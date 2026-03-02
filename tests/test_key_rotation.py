@@ -142,7 +142,8 @@ class TestKeyRotationManager:
         status = manager.get_key_status()
 
         assert len(status) == 3
-        assert status[0]["key"] == "key...ey1"  # Masked
+        # Keys are only 4 chars so they get fully masked
+        assert status[0]["key"] == "****"  # Masked (short key)
         assert status[0]["requests_used"] == 1
         assert status[0]["requests_limit"] == 5
         assert status[0]["remaining"] == 4
@@ -175,8 +176,21 @@ class TestKeyRotationManager:
             assert "key1" not in s["key"]
             assert "key2" not in s["key"]
             assert "key3" not in s["key"]
-            # Should contain masked version
+            # Short keys (<=8 chars) get fully masked as "****"
+            assert s["key"] == "****"
+
+    def test_key_masking_long_keys(self) -> None:
+        """Test that long keys are properly masked with ellipsis."""
+        manager = KeyRotationManager(
+            api_keys=["long-api-key-12345", "another-long-key-99"],
+            requests_limit=5,
+        )
+        status = manager.get_key_status()
+
+        for s in status:
+            # Long keys should show first 4 and last 4 chars with ... in between
             assert "..." in s["key"]
+            assert len(s["key"]) < 20  # Masked should be shorter than original
 
     def test_single_key_manager(self) -> None:
         """Test manager with single key."""

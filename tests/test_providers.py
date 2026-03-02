@@ -36,14 +36,15 @@ class MockSearchProvider(SearchProvider):
                 raise self._fail_with
             raise SearchProviderError("Mock failure", self._name, query)
 
+        max_results = options.max_results if options else 10
         items = [
             SearchResultItem(
                 url=f"https://example.com/result/{i}",
                 title=f"Result {i} for: {query}",
                 snippet=f"Snippet {i}",
-                score=0.9 - (i * 0.1),
+                score=max(0.0, 0.9 - (i * 0.1)),
             )
-            for i in range(1, (options.max_results if options else 10) + 1)
+            for i in range(1, max_results + 1)
         ]
 
         return SearchResult(

@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/jjae/.local/bin/**)",
+      "Read(//Users/jjae/.ralph/**)",
+      "Bash(test -f .ralphrc)",
+      "Bash(test -f .ralph/PROMPT.md)",
+      "Bash(test -f .ralph/fix_plan.md)",
+      "Bash(test -f .ralph/AGENT.md)",
+      "Bash(command -v claude)",
+      "Bash(ralph --monitor)",
+      "Bash(tmux list-sessions)",
+      "Bash(ralph --live)"
+    ]
+  }
+}
