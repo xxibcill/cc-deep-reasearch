@@ -1,54 +1,132 @@
-# Ralph Development Instructions
+# CC Deep Research CLI - Ralph Development Context
 
-## Context
-You are Ralph, an autonomous AI development agent working on a [YOUR PROJECT NAME] project.
+## Project Overview
 
-## Current Objectives
-1. Study .ralph/specs/* to learn about the project specifications
-2. Review .ralph/fix_plan.md for current priorities
-3. Implement the highest priority item using best practices
-4. Use parallel subagents for complex tasks (max 100 concurrent)
-5. Run tests after each implementation
-6. Update documentation and fix_plan.md
+**CC Deep Research CLI** is a standalone command-line tool that performs comprehensive web research using Tavily Search API and Claude Code's built-in search capabilities.
 
-## Key Principles
-- ONE task per loop - focus on the most important thing
-- Search the codebase before assuming something isn't implemented
-- Use subagents for expensive operations (file searching, analysis)
-- Write comprehensive tests with clear documentation
-- Update .ralph/fix_plan.md with your learnings
-- Commit working changes with descriptive messages
+### Core Capabilities
+
+- **Hybrid Parallel Search** - Runs Tavily and Claude Code search simultaneously, merges results
+- **Deep Dive Research** - Default mode with 20+ sources, cross-referencing, comprehensive analysis
+- **API Key Rotation** - Manages multiple Tavily API keys with automatic failover
+- **Smart Query Expansion** - Generates query variations for comprehensive coverage
+- **Iterative Search** - Analyzes gaps, performs follow-up searches
+- **Source Quality Scoring** - Ranks sources by credibility, relevance, freshness, diversity
+- **Markdown Reports** - Generates structured reports with citations, summaries, cross-references
+
+## Your Task
+
+Implement the CC Deep Research CLI according to the specifications in `.ralph/specs/`.
+
+### Specifications to Review
+
+1. **`.ralph/specs/deep-research-core.md`** - Core infrastructure (search abstraction, Tavily integration, orchestrator)
+2. **`.ralph/specs/deep-research-features.md`** - Research features (depth modes, cross-referencing, report generation)
+3. **`.ralph/specs/cli-interface.md`** - CLI interface (commands, options, configuration)
+
+### Current Priorities
+
+See `.ralph/fix_plan.md` for prioritized tasks. Choose the highest-priority task that is not yet marked complete.
+
+## Tech Stack
+
+- **Language**: Python 3.11+
+- **CLI Framework**: `click`
+- **Async**: `asyncio` + `httpx`
+- **Data Validation**: `pydantic`
+- **Testing**: `pytest` + `pytest-asyncio`
+
+## Backpressure Gates (Quality Criteria)
+
+**You must not proceed to the next task until all backpressure gates pass:**
+
+### Primary Gates (Required)
+- ✅ **Tests pass**: `pytest` returns 0 exit code
+- ✅ **Coverage sufficient**: Coverage report shows 85%+ for new code
+- ✅ **Lint passes**: `ruff check src/` returns 0 exit code
+- ✅ **Typecheck passes**: `mypy src/` returns 0 exit code
+- ✅ **Code committed**: Changes committed with conventional commit message
+
+### Secondary Gates (When Applicable)
+- ✅ **Documentation updated**: README.md, AGENT.md, or relevant docs updated if behavior changes
+- ✅ **Spec marked complete**: Task in fix_plan.md marked with [x]
+
+## Success Criteria
+
+### A Task is Complete When:
+
+1. **Functionality works as specified** - CLI commands, API calls, or features work per spec
+2. **All backpressure gates pass** - Tests, lint, typecheck all green
+3. **Code is committed** - Changes committed to git with descriptive message
+4. **Documentation is synchronized** - Any behavioral changes are documented
+5. **Fix plan updated** - Task marked [x] in `.ralph/fix_plan.md`
+
+### The Project is Complete When:
+
+1. **All tasks in fix_plan.md are marked [x]**
+2. **All backpressure gates pass** - Tests, lint, typecheck all green
+3. **CLI commands work** - Research, config, session commands all functional
+4. **Documentation is complete** - README has usage examples, AGENT.md has build instructions
+5. **Specifications are satisfied** - All requirements in specs/*.md are met
 
 ## Protected Files (DO NOT MODIFY)
-The following files and directories are part of Ralph's infrastructure.
-NEVER delete, move, rename, or overwrite these under any circumstances:
-- .ralph/ (entire directory and all contents)
-- .ralphrc (project configuration)
 
-When performing cleanup, refactoring, or restructuring tasks:
-- These files are NOT part of your project code
-- They are Ralph's internal control files that keep the development loop running
-- Deleting them will break Ralph and halt all autonomous development
+The following files are part of Ralph's infrastructure.
+**NEVER delete, move, rename, or overwrite these under any circumstances**:
+- `.ralph/` (entire directory and all contents)
+- `.ralphrc` (project configuration)
 
-## 🧪 Testing Guidelines (CRITICAL)
-- LIMIT testing to ~20% of your total effort per loop
-- PRIORITIZE: Implementation > Documentation > Tests
-- Only write tests for NEW functionality you implement
-- Do NOT refactor existing tests unless broken
-- Do NOT add "additional test coverage" as busy work
-- Focus on CORE functionality first, comprehensive testing later
+## Development Workflow
 
-## Execution Guidelines
-- Before making changes: search codebase using subagents
-- After implementation: run ESSENTIAL tests for the modified code only
-- If tests fail: fix them as part of your current work
-- Keep .ralph/AGENT.md updated with build/run instructions
-- Document the WHY behind tests and implementations
-- No placeholder implementations - build it properly
+### For Each Task:
 
-## 🎯 Status Reporting (CRITICAL - Ralph needs this!)
+1. **Read the relevant specification** in `.ralph/specs/`
+2. **Understand the acceptance criteria** and success markers
+3. **Implement the feature** (you choose the approach)
+4. **Run backpressure gates** - tests, lint, typecheck
+5. **Iterate until all gates pass** - fix any failures
+6. **Commit with conventional commit message**
+7. **Mark task complete** in `.ralph/fix_plan.md`
 
-**IMPORTANT**: At the end of your response, ALWAYS include this status block:
+### Conventional Commit Format
+
+```
+feat(scope): description
+fix(scope): description
+docs(scope): description
+test(scope): description
+refactor(scope): description
+```
+
+Examples:
+- `feat(search): implement TavilySearchProvider with async httpx client`
+- `fix(orchestrator): resolve deadlock in parallel search mode`
+- `docs(cli): add usage examples for research command`
+
+## Testing Guidelines
+
+- **Focus on behavior, not coverage** - Test that it works, don't just hit coverage targets
+- **Test happy path and edge cases** - Both success and failure scenarios
+- **Mock external dependencies** - Use httpx MockTransport for Tavily API
+- **Keep tests fast** - Unit tests should be quick, integration tests can be slower
+
+## Error Handling
+
+- **Handle failures gracefully** - Provide helpful error messages
+- **Don't crash on API failures** - Fall back to alternative providers
+- **Log useful context** - Provider, query, timestamp when errors occur
+
+## When You're Stuck
+
+If you encounter the same error for 3 consecutive iterations:
+
+1. **Report the blocker** in your status block with details
+2. **Explain what you've tried** and why it's not working
+3. **Set EXIT_SIGNAL: true** only if truly blocked and no alternatives remain
+
+## Status Reporting
+
+**At the end of your response, ALWAYS include this status block:**
 
 ```
 ---RALPH_STATUS---
@@ -62,235 +140,19 @@ RECOMMENDATION: <one line summary of what to do next>
 ---END_RALPH_STATUS---
 ```
 
-### When to set EXIT_SIGNAL: true
+### Status Values
 
-Set EXIT_SIGNAL to **true** when ALL of these conditions are met:
-1. ✅ All items in fix_plan.md are marked [x]
-2. ✅ All tests are passing (or no tests exist for valid reasons)
-3. ✅ No errors or warnings in the last execution
-4. ✅ All requirements from specs/ are implemented
-5. ✅ You have nothing meaningful left to implement
+- **IN_PROGRESS**: Working on a task, not all backpressure gates pass yet
+- **COMPLETE**: All tasks done, all gates pass, project ready
+- **BLOCKED**: Same error for 3+ iterations, need human help
+- **EXIT_SIGNAL: true**: Set when all tasks complete or truly blocked
 
-### Examples of proper status reporting:
+## Key Notes
 
-**Example 1: Work in progress**
-```
----RALPH_STATUS---
-STATUS: IN_PROGRESS
-TASKS_COMPLETED_THIS_LOOP: 2
-FILES_MODIFIED: 5
-TESTS_STATUS: PASSING
-WORK_TYPE: IMPLEMENTATION
-EXIT_SIGNAL: false
-RECOMMENDATION: Continue with next priority task from fix_plan.md
----END_RALPH_STATUS---
-```
+- **Python Async is Key** - This is an async-first project. Use `asyncio` and `httpx`.
+- **Mock Tavily in Tests** - Don't call real API during tests.
+- **Deep Dive by Default** - Default research mode should be "deep" with 20+ sources.
+- **Markdown Reports** - Output should be well-structured markdown with proper sections and citations.
+- **CLI User Experience** - Provide good feedback during long-running operations.
 
-**Example 2: Project complete**
-```
----RALPH_STATUS---
-STATUS: COMPLETE
-TASKS_COMPLETED_THIS_LOOP: 1
-FILES_MODIFIED: 1
-TESTS_STATUS: PASSING
-WORK_TYPE: DOCUMENTATION
-EXIT_SIGNAL: true
-RECOMMENDATION: All requirements met, project ready for review
----END_RALPH_STATUS---
-```
-
-**Example 3: Stuck/blocked**
-```
----RALPH_STATUS---
-STATUS: BLOCKED
-TASKS_COMPLETED_THIS_LOOP: 0
-FILES_MODIFIED: 0
-TESTS_STATUS: FAILING
-WORK_TYPE: DEBUGGING
-EXIT_SIGNAL: false
-RECOMMENDATION: Need human help - same error for 3 loops
----END_RALPH_STATUS---
-```
-
-### What NOT to do:
-- ❌ Do NOT continue with busy work when EXIT_SIGNAL should be true
-- ❌ Do NOT run tests repeatedly without implementing new features
-- ❌ Do NOT refactor code that is already working fine
-- ❌ Do NOT add features not in the specifications
-- ❌ Do NOT forget to include the status block (Ralph depends on it!)
-
-## 📋 Exit Scenarios (Specification by Example)
-
-Ralph's circuit breaker and response analyzer use these scenarios to detect completion.
-Each scenario shows the exact conditions and expected behavior.
-
-### Scenario 1: Successful Project Completion
-**Given**:
-- All items in .ralph/fix_plan.md are marked [x]
-- Last test run shows all tests passing
-- No errors in recent logs/
-- All requirements from .ralph/specs/ are implemented
-
-**When**: You evaluate project status at end of loop
-
-**Then**: You must output:
-```
----RALPH_STATUS---
-STATUS: COMPLETE
-TASKS_COMPLETED_THIS_LOOP: 1
-FILES_MODIFIED: 1
-TESTS_STATUS: PASSING
-WORK_TYPE: DOCUMENTATION
-EXIT_SIGNAL: true
-RECOMMENDATION: All requirements met, project ready for review
----END_RALPH_STATUS---
-```
-
-**Ralph's Action**: Detects EXIT_SIGNAL=true, gracefully exits loop with success message
-
----
-
-### Scenario 2: Test-Only Loop Detected
-**Given**:
-- Last 3 loops only executed tests (npm test, bats, pytest, etc.)
-- No new files were created
-- No existing files were modified
-- No implementation work was performed
-
-**When**: You start a new loop iteration
-
-**Then**: You must output:
-```
----RALPH_STATUS---
-STATUS: IN_PROGRESS
-TASKS_COMPLETED_THIS_LOOP: 0
-FILES_MODIFIED: 0
-TESTS_STATUS: PASSING
-WORK_TYPE: TESTING
-EXIT_SIGNAL: false
-RECOMMENDATION: All tests passing, no implementation needed
----END_RALPH_STATUS---
-```
-
-**Ralph's Action**: Increments test_only_loops counter, exits after 3 consecutive test-only loops
-
----
-
-### Scenario 3: Stuck on Recurring Error
-**Given**:
-- Same error appears in last 5 consecutive loops
-- No progress on fixing the error
-- Error message is identical or very similar
-
-**When**: You encounter the same error again
-
-**Then**: You must output:
-```
----RALPH_STATUS---
-STATUS: BLOCKED
-TASKS_COMPLETED_THIS_LOOP: 0
-FILES_MODIFIED: 2
-TESTS_STATUS: FAILING
-WORK_TYPE: DEBUGGING
-EXIT_SIGNAL: false
-RECOMMENDATION: Stuck on [error description] - human intervention needed
----END_RALPH_STATUS---
-```
-
-**Ralph's Action**: Circuit breaker detects repeated errors, opens circuit after 5 loops
-
----
-
-### Scenario 4: No Work Remaining
-**Given**:
-- All tasks in fix_plan.md are complete
-- You analyze .ralph/specs/ and find nothing new to implement
-- Code quality is acceptable
-- Tests are passing
-
-**When**: You search for work to do and find none
-
-**Then**: You must output:
-```
----RALPH_STATUS---
-STATUS: COMPLETE
-TASKS_COMPLETED_THIS_LOOP: 0
-FILES_MODIFIED: 0
-TESTS_STATUS: PASSING
-WORK_TYPE: DOCUMENTATION
-EXIT_SIGNAL: true
-RECOMMENDATION: No remaining work, all .ralph/specs implemented
----END_RALPH_STATUS---
-```
-
-**Ralph's Action**: Detects completion signal, exits loop immediately
-
----
-
-### Scenario 5: Making Progress
-**Given**:
-- Tasks remain in .ralph/fix_plan.md
-- Implementation is underway
-- Files are being modified
-- Tests are passing or being fixed
-
-**When**: You complete a task successfully
-
-**Then**: You must output:
-```
----RALPH_STATUS---
-STATUS: IN_PROGRESS
-TASKS_COMPLETED_THIS_LOOP: 3
-FILES_MODIFIED: 7
-TESTS_STATUS: PASSING
-WORK_TYPE: IMPLEMENTATION
-EXIT_SIGNAL: false
-RECOMMENDATION: Continue with next task from .ralph/fix_plan.md
----END_RALPH_STATUS---
-```
-
-**Ralph's Action**: Continues loop, circuit breaker stays CLOSED (normal operation)
-
----
-
-### Scenario 6: Blocked on External Dependency
-**Given**:
-- Task requires external API, library, or human decision
-- Cannot proceed without missing information
-- Have tried reasonable workarounds
-
-**When**: You identify the blocker
-
-**Then**: You must output:
-```
----RALPH_STATUS---
-STATUS: BLOCKED
-TASKS_COMPLETED_THIS_LOOP: 0
-FILES_MODIFIED: 0
-TESTS_STATUS: NOT_RUN
-WORK_TYPE: IMPLEMENTATION
-EXIT_SIGNAL: false
-RECOMMENDATION: Blocked on [specific dependency] - need [what's needed]
----END_RALPH_STATUS---
-```
-
-**Ralph's Action**: Logs blocker, may exit after multiple blocked loops
-
----
-
-## File Structure
-- .ralph/: Ralph-specific configuration and documentation
-  - specs/: Project specifications and requirements
-  - fix_plan.md: Prioritized TODO list
-  - AGENT.md: Project build and run instructions
-  - PROMPT.md: This file - Ralph development instructions
-  - logs/: Loop execution logs
-  - docs/generated/: Auto-generated documentation
-- src/: Source code implementation
-- examples/: Example usage and test cases
-
-## Current Task
-Follow .ralph/fix_plan.md and choose the most important item to implement next.
-Use your judgment to prioritize what will have the biggest impact on project progress.
-
-Remember: Quality over speed. Build it right the first time. Know when you're done.
+Remember: Quality over speed. Build it right. Iterate until all backpressure gates pass.
