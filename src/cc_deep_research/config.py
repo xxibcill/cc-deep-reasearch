@@ -102,8 +102,7 @@ class Config(BaseModel):
 class Settings(BaseSettings):
     """Application settings with environment variable support."""
 
-    # Environment variable overrides
-    tavily_api_keys: list[str] = Field(default_factory=list, alias="TAVILY_API_KEYS")
+    # Environment variable overrides (not including TAVILY_API_KEYS - handled separately)
     config_path: Path | None = Field(default=None, alias="CC_DEEP_RESEARCH_CONFIG")
     depth: ResearchDepth | None = Field(default=None, alias="CC_DEEP_RESEARCH_DEPTH")
     output_format: str | None = Field(default=None, alias="CC_DEEP_RESEARCH_FORMAT")
@@ -114,7 +113,20 @@ class Settings(BaseSettings):
         "env_file_encoding": "utf-8",
         "extra": "ignore",
         "populate_by_name": True,
+        "env_prefix": "",
     }
+
+
+def _parse_api_keys_from_env() -> list[str]:
+    """Parse TAVILY_API_KEYS from environment variable.
+
+    Returns:
+        List of API keys from comma-separated env var.
+    """
+    env_value = os.environ.get("TAVILY_API_KEYS", "")
+    if not env_value:
+        return []
+    return [k.strip() for k in env_value.split(",") if k.strip()]
 
 
 def get_default_config_path() -> Path:
@@ -151,8 +163,9 @@ def load_config(config_path: Path | None = None) -> Config:
     config = Config(**config_data)
 
     # Apply environment variable overrides
-    if settings.tavily_api_keys:
-        config.tavily.api_keys = settings.tavily_api_keys
+    api_keys = _parse_api_keys_from_env()
+    if api_keys:
+        config.tavily.api_keys = api_keys
 
     if settings.depth:
         config.search.depth = settings.depth
@@ -180,8 +193,8 @@ def save_config(config: Config, config_path: Path | None = None) -> None:
     # Ensure directory exists
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Convert to dict and save
-    config_data = config.model_dump(mode="python")
+    # Convert to dict and save (use json mode to serialize enums as strings)
+    config_data = config.model_dump(mode="json")
 
     with open(config_path, "w") as f:
         yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)

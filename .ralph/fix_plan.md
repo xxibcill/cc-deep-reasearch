@@ -3,28 +3,28 @@
 ## Tasks
 
 ### Foundation
-- [ ] **Project Structure**
+- [x] **Project Structure**
   - Acceptance: pyproject.toml and requirements.txt exist, pip install -e . succeeds
   - Gates: tests: N/A (no tests yet), lint: pass, typecheck: pass, committed: yes
 
-- [ ] **Core Data Structures**
+- [x] **Core Data Structures**
   - Acceptance: pydantic models defined for SearchResult, ResearchSession, APIKey, etc.
   - Gates: tests: pass, lint: pass, typecheck: pass, committed: yes
 
-- [ ] **Configuration Management**
+- [x] **Configuration Management**
   - Acceptance: Can load config from file and environment variables
   - Gates: tests: pass, lint: pass, typecheck: pass, committed: yes
 
 ### Search Infrastructure
-- [ ] **SearchProvider Interface**
+- [x] **SearchProvider Interface**
   - Acceptance: Abstract base class defined with async search() method
   - Gates: tests: pass, lint: pass, typecheck: pass, committed: yes
 
-- [ ] **TavilySearchProvider**
+- [x] **TavilySearchProvider**
   - Acceptance: Can execute Tavily search, returns unified SearchResult format
   - Gates: tests: pass (mocked), lint: pass, typecheck: pass, committed: yes
 
-- [ ] **KeyRotationManager**
+- [x] **KeyRotationManager**
   - Acceptance: Manages multiple API keys, rotates on rate limit, tracks usage
   - Gates: tests: pass, lint: pass, typecheck: pass, committed: yes
 
@@ -32,7 +32,7 @@
   - Acceptance: Wraps Claude Code's WebSearch, returns unified format
   - Gates: tests: pass (mocked), lint: pass, typecheck: pass, committed: yes
 
-- [ ] **Result Aggregation**
+- [x] **Result Aggregation**
   - Acceptance: Merges results from multiple providers, deduplicates by URL
   - Gates: tests: pass, lint: pass, typecheck: pass, committed: yes
 
@@ -107,6 +107,13 @@
 ## Completed
 - [x] Project initialization with Ralph
 - [x] Specification documents created
+- [x] Project Structure (pyproject.toml, src layout)
+- [x] Core Data Structures (models.py with pydantic)
+- [x] Configuration Management (config.py with env vars and YAML)
+- [x] SearchProvider Interface (abstract base class)
+- [x] TavilySearchProvider (async httpx implementation)
+- [x] KeyRotationManager (multi-key rotation with tracking)
+- [x] Result Aggregation (deduplication and merging)
 
 ## Notes
 

@@ -18,6 +18,7 @@ from cc_deep_research.config import (
     TavilyConfig,
     ClaudeConfig,
     Settings,
+    _parse_api_keys_from_env,
     create_default_config_file,
     get_default_config,
     get_default_config_path,
@@ -291,7 +292,6 @@ class TestSettings:
     def test_default_settings(self) -> None:
         """Test default Settings values."""
         settings = Settings()
-        assert settings.tavily_api_keys == []
         assert settings.config_path is None
         assert settings.depth is None
         assert settings.output_format is None
@@ -302,12 +302,46 @@ class TestSettings:
         with patch.dict(
             os.environ,
             {
-                "TAVILY_API_KEYS": "key1,key2",
                 "CC_DEEP_RESEARCH_DEPTH": "quick",
                 "NO_COLOR": "1",
             },
         ):
             settings = Settings()
-            assert settings.tavily_api_keys == ["key1", "key2"]
             assert settings.depth == ResearchDepth.QUICK
             assert settings.no_color is True
+
+
+class TestParseApiKeysFromEnv:
+    """Tests for _parse_api_keys_from_env function."""
+
+    def test_parse_empty_env(self) -> None:
+        """Test parsing when env var is not set."""
+        with patch.dict(os.environ, {}, clear=True):
+            # Remove TAVILY_API_KEYS if set
+            os.environ.pop("TAVILY_API_KEYS", None)
+            keys = _parse_api_keys_from_env()
+            assert keys == []
+
+    def test_parse_single_key(self) -> None:
+        """Test parsing single API key."""
+        with patch.dict(os.environ, {"TAVILY_API_KEYS": "key1"}):
+            keys = _parse_api_keys_from_env()
+            assert keys == ["key1"]
+
+    def test_parse_multiple_keys(self) -> None:
+        """Test parsing multiple comma-separated keys."""
+        with patch.dict(os.environ, {"TAVILY_API_KEYS": "key1,key2,key3"}):
+            keys = _parse_api_keys_from_env()
+            assert keys == ["key1", "key2", "key3"]
+
+    def test_parse_keys_with_spaces(self) -> None:
+        """Test parsing keys with extra spaces."""
+        with patch.dict(os.environ, {"TAVILY_API_KEYS": " key1 , key2 , "}):
+            keys = _parse_api_keys_from_env()
+            assert keys == ["key1", "key2"]
+
+    def test_parse_empty_string(self) -> None:
+        """Test parsing empty string."""
+        with patch.dict(os.environ, {"TAVILY_API_KEYS": ""}):
+            keys = _parse_api_keys_from_env()
+            assert keys == []
