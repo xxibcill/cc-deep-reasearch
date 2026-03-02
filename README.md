@@ -13,7 +13,50 @@ A powerful deep research engine that builds on top of Claude Code, combining Tav
 - **Markdown Reports** - Generates structured reports with citations, executive summaries, and cross-reference analysis
 - **Interactive CLI** - User-friendly command-line interface with progress indicators
 
+## Quick Start
+
+Get up and running in less than 5 minutes:
+
+```bash
+# 1. Install the package
+pip install cc-deep-research
+
+# 2. Set your Tavily API key (get one at https://tavily.com)
+export TAVILY_API_KEYS=your_api_key_here
+
+# 3. Run your first research query
+cc-deep-research research "What are the latest developments in quantum computing?"
+```
+
+That's it! The tool will automatically:
+- Run comprehensive searches across multiple sources
+- Generate a detailed markdown report
+- Save the report to your current directory
+
+**Example Output:**
+```
+# Research Report: Latest Developments in Quantum Computing
+
+## Executive Summary
+[2-3 paragraph summary of key findings...]
+
+## Key Findings
+### 1. Recent Breakthroughs in Quantum Error Correction
+[Analysis with citations...]
+[1] https://example.com/article1
+
+### 2. Scaling Quantum Computers to 1000+ Qubits
+[Analysis with citations...]
+[2] https://example.com/article2
+
+## Sources
+1. [Title](https://example.com/article1) - Description
+2. [Title](https://example.com/article2) - Description
+```
+
 ## Installation
+
+For development or to install from source:
 
 ```bash
 # Clone the repository
