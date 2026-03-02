@@ -1,8 +1,16 @@
 """CLI entry point for CC Deep Research."""
 
+from pathlib import Path
+
 import click
 
 from cc_deep_research import __version__
+from cc_deep_research.config import (
+    Config,
+    load_config,
+    save_config,
+    get_default_config_path,
+)
 
 
 @click.group()
@@ -96,5 +104,279 @@ def research(
     click.echo("(Research functionality will be implemented in subsequent tasks)")
 
 
+@main.group()
+@click.pass_context
+def config(ctx: click.Context) -> None:
+    """Manage configuration settings."""
+    pass
+
+
+@config.command()
+@click.argument("key", required=True)
+@click.argument("value", required=True)
+@click.option(
+    "--config-path",
+    type=click.Path(),
+    default=None,
+    help="Path to config file (uses default if not specified)",
+)
+@click.pass_context
+def set(ctx: click.Context, key: str, value: str, config_path: str | None) -> None:
+    """Set a configuration value.
+
+    KEY is the configuration key in dot notation (e.g., tavily.api_keys).
+    VALUE is the value to set.
+
+    Examples:
+        cc-deep-research config set tavily.api_keys key1,key2
+        cc-deep-research config set search.mode hybrid_parallel
+    """
+    config_obj = Config()
+
+    if config_path:
+        config_path_obj = click.Path().convert(config_path, None, ctx=ctx)
+        if config_path_obj.exists():
+            config_obj = load_config(Path(config_path_obj))
+    else:
+        config_obj = load_config()
+
+    # Parse the key path and set the value
+    key_parts = key.split(".")
+    target = config_obj
+
+    # Navigate to the parent of the final key
+    for part in key_parts[:-1]:
+        if not hasattr(target, part):
+            click.echo(f"Error: Invalid configuration key: {key}", err=True)
+            raise click.Abort()
+        target = getattr(target, part)
+
+    final_key = key_parts[-1]
+    if not hasattr(target, final_key):
+        click.echo(f"Error: Invalid configuration key: {key}", err=True)
+        raise click.Abort()
+
+    # Handle different value types
+    current_value = getattr(target, final_key)
+    if isinstance(current_value, list):
+        # Handle list values (comma-separated)
+        parsed_value = [v.strip() for v in value.split(",") if v.strip()]
+    elif isinstance(current_value, bool):
+        # Handle boolean values
+        parsed_value = value.lower() in ("true", "1", "yes", "on")
+    elif isinstance(current_value, int):
+        # Handle integer values
+        try:
+            parsed_value = int(value)
+        except ValueError:
+            click.echo(
+                f"Error: Expected integer value for {key}, got: {value}", err=True
+            )
+            raise click.Abort()
+    else:
+        # Handle string values
+        parsed_value = value
+
+    # Set the value
+    setattr(target, final_key, parsed_value)
+
+    # Save the configuration
+    save_path = Path(config_path) if config_path else None
+    save_config(config_obj, save_path)
+
+    click.echo(f"Configuration updated: {key} = {parsed_value}")
+    if config_path:
+        click.echo(f"Saved to: {config_path}")
+    else:
+        click.echo(f"Saved to: {get_default_config_path()}")
+
+
+@config.command()
+@click.option(
+    "--config-path",
+    type=click.Path(),
+    default=None,
+    help="Path to config file (uses default if not specified)",
+)
+@click.pass_context
+def show(ctx: click.Context, config_path: str | None) -> None:
+    """Show current configuration."""
+    if config_path:
+        config_obj = load_config(Path(config_path))
+    else:
+        config_obj = load_config()
+
+    click.echo("Current configuration:")
+    click.echo(f"  Search providers: {', '.join(config_obj.search.providers)}")
+    click.echo(f"  Search mode: {config_obj.search.mode}")
+    click.echo(f"  Search depth: {config_obj.search.depth}")
+    click.echo(f"  Tavily API keys: {len(config_obj.tavily.api_keys)} configured")
+    click.echo(f"  Output format: {config_obj.output.format}")
+    click.echo(f"  Output directory: {config_obj.output.save_dir}")
+
+
+@config.command()
+@click.option(
+    "--config-path",
+    type=click.Path(),
+    default=None,
+    help="Path to config file (uses default if not specified)",
+)
+@click.option("--force", is_flag=True, help="Overwrite existing config file")
+@click.pass_context
+def init(ctx: click.Context, config_path: str | None, force: bool) -> None:
+    """Create a default configuration file."""
+    from cc_deep_research.config import create_default_config_file
+
+    save_path = Path(config_path) if config_path else None
+
+    if save_path and save_path.exists() and not force:
+        click.echo(
+            f"Error: Config file already exists at {save_path}. Use --force to overwrite.",
+            err=True,
+        )
+        raise click.Abort()
+
+    created_path = create_default_config_file(save_path)
+    click.echo(f"Created default configuration at: {created_path}")
+
+
 if __name__ == "__main__":
     main()
+
+
+@main.group()
+@click.pass_context
+def config(ctx: click.Context) -> None:
+    """Manage configuration settings."""
+    pass
+
+
+@config.command()
+@click.argument("key", required=True)
+@click.argument("value", required=True)
+@click.option(
+    "--config-path",
+    type=click.Path(),
+    default=None,
+    help="Path to config file (uses default if not specified)",
+)
+@click.pass_context
+def set(ctx: click.Context, key: str, value: str, config_path: str | None) -> None:
+    """Set a configuration value.
+
+    KEY is the configuration key in dot notation (e.g., tavily.api_keys).
+    VALUE is the value to set.
+
+    Examples:
+        cc-deep-research config set tavily.api_keys key1,key2
+        cc-deep-research config set search.mode hybrid_parallel
+    """
+    config_obj = Config()
+
+    if config_path:
+        config_path_obj = click.Path().convert(config_path, None, ctx=ctx)
+        if config_path_obj.exists():
+            config_obj = load_config(Path(config_path_obj))
+    else:
+        config_obj = load_config()
+
+    # Parse the key path and set the value
+    key_parts = key.split(".")
+    target = config_obj
+
+    # Navigate to the parent of the final key
+    for part in key_parts[:-1]:
+        if not hasattr(target, part):
+            click.echo(f"Error: Invalid configuration key: {key}", err=True)
+            raise click.Abort()
+        target = getattr(target, part)
+
+    final_key = key_parts[-1]
+    if not hasattr(target, final_key):
+        click.echo(f"Error: Invalid configuration key: {key}", err=True)
+        raise click.Abort()
+
+    # Handle different value types
+    current_value = getattr(target, final_key)
+    if isinstance(current_value, list):
+        # Handle list values (comma-separated)
+        parsed_value = [v.strip() for v in value.split(",") if v.strip()]
+    elif isinstance(current_value, bool):
+        # Handle boolean values
+        parsed_value = value.lower() in ("true", "1", "yes", "on")
+    elif isinstance(current_value, int):
+        # Handle integer values
+        try:
+            parsed_value = int(value)
+        except ValueError:
+            click.echo(
+                f"Error: Expected integer value for {key}, got: {value}", err=True
+            )
+            raise click.Abort()
+    else:
+        # Handle string values
+        parsed_value = value
+
+    # Set the value
+    setattr(target, final_key, parsed_value)
+
+    # Save the configuration
+    save_path = Path(config_path) if config_path else None
+    save_config(config_obj, save_path)
+
+    click.echo(f"Configuration updated: {key} = {parsed_value}")
+    if config_path:
+        click.echo(f"Saved to: {config_path}")
+    else:
+        click.echo(f"Saved to: {get_default_config_path()}")
+
+
+@config.command()
+@click.option(
+    "--config-path",
+    type=click.Path(),
+    default=None,
+    help="Path to config file (uses default if not specified)",
+)
+@click.pass_context
+def show(ctx: click.Context, config_path: str | None) -> None:
+    """Show current configuration."""
+    if config_path:
+        config_obj = load_config(Path(config_path))
+    else:
+        config_obj = load_config()
+
+    click.echo("Current configuration:")
+    click.echo(f"  Search providers: {', '.join(config_obj.search.providers)}")
+    click.echo(f"  Search mode: {config_obj.search.mode}")
+    click.echo(f"  Search depth: {config_obj.search.depth}")
+    click.echo(f"  Tavily API keys: {len(config_obj.tavily.api_keys)} configured")
+    click.echo(f"  Output format: {config_obj.output.format}")
+    click.echo(f"  Output directory: {config_obj.output.save_dir}")
+
+
+@config.command()
+@click.option(
+    "--config-path",
+    type=click.Path(),
+    default=None,
+    help="Path to config file (uses default if not specified)",
+)
+@click.option("--force", is_flag=True, help="Overwrite existing config file")
+@click.pass_context
+def init(ctx: click.Context, config_path: str | None, force: bool) -> None:
+    """Create a default configuration file."""
+    from cc_deep_research.config import create_default_config_file
+
+    save_path = Path(config_path) if config_path else None
+
+    if save_path and save_path.exists() and not force:
+        click.echo(
+            f"Error: Config file already exists at {save_path}. Use --force to overwrite.",
+            err=True,
+        )
+        raise click.Abort()
+
+    created_path = create_default_config_file(save_path)
+    click.echo(f"Created default configuration at: {created_path}")

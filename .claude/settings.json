@@ -10,7 +10,21 @@
       "Bash(command -v claude)",
       "Bash(ralph --monitor)",
       "Bash(tmux list-sessions)",
-      "Bash(ralph --live)"
+      "Bash(ralph --live)",
+      "Bash(uv sync)",
+      "Bash(uv run pytest -v)",
+      "Bash(uv run cc-deep-research --help)",
+      "Bash(python -m cc_deep_research.cli config set tavily.api_keys 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,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)",
+      "Bash(python3 -m cc_deep_research.cli config set tavily.api_keys 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,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)",
+      "Bash(uv pip install -e .)",
+      "Bash(cc-deep-research config set tavily.api_keys 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,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)",
+      "Bash(.venv/bin/python -m cc_deep_research.cli config set tavily.api_keys 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,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)",
+      "Bash(.venv/bin/python -c \"import cc_deep_research.cli; print\\(dir\\(cc_deep_research.cli\\)\\)\")",
+      "Bash(uv pip install -e . --force-reinstall)",
+      "Read(//Users/jjae/.config/cc-deep-research/**)",
+      "Bash(.venv/bin/python -m cc_deep_research.cli config show)",
+      "Bash(.venv/bin/python -m cc_deep_research.cli --help)",
+      "Bash(.venv/bin/python -m cc_deep_research.cli config --help)"
     ]
   }
 }
