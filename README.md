@@ -17,6 +17,24 @@ A powerful deep research engine that builds on top of Claude Code, combining Tav
 
 Get up and running in less than 5 minutes:
 
+### Using uv (Recommended)
+
+```bash
+# 1. Install uv if you haven't already
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 2. Install the package
+uv pip install cc-deep-research
+
+# 3. Set your Tavily API key (get one at https://tavily.com)
+export TAVILY_API_KEYS=your_api_key_here
+
+# 4. Run your first research query
+cc-deep-research research "What are the latest developments in quantum computing?"
+```
+
+### Using pip
+
 ```bash
 # 1. Install the package
 pip install cc-deep-research
@@ -54,9 +72,92 @@ That's it! The tool will automatically:
 2. [Title](https://example.com/article2) - Description
 ```
 
+## Common Commands
+
+### uv (Recommended)
+
+```bash
+# Install dependencies
+uv sync
+
+# Run the CLI
+uv run cc-deep-research research "query"
+
+# Run tests
+uv run pytest
+
+# Run linting
+uv run ruff check src/ tests/
+
+# Format code
+uv run ruff format src/ tests/
+
+# Type checking
+uv run mypy src/
+
+# Add a new dependency
+uv add package-name
+
+# Add a dev dependency
+uv add --dev package-name
+```
+
+### pip
+
+```bash
+# Run tests
+pytest
+
+# Run linting
+ruff check src/ tests/
+
+# Format code
+ruff format src/ tests/
+
+# Type checking
+mypy src/
+```
+
+## Installation
+```
+# Research Report: Latest Developments in Quantum Computing
+
+## Executive Summary
+[2-3 paragraph summary of key findings...]
+
+## Key Findings
+### 1. Recent Breakthroughs in Quantum Error Correction
+[Analysis with citations...]
+[1] https://example.com/article1
+
+### 2. Scaling Quantum Computers to 1000+ Qubits
+[Analysis with citations...]
+[2] https://example.com/article2
+
+## Sources
+1. [Title](https://example.com/article1) - Description
+2. [Title](https://example.com/article2) - Description
+```
+
 ## Installation
 
 For development or to install from source:
+
+### Using uv (Recommended)
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd cc-deep-research
+
+# Sync with uv (creates virtual environment and installs dependencies)
+uv sync
+
+# Run commands with uv
+uv run cc-deep-research research "What are the latest developments in quantum computing?"
+```
+
+### Using pip
 
 ```bash
 # Clone the repository
