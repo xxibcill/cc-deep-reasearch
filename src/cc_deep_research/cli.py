@@ -62,6 +62,7 @@ def main(ctx: click.Context) -> None:
 @click.option("--progress", is_flag=True, default=True, help="Show progress indicators")
 @click.option("--quiet", is_flag=True, help="Suppress output")
 @click.option("--verbose", is_flag=True, help="Show detailed output")
+@click.option("--monitor", is_flag=True, help="Show internal workflow monitoring information")
 @click.pass_context
 def research(
     ctx: click.Context,
@@ -76,6 +77,7 @@ def research(
     progress: bool,
     quiet: bool,
     verbose: bool,
+    monitor: bool,
 ) -> None:
     """Execute a research query and generate a report.
 
@@ -93,15 +95,42 @@ def research(
     ctx.obj["progress"] = progress
     ctx.obj["quiet"] = quiet
     ctx.obj["verbose"] = verbose
+    ctx.obj["monitor"] = monitor
 
     if verbose:
         click.echo(f"Research query: {query}")
         click.echo(f"Depth: {depth}")
         click.echo(f"Output format: {output_format}")
 
+    # Initialize monitoring if enabled
+    from cc_deep_research.monitoring import ResearchMonitor
+
+    research_monitor = ResearchMonitor(enabled=monitor and not quiet)
+
+    if monitor and not quiet:
+        research_monitor.section("Research Session")
+        research_monitor.log(f"Query: {query}")
+        research_monitor.log(f"Depth: {depth}")
+        research_monitor.log(f"Output format: {output_format}")
+
+        # Log configuration
+        research_monitor.section("Configuration")
+        from cc_deep_research.config import load_config
+
+        config_obj = load_config()
+        research_monitor.log(f"Providers: {', '.join(config_obj.search.providers)}")
+        research_monitor.log(f"Search depth: {config_obj.search.depth}")
+        research_monitor.log(f"Search mode: {config_obj.search.mode}")
+
+        research_monitor.section("Provider Execution")
+
     # TODO: Implement actual research logic
     click.echo(f"Researching: {query}")
     click.echo("(Research functionality will be implemented in subsequent tasks)")
+
+    if monitor and not quiet:
+        research_monitor.section("Summary")
+        research_monitor.summary(total_sources=0, providers=[], total_time_ms=0)
 
 
 @main.group()

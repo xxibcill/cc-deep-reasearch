@@ -3,6 +3,7 @@
 import time
 from typing import Any
 
+import click
 import httpx
 
 from cc_deep_research.models import SearchOptions, SearchResult, SearchResultItem
@@ -57,6 +58,11 @@ class TavilySearchProvider(SearchProvider):
         options = options or SearchOptions(max_results=self._max_results)
         start_time = time.time()
 
+        # Monitor: Start of operation
+        monitor = getattr(options, 'monitor', False) if options else False
+        if monitor:
+            click.echo(f"[MONITOR] [TAVILY] Starting search: {query}")
+
         payload = self._build_payload(query, options)
 
         try:
@@ -72,6 +78,12 @@ class TavilySearchProvider(SearchProvider):
             results = self._parse_results(data)
 
             execution_time_ms = int((time.time() - start_time) * 1000)
+
+            # Monitor: Log results
+            if monitor:
+                click.echo(
+                    f"[MONITOR] [TAVILY] Response received: {len(results)} results ({execution_time_ms}ms)"
+                )
 
             return SearchResult(
                 query=query,
