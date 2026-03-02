@@ -1,5 +1,6 @@
 """Result aggregation and deduplication utilities."""
 
+import click
 from urllib.parse import urlparse
 
 from cc_deep_research.models import SearchResult, SearchResultItem
@@ -57,6 +58,7 @@ def aggregate_results(
     search_results: list[SearchResult],
     deduplicate: bool = True,
     sort_by_score: bool = True,
+    monitor: bool = False,
 ) -> list[SearchResultItem]:
     """Aggregate results from multiple search providers.
 
@@ -64,6 +66,7 @@ def aggregate_results(
         search_results: List of SearchResult objects from different providers.
         deduplicate: If True, remove duplicate URLs.
         sort_by_score: If True, sort results by score descending.
+        monitor: If True, log monitoring information.
 
     Returns:
         Aggregated list of search result items.
@@ -73,11 +76,26 @@ def aggregate_results(
     for search_result in search_results:
         all_items.extend(search_result.results)
 
+    if monitor:
+        click.echo(
+            f"[MONITOR] [AGGREGATOR] Processing {len(all_items)} results from "
+            f"{len(search_results)} provider(s)"
+        )
+
     if deduplicate:
+        original_count = len(all_items)
         all_items = deduplicate_by_url(all_items)
+        if monitor:
+            removed = original_count - len(all_items)
+            click.echo(
+                f"[MONITOR] [AGGREGATOR] Deduplicated: {removed} duplicate(s) removed, "
+                f"{len(all_items)} unique result(s)"
+            )
 
     if sort_by_score:
         all_items.sort(key=lambda x: x.score, reverse=True)
+        if monitor:
+            click.echo("[MONITOR] [AGGREGATOR] Sorted by score (descending)")
 
     return all_items
 
@@ -121,15 +139,18 @@ class ResultAggregator:
         self,
         deduplicate: bool = True,
         sort_by_score: bool = True,
+        monitor: bool = False,
     ) -> None:
         """Initialize the aggregator.
 
         Args:
             deduplicate: Whether to deduplicate results.
             sort_by_score: Whether to sort by score.
+            monitor: Whether to enable monitoring.
         """
         self._deduplicate = deduplicate
         self._sort_by_score = sort_by_score
+        self._monitor = monitor
         self._all_results: list[SearchResult] = []
 
     def add_result(self, result: SearchResult) -> None:
@@ -150,6 +171,7 @@ class ResultAggregator:
             self._all_results,
             deduplicate=self._deduplicate,
             sort_by_score=self._sort_by_score,
+            monitor=self._monitor,
         )
 
     def get_merged(self, query: str) -> SearchResult:
