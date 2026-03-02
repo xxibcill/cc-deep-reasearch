@@ -24,7 +24,16 @@
       "Read(//Users/jjae/.config/cc-deep-research/**)",
       "Bash(.venv/bin/python -m cc_deep_research.cli config show)",
       "Bash(.venv/bin/python -m cc_deep_research.cli --help)",
-      "Bash(.venv/bin/python -m cc_deep_research.cli config --help)"
+      "Bash(.venv/bin/python -m cc_deep_research.cli config --help)",
+      "Bash(uv run pytest tests/test_monitoring.py -v)",
+      "Bash(uv run pytest tests/ -v)",
+      "Bash(uv run cc-deep-research research --monitor --help)",
+      "Bash(uv run cc-deep-research research --monitor \"test query\")",
+      "Bash(uv run cc-deep-research research --monitor --quiet \"test query\")",
+      "Bash(uv run cc-deep-research research \"test query\")",
+      "Bash(uv run ruff check src/cc_deep_research/monitoring.py src/cc_deep_research/cli.py src/cc_deep_research/models.py src/cc_deep_research/providers/tavily.py src/cc_deep_research/aggregation.py)",
+      "Bash(uv run pytest tests/ -q)",
+      "Bash(uv run cc-deep-research research --monitor \"quantum computing\")"
     ]
   }
 }
