@@ -8,7 +8,6 @@ The source collector agent is responsible for:
 """
 
 import asyncio
-from typing import Any
 
 from cc_deep_research.aggregation import ResultAggregator
 from cc_deep_research.config import Config
@@ -98,7 +97,7 @@ class SourceCollectorAgent:
             if isinstance(result, Exception):
                 # Log error but continue with other providers
                 continue
-            aggregator.add_result(result)
+            aggregator.add_result(result)  # type: ignore[arg-type]
 
         return aggregator.get_aggregated()
 
@@ -136,7 +135,7 @@ class SourceCollectorAgent:
         # Process results
         for result in results:
             if not isinstance(result, Exception):
-                aggregator.add_result(result)
+                aggregator.add_result(result)  # type: ignore[arg-type]
 
         return aggregator.get_aggregated()
 

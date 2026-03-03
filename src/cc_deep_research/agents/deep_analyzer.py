@@ -19,7 +19,7 @@ class DeepAnalyzerAgent:
     - Pass 3: Synthesize comprehensive insights and implications
     """
 
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """Initialize deep analyzer agent.
 
         Args:
@@ -361,14 +361,14 @@ class DeepAnalyzerAgent:
 
         # Find frequently occurring words as consensus indicators
         if all_words:
-            word_counts = {}
+            word_counts: dict[str, int] = {}
             for word in all_words:
                 if len(word) > 4:
                     word_counts[word] = word_counts.get(word, 0) + 1
 
             # Top 3 most common words as consensus indicators
             sorted_words = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)
-            for word, count in sorted_words[:3]:
+            for word, _count in sorted_words[:3]:
                 consensus.append(f"Sources frequently mention: {word}")
 
         return {

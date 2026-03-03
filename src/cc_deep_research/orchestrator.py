@@ -25,7 +25,7 @@ from cc_deep_research.agents import (
     ValidatorAgent,
 )
 from cc_deep_research.config import Config
-from cc_deep_research.models import ResearchDepth, ResearchSession, SearchOptions
+from cc_deep_research.models import ResearchDepth, ResearchSession, SearchOptions, SearchResultItem
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.teams import AgentSpec, ResearchTeam, TeamConfig
 
@@ -324,7 +324,7 @@ class TeamResearchOrchestrator:
         """
         self._monitor.section("Strategy Analysis")
 
-        lead = self._agents[AGENT_TYPE_LEAD]
+        lead: ResearchLeadAgent = self._agents[AGENT_TYPE_LEAD]
         strategy = lead.analyze_query(query, depth)
 
         self._monitor.log(f"Complexity: {strategy['complexity']}")
@@ -357,7 +357,7 @@ class TeamResearchOrchestrator:
             self._monitor.log("Query expansion not needed (quick mode)")
             return [query]
 
-        expander = self._agents[AGENT_TYPE_EXPANDER]
+        expander: QueryExpanderAgent = self._agents[AGENT_TYPE_EXPANDER]
         queries = expander.expand_query(query, depth)
 
         self._monitor.log(f"Generated {len(queries)} query variations")
@@ -369,7 +369,7 @@ class TeamResearchOrchestrator:
         queries: list[str],
         depth: ResearchDepth,
         _min_sources: int | None,
-    ) -> list:
+    ) -> list[SearchResultItem]:
         """Phase 3: Collect sources from providers.
 
         Args:
@@ -416,7 +416,7 @@ class TeamResearchOrchestrator:
 
     async def _phase_analyze_findings(
         self,
-        sources: list,
+        sources: list[SearchResultItem],
         query: str,
         _strategy: dict[str, Any],
     ) -> dict[str, Any]:
@@ -432,7 +432,7 @@ class TeamResearchOrchestrator:
         """
         self._monitor.section("Analysis")
 
-        analyzer = self._agents[AGENT_TYPE_ANALYZER]
+        analyzer: AnalyzerAgent = self._agents[AGENT_TYPE_ANALYZER]
         analysis = analyzer.analyze_sources(sources, query)
 
         self._monitor.log(f"Key findings: {len(analysis['key_findings'])}")
@@ -443,7 +443,7 @@ class TeamResearchOrchestrator:
 
     async def _phase_deep_analysis(
         self,
-        sources: list,
+        sources: list[SearchResultItem],
         query: str,
         analysis: dict[str, Any],  # noqa: ARG002
     ) -> dict[str, Any]:
@@ -459,7 +459,7 @@ class TeamResearchOrchestrator:
         """
         self._monitor.section("Deep Analysis")
 
-        deep_analyzer = self._agents[AGENT_TYPE_DEEP_ANALYZER]
+        deep_analyzer: DeepAnalyzerAgent = self._agents[AGENT_TYPE_DEEP_ANALYZER]
         deep_analysis = deep_analyzer.deep_analyze(sources, query)
 
         self._monitor.log(f"Deep analysis passes: {deep_analysis['analysis_passes']}")
@@ -472,7 +472,7 @@ class TeamResearchOrchestrator:
     async def _phase_validate_research(
         self,
         query: str,
-        sources: list,
+        sources: list[SearchResultItem],
         analysis: dict[str, Any],
     ) -> dict[str, Any]:
         """Phase 5: Validate research quality.
@@ -493,7 +493,7 @@ class TeamResearchOrchestrator:
             sources=sources,
         )
 
-        validator = self._agents[AGENT_TYPE_VALIDATOR]
+        validator: ValidatorAgent = self._agents[AGENT_TYPE_VALIDATOR]
         validation = validator.validate_research(session, analysis)
 
         self._monitor.log(f"Quality score: {validation['quality_score']:.2f}")
@@ -533,9 +533,9 @@ class TeamResearchOrchestrator:
 
     async def _fetch_content_for_top_sources(
         self,
-        sources: list,
+        sources: list[SearchResultItem],
         depth: ResearchDepth,
-    ) -> list:
+    ) -> list[SearchResultItem]:
         """Fetch full content for top-scoring sources.
 
         Args:
@@ -545,7 +545,6 @@ class TeamResearchOrchestrator:
         Returns:
             Sources with content filled in for top sources.
         """
-        from cc_deep_research.models import SearchResultItem
 
         # Determine how many sources to fetch content for
         num_to_fetch = getattr(self._config.research, "top_sources_for_content", 15)
@@ -607,7 +606,7 @@ class TeamResearchOrchestrator:
         try:
             # Import the web_reader MCP tool
             # Note: This uses the MCP tool that's available in the environment
-            from mcp__web_reader__webReader import webReader
+            from mcp__web_reader__webReader import webReader  # type: ignore[import-not-found]
 
             result = webReader(
                 url=url,
@@ -618,7 +617,7 @@ class TeamResearchOrchestrator:
 
             # Extract content from the result
             if isinstance(result, dict) and "content" in result:
-                return result["content"]
+                return str(result["content"])
             elif isinstance(result, str):
                 return result
             else:

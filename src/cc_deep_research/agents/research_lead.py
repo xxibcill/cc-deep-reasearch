@@ -8,6 +8,8 @@ The research lead agent is responsible for:
 - Aggregating results from all agents
 """
 
+from typing import Any
+
 from cc_deep_research.models import ResearchDepth, ResearchSession
 
 
@@ -23,7 +25,7 @@ class ResearchLeadAgent:
     - Ensuring research quality and completeness
     """
 
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """Initialize the research lead agent.
 
         Args:
@@ -35,7 +37,7 @@ class ResearchLeadAgent:
         self,
         query: str,
         depth: ResearchDepth,
-    ) -> dict[str, any]:
+    ) -> dict[str, Any]:
         """Analyze the research query and determine strategy.
 
         Args:
@@ -82,7 +84,7 @@ class ResearchLeadAgent:
         self,
         depth: ResearchDepth,
         complexity: str,
-    ) -> dict[str, any]:
+    ) -> dict[str, Any]:
         """Create research strategy based on depth and complexity.
 
         Args:
@@ -128,7 +130,7 @@ class ResearchLeadAgent:
 
     def coordinate_research(
         self,
-        strategy: dict[str, any],
+        strategy: dict[str, Any],
     ) -> ResearchSession:
         """Coordinate the research process using the strategy.
 

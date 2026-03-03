@@ -22,7 +22,7 @@ class ValidatorAgent:
     - Ensures research meets configured standards
     """
 
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """Initialize the validator agent.
 
         Args:

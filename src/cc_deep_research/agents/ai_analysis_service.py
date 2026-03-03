@@ -20,7 +20,7 @@ class AIAnalysisService:
     to perform deep semantic analysis that goes beyond keyword matching.
     """
 
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """Initialize AI analysis service.
 
         Args:
@@ -114,7 +114,7 @@ class AIAnalysisService:
         self,
         sources: list[SearchResultItem],
         query: str,
-        themes: list[dict[str, Any]],
+        themes: list[dict[str, Any]],  # noqa: ARG002
     ) -> list[dict[str, Any]]:
         """Identify information gaps in the research.
 
@@ -169,11 +169,11 @@ class AIAnalysisService:
 
     def synthesize_findings(
         self,
-        sources: list[SearchResultItem],
+        sources: list[SearchResultItem],  # noqa: ARG002
         themes: list[dict[str, Any]],
-        cross_ref: dict[str, Any],
-        gaps: list[dict[str, Any]],
-        query: str,
+        cross_ref: dict[str, Any],  # noqa: ARG002
+        gaps: list[dict[str, Any]],  # noqa: ARG002
+        query: str,  # noqa: ARG002
     ) -> list[dict[str, Any]]:
         """Synthesize key findings with proper attribution.
 
@@ -288,7 +288,7 @@ Focus on synthesizing information rather than just listing it.
         return prompt
 
     def _extract_themes_from_content(
-        self, query: str, content_blocks: list[dict[str, Any]], num_themes: int
+        self, _query: str, content_blocks: list[dict[str, Any]], num_themes: int
     ) -> list[dict[str, Any]]:
         """Extract themes from content blocks using analysis.
 
@@ -321,7 +321,7 @@ Focus on synthesizing information rather than just listing it.
                 all_phrases.extend(phrases)
 
         # Count phrase occurrences
-        phrase_counts = {}
+        phrase_counts: dict[str, int] = {}
         for phrase in all_phrases:
             phrase = phrase.lower()
             if len(phrase) > 10 and len(phrase) < 50:
@@ -334,7 +334,7 @@ Focus on synthesizing information rather than just listing it.
 
         # Group related phrases into themes
         used_sources = set()
-        for phrase, count in top_phrases[:num_themes]:
+        for phrase, _count in top_phrases[:num_themes]:
             # Find sources that contain this phrase
             supporting_sources = []
             key_points = []
@@ -397,7 +397,7 @@ Focus on synthesizing information rather than just listing it.
                 all_words.extend(words)
 
         # Count word occurrences
-        word_counts = {}
+        word_counts: dict[str, int] = {}
         for word in all_words:
             word_counts[word] = word_counts.get(word, 0) + 1
 
@@ -417,7 +417,7 @@ Focus on synthesizing information rather than just listing it.
         return themes
 
     def _analyze_cross_reference_basic(
-        self, content_blocks: list[dict[str, Any]], themes: list[dict[str, Any]]
+        self, _content_blocks: list[dict[str, Any]], themes: list[dict[str, Any]]
     ) -> dict[str, Any]:
         """Basic cross-reference analysis without AI.
 
@@ -428,8 +428,8 @@ Focus on synthesizing information rather than just listing it.
         Returns:
             Dictionary with consensus and disagreement points.
         """
-        consensus_points = []
-        disagreement_points = []
+        consensus_points: list[str] = []
+        disagreement_points: list[str] = []
 
         # Find consensus: themes supported by multiple sources
         for theme in themes:

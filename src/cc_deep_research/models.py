@@ -1,13 +1,13 @@
 """Core data structures for CC Deep Research CLI."""
 
 from datetime import datetime
-from enum import Enum
-from typing import Any, Optional
+from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class ResearchDepth(str, Enum):
+class ResearchDepth(StrEnum):
     """Research depth modes."""
 
     QUICK = "quick"
@@ -30,7 +30,7 @@ class SearchResultItem(BaseModel):
     url: str = Field(..., min_length=1)
     title: str = Field(default="")
     snippet: str = Field(default="")
-    content: Optional[str] = Field(default=None)
+    content: str | None = Field(default=None)
     score: float = Field(default=0.0, ge=0.0, le=1.0)
     source_metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -54,7 +54,7 @@ class APIKey(BaseModel):
     key: str = Field(..., min_length=1)
     requests_used: int = Field(default=0, ge=0)
     requests_limit: int = Field(default=1000, ge=1)
-    last_used: Optional[datetime] = Field(default=None)
+    last_used: datetime | None = Field(default=None)
     disabled: bool = Field(default=False)
 
     @property
@@ -75,7 +75,7 @@ class ResearchSession(BaseModel):
     query: str = Field(..., min_length=1)
     depth: ResearchDepth = Field(default=ResearchDepth.DEEP)
     started_at: datetime = Field(default_factory=datetime.utcnow)
-    completed_at: Optional[datetime] = Field(default=None)
+    completed_at: datetime | None = Field(default=None)
     searches: list[SearchResult] = Field(default_factory=list)
     sources: list[SearchResultItem] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -95,7 +95,7 @@ class ResearchSession(BaseModel):
         return len(self.sources)
 
 
-class SearchMode(str, Enum):
+class SearchMode(StrEnum):
     """Search mode for orchestrator."""
 
     HYBRID_PARALLEL = "hybrid_parallel"

@@ -1,7 +1,6 @@
 """Search provider implementations."""
 
 from abc import ABC, abstractmethod
-from typing import Any
 
 from cc_deep_research.models import SearchOptions, SearchResult
 

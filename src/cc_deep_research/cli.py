@@ -189,7 +189,7 @@ def research(
 
         # Generate PDF if requested
         if pdf:
-            from cc_deep_research.pdf_generator import PDFGenerator, PDFGenerationError
+            from cc_deep_research.pdf_generator import PDFGenerationError, PDFGenerator
 
             try:
                 pdf_gen = PDFGenerator()

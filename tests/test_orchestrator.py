@@ -24,21 +24,65 @@ class TestTeamResearchOrchestrator:
 
     @pytest.mark.asyncio
     async def test_execute_research_simple(self) -> None:
-        """Test executing a simple research query."""
+        """Test executing a simple research query with mocked providers."""
+        from unittest.mock import AsyncMock, MagicMock
+        from cc_deep_research.providers import SearchProvider
+        from cc_deep_research.models import SearchResult, SearchResultItem
+
         config = Config()
-        # Add at least one API key for testing
-        config.tavily.api_keys = ["test-key-12345"]
         monitor = ResearchMonitor(enabled=False)
 
         orchestrator = TeamResearchOrchestrator(config, monitor)
 
-        # This will fail without actual API, but tests the flow
-        with pytest.raises(Exception):  # Expected to fail without real API
-            await orchestrator.execute_research(
-                query="test query",
-                depth=ResearchDepth.QUICK,
-                min_sources=3,
-            )
+        # Mock the provider to return empty results
+        mock_provider = MagicMock(spec=SearchProvider)
+        mock_provider.get_provider_name.return_value = "mock"
+        mock_provider.search = AsyncMock(return_value=SearchResult(
+            query="test query",
+            results=[],
+            provider="mock",
+            metadata={},
+        ))
+
+        # Set up agents with mocked collector
+        orchestrator._agents = {}
+        from cc_deep_research.agents import SourceCollectorAgent
+        collector = SourceCollectorAgent(config)
+        collector._providers = [mock_provider]
+        # Mock initialize_providers to not reset our mock provider
+        collector.initialize_providers = AsyncMock()
+        from cc_deep_research.agents import AGENT_TYPE_COLLECTOR
+        orchestrator._agents[AGENT_TYPE_COLLECTOR] = collector
+
+        # Also mock other agents
+        from cc_deep_research.agents import (
+            AGENT_TYPE_LEAD,
+            AGENT_TYPE_EXPANDER,
+            AGENT_TYPE_ANALYZER,
+            AGENT_TYPE_VALIDATOR,
+            ResearchLeadAgent,
+            QueryExpanderAgent,
+            AnalyzerAgent,
+            ValidatorAgent,
+        )
+        orchestrator._agents[AGENT_TYPE_LEAD] = ResearchLeadAgent({})
+        orchestrator._agents[AGENT_TYPE_EXPANDER] = QueryExpanderAgent({})
+        orchestrator._agents[AGENT_TYPE_ANALYZER] = AnalyzerAgent({})
+        orchestrator._agents[AGENT_TYPE_VALIDATOR] = ValidatorAgent({})
+
+        # Mock _initialize_team to not overwrite our agents
+        orchestrator._initialize_team = AsyncMock()
+
+        # This should succeed with empty results
+        session = await orchestrator.execute_research(
+            query="test query",
+            depth=ResearchDepth.QUICK,
+            min_sources=3,
+        )
+
+        assert session is not None
+        assert session.query == "test query"
+        assert isinstance(session.sources, list)
 
     def test_phase_analyze_strategy(self) -> None:
         """Test strategy analysis phase."""

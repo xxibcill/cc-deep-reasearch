@@ -11,8 +11,6 @@ from typing import Any
 
 from cc_deep_research.agents.ai_analysis_service import AIAnalysisService
 from cc_deep_research.models import (
-    CrossReferenceClaim,
-    ResearchSession,
     SearchResultItem,
 )
 
@@ -27,7 +25,7 @@ class AnalyzerAgent:
     - Synthesizes coherent analysis
     """
 
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """Initialize the analyzer agent.
 
         Args:
@@ -149,7 +147,7 @@ class AnalyzerAgent:
         findings = []
 
         # Placeholder: create findings from source titles/snippets
-        for i, source in enumerate(sources[:5]):  # Top 5 sources
+        for _i, source in enumerate(sources[:5]):  # Top 5 sources
             if source.title:
                 findings.append(
                     {
@@ -188,7 +186,7 @@ class AnalyzerAgent:
 
     def _perform_cross_reference(
         self, sources: list[SearchResultItem]  # noqa: ARG002
-    ) -> dict[str, list]:
+    ) -> dict[str, list[str]]:
         """Perform cross-reference analysis across sources.
 
         Args:
@@ -231,7 +229,7 @@ class AnalyzerAgent:
 
         return gaps
 
-    def _empty_analysis(self, query: str) -> dict[str, Any]:
+    def _empty_analysis(self, _query: str) -> dict[str, Any]:
         """Return empty analysis structure.
 
         Args:
