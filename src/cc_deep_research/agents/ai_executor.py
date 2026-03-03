@@ -214,6 +214,87 @@ Respond in JSON format:
 
         return themes
 
+    # Topic-specific keyword sets for semantic relevance checking
+    _TOPIC_KEYWORDS: dict[str, list[str]] = {
+        "Antioxidant Properties": [
+            "antioxidant", "free radical", "oxidative", "oxidation", "cell damage",
+            "protect cell", "neutralize", "egcg", "catechin"
+        ],
+        "Polyphenol Content": [
+            "polyphenol", "phenolic", "compound", "plant compound", "bioactive"
+        ],
+        "Catechin Compounds": [
+            "catechin", "egcg", "epigallocatechin", "flavonoid", "gallic"
+        ],
+        "Heart Health Benefits": [
+            "heart", "cardiovascular", "cholesterol", "blood pressure", "ldl",
+            "hdl", "triglyceride", "artery", "vascular", "cardiac"
+        ],
+        "Cancer Prevention Potential": [
+            "cancer", "tumor", "malignant", "carcinogen", "anti-cancer",
+            "prevent cancer", "cancer cell", "chemopreventive"
+        ],
+        "Skin Health Benefits": [
+            "skin", "collagen", "elasticity", "aging", "uv", "sun damage",
+            "wrinkle", "dermat", "epiderm"
+        ],
+        "Weight Management Support": [
+            "weight", "fat", "obesity", "metabolism", "adipose", "bmi",
+            "body weight", "weight loss", "burn fat", "lipid"
+        ],
+        "Bone Health Benefits": [
+            "bone", "osteoporosis", "density", "calcium", "skeleton",
+            "mineral density", "fracture"
+        ],
+        "Dental and Oral Health": [
+            "dental", "teeth", "tooth", "oral", "cavity", "plaque", "gum",
+            "gingiv", "enamel", "bacteria mouth"
+        ],
+        "Brain and Cognitive Health": [
+            "brain", "cognitive", "memory", "neuroprotective", "alzheimer",
+            "dementia", "neural", "neurodegenerative", "mental"
+        ],
+        "Liver Protection": [
+            "liver", "hepatic", "detox", "hepatoprotect", "cirrhosis"
+        ],
+        "Blood Sugar and Diabetes": [
+            "diabetes", "blood sugar", "glucose", "insulin", "glycemic",
+            "prediabetes", "type 2"
+        ],
+        "Anti-Inflammatory Effects": [
+            "inflammation", "inflammatory", "anti-inflammatory", "swelling",
+            "chronic inflammation", "cytokine"
+        ],
+        "Immune System Support": [
+            "immune", "immunity", "antiviral", "antibacterial", "infection",
+            "white blood cell", "immune response"
+        ],
+        "Caffeine Content and Effects": [
+            "caffeine", "stimulant", "alertness", "energy", "nervous",
+            "jittery", "sleep"
+        ],
+        "L-Theanine and Relaxation": [
+            "theanine", "relaxation", "calm", "focus", "anxiety", "stress",
+            "alpha wave"
+        ],
+        "Origin and History": [
+            "china", "fujian", "origin", "history", "traditional", "ancient",
+            "dynasty", "province"
+        ],
+        "Camellia Sinensis Plant": [
+            "camellia sinensis", "tea plant", "tea leaf", "sinensis",
+            "bud", "young leaf"
+        ],
+        "Minimal Processing Benefits": [
+            "processing", "processed", "oxidation", "withered", "dried",
+            "steamed", "preserved", "minimal"
+        ],
+        "Digestive Health": [
+            "digestive", "digestion", "gut", "stomach", "intestine",
+            "probiotic", "microbiome", "bowel"
+        ],
+    }
+
     def _extract_key_points(self, source: dict[str, str], topic_name: str) -> list[str]:
         """Extract key points from a source related to a topic.
 
@@ -228,8 +309,12 @@ Respond in JSON format:
         if not content:
             return []
 
-        # Topic-related words to look for
-        topic_words = topic_name.lower().split()
+        # Get topic-specific keywords for semantic relevance
+        topic_keywords = self._TOPIC_KEYWORDS.get(topic_name, [])
+
+        # Fall back to topic name words if no specific keywords defined
+        if not topic_keywords:
+            topic_keywords = topic_name.lower().split()
 
         # Split into sentences
         sentences = re.split(r'[.!?]+', content)
@@ -242,9 +327,12 @@ Respond in JSON format:
             if len(sentence) < 30 or len(sentence) > 250:
                 continue
 
-            # Check if sentence relates to the topic
+            # Check if sentence is semantically relevant to the topic
+            # Must contain at least 1 topic-specific keyword for relevance
             sentence_lower = sentence.lower()
-            if any(word in sentence_lower for word in topic_words):
+            keyword_matches = sum(1 for kw in topic_keywords if kw in sentence_lower)
+
+            if keyword_matches >= 1:
                 # Clean the sentence
                 clean = self._clean_sentence(sentence)
                 if clean and clean not in key_points:
@@ -259,23 +347,73 @@ Respond in JSON format:
             sentence: Sentence to clean.
 
         Returns:
-            Cleaned sentence.
+            Cleaned sentence or empty string if invalid.
         """
+        if not sentence:
+            return ""
+
         # Remove markdown and UI artifacts
         sentence = re.sub(r'\[.*?\]', '', sentence)
         sentence = re.sub(r'#{2,}', '', sentence)
         sentence = re.sub(r'\*+', '', sentence)
         sentence = re.sub(r'https?://\S+', '', sentence)
 
+        # Remove leading/trailing punctuation and whitespace
+        sentence = sentence.strip().lstrip('- ').lstrip('• ').lstrip('* ')
+
         # Clean whitespace
         sentence = ' '.join(sentence.split())
 
+        # Skip if too short or too long
+        if len(sentence) < 25 or len(sentence) > 300:
+            return ""
+
         # Skip if contains navigation text
-        nav_words = ['log in', 'sign up', 'cart', 'menu', 'subscribe', 'click here']
+        nav_words = [
+            'log in', 'sign up', 'cart', 'menu', 'subscribe', 'click here',
+            'learn more', 'read more', 'buy now', 'shop now', 'add to cart',
+            'newsletter', 'follow us', 'share this', 'pin it', 'tweet'
+        ]
         if any(word in sentence.lower() for word in nav_words):
             return ""
 
-        return sentence.strip() if len(sentence) >= 20 else ""
+        # Skip marketing fluff patterns (check before any modifications)
+        marketing_patterns = [
+            r'^have you ever',
+            r'^did you know',
+            r'^discover',
+            r'^unlock',
+            r'^explore',
+            r'^find out',
+            r'^helps in weight loss have you',  # Specific garbled pattern
+            r'^- ',  # Starts with dash (often list artifacts)
+            r'^\d+\s*%',  # Starts with percentage (often stats taken out of context)
+            r'^benefits?,?\s+taste',  # "Benefits, Taste, Uses" artifact
+            r'^uses\s+have\s+you',  # Garbled text pattern
+            r'\.\.\.\s*$',  # Ends with ellipsis (incomplete)
+            r'^[a-z]\s+[a-z]\s+',  # "a b c" pattern (broken words)
+            r'have you ever considered',
+            r'have you ever wondered',
+            r'have you ever thought',
+        ]
+        for pattern in marketing_patterns:
+            if re.search(pattern, sentence.lower()):
+                return ""
+
+        # Skip if mostly uppercase (often headers/navigation)
+        if sum(1 for c in sentence if c.isupper()) > len(sentence) * 0.6:
+            return ""
+
+        # Skip if contains sentence fragments (multiple periods close together)
+        if sentence.count('.') > 3:
+            return ""
+
+        # Ensure sentence ends with proper punctuation (add period if missing)
+        sentence = sentence.rstrip()
+        if not sentence.endswith(('.', '!', '?')):
+            sentence += '.'
+
+        return sentence
 
     def _generate_description(
         self, topic_name: str, sources: list[dict[str, str]], key_points: list[str]
@@ -285,7 +423,7 @@ Respond in JSON format:
         Args:
             topic_name: Name of the theme.
             sources: List of sources.
-            key_points: Key points.
+            key_points: Key points (should be pre-validated for relevance).
 
         Returns:
             Description string.
@@ -293,21 +431,41 @@ Respond in JSON format:
         # Start with topic introduction
         source_count = len(sources)
 
-        # Get the best key point for description
+        # Get topic-specific keywords for relevance checking
+        topic_keywords = self._TOPIC_KEYWORDS.get(topic_name, [])
+        if not topic_keywords:
+            topic_keywords = topic_name.lower().split()
+
+        # Build description
         description = f"Research from {source_count} source"
         if source_count > 1:
             description += "s"
         description += f" supports findings about {topic_name.lower()}."
 
-        # Add a key point if available
-        if key_points:
-            best_point = key_points[0]
-            if len(best_point) > 50:
-                description += " " + best_point[:200]
-                if len(best_point) > 200:
-                    description += "..."
+        # Find a relevant key point (must contain topic keywords)
+        relevant_point = None
+        for point in key_points:
+            point_lower = point.lower()
+            # Check if point contains at least 2 topic keywords
+            keyword_matches = sum(1 for kw in topic_keywords if kw in point_lower)
+            if keyword_matches >= 2:
+                relevant_point = point
+                break
+
+        # Add the relevant key point if found
+        if relevant_point:
+            # Ensure the point is well-formed
+            if len(relevant_point) > 50:
+                # Truncate at a sentence boundary if possible
+                truncated = relevant_point[:200]
+                last_period = truncated.rfind('.')
+                if last_period > 100:
+                    truncated = truncated[:last_period + 1]
+                else:
+                    truncated = truncated.rstrip() + "..."
+                description += " " + truncated
             else:
-                description += " " + best_point
+                description += " " + relevant_point
 
         return description
 
