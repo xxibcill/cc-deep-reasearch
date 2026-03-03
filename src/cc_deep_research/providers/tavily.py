@@ -1,5 +1,6 @@
 """Tavily search provider implementation."""
 
+from datetime import datetime
 import time
 from typing import Any
 
@@ -61,7 +62,8 @@ class TavilySearchProvider(SearchProvider):
         # Monitor: Start of operation
         monitor = getattr(options, "monitor", False) if options else False
         if monitor:
-            click.echo(f"[MONITOR] [TAVILY] Starting search: {query}")
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            click.echo(f"[{timestamp}] [TAVILY] Starting search: {query}")
 
         payload = self._build_payload(query, options)
 
@@ -81,8 +83,9 @@ class TavilySearchProvider(SearchProvider):
 
             # Monitor: Log results
             if monitor:
+                timestamp = datetime.now().strftime("%H:%M:%S")
                 click.echo(
-                    f"[MONITOR] [TAVILY] Response received: {len(results)} results ({execution_time_ms}ms)"
+                    f"[{timestamp}] [TAVILY] Response received: {len(results)} results ({execution_time_ms}ms)"
                 )
 
             return SearchResult(
