@@ -1,5 +1,6 @@
 """CLI entry point for CC Deep Research."""
 
+import asyncio
 from pathlib import Path
 
 import click
@@ -59,6 +60,8 @@ def main(ctx: click.Context) -> None:
 @click.option("--no-cross-ref", is_flag=True, help="Disable cross-reference analysis")
 @click.option("--tavily-only", is_flag=True, help="Use only Tavily provider")
 @click.option("--claude-only", is_flag=True, help="Use only Claude provider")
+@click.option("--no-team", is_flag=True, help="Disable agent teams, use sequential mode")
+@click.option("--team-size", "team_size", type=int, default=None, help="Override default team size")
 @click.option("--progress", is_flag=True, default=True, help="Show progress indicators")
 @click.option("--quiet", is_flag=True, help="Suppress output")
 @click.option("--verbose", is_flag=True, help="Show detailed output")
@@ -74,6 +77,8 @@ def research(
     no_cross_ref: bool,
     tavily_only: bool,
     claude_only: bool,
+    no_team: bool,
+    team_size: int | None,
     progress: bool,
     quiet: bool,
     verbose: bool,
@@ -92,6 +97,8 @@ def research(
     ctx.obj["no_cross_ref"] = no_cross_ref
     ctx.obj["tavily_only"] = tavily_only
     ctx.obj["claude_only"] = claude_only
+    ctx.obj["no_team"] = no_team
+    ctx.obj["team_size"] = team_size
     ctx.obj["progress"] = progress
     ctx.obj["quiet"] = quiet
     ctx.obj["verbose"] = verbose
@@ -101,6 +108,10 @@ def research(
         click.echo(f"Research query: {query}")
         click.echo(f"Depth: {depth}")
         click.echo(f"Output format: {output_format}")
+        if no_team:
+            click.echo("Mode: Sequential (agent teams disabled)")
+        else:
+            click.echo(f"Mode: Agent Teams (size: {team_size or 'default'})")
 
     # Initialize monitoring if enabled
     from cc_deep_research.monitoring import ResearchMonitor
@@ -121,16 +132,84 @@ def research(
         research_monitor.log(f"Providers: {', '.join(config_obj.search.providers)}")
         research_monitor.log(f"Search depth: {config_obj.search.depth}")
         research_monitor.log(f"Search mode: {config_obj.search.mode}")
+        research_monitor.log(f"Agent teams: {'enabled' if config_obj.search_team.enabled else 'disabled'}")
 
-        research_monitor.section("Provider Execution")
+        research_monitor.section("Execution")
 
-    # TODO: Implement actual research logic
-    click.echo(f"Researching: {query}")
-    click.echo("(Research functionality will be implemented in subsequent tasks)")
+    # Execute research using agent teams
+    try:
+        from cc_deep_research.models import ResearchDepth
+        from cc_deep_research.orchestrator import TeamResearchOrchestrator
+        from cc_deep_research.reporting import ReportGenerator
 
-    if monitor and not quiet:
-        research_monitor.section("Summary")
-        research_monitor.summary(total_sources=0, providers=[], total_time_ms=0)
+        # Load configuration
+        config = load_config()
+
+        # Override team settings from CLI options
+        if no_team:
+            config.search_team.enabled = False
+        if team_size:
+            config.search_team.team_size = team_size
+
+        # Handle provider selection
+        if tavily_only:
+            config.search.providers = ["tavily"]
+        if claude_only:
+            config.search.providers = ["claude"]
+
+        # Create orchestrator
+        orchestrator = TeamResearchOrchestrator(
+            config=config,
+            monitor=research_monitor,
+        )
+
+        # Convert depth string to enum
+        depth_enum = ResearchDepth(depth)
+
+        # Execute research (async)
+        import asyncio
+        session = asyncio.run(orchestrator.execute_research(
+            query=query,
+            depth=depth_enum,
+            min_sources=min_sources,
+        ))
+
+        # Generate report
+        reporter = ReportGenerator(config)
+        analysis = session.metadata.get("analysis", {})
+
+        if output_format == "markdown":
+            report = reporter.generate_markdown_report(session, analysis)
+        else:
+            report = reporter.generate_json_report(session, analysis)
+
+        # Output report
+        if output:
+            # Save to file
+            output_path = Path(output)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(report)
+            if not quiet:
+                click.echo(f"Report saved to: {output_path}")
+        else:
+            # Print to stdout
+            click.echo(report)
+
+        if monitor and not quiet:
+            research_monitor.section("Summary")
+            research_monitor.summary(
+                total_sources=session.total_sources,
+                providers=[s.provider for s in session.searches],
+                total_time_ms=int(session.execution_time_seconds * 1000),
+            )
+
+    except Exception as e:
+        if not quiet:
+            click.echo(f"Error: {e}", err=True)
+        if monitor and not quiet:
+            research_monitor.section("Error")
+            research_monitor.log(f"Research failed: {e}")
+        raise click.Abort()
 
 
 @main.group()

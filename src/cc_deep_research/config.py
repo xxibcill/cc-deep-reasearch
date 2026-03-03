@@ -88,6 +88,24 @@ class DisplayConfig(BaseModel):
         return v.lower()
 
 
+class AgentConfig(BaseModel):
+    """Individual agent configuration."""
+
+    model: str = Field(default="claude-sonnet-4-6")
+    max_turns: int = Field(default=10, ge=1, le=50)
+    mode: str = Field(default="default")  # default, bypassPermissions, dontAsk
+
+
+class AgentTeamConfig(BaseModel):
+    """Agent team configuration."""
+
+    enabled: bool = Field(default=True)
+    team_size: int = Field(default=4, ge=2, le=8)
+    parallel_execution: bool = Field(default=True)
+    timeout_seconds: int = Field(default=300, ge=30, le=600)
+    fallback_to_sequential: bool = Field(default=True)
+
+
 class Config(BaseModel):
     """Main configuration model."""
 
@@ -95,6 +113,8 @@ class Config(BaseModel):
     tavily: TavilyConfig = Field(default_factory=TavilyConfig)
     claude: ClaudeConfig = Field(default_factory=ClaudeConfig)
     research: ResearchConfig = Field(default_factory=ResearchConfig)
+    research_agent: AgentConfig = Field(default_factory=AgentConfig)
+    search_team: AgentTeamConfig = Field(default_factory=AgentTeamConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     display: DisplayConfig = Field(default_factory=DisplayConfig)
 
@@ -233,6 +253,8 @@ __all__ = [
     "TavilyConfig",
     "ClaudeConfig",
     "ResearchConfig",
+    "AgentConfig",
+    "AgentTeamConfig",
     "OutputConfig",
     "DisplayConfig",
     "MinSourcesConfig",

@@ -12,6 +12,8 @@ from cc_deep_research.models import (
     SearchOptions,
 )
 from cc_deep_research.providers import SearchProvider
+from cc_deep_research.teams import ResearchTeam
+from cc_deep_research.orchestrator import TeamResearchOrchestrator
 
 __all__ = [
     "__version__",
@@ -23,4 +25,6 @@ __all__ = [
     "SearchResultItem",
     "SearchOptions",
     "SearchProvider",
+    "ResearchTeam",
+    "TeamResearchOrchestrator",
 ]

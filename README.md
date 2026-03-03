@@ -4,6 +4,8 @@ A powerful deep research engine that builds on top of Claude Code, combining Tav
 
 ## Features
 
+- **Agent Team Research** - Uses multiple specialized AI agents working together for coordinated research
+- **Parallel Agent Execution** - Agents work in parallel for faster, more comprehensive research
 - **Hybrid Parallel Search** - Runs Tavily and Claude Code search simultaneously for comprehensive results
 - **Deep Dive Research** - Default mode with 20+ sources, cross-referencing, and comprehensive analysis
 - **API Key Rotation** - Automatic management of multiple Tavily API keys with graceful failover
@@ -191,7 +193,7 @@ cc-deep-research config set tavily.api_keys key1,key2,key3
 ### Basic Research
 
 ```bash
-# Deep dive research (default)
+# Deep dive research (default) with agent teams
 cc-deep-research research "What are the latest developments in quantum computing?"
 
 # Quick research
@@ -199,6 +201,9 @@ cc-deep-research research -d quick "What is the capital of Australia?"
 
 # Save to specific file
 cc-deep-research research -o report.md "Climate change statistics 2024"
+
+# Research without agent teams (sequential mode)
+cc-deep-research research --no-team "Simple query"
 ```
 
 ### Advanced Options
@@ -215,6 +220,9 @@ cc-deep-research research -s 30 "Comprehensive topic"
 
 # JSON output
 cc-deep-research research --format json "Query" > results.json
+
+# Custom team size
+cc-deep-research research --team-size 6 "Complex topic"
 ```
 
 ### Configuration Management
