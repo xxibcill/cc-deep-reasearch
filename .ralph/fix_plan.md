@@ -50,13 +50,13 @@ After running `cc-deep-research research "health benefit of white tea"` and anal
 **File**: `src/cc_deep_research/agents/ai_executor.py`
 
 Changes needed:
-- [ ] Improve `_clean_sentence()` to remove more artifacts:
+- [x] Improve `_clean_sentence()` to remove more artifacts:
   - Remove sentences starting with `-` or other markdown list markers
   - Remove sentences with marketing language ("Have you ever", "Discover", "Learn more")
   - Remove sentences with incomplete phrases
   - Remove sentences that are questions
   - Remove sentences with URL fragments or navigation text
-- [ ] Add semantic relevance check in `_extract_key_points()`:
+- [x] Add semantic relevance check in `_extract_key_points()`:
   - Only include sentences where topic-specific keywords appear together
   - Use topic-specific word sets, not just topic name words
 
@@ -64,15 +64,15 @@ Changes needed:
 **File**: `src/cc_deep_research/agents/ai_executor.py`
 
 Changes needed:
-- [ ] Create topic-specific keyword sets for each theme pattern
-- [ ] Only assign key points to themes where they are semantically relevant
-- [ ] Add validation that key points actually relate to the topic
+- [x] Create topic-specific keyword sets for each theme pattern
+- [x] Only assign key points to themes where they are semantically relevant
+- [x] Add validation that key points actually relate to the topic
 
 #### Task 1.3: Improve Description Generation
 **File**: `src/cc_deep_research/agents/ai_executor.py`
 
 Changes needed:
-- [ ] `_generate_description()` should:
+- [x] `_generate_description()` should:
   - Select key points that are most relevant to the topic
   - Summarize findings rather than just appending first key point
   - Validate description coherence
@@ -80,21 +80,21 @@ Changes needed:
 ### Phase 2: Add Source Quality Scoring (MEDIUM PRIORITY)
 
 #### Task 2.1: Implement Source Credibility Scoring
-**File**: `src/cc_deep_research/aggregation.py` (new module or extension)
+**File**: `src/cc_deep_research/credibility.py` (new module)
 
 Changes needed:
-- [ ] Add domain credibility database (pubmed.gov, nih.gov = high; blogs = low)
-- [ ] Score sources on credibility, relevance, freshness
-- [ ] Display credibility scores in report
-- [ ] Prioritize high-credibility sources in analysis
+- [x] Add domain credibility database (pubmed.gov, nih.gov = high; blogs = low)
+- [x] Score sources on credibility, relevance, freshness
+- [x] Display credibility scores in report
+- [x] Prioritize high-credibility sources in analysis
 
 #### Task 2.2: Differentiate Source Types in Report
 **File**: `src/cc_deep_research/agents/reporter.py`
 
 Changes needed:
-- [ ] Mark sources as [Peer-Reviewed], [Blog], [News], etc.
-- [ ] Group sources by type in Sources section
-- [ ] Highlight high-credibility sources in findings
+- [x] Mark sources as [Peer-Reviewed], [Blog], [News], etc.
+- [x] Group sources by type in Sources section
+- [x] Highlight high-credibility sources in findings
 
 ### Phase 3: Add Analytical Depth (MEDIUM PRIORITY)
 
@@ -102,9 +102,9 @@ Changes needed:
 **File**: `src/cc_deep_research/agents/reporter.py`
 
 Changes needed:
-- [ ] Add Methodology section to report structure
-- [ ] Document search strategy, query expansion, source selection criteria
-- [ ] Include limitations and scope
+- [x] Add Methodology section to report structure
+- [x] Document search strategy, query expansion, source selection criteria
+- [x] Include limitations and scope
 
 #### Task 3.2: Enhance Cross-Reference Analysis
 **File**: `src/cc_deep_research/agents/ai_analysis_service.py`
@@ -131,8 +131,8 @@ Changes needed:
 3. [x] Fix `_generate_description()` to create coherent descriptions
 
 ### Short-term (After Immediate)
-4. [ ] Add source credibility scoring
-5. [ ] Add methodology section to reports
+4. [x] Add source credibility scoring
+5. [x] Add methodology section to reports
 
 ### Medium-term
 6. [ ] Add analytical depth improvements
