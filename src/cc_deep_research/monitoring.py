@@ -3,7 +3,7 @@
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Unpack
+from typing import Any
 
 import click
 
@@ -189,7 +189,7 @@ class ResearchMonitor:
         self,
         event_type: str,
         agent_id: str,
-        **metadata: Unpack[Any],
+        **metadata: Any,
     ) -> None:
         """Log parallel researcher events.
 

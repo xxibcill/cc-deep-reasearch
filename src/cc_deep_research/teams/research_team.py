@@ -242,7 +242,7 @@ class ResearchTeam:
         shut down all agents and clean up team resources.
         """
         # Clean up agent instances
-        for agent_id, agent_data in self._agent_instances.items():
+        for _agent_id, agent_data in self._agent_instances.items():
             agent_data["status"] = "shutdown"
 
         self._agent_instances.clear()

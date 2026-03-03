@@ -7,14 +7,14 @@ with multiple agents working in parallel.
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
 from cc_deep_research.models import ResearchDepth, SearchResultItem
 
 
-class ResearchStatus(str, Enum):
+class ResearchStatus(StrEnum):
     """Status of the research session."""
 
     INITIALIZING = "initializing"

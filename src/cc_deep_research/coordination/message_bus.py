@@ -6,12 +6,12 @@ multiple researcher agents working in parallel.
 
 import asyncio
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
 
-class MessageType(str, Enum):
+class MessageType(StrEnum):
     """Types of messages that can be sent through the message bus."""
 
     TASK = "task"
