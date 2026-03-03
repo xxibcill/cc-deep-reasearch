@@ -4,6 +4,7 @@ This module provides the TeamResearchOrchestrator class that coordinates
 research operations using multiple specialized agents working together.
 """
 
+import asyncio
 import uuid
 from collections.abc import Callable
 from typing import Any
@@ -25,7 +26,8 @@ from cc_deep_research.agents import (
     ValidatorAgent,
 )
 from cc_deep_research.config import Config
-from cc_deep_research.models import ResearchDepth, ResearchSession, SearchOptions, SearchResultItem
+from cc_deep_research.coordination import AgentPool, MessageBus, ResearchState
+from cc_deep_research.models import ResearchDepth, ResearchSession, SearchOptions, SearchResult, SearchResultItem
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.teams import AgentSpec, ResearchTeam, TeamConfig
 
@@ -54,17 +56,28 @@ class TeamResearchOrchestrator:
         self,
         config: Config,
         monitor: ResearchMonitor | None = None,
+        parallel_mode: bool | None = None,
+        num_researchers: int | None = None,
     ) -> None:
         """Initialize the research orchestrator.
 
         Args:
             config: Application configuration.
             monitor: Optional research monitor for progress tracking.
+            parallel_mode: Whether to enable parallel researcher execution.
+                          If None, uses config.search_team.parallel_execution.
+            num_researchers: Number of parallel researchers to spawn.
+                          If None, uses config.search_team.num_researchers.
         """
         self._config = config
         self._monitor = monitor or ResearchMonitor(enabled=False)
         self._team: ResearchTeam | None = None
         self._agents: dict[str, Any] = {}
+        # Use config defaults if not specified
+        self._parallel_mode = parallel_mode if parallel_mode is not None else config.search_team.parallel_execution
+        self._num_researchers = num_researchers or config.search_team.num_researchers
+        self._message_bus: MessageBus | None = None
+        self._agent_pool: AgentPool | None = None
 
     async def execute_research(
         self,
@@ -124,17 +137,36 @@ class TeamResearchOrchestrator:
         )
         queries = await self._phase_expand_queries(query, strategy, depth)
 
-        # Phase 3: Collect sources
+        # Phase 3: Collect sources (parallel or sequential)
         self._notify_phase(
             phase_hook,
             phase_key="source_collection",
             description="Collecting sources from providers",
         )
-        sources = await self._phase_collect_sources(
-            queries,
-            depth,
-            min_sources,
-        )
+
+        # Use parallel or sequential mode based on configuration
+        if self._parallel_mode and self._agent_pool:
+            try:
+                sources = await self._phase_parallel_research(
+                    queries,
+                    depth,
+                    min_sources,
+                )
+            except Exception as e:
+                # Fall back to sequential mode on error
+                self._monitor.log(f"Parallel execution failed: {e}")
+                self._monitor.log("Falling back to sequential mode")
+                sources = await self._phase_collect_sources(
+                    queries,
+                    depth,
+                    min_sources,
+                )
+        else:
+            sources = await self._phase_collect_sources(
+                queries,
+                depth,
+                min_sources,
+            )
 
         # Phase 4: Analyze findings
         self._notify_phase(
@@ -238,6 +270,19 @@ class TeamResearchOrchestrator:
             return  # Already initialized
 
         self._monitor.section("Team Initialization")
+
+        # Initialize coordination layer for parallel mode
+        if self._parallel_mode:
+            self._message_bus = MessageBus()
+            self._agent_pool = AgentPool(
+                num_agents=self._num_researchers,
+                config=self._config,
+                timeout=self._config.search_team.timeout_seconds,
+            )
+            await self._agent_pool.initialize()
+            self._monitor.log(f"Parallel mode: {self._num_researchers} researchers")
+        else:
+            self._monitor.log("Sequential mode")
 
         # Create agent specifications
         agent_specs = [
@@ -634,11 +679,188 @@ class TeamResearchOrchestrator:
 
         Cleans up all team resources and agents.
         """
+        # Shutdown coordination layer for parallel mode
+        if self._parallel_mode:
+            if self._message_bus:
+                await self._message_bus.shutdown()
+            if self._agent_pool:
+                await self._agent_pool.shutdown()
+            self._monitor.log("Coordination layer shut down")
+
         if self._team:
             await self._team.shutdown()
             self._team = None
             self._monitor.section("Team Shutdown")
             self._monitor.log("Team shut down successfully")
+
+    async def _phase_parallel_research(
+        self,
+        queries: list[str],
+        depth: ResearchDepth,
+        min_sources: int | None,
+    ) -> list[SearchResultItem]:
+        """Phase 3 (Parallel): Collect sources using multiple researchers.
+
+        Args:
+            queries: List of queries to search.
+            depth: Research depth mode.
+            min_sources: Minimum sources required.
+
+        Returns:
+            Aggregated list of search result items.
+        """
+        self._monitor.section("Parallel Source Collection")
+
+        if not self._agent_pool:
+            msg = "Agent pool not initialized for parallel mode"
+            raise RuntimeError(msg)
+
+        # Determine max results per researcher
+        max_results_per_researcher = (
+            (min_sources or self._config.research.min_sources.__dict__[depth.value])
+            // self._num_researchers
+        )
+
+        # Create Tavily provider with key rotation
+        from cc_deep_research.key_rotation import KeyRotationManager
+
+        key_manager = KeyRotationManager(self._config.tavily.api_keys)
+        from cc_deep_research.providers.tavily import TavilySearchProvider
+
+        provider = TavilySearchProvider(
+            api_key=key_manager.get_available_key(),
+            max_results=max_results_per_researcher,
+        )
+
+        # Create researcher agent
+        from cc_deep_research.agents import ResearcherAgent
+
+        researcher = ResearcherAgent(self._config, provider)
+
+        # Decompose queries into tasks
+        tasks = self._decompose_tasks(queries)
+
+        self._monitor.log(f"Decomposed {len(queries)} queries into {len(tasks)} tasks")
+
+        # Execute research in parallel
+        researcher_timeout = getattr(
+            self._config.search_team, "researcher_timeout", 120
+        )
+
+        results = await researcher.execute_multiple_tasks(
+            tasks,
+            timeout=researcher_timeout,
+        )
+
+        # Aggregate results
+        all_sources: list[SearchResultItem] = []
+        for result in results:
+            if result["status"] == "success":
+                all_sources.extend(result["sources"])
+                self._monitor.log(
+                    f"✓ Researcher {result['task_id']}: "
+                    f"{result['source_count']} sources "
+                    f"({result['execution_time_ms']:.0f}ms)"
+                )
+            else:
+                self._monitor.log(
+                    f"✗ Researcher {result['task_id']}: "
+                    f"{result['status']} - {result.get('error', 'Unknown error')}"
+                )
+
+        # Deduplicate and aggregate
+        from cc_deep_research.aggregation import ResultAggregator
+
+        aggregator = ResultAggregator(
+            deduplicate=True,
+            sort_by_score=True,
+            monitor=self._monitor.is_enabled(),
+        )
+
+        # Wrap each source in SearchResult for the aggregator
+        for source in all_sources:
+            search_result = SearchResult(
+                query="parallel-research",
+                results=[source],
+                provider="tavily",
+            )
+            aggregator.add_result(search_result)
+
+        aggregated = aggregator.get_aggregated()
+
+        self._monitor.log(f"Collected {len(aggregated)} unique sources (parallel)")
+
+        # Fetch full content for top sources
+        aggregated = await self._fetch_content_for_top_sources(
+            aggregated,
+            depth
+        )
+
+        return aggregated
+
+    def _decompose_tasks(
+        self,
+        queries: list[str],
+    ) -> list[dict[str, str]]:
+        """Decompose research into parallel tasks.
+
+        Args:
+            queries: List of queries to decompose.
+
+        Returns:
+            List of task dictionaries.
+        """
+        tasks = []
+        for i, query in enumerate(queries):
+            tasks.append({
+                "task_id": f"task-{i + 1}",
+                "query": query,
+            })
+
+        return tasks
+
+    async def _reflect_at(
+        self,
+        stage: str,
+        question: str,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Perform strategic reflection at a decision point.
+
+        Args:
+            stage: Research stage where reflection occurs.
+            question: Question or prompt for reflection.
+            context: Optional context for the reflection.
+
+        Returns:
+            Reflection dictionary with analysis and decisions.
+        """
+        from cc_deep_research.coordination import Reflection
+
+        reflection = Reflection(
+            stage=stage,
+            question=question,
+            analysis="",
+        )
+
+        # Log reflection point
+        self._monitor.section(f"Reflection: {stage}")
+        self._monitor.log(f"Question: {question}")
+
+        # In a real implementation, this would use AI to analyze
+        # For now, we do a simple analysis
+        reflection.analysis = f"Reflection at {stage}: {question}"
+        reflection.decision = "Continue with current strategy"
+
+        if context:
+            self._monitor.log(f"Context: {context}")
+
+        return {
+            "stage": stage,
+            "question": question,
+            "analysis": reflection.analysis,
+            "decision": reflection.decision,
+        }
 
 
 class OrchestratorError(Exception):
