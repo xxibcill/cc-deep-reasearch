@@ -5,13 +5,19 @@ The reporter agent is responsible for:
 - Structuring reports according to specifications
 - Ensuring proper citation formatting
 - Including all required sections and metadata
+- Displaying source credibility information
 """
 
 import json
+from collections import defaultdict
 from datetime import datetime
 from typing import Any
 
-from cc_deep_research.models import ResearchSession
+from cc_deep_research.credibility import (
+    SourceCredibilityScorer,
+    format_credibility_badge,
+)
+from cc_deep_research.models import QualityScore, ResearchSession, SearchResultItem
 
 
 class ReporterAgent:
@@ -22,6 +28,7 @@ class ReporterAgent:
     - Generates JSON reports for programmatic use
     - Formats citations correctly
     - Includes all required sections (executive summary, findings, analysis, etc.)
+    - Displays source credibility scores and types
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
@@ -31,6 +38,7 @@ class ReporterAgent:
             config: Agent configuration dictionary.
         """
         self._config = config
+        self._credibility_scorer = SourceCredibilityScorer()
 
     def generate_markdown_report(
         self,
@@ -49,10 +57,11 @@ class ReporterAgent:
         Report structure follows deep-research-features.md specification:
         # Research Report: [Query]
         ## Executive Summary
+        ## Methodology
         ## Key Findings
         ## Detailed Analysis
         ## Cross-Reference Analysis
-        ## Sources
+        ## Sources (with credibility scores)
         ## Research Metadata
         """
         sections = []
@@ -63,6 +72,11 @@ class ReporterAgent:
         # Executive Summary
         sections.append("## Executive Summary\n")
         sections.append(self._generate_executive_summary(session, analysis))
+        sections.append("\n")
+
+        # Methodology (NEW)
+        sections.append("## Methodology\n")
+        sections.append(self._generate_methodology_section(session, analysis))
         sections.append("\n")
 
         # Key Findings
@@ -108,10 +122,9 @@ class ReporterAgent:
                     sections.append(f"- {gap}")
             sections.append("")
 
-        # Sources
+        # Sources (with credibility scoring)
         sections.append("## Sources\n")
-        for i, source in enumerate(session.sources, 1):
-            sections.append(f"[{i}] {source.title} - {source.url}")
+        sections.append(self._generate_sources_section(session))
 
         # Metadata
         sections.append("\n## Research Metadata\n")
@@ -434,6 +447,192 @@ class ReporterAgent:
             metadata.append(f"- Analysis Method: {method}")
 
         return "\n".join(metadata)
+
+    def _generate_methodology_section(
+        self,
+        session: ResearchSession,
+        analysis: dict[str, Any],
+    ) -> str:
+        """Generate methodology section.
+
+        Args:
+            session: Research session.
+            analysis: Analysis results.
+
+        Returns:
+            Methodology text describing how research was conducted.
+        """
+        lines = []
+
+        # Research approach
+        lines.append("### Research Approach")
+        lines.append(
+            f"This report was generated using the **{session.depth.value.title()}** "
+            "research depth mode, which determines the comprehensiveness of the search."
+        )
+        lines.append("")
+
+        # Depth explanation
+        depth_descriptions = {
+            "quick": (
+                "Quick mode provides rapid fact-checking with 3-5 sources, "
+                "suitable for basic queries and verification."
+            ),
+            "standard": (
+                "Standard mode provides general research with 10-15 sources, "
+                "suitable for overviews and introductory analysis."
+            ),
+            "deep": (
+                "Deep mode provides thorough research with 20+ sources, "
+                "suitable for comprehensive understanding and detailed analysis."
+            ),
+        }
+        lines.append(depth_descriptions.get(
+            session.depth.value,
+            "Custom research depth mode."
+        ))
+        lines.append("")
+
+        # Search strategy
+        lines.append("### Search Strategy")
+        if session.searches:
+            providers = {s.provider for s in session.searches}
+            lines.append(
+                f"Sources were collected from: {', '.join(providers)}. "
+                "Results were aggregated, deduplicated by URL, and sorted by relevance."
+            )
+        else:
+            lines.append("Sources were collected using configured search providers.")
+
+        lines.append(f"Total unique sources after deduplication: {session.total_sources}")
+        lines.append("")
+
+        # Analysis method
+        lines.append("### Analysis Method")
+        method = analysis.get("analysis_method", "basic")
+
+        method_descriptions = {
+            "ai_semantic": (
+                "AI-powered semantic analysis was used to identify themes, extract key points, "
+                "and analyze cross-source relationships. This approach enables nuanced understanding "
+                "of content beyond simple keyword matching."
+            ),
+            "ai_multi_pass": (
+                "Multi-pass AI analysis was performed to ensure comprehensive theme extraction "
+                "and cross-reference analysis. This involves multiple processing passes to identify "
+                "both obvious and subtle patterns in the source material."
+            ),
+            "basic_keyword": (
+                "Keyword-based analysis was used due to limited source content availability. "
+                "For deeper analysis, ensure full webpage content is accessible during search."
+            ),
+        }
+        lines.append(method_descriptions.get(
+            method,
+            f"Analysis was performed using {method} methodology."
+        ))
+        lines.append("")
+
+        # Credibility assessment
+        lines.append("### Credibility Assessment")
+        lines.append(
+            "Sources are scored on credibility based on domain reputation, content relevance, "
+            "publication freshness, and source diversity. High-credibility sources include "
+            "peer-reviewed journals, government agencies, and established academic institutions. "
+            "Source types are indicated in the Sources section to help readers assess reliability."
+        )
+        lines.append("")
+
+        # Limitations
+        lines.append("### Limitations")
+        lines.append(
+            "- This research is limited to publicly available web sources and may not include "
+            "paywalled academic content or subscription databases."
+        )
+        lines.append(
+            "- Source credibility scores are heuristic-based and should not be considered "
+            "definitive assessments of accuracy."
+        )
+        lines.append(
+            "- The analysis reflects the state of available information at the time of research "
+            f"({datetime.utcnow().strftime('%Y-%m-%d')})."
+        )
+
+        return "\n".join(lines)
+
+    def _generate_sources_section(
+        self,
+        session: ResearchSession,
+    ) -> str:
+        """Generate sources section with credibility scoring and grouping.
+
+        Args:
+            session: Research session.
+
+        Returns:
+            Sources section text with credibility badges.
+        """
+        lines = []
+
+        # Score all sources
+        scored_sources = self._credibility_scorer.score_sources(
+            session.sources,
+            session.query,
+        )
+
+        # Group sources by type
+        sources_by_type: dict[str, list[tuple[SearchResultItem, QualityScore]]] = defaultdict(list)
+        for source, score in scored_sources:
+            source_type = self._credibility_scorer.get_source_type(source.url)
+            sources_by_type[source_type].append((source, score))
+
+        # Order source types by credibility
+        type_order = [
+            "Peer-Reviewed", "Preprint", "Academic", "Government",
+            "Medical Institution", "Medical Reference", "Medical News",
+            "News Agency", "News", "Business News",
+            "Encyclopedia", "Reference",
+            "Organization", "Commercial", "Web Source",
+            "Blog Platform", "Social Media", "Video Platform",
+        ]
+
+        # Credibility summary
+        summary = self._credibility_scorer.get_credibility_summary(session.sources)
+        high_cred = summary["credibility_distribution"]["high"]
+        med_cred = summary["credibility_distribution"]["medium"]
+        low_cred = summary["credibility_distribution"]["low"]
+
+        lines.append(
+            f"**Credibility Distribution:** {high_cred} high-credibility, "
+            f"{med_cred} medium-credibility, {low_cred} low-credibility sources.\n"
+        )
+
+        # Display sources grouped by type
+        displayed_types = set()
+        source_index = 1
+
+        for source_type in type_order:
+            if source_type in sources_by_type:
+                displayed_types.add(source_type)
+                lines.append(f"\n### {source_type}\n")
+
+                for source, score in sources_by_type[source_type]:
+                    badge = format_credibility_badge(score)
+                    title = self._clean_title(source.title or "Untitled")
+                    lines.append(f"[{source_index}] {badge} [{title}]({source.url})")
+                    source_index += 1
+
+        # Display any remaining types not in our order
+        for source_type, sources in sources_by_type.items():
+            if source_type not in displayed_types:
+                lines.append(f"\n### {source_type}\n")
+                for source, score in sources:
+                    badge = format_credibility_badge(score)
+                    title = self._clean_title(source.title or "Untitled")
+                    lines.append(f"[{source_index}] {badge} [{title}]({source.url})")
+                    source_index += 1
+
+        return "\n".join(lines)
 
 
 __all__ = ["ReporterAgent"]
