@@ -9,6 +9,7 @@ This service provides semantic analysis capabilities using Claude models:
 
 from typing import Any
 
+from cc_deep_research.agents.ai_agent_integration import AIAgentIntegration
 from cc_deep_research.models import SearchResultItem
 
 
@@ -30,6 +31,7 @@ class AIAnalysisService:
         self._max_tokens = config.get("deep_analysis_tokens", 150000)
         self._num_themes = config.get("ai_num_themes", 8)
         self._deep_num_themes = config.get("ai_deep_num_themes", 12)
+        self._ai_integration = AIAgentIntegration(config)
 
     def extract_themes_semantically(
         self,
@@ -54,6 +56,17 @@ class AIAnalysisService:
         if num_themes is None:
             num_themes = self._num_themes
 
+        # Try AI-powered theme extraction
+        ai_themes = self._ai_integration.extract_themes_with_ai(
+            sources=sources,
+            query=query,
+            num_themes=num_themes,
+        )
+
+        if ai_themes:
+            return ai_themes
+
+        # Fallback to heuristic if AI integration doesn't return results
         # Prepare content for analysis
         content_blocks = self._prepare_content_blocks(
             sources, max_tokens=self._max_tokens
@@ -62,13 +75,7 @@ class AIAnalysisService:
         if not content_blocks:
             return self._basic_theme_fallback(sources, num_themes)
 
-        # Construct analysis prompt
-        prompt = self._build_theme_extraction_prompt(
-            query=query, content_blocks=content_blocks, num_themes=num_themes
-        )
-
-        # For now, use a basic implementation
-        # TODO: Integrate with actual AI analysis using Agent system
+        # Use existing heuristic method as fallback
         themes = self._extract_themes_from_content(
             query, content_blocks, num_themes
         )

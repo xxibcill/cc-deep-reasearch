@@ -9,6 +9,7 @@ This module provides agent implementations for different aspects of research:
 - Reporter: Generates final research reports
 - Validator: Validates research quality and completeness
 - AIAnalysisService: Provides AI-powered semantic analysis capabilities
+- AIAgentIntegration: Integration layer for AI-powered analysis
 """
 
 from cc_deep_research.agents.research_lead import ResearchLeadAgent
@@ -19,6 +20,7 @@ from cc_deep_research.agents.deep_analyzer import DeepAnalyzerAgent
 from cc_deep_research.agents.reporter import ReporterAgent
 from cc_deep_research.agents.validator import ValidatorAgent
 from cc_deep_research.agents.ai_analysis_service import AIAnalysisService
+from cc_deep_research.agents.ai_agent_integration import AIAgentIntegration
 
 # Agent type constants
 AGENT_TYPE_LEAD = "lead"
@@ -62,6 +64,7 @@ __all__ = [
     "ReporterAgent",
     "ValidatorAgent",
     "AIAnalysisService",
+    "AIAgentIntegration",
     "AGENT_TYPE_LEAD",
     "AGENT_TYPE_COLLECTOR",
     "AGENT_TYPE_EXPANDER",
