@@ -80,6 +80,8 @@ class ResearchSession(BaseModel):
     sources: list[SearchResultItem] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    model_config = {"frozen": False}
+
     @property
     def execution_time_seconds(self) -> float:
         """Get total execution time in seconds."""

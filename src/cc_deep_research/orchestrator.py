@@ -87,6 +87,11 @@ class TeamResearchOrchestrator:
         Raises:
             TeamExecutionError: If research execution fails.
         """
+        from datetime import datetime
+
+        # Track actual start time for accurate execution time calculation
+        start_time = datetime.utcnow()
+
         self._monitor.section("Research Session")
         self._monitor.log(f"Query: {query}")
         self._monitor.log(f"Depth: {depth.value}")
@@ -180,6 +185,8 @@ class TeamResearchOrchestrator:
             query=query,
             depth=depth,
             sources=sources,
+            started_at=start_time,
+            completed_at=datetime.utcnow(),
             metadata={
                 "strategy": strategy,
                 "analysis": analysis,
@@ -187,11 +194,6 @@ class TeamResearchOrchestrator:
                 "deep_analysis": analysis.get("deep_analysis_complete", False),
             },
         )
-
-        # Mark session as completed
-        from datetime import datetime
-
-        session.completed_at = datetime.utcnow()
 
         # Summary
         self._monitor.section("Summary")

@@ -45,7 +45,8 @@
       "Bash(python3 -c)",
       "Bash(.venv/bin/python -c)",
       "Bash(poetry run)",
-      "Bash(uv run cc-deep-research research \"benefit of tea\" --depth quick)"
+      "Bash(uv run cc-deep-research research \"benefit of tea\" --depth quick)",
+      "Bash(uv run cc-deep-research research \"health benefit of white tea\" --monitor --output whitetea.md)"
     ]
   }
 }
