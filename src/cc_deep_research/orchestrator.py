@@ -4,8 +4,8 @@ This module provides the TeamResearchOrchestrator class that coordinates
 research operations using multiple specialized agents working together.
 """
 
-import asyncio
 import uuid
+from collections.abc import Callable
 from typing import Any
 
 from cc_deep_research.agents import (
@@ -22,12 +22,10 @@ from cc_deep_research.agents import (
     SourceCollectorAgent,
     ValidatorAgent,
 )
-from cc_deep_research.agents.reporter import ReporterAgent as ReporterAgentImpl
-from cc_deep_research.agents.validator import ValidatorAgent as ValidatorAgentImpl
 from cc_deep_research.config import Config
 from cc_deep_research.models import ResearchDepth, ResearchSession, SearchOptions
 from cc_deep_research.monitoring import ResearchMonitor
-from cc_deep_research.teams import AgentSpec, TeamConfig, ResearchTeam
+from cc_deep_research.teams import AgentSpec, ResearchTeam, TeamConfig
 
 
 class TeamResearchOrchestrator:
@@ -70,6 +68,7 @@ class TeamResearchOrchestrator:
         query: str,
         depth: ResearchDepth,
         min_sources: int | None = None,
+        phase_hook: Callable[[str, str], None] | None = None,
     ) -> ResearchSession:
         """Execute a research query using the agent team.
 
@@ -77,6 +76,7 @@ class TeamResearchOrchestrator:
             query: Research query string.
             depth: Research depth mode (quick/standard/deep).
             min_sources: Minimum number of sources (optional).
+            phase_hook: Optional callback for phase progress updates.
 
         Returns:
             ResearchSession with complete research results.
@@ -93,15 +93,35 @@ class TeamResearchOrchestrator:
         self._monitor.log(f"Session ID: {session_id}")
 
         # Initialize team
+        self._notify_phase(
+            phase_hook,
+            phase_key="team_init",
+            description="Initializing agent team",
+        )
         await self._initialize_team()
 
         # Phase 1: Analyze query and determine strategy
+        self._notify_phase(
+            phase_hook,
+            phase_key="strategy",
+            description="Analyzing research strategy",
+        )
         strategy = await self._phase_analyze_strategy(query, depth)
 
         # Phase 2: Expand queries if needed
+        self._notify_phase(
+            phase_hook,
+            phase_key="query_expansion",
+            description="Expanding search queries",
+        )
         queries = await self._phase_expand_queries(query, strategy, depth)
 
         # Phase 3: Collect sources
+        self._notify_phase(
+            phase_hook,
+            phase_key="source_collection",
+            description="Collecting sources from providers",
+        )
         sources = await self._phase_collect_sources(
             queries,
             depth,
@@ -109,6 +129,11 @@ class TeamResearchOrchestrator:
         )
 
         # Phase 4: Analyze findings
+        self._notify_phase(
+            phase_hook,
+            phase_key="analysis",
+            description="Analyzing findings",
+        )
         analysis = await self._phase_analyze_findings(
             sources,
             query,
@@ -116,6 +141,11 @@ class TeamResearchOrchestrator:
         )
 
         # Phase 5: Validate quality (if enabled)
+        self._notify_phase(
+            phase_hook,
+            phase_key="validation",
+            description="Validating research quality",
+        )
         if strategy.get("enable_quality_scoring", True):
             validation = await self._phase_validate_research(
                 query,
@@ -141,6 +171,7 @@ class TeamResearchOrchestrator:
 
         # Mark session as completed
         from datetime import datetime
+
         session.completed_at = datetime.utcnow()
 
         # Summary
@@ -151,9 +182,30 @@ class TeamResearchOrchestrator:
             self._monitor.log(f"Quality score: {validation['quality_score']:.2f}")
 
         # Cleanup
+        self._notify_phase(
+            phase_hook,
+            phase_key="cleanup",
+            description="Cleaning up team resources",
+        )
         await self._shutdown_team()
+        self._notify_phase(
+            phase_hook,
+            phase_key="complete",
+            description="Research complete",
+        )
 
         return session
+
+    @staticmethod
+    def _notify_phase(
+        phase_hook: Callable[[str, str], None] | None,
+        phase_key: str,
+        description: str,
+    ) -> None:
+        """Emit a phase notification when a hook is configured."""
+        if phase_hook is None:
+            return
+        phase_hook(phase_key, description)
 
     async def _initialize_team(self) -> None:
         """Initialize the research team with agents.
@@ -290,14 +342,14 @@ class TeamResearchOrchestrator:
         self,
         queries: list[str],
         depth: ResearchDepth,
-        min_sources: int | None,
+        _min_sources: int | None,
     ) -> list:
         """Phase 3: Collect sources from providers.
 
         Args:
             queries: List of queries to search.
             depth: Research depth mode.
-            min_sources: Minimum sources required.
+            _min_sources: Minimum sources required.
 
         Returns:
             List of search result items.
@@ -332,14 +384,14 @@ class TeamResearchOrchestrator:
         self,
         sources: list,
         query: str,
-        strategy: dict[str, Any],
+        _strategy: dict[str, Any],
     ) -> dict[str, Any]:
         """Phase 4: Analyze collected findings.
 
         Args:
             sources: List of collected sources.
             query: Original research query.
-            strategy: Research strategy.
+            _strategy: Research strategy.
 
         Returns:
             Analysis results dictionary.

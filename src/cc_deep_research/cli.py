@@ -1,28 +1,32 @@
 """CLI entry point for CC Deep Research."""
 
+from __future__ import annotations
+
 import asyncio
 from pathlib import Path
+from typing import Any
 
 import click
 
 from cc_deep_research import __version__
 from cc_deep_research.config import (
     Config,
+    create_default_config_file,
+    get_default_config_path,
     load_config,
     save_config,
-    get_default_config_path,
 )
+from cc_deep_research.monitoring import ResearchMonitor
+from cc_deep_research.tui import ResearchRunView, TerminalUI
+
+RESEARCH_PHASE_STEPS = 8
 
 
 @click.group()
 @click.version_option(version=__version__, prog_name="cc-deep-research")
 @click.pass_context
 def main(ctx: click.Context) -> None:
-    """CC Deep Research - Comprehensive web research CLI tool.
-
-    Perform deep research using Tavily Search API and Claude Code's
-    built-in search capabilities.
-    """
+    """CC Deep Research - comprehensive web research CLI tool."""
     ctx.ensure_object(dict)
 
 
@@ -84,97 +88,78 @@ def research(
     verbose: bool,
     monitor: bool,
 ) -> None:
-    """Execute a research query and generate a report.
+    """Execute a research query and generate a report."""
+    ctx.obj.update(
+        {
+            "query": query,
+            "depth": depth,
+            "min_sources": min_sources,
+            "output": output,
+            "output_format": output_format,
+            "no_cross_ref": no_cross_ref,
+            "tavily_only": tavily_only,
+            "claude_only": claude_only,
+            "no_team": no_team,
+            "team_size": team_size,
+            "progress": progress,
+            "quiet": quiet,
+            "verbose": verbose,
+            "monitor": monitor,
+        }
+    )
 
-    QUERY is the research topic or question to investigate.
-    """
-    # Store options in context for potential use by subcommands
-    ctx.obj["query"] = query
-    ctx.obj["depth"] = depth
-    ctx.obj["min_sources"] = min_sources
-    ctx.obj["output"] = output
-    ctx.obj["output_format"] = output_format
-    ctx.obj["no_cross_ref"] = no_cross_ref
-    ctx.obj["tavily_only"] = tavily_only
-    ctx.obj["claude_only"] = claude_only
-    ctx.obj["no_team"] = no_team
-    ctx.obj["team_size"] = team_size
-    ctx.obj["progress"] = progress
-    ctx.obj["quiet"] = quiet
-    ctx.obj["verbose"] = verbose
-    ctx.obj["monitor"] = monitor
-
-    if verbose:
-        click.echo(f"Research query: {query}")
-        click.echo(f"Depth: {depth}")
-        click.echo(f"Output format: {output_format}")
-        if no_team:
-            click.echo("Mode: Sequential (agent teams disabled)")
-        else:
-            click.echo(f"Mode: Agent Teams (size: {team_size or 'default'})")
-
-    # Initialize monitoring if enabled
-    from cc_deep_research.monitoring import ResearchMonitor
-
+    ui = TerminalUI(enabled=not quiet)
     research_monitor = ResearchMonitor(enabled=monitor and not quiet)
 
-    if monitor and not quiet:
-        research_monitor.section("Research Session")
-        research_monitor.log(f"Query: {query}")
-        research_monitor.log(f"Depth: {depth}")
-        research_monitor.log(f"Output format: {output_format}")
-
-        # Log configuration
-        research_monitor.section("Configuration")
-        from cc_deep_research.config import load_config
-
-        config_obj = load_config()
-        research_monitor.log(f"Providers: {', '.join(config_obj.search.providers)}")
-        research_monitor.log(f"Search depth: {config_obj.search.depth}")
-        research_monitor.log(f"Search mode: {config_obj.search.mode}")
-        research_monitor.log(f"Agent teams: {'enabled' if config_obj.search_team.enabled else 'disabled'}")
-
-        research_monitor.section("Execution")
-
-    # Execute research using agent teams
     try:
         from cc_deep_research.models import ResearchDepth
         from cc_deep_research.orchestrator import TeamResearchOrchestrator
         from cc_deep_research.reporting import ReportGenerator
 
-        # Load configuration
         config = load_config()
-
-        # Override team settings from CLI options
         if no_team:
             config.search_team.enabled = False
-        if team_size:
+        if team_size is not None:
             config.search_team.team_size = team_size
-
-        # Handle provider selection
+        if no_cross_ref:
+            config.research.enable_cross_ref = False
         if tavily_only:
             config.search.providers = ["tavily"]
         if claude_only:
             config.search.providers = ["claude"]
 
-        # Create orchestrator
-        orchestrator = TeamResearchOrchestrator(
-            config=config,
-            monitor=research_monitor,
-        )
+        if not quiet:
+            team_mode = _describe_team_mode(config)
+            ui.show_research_header(
+                ResearchRunView(
+                    query=query,
+                    depth=depth,
+                    output_format=output_format,
+                    providers=config.search.providers,
+                    team_mode=team_mode,
+                    monitor_enabled=monitor,
+                )
+            )
+            if verbose:
+                click.echo(
+                    f"Min sources override: {min_sources if min_sources is not None else 'none'}"
+                )
 
-        # Convert depth string to enum
-        depth_enum = ResearchDepth(depth)
+        if monitor and not quiet:
+            _log_monitor_session_start(research_monitor, query, depth, output_format, config)
 
-        # Execute research (async)
-        import asyncio
-        session = asyncio.run(orchestrator.execute_research(
+        orchestrator = TeamResearchOrchestrator(config=config, monitor=research_monitor)
+        depth_enum = ResearchDepth(depth.lower())
+
+        session = _execute_research_run(
+            orchestrator=orchestrator,
             query=query,
             depth=depth_enum,
             min_sources=min_sources,
-        ))
+            progress=progress and not quiet,
+            ui=ui,
+        )
 
-        # Generate report
         reporter = ReportGenerator(config)
         analysis = session.metadata.get("analysis", {})
 
@@ -183,40 +168,48 @@ def research(
         else:
             report = reporter.generate_json_report(session, analysis)
 
-        # Output report
-        if output:
-            # Save to file
-            output_path = Path(output)
+        output_path = Path(output) if output else None
+        if output_path is not None:
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(report)
+            output_path.write_text(report, encoding="utf-8")
             if not quiet:
-                click.echo(f"Report saved to: {output_path}")
+                ui.show_report_saved(output_path)
         else:
-            # Print to stdout
-            click.echo(report)
+            if quiet:
+                click.echo(report)
+            else:
+                ui.show_report(report, output_format)
 
         if monitor and not quiet:
             research_monitor.section("Summary")
             research_monitor.summary(
                 total_sources=session.total_sources,
-                providers=[s.provider for s in session.searches],
+                providers=config.search.providers,
                 total_time_ms=int(session.execution_time_seconds * 1000),
             )
 
-    except Exception as e:
         if not quiet:
-            click.echo(f"Error: {e}", err=True)
+            ui.show_research_summary(
+                source_count=session.total_sources,
+                findings_count=len(analysis.get("key_findings", [])),
+                theme_count=len(analysis.get("themes", [])),
+                gap_count=len(analysis.get("gaps", [])),
+                execution_seconds=session.execution_time_seconds,
+                output_path=output_path,
+            )
+
+    except Exception as error:
+        if not quiet:
+            ui.show_error(str(error))
         if monitor and not quiet:
             research_monitor.section("Error")
-            research_monitor.log(f"Research failed: {e}")
-        raise click.Abort()
+            research_monitor.log(f"Research failed: {error}")
+        raise click.Abort() from error
 
 
 @main.group()
-@click.pass_context
-def config(ctx: click.Context) -> None:
+def config() -> None:
     """Manage configuration settings."""
-    pass
 
 
 @config.command()
@@ -228,31 +221,150 @@ def config(ctx: click.Context) -> None:
     default=None,
     help="Path to config file (uses default if not specified)",
 )
-@click.pass_context
-def set(ctx: click.Context, key: str, value: str, config_path: str | None) -> None:
+def set(key: str, value: str, config_path: str | None) -> None:
     """Set a configuration value.
 
     KEY is the configuration key in dot notation (e.g., tavily.api_keys).
     VALUE is the value to set.
-
-    Examples:
-        cc-deep-research config set tavily.api_keys key1,key2
-        cc-deep-research config set search.mode hybrid_parallel
     """
-    config_obj = Config()
+    config_obj = _load_config_from_path(config_path)
+    target, final_key = _resolve_config_target(config_obj, key)
 
-    if config_path:
-        config_path_obj = click.Path().convert(config_path, None, ctx=ctx)
-        if config_path_obj.exists():
-            config_obj = load_config(Path(config_path_obj))
-    else:
-        config_obj = load_config()
+    current_value = getattr(target, final_key)
+    parsed_value = _parse_config_value(current_value, value, key)
+    setattr(target, final_key, parsed_value)
 
-    # Parse the key path and set the value
+    save_path = Path(config_path) if config_path else get_default_config_path()
+    save_config(config_obj, save_path)
+
+    ui = TerminalUI(enabled=True)
+    ui.show_config_updated(key, str(parsed_value), save_path)
+
+
+@config.command()
+@click.option(
+    "--config-path",
+    type=click.Path(),
+    default=None,
+    help="Path to config file (uses default if not specified)",
+)
+def show(config_path: str | None) -> None:
+    """Show current configuration."""
+    config_obj = _load_config_from_path(config_path)
+
+    rows = [
+        ("search.providers", ", ".join(config_obj.search.providers)),
+        ("search.mode", _format_config_value(config_obj.search.mode)),
+        ("search.depth", _format_config_value(config_obj.search.depth)),
+        ("tavily.api_keys", f"{len(config_obj.tavily.api_keys)} configured"),
+        ("tavily.max_results", str(config_obj.tavily.max_results)),
+        ("search_team.enabled", str(config_obj.search_team.enabled).lower()),
+        ("search_team.team_size", str(config_obj.search_team.team_size)),
+        ("output.format", config_obj.output.format),
+        ("output.save_dir", config_obj.output.save_dir),
+    ]
+
+    ui = TerminalUI(enabled=True)
+    ui.show_config(rows)
+
+
+@config.command()
+@click.option(
+    "--config-path",
+    type=click.Path(),
+    default=None,
+    help="Path to config file (uses default if not specified)",
+)
+@click.option("--force", is_flag=True, help="Overwrite existing config file")
+def init(config_path: str | None, force: bool) -> None:
+    """Create a default configuration file."""
+    save_path = Path(config_path) if config_path else get_default_config_path()
+
+    if save_path.exists() and not force:
+        click.echo(
+            f"Error: Config file already exists at {save_path}. Use --force to overwrite.",
+            err=True,
+        )
+        raise click.Abort()
+
+    created_path = create_default_config_file(save_path)
+    ui = TerminalUI(enabled=True)
+    ui.show_config_updated("config", "initialized", created_path)
+
+
+def _execute_research_run(
+    orchestrator: Any,
+    query: str,
+    depth: Any,
+    min_sources: int | None,
+    progress: bool,
+    ui: TerminalUI,
+) -> Any:
+    """Run the orchestrator and optionally render phase progress."""
+    if progress:
+        with ui.create_phase_progress(RESEARCH_PHASE_STEPS) as tracker:
+            session = asyncio.run(
+                orchestrator.execute_research(
+                    query=query,
+                    depth=depth,
+                    min_sources=min_sources,
+                    phase_hook=tracker.on_phase,
+                )
+            )
+            tracker.mark_complete()
+            return session
+
+    with ui.status("Running research workflow..."):
+        return asyncio.run(
+            orchestrator.execute_research(
+                query=query,
+                depth=depth,
+                min_sources=min_sources,
+            )
+        )
+
+
+def _describe_team_mode(config: Config) -> str:
+    """Describe team mode for display."""
+    if not config.search_team.enabled:
+        return "sequential"
+    return f"agent team ({config.search_team.team_size})"
+
+
+def _log_monitor_session_start(
+    research_monitor: ResearchMonitor,
+    query: str,
+    depth: str,
+    output_format: str,
+    config: Config,
+) -> None:
+    """Emit monitor startup metadata."""
+    research_monitor.section("Research Session")
+    research_monitor.log(f"Query: {query}")
+    research_monitor.log(f"Depth: {depth}")
+    research_monitor.log(f"Output format: {output_format}")
+
+    research_monitor.section("Configuration")
+    research_monitor.log(f"Providers: {', '.join(config.search.providers)}")
+    research_monitor.log(f"Search depth: {config.search.depth}")
+    research_monitor.log(f"Search mode: {config.search.mode}")
+    research_monitor.log(f"Agent teams: {'enabled' if config.search_team.enabled else 'disabled'}")
+
+    research_monitor.section("Execution")
+
+
+def _load_config_from_path(config_path: str | None) -> Config:
+    """Load configuration from default location or a provided path."""
+    if config_path is None:
+        return load_config()
+    return load_config(Path(config_path))
+
+
+def _resolve_config_target(config_obj: Config, key: str) -> tuple[Any, str]:
+    """Resolve object and attribute for a dot-notation configuration key."""
     key_parts = key.split(".")
-    target = config_obj
+    target: Any = config_obj
 
-    # Navigate to the parent of the final key
     for part in key_parts[:-1]:
         if not hasattr(target, part):
             click.echo(f"Error: Invalid configuration key: {key}", err=True)
@@ -264,227 +376,34 @@ def set(ctx: click.Context, key: str, value: str, config_path: str | None) -> No
         click.echo(f"Error: Invalid configuration key: {key}", err=True)
         raise click.Abort()
 
-    # Handle different value types
-    current_value = getattr(target, final_key)
+    return target, final_key
+
+
+def _parse_config_value(current_value: Any, value: str, key: str) -> Any:
+    """Parse CLI string values into the target config field type."""
     if isinstance(current_value, list):
-        # Handle list values (comma-separated)
-        parsed_value = [v.strip() for v in value.split(",") if v.strip()]
-    elif isinstance(current_value, bool):
-        # Handle boolean values
-        parsed_value = value.lower() in ("true", "1", "yes", "on")
-    elif isinstance(current_value, int):
-        # Handle integer values
+        return [item.strip() for item in value.split(",") if item.strip()]
+
+    if isinstance(current_value, bool):
+        return value.lower() in {"true", "1", "yes", "on"}
+
+    if isinstance(current_value, int):
         try:
-            parsed_value = int(value)
-        except ValueError:
-            click.echo(
-                f"Error: Expected integer value for {key}, got: {value}", err=True
-            )
-            raise click.Abort()
-    else:
-        # Handle string values
-        parsed_value = value
+            return int(value)
+        except ValueError as error:
+            click.echo(f"Error: Expected integer value for {key}, got: {value}", err=True)
+            raise click.Abort() from error
 
-    # Set the value
-    setattr(target, final_key, parsed_value)
-
-    # Save the configuration
-    save_path = Path(config_path) if config_path else None
-    save_config(config_obj, save_path)
-
-    click.echo(f"Configuration updated: {key} = {parsed_value}")
-    if config_path:
-        click.echo(f"Saved to: {config_path}")
-    else:
-        click.echo(f"Saved to: {get_default_config_path()}")
+    return value
 
 
-@config.command()
-@click.option(
-    "--config-path",
-    type=click.Path(),
-    default=None,
-    help="Path to config file (uses default if not specified)",
-)
-@click.pass_context
-def show(ctx: click.Context, config_path: str | None) -> None:
-    """Show current configuration."""
-    if config_path:
-        config_obj = load_config(Path(config_path))
-    else:
-        config_obj = load_config()
-
-    click.echo("Current configuration:")
-    click.echo(f"  Search providers: {', '.join(config_obj.search.providers)}")
-    click.echo(f"  Search mode: {config_obj.search.mode}")
-    click.echo(f"  Search depth: {config_obj.search.depth}")
-    click.echo(f"  Tavily API keys: {len(config_obj.tavily.api_keys)} configured")
-    click.echo(f"  Output format: {config_obj.output.format}")
-    click.echo(f"  Output directory: {config_obj.output.save_dir}")
-
-
-@config.command()
-@click.option(
-    "--config-path",
-    type=click.Path(),
-    default=None,
-    help="Path to config file (uses default if not specified)",
-)
-@click.option("--force", is_flag=True, help="Overwrite existing config file")
-@click.pass_context
-def init(ctx: click.Context, config_path: str | None, force: bool) -> None:
-    """Create a default configuration file."""
-    from cc_deep_research.config import create_default_config_file
-
-    save_path = Path(config_path) if config_path else None
-
-    if save_path and save_path.exists() and not force:
-        click.echo(
-            f"Error: Config file already exists at {save_path}. Use --force to overwrite.",
-            err=True,
-        )
-        raise click.Abort()
-
-    created_path = create_default_config_file(save_path)
-    click.echo(f"Created default configuration at: {created_path}")
+def _format_config_value(value: Any) -> str:
+    """Format config values for display."""
+    enum_value = getattr(value, "value", None)
+    if enum_value is not None:
+        return str(enum_value)
+    return str(value)
 
 
 if __name__ == "__main__":
     main()
-
-
-@main.group()
-@click.pass_context
-def config(ctx: click.Context) -> None:
-    """Manage configuration settings."""
-    pass
-
-
-@config.command()
-@click.argument("key", required=True)
-@click.argument("value", required=True)
-@click.option(
-    "--config-path",
-    type=click.Path(),
-    default=None,
-    help="Path to config file (uses default if not specified)",
-)
-@click.pass_context
-def set(ctx: click.Context, key: str, value: str, config_path: str | None) -> None:
-    """Set a configuration value.
-
-    KEY is the configuration key in dot notation (e.g., tavily.api_keys).
-    VALUE is the value to set.
-
-    Examples:
-        cc-deep-research config set tavily.api_keys key1,key2
-        cc-deep-research config set search.mode hybrid_parallel
-    """
-    config_obj = Config()
-
-    if config_path:
-        config_path_obj = click.Path().convert(config_path, None, ctx=ctx)
-        if config_path_obj.exists():
-            config_obj = load_config(Path(config_path_obj))
-    else:
-        config_obj = load_config()
-
-    # Parse the key path and set the value
-    key_parts = key.split(".")
-    target = config_obj
-
-    # Navigate to the parent of the final key
-    for part in key_parts[:-1]:
-        if not hasattr(target, part):
-            click.echo(f"Error: Invalid configuration key: {key}", err=True)
-            raise click.Abort()
-        target = getattr(target, part)
-
-    final_key = key_parts[-1]
-    if not hasattr(target, final_key):
-        click.echo(f"Error: Invalid configuration key: {key}", err=True)
-        raise click.Abort()
-
-    # Handle different value types
-    current_value = getattr(target, final_key)
-    if isinstance(current_value, list):
-        # Handle list values (comma-separated)
-        parsed_value = [v.strip() for v in value.split(",") if v.strip()]
-    elif isinstance(current_value, bool):
-        # Handle boolean values
-        parsed_value = value.lower() in ("true", "1", "yes", "on")
-    elif isinstance(current_value, int):
-        # Handle integer values
-        try:
-            parsed_value = int(value)
-        except ValueError:
-            click.echo(
-                f"Error: Expected integer value for {key}, got: {value}", err=True
-            )
-            raise click.Abort()
-    else:
-        # Handle string values
-        parsed_value = value
-
-    # Set the value
-    setattr(target, final_key, parsed_value)
-
-    # Save the configuration
-    save_path = Path(config_path) if config_path else None
-    save_config(config_obj, save_path)
-
-    click.echo(f"Configuration updated: {key} = {parsed_value}")
-    if config_path:
-        click.echo(f"Saved to: {config_path}")
-    else:
-        click.echo(f"Saved to: {get_default_config_path()}")
-
-
-@config.command()
-@click.option(
-    "--config-path",
-    type=click.Path(),
-    default=None,
-    help="Path to config file (uses default if not specified)",
-)
-@click.pass_context
-def show(ctx: click.Context, config_path: str | None) -> None:
-    """Show current configuration."""
-    if config_path:
-        config_obj = load_config(Path(config_path))
-    else:
-        config_obj = load_config()
-
-    click.echo("Current configuration:")
-    click.echo(f"  Search providers: {', '.join(config_obj.search.providers)}")
-    click.echo(f"  Search mode: {config_obj.search.mode}")
-    click.echo(f"  Search depth: {config_obj.search.depth}")
-    click.echo(f"  Tavily API keys: {len(config_obj.tavily.api_keys)} configured")
-    click.echo(f"  Output format: {config_obj.output.format}")
-    click.echo(f"  Output directory: {config_obj.output.save_dir}")
-
-
-@config.command()
-@click.option(
-    "--config-path",
-    type=click.Path(),
-    default=None,
-    help="Path to config file (uses default if not specified)",
-)
-@click.option("--force", is_flag=True, help="Overwrite existing config file")
-@click.pass_context
-def init(ctx: click.Context, config_path: str | None, force: bool) -> None:
-    """Create a default configuration file."""
-    from cc_deep_research.config import create_default_config_file
-
-    save_path = Path(config_path) if config_path else None
-
-    if save_path and save_path.exists() and not force:
-        click.echo(
-            f"Error: Config file already exists at {save_path}. Use --force to overwrite.",
-            err=True,
-        )
-        raise click.Abort()
-
-    created_path = create_default_config_file(save_path)
-    click.echo(f"Created default configuration at: {created_path}")
