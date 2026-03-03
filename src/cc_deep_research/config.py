@@ -60,6 +60,11 @@ class ResearchConfig(BaseModel):
     ai_analysis_enabled: bool = Field(default=True)
     ai_num_themes: int = Field(default=8, ge=3, le=15)
     ai_deep_num_themes: int = Field(default=12, ge=5, le=20)
+    ai_integration_method: str = Field(
+        default="heuristic",
+        description="Method for AI integration: 'heuristic', 'agent', 'api', 'hybrid'"
+    )
+    ai_temperature: float = Field(default=0.3, ge=0.0, le=1.0)
 
 
 class OutputConfig(BaseModel):
