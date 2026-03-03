@@ -1,7 +1,5 @@
 """Tests for TavilySearchProvider."""
 
-import json
-from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest

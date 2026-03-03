@@ -83,7 +83,7 @@ class AIAnalysisService:
         return themes
 
     def analyze_cross_reference(
-        self, sources: list[SearchResultItem], themes: list[dict[str, Any]]
+        self, _sources: list[SearchResultItem], themes: list[dict[str, Any]]
     ) -> dict[str, Any]:
         """Perform cross-reference analysis across sources.
 
@@ -97,24 +97,17 @@ class AIAnalysisService:
             - disagreement_points: List of contradictory claims with evidence
             - cross_reference_claims: List of claim objects
         """
-        content_blocks = self._prepare_content_blocks(
-            sources, max_tokens=self._max_tokens
-        )
-
-        if not content_blocks:
-            return self._basic_cross_reference_fallback()
-
-        # TODO: Implement AI-powered cross-reference analysis
-        # For now, use a basic implementation
-        return self._analyze_cross_reference_basic(
-            content_blocks, themes
+        # Use AI integration for cross-reference analysis
+        return self._ai_integration.analyze_cross_reference_with_ai(
+            _sources=_sources,
+            themes=themes,
         )
 
     def identify_gaps(
         self,
         sources: list[SearchResultItem],
         query: str,
-        themes: list[dict[str, Any]],  # noqa: ARG002
+        themes: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         """Identify information gaps in the research.
 
@@ -129,43 +122,12 @@ class AIAnalysisService:
             - importance: High/Medium/Low
             - suggested_queries: Queries to fill gap
         """
-        # TODO: Implement AI-powered gap identification
-        # For now, use basic heuristics
-        gaps = []
-
-        # Check for insufficient source diversity
-        domains = set()
-        for source in sources:
-            if source.url:
-                try:
-                    domain = source.url.split("//")[1].split("/")[0]
-                    domains.add(domain)
-                except (IndexError, AttributeError):
-                    pass
-
-        if len(domains) < 5:
-            gaps.append({
-                "gap_description": "Limited source diversity - most sources from few domains",
-                "importance": "Medium",
-                "suggested_queries": [
-                    f"{query} academic research",
-                    f"{query} scientific studies",
-                    f"{query} peer reviewed"
-                ],
-            })
-
-        # Check for recent information
-        gaps.append({
-            "gap_description": "Research may not include very recent developments",
-            "importance": "Low",
-            "suggested_queries": [
-                f"{query} 2026",
-                f"{query} latest studies",
-                f"{query} recent findings"
-            ],
-        })
-
-        return gaps
+        # Use AI integration for gap identification
+        return self._ai_integration.identify_gaps_with_ai(
+            sources=sources,
+            query=query,
+            themes=themes,
+        )
 
     def synthesize_findings(
         self,
@@ -419,7 +381,7 @@ Focus on synthesizing information rather than just listing it.
     def _analyze_cross_reference_basic(
         self, _content_blocks: list[dict[str, Any]], themes: list[dict[str, Any]]
     ) -> dict[str, Any]:
-        """Basic cross-reference analysis without AI.
+        """Basic cross-reference analysis without AI (deprecated, now uses AI integration).
 
         Args:
             content_blocks: Content blocks to analyze.
@@ -428,30 +390,11 @@ Focus on synthesizing information rather than just listing it.
         Returns:
             Dictionary with consensus and disagreement points.
         """
-        consensus_points: list[str] = []
-        disagreement_points: list[str] = []
-
-        # Find consensus: themes supported by multiple sources
-        for theme in themes:
-            support_count = len(theme.get("supporting_sources", []))
-            if support_count >= 3:
-                consensus_points.append(
-                    f"Multiple sources ({support_count}) support findings about {theme['name']}"
-                )
-
-        if not consensus_points:
-            consensus_points.append("Core concepts are discussed across multiple sources")
-
-        # Disagreements would require AI to detect conflicting claims
-        # For now, leave empty
-        if not disagreement_points:
-            disagreement_points.append("No major contradictions detected between sources")
-
-        return {
-            "consensus_points": consensus_points,
-            "disagreement_points": disagreement_points,
-            "cross_reference_claims": [],
-        }
+        # This method is now a fallback for the AI integration
+        return self._ai_integration.analyze_cross_reference_with_ai(
+            _sources=[],
+            themes=themes,
+        )
 
     def _basic_cross_reference_fallback(self) -> dict[str, Any]:
         """Fallback cross-reference when content is unavailable."""

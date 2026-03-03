@@ -55,7 +55,14 @@
       "Bash(uv run mypy src/cc_deep_research/agents/researcher.py --no-error-summary)",
       "Bash(uv run mypy src/cc_deep_research/orchestrator.py --no-error-summary)",
       "Bash(git add src/cc_deep_research/agents/__init__.py src/cc_deep_research/agents/researcher.py src/cc_deep_research/cli.py src/cc_deep_research/config.py src/cc_deep_research/monitoring.py src/cc_deep_research/orchestrator.py src/cc_deep_research/teams/research_team.py src/cc_deep_research/coordination/)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(uv run ruff check src/ tests/)",
+      "Bash(uv run ruff check --fix src/ tests/)",
+      "Bash(uv run pytest tests/ -x --tb=short)",
+      "Bash(uv run pytest tests/ --tb=short -q)",
+      "Bash(uv run cc-deep-research research \"health benefit of white tea\" --output test_improved.md --depth quick --tavily-only)",
+      "Bash(uv run cc-deep-research research \"health benefit of white tea\" --output test_debug.md --depth quick --tavily-only --monitor)",
+      "Bash(uv run cc-deep-research research \"health benefit of white tea\" --output test_final.md --depth quick --tavily-only)"
     ]
   }
 }

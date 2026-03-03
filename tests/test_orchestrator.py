@@ -1,12 +1,13 @@
 """Tests for TeamResearchOrchestrator."""
 
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import MagicMock, patch
 
 from cc_deep_research.config import Config
-from cc_deep_research.models import ResearchDepth, ResearchSession, SearchResultItem
+from cc_deep_research.models import ResearchDepth
 from cc_deep_research.monitoring import ResearchMonitor
-from cc_deep_research.orchestrator import TeamResearchOrchestrator, TeamExecutionError
+from cc_deep_research.orchestrator import TeamExecutionError, TeamResearchOrchestrator
 
 
 class TestTeamResearchOrchestrator:
@@ -26,8 +27,9 @@ class TestTeamResearchOrchestrator:
     async def test_execute_research_simple(self) -> None:
         """Test executing a simple research query with mocked providers."""
         from unittest.mock import AsyncMock, MagicMock
+
+        from cc_deep_research.models import SearchResult
         from cc_deep_research.providers import SearchProvider
-        from cc_deep_research.models import SearchResult, SearchResultItem
 
         config = Config()
         monitor = ResearchMonitor(enabled=False)
@@ -56,13 +58,13 @@ class TestTeamResearchOrchestrator:
 
         # Also mock other agents
         from cc_deep_research.agents import (
-            AGENT_TYPE_LEAD,
-            AGENT_TYPE_EXPANDER,
             AGENT_TYPE_ANALYZER,
+            AGENT_TYPE_EXPANDER,
+            AGENT_TYPE_LEAD,
             AGENT_TYPE_VALIDATOR,
-            ResearchLeadAgent,
-            QueryExpanderAgent,
             AnalyzerAgent,
+            QueryExpanderAgent,
+            ResearchLeadAgent,
             ValidatorAgent,
         )
         orchestrator._agents[AGENT_TYPE_LEAD] = ResearchLeadAgent({})

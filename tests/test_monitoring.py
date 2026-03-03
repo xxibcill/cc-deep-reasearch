@@ -3,8 +3,6 @@
 import re
 from unittest.mock import patch
 
-import pytest
-
 from cc_deep_research.monitoring import MonitorEvent, ResearchMonitor
 
 

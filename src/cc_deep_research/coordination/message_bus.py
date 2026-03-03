@@ -139,7 +139,7 @@ class MessageBus:
                         self._queue.get(),
                         timeout=timeout,
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     if timeout is not None:
                         raise
                     # Continue waiting if no timeout
@@ -185,7 +185,7 @@ class MessageBus:
                     except asyncio.QueueEmpty:
                         break
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass  # No messages available
 
         return messages

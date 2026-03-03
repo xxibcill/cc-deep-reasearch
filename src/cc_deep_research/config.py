@@ -56,10 +56,15 @@ class ResearchConfig(BaseModel):
     # Content fetching configuration
     top_sources_for_content: int = Field(default=15, ge=5, le=30)
 
+    # Content quality configuration
+    content_min_quality_threshold: int = Field(default=100, ge=50, le=500)
+    enable_content_cleaning: bool = Field(default=True)
+
     # AI analysis configuration
     ai_analysis_enabled: bool = Field(default=True)
     ai_num_themes: int = Field(default=8, ge=3, le=15)
     ai_deep_num_themes: int = Field(default=12, ge=5, le=20)
+    max_sources_per_theme: int = Field(default=5, ge=2, le=10)
     ai_integration_method: str = Field(
         default="heuristic",
         description="Method for AI integration: 'heuristic', 'agent', 'api', 'hybrid'"

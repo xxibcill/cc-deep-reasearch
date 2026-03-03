@@ -7,6 +7,7 @@ The analyzer agent is responsible for:
 - Detecting consensus and disagreement across sources
 """
 
+import re
 from typing import Any
 
 from cc_deep_research.agents.ai_analysis_service import AIAnalysisService
@@ -56,33 +57,36 @@ class AnalyzerAgent:
         if not sources:
             return self._empty_analysis(query)
 
+        # Clean source content before analysis
+        cleaned_sources = self._clean_sources_content(sources)
+
         # Check if we have sufficient content for AI analysis
-        has_content = any(s.content and len(s.content) > 200 for s in sources)
+        has_content = any(s.content and len(s.content) > 200 for s in cleaned_sources)
 
         if not has_content:
             # Fall back to basic analysis without AI
-            return self._basic_analysis(sources, query)
+            return self._basic_analysis(cleaned_sources, query)
 
         # Use AI-powered analysis
         themes = self._ai_service.extract_themes_semantically(
-            sources=sources,
+            sources=cleaned_sources,
             query=query,
             num_themes=self._config.get("ai_num_themes", 8),
         )
 
         # Perform cross-reference analysis
         cross_ref = self._ai_service.analyze_cross_reference(
-            sources=sources, themes=themes
+            _sources=cleaned_sources, themes=themes
         )
 
         # Identify gaps
         gaps = self._ai_service.identify_gaps(
-            sources=sources, query=query, themes=themes
+            sources=cleaned_sources, query=query, themes=themes
         )
 
         # Synthesize findings
         key_findings = self._ai_service.synthesize_findings(
-            sources=sources,
+            sources=cleaned_sources,
             themes=themes,
             cross_ref=cross_ref,
             gaps=gaps,
@@ -97,9 +101,180 @@ class AnalyzerAgent:
             "contention_points": cross_ref["disagreement_points"],
             "cross_reference_claims": cross_ref.get("cross_reference_claims", []),
             "gaps": gaps,
-            "source_count": len(sources),
+            "source_count": len(cleaned_sources),
             "analysis_method": "ai_semantic",
         }
+
+    def _clean_sources_content(
+        self, sources: list[SearchResultItem]
+    ) -> list[SearchResultItem]:
+        """Clean content from all sources.
+
+        Args:
+            sources: List of sources to clean.
+
+        Returns:
+            List of sources with cleaned content.
+        """
+        cleaned = []
+
+        for source in sources:
+            # Create a copy to avoid modifying the original
+            cleaned_source = source.model_copy(deep=True)
+
+            # Clean title
+            if cleaned_source.title:
+                cleaned_source.title = self._clean_source_content(
+                    cleaned_source.title, is_title=True
+                )
+
+            # Clean snippet
+            if cleaned_source.snippet:
+                cleaned_source.snippet = self._clean_source_content(
+                    cleaned_source.snippet, is_title=False
+                )
+
+            # Clean content
+            if cleaned_source.content:
+                cleaned_source.content = self._clean_source_content(
+                    cleaned_source.content, is_title=False
+                )
+
+            cleaned.append(cleaned_source)
+
+        return cleaned
+
+    def _clean_source_content(self, content: str, is_title: bool = False) -> str:
+        """Clean content by removing HTML fragments, navigation text, and artifacts.
+
+        Args:
+            content: Content to clean.
+            is_title: Whether this is a title (shorter cleaning).
+
+        Returns:
+            Cleaned content.
+        """
+        if not content:
+            return ""
+
+        # Remove blob URLs and internal references
+        content = re.sub(r'blob:http://[^\s]+', '', content)
+        content = re.sub(r'\[Image\s*\d+\]', '', content)
+        content = re.sub(r'!\[.*?\]\(.*?\)', '', content)
+
+        # Remove markdown links and their text
+        content = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', content)
+
+        # Remove all markdown links completely (they're often navigation)
+        content = re.sub(r'\[[^\]]+\]\([^\)]+\)', '', content)
+
+        # Remove social media and navigation patterns
+        navigation_patterns = [
+            r'\[Log in\]',
+            r'\[Cart\]',
+            r'\[Sign up\]',
+            r'\[Menu\]',
+            r'\[Close\]',
+            r'\[Share\]',
+            r'\(Log in\)',
+            r'\(Cart\)',
+            r'\(Sign up\)',
+            r'\[Skip to content\]',
+            r'\[Continue shopping\]',
+            r'\[Have an account',
+            r'\[Login\]',
+            r'\[Sign Up\]',
+            r'\*?\s*Twitter',
+            r'\*?\s*Facebook',
+            r'\*?\s*Instagram',
+            r'\*?\s*YouTube',
+            r'SHOP\s*\+\s*',
+            r'BLOG\s*\+\s*',
+            r'ABOUT\s*\+\s*',
+            r'REWARDS\s*\+\s*',
+            r'CONTACT\s*\+\s*',
+            r'REGISTER\s*\+\s*',
+        ]
+
+        for pattern in navigation_patterns:
+            content = re.sub(pattern, '', content, flags=re.IGNORECASE)
+
+        # Remove common website artifacts
+        artifacts = [
+            r'Share\s*$',
+            r'^\s*Share\n',
+            r'Log in\s*Cart',
+            r'Cart\s*$',
+            r'^\s*Cart\n',
+            r'com/@\w+',
+            r'Skip to content',
+            r'Continue shopping',
+            r'Have an account',
+            r'Check out faster',
+            r'Estimated total',
+            r'Your cart is empty',
+            r'Best Sellers',
+            r'Shop our best selling',
+            r'Find Relief Now',
+            r'Steeping Accessories',
+            r'Who We Are',
+            r'What is Matcha',
+            r'What is White Tea',
+            r'What are the origins',
+            r'## Best Sellers',
+            r'## Find Relief',
+            r'## Steeping',
+            r'## Who We Are',
+            r'## What is',
+            r'## Origins of',
+        ]
+
+        for pattern in artifacts:
+            content = re.sub(pattern, '', content, flags=re.IGNORECASE | re.MULTILINE)
+
+        # Remove section headers with limited text (they're usually navigation)
+        content = re.sub(r'^#{1,3}\s+(Your\s+cart|Estimated\s+total|Continue\s+shopping|Best\s+Sellers|Find\s+Relief|Steeping\s+Accessories|Who\s+We\s+Are|What\s+is\s+Matcha?|Origins\s+of).*$', '', content, flags=re.IGNORECASE | re.MULTILINE)
+
+        # Remove email addresses and URLs from content
+        content = re.sub(r'\S+@\S+\.\S+', '', content)
+        content = re.sub(r'https?://\S+', '', content)
+
+        # Clean up extra whitespace
+        content = re.sub(r'\s+', ' ', content)
+        content = re.sub(r'\n\s*\n\s*\n+', '\n\n', content)
+
+        # For titles, just trim
+        if is_title:
+            return content.strip()[:200]
+
+        # For full content, also remove very short/incomplete sentences at start
+        lines = content.split('\n')
+        cleaned_lines = []
+
+        for line in lines:
+            line = line.strip()
+
+            # Skip empty lines or very short lines
+            if len(line) < 10:
+                continue
+
+            # Skip lines that look like navigation
+            if line.lower() in ['log in', 'cart', 'menu', 'search']:
+                continue
+
+            # Skip lines that start with ## (markdown headers) unless they're meaningful
+            if line.startswith('##') and len(line) < 30:
+                continue
+
+            # Skip lines that are just URLs
+            if re.match(r'^https?://', line):
+                continue
+
+            cleaned_lines.append(line)
+
+        content = ' '.join(cleaned_lines)
+
+        return content.strip()
 
     def _basic_analysis(
         self, sources: list[SearchResultItem], query: str

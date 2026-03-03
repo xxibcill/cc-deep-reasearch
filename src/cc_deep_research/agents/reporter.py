@@ -246,33 +246,108 @@ class ReporterAgent:
                     "Further investigation may provide additional insights.\n"
                 )
         else:
-            # ENHANCED: Use AI-generated detailed themes
+            # Use AI-generated detailed themes with deduplication
+            cited_sources: set[str] = set()  # Track which sources have been cited
+
             for theme in themes_detailed:
                 sections.append(f"### {theme['name']}\n")
 
                 # Theme description
-                sections.append(theme.get("description", ""))
+                description = theme.get("description", "")
+
+                # Clean description to remove navigation artifacts
+                description = self._clean_description(description)
+                sections.append(description)
                 sections.append("\n")
 
                 # Key points
                 if theme.get("key_points"):
                     sections.append("**Key Points:**\n")
                     for point in theme["key_points"]:
-                        sections.append(f"- {point}")
+                        # Clean key points
+                        clean_point = self._clean_description(str(point))
+                        if clean_point and len(clean_point) > 10:
+                            sections.append(f"- {clean_point}")
                     sections.append("\n")
 
-                # Supporting sources
+                # Supporting sources (with deduplication)
                 if theme.get("supporting_sources"):
                     sections.append("**Supporting Sources:**\n")
                     for url in theme["supporting_sources"]:
+                        # Skip if already cited
+                        if url in cited_sources:
+                            continue
+
                         # Find source details
                         for source in session.sources:
                             if source.url == url:
-                                sections.append(f"- [{source.title}]({url})")
+                                # Clean title
+                                title = self._clean_title(source.title or "Untitled")
+                                sections.append(f"- [{title}]({url})")
+                                cited_sources.add(url)
                                 break
                     sections.append("")
 
         return "\n".join(sections)
+
+    def _clean_description(self, description: str) -> str:
+        """Clean description text from artifacts.
+
+        Args:
+            description: Description text to clean.
+
+        Returns:
+            Cleaned description.
+        """
+        if not description:
+            return ""
+
+        # Remove navigation and UI text
+        import re
+
+        description = re.sub(r'\[Log in\]', '', description)
+        description = re.sub(r'\[Cart\]', '', description)
+        description = re.sub(r'\[Share\]', '', description)
+        description = re.sub(r'com/@\w+', '', description)
+
+        # Remove image references
+        description = re.sub(r'!\[.*?\]\(.*?\)', '', description)
+
+        # Clean up whitespace
+        description = re.sub(r'\s+', ' ', description)
+
+        # Remove incomplete sentences at the start
+        sentences = description.split('.')
+        clean_sentences = []
+
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if len(sentence) > 20:
+                clean_sentences.append(sentence)
+
+        return '. '.join(clean_sentences).strip()
+
+    def _clean_title(self, title: str) -> str:
+        """Clean title from artifacts.
+
+        Args:
+            title: Title to clean.
+
+        Returns:
+            Cleaned title.
+        """
+        if not title:
+            return "Untitled"
+
+        # Remove navigation patterns
+        import re
+
+        title = re.sub(r'\[Log in\]', '', title)
+        title = re.sub(r'\[Cart\]', '', title)
+        title = re.sub(r'com/@\w+', '', title)
+        title = re.sub(r'\|.*$', '', title)  # Remove pipe-delimited suffixes
+
+        return title.strip()
 
     def _generate_cross_reference_section(
         self,
