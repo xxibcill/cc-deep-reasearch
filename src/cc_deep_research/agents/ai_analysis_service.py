@@ -10,6 +10,7 @@ This service provides semantic analysis capabilities using Claude models:
 from typing import Any
 
 from cc_deep_research.agents.ai_agent_integration import AIAgentIntegration
+from cc_deep_research.agents.ai_executor import AIExecutor
 from cc_deep_research.models import SearchResultItem
 
 
@@ -32,6 +33,7 @@ class AIAnalysisService:
         self._num_themes = config.get("ai_num_themes", 8)
         self._deep_num_themes = config.get("ai_deep_num_themes", 12)
         self._ai_integration = AIAgentIntegration(config)
+        self._ai_executor = AIExecutor(config)
 
     def extract_themes_semantically(
         self,
@@ -56,7 +58,30 @@ class AIAnalysisService:
         if num_themes is None:
             num_themes = self._num_themes
 
-        # Try AI-powered theme extraction
+        # Convert SearchResultItem to dict for AI executor
+        sources_dict = [
+            {
+                "url": s.url,
+                "title": s.title or "",
+                "content": s.content or s.snippet or "",
+                "snippet": s.snippet or "",
+            }
+            for s in sources
+            if s.content or s.snippet
+        ]
+
+        # Try AI executor first (uses semantic topic detection)
+        if sources_dict:
+            ai_themes = self._ai_executor.extract_themes(
+                sources=sources_dict,
+                query=query,
+                num_themes=num_themes,
+            )
+
+            if ai_themes:
+                return ai_themes
+
+        # Fallback to AI integration heuristics
         ai_themes = self._ai_integration.extract_themes_with_ai(
             sources=sources,
             query=query,
@@ -66,8 +91,7 @@ class AIAnalysisService:
         if ai_themes:
             return ai_themes
 
-        # Fallback to heuristic if AI integration doesn't return results
-        # Prepare content for analysis
+        # Final fallback to basic theme extraction
         content_blocks = self._prepare_content_blocks(
             sources, max_tokens=self._max_tokens
         )
@@ -75,7 +99,7 @@ class AIAnalysisService:
         if not content_blocks:
             return self._basic_theme_fallback(sources, num_themes)
 
-        # Use existing heuristic method as fallback
+        # Use existing heuristic method as final fallback
         themes = self._extract_themes_from_content(
             query, content_blocks, num_themes
         )
@@ -131,7 +155,7 @@ class AIAnalysisService:
 
     def synthesize_findings(
         self,
-        sources: list[SearchResultItem],  # noqa: ARG002
+        sources: list[SearchResultItem],
         themes: list[dict[str, Any]],
         cross_ref: dict[str, Any],  # noqa: ARG002
         gaps: list[dict[str, Any]],  # noqa: ARG002
@@ -153,9 +177,24 @@ class AIAnalysisService:
             - evidence: List of supporting source references
             - confidence: High/Medium/Low
         """
-        findings = []
+        # Convert sources to dict format for AI executor
+        sources_dict = [
+            {
+                "url": s.url,
+                "title": s.title or "",
+                "content": s.content or s.snippet or "",
+            }
+            for s in sources
+        ]
 
-        # Create findings from themes
+        # Use AI executor for synthesis
+        findings = self._ai_executor.synthesize_findings(themes, sources_dict)
+
+        if findings:
+            return findings
+
+        # Fallback to basic synthesis
+        findings = []
         for theme in themes[:5]:  # Top 5 themes become key findings
             finding = {
                 "title": theme.get("name", "Unnamed Finding"),
