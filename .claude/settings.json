@@ -59,7 +59,8 @@
       "Bash(uv run ruff format src/cc_deep_research/pdf_generator.py src/cc_deep_research/agents/deep_analyzer.py)",
       "Bash(uv run ruff format src/)",
       "Bash(uv run mypy src/cc_deep_research/pdf_generator.py src/cc_deep_research/agents/deep_analyzer.py src/cc_deep_research/orchestrator.py src/cc_deep_research/cli.py src/cc_deep_research/config.py --no-error-summary)",
-      "Bash(uv run pytest tests/test_config.py::TestResearchConfig::test_default_research_config -v)"
+      "Bash(uv run pytest tests/test_config.py::TestResearchConfig::test_default_research_config -v)",
+      "Bash(uv run pytest --cov=src/cc_deep_research --cov-report=term-missing)"
     ]
   }
 }
