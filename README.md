@@ -51,30 +51,105 @@ cc-deep-research research "What are the latest developments in quantum computing
 That's it! The tool will automatically:
 - Run comprehensive searches across multiple sources
 - Generate a detailed markdown report
-- Save the report to your current directory
+- Display the results in your terminal
 
-**Example Output:**
-```
-# Research Report: Latest Developments in Quantum Computing
+## Usage Examples
 
-## Executive Summary
-[2-3 paragraph summary of key findings...]
+### Basic Research
 
-## Key Findings
-### 1. Recent Breakthroughs in Quantum Error Correction
-[Analysis with citations...]
-[1] https://example.com/article1
+```bash
+# Deep dive research (default) with agent teams
+cc-deep-research research "What are the latest developments in quantum computing?"
 
-### 2. Scaling Quantum Computers to 1000+ Qubits
-[Analysis with citations...]
-[2] https://example.com/article2
+# Quick research
+cc-deep-research research -d quick "What is the capital of Australia?"
 
-## Sources
-1. [Title](https://example.com/article1) - Description
-2. [Title](https://example.com/article2) - Description
+# Save to specific file
+cc-deep-research research -o report.md "Climate change statistics 2024"
+
+# Research without agent teams (sequential mode)
+cc-deep-research research --no-team "Simple query"
 ```
 
-## Common Commands
+### Advanced Options
+
+```bash
+# Use only Tavily search
+cc-deep-research research --tavily-only "AI safety research"
+
+# Use only Claude Code search
+cc-deep-research research --claude-only "Machine learning trends"
+
+# Specify minimum sources
+cc-deep-research research -s 30 "Comprehensive topic"
+
+# JSON output
+cc-deep-research research --format json "Query" > results.json
+
+# Custom team size
+cc-deep-research research --team-size 6 "Complex topic"
+```
+
+### Configuration Management
+
+```bash
+# Show current configuration
+cc-deep-research config show
+
+# Set configuration value
+cc-deep-research config set tavily.api_keys key1,key2,key3
+
+# Create default configuration file
+cc-deep-research config init
+```
+
+## Research Modes
+
+| Mode | Sources | Time | Best For |
+|------|---------|------|----------|
+| Quick | 3-5 | 1-2 min | Fact-checking, basic queries |
+| Standard | 10-15 | 3-5 min | General research, overviews |
+| Deep (default) | 20+ | 5-10 min | Thorough research, detailed understanding |
+
+## Documentation
+
+- **[USAGE.md](USAGE.md)** - Complete usage guide with detailed documentation
+- **[EXAMPLES.md](EXAMPLES.md)** - Comprehensive examples for common and advanced use cases
+
+## Installation
+
+For development or to install from source:
+
+### Using uv (Recommended)
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd cc-deep-research
+
+# Sync with uv (creates virtual environment and installs dependencies)
+uv sync
+
+# Run commands with uv
+uv run cc-deep-research research "What are the latest developments in quantum computing?"
+```
+
+### Using pip
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd cc-deep-research
+
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install dependencies
+pip install -e .
+```
+
+## Development Commands
 
 ### uv (Recommended)
 
@@ -120,60 +195,6 @@ ruff format src/ tests/
 mypy src/
 ```
 
-## Installation
-```
-# Research Report: Latest Developments in Quantum Computing
-
-## Executive Summary
-[2-3 paragraph summary of key findings...]
-
-## Key Findings
-### 1. Recent Breakthroughs in Quantum Error Correction
-[Analysis with citations...]
-[1] https://example.com/article1
-
-### 2. Scaling Quantum Computers to 1000+ Qubits
-[Analysis with citations...]
-[2] https://example.com/article2
-
-## Sources
-1. [Title](https://example.com/article1) - Description
-2. [Title](https://example.com/article2) - Description
-```
-
-## Installation
-
-For development or to install from source:
-
-### Using uv (Recommended)
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd cc-deep-research
-
-# Sync with uv (creates virtual environment and installs dependencies)
-uv sync
-
-# Run commands with uv
-uv run cc-deep-research research "What are the latest developments in quantum computing?"
-```
-
-### Using pip
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd cc-deep-research
-
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install dependencies
-pip install -e .
-```
-
 ## Configuration
 
 Set your Tavily API keys for web search:
@@ -188,111 +209,62 @@ Or use the config command:
 cc-deep-research config set tavily.api_keys key1,key2,key3
 ```
 
-## Usage
+### Configuration File
 
-### Basic Research
+Create a configuration file at `~/.config/cc-deep-research/config.yaml`:
 
-```bash
-# Deep dive research (default) with agent teams
-cc-deep-research research "What are the latest developments in quantum computing?"
+```yaml
+search:
+  providers: ["tavily", "claude"]
+  mode: "hybrid_parallel"
+  depth: "deep"
 
-# Quick research
-cc-deep-research research -d quick "What is the capital of Australia?"
+tavily:
+  api_keys: ["key1", "key2"]
+  rate_limit: 1000
+  max_results: 100
 
-# Save to specific file
-cc-deep-research research -o report.md "Climate change statistics 2024"
+research:
+  default_depth: "deep"
+  min_sources:
+    quick: 3
+    standard: 10
+    deep: 20
+  enable_iterative_search: true
+  enable_cross_ref: true
 
-# Research without agent teams (sequential mode)
-cc-deep-research research --no-team "Simple query"
+search_team:
+  enabled: true
+  team_size: 4
+  parallel_execution: true
+  timeout_seconds: 300
+
+output:
+  format: "markdown"
+  auto_save: true
+  save_dir: "./reports"
 ```
-
-### Advanced Options
-
-```bash
-# Use only Tavily search
-cc-deep-research research --tavily-only "AI safety research"
-
-# Use only Claude Code search
-cc-deep-research research --claude-only "Machine learning trends"
-
-# Specify minimum sources
-cc-deep-research research -s 30 "Comprehensive topic"
-
-# JSON output
-cc-deep-research research --format json "Query" > results.json
-
-# Custom team size
-cc-deep-research research --team-size 6 "Complex topic"
-```
-
-### Configuration Management
-
-```bash
-# Show current configuration
-cc-deep-research config show
-
-# Set configuration value
-cc-deep-research config set research.min_sources_deep 25
-
-# Edit config file
-cc-deep-research config edit
-```
-
-### Session Management
-
-```bash
-# List saved sessions
-cc-deep-research session list
-
-# Show session details
-cc-deep-deep research session show <session-id>
-
-# Export session
-cc-deep-research session export <session-id> -o report.md
-```
-
-## Research Modes
-
-| Mode | Sources | Time | Best For |
-|------|---------|------|----------|
-| Quick | 3-5 | 1-2 min | Fact-checking, basic queries |
-| Standard | 10-15 | 3-5 min | General research, overviews |
-| Deep (default) | 20+ | 5-10 min | Thorough research, detailed understanding |
-
-## Output Format
-
-The tool generates comprehensive markdown reports with:
-
-- **Executive Summary** - 2-3 paragraph overview of key findings
-- **Key Findings** - Organized sections with citations
-- **Detailed Analysis** - Comprehensive analysis with cross-references
-- **Cross-Reference Analysis** - Consensus points and areas of contention
-- **Sources** - Numbered list of all sources with URLs
-- **Metadata** - Research session information (time, sources used, etc.)
 
 ## Project Structure
 
 ```
 cc-deep-research/
 ├── src/cc_deep_research/
-│   ├── cli/              # CLI interface (click commands)
-│   ├── search/           # Search provider implementations
-│   ├── orchestrator/     # Research orchestration logic
-│   ├── reporting/        # Report generation
-│   └── config/           # Configuration management
-├── tests/                # Test suite
-├── .ralph/              # Ralph AI assistant configuration
-└── README.md
+│   ├── __init__.py
+│   ├── cli.py              # CLI entry point
+│   ├── config.py           # Configuration management
+│   ├── models.py           # Data models and schemas
+│   ├── orchestrator.py     # Research orchestration
+│   ├── monitoring.py       # Monitoring and logging
+│   ├── reporting.py        # Report generation
+│   ├── providers/          # Search provider implementations
+│   ├── agents/             # Specialized research agents
+│   └── teams/             # Team management and coordination
+├── tests/                  # Test suite
+├── USAGE.md                # Complete usage guide
+├── EXAMPLES.md             # Detailed examples
+└── README.md               # This file
 ```
-
-## Development
-
-This project uses the [Ralph Wiggum](https://github.com/anthropics/claude-code) AI assistant for autonomous development.
-
-See `.ralph/specs/` for detailed specifications:
-- `deep-research-core.md` - Core infrastructure
-- `deep-research-features.md` - Research features
-- `cli-interface.md` - CLI interface
 
 ## Requirements
 
@@ -303,3 +275,7 @@ See `.ralph/specs/` for detailed specifications:
 ## License
 
 [Add your license here]
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
