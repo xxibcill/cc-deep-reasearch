@@ -206,7 +206,7 @@ class TestSearchOptions:
         """Test default SearchOptions values."""
         options = SearchOptions()
         assert options.max_results == 10
-        assert options.include_raw_content is False
+        assert options.include_raw_content is True  # Changed to enable content fetching by default
         assert options.search_depth == ResearchDepth.DEEP
 
     def test_custom_search_options(self) -> None:

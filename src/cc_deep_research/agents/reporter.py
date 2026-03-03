@@ -25,7 +25,7 @@ class ReporterAgent:
     """
 
     def __init__(self, config: dict) -> None:
-        """Initialize the reporter agent.
+        """Initialize reporter agent.
 
         Args:
             config: Agent configuration dictionary.
@@ -70,6 +70,17 @@ class ReporterAgent:
         for i, finding in enumerate(analysis.get("key_findings", []), 1):
             sections.append(f"### Finding {i}: {finding['title']}")
             sections.append(f"{finding['description']}\n")
+            if finding.get("evidence"):
+                sections.append("**Supporting Sources:**")
+                for url in finding["evidence"]:
+                    # Find source index
+                    for j, source in enumerate(session.sources, 1):
+                        if source.url == url:
+                            sections.append(f"- [{source.title}]({url}) [{j}]")
+                            break
+                sections.append("")
+            if finding.get("confidence"):
+                sections.append(f"**Confidence:** {finding['confidence'].capitalize()}\n")
 
         # Detailed Analysis
         sections.append("## Detailed Analysis\n")
@@ -80,6 +91,22 @@ class ReporterAgent:
         sections.append("## Cross-Reference Analysis\n")
         sections.append(self._generate_cross_reference_section(analysis))
         sections.append("\n")
+
+        # Research Gaps (NEW)
+        if analysis.get("gaps"):
+            sections.append("## Research Gaps and Limitations\n")
+            for gap in analysis.get("gaps", []):
+                if isinstance(gap, dict):
+                    sections.append(f"### {gap.get('gap_description', 'Gap')}")
+                    sections.append(f"**Importance:** {gap.get('importance', 'Medium')}")
+                    if gap.get("suggested_queries"):
+                        sections.append("**Suggested follow-up queries:**")
+                        for q in gap["suggested_queries"]:
+                            sections.append(f"- {q}")
+                    sections.append("")
+                else:
+                    sections.append(f"- {gap}")
+            sections.append("")
 
         # Sources
         sections.append("## Sources\n")
@@ -120,6 +147,7 @@ class ReporterAgent:
                     "url": s.url,
                     "title": s.title,
                     "snippet": s.snippet,
+                    "content": s.content,
                     "score": s.score,
                     "metadata": s.source_metadata,
                 }
@@ -153,20 +181,38 @@ class ReporterAgent:
             f"identifying key themes, consensus points, and areas of contention."
         )
 
-        # Paragraph 2: Key findings
+        # Paragraph 2: Key findings (ENHANCED)
         if analysis.get("key_findings"):
             key_count = len(analysis["key_findings"])
+            themes = analysis.get("themes", [])[:3]
             paragraphs.append(
                 f"The research identified {key_count} key findings. "
                 f"Main themes include: "
-                f"{', '.join(analysis.get('themes', [])[:3])}."
+                f"{', '.join(themes)}. "
             )
+
+            # Add method information
+            method = analysis.get("analysis_method", "basic")
+            if method == "ai_semantic" or method == "ai_multi_pass":
+                paragraphs.append(
+                    "Analysis was performed using AI-powered semantic analysis, "
+                    "enabling identification of nuanced patterns and cross-source relationships."
+                )
+            elif method == "basic_keyword":
+                paragraphs.append(
+                    "Analysis was performed using keyword-based extraction due to limited source content availability. "
+                    "For deeper analysis, ensure full webpage content is accessible."
+                )
 
         # Paragraph 3: Notes
         gaps = analysis.get("gaps", [])
         if gaps:
+            if isinstance(gaps[0], dict):
+                gap_descriptions = [g.get("gap_description", g) for g in gaps]
+            else:
+                gap_descriptions = gaps
             paragraphs.append(
-                f"Areas requiring additional investigation include: {', '.join(gaps)}."
+                f"Areas requiring additional investigation include: {', '.join(gap_descriptions)}."
             )
 
         return "\n\n".join(paragraphs)
@@ -187,12 +233,44 @@ class ReporterAgent:
         """
         sections = []
 
-        # Group by themes
-        themes = analysis.get("themes", [])
-        for theme in themes:
-            sections.append(f"### {theme}")
-            sections.append(f"Analysis related to {theme} is based on multiple sources. ")
-            sections.append("Further investigation may provide additional insights.\n")
+        # Use detailed theme data if available
+        themes_detailed = analysis.get("themes_detailed", [])
+
+        if not themes_detailed:
+            # Fallback to basic theme names
+            themes = analysis.get("themes", [])
+            for theme in themes:
+                sections.append(f"### {theme}")
+                sections.append(
+                    f"Analysis related to {theme} is based on multiple sources. "
+                    "Further investigation may provide additional insights.\n"
+                )
+        else:
+            # ENHANCED: Use AI-generated detailed themes
+            for theme in themes_detailed:
+                sections.append(f"### {theme['name']}\n")
+
+                # Theme description
+                sections.append(theme.get("description", ""))
+                sections.append("\n")
+
+                # Key points
+                if theme.get("key_points"):
+                    sections.append("**Key Points:**\n")
+                    for point in theme["key_points"]:
+                        sections.append(f"- {point}")
+                    sections.append("\n")
+
+                # Supporting sources
+                if theme.get("supporting_sources"):
+                    sections.append("**Supporting Sources:**\n")
+                    for url in theme["supporting_sources"]:
+                        # Find source details
+                        for source in session.sources:
+                            if source.url == url:
+                                sections.append(f"- [{source.title}]({url})")
+                                break
+                    sections.append("")
 
         return "\n".join(sections)
 
@@ -229,6 +307,24 @@ class ReporterAgent:
         else:
             sections.append("- No major points of contention identified")
 
+        # ENHANCED: Cross-reference claims with evidence
+        claims = analysis.get("cross_reference_claims", [])
+        if claims:
+            sections.append("\n### Detailed Claims Analysis")
+            for claim in claims:
+                sections.append(f"\n**Claim:** {claim.get('claim', 'Unnamed claim')}")
+                if claim.get("supporting_sources"):
+                    sections.append(
+                        f"- **Supporting:** {len(claim['supporting_sources'])} sources"
+                    )
+                if claim.get("contradicting_sources"):
+                    sections.append(
+                        f"- **Contradicting:** {len(claim['contradicting_sources'])} sources"
+                    )
+                if claim.get("consensus_level"):
+                    consensus_pct = claim["consensus_level"] * 100
+                    sections.append(f"- **Consensus Level:** {consensus_pct:.0f}%")
+
         return "\n".join(sections)
 
     def _generate_metadata_section(
@@ -255,6 +351,12 @@ class ReporterAgent:
         if session.searches:
             providers = list(set(s.provider for s in session.searches))
             metadata.append(f"- Providers Used: {', '.join(providers)}")
+
+        # Add analysis method if available
+        if session.metadata and session.metadata.get("analysis"):
+            analysis = session.metadata["analysis"]
+            method = analysis.get("analysis_method", "unknown")
+            metadata.append(f"- Analysis Method: {method}")
 
         return "\n".join(metadata)
 
