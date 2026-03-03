@@ -172,9 +172,7 @@ class ResearchLeadAgent:
 
         # Check source count
         if min_sources and session.total_sources < min_sources:
-            issues.append(
-                f"Insufficient sources: {session.total_sources} < {min_sources}"
-            )
+            issues.append(f"Insufficient sources: {session.total_sources} < {min_sources}")
 
         # Check for gaps (placeholder logic)
         if not session.sources:

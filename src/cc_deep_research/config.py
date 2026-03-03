@@ -38,7 +38,7 @@ class MinSourcesConfig(BaseModel):
 
     quick: int = Field(default=3, ge=1)
     standard: int = Field(default=10, ge=1)
-    deep: int = Field(default=20, ge=1)
+    deep: int = Field(default=50, ge=1)
 
 
 class ResearchConfig(BaseModel):
@@ -50,6 +50,8 @@ class ResearchConfig(BaseModel):
     max_iterations: int = Field(default=3, ge=1)
     enable_cross_ref: bool = Field(default=True)
     enable_quality_scoring: bool = Field(default=True)
+    deep_analysis_passes: int = Field(default=3, ge=1, le=5)
+    deep_analysis_tokens: int = Field(default=150000, ge=100000, le=300000)
 
 
 class OutputConfig(BaseModel):
@@ -60,6 +62,8 @@ class OutputConfig(BaseModel):
     save_dir: str = Field(default="./reports")
     include_metadata: bool = Field(default=True)
     include_cross_ref_analysis: bool = Field(default=True)
+    pdf_enabled: bool = Field(default=False)
+    pdf_css_template: str | None = Field(default=None)
 
     @field_validator("format")
     @classmethod

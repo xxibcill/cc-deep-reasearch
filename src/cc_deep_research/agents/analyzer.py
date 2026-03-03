@@ -99,11 +99,13 @@ class AnalyzerAgent:
         # Placeholder: create findings from source titles/snippets
         for i, source in enumerate(sources[:5]):  # Top 5 sources
             if source.title:
-                findings.append({
-                    "title": source.title,
-                    "description": source.snippet or "No description available",
-                    "source": source.url,
-                })
+                findings.append(
+                    {
+                        "title": source.title,
+                        "description": source.snippet or "No description available",
+                        "source": source.url,
+                    }
+                )
 
         return findings
 
@@ -178,9 +180,7 @@ class AnalyzerAgent:
             gaps.append("Limited number of sources collected")
 
         # Check for content depth
-        has_long_content = any(
-            len(s.content or "") > 500 for s in sources
-        )
+        has_long_content = any(len(s.content or "") > 500 for s in sources)
         if not has_long_content:
             gaps.append("Sources lack detailed content for deep analysis")
 

@@ -88,11 +88,13 @@ class TestResearchConfig:
         assert config.default_depth == ResearchDepth.DEEP
         assert config.min_sources.quick == 3
         assert config.min_sources.standard == 10
-        assert config.min_sources.deep == 20
+        assert config.min_sources.deep == 50
         assert config.enable_iterative_search is True
         assert config.max_iterations == 3
         assert config.enable_cross_ref is True
         assert config.enable_quality_scoring is True
+        assert config.deep_analysis_passes == 3
+        assert config.deep_analysis_tokens == 150000
 
 
 class TestOutputConfig:

@@ -83,6 +83,7 @@ class ReportGenerator:
         """
         if output_path:
             from pathlib import Path
+
             path = Path(output_path)
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(report)
@@ -140,10 +141,7 @@ def generate_executive_summary(
     # Paragraph 3: Notes
     gaps = analysis.get("gaps", [])
     if gaps:
-        paragraphs.append(
-            f"Areas requiring additional investigation include: "
-            f"{', '.join(gaps)}."
-        )
+        paragraphs.append(f"Areas requiring additional investigation include: {', '.join(gaps)}.")
 
     return "\n\n".join(paragraphs)
 

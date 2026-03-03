@@ -80,9 +80,7 @@ class SourceCollectorAgent:
             await self.initialize_providers()
 
         if not self._providers:
-            raise SourceCollectionError(
-                "No search providers available. Please configure API keys."
-            )
+            raise SourceCollectionError("No search providers available. Please configure API keys.")
 
         aggregator = ResultAggregator(
             deduplicate=True,
@@ -91,9 +89,7 @@ class SourceCollectorAgent:
         )
 
         # Execute searches in parallel
-        tasks = [
-            provider.search(query, options) for provider in self._providers
-        ]
+        tasks = [provider.search(query, options) for provider in self._providers]
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 

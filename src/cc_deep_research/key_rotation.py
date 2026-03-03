@@ -132,9 +132,7 @@ class KeyRotationManager:
                 key.last_used = datetime.utcnow()
                 self._rotate_to_next()
                 self._log_rotation_event("rate_limited", key.key)
-                logger.warning(
-                    f"API key rate limited, rotating: {self._mask_key(key.key)}"
-                )
+                logger.warning(f"API key rate limited, rotating: {self._mask_key(key.key)}")
                 break
 
     def _rotate_to_next(self) -> None:
@@ -146,8 +144,7 @@ class KeyRotationManager:
             old_key = self._keys[old_index]
             new_key = self._keys[self._current_index]
             logger.debug(
-                f"Rotated from {self._mask_key(old_key.key)} "
-                f"to {self._mask_key(new_key.key)}"
+                f"Rotated from {self._mask_key(old_key.key)} to {self._mask_key(new_key.key)}"
             )
 
     def _get_earliest_reset_time(self) -> datetime | None:
@@ -184,11 +181,13 @@ class KeyRotationManager:
             event_type: Type of rotation event.
             key: The affected key.
         """
-        self._rotation_events.append({
-            "type": event_type,
-            "key": self._mask_key(key),
-            "timestamp": datetime.utcnow().isoformat(),
-        })
+        self._rotation_events.append(
+            {
+                "type": event_type,
+                "key": self._mask_key(key),
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+        )
 
     def reset_all_counters(self) -> None:
         """Reset all key counters (e.g., for daily reset)."""

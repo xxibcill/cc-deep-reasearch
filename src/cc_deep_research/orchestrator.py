@@ -11,11 +11,13 @@ from typing import Any
 from cc_deep_research.agents import (
     AGENT_TYPE_ANALYZER,
     AGENT_TYPE_COLLECTOR,
+    AGENT_TYPE_DEEP_ANALYZER,
     AGENT_TYPE_EXPANDER,
     AGENT_TYPE_LEAD,
     AGENT_TYPE_REPORTER,
     AGENT_TYPE_VALIDATOR,
     AnalyzerAgent,
+    DeepAnalyzerAgent,
     QueryExpanderAgent,
     ReporterAgent,
     ResearchLeadAgent,
@@ -43,8 +45,9 @@ class TeamResearchOrchestrator:
     2. Expand queries for comprehensive coverage (expander agent)
     3. Collect sources from providers (collector agent)
     4. Analyze findings (analyzer agent)
-    5. Validate quality (validator agent)
-    6. Generate reports (reporter agent)
+    5. Deep analysis (deep_analyzer agent - deep mode only)
+    6. Validate quality (validator agent)
+    7. Generate reports (reporter agent)
     """
 
     def __init__(
@@ -140,6 +143,21 @@ class TeamResearchOrchestrator:
             strategy,
         )
 
+        # Phase 4.5: Deep analysis (deep mode only)
+        if depth == ResearchDepth.DEEP:
+            self._notify_phase(
+                phase_hook,
+                phase_key="deep_analysis",
+                description="Performing deep multi-pass analysis",
+            )
+            deep_analysis = await self._phase_deep_analysis(
+                sources,
+                query,
+                analysis,
+            )
+            # Merge deep analysis results
+            analysis.update(deep_analysis)
+
         # Phase 5: Validate quality (if enabled)
         self._notify_phase(
             phase_hook,
@@ -166,6 +184,7 @@ class TeamResearchOrchestrator:
                 "strategy": strategy,
                 "analysis": analysis,
                 "validation": validation,
+                "deep_analysis": analysis.get("deep_analysis_complete", False),
             },
         )
 
@@ -276,6 +295,11 @@ class TeamResearchOrchestrator:
             AGENT_TYPE_COLLECTOR: SourceCollectorAgent(self._config),
             AGENT_TYPE_EXPANDER: QueryExpanderAgent({}),
             AGENT_TYPE_ANALYZER: AnalyzerAgent({}),
+            AGENT_TYPE_DEEP_ANALYZER: DeepAnalyzerAgent(
+                {
+                    "deep_analysis_passes": self._config.research.deep_analysis_passes,
+                }
+            ),
             AGENT_TYPE_REPORTER: ReporterAgent({}),
             AGENT_TYPE_VALIDATOR: ValidatorAgent({}),
         }
@@ -406,6 +430,34 @@ class TeamResearchOrchestrator:
         self._monitor.log(f"Gaps: {len(analysis['gaps'])}")
 
         return analysis
+
+    async def _phase_deep_analysis(
+        self,
+        sources: list,
+        query: str,
+        analysis: dict[str, Any],  # noqa: ARG002
+    ) -> dict[str, Any]:
+        """Phase 4.5: Multi-pass deep analysis (deep mode only).
+
+        Args:
+            sources: List of collected sources.
+            query: Original research query.
+            analysis: Existing analysis results.
+
+        Returns:
+            Deep analysis results dictionary.
+        """
+        self._monitor.section("Deep Analysis")
+
+        deep_analyzer = self._agents[AGENT_TYPE_DEEP_ANALYZER]
+        deep_analysis = deep_analyzer.deep_analyze(sources, query)
+
+        self._monitor.log(f"Deep analysis passes: {deep_analysis['analysis_passes']}")
+        self._monitor.log(f"Deep themes: {len(deep_analysis['themes'])}")
+        self._monitor.log(f"Consensus points: {len(deep_analysis['consensus_points'])}")
+        self._monitor.log(f"Disagreement points: {len(deep_analysis['disagreement_points'])}")
+
+        return deep_analysis
 
     async def _phase_validate_research(
         self,

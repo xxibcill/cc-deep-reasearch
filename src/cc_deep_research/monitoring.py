@@ -81,7 +81,9 @@ class ResearchMonitor:
         """
         if not self._enabled:
             return
-        click.echo(f"{self.PREFIX} [{provider.upper()}] Response received: {count} results ({duration_ms}ms)")
+        click.echo(
+            f"{self.PREFIX} [{provider.upper()}] Response received: {count} results ({duration_ms}ms)"
+        )
 
     def log_aggregation(self, before: int, after: int) -> None:
         """Log aggregation deduplication statistics.
