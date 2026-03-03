@@ -11,7 +11,7 @@ import asyncio
 from typing import Any
 
 from cc_deep_research.config import Config
-from cc_deep_research.models import SearchOptions, SearchResultItem
+from cc_deep_research.models import SearchOptions
 from cc_deep_research.providers import SearchProvider
 
 
@@ -72,7 +72,7 @@ class ResearcherAgent:
                 "execution_time_ms": result["execution_time_ms"],
             }
 
-        except asyncio.TimeoutError as e:
+        except TimeoutError:
             return {
                 "task_id": task_id,
                 "query": query,

@@ -4,7 +4,6 @@ This module provides the TeamResearchOrchestrator class that coordinates
 research operations using multiple specialized agents working together.
 """
 
-import asyncio
 import uuid
 from collections.abc import Callable
 from typing import Any
@@ -26,8 +25,14 @@ from cc_deep_research.agents import (
     ValidatorAgent,
 )
 from cc_deep_research.config import Config
-from cc_deep_research.coordination import AgentPool, MessageBus, ResearchState
-from cc_deep_research.models import ResearchDepth, ResearchSession, SearchOptions, SearchResult, SearchResultItem
+from cc_deep_research.coordination import AgentPool, MessageBus
+from cc_deep_research.models import (
+    ResearchDepth,
+    ResearchSession,
+    SearchOptions,
+    SearchResult,
+    SearchResultItem,
+)
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.teams import AgentSpec, ResearchTeam, TeamConfig
 

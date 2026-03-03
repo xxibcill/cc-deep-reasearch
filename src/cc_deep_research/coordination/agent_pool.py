@@ -316,7 +316,7 @@ class AgentPool:
             # Check for timeout
             if asyncio.get_event_loop().time() > deadline:
                 msg = f"Agent pool timeout after {timeout}s"
-                raise asyncio.TimeoutError(msg)
+                raise TimeoutError(msg)
 
             # Wait a bit before checking again
             await asyncio.sleep(0.5)

@@ -135,7 +135,7 @@ class DeepAnalyzerAgent:
             Dictionary with consensus and disagreements.
         """
         cross_ref = self._ai_service.analyze_cross_reference(
-            sources=sources, themes=pass1_results["themes_detailed"]
+            _sources=sources, themes=pass1_results["themes_detailed"]
         )
 
         return {
