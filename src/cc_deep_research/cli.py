@@ -17,6 +17,7 @@ from cc_deep_research.config import (
     save_config,
 )
 from cc_deep_research.monitoring import ResearchMonitor
+from cc_deep_research.session_store import SessionStore
 from cc_deep_research.tui import ResearchRunView, TerminalUI
 
 RESEARCH_PHASE_STEPS = 8
@@ -161,6 +162,10 @@ def research(
             progress=progress and not quiet,
             ui=ui,
         )
+
+        # Save session to store for later retrieval
+        session_store = SessionStore()
+        session_store.save_session(session)
 
         reporter = ReportGenerator(config)
         analysis = session.metadata.get("analysis", {})
@@ -318,6 +323,138 @@ def init(config_path: str | None, force: bool) -> None:
     created_path = create_default_config_file(save_path)
     ui = TerminalUI(enabled=True)
     ui.show_config_updated("config", "initialized", created_path)
+
+
+# Session management commands
+@main.group()
+def session() -> None:
+    """Manage research sessions."""
+
+
+@session.command("list")
+@click.option("--limit", type=int, default=20, help="Maximum number of sessions to show")
+@click.option("--offset", type=int, default=0, help="Number of sessions to skip")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def session_list(limit: int, offset: int, as_json: bool) -> None:
+    """List all saved research sessions.
+
+    Shows session ID, query, depth, and timestamp for each session.
+    """
+    store = SessionStore()
+    sessions = store.list_sessions(limit=limit, offset=offset)
+
+    if not sessions:
+        click.echo("No saved sessions found.")
+        return
+
+    if as_json:
+        import json as json_module
+
+        click.echo(json_module.dumps(sessions, indent=2))
+        return
+
+    ui = TerminalUI(enabled=True)
+    ui.show_session_list(sessions)
+
+
+@session.command("show")
+@click.argument("session_id", required=True)
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def session_show(session_id: str, as_json: bool) -> None:
+    """Show details of a specific research session.
+
+    SESSION_ID is the identifier of the session to display.
+    """
+    store = SessionStore()
+    session_obj = store.load_session(session_id)
+
+    if session_obj is None:
+        click.echo(f"Error: Session '{session_id}' not found.", err=True)
+        raise click.Abort()
+
+    if as_json:
+        from cc_deep_research.reporting import ReportGenerator
+
+        config = load_config()
+        reporter = ReportGenerator(config)
+        analysis = session_obj.metadata.get("analysis", {})
+        click.echo(reporter.generate_json_report(session_obj, analysis))
+        return
+
+    ui = TerminalUI(enabled=True)
+    ui.show_session_details(session_obj)
+
+
+@session.command("export")
+@click.argument("session_id", required=True)
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(dir_okay=False, writable=True),
+    required=True,
+    help="Output file path",
+)
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["markdown", "json"], case_sensitive=False),
+    default="markdown",
+    help="Output format (default: markdown)",
+)
+def session_export(session_id: str, output: str, output_format: str) -> None:
+    """Export a research session to a file.
+
+    SESSION_ID is the identifier of the session to export.
+    """
+    store = SessionStore()
+    session_obj = store.load_session(session_id)
+
+    if session_obj is None:
+        click.echo(f"Error: Session '{session_id}' not found.", err=True)
+        raise click.Abort()
+
+    from cc_deep_research.reporting import ReportGenerator
+
+    config = load_config()
+    reporter = ReportGenerator(config)
+    analysis = session_obj.metadata.get("analysis", {})
+
+    if output_format == "markdown":
+        report = reporter.generate_markdown_report(session_obj, analysis)
+    else:
+        report = reporter.generate_json_report(session_obj, analysis)
+
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(report, encoding="utf-8")
+
+    ui = TerminalUI(enabled=True)
+    ui.show_report_saved(output_path)
+
+
+@session.command("delete")
+@click.argument("session_id", required=True)
+@click.option("--force", is_flag=True, help="Skip confirmation prompt")
+def session_delete(session_id: str, force: bool) -> None:
+    """Delete a research session.
+
+    SESSION_ID is the identifier of the session to delete.
+    """
+    store = SessionStore()
+
+    if not store.session_exists(session_id):
+        click.echo(f"Error: Session '{session_id}' not found.", err=True)
+        raise click.Abort()
+
+    if not force and not click.confirm(f"Delete session '{session_id}'?"):
+        click.echo("Aborted.")
+        return
+
+    if store.delete_session(session_id):
+        click.echo(f"Session '{session_id}' deleted.")
+    else:
+        click.echo(f"Error: Failed to delete session '{session_id}'.", err=True)
+        raise click.Abort()
 
 
 def _execute_research_run(
