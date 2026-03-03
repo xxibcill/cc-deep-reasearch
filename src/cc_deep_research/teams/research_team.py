@@ -5,7 +5,6 @@ functionality for coordinated research operations.
 """
 
 from dataclasses import dataclass, field
-from typing import Any
 
 from cc_deep_research.config import Config
 from cc_deep_research.models import ResearchDepth, ResearchSession
@@ -134,7 +133,7 @@ class ResearchTeam:
         self,
         query: str,
         depth: ResearchDepth,
-        min_sources: int | None = None,
+        _min_sources: int | None = None,
     ) -> ResearchSession:
         """Execute a research query using the team.
 

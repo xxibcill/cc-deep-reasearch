@@ -24,7 +24,7 @@ class ReporterAgent:
     - Includes all required sections (executive summary, findings, analysis, etc.)
     """
 
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """Initialize reporter agent.
 
         Args:
@@ -349,7 +349,7 @@ class ReporterAgent:
 
         # Add providers from searches
         if session.searches:
-            providers = list(set(s.provider for s in session.searches))
+            providers = {s.provider for s in session.searches}
             metadata.append(f"- Providers Used: {', '.join(providers)}")
 
         # Add analysis method if available

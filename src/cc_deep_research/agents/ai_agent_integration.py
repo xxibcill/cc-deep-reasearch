@@ -18,7 +18,7 @@ class AIAgentIntegration:
     - Parsing AI responses into structured data
     """
 
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """Initialize AI integration layer.
 
         Args:
@@ -32,7 +32,7 @@ class AIAgentIntegration:
     def analyze_with_claude(
         self,
         prompt: str,
-        max_tokens: int = 100000,
+        _max_tokens: int = 100000,
     ) -> dict[str, Any]:
         """Run semantic analysis using Claude.
 
@@ -66,9 +66,9 @@ class AIAgentIntegration:
 
     def extract_themes_with_ai(
         self,
-        sources: list[SearchResultItem],
-        query: str,
-        num_themes: int = 8,
+        sources: list[SearchResultItem],  # noqa: ARG002
+        query: str,  # noqa: ARG002
+        num_themes: int = 8,  # noqa: ARG002
     ) -> list[dict[str, Any]]:
         """Extract themes using AI semantic analysis.
 
@@ -178,7 +178,7 @@ Response format (valid JSON):
         return prompt
 
     def _parse_theme_response(
-        self, response_data: str | dict
+        self, response_data: str | dict[str, Any]
     ) -> list[dict[str, Any]]:
         """Parse AI response for themes.
 
@@ -196,12 +196,12 @@ Response format (valid JSON):
             else:
                 data = response_data
 
-            return data.get("themes", [])
+            return list(data.get("themes", []))
         except Exception:
             return []
 
     def _fallback_theme_extraction(
-        self, sources: list[SearchResultItem], num_themes: int
+        self, _sources: list[SearchResultItem], _num_themes: int
     ) -> list[dict[str, Any]]:
         """Fallback to heuristic theme extraction.
 

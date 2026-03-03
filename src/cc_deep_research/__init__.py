@@ -7,13 +7,13 @@ from cc_deep_research.models import (
     APIKey,
     ResearchDepth,
     ResearchSession,
+    SearchOptions,
     SearchResult,
     SearchResultItem,
-    SearchOptions,
 )
+from cc_deep_research.orchestrator import TeamResearchOrchestrator
 from cc_deep_research.providers import SearchProvider
 from cc_deep_research.teams import ResearchTeam
-from cc_deep_research.orchestrator import TeamResearchOrchestrator
 
 __all__ = [
     "__version__",

@@ -84,10 +84,9 @@ class KeyRotationManager:
         """
         if key.disabled:
             # Check if disable duration has passed
-            if key.last_used:
-                if datetime.utcnow() - key.last_used > self._disable_duration:
-                    self._reenable_key(key)
-                    return True
+            if key.last_used and datetime.utcnow() - key.last_used > self._disable_duration:
+                self._reenable_key(key)
+                return True
             return False
 
         return key.is_available

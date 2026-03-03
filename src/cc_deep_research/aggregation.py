@@ -48,9 +48,7 @@ def deduplicate_by_url(
     for result in results:
         normalized = normalize_url(result.url)
 
-        if normalized not in seen_urls:
-            seen_urls[normalized] = result
-        elif keep_highest_score and result.score > seen_urls[normalized].score:
+        if normalized not in seen_urls or keep_highest_score and result.score > seen_urls[normalized].score:
             seen_urls[normalized] = result
 
     return list(seen_urls.values())

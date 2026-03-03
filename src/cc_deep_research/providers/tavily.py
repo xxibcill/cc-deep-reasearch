@@ -1,7 +1,7 @@
 """Tavily search provider implementation."""
 
-from datetime import datetime
 import time
+from datetime import datetime
 from typing import Any
 
 import click
@@ -105,21 +105,21 @@ class TavilySearchProvider(SearchProvider):
                 self.get_provider_name(),
                 query,
                 original_error=e,
-            )
+            ) from None
         except httpx.ConnectError as e:
             raise NetworkError(
                 "Failed to connect to Tavily API",
                 self.get_provider_name(),
                 query,
                 original_error=e,
-            )
+            ) from None
         except httpx.HTTPStatusError as e:
             raise NetworkError(
                 f"HTTP error: {e.response.status_code}",
                 self.get_provider_name(),
                 query,
                 original_error=e,
-            )
+            ) from None
 
     def _build_payload(self, query: str, options: SearchOptions) -> dict[str, Any]:
         """Build the API request payload.

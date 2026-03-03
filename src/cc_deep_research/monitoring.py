@@ -1,11 +1,11 @@
 """Monitoring infrastructure for research workflow visibility."""
 
-from datetime import datetime
+import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 import click
-import time
 
 
 @dataclass
@@ -134,7 +134,7 @@ class ResearchMonitor:
         click.echo(f"[{self._get_timestamp()}] Providers used: {providers_str}")
         click.echo(f"[{self._get_timestamp()}] Total execution time: {total_time_sec:.1f}s")
 
-    def start_operation(self, name: str, category: str, **metadata) -> MonitorEvent:
+    def start_operation(self, name: str, category: str, **metadata: Any) -> MonitorEvent:
         """Start tracking an operation.
 
         Args:

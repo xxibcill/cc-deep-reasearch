@@ -21,7 +21,7 @@ class QueryExpanderAgent:
     - Limits number of variations based on research depth
     """
 
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """Initialize the query expander agent.
 
         Args:

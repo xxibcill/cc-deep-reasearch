@@ -12,15 +12,15 @@ This module provides agent implementations for different aspects of research:
 - AIAgentIntegration: Integration layer for AI-powered analysis
 """
 
-from cc_deep_research.agents.research_lead import ResearchLeadAgent
-from cc_deep_research.agents.source_collector import SourceCollectorAgent
-from cc_deep_research.agents.query_expander import QueryExpanderAgent
+from cc_deep_research.agents.ai_agent_integration import AIAgentIntegration
+from cc_deep_research.agents.ai_analysis_service import AIAnalysisService
 from cc_deep_research.agents.analyzer import AnalyzerAgent
 from cc_deep_research.agents.deep_analyzer import DeepAnalyzerAgent
+from cc_deep_research.agents.query_expander import QueryExpanderAgent
 from cc_deep_research.agents.reporter import ReporterAgent
+from cc_deep_research.agents.research_lead import ResearchLeadAgent
+from cc_deep_research.agents.source_collector import SourceCollectorAgent
 from cc_deep_research.agents.validator import ValidatorAgent
-from cc_deep_research.agents.ai_analysis_service import AIAnalysisService
-from cc_deep_research.agents.ai_agent_integration import AIAgentIntegration
 
 # Agent type constants
 AGENT_TYPE_LEAD = "lead"

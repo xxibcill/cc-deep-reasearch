@@ -4,8 +4,6 @@ This module provides report generation functionality for research sessions,
 supporting multiple output formats (Markdown, JSON, HTML).
 """
 
-import json
-from datetime import datetime
 from typing import Any
 
 from cc_deep_research.agents.reporter import ReporterAgent
@@ -68,7 +66,7 @@ class ReportGenerator:
     def save_report(
         self,
         report: str,
-        output_format: str,
+        _output_format: str,
         output_path: str | None = None,
     ) -> str:
         """Save report to file or return it.
@@ -91,7 +89,7 @@ class ReportGenerator:
         return ""
 
 
-def format_citation(sources: list, index: int) -> str:
+def format_citation(sources: list[Any], index: int) -> str:
     """Format a citation for a source.
 
     Args:
@@ -146,7 +144,7 @@ def generate_executive_summary(
     return "\n\n".join(paragraphs)
 
 
-def format_sources_list(sources: list) -> str:
+def format_sources_list(sources: list[Any]) -> str:
     """Format sources list with proper numbering.
 
     Args:

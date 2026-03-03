@@ -9,14 +9,14 @@ from __future__ import annotations
 from pathlib import Path
 
 try:
-    from weasyprint import CSS, HTML
+    from weasyprint import CSS, HTML  # type: ignore[import-untyped]
 
     WEASYPRINT_AVAILABLE = True
 except ImportError:
     WEASYPRINT_AVAILABLE = False
 
 try:
-    import markdown
+    import markdown  # type: ignore[import-untyped]
 
     MARKDOWN_AVAILABLE = True
 except ImportError:

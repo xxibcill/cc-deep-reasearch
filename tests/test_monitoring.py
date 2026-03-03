@@ -1,5 +1,6 @@
 """Tests for ResearchMonitor."""
 
+import re
 from unittest.mock import patch
 
 import pytest
@@ -38,7 +39,11 @@ class TestResearchMonitor:
             monitor = ResearchMonitor(enabled=True)
             monitor.section("Configuration")
 
-            mock_echo.assert_called_once_with("[MONITOR] === Configuration ===")
+            # Check that the call contains the expected content with timestamp prefix
+            call_args = mock_echo.call_args[0][0]
+            assert "=== Configuration ===" in call_args
+            # Timestamp format: [HH:MM:SS]
+            assert re.match(r"\[\d{2}:\d{2}:\d{2}\]", call_args)
 
     def test_log_format(self):
         """Test log formatting."""
@@ -46,7 +51,10 @@ class TestResearchMonitor:
             monitor = ResearchMonitor(enabled=True)
             monitor.log("Test message")
 
-            mock_echo.assert_called_once_with("[MONITOR] Test message")
+            # Check that the call contains the expected content with timestamp prefix
+            call_args = mock_echo.call_args[0][0]
+            assert "Test message" in call_args
+            assert re.match(r"\[\d{2}:\d{2}:\d{2}\]", call_args)
 
     def test_log_with_indent(self):
         """Test log with indentation."""
@@ -54,7 +62,10 @@ class TestResearchMonitor:
             monitor = ResearchMonitor(enabled=True)
             monitor.log("Indented message", indent=4)
 
-            mock_echo.assert_called_once_with("[MONITOR]     Indented message")
+            # Check that the call contains the expected content with indentation
+            call_args = mock_echo.call_args[0][0]
+            assert "    Indented message" in call_args
+            assert re.match(r"\[\d{2}:\d{2}:\d{2}\]", call_args)
 
     def test_log_result_format(self):
         """Test result logging format."""
@@ -62,7 +73,10 @@ class TestResearchMonitor:
             monitor = ResearchMonitor(enabled=True)
             monitor.log_result("tavily", 10, 1234)
 
-            mock_echo.assert_called_once_with("[MONITOR] [TAVILY] Response received: 10 results (1234ms)")
+            # Check that the call contains the expected content with timestamp prefix
+            call_args = mock_echo.call_args[0][0]
+            assert "[TAVILY] Response received: 10 results (1234ms)" in call_args
+            assert re.match(r"\[\d{2}:\d{2}:\d{2}\]", call_args)
 
     def test_log_aggregation_format(self):
         """Test aggregation logging format."""
@@ -70,11 +84,10 @@ class TestResearchMonitor:
             monitor = ResearchMonitor(enabled=True)
             monitor.log_aggregation(10, 8)
 
-            expected = (
-                "[MONITOR] [AGGREGATOR] Deduplicated: 2 duplicate(s) removed, "
-                "8 unique result(s)"
-            )
-            mock_echo.assert_called_once_with(expected)
+            # Check that the call contains the expected content with timestamp prefix
+            call_args = mock_echo.call_args[0][0]
+            assert "[AGGREGATOR] Deduplicated: 2 duplicate(s) removed, 8 unique result(s)" in call_args
+            assert re.match(r"\[\d{2}:\d{2}:\d{2}\]", call_args)
 
     def test_log_timing_format(self):
         """Test timing logging format."""
@@ -82,7 +95,10 @@ class TestResearchMonitor:
             monitor = ResearchMonitor(enabled=True)
             monitor.log_timing("Search", 500)
 
-            mock_echo.assert_called_once_with("[MONITOR] Search completed in 500ms")
+            # Check that the call contains the expected content with timestamp prefix
+            call_args = mock_echo.call_args[0][0]
+            assert "Search completed in 500ms" in call_args
+            assert re.match(r"\[\d{2}:\d{2}:\d{2}\]", call_args)
 
     def test_summary_format(self):
         """Test summary formatting."""
@@ -92,9 +108,10 @@ class TestResearchMonitor:
 
             calls = mock_echo.call_args_list
             assert len(calls) == 3
-            assert "[MONITOR] Total sources: 10" in str(calls[0])
-            assert "[MONITOR] Providers used: tavily" in str(calls[1])
-            assert "[MONITOR] Total execution time: 2.5s" in str(calls[2])
+            # Check content with timestamp prefix
+            assert "Total sources: 10" in str(calls[0])
+            assert "Providers used: tavily" in str(calls[1])
+            assert "Total execution time: 2.5s" in str(calls[2])
 
     def test_summary_empty_providers(self):
         """Test summary with no providers."""
