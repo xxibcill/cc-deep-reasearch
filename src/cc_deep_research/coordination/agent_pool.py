@@ -5,14 +5,14 @@ This module provides lifecycle management for spawned researcher agents.
 
 import asyncio
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
 from cc_deep_research.config import Config
 
 
-class AgentStatus(str, Enum):
+class AgentStatus(StrEnum):
     """Status of a researcher agent."""
 
     SPAWNING = "spawning"
