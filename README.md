@@ -151,6 +151,48 @@ pip install -e .
 
 ## Development Commands
 
+### Testing CLI Without Installation
+
+During development, you can test the CLI without reinstalling the package each time. Here are the available methods:
+
+**Method 1: Using `uv run` (Recommended)**
+```bash
+# Setup (one-time)
+uv sync
+
+# Run CLI directly - changes reflect immediately
+uv run cc-deep-research research "query"
+uv run cc-deep-research config show
+uv run cc-deep-research config init
+```
+
+**Method 2: Editable Install with pip**
+```bash
+# Install in editable mode (one-time setup)
+pip install -e .
+
+# Run CLI directly - changes reflect immediately
+cc-deep-research research "query"
+```
+
+**Method 3: Run as Python Module**
+```bash
+# Run as module without installation
+python -m cc_deep_research.cli research "query"
+
+# Or with uv
+uv run python -m cc_deep_research.cli research "query"
+```
+
+**Method 4: Direct File Execution**
+```bash
+# Set PYTHONPATH to include src directory
+export PYTHONPATH="${PYTHONPATH}:$(pwd)/src"
+
+# Run the CLI file directly
+python src/cc_deep_research/cli.py research "query"
+```
+
 ### uv (Recommended)
 
 ```bash
