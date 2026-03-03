@@ -1,10 +1,11 @@
 """Monitoring infrastructure for research workflow visibility."""
 
-import time
+from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Any
 
 import click
+import time
 
 
 @dataclass
@@ -29,8 +30,6 @@ class MonitorEvent:
 class ResearchMonitor:
     """Monitor for research operations with structured output."""
 
-    PREFIX = "[MONITOR]"
-
     def __init__(self, enabled: bool = False) -> None:
         """Initialize the monitor.
 
@@ -40,6 +39,14 @@ class ResearchMonitor:
         self._enabled = enabled
         self._events: list[MonitorEvent] = []
         self._start_time = time.time()
+
+    def _get_timestamp(self) -> str:
+        """Get formatted timestamp for log messages.
+
+        Returns:
+            Timestamp string in HH:MM:SS format.
+        """
+        return datetime.now().strftime("%H:%M:%S")
 
     def is_enabled(self) -> bool:
         """Check if monitoring is enabled.
@@ -57,7 +64,7 @@ class ResearchMonitor:
         """
         if not self._enabled:
             return
-        click.echo(f"{self.PREFIX} === {name} ===")
+        click.echo(f"[{self._get_timestamp()}] === {name} ===")
 
     def log(self, message: str, indent: int = 0) -> None:
         """Log a message.
@@ -69,7 +76,7 @@ class ResearchMonitor:
         if not self._enabled:
             return
         prefix = " " * indent
-        click.echo(f"{self.PREFIX} {prefix}{message}")
+        click.echo(f"[{self._get_timestamp()}] {prefix}{message}")
 
     def log_result(self, provider: str, count: int, duration_ms: int) -> None:
         """Log search results from a provider.
@@ -82,7 +89,7 @@ class ResearchMonitor:
         if not self._enabled:
             return
         click.echo(
-            f"{self.PREFIX} [{provider.upper()}] Response received: {count} results ({duration_ms}ms)"
+            f"[{self._get_timestamp()}] [{provider.upper()}] Response received: {count} results ({duration_ms}ms)"
         )
 
     def log_aggregation(self, before: int, after: int) -> None:
@@ -96,7 +103,7 @@ class ResearchMonitor:
             return
         removed = before - after
         click.echo(
-            f"{self.PREFIX} [AGGREGATOR] Deduplicated: {removed} duplicate(s) removed, "
+            f"[{self._get_timestamp()}] [AGGREGATOR] Deduplicated: {removed} duplicate(s) removed, "
             f"{after} unique result(s)"
         )
 
@@ -109,7 +116,7 @@ class ResearchMonitor:
         """
         if not self._enabled:
             return
-        click.echo(f"{self.PREFIX} {operation} completed in {duration_ms}ms")
+        click.echo(f"[{self._get_timestamp()}] {operation} completed in {duration_ms}ms")
 
     def summary(self, total_sources: int, providers: list[str], total_time_ms: int) -> None:
         """Display final summary of the research session.
@@ -123,9 +130,9 @@ class ResearchMonitor:
             return
         providers_str = ", ".join(providers) if providers else "none"
         total_time_sec = total_time_ms / 1000
-        click.echo(f"{self.PREFIX} Total sources: {total_sources}")
-        click.echo(f"{self.PREFIX} Providers used: {providers_str}")
-        click.echo(f"{self.PREFIX} Total execution time: {total_time_sec:.1f}s")
+        click.echo(f"[{self._get_timestamp()}] Total sources: {total_sources}")
+        click.echo(f"[{self._get_timestamp()}] Providers used: {providers_str}")
+        click.echo(f"[{self._get_timestamp()}] Total execution time: {total_time_sec:.1f}s")
 
     def start_operation(self, name: str, category: str, **metadata) -> MonitorEvent:
         """Start tracking an operation.

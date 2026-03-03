@@ -1,7 +1,9 @@
 """Result aggregation and deduplication utilities."""
 
-import click
+from datetime import datetime
 from urllib.parse import urlparse
+
+import click
 
 from cc_deep_research.models import SearchResult, SearchResultItem
 
@@ -77,8 +79,9 @@ def aggregate_results(
         all_items.extend(search_result.results)
 
     if monitor:
+        timestamp = datetime.now().strftime("%H:%M:%S")
         click.echo(
-            f"[MONITOR] [AGGREGATOR] Processing {len(all_items)} results from "
+            f"[{timestamp}] [AGGREGATOR] Processing {len(all_items)} results from "
             f"{len(search_results)} provider(s)"
         )
 
@@ -87,15 +90,17 @@ def aggregate_results(
         all_items = deduplicate_by_url(all_items)
         if monitor:
             removed = original_count - len(all_items)
+            timestamp = datetime.now().strftime("%H:%M:%S")
             click.echo(
-                f"[MONITOR] [AGGREGATOR] Deduplicated: {removed} duplicate(s) removed, "
+                f"[{timestamp}] [AGGREGATOR] Deduplicated: {removed} duplicate(s) removed, "
                 f"{len(all_items)} unique result(s)"
             )
 
     if sort_by_score:
         all_items.sort(key=lambda x: x.score, reverse=True)
         if monitor:
-            click.echo("[MONITOR] [AGGREGATOR] Sorted by score (descending)")
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            click.echo(f"[{timestamp}] [AGGREGATOR] Sorted by score (descending)")
 
     return all_items
 
