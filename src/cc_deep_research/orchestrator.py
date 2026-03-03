@@ -118,6 +118,7 @@ class TeamResearchOrchestrator:
         # Phase 5: Validate quality (if enabled)
         if strategy.get("enable_quality_scoring", True):
             validation = await self._phase_validate_research(
+                query,
                 sources,
                 analysis,
             )
@@ -356,6 +357,7 @@ class TeamResearchOrchestrator:
 
     async def _phase_validate_research(
         self,
+        query: str,
         sources: list,
         analysis: dict[str, Any],
     ) -> dict[str, Any]:
@@ -373,7 +375,7 @@ class TeamResearchOrchestrator:
         # Create session for validation
         session = ResearchSession(
             session_id="validation",
-            query="",
+            query=query,
             sources=sources,
         )
 

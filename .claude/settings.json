@@ -49,7 +49,11 @@
       "Bash(python3 -c \"import sys; sys.path.insert\\(0, ''src''\\); from cc_deep_research import __version__; print\\(f''Version: {__version__}''\\)\")",
       "Bash(python3 -c \"import sys; import pkg_resources; dist = pkg_resources.get_distribution\\(''cc-deep-research''\\); print\\(dist\\); scripts = list\\(dist.get_entry_map\\(''console_scripts''\\).items\\(\\)\\); print\\(scripts\\)\")",
       "Bash(python3 -c \"import importlib.metadata; metadata = importlib.metadata.metadata\\(''cc-deep-research''\\); print\\(metadata.get\\(''Entry-Points'', ''Not found''\\)\\)\")",
-      "Bash(python3 -c \"import sys; sys.path.insert\\(0, ''src''\\); from cc_deep_research.orchestrator import TeamResearchOrchestrator; from cc_deep_research.teams import ResearchTeam; from cc_deep_research.reporting import ReportGenerator; print\\(''All imports successful!''\\)\")"
+      "Bash(python3 -c \"import sys; sys.path.insert\\(0, ''src''\\); from cc_deep_research.orchestrator import TeamResearchOrchestrator; from cc_deep_research.teams import ResearchTeam; from cc_deep_research.reporting import ReportGenerator; print\\(''All imports successful!''\\)\")",
+      "Bash(cc-deep-research research \"health benefit of white tea\" --monitor)",
+      "Bash(poetry run cc-deep-research research \"health benefit of white tea\" --monitor)",
+      "Bash(python -m cc_deep_research research \"health benefit of white tea\" --monitor)",
+      "Bash(.venv/bin/python -m cc_deep_research research \"health benefit of white tea\" --monitor)"
     ]
   }
 }
