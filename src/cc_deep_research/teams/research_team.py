@@ -5,6 +5,7 @@ functionality for coordinated research operations.
 """
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from cc_deep_research.config import Config
 from cc_deep_research.models import ResearchDepth, ResearchSession
@@ -73,6 +74,7 @@ class ResearchTeam:
         self._config = config
         self._app_config = app_config
         self._is_active: bool = False
+        self._agent_instances: dict[str, Any] = {}
 
     @property
     def is_active(self) -> bool:
@@ -116,6 +118,78 @@ class ResearchTeam:
 
     # Placeholder methods for actual Agent tool integration
     # These would be implemented using Claude's Agent, TeamCreate, SendMessage tools
+
+    async def spawn_researcher(
+        self,
+        researcher_name: str,
+        task: dict[str, Any],
+    ) -> str:
+        """Spawn a researcher agent with a task.
+
+        Args:
+            researcher_name: Name for the researcher agent.
+            task: Task dictionary to assign to the researcher.
+
+        Returns:
+            Agent ID of the spawned researcher.
+
+        Note:
+            This is a placeholder. In a real implementation, this would use
+            the Agent tool to spawn a Claude Code instance.
+        """
+        import uuid
+
+        agent_id = f"{researcher_name}-{uuid.uuid4().hex[:8]}"
+
+        self._agent_instances[agent_id] = {
+            "name": researcher_name,
+            "task": task,
+            "status": "active",
+        }
+
+        return agent_id
+
+    async def send_message(
+        self,
+        recipient: str,
+        content: str,
+        message_type: str = "task",
+    ) -> None:
+        """Send a message to a specific agent.
+
+        Args:
+            recipient: Agent ID of the recipient.
+            content: Message content.
+            message_type: Type of message (task, result, status, etc.).
+
+        Note:
+            This is a placeholder. In a real implementation, this would use
+            the SendMessage tool to communicate with spawned agents.
+        """
+        if recipient in self._agent_instances:
+            # Store message in agent's instance for later retrieval
+            if "messages" not in self._agent_instances[recipient]:
+                self._agent_instances[recipient]["messages"] = []
+            self._agent_instances[recipient]["messages"].append({
+                "type": message_type,
+                "content": content,
+            })
+
+    async def collect_results(self, agent_ids: list[str]) -> dict[str, Any]:
+        """Collect results from multiple agents.
+
+        Args:
+            agent_ids: List of agent IDs to collect results from.
+
+        Returns:
+            Dictionary mapping agent IDs to their results.
+        """
+        results = {}
+        for agent_id in agent_ids:
+            if agent_id in self._agent_instances:
+                results[agent_id] = self._agent_instances[agent_id].get("results")
+
+        return results
 
     async def create(self) -> None:
         """Create the agent team.
@@ -167,6 +241,12 @@ class ResearchTeam:
         This method would use Claude's TeamDelete tool to properly
         shut down all agents and clean up team resources.
         """
+        # Clean up agent instances
+        for agent_id, agent_data in self._agent_instances.items():
+            agent_data["status"] = "shutdown"
+
+        self._agent_instances.clear()
+
         # TODO: Implement actual team shutdown using TeamDelete tool
         self._is_active = False
 

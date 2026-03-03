@@ -3,7 +3,7 @@
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Unpack
 
 import click
 
@@ -184,6 +184,100 @@ class ResearchMonitor:
             status="completed",
         )
         self._events.append(event)
+
+    def log_researcher_event(
+        self,
+        event_type: str,
+        agent_id: str,
+        **metadata: Unpack[Any],
+    ) -> None:
+        """Log parallel researcher events.
+
+        Args:
+            event_type: Type of event (spawned, started, completed, failed, etc.).
+            agent_id: ID of the researcher agent.
+            **metadata: Additional event metadata.
+        """
+        if not self._enabled:
+            return
+
+        metadata["agent_id"] = agent_id
+
+        if event_type == "spawned":
+            self.log(f"Researcher {agent_id} spawned")
+        elif event_type == "started":
+            self.log(f"Researcher {agent_id} started task")
+        elif event_type == "completed":
+            duration = metadata.get("duration_ms", 0)
+            sources = metadata.get("source_count", 0)
+            self.log(
+                f"Researcher {agent_id} completed: "
+                f"{sources} sources ({duration:.0f}ms)"
+            )
+        elif event_type == "failed":
+            error = metadata.get("error", "Unknown error")
+            self.log(f"Researcher {agent_id} failed: {error}")
+        elif event_type == "timeout":
+            self.log(f"Researcher {agent_id} timed out")
+
+    def log_reflection_point(
+        self,
+        stage: str,
+        question: str,
+    ) -> None:
+        """Log a strategic reflection point.
+
+        Args:
+            stage: Research stage where reflection occurs.
+            question: Reflection question or prompt.
+        """
+        if not self._enabled:
+            return
+
+        self.section(f"Reflection: {stage}")
+        self.log(f"Question: {question}")
+
+    def show_timeline(self) -> None:
+        """Display execution timeline of parallel operations.
+
+        Shows researcher lifecycle events in chronological order.
+        """
+        if not self._enabled:
+            return
+
+        self.section("Execution Timeline")
+
+        # Filter researcher-related events
+        researcher_events = [
+            e for e in self._events
+            if "researcher" in e.name.lower()
+            or e.category == "parallel"
+        ]
+
+        if not researcher_events:
+            self.log("No parallel execution events recorded")
+            return
+
+        # Sort by start time
+        researcher_events.sort(key=lambda e: e.start_time)
+
+        # Display timeline
+        for event in researcher_events:
+            duration = (
+                f"{event.duration_ms:.0f}ms"
+                if event.duration_ms > 0
+                else "N/A"
+            )
+            status_emoji = {
+                "in_progress": "🔄",
+                "completed": "✓",
+                "failed": "✗",
+            }.get(event.status, "?")
+
+            self.log(
+                f"{status_emoji} {event.name} "
+                f"({duration}) - {event.metadata}"
+            )
 
 
 __all__ = [

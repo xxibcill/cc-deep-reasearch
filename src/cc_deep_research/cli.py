@@ -71,6 +71,9 @@ def main(ctx: click.Context) -> None:
 @click.option("--quiet", is_flag=True, help="Suppress output")
 @click.option("--verbose", is_flag=True, help="Show detailed output")
 @click.option("--monitor", is_flag=True, help="Show internal workflow monitoring information")
+@click.option("--parallel-mode", is_flag=True, help="Enable parallel researcher execution")
+@click.option("--num-researchers", type=int, default=None, help="Number of parallel researchers (1-8)")
+@click.option("--show-timeline", is_flag=True, help="Show execution timeline for parallel mode")
 @click.option("--pdf", is_flag=True, help="Generate PDF output in addition to markdown")
 @click.pass_context
 def research(
@@ -89,6 +92,9 @@ def research(
     quiet: bool,
     verbose: bool,
     monitor: bool,
+    parallel_mode: bool,
+    num_researchers: int | None,
+    show_timeline: bool,
     pdf: bool,
 ) -> None:
     """Execute a research query and generate a report."""
@@ -108,6 +114,10 @@ def research(
             "quiet": quiet,
             "verbose": verbose,
             "monitor": monitor,
+            "parallel_mode": parallel_mode,
+            "num_researchers": num_researchers,
+            "show_timeline": show_timeline,
+            "pdf": pdf,
         }
     )
 
@@ -151,8 +161,17 @@ def research(
         if monitor and not quiet:
             _log_monitor_session_start(research_monitor, query, depth, output_format, config)
 
-        orchestrator = TeamResearchOrchestrator(config=config, monitor=research_monitor)
+        orchestrator = TeamResearchOrchestrator(
+            config=config,
+            monitor=research_monitor,
+            # Only pass parallel params if explicitly specified via CLI
+            parallel_mode=parallel_mode if parallel_mode else None,
+            num_researchers=num_researchers if num_researchers else None,
+        )
         depth_enum = ResearchDepth(depth.lower())
+
+        # Track if parallel mode was enabled
+        parallel_enabled = parallel_mode or config.search_team.parallel_execution
 
         session = _execute_research_run(
             orchestrator=orchestrator,
@@ -162,6 +181,10 @@ def research(
             progress=progress and not quiet,
             ui=ui,
         )
+
+        # Show timeline if requested and parallel mode was enabled
+        if show_timeline and parallel_enabled and not quiet:
+            research_monitor.show_timeline()
 
         # Save session to store for later retrieval
         session_store = SessionStore()
