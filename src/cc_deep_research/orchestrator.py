@@ -388,11 +388,12 @@ class TeamResearchOrchestrator:
         # Determine max results
         max_results = self._config.research.min_sources.__dict__[depth.value]
 
-        # Collect sources
+        # Collect sources with raw content enabled
         options = SearchOptions(
             max_results=max_results,
             search_depth=depth,
             monitor=self._monitor.is_enabled(),
+            include_raw_content=True,
         )
 
         if len(queries) == 1:
@@ -401,6 +402,13 @@ class TeamResearchOrchestrator:
             sources = await collector.collect_multiple_queries(queries, options)
 
         self._monitor.log(f"Collected {len(sources)} sources")
+
+        # Fetch full content for top sources
+        sources = await self._fetch_content_for_top_sources(sources, depth)
+
+        # Log content availability
+        sources_with_content = sum(1 for s in sources if s.content and len(s.content) > 500)
+        self._monitor.log(f"Sources with full content: {sources_with_content}/{len(sources)}")
 
         return sources
 
@@ -520,6 +528,105 @@ class TeamResearchOrchestrator:
             self._monitor.section("Recommendations")
             for rec in validation["recommendations"]:
                 self._monitor.log(f"  - {rec}")
+
+    async def _fetch_content_for_top_sources(
+        self,
+        sources: list,
+        depth: ResearchDepth,
+    ) -> list:
+        """Fetch full content for top-scoring sources.
+
+        Args:
+            sources: List of collected sources.
+            depth: Research depth mode.
+
+        Returns:
+            Sources with content filled in for top sources.
+        """
+        from cc_deep_research.models import SearchResultItem
+
+        # Determine how many sources to fetch content for
+        num_to_fetch = getattr(self._config.research, "top_sources_for_content", 15)
+        if depth != ResearchDepth.DEEP:
+            num_to_fetch = min(num_to_fetch, 10)
+
+        # Sort by score and get top N
+        sorted_sources = sorted(
+            sources,
+            key=lambda s: getattr(s, "score", 0) or 0,
+            reverse=True
+        )
+        top_sources = sorted_sources[:num_to_fetch]
+
+        if not top_sources:
+            return sources
+
+        self._monitor.log(f"Fetching full content for top {len(top_sources)} sources...")
+
+        # Use web_reader MCP to fetch content
+        sources_with_content = []
+        sources_needing_fetch = []
+
+        # Separate sources that already have content vs those that need it
+        for source in sources:
+            if source.content and len(source.content) > 500:
+                sources_with_content.append(source)
+            elif source in top_sources:
+                sources_needing_fetch.append(source)
+            else:
+                sources_with_content.append(source)
+
+        # Fetch content for top sources that need it
+        for source in sources_needing_fetch:
+            try:
+                # Use web_reader MCP tool to fetch page content
+                content = await self._fetch_page_content(source.url)
+                if content and len(content) > 200:
+                    # Update source content
+                    source.content = content
+                    self._monitor.log(f"  ✓ Fetched content for: {source.title[:50]}...")
+            except Exception as e:
+                self._monitor.log(f"  ✗ Failed to fetch {source.url}: {e}")
+
+        # Combine sources, maintaining order with updated sources first
+        result = sources_with_content + sources_needing_fetch
+
+        return result
+
+    async def _fetch_page_content(self, url: str) -> str | None:
+        """Fetch page content using web_reader MCP tool.
+
+        Args:
+            url: URL to fetch content from.
+
+        Returns:
+            Page content as string, or None if fetch fails.
+        """
+        try:
+            # Import the web_reader MCP tool
+            # Note: This uses the MCP tool that's available in the environment
+            from mcp__web_reader__webReader import webReader
+
+            result = webReader(
+                url=url,
+                timeout=15,
+                return_format="markdown",
+                retain_images=False,
+            )
+
+            # Extract content from the result
+            if isinstance(result, dict) and "content" in result:
+                return result["content"]
+            elif isinstance(result, str):
+                return result
+            else:
+                return None
+        except ImportError:
+            self._monitor.log("web_reader MCP not available, skipping content fetch")
+            return None
+        except Exception as e:
+            self._monitor.log(f"Error fetching page content: {e}")
+            return None
 
     async def _shutdown_team(self) -> None:
         """Shutdown the research team.

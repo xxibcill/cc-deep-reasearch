@@ -53,6 +53,14 @@ class ResearchConfig(BaseModel):
     deep_analysis_passes: int = Field(default=3, ge=1, le=5)
     deep_analysis_tokens: int = Field(default=150000, ge=100000, le=300000)
 
+    # Content fetching configuration
+    top_sources_for_content: int = Field(default=15, ge=5, le=30)
+
+    # AI analysis configuration
+    ai_analysis_enabled: bool = Field(default=True)
+    ai_num_themes: int = Field(default=8, ge=3, le=15)
+    ai_deep_num_themes: int = Field(default=12, ge=5, le=20)
+
 
 class OutputConfig(BaseModel):
     """Output-related configuration."""

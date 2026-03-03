@@ -9,6 +9,7 @@ The analyzer agent is responsible for:
 
 from typing import Any
 
+from cc_deep_research.agents.ai_analysis_service import AIAnalysisService
 from cc_deep_research.models import (
     CrossReferenceClaim,
     ResearchSession,
@@ -33,6 +34,7 @@ class AnalyzerAgent:
             config: Agent configuration dictionary.
         """
         self._config = config
+        self._ai_service = AIAnalysisService(config)
 
     def analyze_sources(
         self,
@@ -56,31 +58,82 @@ class AnalyzerAgent:
         if not sources:
             return self._empty_analysis(query)
 
-        # Extract findings (placeholder logic)
-        key_findings = self._extract_findings(sources, query)
+        # Check if we have sufficient content for AI analysis
+        has_content = any(s.content and len(s.content) > 200 for s in sources)
 
-        # Identify themes (placeholder logic)
-        themes = self._identify_themes(sources)
+        if not has_content:
+            # Fall back to basic analysis without AI
+            return self._basic_analysis(sources, query)
 
-        # Cross-reference analysis
-        cross_ref = self._perform_cross_reference(sources)
+        # Use AI-powered analysis
+        themes = self._ai_service.extract_themes_semantically(
+            sources=sources,
+            query=query,
+            num_themes=self._config.get("ai_num_themes", 8),
+        )
 
-        # Identify gaps (placeholder logic)
-        gaps = self._identify_gaps(sources, query)
+        # Perform cross-reference analysis
+        cross_ref = self._ai_service.analyze_cross_reference(
+            sources=sources, themes=themes
+        )
+
+        # Identify gaps
+        gaps = self._ai_service.identify_gaps(
+            sources=sources, query=query, themes=themes
+        )
+
+        # Synthesize findings
+        key_findings = self._ai_service.synthesize_findings(
+            sources=sources,
+            themes=themes,
+            cross_ref=cross_ref,
+            gaps=gaps,
+            query=query,
+        )
 
         return {
             "key_findings": key_findings,
+            "themes": [t["name"] for t in themes],
+            "themes_detailed": themes,
+            "consensus_points": cross_ref["consensus_points"],
+            "contention_points": cross_ref["disagreement_points"],
+            "cross_reference_claims": cross_ref.get("cross_reference_claims", []),
+            "gaps": gaps,
+            "source_count": len(sources),
+            "analysis_method": "ai_semantic",
+        }
+
+    def _basic_analysis(
+        self, sources: list[SearchResultItem], query: str
+    ) -> dict[str, Any]:
+        """Perform basic analysis without AI (fallback).
+
+        Args:
+            sources: List of sources.
+            query: Research query.
+
+        Returns:
+            Basic analysis results.
+        """
+        # Keep existing placeholder logic as fallback
+        # This ensures backward compatibility when content is unavailable
+        findings = self._extract_findings(sources, query)
+        themes = self._identify_themes(sources)
+        cross_ref = self._perform_cross_reference(sources)
+        gaps = self._identify_gaps(sources, query)
+
+        return {
+            "key_findings": findings,
             "themes": themes,
             "consensus_points": cross_ref["consensus"],
             "contention_points": cross_ref["contention"],
             "gaps": gaps,
             "source_count": len(sources),
+            "analysis_method": "basic_keyword",
         }
 
     def _extract_findings(
-        self,
-        sources: list[SearchResultItem],
-        query: str,
+        self, sources: list[SearchResultItem], query: str  # noqa: ARG002
     ) -> list[dict[str, str]]:
         """Extract key findings from sources.
 
@@ -91,8 +144,7 @@ class AnalyzerAgent:
         Returns:
             List of findings with titles and descriptions.
 
-        Note: This is a placeholder implementation.
-        In production, would use AI to extract and synthesize findings.
+        Note: This is a fallback implementation used when content is insufficient.
         """
         findings = []
 
@@ -110,8 +162,7 @@ class AnalyzerAgent:
         return findings
 
     def _identify_themes(
-        self,
-        sources: list[SearchResultItem],
+        self, sources: list[SearchResultItem]
     ) -> list[str]:
         """Identify major themes across sources.
 
@@ -121,8 +172,7 @@ class AnalyzerAgent:
         Returns:
             List of theme names.
 
-        Note: This is a placeholder implementation.
-        In production, would use topic modeling or AI analysis.
+        Note: This is a fallback implementation used when content is insufficient.
         """
         # Placeholder: simple keyword-based theme identification
         themes = set()
@@ -137,8 +187,7 @@ class AnalyzerAgent:
         return list(themes)[:5]  # Return top 5 themes
 
     def _perform_cross_reference(
-        self,
-        sources: list[SearchResultItem],
+        self, sources: list[SearchResultItem]  # noqa: ARG002
     ) -> dict[str, list]:
         """Perform cross-reference analysis across sources.
 
@@ -148,8 +197,7 @@ class AnalyzerAgent:
         Returns:
             Dictionary with consensus and contention points.
 
-        Note: This is a placeholder implementation.
-        In production, would use AI to identify claims and their support.
+        Note: This is a fallback implementation used when content is insufficient.
         """
         # Placeholder results
         return {
@@ -158,9 +206,7 @@ class AnalyzerAgent:
         }
 
     def _identify_gaps(
-        self,
-        sources: list[SearchResultItem],
-        query: str,
+        self, sources: list[SearchResultItem], query: str  # noqa: ARG002
     ) -> list[str]:
         """Identify information gaps in the research.
 
@@ -171,8 +217,7 @@ class AnalyzerAgent:
         Returns:
             List of identified gaps.
 
-        Note: This is a placeholder implementation.
-        In production, would analyze what's missing vs what was asked.
+        Note: This is a fallback implementation used when content is insufficient.
         """
         gaps = []
 
@@ -202,12 +247,11 @@ class AnalyzerAgent:
             "contention_points": [],
             "gaps": ["No sources to analyze"],
             "source_count": 0,
+            "analysis_method": "empty",
         }
 
     def synthesize_report(
-        self,
-        analysis: dict[str, Any],
-        query: str,
+        self, analysis: dict[str, Any], query: str  # noqa: ARG002
     ) -> str:
         """Synthesize analysis into a coherent report section.
 
@@ -219,7 +263,6 @@ class AnalyzerAgent:
             Synthesized text report.
 
         Note: This is a placeholder implementation.
-        In production, would use AI to generate coherent text.
         """
         sections = []
 

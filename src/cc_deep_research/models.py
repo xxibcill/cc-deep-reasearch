@@ -19,7 +19,7 @@ class SearchOptions(BaseModel):
     """Options for search operations."""
 
     max_results: int = Field(default=10, ge=1, le=100)
-    include_raw_content: bool = Field(default=False)
+    include_raw_content: bool = Field(default=True)
     search_depth: ResearchDepth = Field(default=ResearchDepth.DEEP)
     monitor: bool = Field(default=False)
 
