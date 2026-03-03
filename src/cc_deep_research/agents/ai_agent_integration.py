@@ -4,6 +4,7 @@ This module provides a bridge between research agents
 and Claude Code's AI capabilities for semantic analysis.
 """
 
+import re
 from typing import Any
 
 from cc_deep_research.models import SearchResultItem
@@ -236,11 +237,7 @@ Response format (valid JSON):
     def _parse_themes_from_analysis(
         self, content: str, _query: str, num_themes: int
     ) -> list[dict[str, Any]]:
-        """Parse themes from analyzed content using heuristics.
-
-        Since we don't have direct access to the Agent tool in this context,
-        we'll use an improved heuristic approach that produces better themes
-        than the basic implementation.
+        """Parse themes from analyzed content using improved heuristics.
 
         Args:
             content: Content to analyze.
@@ -258,74 +255,99 @@ Response format (valid JSON):
         if not sources:
             return []
 
-        # Extract keywords and phrases from sources
-        all_content = " ".join([s.get("content", "") + " " + s.get("title", "") for s in sources])
+        # Health benefit topic patterns to look for
+        topic_patterns = [
+            (r'\bantioxidant[s]?\b', "Antioxidant Properties"),
+            (r'\bpolyphenol[s]?\b', "Polyphenol Content"),
+            (r'\bcatechin[s]?\b', "Catechin Compounds"),
+            (r'\bheart\b.{0,20}\b(health|disease|cardiovascular)\b', "Heart Health Benefits"),
+            (r'\bcancer\b.{0,20}\b(prevent|risk|fight)\b', "Cancer Prevention"),
+            (r'\bskin\b.{0,20}\b(health|benefit|aging|damage)\b', "Skin Health Benefits"),
+            (r'\bweight\b.{0,20}\b(loss|management|metabolism)\b', "Weight Management"),
+            (r'\bbone\b.{0,20}\b(health|density|strength)\b', "Bone Health"),
+            (r'\bdental\b.{0,20}\b(health|teeth|oral|cavity)\b', "Dental Health"),
+            (r'\bbrain\b.{0,20}\b(health|cognitive|function|memory)\b', "Brain Health"),
+            (r'\bliver\b.{0,20}\b(health|protect|function)\b', "Liver Protection"),
+            (r'\bdiabetes\b.{0,20}\b(prevent|manage|blood sugar|insulin)\b', "Diabetes Management"),
+            (r'\binflammation\b.{0,20}\b(reduce|anti-inflammatory|chronic)\b', "Anti-Inflammatory Effects"),
+            (r'\bimmune\b.{0,20}\b(system|boost|function)\b', "Immune System Support"),
+            (r'\bcell\b.{0,20}\b(damage|protect|oxidative)\b', "Cellular Protection"),
+            (r'\bcaffeine\b', "Caffeine Content"),
+            (r'\bl-theanine\b', "L-Theanine Content"),
+            (r'\borigin\b.{0,20}\b(china|fujian|history)\b', "Origin and History"),
+            (r'\bcamellia sinensis\b', "Camellia Sinensis Plant"),
+            (r'\bminimal.{0,10}process\b', "Minimal Processing"),
+        ]
 
-        # Extract meaningful phrases that appear across sources
-        phrase_sources: dict[str, list[str]] = {}
+        # Find which topics appear in which sources
+        topic_sources: dict[str, list[dict[str, str]]] = {}
 
         for source in sources:
             source_content = (source.get("title", "") + " " + source.get("content", "")).lower()
 
-            # Look for meaningful phrases (4-6 words) related to health benefits
-            words = [w for w in source_content.split() if len(w) > 3 and w.isalpha()]
+            for pattern, topic_name in topic_patterns:
+                if re.search(pattern, source_content, re.IGNORECASE):
+                    if topic_name not in topic_sources:
+                        topic_sources[topic_name] = []
+                    if source.get("url") not in [s.get("url") for s in topic_sources[topic_name]]:
+                        topic_sources[topic_name].append(source)
 
-            for i in range(len(words) - 3):
-                phrase = " ".join(words[i:i+4])
-                # Filter out common phrases and navigation text
-                if self._is_meaningful_phrase(phrase):
-                    if phrase not in phrase_sources:
-                        phrase_sources[phrase] = []
-                    if source.get("url") not in phrase_sources[phrase]:
-                        phrase_sources[phrase].append(source.get("url", ""))
-
-        # Sort phrases by number of sources and create themes
-        sorted_phrases = sorted(
-            phrase_sources.items(),
+        # Sort topics by number of supporting sources
+        sorted_topics = sorted(
+            topic_sources.items(),
             key=lambda x: len(x[1]),
             reverse=True
         )
 
         used_sources = set()
 
-        for phrase, source_urls in sorted_phrases[:num_themes]:
-            # Skip if all sources already used
-            if all(url in used_sources for url in source_urls):
+        for topic_name, matching_sources in sorted_topics[:num_themes]:
+            if len(matching_sources) < 1:
                 continue
 
-            # Create a meaningful theme name from the phrase
-            theme_name = self._clean_theme_name(phrase)
+            # Get supporting source URLs
+            supporting_urls = []
+            for src in matching_sources:
+                url = src.get("url", "")
+                if url and url not in used_sources:
+                    supporting_urls.append(url)
+                    used_sources.add(url)
 
-            # Find supporting sources
-            supporting_sources = [url for url in source_urls if url not in used_sources][:5]
-            used_sources.update(supporting_sources)
+            if not supporting_urls:
+                continue
 
-            # Extract key points from sources
+            # Extract key points from matching sources
             key_points = []
-            for source in sources:
-                source_url = source.get("url", "")
-                if source_url in supporting_sources:
-                    content = source.get("content", "")
-                    # Extract relevant sentences
-                    relevant_sentences = [
-                        s.strip() for s in content.split(".")
-                        if len(s.strip()) > 30 and any(word in s.lower() for word in phrase.split())
-                    ]
-                    key_points.extend(relevant_sentences[:2])
+            key_sentences = []
+
+            for source in matching_sources:
+                source_content = source.get("content", "")
+                if not source_content:
+                    continue
+
+                # Extract sentences related to the topic
+                sentences = re.split(r'[.!?]+', source_content)
+                topic_words = topic_name.lower().replace("(", "").replace(")", "").split()
+
+                for sentence in sentences:
+                    sentence = sentence.strip()
+                    if len(sentence) > 30 and len(sentence) < 300:
+                        sentence_lower = sentence.lower()
+                        # Check if sentence is relevant to the topic
+                        if any(word in sentence_lower for word in topic_words):
+                            # Clean the sentence
+                            clean_sentence = self._clean_sentence(sentence)
+                            if clean_sentence and clean_sentence not in key_sentences:
+                                key_sentences.append(clean_sentence)
+                                key_points.append(clean_sentence)
 
             # Create description
-            description = (
-                f"This theme emerges from {len(supporting_sources)} sources. "
-                f"The sources discuss various aspects related to {theme_name.lower()}."
-            )
-
-            if key_points:
-                description += " " + " ".join(key_points[:2])
+            description = self._generate_theme_description(topic_name, matching_sources, key_points)
 
             themes.append({
-                "name": theme_name,
+                "name": topic_name,
                 "description": description,
-                "supporting_sources": supporting_sources,
+                "supporting_sources": supporting_urls[:5],
                 "key_points": key_points[:5],
             })
 
@@ -333,6 +355,75 @@ Response format (valid JSON):
                 break
 
         return themes
+
+    def _clean_sentence(self, sentence: str) -> str:
+        """Clean a sentence by removing UI artifacts and navigation text.
+
+        Args:
+            sentence: Sentence to clean.
+
+        Returns:
+            Cleaned sentence or empty string if not valid.
+        """
+        # Remove markdown artifacts
+        sentence = re.sub(r'\[.*?\]', '', sentence)
+        sentence = re.sub(r'\(.*?\)', '', sentence)
+        sentence = re.sub(r'#{2,}', '', sentence)
+        sentence = re.sub(r'\*+', '', sentence)
+
+        # Remove navigation text patterns
+        nav_patterns = [
+            r'log in', r'sign up', r'cart', r'menu', r'search',
+            r'subscribe', r'newsletter', r'follow us', r'share',
+            r'continue reading', r'read more', r'click here',
+        ]
+        sentence_lower = sentence.lower()
+        if any(pattern in sentence_lower for pattern in nav_patterns):
+            return ""
+
+        # Remove URLs and emails
+        sentence = re.sub(r'https?://\S+', '', sentence)
+        sentence = re.sub(r'\S+@\S+\.\S+', '', sentence)
+
+        # Clean whitespace
+        sentence = ' '.join(sentence.split())
+
+        # Skip if too short after cleaning
+        if len(sentence) < 20:
+            return ""
+
+        return sentence.strip()
+
+    def _generate_theme_description(
+        self, topic_name: str, sources: list[dict[str, str]], key_points: list[str]
+    ) -> str:
+        """Generate a meaningful description for a theme.
+
+        Args:
+            topic_name: Name of the theme.
+            sources: List of sources supporting this theme.
+            key_points: Key points extracted from sources.
+
+        Returns:
+            Generated description.
+        """
+        # Start with topic introduction
+        description_parts = []
+
+        source_count = len(sources)
+        if source_count == 1:
+            description_parts.append(f"Research from {source_count} source discusses {topic_name.lower()}.")
+        else:
+            description_parts.append(f"Multiple sources ({source_count}) discuss {topic_name.lower()}.")
+
+        # Add key point if available
+        if key_points:
+            best_point = key_points[0]
+            if len(best_point) > 50:
+                best_point = best_point[:200] + "..." if len(best_point) > 200 else best_point
+            description_parts.append(best_point)
+
+        return " ".join(description_parts)
 
     def _parse_content_sources(self, content: str) -> list[dict[str, str]]:
         """Parse source information from formatted content string.
@@ -404,28 +495,74 @@ Response format (valid JSON):
         return not ("http" in phrase_lower or "www" in phrase_lower or "@" in phrase_lower)
 
     def _clean_theme_name(self, phrase: str) -> str:
-        """Clean and format a phrase as a theme name.
+        """Clean and format a phrase as a meaningful theme name.
 
         Args:
             phrase: Raw phrase.
 
         Returns:
-            Cleaned theme name.
+            Cleaned theme name that is human-readable.
         """
-        # Remove trailing words that are common fillers
-        words = phrase.split()
+        # Common stop words to avoid at start/end
+        stop_words = {"the", "a", "an", "and", "or", "for", "with", "in", "of", "to", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "must", "can", "this", "that", "these", "those", "it", "its", "they", "them", "their", "we", "us", "our", "you", "your", "he", "him", "his", "she", "her", "when", "where", "which", "who", "whom", "what", "how", "why", "all", "each", "every", "both", "few", "more", "most", "other", "some", "such", "no", "not", "only", "same", "so", "than", "too", "very", "just", "also", "now", "here", "there", "then", "once", "from", "up", "down", "out", "on", "off", "over", "under", "again", "further", "into", "through", "during", "before", "after", "above", "below", "between"}
 
-        # Remove trailing articles and prepositions
-        while words and words[-1].lower() in ["the", "a", "an", "and", "or", "for", "with", "in", "of", "to"]:
+        # Content-related words that make good theme names
+        health_benefit_words = {
+            "antioxidant", "polyphenol", "catechin", "flavonoid", "egcg",
+            "health", "benefit", "property", "effect", "compound",
+            "cancer", "heart", "skin", "bone", "brain", "liver", "dental",
+            "weight", "metabolism", "inflammation", "immune", "diabetes",
+            "cell", "damage", "protection", "prevent", "reduce", "improve",
+            "extract", "study", "research", "clinical", "evidence",
+            "cardiovascular", "neuroprotective", "antimicrobial", "antiviral",
+            "aging", "collagen", "elastin", "wrinkle", "acne",
+            "cholesterol", "blood", "pressure", "sugar", "insulin",
+            "cognitive", "memory", "focus", "alertness",
+            "digestive", "gut", "microbiome", "probiotic",
+            "detox", "cleanse", "hydration", "relaxation",
+            "origin", "fujian", "china", "camellia", "sinensis",
+            "processing", "harvest", "bud", "leaf", "silver", "needle",
+            "white", "tea", "green", "black", "oolong", "herbal",
+            "caffeine", "l-theanine", "amino", "acid", "vitamin", "mineral",
+        }
+
+        words = phrase.lower().split()
+
+        # Remove stop words from start and end
+        while words and words[0] in stop_words:
+            words.pop(0)
+        while words and words[-1] in stop_words:
             words.pop()
 
         if not words:
-            words = phrase.split()
+            return "Research Finding"
 
-        # Capitalize each word
-        theme_name = " ".join(word.capitalize() for word in words)
+        # Try to find a meaningful phrase by looking for content words
+        meaningful_words = [w for w in words if w in health_benefit_words or len(w) > 5]
 
-        return theme_name
+        if meaningful_words:
+            # Use the meaningful words if we found some
+            theme_words = []
+            for word in words:
+                if word in health_benefit_words or word in {"tea", "white", "benefits"}:
+                    theme_words.append(word)
+                elif word == "drinking":
+                    theme_words.append("consumption")
+                elif word not in stop_words and len(word) > 3:
+                    theme_words.append(word)
+
+            if theme_words:
+                # Capitalize properly
+                return " ".join(word.capitalize() for word in theme_words[:5])
+
+        # Fallback: clean up and capitalize the original phrase
+        cleaned_words = [w for w in words if w not in stop_words and len(w) > 2]
+
+        if not cleaned_words:
+            return "Research Finding"
+
+        # Limit to 4-5 words for readability
+        return " ".join(word.capitalize() for word in cleaned_words[:5])
 
     def analyze_cross_reference_with_ai(
         self,

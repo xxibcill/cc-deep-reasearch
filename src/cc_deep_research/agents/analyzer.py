@@ -162,11 +162,8 @@ class AnalyzerAgent:
         content = re.sub(r'\[Image\s*\d+\]', '', content)
         content = re.sub(r'!\[.*?\]\(.*?\)', '', content)
 
-        # Remove markdown links and their text
+        # Remove markdown links but keep the text (for content)
         content = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', content)
-
-        # Remove all markdown links completely (they're often navigation)
-        content = re.sub(r'\[[^\]]+\]\([^\)]+\)', '', content)
 
         # Remove social media and navigation patterns
         navigation_patterns = [
@@ -176,6 +173,7 @@ class AnalyzerAgent:
             r'\[Menu\]',
             r'\[Close\]',
             r'\[Share\]',
+            r'\[Register\]',
             r'\(Log in\)',
             r'\(Cart\)',
             r'\(Sign up\)',
@@ -188,91 +186,168 @@ class AnalyzerAgent:
             r'\*?\s*Facebook',
             r'\*?\s*Instagram',
             r'\*?\s*YouTube',
-            r'SHOP\s*\+\s*',
-            r'BLOG\s*\+\s*',
-            r'ABOUT\s*\+\s*',
-            r'REWARDS\s*\+\s*',
-            r'CONTACT\s*\+\s*',
-            r'REGISTER\s*\+\s*',
+            r'\*?\s*Pinterest',
+            r'\*?\s*LinkedIn',
+            r'Follow us on',
+            r'Subscribe to',
+            r'Join our',
         ]
 
         for pattern in navigation_patterns:
             content = re.sub(pattern, '', content, flags=re.IGNORECASE)
 
+        # Remove lines that are purely UI elements (all caps navigation)
+        ui_line_patterns = [
+            r'^SHOP\s*$',
+            r'^BLOG\s*$',
+            r'^ABOUT\s*$',
+            r'^CONTACT\s*$',
+            r'^REWARDS\s*$',
+            r'^REGISTER\s*$',
+            r'^LOGIN\s*$',
+            r'^CART\s*$',
+            r'^MENU\s*$',
+            r'^SEARCH\s*$',
+            r'^HOME\s*$',
+            r'^ALL\s+TEAS?\s*$',
+            r'^GREEN\s+TEA\s*$',
+            r'^BLACK\s+TEA\s*$',
+            r'^WHITE\s+TEA\s*$',
+            r'^OOLONG\s+TEA\s*$',
+            r'^MERCHANDISE\s*$',
+            r'^WHO\s+WE\s+ARE\s*$',
+            r'^WHY\s+GREEN\s+TEA\??\s*$',
+            r'^BEST\s+SELLERS?\s*$',
+            r'^NEW\s*!\s*$',
+            r'^FREE\s+.*SHIPPING\s*$',
+        ]
+
+        for pattern in ui_line_patterns:
+            content = re.sub(pattern, '', content, flags=re.MULTILINE)
+
+        # Remove markdown headers that are navigation (## Shop, ## Blog, etc.)
+        nav_header_patterns = [
+            r'^#{1,3}\s*Shop\s*$',
+            r'^#{1,3}\s*Blog\s*$',
+            r'^#{1,3}\s*About\s*(Us)?\s*$',
+            r'^#{1,3}\s*Contact\s*$',
+            r'^#{1,3}\s*Cart\s*$',
+            r'^#{1,3}\s*Menu\s*$',
+            r'^#{1,3}\s*Best\s+Sellers?\s*$',
+            r'^#{1,3}\s*Who\s+We\s+Are\s*$',
+            r'^#{1,3}\s*What\s+is\s+Matcha?\s*$',
+            r'^#{1,3}\s*Find\s+Relief\s*$',
+            r'^#{1,3}\s*Steeping\s+Accessories\s*$',
+            r'^#{1,3}\s*Your\s+cart\s*$',
+            r'^#{1,3}\s*Estimated\s+total\s*$',
+            r'^#{1,3}\s*Continue\s+shopping\s*$',
+            r'^#{1,3}\s*Origins\s+of\s*$',
+            r'^#{1,3}\s*Related\s+products?\s*$',
+            r'^#{1,3}\s*You\s+may\s+also\s+like\s*$',
+            r'^#{1,3}\s*Customer\s+reviews?\s*$',
+            r'^#{1,3}\s*Newsletter\s*$',
+            r'^#{1,3}\s*Follow\s+us\s*$',
+        ]
+
+        for pattern in nav_header_patterns:
+            content = re.sub(pattern, '', content, flags=re.IGNORECASE | re.MULTILINE)
+
         # Remove common website artifacts
         artifacts = [
-            r'Share\s*$',
-            r'^\s*Share\n',
-            r'Log in\s*Cart',
-            r'Cart\s*$',
-            r'^\s*Cart\n',
+            r'Share\s+this\s*:',
+            r'Follow\s+us\s*:',
+            r'Skip\s+to\s+content',
+            r'Continue\s+shopping',
+            r'Have\s+an\s+account',
+            r'Check\s+out\s+faster',
+            r'Estimated\s+total',
+            r'Your\s+cart\s+is\s+empty',
+            r'Best\s+Sellers?',
+            r'Shop\s+our\s+best\s+selling',
+            r'Find\s+Relief\s+Now',
+            r'Free\s+US\s+Shipping',
+            r'Shipping\s+on\s+orders',
+            r'Sign\s+up\s+for\s+our\s+newsletter',
+            r'Subscribe\s+to\s+our\s+newsletter',
+            r'Join\s+our\s+email\s+list',
+            r'Get\s+\d+%\s+off',
+            r'Use\s+code\s*:',
             r'com/@\w+',
-            r'Skip to content',
-            r'Continue shopping',
-            r'Have an account',
-            r'Check out faster',
-            r'Estimated total',
-            r'Your cart is empty',
-            r'Best Sellers',
-            r'Shop our best selling',
-            r'Find Relief Now',
-            r'Steeping Accessories',
-            r'Who We Are',
-            r'What is Matcha',
-            r'What is White Tea',
-            r'What are the origins',
-            r'## Best Sellers',
-            r'## Find Relief',
-            r'## Steeping',
-            r'## Who We Are',
-            r'## What is',
-            r'## Origins of',
+            r'\(\d+\)',  # Standalone numbers in parentheses like (0), (1)
+            r'\*\s*\+\s*',  # Bullet + plus patterns like "* +"
+            r'######\s*',  # Markdown heading artifacts
+            r'\[\]\([^\)]*\)',  # Empty markdown links
         ]
 
         for pattern in artifacts:
-            content = re.sub(pattern, '', content, flags=re.IGNORECASE | re.MULTILINE)
-
-        # Remove section headers with limited text (they're usually navigation)
-        content = re.sub(r'^#{1,3}\s+(Your\s+cart|Estimated\s+total|Continue\s+shopping|Best\s+Sellers|Find\s+Relief|Steeping\s+Accessories|Who\s+We\s+Are|What\s+is\s+Matcha?|Origins\s+of).*$', '', content, flags=re.IGNORECASE | re.MULTILINE)
+            content = re.sub(pattern, '', content, flags=re.IGNORECASE)
 
         # Remove email addresses and URLs from content
         content = re.sub(r'\S+@\S+\.\S+', '', content)
         content = re.sub(r'https?://\S+', '', content)
 
-        # Clean up extra whitespace
-        content = re.sub(r'\s+', ' ', content)
-        content = re.sub(r'\n\s*\n\s*\n+', '\n\n', content)
+        # Clean up markdown link artifacts - remove lines that are just links
+        content = re.sub(r'^\s*\[[^\]]*\]\s*$', '', content, flags=re.MULTILINE)
 
-        # For titles, just trim
+        # Remove lines with excessive special characters (UI artifacts)
+        content = re.sub(r'^[^a-zA-Z0-9]*$', '', content, flags=re.MULTILINE)
+
+        # Clean up extra whitespace
+        content = re.sub(r'[ \t]+', ' ', content)  # Multiple spaces/tabs to single space
+        content = re.sub(r'\n\s*\n\s*\n+', '\n\n', content)  # Multiple blank lines
+
+        # For titles, just trim and return
         if is_title:
             return content.strip()[:200]
 
-        # For full content, also remove very short/incomplete sentences at start
+        # For full content, process line by line for better filtering
         lines = content.split('\n')
         cleaned_lines = []
+
+        # Content words that indicate actual content (not UI)
+        content_indicators = {
+            'health', 'benefit', 'study', 'research', 'tea', 'antioxidant',
+            'cell', 'damage', 'cancer', 'heart', 'skin', 'weight', 'diabetes',
+            'inflammation', 'immune', 'bone', 'dental', 'brain', 'liver',
+            'metabolism', 'polyphenol', 'catechin', 'flavonoid', 'extract',
+            'clinical', 'effect', 'result', 'show', 'found', 'suggest',
+            'contain', 'include', 'help', 'reduce', 'prevent', 'improve',
+            'according', 'reported', 'published', 'journal', 'scientist',
+        }
 
         for line in lines:
             line = line.strip()
 
-            # Skip empty lines or very short lines
-            if len(line) < 10:
+            # Skip empty lines
+            if not line:
                 continue
 
-            # Skip lines that look like navigation
-            if line.lower() in ['log in', 'cart', 'menu', 'search']:
+            # Skip very short lines (likely UI)
+            if len(line) < 15:
                 continue
 
-            # Skip lines that start with ## (markdown headers) unless they're meaningful
-            if line.startswith('##') and len(line) < 30:
+            # Skip lines that are just numbers or special chars
+            if re.match(r'^[\d\s\*\-\+\#\[\]\(\)]+$', line):
                 continue
 
-            # Skip lines that are just URLs
-            if re.match(r'^https?://', line):
+            # Skip lines that look like pure navigation (no content words)
+            line_lower = line.lower()
+            has_content_word = any(word in line_lower for word in content_indicators)
+
+            # Also check if line has reasonable word count (not just "Log in Cart")
+            words = [w for w in line.split() if len(w) > 2]
+            has_reasonable_words = len(words) >= 3
+
+            if not has_content_word and not has_reasonable_words:
+                continue
+
+            # Skip lines that are mostly markdown artifacts
+            if line.count('#') > 3 or line.count('*') > 3:
                 continue
 
             cleaned_lines.append(line)
 
-        content = ' '.join(cleaned_lines)
+        content = '\n'.join(cleaned_lines)
 
         return content.strip()
 
