@@ -37,7 +37,7 @@ def main(ctx: click.Context) -> None:
     "--depth",
     type=click.Choice(["quick", "standard", "deep"], case_sensitive=False),
     default="deep",
-    help="Research depth mode (default: deep)",
+    help="Research depth mode (default: deep). Deep mode performs multi-pass analysis with 50+ sources.",
 )
 @click.option(
     "-s",
@@ -70,6 +70,7 @@ def main(ctx: click.Context) -> None:
 @click.option("--quiet", is_flag=True, help="Suppress output")
 @click.option("--verbose", is_flag=True, help="Show detailed output")
 @click.option("--monitor", is_flag=True, help="Show internal workflow monitoring information")
+@click.option("--pdf", is_flag=True, help="Generate PDF output in addition to markdown")
 @click.pass_context
 def research(
     ctx: click.Context,
@@ -87,6 +88,7 @@ def research(
     quiet: bool,
     verbose: bool,
     monitor: bool,
+    pdf: bool,
 ) -> None:
     """Execute a research query and generate a report."""
     ctx.obj.update(
@@ -179,6 +181,32 @@ def research(
                 click.echo(report)
             else:
                 ui.show_report(report, output_format)
+
+        # Generate PDF if requested
+        if pdf:
+            from cc_deep_research.pdf_generator import PDFGenerator, PDFGenerationError
+
+            try:
+                pdf_gen = PDFGenerator()
+                if output_format == "json":
+                    markdown_report = reporter.generate_markdown_report(session, analysis)
+                else:
+                    markdown_report = report
+
+                if output_path:
+                    pdf_path = output_path.with_suffix(".pdf")
+                else:
+                    pdf_path = Path("research_report.pdf")
+
+                pdf_gen.generate_pdf(markdown_report, pdf_path, title=query)
+                if not quiet:
+                    ui.show_report_saved(pdf_path)
+            except PDFGenerationError as e:
+                if not quiet:
+                    ui.show_error(str(e))
+            except Exception as e:
+                if not quiet:
+                    ui.show_error(f"Failed to generate PDF: {e}")
 
         if monitor and not quiet:
             research_monitor.section("Summary")

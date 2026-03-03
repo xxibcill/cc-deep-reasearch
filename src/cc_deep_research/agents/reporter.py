@@ -166,8 +166,7 @@ class ReporterAgent:
         gaps = analysis.get("gaps", [])
         if gaps:
             paragraphs.append(
-                f"Areas requiring additional investigation include: "
-                f"{', '.join(gaps)}."
+                f"Areas requiring additional investigation include: {', '.join(gaps)}."
             )
 
         return "\n\n".join(paragraphs)

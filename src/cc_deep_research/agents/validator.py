@@ -57,12 +57,8 @@ class ValidatorAgent:
 
         # Check source count
         if session.total_sources < self._min_sources:
-            issues.append(
-                f"Insufficient sources: {session.total_sources} < {self._min_sources}"
-            )
-            recommendations.append(
-                "Increase minimum sources or expand query variations"
-            )
+            issues.append(f"Insufficient sources: {session.total_sources} < {self._min_sources}")
+            recommendations.append("Increase minimum sources or expand query variations")
 
         # Check source diversity
         diversity_check = self._check_source_diversity(session.sources)
@@ -187,10 +183,7 @@ class ValidatorAgent:
             }
 
         # Count sources with meaningful content
-        sources_with_content = sum(
-            1 for s in sources
-            if s.content and len(s.content) > 200
-        )
+        sources_with_content = sum(1 for s in sources if s.content and len(s.content) > 200)
 
         content_ratio = sources_with_content / max(len(sources), 1)
 
@@ -279,10 +272,10 @@ class ValidatorAgent:
 
         # Weighted components
         total_score = (
-            (source_score * 0.4) +
-            (diversity_score * 0.4) +
-            (1.0 - issue_penalty) * 0.1 +
-            (1.0 - warning_penalty) * 0.1
+            (source_score * 0.4)
+            + (diversity_score * 0.4)
+            + (1.0 - issue_penalty) * 0.1
+            + (1.0 - warning_penalty) * 0.1
         )
 
         # Ensure score is in valid range

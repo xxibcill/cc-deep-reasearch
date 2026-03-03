@@ -53,7 +53,13 @@
       "Bash(cc-deep-research research \"health benefit of white tea\" --monitor)",
       "Bash(poetry run cc-deep-research research \"health benefit of white tea\" --monitor)",
       "Bash(python -m cc_deep_research research \"health benefit of white tea\" --monitor)",
-      "Bash(.venv/bin/python -m cc_deep_research research \"health benefit of white tea\" --monitor)"
+      "Bash(.venv/bin/python -m cc_deep_research research \"health benefit of white tea\" --monitor)",
+      "Bash(ruff check src/)",
+      "Bash(uv run ruff check src/)",
+      "Bash(uv run ruff format src/cc_deep_research/pdf_generator.py src/cc_deep_research/agents/deep_analyzer.py)",
+      "Bash(uv run ruff format src/)",
+      "Bash(uv run mypy src/cc_deep_research/pdf_generator.py src/cc_deep_research/agents/deep_analyzer.py src/cc_deep_research/orchestrator.py src/cc_deep_research/cli.py src/cc_deep_research/config.py --no-error-summary)",
+      "Bash(uv run pytest tests/test_config.py::TestResearchConfig::test_default_research_config -v)"
     ]
   }
 }

@@ -59,7 +59,7 @@ class TavilySearchProvider(SearchProvider):
         start_time = time.time()
 
         # Monitor: Start of operation
-        monitor = getattr(options, 'monitor', False) if options else False
+        monitor = getattr(options, "monitor", False) if options else False
         if monitor:
             click.echo(f"[MONITOR] [TAVILY] Starting search: {query}")
 
