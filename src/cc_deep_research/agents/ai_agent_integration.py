@@ -576,7 +576,8 @@ Response format (valid JSON):
             themes: Identified themes.
 
         Returns:
-            Dictionary with consensus and disagreement points.
+            Dictionary with consensus and disagreement points, evidence types,
+            confidence levels, and study type breakdown.
         """
         consensus_points = []
         disagreement_points = []
@@ -612,6 +613,614 @@ Response format (valid JSON):
             "disagreement_points": disagreement_points,
             "cross_reference_claims": claims,
         }
+
+    def analyze_evidence_quality(
+        self,
+        sources: list[SearchResultItem],
+        themes: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Analyze evidence quality across sources.
+
+        Distinguishes between human studies, animal studies, and in vitro studies.
+        Identifies conflicting evidence and assigns confidence levels.
+
+        Args:
+            sources: List of sources with content.
+            themes: Identified themes.
+
+        Returns:
+            Dictionary with:
+            - study_types: Breakdown of human/animal/in vitro/other studies
+            - evidence_conflicts: List of identified conflicts with explanations
+            - confidence_levels: Confidence assessment for each theme
+            - evidence_summary: Overall evidence quality summary
+        """
+        study_types: dict[str, list[dict[str, str]]] = {
+            "human_clinical": [],
+            "human_observational": [],
+            "animal": [],
+            "in_vitro": [],
+            "review_meta": [],
+            "other": [],
+        }
+
+        # Classify each source by study type
+        for source in sources:
+            study_type = self._classify_study_type(source)
+            study_types[study_type].append({
+                "url": source.url,
+                "title": source.title or "Untitled",
+            })
+
+        # Identify conflicts between sources
+        evidence_conflicts = self._identify_evidence_conflicts(sources, themes)
+
+        # Calculate confidence levels for each theme
+        confidence_levels = self._calculate_confidence_levels(sources, themes, study_types)
+
+        # Generate evidence summary
+        evidence_summary = self._generate_evidence_summary(study_types, evidence_conflicts)
+
+        return {
+            "study_types": study_types,
+            "evidence_conflicts": evidence_conflicts,
+            "confidence_levels": confidence_levels,
+            "evidence_summary": evidence_summary,
+        }
+
+    def _classify_study_type(self, source: SearchResultItem) -> str:
+        """Classify a source by study type based on content analysis.
+
+        Args:
+            source: Source to classify.
+
+        Returns:
+            Study type classification string.
+        """
+        content = (source.content or source.snippet or "").lower()
+        title = (source.title or "").lower()
+        combined = f"{title} {content}"
+
+        # Check for meta-analysis or systematic review (highest quality)
+        meta_patterns = [
+            r'\bmeta-analysis\b', r'\bsystematic review\b',
+            r'\bpooled analysis\b', r'\bcochrane\b',
+        ]
+        for pattern in meta_patterns:
+            if re.search(pattern, combined, re.IGNORECASE):
+                return "review_meta"
+
+        # Check for human clinical trials
+        clinical_patterns = [
+            r'\brct\b', r'\brandomized controlled trial\b',
+            r'\bclinical trial\b', r'\bdouble-blind\b',
+            r'\bplacebo-controlled\b', r'\bhuman (subjects|participants|patients)\b',
+            r'\bhuman study\b', r'\bhuman trial\b',
+        ]
+        for pattern in clinical_patterns:
+            if re.search(pattern, combined, re.IGNORECASE):
+                return "human_clinical"
+
+        # Check for observational human studies
+        observational_patterns = [
+            r'\bcohort study\b', r'\bcase-control\b',
+            r'\bcross-sectional\b', r'\bprospective study\b',
+            r'\bretrospective study\b', r'\bepidemiological\b',
+            r'\bpopulation\b.{0,20}\bstudy\b',
+            r'\bsurvey\b.{0,20}\bparticipant\b',
+        ]
+        for pattern in observational_patterns:
+            if re.search(pattern, combined, re.IGNORECASE):
+                return "human_observational"
+
+        # Check for animal studies
+        animal_patterns = [
+            r'\banimal study\b', r'\banimal model\b',
+            r'\bin vivo\b', r'\bmouse\b', r'\bmice\b',
+            r'\brat\b', r'\brats\b', r'\brodent\b',
+            r'\brabbit\b', r'\bhamster\b', r'\bpig\b',
+            r'\bprimate\b.{0,20}(?!human)', r'\bdog\b.{0,20}\bstudy\b',
+        ]
+        for pattern in animal_patterns:
+            if re.search(pattern, combined, re.IGNORECASE):
+                return "animal"
+
+        # Check for in vitro / cell culture studies
+        in_vitro_patterns = [
+            r'\bin vitro\b', r'\bcell culture\b',
+            r'\bcell line\b', r'\btissue culture\b',
+            r'\blaboratory\b.{0,20}\bcell\b',
+            r'\bpetri dish\b', r'\btest tube\b',
+        ]
+        for pattern in in_vitro_patterns:
+            if re.search(pattern, combined, re.IGNORECASE):
+                return "in_vitro"
+
+        return "other"
+
+    def _identify_evidence_conflicts(
+        self,
+        sources: list[SearchResultItem],
+        themes: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Identify conflicting evidence between sources.
+
+        Args:
+            sources: List of sources to analyze.
+            themes: Identified themes for context.
+
+        Returns:
+            List of identified conflicts with explanations.
+        """
+        conflicts = []
+
+        # Look for contradiction indicators in content
+        contradiction_patterns = [
+            (r'\b(however|but|although|conversely|in contrast|on the other hand)\b.{0,100}\b(show|found|suggest|indicate)\b',
+             "Direct contradiction found in source"),
+            (r'\bconflict\w*\b.{0,50}\bevidence\b',
+             "Source mentions conflicting evidence"),
+            (r'\b(inconsistent|mixed|contradictory)\b.{0,50}\bresult\w*\b',
+             "Source reports inconsistent results"),
+            (r'\bno (significant |)effect\b',
+             "Source reports no significant effect"),
+            (r'\bfailed to (replicate|confirm|demonstrate)\b',
+             "Source reports failure to replicate findings"),
+        ]
+
+        for source in sources:
+            content = source.content or source.snippet or ""
+            for pattern, conflict_type in contradiction_patterns:
+                if re.search(pattern, content, re.IGNORECASE):
+                    # Extract relevant context
+                    context = self._extract_conflict_context(content, pattern)
+                    if context:
+                        conflicts.append({
+                            "type": conflict_type,
+                            "source": source.url,
+                            "source_title": source.title or "Untitled",
+                            "context": context,
+                        })
+                    break  # Only one conflict per source
+
+        # Also check for thematic conflicts between sources
+        thematic_conflicts = self._find_thematic_conflicts(sources, themes)
+        conflicts.extend(thematic_conflicts)
+
+        return conflicts[:10]  # Limit to top 10 conflicts
+
+    def _extract_conflict_context(self, content: str, pattern: str) -> str:
+        """Extract relevant context around a conflict pattern.
+
+        Args:
+            content: Full content text.
+            pattern: Regex pattern that matched.
+
+        Returns:
+            Contextual excerpt around the conflict.
+        """
+        match = re.search(pattern, content, re.IGNORECASE)
+        if not match:
+            return ""
+
+        # Get 100 chars before and after the match
+        start = max(0, match.start() - 100)
+        end = min(len(content), match.end() + 100)
+
+        context = content[start:end].strip()
+
+        # Clean up the context
+        if start > 0:
+            context = "..." + context
+        if end < len(content):
+            context = context + "..."
+
+        return context
+
+    def _find_thematic_conflicts(
+        self,
+        sources: list[SearchResultItem],
+        themes: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Find conflicts between sources on the same theme.
+
+        Args:
+            sources: List of sources.
+            themes: Identified themes.
+
+        Returns:
+            List of thematic conflicts.
+        """
+        conflicts = []
+
+        # Positive and negative indicator patterns
+        positive_patterns = [
+            r'\b(benefit|effective|improve|increase|enhance|support|promote|reduce risk)\b',
+        ]
+        negative_patterns = [
+            r'\b(no effect|ineffective|harmful|risk|danger|side effect|adverse)\b',
+        ]
+
+        # Check each theme for conflicting evidence
+        for theme in themes:
+            positive_sources = []
+            negative_sources = []
+
+            supporting_urls = set(theme.get("supporting_sources", []))
+
+            for source in sources:
+                if source.url not in supporting_urls:
+                    continue
+
+                content = (source.content or source.snippet or "").lower()
+
+                # Check for positive indicators
+                has_positive = any(
+                    re.search(p, content, re.IGNORECASE)
+                    for p in positive_patterns
+                )
+
+                # Check for negative indicators
+                has_negative = any(
+                    re.search(p, content, re.IGNORECASE)
+                    for p in negative_patterns
+                )
+
+                if has_positive and not has_negative:
+                    positive_sources.append(source.url)
+                elif has_negative and not has_positive:
+                    negative_sources.append(source.url)
+
+            # If we have both positive and negative sources, it's a conflict
+            if positive_sources and negative_sources:
+                conflicts.append({
+                    "type": "Thematic evidence conflict",
+                    "theme": theme.get("name", "Unknown theme"),
+                    "context": (
+                        f"Evidence for '{theme.get('name', 'this topic')}' shows mixed results: "
+                        f"{len(positive_sources)} source(s) report positive findings, "
+                        f"{len(negative_sources)} source(s) report negative or no-effect findings."
+                    ),
+                    "supporting_positive": positive_sources[:3],
+                    "supporting_negative": negative_sources[:3],
+                })
+
+        return conflicts
+
+    def _calculate_confidence_levels(
+        self,
+        _sources: list[SearchResultItem],  # noqa: ARG002
+        themes: list[dict[str, Any]],
+        study_types: dict[str, list[dict[str, str]]],
+    ) -> list[dict[str, Any]]:
+        """Calculate confidence levels for each theme based on evidence quality.
+
+        Args:
+            sources: List of sources.
+            themes: Identified themes.
+            study_types: Study type classification results.
+
+        Returns:
+            List of confidence assessments per theme.
+        """
+        confidence_levels = []
+
+        # Evidence quality weights
+        evidence_weights = {
+            "review_meta": 1.0,      # Meta-analyses are strongest
+            "human_clinical": 0.9,   # Clinical trials are very strong
+            "human_observational": 0.7,  # Observational studies are moderate
+            "animal": 0.4,           # Animal studies are weak for human conclusions
+            "in_vitro": 0.3,         # In vitro are weakest for human conclusions
+            "other": 0.5,            # Unknown type gets moderate weight
+        }
+
+        for theme in themes:
+            supporting_urls = set(theme.get("supporting_sources", []))
+            theme_evidence_score = 0.0
+            evidence_types = []
+
+            # Calculate evidence score based on supporting sources
+            for study_type, type_sources in study_types.items():
+                matching = [s for s in type_sources if s["url"] in supporting_urls]
+                if matching:
+                    weight = evidence_weights.get(study_type, 0.5)
+                    theme_evidence_score += len(matching) * weight
+                    evidence_types.append({
+                        "type": study_type,
+                        "count": len(matching),
+                        "weight": weight,
+                    })
+
+            # Determine confidence level
+            if theme_evidence_score >= 3.0:
+                confidence = "High"
+            elif theme_evidence_score >= 1.5:
+                confidence = "Medium"
+            else:
+                confidence = "Low"
+
+            # Generate explanation
+            explanation = self._generate_confidence_explanation(
+                confidence, evidence_types, len(supporting_urls)
+            )
+
+            confidence_levels.append({
+                "theme": theme.get("name", "Unknown"),
+                "confidence": confidence,
+                "evidence_score": round(theme_evidence_score, 2),
+                "evidence_types": evidence_types,
+                "explanation": explanation,
+            })
+
+        return confidence_levels
+
+    def _generate_confidence_explanation(
+        self,
+        confidence: str,
+        evidence_types: list[dict[str, Any]],
+        source_count: int,
+    ) -> str:
+        """Generate explanation for confidence level.
+
+        Args:
+            confidence: Confidence level string.
+            evidence_types: List of evidence type breakdowns.
+            source_count: Total number of supporting sources.
+
+        Returns:
+            Explanation string.
+        """
+        if confidence == "High":
+            base = f"High confidence based on {source_count} supporting source(s)"
+        elif confidence == "Medium":
+            base = f"Medium confidence based on {source_count} supporting source(s)"
+        else:
+            base = f"Low confidence - only {source_count} supporting source(s)"
+
+        if not evidence_types:
+            return f"{base}. Evidence quality could not be assessed."
+
+        # Describe evidence types
+        type_descriptions = {
+            "review_meta": "meta-analysis/review",
+            "human_clinical": "clinical trial",
+            "human_observational": "observational study",
+            "animal": "animal study",
+            "in_vitro": "laboratory/cell study",
+            "other": "other source",
+        }
+
+        type_strs = []
+        for et in evidence_types:
+            desc = type_descriptions.get(et["type"], et["type"])
+            type_strs.append(f"{et['count']} {desc}")
+
+        if type_strs:
+            return f"{base}, including {', '.join(type_strs)}."
+        return f"{base}."
+
+    def _generate_evidence_summary(
+        self,
+        study_types: dict[str, list[dict[str, str]]],
+        evidence_conflicts: list[dict[str, Any]],
+    ) -> str:
+        """Generate overall evidence quality summary.
+
+        Args:
+            study_types: Study type breakdown.
+            evidence_conflicts: Identified conflicts.
+
+        Returns:
+            Summary string.
+        """
+        # Count each type
+        counts = {k: len(v) for k, v in study_types.items()}
+        total = sum(counts.values())
+
+        if total == 0:
+            return "No sources available for evidence assessment."
+
+        # Calculate percentage of high-quality evidence
+        high_quality = counts.get("review_meta", 0) + counts.get("human_clinical", 0)
+        medium_quality = counts.get("human_observational", 0)
+        low_quality = counts.get("animal", 0) + counts.get("in_vitro", 0)
+
+        high_pct = (high_quality / total * 100) if total > 0 else 0
+        med_pct = (medium_quality / total * 100) if total > 0 else 0
+        low_pct = (low_quality / total * 100) if total > 0 else 0
+
+        # Build summary
+        parts = [f"Evidence from {total} source(s):"]
+
+        if high_quality > 0:
+            parts.append(f" {high_pct:.0f}% high-quality (clinical trials, meta-analyses)")
+        if medium_quality > 0:
+            parts.append(f" {med_pct:.0f}% moderate-quality (observational studies)")
+        if low_quality > 0:
+            parts.append(f" {low_pct:.0f}% preliminary (animal/lab studies)")
+
+        if evidence_conflicts:
+            parts.append(f" {len(evidence_conflicts)} potential conflict(s) identified.")
+
+        return "".join(parts)
+
+    def extract_safety_information(
+        self,
+        sources: list[SearchResultItem],
+    ) -> dict[str, Any]:
+        """Extract safety, side effects, and contraindication information.
+
+        Args:
+            sources: List of sources to analyze.
+
+        Returns:
+            Dictionary with:
+            - side_effects: List of identified side effects
+            - contraindications: List of contraindications
+            - drug_interactions: List of drug interactions
+            - precautions: List of precautions
+            - dosage_info: Dosage information if available
+        """
+        side_effects: list[dict[str, str]] = []
+        contraindications: list[dict[str, str]] = []
+        drug_interactions: list[dict[str, str]] = []
+        precautions: list[dict[str, str]] = []
+        dosage_info: list[dict[str, str]] = []
+
+        # Patterns for extracting safety information
+        side_effect_patterns = [
+            r'\bside effects?\b[:\s]+([^.]*(?:headache|nausea|insomnia|digestive|stomach|anxiety|jittery|heart)[^.]*)',
+            r'\bmay cause\b[:\s]+([^.]*(?:headache|nausea|insomnia|digestive|stomach|anxiety)[^.]*)',
+            r'\badverse effects?\b[:\s]+([^.]+)',
+            r'\bcommon (?:side )?effects?\b[:\s]+([^.]+)',
+        ]
+
+        contraindication_patterns = [
+            r'\bcontraindicated?\b[:\s]+([^.]+)',
+            r'\bshould (?:not )?(?:avoid|take|use)\b[:\s]+([^.]+)',
+            r'\bnot recommended (?:for|in)\b[:\s]+([^.]+)',
+            r'\bpregnancy\b[^.]*(?:avoid|not recommended|caution)',
+            r'\bbreastfeeding\b[^.]*(?:avoid|not recommended|caution)',
+        ]
+
+        interaction_patterns = [
+            r'\binteracts?\s+(?:with|to)\b[:\s]+([^.]+)',
+            r'\bdrug interactions?\b[:\s]+([^.]+)',
+            r'\bmay (?:interfere|interact)\b[:\s]+([^.]+)',
+            r'\bwarfarin\b[^.]*\b(tea|interact|affect)',
+            r'\bblood thinner[s]?\b[^.]*\binteract',
+        ]
+
+        precaution_patterns = [
+            r'\bcaution\b[:\s]+([^.]+)',
+            r'\bconsult\b[:\s]+([^.]*doctor|physician|healthcare)[^.]*',
+            r'\bwarning[s]?\b[:\s]+([^.]+)',
+            r'\bprecaution[s]?\b[:\s]+([^.]+)',
+        ]
+
+        dosage_patterns = [
+            r'\bdosage\b[:\s]+([^.]+)',
+            r'\brecommended\b[:\s]+([^.]*cups?|mg|ml)[^.]*(?:daily|per day)',
+            r'\b(\d+[-\s]?\d*)\s*(?:cups?|mg|ml)[^.]*daily',
+            r'\bconsume\b[:\s]+([^.]*cups?|mg)[^.]*(?:daily|per day)',
+        ]
+
+        for source in sources:
+            content = source.content or source.snippet or ""
+
+            # Extract side effects
+            for pattern in side_effect_patterns:
+                matches = re.findall(pattern, content, re.IGNORECASE)
+                for match in matches:
+                    if isinstance(match, str) and len(match) > 10:
+                        clean_match = self._clean_safety_text(match)
+                        if clean_match and clean_match not in [
+                            s["description"] for s in side_effects
+                        ]:
+                            side_effects.append({
+                                "description": clean_match,
+                                "source": source.url,
+                                "source_title": source.title or "Untitled",
+                            })
+
+            # Extract contraindications
+            for pattern in contraindication_patterns:
+                matches = re.findall(pattern, content, re.IGNORECASE)
+                for match in matches:
+                    if isinstance(match, str) and len(match) > 10:
+                        clean_match = self._clean_safety_text(match)
+                        if clean_match and clean_match not in [
+                            c["description"] for c in contraindications
+                        ]:
+                            contraindications.append({
+                                "description": clean_match,
+                                "source": source.url,
+                                "source_title": source.title or "Untitled",
+                            })
+
+            # Extract drug interactions
+            for pattern in interaction_patterns:
+                matches = re.findall(pattern, content, re.IGNORECASE)
+                for match in matches:
+                    if isinstance(match, str) and len(match) > 10:
+                        clean_match = self._clean_safety_text(match)
+                        if clean_match and clean_match not in [
+                            d["description"] for d in drug_interactions
+                        ]:
+                            drug_interactions.append({
+                                "description": clean_match,
+                                "source": source.url,
+                                "source_title": source.title or "Untitled",
+                            })
+
+            # Extract precautions
+            for pattern in precaution_patterns:
+                matches = re.findall(pattern, content, re.IGNORECASE)
+                for match in matches:
+                    if isinstance(match, str) and len(match) > 10:
+                        clean_match = self._clean_safety_text(match)
+                        if clean_match and clean_match not in [
+                            p["description"] for p in precautions
+                        ]:
+                            precautions.append({
+                                "description": clean_match,
+                                "source": source.url,
+                                "source_title": source.title or "Untitled",
+                            })
+
+            # Extract dosage info
+            for pattern in dosage_patterns:
+                matches = re.findall(pattern, content, re.IGNORECASE)
+                for match in matches:
+                    if isinstance(match, str) and len(match) > 5:
+                        clean_match = self._clean_safety_text(match)
+                        if clean_match and clean_match not in [
+                            d["description"] for d in dosage_info
+                        ]:
+                            dosage_info.append({
+                                "description": clean_match,
+                                "source": source.url,
+                                "source_title": source.title or "Untitled",
+                            })
+
+        return {
+            "side_effects": side_effects[:5],
+            "contraindications": contraindications[:5],
+            "drug_interactions": drug_interactions[:5],
+            "precautions": precautions[:5],
+            "dosage_info": dosage_info[:3],
+            "has_safety_info": bool(
+                side_effects or contraindications or
+                drug_interactions or precautions
+            ),
+        }
+
+    def _clean_safety_text(self, text: str) -> str:
+        """Clean extracted safety text.
+
+        Args:
+            text: Text to clean.
+
+        Returns:
+            Cleaned text.
+        """
+        # Remove excess whitespace
+        text = " ".join(text.split())
+
+        # Remove navigation/UI artifacts
+        text = re.sub(r'\[.*?\]', '', text)
+        text = re.sub(r'\(.*?click.*?\)', '', text, flags=re.IGNORECASE)
+
+        # Truncate if too long
+        if len(text) > 200:
+            text = text[:200].rsplit(' ', 1)[0] + "..."
+
+        # Skip if too short after cleaning
+        if len(text) < 15:
+            return ""
+
+        return text.strip()
 
     def identify_gaps_with_ai(
         self,
