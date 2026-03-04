@@ -342,11 +342,21 @@ class TeamResearchOrchestrator:
         self._team = ResearchTeam(team_config, self._config)
 
         # Initialize individual agents (for local execution)
+        # Build analyzer config with AI integration settings
+        analyzer_config = {
+            "ai_integration_method": self._config.research.ai_integration_method,
+            "model": self._config.research_agent.model,
+            "deep_analysis_tokens": self._config.research.deep_analysis_tokens,
+            "ai_num_themes": self._config.research.ai_num_themes,
+            "ai_deep_num_themes": self._config.research.ai_deep_num_themes,
+            "ai_temperature": self._config.research.ai_temperature,
+        }
+
         self._agents = {
             AGENT_TYPE_LEAD: ResearchLeadAgent({}),
             AGENT_TYPE_COLLECTOR: SourceCollectorAgent(self._config),
             AGENT_TYPE_EXPANDER: QueryExpanderAgent({}),
-            AGENT_TYPE_ANALYZER: AnalyzerAgent({}),
+            AGENT_TYPE_ANALYZER: AnalyzerAgent(analyzer_config),
             AGENT_TYPE_DEEP_ANALYZER: DeepAnalyzerAgent(
                 {
                     "deep_analysis_passes": self._config.research.deep_analysis_passes,
