@@ -76,7 +76,7 @@ class AnalyzerAgent:
 
         # Perform cross-reference analysis
         cross_ref = self._ai_service.analyze_cross_reference(
-            _sources=cleaned_sources, themes=themes
+            sources=cleaned_sources, themes=themes
         )
 
         # Identify gaps
