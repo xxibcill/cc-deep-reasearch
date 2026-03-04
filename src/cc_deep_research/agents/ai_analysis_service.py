@@ -5,35 +5,91 @@ This service provides semantic analysis capabilities using Claude models:
 - Cross-reference analysis for consensus/disagreement
 - Gap identification with query relevance scoring
 - Synthesis with proper attribution
+
+Supports multiple integration methods:
+- 'api': Uses real Anthropic API calls for deep semantic analysis
+- 'heuristic': Uses pattern matching and heuristics (fast, no API cost)
+- 'hybrid': Tries API first, falls back to heuristic
 """
 
-from typing import Any
+import logging
+import os
+from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.agents.ai_agent_integration import AIAgentIntegration
 from cc_deep_research.agents.ai_executor import AIExecutor
 from cc_deep_research.models import SearchResultItem
 
+if TYPE_CHECKING:
+    from cc_deep_research.agents.llm_analysis_client import LLMAnalysisClient
+
+logger = logging.getLogger(__name__)
+
 
 class AIAnalysisService:
     """Service for AI-powered semantic analysis of research sources.
 
-    This service leverages Claude models through the Agent system
-    to perform deep semantic analysis that goes beyond keyword matching.
+    This service leverages Claude models through multiple integration methods:
+    - API: Real Anthropic API calls for deep semantic understanding
+    - Heuristic: Pattern matching and heuristics for fast analysis
+    - Hybrid: API with heuristic fallback
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize AI analysis service.
 
         Args:
-            config: Agent configuration dictionary.
+            config: Agent configuration dictionary with:
+                - ai_integration_method: 'api', 'heuristic', or 'hybrid'
+                - anthropic_api_key: API key (or ANTHROPIC_API_KEY env var)
+                - model: Model to use
+                - deep_analysis_tokens: Token limit
         """
         self._config = config
         self._model = config.get("model", "claude-sonnet-4-6")
         self._max_tokens = config.get("deep_analysis_tokens", 150000)
         self._num_themes = config.get("ai_num_themes", 8)
         self._deep_num_themes = config.get("ai_deep_num_themes", 12)
+        self._integration_method = config.get("ai_integration_method", "heuristic")
+
+        # Initialize heuristic-based components
         self._ai_integration = AIAgentIntegration(config)
         self._ai_executor = AIExecutor(config)
+
+        # Initialize LLM client if using API or hybrid mode
+        self._llm_client: LLMAnalysisClient | None = None
+        if self._integration_method in ("api", "hybrid"):
+            self._initialize_llm_client()
+
+    def _initialize_llm_client(self) -> None:
+        """Initialize the LLM client for real API-based analysis."""
+        try:
+            from cc_deep_research.agents.llm_analysis_client import LLMAnalysisClient
+
+            # Check for API key
+            api_key = self._config.get("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY")
+            if api_key:
+                llm_config = {
+                    **self._config,
+                    "anthropic_api_key": api_key,
+                    "max_tokens": 8192,  # Per-request token limit
+                }
+                self._llm_client = LLMAnalysisClient(llm_config)
+                logger.info("LLM client initialized for deep semantic analysis")
+            else:
+                logger.warning(
+                    "ANTHROPIC_API_KEY not found. Falling back to heuristic analysis. "
+                    "Set ANTHROPIC_API_KEY environment variable for deep analysis."
+                )
+                if self._integration_method == "api":
+                    raise ValueError(
+                        "ANTHROPIC_API_KEY required for 'api' integration method. "
+                        "Set it via environment variable or config."
+                    )
+        except ImportError as e:
+            logger.warning(f"Failed to import LLMAnalysisClient: {e}")
+            if self._integration_method == "api":
+                raise
 
     def extract_themes_semantically(
         self,
@@ -42,6 +98,9 @@ class AIAnalysisService:
         num_themes: int | None = None,
     ) -> list[dict[str, Any]]:
         """Extract themes using semantic analysis.
+
+        Uses LLM API when available for deep semantic understanding,
+        falls back to heuristic-based extraction.
 
         Args:
             sources: List of sources with content.
@@ -58,7 +117,7 @@ class AIAnalysisService:
         if num_themes is None:
             num_themes = self._num_themes
 
-        # Convert SearchResultItem to dict for AI executor
+        # Convert SearchResultItem to dict
         sources_dict = [
             {
                 "url": s.url,
@@ -70,7 +129,25 @@ class AIAnalysisService:
             if s.content or s.snippet
         ]
 
-        # Try AI executor first (uses semantic topic detection)
+        # Try LLM client first if available (API or hybrid mode)
+        if self._llm_client and sources_dict:
+            try:
+                logger.info("Using LLM API for deep semantic theme extraction")
+                themes = self._llm_client.extract_themes(
+                    sources=sources_dict,
+                    query=query,
+                    num_themes=num_themes,
+                )
+                if themes:
+                    logger.info(f"LLM extracted {len(themes)} themes")
+                    return themes
+            except Exception as e:
+                logger.warning(f"LLM theme extraction failed: {e}")
+                if self._integration_method == "api":
+                    raise
+                # Fall through to heuristic for hybrid mode
+
+        # Fallback to heuristic-based AI executor
         if sources_dict:
             ai_themes = self._ai_executor.extract_themes(
                 sources=sources_dict,
@@ -107,9 +184,12 @@ class AIAnalysisService:
         return themes
 
     def analyze_cross_reference(
-        self, _sources: list[SearchResultItem], themes: list[dict[str, Any]]
+        self, sources: list[SearchResultItem], themes: list[dict[str, Any]]
     ) -> dict[str, Any]:
         """Perform cross-reference analysis across sources.
+
+        Uses LLM API when available for deep cross-reference analysis,
+        falls back to heuristic-based analysis.
 
         Args:
             sources: List of sources with content.
@@ -121,9 +201,39 @@ class AIAnalysisService:
             - disagreement_points: List of contradictory claims with evidence
             - cross_reference_claims: List of claim objects
         """
-        # Use AI integration for cross-reference analysis
+        # Convert SearchResultItem to dict
+        sources_dict = [
+            {
+                "url": s.url,
+                "title": s.title or "",
+                "content": s.content or s.snippet or "",
+                "snippet": s.snippet or "",
+            }
+            for s in sources
+            if s.content or s.snippet
+        ]
+
+        # Try LLM client first if available
+        if self._llm_client and sources_dict and themes:
+            try:
+                logger.info("Using LLM API for cross-reference analysis")
+                result = self._llm_client.analyze_cross_reference(
+                    sources=sources_dict,
+                    themes=themes,
+                )
+                logger.info(
+                    f"LLM found {len(result.get('consensus_points', []))} consensus points, "
+                    f"{len(result.get('disagreement_points', []))} disagreement points"
+                )
+                return result
+            except Exception as e:
+                logger.warning(f"LLM cross-reference analysis failed: {e}")
+                if self._integration_method == "api":
+                    raise
+
+        # Fallback to AI integration heuristics
         return self._ai_integration.analyze_cross_reference_with_ai(
-            _sources=_sources,
+            _sources=sources,
             themes=themes,
         )
 
@@ -161,6 +271,9 @@ class AIAnalysisService:
     ) -> list[dict[str, Any]]:
         """Identify information gaps in the research.
 
+        Uses LLM API when available for deep gap identification,
+        falls back to heuristic-based analysis.
+
         Args:
             sources: List of analyzed sources.
             query: Original research query.
@@ -172,7 +285,35 @@ class AIAnalysisService:
             - importance: High/Medium/Low
             - suggested_queries: Queries to fill gap
         """
-        # Use AI integration for gap identification
+        # Convert SearchResultItem to dict
+        sources_dict = [
+            {
+                "url": s.url,
+                "title": s.title or "",
+                "content": s.content or s.snippet or "",
+                "snippet": s.snippet or "",
+            }
+            for s in sources
+            if s.content or s.snippet
+        ]
+
+        # Try LLM client first if available
+        if self._llm_client and sources_dict and themes:
+            try:
+                logger.info("Using LLM API for gap identification")
+                gaps = self._llm_client.identify_gaps(
+                    sources=sources_dict,
+                    query=query,
+                    themes=themes,
+                )
+                logger.info(f"LLM identified {len(gaps)} gaps")
+                return gaps
+            except Exception as e:
+                logger.warning(f"LLM gap identification failed: {e}")
+                if self._integration_method == "api":
+                    raise
+
+        # Fallback to AI integration for gap identification
         return self._ai_integration.identify_gaps_with_ai(
             sources=sources,
             query=query,
@@ -183,11 +324,14 @@ class AIAnalysisService:
         self,
         sources: list[SearchResultItem],
         themes: list[dict[str, Any]],
-        cross_ref: dict[str, Any],  # noqa: ARG002
-        gaps: list[dict[str, Any]],  # noqa: ARG002
-        query: str,  # noqa: ARG002
+        cross_ref: dict[str, Any],
+        gaps: list[dict[str, Any]],
+        query: str,
     ) -> list[dict[str, Any]]:
         """Synthesize key findings with proper attribution.
+
+        Uses LLM API when available for deep synthesis,
+        falls back to heuristic-based synthesis.
 
         Args:
             sources: List of sources.
@@ -203,7 +347,7 @@ class AIAnalysisService:
             - evidence: List of supporting source references
             - confidence: High/Medium/Low
         """
-        # Convert sources to dict format for AI executor
+        # Convert sources to dict format
         sources_dict = [
             {
                 "url": s.url,
@@ -213,13 +357,31 @@ class AIAnalysisService:
             for s in sources
         ]
 
-        # Use AI executor for synthesis
+        # Try LLM client first if available
+        if self._llm_client and sources_dict and themes:
+            try:
+                logger.info("Using LLM API for findings synthesis")
+                findings = self._llm_client.synthesize_findings(
+                    sources=sources_dict,
+                    themes=themes,
+                    cross_ref=cross_ref,
+                    gaps=gaps,
+                    query=query,
+                )
+                logger.info(f"LLM synthesized {len(findings)} findings")
+                return findings
+            except Exception as e:
+                logger.warning(f"LLM synthesis failed: {e}")
+                if self._integration_method == "api":
+                    raise
+
+        # Fallback to AI executor for synthesis
         findings = self._ai_executor.synthesize_findings(themes, sources_dict)
 
         if findings:
             return findings
 
-        # Fallback to basic synthesis
+        # Final fallback to basic synthesis
         findings = []
         for theme in themes[:5]:  # Top 5 themes become key findings
             finding = {
