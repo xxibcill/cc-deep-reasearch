@@ -110,16 +110,16 @@ Changes needed:
 **File**: `src/cc_deep_research/agents/ai_analysis_service.py`
 
 Changes needed:
-- [ ] Distinguish between human studies, animal studies, in vitro studies
-- [ ] Identify conflicting evidence and explain contradictions
-- [ ] Add confidence levels based on evidence quality
+- [x] Distinguish between human studies, animal studies, in vitro studies
+- [x] Identify conflicting evidence and explain contradictions
+- [x] Add confidence levels based on evidence quality
 
 #### Task 3.3: Add Safety and Contraindications Section
 **File**: `src/cc_deep_research/agents/reporter.py`
 
 Changes needed:
-- [ ] Add dedicated section for safety, side effects, contraindications
-- [ ] Extract this information from sources during analysis
+- [x] Add dedicated section for safety, side effects, contraindications
+- [x] Extract this information from sources during analysis
 
 ---
 
@@ -135,8 +135,8 @@ Changes needed:
 5. [x] Add methodology section to reports
 
 ### Medium-term
-6. [ ] Add analytical depth improvements
-7. [ ] Add safety/contraindication extraction
+6. [x] Add analytical depth improvements
+7. [x] Add safety/contraindication extraction
 
 ---
 

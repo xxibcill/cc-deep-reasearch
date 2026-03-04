@@ -127,6 +127,32 @@ class AIAnalysisService:
             themes=themes,
         )
 
+    def analyze_evidence_quality(
+        self,
+        sources: list[SearchResultItem],
+        themes: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Analyze evidence quality across sources.
+
+        Distinguishes between human studies, animal studies, and in vitro studies.
+        Identifies conflicting evidence and assigns confidence levels.
+
+        Args:
+            sources: List of sources with content.
+            themes: Identified themes from semantic analysis.
+
+        Returns:
+            Dictionary with:
+            - study_types: Breakdown of human/animal/in vitro/other studies
+            - evidence_conflicts: List of identified conflicts with explanations
+            - confidence_levels: Confidence assessment for each theme
+            - evidence_summary: Overall evidence quality summary
+        """
+        return self._ai_integration.analyze_evidence_quality(
+            sources=sources,
+            themes=themes,
+        )
+
     def identify_gaps(
         self,
         sources: list[SearchResultItem],

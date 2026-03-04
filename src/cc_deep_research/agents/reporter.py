@@ -6,6 +6,8 @@ The reporter agent is responsible for:
 - Ensuring proper citation formatting
 - Including all required sections and metadata
 - Displaying source credibility information
+- Showing evidence quality analysis
+- Including safety and contraindication information
 """
 
 import json
@@ -13,6 +15,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any
 
+from cc_deep_research.agents.ai_agent_integration import AIAgentIntegration
 from cc_deep_research.credibility import (
     SourceCredibilityScorer,
     format_credibility_badge,
@@ -29,6 +32,8 @@ class ReporterAgent:
     - Formats citations correctly
     - Includes all required sections (executive summary, findings, analysis, etc.)
     - Displays source credibility scores and types
+    - Shows evidence quality analysis (human/animal/in vitro studies)
+    - Includes safety and contraindication information
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
@@ -39,6 +44,7 @@ class ReporterAgent:
         """
         self._config = config
         self._credibility_scorer = SourceCredibilityScorer()
+        self._ai_integration = AIAgentIntegration(config)
 
     def generate_markdown_report(
         self,
@@ -60,7 +66,10 @@ class ReporterAgent:
         ## Methodology
         ## Key Findings
         ## Detailed Analysis
+        ## Evidence Quality Analysis
         ## Cross-Reference Analysis
+        ## Safety and Contraindications
+        ## Research Gaps and Limitations
         ## Sources (with credibility scores)
         ## Research Metadata
         """
@@ -74,7 +83,7 @@ class ReporterAgent:
         sections.append(self._generate_executive_summary(session, analysis))
         sections.append("\n")
 
-        # Methodology (NEW)
+        # Methodology
         sections.append("## Methodology\n")
         sections.append(self._generate_methodology_section(session, analysis))
         sections.append("\n")
@@ -101,12 +110,24 @@ class ReporterAgent:
         sections.append(self._generate_detailed_analysis(session, analysis))
         sections.append("\n")
 
+        # Evidence Quality Analysis (NEW)
+        sections.append("## Evidence Quality Analysis\n")
+        sections.append(self._generate_evidence_quality_section(session, analysis))
+        sections.append("\n")
+
         # Cross-Reference Analysis
         sections.append("## Cross-Reference Analysis\n")
         sections.append(self._generate_cross_reference_section(analysis))
         sections.append("\n")
 
-        # Research Gaps (NEW)
+        # Safety and Contraindications (NEW)
+        safety_section = self._generate_safety_section(session)
+        if safety_section:
+            sections.append("## Safety and Contraindications\n")
+            sections.append(safety_section)
+            sections.append("\n")
+
+        # Research Gaps
         if analysis.get("gaps"):
             sections.append("## Research Gaps and Limitations\n")
             for gap in analysis.get("gaps", []):
@@ -146,6 +167,19 @@ class ReporterAgent:
         Returns:
             JSON string with complete research data.
         """
+        # Get evidence quality analysis
+        themes = analysis.get("themes_detailed", [])
+        if not themes:
+            themes = [{"name": t, "supporting_sources": []} for t in analysis.get("themes", [])]
+
+        evidence_quality = self._ai_integration.analyze_evidence_quality(
+            session.sources,
+            themes,
+        )
+
+        # Get safety information
+        safety_info = self._ai_integration.extract_safety_information(session.sources)
+
         report = {
             "query": session.query,
             "session_id": session.session_id,
@@ -155,6 +189,8 @@ class ReporterAgent:
             "execution_time_seconds": session.execution_time_seconds,
             "total_sources": session.total_sources,
             "analysis": analysis,
+            "evidence_quality": evidence_quality,
+            "safety_info": safety_info,
             "sources": [
                 {
                     "url": s.url,
@@ -557,6 +593,171 @@ class ReporterAgent:
             "- The analysis reflects the state of available information at the time of research "
             f"({datetime.utcnow().strftime('%Y-%m-%d')})."
         )
+
+        return "\n".join(lines)
+
+    def _generate_evidence_quality_section(
+        self,
+        session: ResearchSession,
+        analysis: dict[str, Any],
+    ) -> str:
+        """Generate evidence quality analysis section.
+
+        Args:
+            session: Research session.
+            analysis: Analysis results.
+
+        Returns:
+            Evidence quality analysis text.
+        """
+        lines = []
+
+        # Get evidence quality analysis
+        themes = analysis.get("themes_detailed", [])
+        if not themes:
+            themes = [{"name": t, "supporting_sources": []} for t in analysis.get("themes", [])]
+
+        evidence_quality = self._ai_integration.analyze_evidence_quality(
+            session.sources,
+            themes,
+        )
+
+        # Study types breakdown
+        study_types = evidence_quality.get("study_types", {})
+        lines.append("### Study Types\n")
+
+        type_descriptions = {
+            "review_meta": "Meta-Analyses and Systematic Reviews",
+            "human_clinical": "Human Clinical Trials",
+            "human_observational": "Human Observational Studies",
+            "animal": "Animal Studies",
+            "in_vitro": "In Vitro / Laboratory Studies",
+            "other": "Other Sources",
+        }
+
+        has_studies = False
+        for study_type, sources in study_types.items():
+            if sources:
+                has_studies = True
+                desc = type_descriptions.get(study_type, study_type.replace("_", " ").title())
+                lines.append(f"- **{desc}**: {len(sources)} source(s)")
+
+        if not has_studies:
+            lines.append("- Study type classification not available for these sources")
+
+        lines.append("")
+
+        # Evidence summary
+        evidence_summary = evidence_quality.get("evidence_summary", "")
+        if evidence_summary:
+            lines.append("### Evidence Summary\n")
+            lines.append(evidence_summary)
+            lines.append("")
+
+        # Confidence levels by theme
+        confidence_levels = evidence_quality.get("confidence_levels", [])
+        if confidence_levels:
+            lines.append("### Confidence by Theme\n")
+            for cl in confidence_levels[:5]:  # Top 5 themes
+                theme = cl.get("theme", "Unknown")
+                confidence = cl.get("confidence", "Unknown")
+                score = cl.get("evidence_score", 0)
+                explanation = cl.get("explanation", "")
+
+                lines.append(f"**{theme}**: {confidence} confidence (score: {score})")
+                if explanation:
+                    lines.append(f"  {explanation}")
+                lines.append("")
+
+        # Evidence conflicts
+        conflicts = evidence_quality.get("evidence_conflicts", [])
+        if conflicts:
+            lines.append("### Identified Evidence Conflicts\n")
+            for conflict in conflicts[:5]:  # Top 5 conflicts
+                conflict_type = conflict.get("type", "Conflict")
+                context = conflict.get("context", "No context available")
+                lines.append(f"- **{conflict_type}**: {context}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    def _generate_safety_section(
+        self,
+        session: ResearchSession,
+    ) -> str:
+        """Generate safety and contraindications section.
+
+        Args:
+            session: Research session.
+
+        Returns:
+            Safety section text or empty string if no safety info found.
+        """
+        # Extract safety information
+        safety_info = self._ai_integration.extract_safety_information(session.sources)
+
+        if not safety_info.get("has_safety_info"):
+            # Return a brief note even if no safety info found
+            return (
+                "No specific safety information was found in the analyzed sources. "
+                "Always consult with a healthcare professional before making significant "
+                "changes to your diet or supplement regimen.\n"
+            )
+
+        lines = []
+
+        # Side effects
+        side_effects = safety_info.get("side_effects", [])
+        if side_effects:
+            lines.append("### Potential Side Effects\n")
+            for se in side_effects:
+                lines.append(f"- {se['description']}")
+                if se.get("source_title"):
+                    lines.append(f"  *Source: {se['source_title']}*")
+            lines.append("")
+
+        # Contraindications
+        contraindications = safety_info.get("contraindications", [])
+        if contraindications:
+            lines.append("### Contraindications\n")
+            for ci in contraindications:
+                lines.append(f"- {ci['description']}")
+                if ci.get("source_title"):
+                    lines.append(f"  *Source: {ci['source_title']}*")
+            lines.append("")
+
+        # Drug interactions
+        drug_interactions = safety_info.get("drug_interactions", [])
+        if drug_interactions:
+            lines.append("### Drug Interactions\n")
+            for di in drug_interactions:
+                lines.append(f"- {di['description']}")
+                if di.get("source_title"):
+                    lines.append(f"  *Source: {di['source_title']}*")
+            lines.append("")
+
+        # Precautions
+        precautions = safety_info.get("precautions", [])
+        if precautions:
+            lines.append("### Precautions\n")
+            for pc in precautions:
+                lines.append(f"- {pc['description']}")
+                if pc.get("source_title"):
+                    lines.append(f"  *Source: {pc['source_title']}*")
+            lines.append("")
+
+        # Dosage information
+        dosage_info = safety_info.get("dosage_info", [])
+        if dosage_info:
+            lines.append("### Dosage Information\n")
+            for di in dosage_info:
+                lines.append(f"- {di['description']}")
+                if di.get("source_title"):
+                    lines.append(f"  *Source: {di['source_title']}*")
+            lines.append("")
+
+        # Disclaimer
+        lines.append("**Important Disclaimer:** This safety information is extracted from the analyzed sources and should not be considered medical advice. Always consult with a qualified healthcare professional before starting any new supplement or making significant dietary changes, especially if you have existing health conditions or are taking medications.\n")
 
         return "\n".join(lines)
 
