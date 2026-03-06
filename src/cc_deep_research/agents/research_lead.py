@@ -10,7 +10,13 @@ The research lead agent is responsible for:
 
 from typing import Any
 
-from cc_deep_research.models import ResearchDepth, ResearchSession
+from cc_deep_research.models import (
+    QueryProfile,
+    ResearchDepth,
+    ResearchSession,
+    StrategyPlan,
+    StrategyResult,
+)
 
 
 class ResearchLeadAgent:
@@ -37,7 +43,7 @@ class ResearchLeadAgent:
         self,
         query: str,
         depth: ResearchDepth,
-    ) -> dict[str, Any]:
+    ) -> StrategyResult:
         """Analyze the research query and determine strategy.
 
         Args:
@@ -45,7 +51,7 @@ class ResearchLeadAgent:
             depth: Research depth mode (quick/standard/deep).
 
         Returns:
-            Dictionary containing research strategy and task plan.
+            Typed strategy result and task plan.
         """
         # Analyze query complexity and scope
         complexity = self._assess_complexity(query)
@@ -54,14 +60,14 @@ class ResearchLeadAgent:
         # Determine strategy based on depth
         strategy = self._create_strategy(depth, complexity, profile)
 
-        return {
-            "query": query,
-            "complexity": complexity,
-            "depth": depth,
-            "profile": profile,
-            "strategy": strategy,
-            "tasks_needed": strategy["tasks"],
-        }
+        return StrategyResult(
+            query=query,
+            complexity=complexity,
+            depth=depth,
+            profile=profile,
+            strategy=strategy,
+            tasks_needed=list(strategy.tasks),
+        )
 
     def _assess_complexity(self, query: str) -> str:
         """Assess the complexity of a research query.
@@ -86,8 +92,8 @@ class ResearchLeadAgent:
         self,
         depth: ResearchDepth,
         complexity: str,
-        profile: dict[str, Any],
-    ) -> dict[str, Any]:
+        profile: QueryProfile,
+    ) -> StrategyPlan:
         """Create research strategy based on depth and complexity.
 
         Args:
@@ -129,23 +135,23 @@ class ResearchLeadAgent:
         elif complexity == "complex" and depth == ResearchDepth.DEEP:
             base_strategy["query_variations"] = 7
 
-        if profile["is_time_sensitive"]:
+        if profile.is_time_sensitive:
             base_strategy["query_variations"] += 1
 
-        if profile["intent"] == "comparison":
+        if profile.intent == "comparison":
             base_strategy["tasks"] = [
                 *base_strategy["tasks"],
                 "compare",
             ]
 
         base_strategy["follow_up_bias"] = self._get_follow_up_bias(profile)
-        base_strategy["intent"] = profile["intent"]
-        base_strategy["time_sensitive"] = profile["is_time_sensitive"]
-        base_strategy["key_terms"] = profile["key_terms"]
+        base_strategy["intent"] = profile.intent
+        base_strategy["time_sensitive"] = profile.is_time_sensitive
+        base_strategy["key_terms"] = profile.key_terms
 
-        return base_strategy
+        return StrategyPlan(**base_strategy)
 
-    def _build_query_profile(self, query: str) -> dict[str, Any]:
+    def _build_query_profile(self, query: str) -> QueryProfile:
         """Build a lightweight profile for planning and expansion."""
         lowered = query.lower()
         comparison_terms = {"vs", "versus", "compare", "comparison", "better"}
@@ -171,23 +177,23 @@ class ResearchLeadAgent:
         else:
             intent = "exploratory"
 
-        return {
-            "intent": intent,
-            "is_time_sensitive": any(term in lowered for term in time_terms),
-            "key_terms": key_terms,
-        }
+        return QueryProfile(
+            intent=intent,
+            is_time_sensitive=any(term in lowered for term in time_terms),
+            key_terms=key_terms,
+        )
 
-    def _get_follow_up_bias(self, profile: dict[str, Any]) -> str:
+    def _get_follow_up_bias(self, profile: QueryProfile) -> str:
         """Describe the preferred follow-up direction for the query."""
-        if profile["intent"] == "comparison":
+        if profile.intent == "comparison":
             return "comparison_evidence"
-        if profile["is_time_sensitive"]:
+        if profile.is_time_sensitive:
             return "recent_updates"
         return "coverage"
 
     def coordinate_research(
         self,
-        strategy: dict[str, Any],
+        strategy: StrategyResult,
     ) -> ResearchSession:
         """Coordinate the research process using the strategy.
 
@@ -210,7 +216,7 @@ class ResearchLeadAgent:
 
         return ResearchSession(
             session_id=session_id,
-            query=strategy.get("query", ""),
+            query=strategy.query,
         )
 
     def validate_completeness(

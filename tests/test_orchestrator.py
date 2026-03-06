@@ -5,7 +5,16 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from cc_deep_research.config import Config
-from cc_deep_research.models import ResearchDepth, SearchResultItem
+from cc_deep_research.models import (
+    AnalysisFinding,
+    AnalysisResult,
+    IterationHistoryRecord,
+    ResearchDepth,
+    SearchResultItem,
+    StrategyPlan,
+    StrategyResult,
+    ValidationResult,
+)
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.orchestrator import TeamExecutionError, TeamResearchOrchestrator
 
@@ -18,6 +27,7 @@ class TestTeamResearchOrchestrator:
         config = Config()
         monitor = ResearchMonitor(enabled=False)
         orchestrator = TeamResearchOrchestrator(config, monitor)
+        orchestrator._monitor.set_session = MagicMock()
 
         assert orchestrator._config == config
         assert orchestrator._monitor == monitor
@@ -33,6 +43,7 @@ class TestTeamResearchOrchestrator:
         monitor = ResearchMonitor(enabled=False)
 
         orchestrator = TeamResearchOrchestrator(config, monitor)
+        orchestrator._monitor.set_session = MagicMock()
 
         # Mock the provider to return empty results
         mock_provider = MagicMock(spec=SearchProvider)
@@ -101,6 +112,7 @@ class TestTeamResearchOrchestrator:
     ) -> None:
         """Test that execute_research writes the same top-level metadata contract."""
         orchestrator = TeamResearchOrchestrator(Config(), ResearchMonitor(enabled=False))
+        orchestrator._monitor.set_session = MagicMock()
         sources = [
             SearchResultItem(
                 url="https://example.com/source",
@@ -112,7 +124,24 @@ class TestTeamResearchOrchestrator:
         orchestrator._initialize_team = AsyncMock()
         orchestrator._shutdown_team = AsyncMock()
         orchestrator._phase_analyze_strategy = AsyncMock(
-            return_value={"strategy": {"enable_quality_scoring": True}}
+            return_value=StrategyResult(
+                query="test query",
+                complexity="moderate",
+                depth=depth,
+                profile={
+                    "intent": "exploratory",
+                    "is_time_sensitive": False,
+                    "key_terms": ["test", "query"],
+                },
+                strategy=StrategyPlan(
+                    query_variations=1,
+                    max_sources=10,
+                    enable_cross_ref=False,
+                    enable_quality_scoring=True,
+                    tasks=["collect", "analyze", "report"],
+                ),
+                tasks_needed=["collect", "analyze", "report"],
+            )
         )
         orchestrator._phase_expand_queries = AsyncMock(return_value=["test query"])
 
@@ -130,24 +159,33 @@ class TestTeamResearchOrchestrator:
         orchestrator._phase_collect_sources = collect_sources
         orchestrator._run_analysis_workflow = AsyncMock(
             return_value=(
-                {
-                    "key_findings": ["Finding"],
-                    "themes": ["Theme"],
-                    "gaps": [],
-                    "analysis_method": analysis_method,
-                    "deep_analysis_complete": depth == ResearchDepth.DEEP,
-                },
-                {
-                    "quality_score": 0.8,
-                    "is_valid": True,
-                    "issues": [],
-                    "warnings": [],
-                    "recommendations": [],
-                    "needs_follow_up": False,
-                    "follow_up_queries": [],
-                },
+                AnalysisResult(
+                    key_findings=[AnalysisFinding(title="Finding", description="Description")],
+                    themes=["Theme"],
+                    gaps=[],
+                    analysis_method=analysis_method,
+                    deep_analysis_complete=depth == ResearchDepth.DEEP,
+                    source_count=1,
+                ),
+                ValidationResult(
+                    quality_score=0.8,
+                    is_valid=True,
+                    issues=[],
+                    warnings=[],
+                    recommendations=[],
+                    needs_follow_up=False,
+                    follow_up_queries=[],
+                    target_source_count=1,
+                ),
                 sources,
-                [{"iteration": 1, "source_count": 1, "quality_score": 0.8, "gap_count": 0}],
+                [
+                    IterationHistoryRecord(
+                        iteration=1,
+                        source_count=1,
+                        quality_score=0.8,
+                        gap_count=0,
+                    )
+                ],
             )
         )
 
@@ -185,7 +223,20 @@ class TestTeamResearchOrchestrator:
         query = "test research query"
         depth = ResearchDepth.STANDARD
 
-        strategy = orchestrator._agents.get("lead", MagicMock()).analyze_query(query, depth)
+        strategy = StrategyResult(
+            query=query,
+            complexity="moderate",
+            depth=depth,
+            profile={"intent": "exploratory", "is_time_sensitive": False, "key_terms": ["test"]},
+            strategy=StrategyPlan(
+                query_variations=3,
+                max_sources=10,
+                enable_cross_ref=False,
+                enable_quality_scoring=True,
+                tasks=["expand", "collect", "analyze", "report"],
+            ),
+            tasks_needed=["expand", "collect", "analyze", "report"],
+        )
 
         # Note: This is a placeholder test as the actual implementation
         # would require proper agent initialization
@@ -203,18 +254,18 @@ class TestTeamResearchOrchestrator:
         """Test that follow-up queries are deduplicated before reuse."""
         orchestrator = TeamResearchOrchestrator(Config(), ResearchMonitor(enabled=False))
 
-        analysis = {
-            "gaps": [
+        analysis = AnalysisResult(
+            gaps=[
                 {
                     "gap_description": "missing regulatory context",
                     "suggested_queries": ["query regulation", "query regulation"],
                 }
             ]
-        }
-        validation = {
-            "needs_follow_up": True,
-            "follow_up_queries": ["query regulation", "query expert review"],
-        }
+        )
+        validation = ValidationResult(
+            needs_follow_up=True,
+            follow_up_queries=["query regulation", "query expert review"],
+        )
 
         follow_up_queries = orchestrator._get_follow_up_queries(
             "query",

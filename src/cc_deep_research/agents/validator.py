@@ -9,7 +9,12 @@ The validator agent is responsible for:
 
 from typing import Any
 
-from cc_deep_research.models import ResearchSession, SearchResultItem
+from cc_deep_research.models import (
+    AnalysisResult,
+    ResearchSession,
+    SearchResultItem,
+    ValidationResult,
+)
 
 
 class ValidatorAgent:
@@ -35,10 +40,10 @@ class ValidatorAgent:
     def validate_research(
         self,
         session: ResearchSession,
-        analysis: dict[str, Any],
+        analysis: AnalysisResult | dict[str, Any],
         query: str | None = None,
         min_sources_override: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> ValidationResult:
         """Validate research session for quality and completeness.
 
         Args:
@@ -53,9 +58,10 @@ class ValidatorAgent:
             - quality_score: Overall quality score (0-1)
             - recommendations: List of improvement recommendations
         """
-        issues = []
-        warnings = []
-        recommendations = []
+        analysis_result = AnalysisResult.model_validate(analysis)
+        issues: list[str] = []
+        warnings: list[str] = []
+        recommendations: list[str] = []
 
         # Check source count
         min_sources = min_sources_override or self._min_sources
@@ -77,7 +83,7 @@ class ValidatorAgent:
             recommendations.append(depth_check["recommendation"])
 
         # Check for gaps in analysis
-        gaps = analysis.get("gaps", [])
+        gaps = analysis_result.normalized_gaps()
         if gaps:
             warnings.append(f"Analysis identified {len(gaps)} gap(s)")
             recommendations.append("Address identified gaps with follow-up research")
@@ -98,7 +104,7 @@ class ValidatorAgent:
         is_valid = len(issues) == 0
         follow_up_queries = self._build_follow_up_queries(
             query=query or session.query,
-            analysis=analysis,
+            analysis=analysis_result,
             source_count=session.total_sources,
             min_sources=min_sources,
             diversity_check=diversity_check,
@@ -107,23 +113,23 @@ class ValidatorAgent:
         )
         needs_follow_up = bool(issues or warnings) and bool(follow_up_queries)
 
-        return {
-            "is_valid": is_valid,
-            "issues": issues,
-            "warnings": warnings,
-            "recommendations": recommendations,
-            "quality_score": quality_score,
-            "diversity_score": diversity_check["score"],
-            "content_depth_score": depth_check["score"],
-            "follow_up_queries": follow_up_queries,
-            "needs_follow_up": needs_follow_up,
-            "target_source_count": max(min_sources, session.total_sources),
-        }
+        return ValidationResult(
+            is_valid=is_valid,
+            issues=issues,
+            warnings=warnings,
+            recommendations=recommendations,
+            quality_score=quality_score,
+            diversity_score=diversity_check["score"],
+            content_depth_score=depth_check["score"],
+            follow_up_queries=follow_up_queries,
+            needs_follow_up=needs_follow_up,
+            target_source_count=max(min_sources, session.total_sources),
+        )
 
     def _build_follow_up_queries(
         self,
         query: str,
-        analysis: dict[str, Any],
+        analysis: AnalysisResult,
         source_count: int,
         min_sources: int,
         diversity_check: dict[str, Any],
@@ -133,15 +139,9 @@ class ValidatorAgent:
         """Build follow-up queries that can improve weak research runs."""
         follow_up_queries: list[str] = []
 
-        gaps = analysis.get("gaps", [])
-        for gap in gaps:
-            if isinstance(gap, dict):
-                follow_up_queries.extend(gap.get("suggested_queries", []))
-                description = gap.get("gap_description")
-                if description:
-                    follow_up_queries.append(f"{query} {description}")
-            elif gap:
-                follow_up_queries.append(f"{query} {gap}")
+        for gap in analysis.normalized_gaps():
+            follow_up_queries.extend(gap.suggested_queries)
+            follow_up_queries.append(f"{query} {gap.gap_description}")
 
         if source_count < min_sources:
             follow_up_queries.extend(
@@ -288,7 +288,7 @@ class ValidatorAgent:
     def _check_citations(
         self,
         session: ResearchSession,
-        analysis: dict[str, Any],
+        analysis: AnalysisResult | dict[str, Any],
     ) -> dict[str, Any]:
         """Check citation completeness and accuracy.
 
@@ -299,12 +299,13 @@ class ValidatorAgent:
         Returns:
             Dictionary with citation check results.
         """
+        analysis_result = AnalysisResult.model_validate(analysis)
+
         # Check if sources are numbered correctly
         has_sources = len(session.sources) > 0
 
         # Check if analysis references sources
-        findings = analysis.get("key_findings", [])
-        has_citations = any(f.get("source") for f in findings)
+        has_citations = any(analysis_result.finding_sources())
 
         is_complete = has_sources and has_citations
 

@@ -28,11 +28,15 @@ from cc_deep_research.agents import (
 from cc_deep_research.config import Config
 from cc_deep_research.coordination import AgentPool, MessageBus
 from cc_deep_research.models import (
+    AnalysisResult,
+    IterationHistoryRecord,
     ResearchDepth,
     ResearchSession,
     SearchOptions,
     SearchResult,
     SearchResultItem,
+    StrategyResult,
+    ValidationResult,
 )
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.teams import AgentSpec, ResearchTeam, TeamConfig
@@ -277,9 +281,9 @@ class TeamResearchOrchestrator:
         # Summary
         self._monitor.section("Summary")
         self._monitor.log(f"Total sources: {len(sources)}")
-        self._monitor.log(f"Key findings: {len(analysis.get('key_findings', []))}")
+        self._monitor.log(f"Key findings: {len(analysis.key_findings)}")
         if validation:
-            self._monitor.log(f"Quality score: {validation['quality_score']:.2f}")
+            self._monitor.log(f"Quality score: {validation.quality_score:.2f}")
 
         # Cleanup
         self._notify_phase(
@@ -336,14 +340,14 @@ class TeamResearchOrchestrator:
         self,
         *,
         depth: ResearchDepth,
-        strategy: dict[str, Any],
-        analysis: dict[str, Any],
-        validation: dict[str, Any] | None,
-        iteration_history: list[dict[str, Any]],
+        strategy: StrategyResult,
+        analysis: AnalysisResult,
+        validation: ValidationResult | None,
+        iteration_history: list[IterationHistoryRecord],
     ) -> dict[str, Any]:
         """Build the stable session metadata contract for persisted sessions."""
-        deep_analysis_complete = bool(analysis.get("deep_analysis_complete", False))
-        deep_analysis_method = str(analysis.get("analysis_method", ""))
+        deep_analysis_complete = analysis.deep_analysis_complete
+        deep_analysis_method = analysis.analysis_method
         deep_analysis_requested = depth == ResearchDepth.DEEP
         deep_analysis_reason: str | None = None
 
@@ -358,10 +362,12 @@ class TeamResearchOrchestrator:
             self._note_execution_degradation(deep_analysis_reason)
 
         return {
-            "strategy": strategy,
-            "analysis": analysis,
-            "validation": validation or {},
-            "iteration_history": iteration_history,
+            "strategy": strategy.model_dump(mode="python"),
+            "analysis": analysis.model_dump(mode="python"),
+            "validation": validation.model_dump(mode="python") if validation else {},
+            "iteration_history": [
+                record.model_dump(mode="python") for record in iteration_history
+            ],
             "providers": self._session_provider_metadata,
             "execution": {
                 "parallel_requested": self._parallel_mode,
@@ -507,7 +513,7 @@ class TeamResearchOrchestrator:
         self,
         query: str,
         depth: ResearchDepth,
-    ) -> dict[str, Any]:
+    ) -> StrategyResult:
         """Phase 1: Analyze query and determine research strategy.
 
         Args:
@@ -515,22 +521,22 @@ class TeamResearchOrchestrator:
             depth: Research depth mode.
 
         Returns:
-            Strategy dictionary.
+            Typed strategy result.
         """
         self._monitor.section("Strategy Analysis")
 
         lead: ResearchLeadAgent = self._agents[AGENT_TYPE_LEAD]
         strategy = lead.analyze_query(query, depth)
 
-        self._monitor.log(f"Complexity: {strategy['complexity']}")
-        self._monitor.log(f"Tasks: {len(strategy['tasks_needed'])}")
-        self._monitor.log(f"Query variations: {strategy['strategy']['query_variations']}")
+        self._monitor.log(f"Complexity: {strategy.complexity}")
+        self._monitor.log(f"Tasks: {len(strategy.tasks_needed)}")
+        self._monitor.log(f"Query variations: {strategy.strategy.query_variations}")
         self._monitor.record_reasoning_summary(
             stage="strategy",
             summary=(
-                f"Complexity {strategy['complexity']} with "
-                f"{len(strategy['tasks_needed'])} tasks and "
-                f"{strategy['strategy']['query_variations']} query variations"
+                f"Complexity {strategy.complexity} with "
+                f"{len(strategy.tasks_needed)} tasks and "
+                f"{strategy.strategy.query_variations} query variations"
             ),
             agent_id=AGENT_TYPE_LEAD,
         )
@@ -540,7 +546,7 @@ class TeamResearchOrchestrator:
     async def _phase_expand_queries(
         self,
         query: str,
-        strategy: dict[str, Any],
+        strategy: StrategyResult,
         depth: ResearchDepth,
     ) -> list[str]:
         """Phase 2: Expand queries for comprehensive coverage.
@@ -555,7 +561,7 @@ class TeamResearchOrchestrator:
         """
         self._monitor.section("Query Expansion")
 
-        variations = strategy["strategy"]["query_variations"]
+        variations = strategy.strategy.query_variations
 
         if variations <= 1:
             self._monitor.log("Query expansion not needed (quick mode)")
@@ -566,7 +572,7 @@ class TeamResearchOrchestrator:
             query,
             depth,
             max_variations=variations,
-            strategy=strategy["strategy"],
+            strategy=strategy.strategy.model_dump(mode="python"),
         )
 
         self._monitor.log(f"Generated {len(queries)} query variations")
@@ -646,8 +652,8 @@ class TeamResearchOrchestrator:
         self,
         sources: list[SearchResultItem],
         query: str,
-        _strategy: dict[str, Any],
-    ) -> dict[str, Any]:
+        _strategy: StrategyResult,
+    ) -> AnalysisResult:
         """Phase 4: Analyze collected findings.
 
         Args:
@@ -663,14 +669,14 @@ class TeamResearchOrchestrator:
         analyzer: AnalyzerAgent = self._agents[AGENT_TYPE_ANALYZER]
         analysis = analyzer.analyze_sources(sources, query)
 
-        self._monitor.log(f"Key findings: {len(analysis['key_findings'])}")
-        self._monitor.log(f"Themes identified: {len(analysis['themes'])}")
-        self._monitor.log(f"Gaps: {len(analysis['gaps'])}")
+        self._monitor.log(f"Key findings: {len(analysis.key_findings)}")
+        self._monitor.log(f"Themes identified: {len(analysis.themes)}")
+        self._monitor.log(f"Gaps: {len(analysis.gaps)}")
         self._monitor.record_reasoning_summary(
             stage="analysis",
             summary=(
-                f"Generated {len(analysis['key_findings'])} findings, "
-                f"{len(analysis['themes'])} themes, {len(analysis['gaps'])} gaps"
+                f"Generated {len(analysis.key_findings)} findings, "
+                f"{len(analysis.themes)} themes, {len(analysis.gaps)} gaps"
             ),
             agent_id=AGENT_TYPE_ANALYZER,
         )
@@ -681,8 +687,8 @@ class TeamResearchOrchestrator:
         self,
         sources: list[SearchResultItem],
         query: str,
-        analysis: dict[str, Any],  # noqa: ARG002
-    ) -> dict[str, Any]:
+        analysis: AnalysisResult,  # noqa: ARG002
+    ) -> AnalysisResult:
         """Phase 4.5: Multi-pass deep analysis (deep mode only).
 
         Args:
@@ -696,17 +702,19 @@ class TeamResearchOrchestrator:
         self._monitor.section("Deep Analysis")
 
         deep_analyzer: DeepAnalyzerAgent = self._agents[AGENT_TYPE_DEEP_ANALYZER]
-        deep_analysis = deep_analyzer.deep_analyze(sources, query)
+        deep_analysis = AnalysisResult.model_validate(
+            deep_analyzer.deep_analyze(sources, query)
+        )
 
-        self._monitor.log(f"Deep analysis passes: {deep_analysis['analysis_passes']}")
-        self._monitor.log(f"Deep themes: {len(deep_analysis['themes'])}")
-        self._monitor.log(f"Consensus points: {len(deep_analysis['consensus_points'])}")
-        self._monitor.log(f"Disagreement points: {len(deep_analysis['disagreement_points'])}")
+        self._monitor.log(f"Deep analysis passes: {deep_analysis.analysis_passes}")
+        self._monitor.log(f"Deep themes: {len(deep_analysis.themes)}")
+        self._monitor.log(f"Consensus points: {len(deep_analysis.consensus_points)}")
+        self._monitor.log(f"Disagreement points: {len(deep_analysis.disagreement_points)}")
         self._monitor.record_reasoning_summary(
             stage="deep_analysis",
             summary=(
-                f"Deep analysis produced {len(deep_analysis['themes'])} themes and "
-                f"{len(deep_analysis['consensus_points'])} consensus points"
+                f"Deep analysis produced {len(deep_analysis.themes)} themes and "
+                f"{len(deep_analysis.consensus_points)} consensus points"
             ),
             agent_id=AGENT_TYPE_DEEP_ANALYZER,
         )
@@ -717,15 +725,20 @@ class TeamResearchOrchestrator:
         self,
         query: str,
         depth: ResearchDepth,
-        strategy: dict[str, Any],
+        strategy: StrategyResult,
         sources: list[SearchResultItem],
         min_sources: int | None,
         phase_hook: Callable[[str, str], None] | None,
-    ) -> tuple[dict[str, Any], dict[str, Any] | None, list[SearchResultItem], list[dict[str, Any]]]:
+    ) -> tuple[
+        AnalysisResult,
+        ValidationResult | None,
+        list[SearchResultItem],
+        list[IterationHistoryRecord],
+    ]:
         """Run analysis, validation, and iterative follow-up search."""
-        analysis: dict[str, Any] = {}
-        validation: dict[str, Any] | None = None
-        iteration_history: list[dict[str, Any]] = []
+        analysis = AnalysisResult()
+        validation: ValidationResult | None = None
+        iteration_history: list[IterationHistoryRecord] = []
         max_iterations = (
             self._config.research.max_iterations
             if self._config.research.enable_iterative_search
@@ -742,15 +755,13 @@ class TeamResearchOrchestrator:
             )
 
             iteration_history.append(
-                {
-                    "iteration": iteration,
-                    "source_count": len(sources),
-                    "quality_score": validation.get("quality_score") if validation else None,
-                    "gap_count": len(analysis.get("gaps", [])),
-                    "follow_up_queries": validation.get("follow_up_queries", [])
-                    if validation
-                    else [],
-                }
+                IterationHistoryRecord(
+                    iteration=iteration,
+                    source_count=len(sources),
+                    quality_score=validation.quality_score if validation else None,
+                    gap_count=len(analysis.gaps),
+                    follow_up_queries=validation.follow_up_queries if validation else [],
+                )
             )
 
             if iteration >= max_iterations:
@@ -790,10 +801,10 @@ class TeamResearchOrchestrator:
         self,
         query: str,
         depth: ResearchDepth,
-        strategy: dict[str, Any],
+        strategy: StrategyResult,
         sources: list[SearchResultItem],
         phase_hook: Callable[[str, str], None] | None,
-    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    ) -> tuple[AnalysisResult, ValidationResult | None]:
         """Run one analysis pass over the current source set."""
         self._notify_phase(
             phase_hook,
@@ -820,7 +831,9 @@ class TeamResearchOrchestrator:
                 description="Performing deep multi-pass analysis",
             )
             deep_analysis = await self._phase_deep_analysis(sources, query, analysis)
-            analysis.update(deep_analysis)
+            analysis = analysis.model_copy(
+                update=deep_analysis.model_dump(mode="python", exclude_unset=True)
+            )
             self._monitor.end_operation(deep_analysis_event, success=True)
 
         self._notify_phase(
@@ -833,7 +846,7 @@ class TeamResearchOrchestrator:
             category="phase",
             description="Validating research quality",
         )
-        if strategy["strategy"].get("enable_quality_scoring", True):
+        if strategy.strategy.enable_quality_scoring:
             validation = await self._phase_validate_research(query, depth, sources, analysis)
             self._log_validation_results(validation)
         else:
@@ -845,26 +858,29 @@ class TeamResearchOrchestrator:
     def _get_follow_up_queries(
         self,
         query: str,
-        analysis: dict[str, Any],
-        validation: dict[str, Any] | None,
+        analysis: AnalysisResult | dict[str, Any],
+        validation: ValidationResult | dict[str, Any] | None,
     ) -> list[str]:
         """Return follow-up queries for the next iteration, if needed."""
+        analysis_result = AnalysisResult.model_validate(analysis)
+        validation_result = (
+            ValidationResult.model_validate(validation) if validation is not None else None
+        )
+
         if not self._config.research.enable_iterative_search:
             return []
 
-        if validation and not validation.get("needs_follow_up", False):
+        if validation_result and not validation_result.needs_follow_up:
             return []
 
         follow_up_queries: list[str] = []
-        if validation:
-            follow_up_queries.extend(validation.get("follow_up_queries", []))
+        if validation_result:
+            follow_up_queries.extend(validation_result.follow_up_queries)
 
         if not follow_up_queries:
-            for gap in analysis.get("gaps", []):
-                if isinstance(gap, dict):
-                    follow_up_queries.extend(gap.get("suggested_queries", []))
-                elif gap:
-                    follow_up_queries.append(f"{query} {gap}")
+            for gap in analysis_result.normalized_gaps():
+                follow_up_queries.extend(gap.suggested_queries)
+                follow_up_queries.append(f"{query} {gap.gap_description}")
 
         deduplicated: list[str] = []
         seen = set()
@@ -939,8 +955,8 @@ class TeamResearchOrchestrator:
         query: str,
         depth: ResearchDepth,
         sources: list[SearchResultItem],
-        analysis: dict[str, Any],
-    ) -> dict[str, Any]:
+        analysis: AnalysisResult,
+    ) -> ValidationResult:
         """Phase 5: Validate research quality.
 
         Args:
@@ -968,25 +984,25 @@ class TeamResearchOrchestrator:
             min_sources_override=min_sources,
         )
 
-        self._monitor.log(f"Quality score: {validation['quality_score']:.2f}")
-        self._monitor.log(f"Valid: {validation['is_valid']}")
+        self._monitor.log(f"Quality score: {validation.quality_score:.2f}")
+        self._monitor.log(f"Valid: {validation.is_valid}")
         self._monitor.record_reasoning_summary(
             stage="validation",
             summary=(
-                f"Quality score {validation['quality_score']:.2f}, valid={validation['is_valid']}"
+                f"Quality score {validation.quality_score:.2f}, valid={validation.is_valid}"
             ),
             agent_id=AGENT_TYPE_VALIDATOR,
         )
 
-        if validation["issues"]:
-            self._monitor.log(f"Issues: {len(validation['issues'])}")
+        if validation.issues:
+            self._monitor.log(f"Issues: {len(validation.issues)}")
 
-        if validation["warnings"]:
-            self._monitor.log(f"Warnings: {len(validation['warnings'])}")
+        if validation.warnings:
+            self._monitor.log(f"Warnings: {len(validation.warnings)}")
 
         return validation
 
-    def _log_validation_results(self, validation: dict[str, Any]) -> None:
+    def _log_validation_results(self, validation: ValidationResult) -> None:
         """Log validation results.
 
         Args:
@@ -995,19 +1011,19 @@ class TeamResearchOrchestrator:
         if not validation:
             return
 
-        if validation["issues"]:
+        if validation.issues:
             self._monitor.section("Validation Issues")
-            for issue in validation["issues"]:
+            for issue in validation.issues:
                 self._monitor.log(f"  - {issue}")
 
-        if validation["warnings"]:
+        if validation.warnings:
             self._monitor.section("Validation Warnings")
-            for warning in validation["warnings"]:
+            for warning in validation.warnings:
                 self._monitor.log(f"  - {warning}")
 
-        if validation["recommendations"]:
+        if validation.recommendations:
             self._monitor.section("Recommendations")
-            for rec in validation["recommendations"]:
+            for rec in validation.recommendations:
                 self._monitor.log(f"  - {rec}")
 
     async def _fetch_content_for_top_sources(

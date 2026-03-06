@@ -12,6 +12,9 @@ from typing import Any
 
 from cc_deep_research.agents.ai_analysis_service import AIAnalysisService
 from cc_deep_research.models import (
+    AnalysisFinding,
+    AnalysisGap,
+    AnalysisResult,
     SearchResultItem,
 )
 
@@ -39,7 +42,7 @@ class AnalyzerAgent:
         self,
         sources: list[SearchResultItem],
         query: str,
-    ) -> dict[str, Any]:
+    ) -> AnalysisResult:
         """Analyze collected sources and extract insights.
 
         Args:
@@ -93,17 +96,17 @@ class AnalyzerAgent:
             query=query,
         )
 
-        return {
-            "key_findings": key_findings,
-            "themes": [t["name"] for t in themes],
-            "themes_detailed": themes,
-            "consensus_points": cross_ref["consensus_points"],
-            "contention_points": cross_ref["disagreement_points"],
-            "cross_reference_claims": cross_ref.get("cross_reference_claims", []),
-            "gaps": gaps,
-            "source_count": len(cleaned_sources),
-            "analysis_method": "ai_semantic",
-        }
+        return AnalysisResult(
+            key_findings=key_findings,
+            themes=[t["name"] for t in themes],
+            themes_detailed=themes,
+            consensus_points=cross_ref["consensus_points"],
+            contention_points=cross_ref["disagreement_points"],
+            cross_reference_claims=cross_ref.get("cross_reference_claims", []),
+            gaps=gaps,
+            source_count=len(cleaned_sources),
+            analysis_method="ai_semantic",
+        )
 
     def _clean_sources_content(
         self, sources: list[SearchResultItem]
@@ -353,7 +356,7 @@ class AnalyzerAgent:
 
     def _basic_analysis(
         self, sources: list[SearchResultItem], query: str
-    ) -> dict[str, Any]:
+    ) -> AnalysisResult:
         """Perform basic analysis without AI (fallback).
 
         Args:
@@ -370,19 +373,19 @@ class AnalyzerAgent:
         cross_ref = self._perform_cross_reference(sources)
         gaps = self._identify_gaps(sources, query)
 
-        return {
-            "key_findings": findings,
-            "themes": themes,
-            "consensus_points": cross_ref["consensus"],
-            "contention_points": cross_ref["contention"],
-            "gaps": gaps,
-            "source_count": len(sources),
-            "analysis_method": "basic_keyword",
-        }
+        return AnalysisResult(
+            key_findings=findings,
+            themes=themes,
+            consensus_points=cross_ref["consensus"],
+            contention_points=cross_ref["contention"],
+            gaps=gaps,
+            source_count=len(sources),
+            analysis_method="basic_keyword",
+        )
 
     def _extract_findings(
         self, sources: list[SearchResultItem], query: str  # noqa: ARG002
-    ) -> list[dict[str, str]]:
+    ) -> list[AnalysisFinding]:
         """Extract key findings from sources.
 
         Args:
@@ -394,24 +397,24 @@ class AnalyzerAgent:
 
         Note: This is a fallback implementation used when content is insufficient.
         """
-        findings = []
+        findings: list[AnalysisFinding] = []
 
         # Placeholder: create findings from source titles/snippets
         for _i, source in enumerate(sources[:5]):  # Top 5 sources
             if source.title:
                 findings.append(
-                    {
-                        "title": source.title,
-                        "description": source.snippet or "No description available",
-                        "source": source.url,
-                    }
+                    AnalysisFinding(
+                        title=source.title,
+                        description=source.snippet or "No description available",
+                        source=source.url,
+                    )
                 )
 
         return findings
 
     def _identify_themes(
         self, sources: list[SearchResultItem]
-    ) -> list[str]:
+    ) -> list[AnalysisGap]:
         """Identify major themes across sources.
 
         Args:
@@ -467,19 +470,23 @@ class AnalyzerAgent:
 
         Note: This is a fallback implementation used when content is insufficient.
         """
-        gaps = []
+        gaps: list[AnalysisGap] = []
 
         if len(sources) < 5:
-            gaps.append("Limited number of sources collected")
+            gaps.append(AnalysisGap(gap_description="Limited number of sources collected"))
 
         # Check for content depth
         has_long_content = any(len(s.content or "") > 500 for s in sources)
         if not has_long_content:
-            gaps.append("Sources lack detailed content for deep analysis")
+            gaps.append(
+                AnalysisGap(
+                    gap_description="Sources lack detailed content for deep analysis"
+                )
+            )
 
         return gaps
 
-    def _empty_analysis(self, _query: str) -> dict[str, Any]:
+    def _empty_analysis(self, _query: str) -> AnalysisResult:
         """Return empty analysis structure.
 
         Args:
@@ -488,18 +495,18 @@ class AnalyzerAgent:
         Returns:
             Empty analysis dictionary.
         """
-        return {
-            "key_findings": [],
-            "themes": [],
-            "consensus_points": [],
-            "contention_points": [],
-            "gaps": ["No sources to analyze"],
-            "source_count": 0,
-            "analysis_method": "empty",
-        }
+        return AnalysisResult(
+            key_findings=[],
+            themes=[],
+            consensus_points=[],
+            contention_points=[],
+            gaps=[AnalysisGap(gap_description="No sources to analyze")],
+            source_count=0,
+            analysis_method="empty",
+        )
 
     def synthesize_report(
-        self, analysis: dict[str, Any], query: str  # noqa: ARG002
+        self, analysis: AnalysisResult | dict[str, Any], query: str  # noqa: ARG002
     ) -> str:
         """Synthesize analysis into a coherent report section.
 
@@ -512,18 +519,22 @@ class AnalyzerAgent:
 
         Note: This is a placeholder implementation.
         """
+        analysis_result = AnalysisResult.model_validate(analysis)
         sections = []
 
-        if analysis["key_findings"]:
+        if analysis_result.key_findings:
             sections.append("## Key Findings\n")
-            for finding in analysis["key_findings"]:
-                sections.append(f"- {finding['title']}")
-                sections.append(f"  {finding['description']}\n")
+            for finding in analysis_result.key_findings:
+                if isinstance(finding, AnalysisFinding):
+                    sections.append(f"- {finding.title}")
+                    sections.append(f"  {finding.description}\n")
+                else:
+                    sections.append(f"- {finding}\n")
 
-        if analysis["gaps"]:
+        if analysis_result.gaps:
             sections.append("\n## Gaps\n")
-            for gap in analysis["gaps"]:
-                sections.append(f"- {gap}\n")
+            for gap in analysis_result.normalized_gaps():
+                sections.append(f"- {gap.gap_description}\n")
 
         return "\n".join(sections)
 
