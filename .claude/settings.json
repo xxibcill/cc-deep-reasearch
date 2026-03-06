@@ -62,7 +62,8 @@
       "Bash(uv run pytest tests/ --tb=short -q)",
       "Bash(uv run cc-deep-research research \"health benefit of white tea\" --output test_improved.md --depth quick --tavily-only)",
       "Bash(uv run cc-deep-research research \"health benefit of white tea\" --output test_debug.md --depth quick --tavily-only --monitor)",
-      "Bash(uv run cc-deep-research research \"health benefit of white tea\" --output test_final.md --depth quick --tavily-only)"
+      "Bash(uv run cc-deep-research research \"health benefit of white tea\" --output test_final.md --depth quick --tavily-only)",
+      "Bash(grep -E \"\\\\.\\(md|json|rc\\)$\")"
     ]
   }
 }
