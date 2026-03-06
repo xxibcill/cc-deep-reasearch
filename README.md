@@ -4,13 +4,12 @@ A powerful deep research engine that builds on top of Claude Code, combining Tav
 
 ## Features
 
-- **Agent Team Research** - Uses multiple specialized AI agents working together for coordinated research
-- **Parallel Agent Execution** - Agents work in parallel for faster, more comprehensive research
-- **Hybrid Parallel Search** - Runs Tavily and Claude Code search simultaneously for comprehensive results
+- **Agent-Orchestrated Research** - Uses specialized workflow stages for planning, collection, analysis, validation, and reporting
+- **Parallel Query Execution** - Runs independent research queries in parallel for faster source collection
 - **Deep Dive Research** - Default mode with 20+ sources, cross-referencing, and comprehensive analysis
 - **API Key Rotation** - Automatic management of multiple Tavily API keys with graceful failover
 - **Smart Query Expansion** - Automatically generates query variations for comprehensive coverage
-- **Iterative Search** - Analyzes gaps in results and performs follow-up searches
+- **Iterative Search** - Analyzes gaps in results and performs validation-driven follow-up searches
 - **Source Quality Scoring** - Evaluates and ranks sources by credibility, relevance, freshness, and diversity
 - **Markdown Reports** - Generates structured reports with citations, executive summaries, and cross-reference analysis
 - **Interactive CLI** - User-friendly command-line interface with progress indicators
@@ -77,7 +76,7 @@ cc-deep-research research --no-team "Simple query"
 # Use only Tavily search
 cc-deep-research research --tavily-only "AI safety research"
 
-# Use only Claude Code search
+# Use only Claude provider (reserved for future provider support)
 cc-deep-research research --claude-only "Machine learning trends"
 
 # Specify minimum sources
@@ -88,6 +87,32 @@ cc-deep-research research --format json "Query" > results.json
 
 # Custom team size
 cc-deep-research research --team-size 6 "Complex topic"
+
+# Enable workflow telemetry (events + session summary persisted by default)
+cc-deep-research research --monitor "Complex topic"
+```
+
+### Monitoring Dashboard
+
+The CLI now persists per-session telemetry logs to:
+
+- `~/.config/cc-deep-research/telemetry/<session_id>/events.jsonl`
+- `~/.config/cc-deep-research/telemetry/<session_id>/summary.json`
+
+Build analytics tables and launch the dashboard:
+
+```bash
+# Ingest telemetry logs into DuckDB
+cc-deep-research telemetry ingest
+
+# Launch Streamlit dashboard
+cc-deep-research telemetry dashboard --port 8501
+```
+
+Dashboard package requirements:
+
+```bash
+pip install \"cc-deep-research[dashboard]\"
 ```
 
 ### Configuration Management

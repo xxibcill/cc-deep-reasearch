@@ -8,10 +8,12 @@ The researcher agent is responsible for:
 """
 
 import asyncio
+import time
 from typing import Any
 
 from cc_deep_research.config import Config
 from cc_deep_research.models import SearchOptions
+from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.providers import SearchProvider
 
 
@@ -25,7 +27,12 @@ class ResearcherAgent:
     - Error handling and timeout management
     """
 
-    def __init__(self, config: Config, provider: SearchProvider) -> None:
+    def __init__(
+        self,
+        config: Config,
+        provider: SearchProvider,
+        monitor: ResearchMonitor | None = None,
+    ) -> None:
         """Initialize researcher agent.
 
         Args:
@@ -34,6 +41,7 @@ class ResearcherAgent:
         """
         self._config = config
         self._provider = provider
+        self._monitor = monitor
 
     async def execute_task(
         self,
@@ -73,6 +81,20 @@ class ResearcherAgent:
             }
 
         except TimeoutError:
+            if self._monitor:
+                self._monitor.record_search_query(
+                    query=query,
+                    provider=self._provider.get_provider_name(),
+                    result_count=0,
+                    duration_ms=int(timeout * 1000),
+                    status="timeout",
+                )
+                self._monitor.record_tool_call(
+                    tool_name=f"{self._provider.get_provider_name()}.search",
+                    status="timeout",
+                    duration_ms=int(timeout * 1000),
+                    query=query,
+                )
             return {
                 "task_id": task_id,
                 "query": query,
@@ -82,6 +104,22 @@ class ResearcherAgent:
                 "source_count": 0,
             }
         except Exception as e:
+            if self._monitor:
+                self._monitor.record_search_query(
+                    query=query,
+                    provider=self._provider.get_provider_name(),
+                    result_count=0,
+                    duration_ms=0,
+                    status="error",
+                    error=str(e),
+                )
+                self._monitor.record_tool_call(
+                    tool_name=f"{self._provider.get_provider_name()}.search",
+                    status="error",
+                    duration_ms=0,
+                    query=query,
+                    error=str(e),
+                )
             return {
                 "task_id": task_id,
                 "query": query,
@@ -103,9 +141,16 @@ class ResearcherAgent:
         Returns:
             Dictionary with sources and metadata.
         """
-        import time
-
         start_time = time.time()
+        provider_name = self._provider.get_provider_name()
+
+        if self._monitor:
+            self._monitor.record_tool_call(
+                tool_name=f"{provider_name}.search",
+                status="started",
+                duration_ms=0,
+                query=query,
+            )
 
         # Create search options
         options = SearchOptions(
@@ -121,6 +166,22 @@ class ResearcherAgent:
         sources = search_result.results
 
         execution_time_ms = (time.time() - start_time) * 1000
+
+        if self._monitor:
+            self._monitor.record_search_query(
+                query=query,
+                provider=provider_name,
+                result_count=len(sources),
+                duration_ms=int(execution_time_ms),
+                status="success",
+            )
+            self._monitor.record_tool_call(
+                tool_name=f"{provider_name}.search",
+                status="success",
+                duration_ms=int(execution_time_ms),
+                query=query,
+                result_count=len(sources),
+            )
 
         return {
             "sources": sources,
@@ -143,9 +204,7 @@ class ResearcherAgent:
             List of result dictionaries.
         """
         # Execute all tasks in parallel
-        task_coroutines = [
-            self.execute_task(task, timeout) for task in tasks
-        ]
+        task_coroutines = [self.execute_task(task, timeout) for task in tasks]
 
         results = await asyncio.gather(*task_coroutines, return_exceptions=True)
 
@@ -154,14 +213,16 @@ class ResearcherAgent:
         for i, result in enumerate(results):
             if isinstance(result, Exception):
                 # Create error result
-                processed_results.append({
-                    "task_id": tasks[i].get("task_id", ""),
-                    "query": tasks[i].get("query", ""),
-                    "status": "error",
-                    "error": str(result),
-                    "sources": [],
-                    "source_count": 0,
-                })
+                processed_results.append(
+                    {
+                        "task_id": tasks[i].get("task_id", ""),
+                        "query": tasks[i].get("query", ""),
+                        "status": "error",
+                        "error": str(result),
+                        "sources": [],
+                        "source_count": 0,
+                    }
+                )
             else:
                 processed_results.append(result)  # type: ignore[arg-type]
 

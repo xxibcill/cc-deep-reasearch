@@ -49,14 +49,16 @@ class ResearchLeadAgent:
         """
         # Analyze query complexity and scope
         complexity = self._assess_complexity(query)
+        profile = self._build_query_profile(query)
 
         # Determine strategy based on depth
-        strategy = self._create_strategy(depth, complexity)
+        strategy = self._create_strategy(depth, complexity, profile)
 
         return {
             "query": query,
             "complexity": complexity,
             "depth": depth,
+            "profile": profile,
             "strategy": strategy,
             "tasks_needed": strategy["tasks"],
         }
@@ -84,6 +86,7 @@ class ResearchLeadAgent:
         self,
         depth: ResearchDepth,
         complexity: str,
+        profile: dict[str, Any],
     ) -> dict[str, Any]:
         """Create research strategy based on depth and complexity.
 
@@ -118,7 +121,7 @@ class ResearchLeadAgent:
             },
         }
 
-        base_strategy = strategies[depth]
+        base_strategy = dict(strategies[depth])
 
         # Adjust based on complexity
         if complexity == "simple":
@@ -126,7 +129,61 @@ class ResearchLeadAgent:
         elif complexity == "complex" and depth == ResearchDepth.DEEP:
             base_strategy["query_variations"] = 7
 
+        if profile["is_time_sensitive"]:
+            base_strategy["query_variations"] += 1
+
+        if profile["intent"] == "comparison":
+            base_strategy["tasks"] = [
+                *base_strategy["tasks"],
+                "compare",
+            ]
+
+        base_strategy["follow_up_bias"] = self._get_follow_up_bias(profile)
+        base_strategy["intent"] = profile["intent"]
+        base_strategy["time_sensitive"] = profile["is_time_sensitive"]
+        base_strategy["key_terms"] = profile["key_terms"]
+
         return base_strategy
+
+    def _build_query_profile(self, query: str) -> dict[str, Any]:
+        """Build a lightweight profile for planning and expansion."""
+        lowered = query.lower()
+        comparison_terms = {"vs", "versus", "compare", "comparison", "better"}
+        time_terms = {
+            "latest",
+            "recent",
+            "today",
+            "current",
+            "new",
+            "2024",
+            "2025",
+            "2026",
+        }
+        explanatory_terms = {"how", "why", "explain", "analysis"}
+
+        words = [word.strip(".,?!:;()[]{}") for word in lowered.split()]
+        key_terms = [word for word in words if len(word) > 3][:8]
+
+        if any(term in words for term in comparison_terms):
+            intent = "comparison"
+        elif any(term in words for term in explanatory_terms):
+            intent = "explanatory"
+        else:
+            intent = "exploratory"
+
+        return {
+            "intent": intent,
+            "is_time_sensitive": any(term in lowered for term in time_terms),
+            "key_terms": key_terms,
+        }
+
+    def _get_follow_up_bias(self, profile: dict[str, Any]) -> str:
+        """Describe the preferred follow-up direction for the query."""
+        if profile["intent"] == "comparison":
+            return "comparison_evidence"
+        if profile["is_time_sensitive"]:
+            return "recent_updates"
+        return "coverage"
 
     def coordinate_research(
         self,

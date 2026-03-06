@@ -34,6 +34,7 @@ class QueryExpanderAgent:
         query: str,
         depth: ResearchDepth,
         max_variations: int | None = None,
+        strategy: dict[str, Any] | None = None,
     ) -> list[str]:
         """Expand a query into multiple variations.
 
@@ -50,14 +51,18 @@ class QueryExpanderAgent:
             max_variations = self._get_max_variations(depth)
 
         # Generate variations
-        variations = self._generate_variations(query, max_variations)
+        variations = self._generate_variations(query, max_variations, strategy)
 
         # Ensure original query is included
         if query not in variations:
             variations.insert(0, query)
 
+        relevant_variations = self.validate_relevance(query, variations)
+        if query not in relevant_variations:
+            relevant_variations.insert(0, query)
+
         # Limit to max_variations
-        return variations[:max_variations]
+        return relevant_variations[:max_variations]
 
     def _get_max_variations(self, depth: ResearchDepth) -> int:
         """Get maximum variations for a depth mode.
@@ -79,6 +84,7 @@ class QueryExpanderAgent:
         self,
         query: str,
         max_count: int,
+        strategy: dict[str, Any] | None = None,
     ) -> list[str]:
         """Generate query variations.
 
@@ -94,6 +100,10 @@ class QueryExpanderAgent:
         semantic variations that preserve intent.
         """
         variations = []
+        strategy_data = strategy or {}
+        key_terms = strategy_data.get("key_terms", [])
+        intent = strategy_data.get("intent")
+        is_time_sensitive = strategy_data.get("time_sensitive", False)
 
         # Simple heuristics for variation generation
         # In production, would use Claude API or similar
@@ -115,6 +125,15 @@ class QueryExpanderAgent:
 
         # Variation 5: Focus on explanation
         variations.append(f"explain {query} in detail")
+
+        if intent == "comparison":
+            variations.append(f"{query} pros cons evidence")
+
+        if is_time_sensitive:
+            variations.append(f"{query} latest updates")
+
+        if key_terms:
+            variations.append(f"{query} {' '.join(key_terms[:3])} expert review")
 
         return variations[:max_count]
 

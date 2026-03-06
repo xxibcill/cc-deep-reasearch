@@ -31,8 +31,8 @@ class TestSearchConfig:
     def test_default_search_config(self) -> None:
         """Test default SearchConfig values."""
         config = SearchConfig()
-        assert config.providers == ["tavily", "claude"]
-        assert config.mode == SearchMode.HYBRID_PARALLEL
+        assert config.providers == ["tavily"]
+        assert config.mode == SearchMode.TAVILY_PRIMARY
         assert config.depth == ResearchDepth.DEEP
 
     def test_custom_search_config(self) -> None:
@@ -290,11 +290,12 @@ class TestSettings:
 
     def test_default_settings(self) -> None:
         """Test default Settings values."""
-        settings = Settings()
-        assert settings.config_path is None
-        assert settings.depth is None
-        assert settings.output_format is None
-        assert settings.no_color is False
+        with patch.dict(os.environ, {}, clear=True):
+            settings = Settings()
+            assert settings.config_path is None
+            assert settings.depth is None
+            assert settings.output_format is None
+            assert settings.no_color is False
 
     def test_settings_from_env(self) -> None:
         """Test Settings from environment variables."""

@@ -44,6 +44,10 @@ class SearchProvider(ABC):
         """
         return True
 
+    async def close(self) -> None:
+        """Release any provider resources."""
+        return None
+
 
 class SearchProviderError(Exception):
     """Base exception for search provider errors."""
@@ -94,10 +98,25 @@ class NetworkError(SearchProviderError):
         self.original_error = original_error
 
 
+class ProviderUnavailableError(SearchProviderError):
+    """Exception raised when a configured provider is unavailable."""
+
+    def __init__(
+        self,
+        message: str,
+        provider: str,
+        query: str | None = None,
+        reason: str | None = None,
+    ) -> None:
+        super().__init__(message, provider, query)
+        self.reason = reason
+
+
 __all__ = [
     "SearchProvider",
     "SearchProviderError",
     "RateLimitError",
     "AuthenticationError",
     "NetworkError",
+    "ProviderUnavailableError",
 ]

@@ -16,6 +16,7 @@ Uses streaming for chunked processing for handle large source volumes.
 import json
 import os
 import re
+import time
 from typing import Any
 
 import anthropic
@@ -49,6 +50,7 @@ class LLMAnalysisClient:
         self._model = config.get("model", "claude-sonnet-4-6")
         self._max_tokens = config.get("max_tokens", 8192)
         self._temperature = config.get("temperature", 0.3)
+        self._usage_callback = config.get("usage_callback")
 
         api_key = config.get("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
@@ -109,14 +111,7 @@ class LLMAnalysisClient:
 
         prompt = self._build_theme_extraction_prompt(query, content, num_themes)
 
-        response = self._client.messages.create(
-            model=self._model,
-            max_tokens=self._max_tokens,
-            temperature=self._temperature,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
-        )
+        response = self._request(operation="extract_themes", prompt=prompt)
 
         # Parse the response - extract text from first content block
         response_text = self._extract_text_from_response(response)
@@ -143,14 +138,7 @@ class LLMAnalysisClient:
 
         prompt = self._build_cross_reference_prompt(themes, content)
 
-        response = self._client.messages.create(
-            model=self._model,
-            max_tokens=self._max_tokens,
-            temperature=self._temperature,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
-        )
+        response = self._request(operation="analyze_cross_reference", prompt=prompt)
 
         response_text = self._extract_text_from_response(response)
         return self._parse_cross_reference_response(response_text)
@@ -178,14 +166,7 @@ class LLMAnalysisClient:
 
         prompt = self._build_gap_identification_prompt(query, themes, content)
 
-        response = self._client.messages.create(
-            model=self._model,
-            max_tokens=self._max_tokens,
-            temperature=self._temperature,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
-        )
+        response = self._request(operation="identify_gaps", prompt=prompt)
 
         response_text = self._extract_text_from_response(response)
         return self._parse_gap_response(response_text)
@@ -218,14 +199,7 @@ class LLMAnalysisClient:
 
         prompt = self._build_synthesis_prompt(query, themes, cross_ref, gaps, content)
 
-        response = self._client.messages.create(
-            model=self._model,
-            max_tokens=self._max_tokens,
-            temperature=self._temperature,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
-        )
+        response = self._request(operation="synthesize_findings", prompt=prompt)
 
         response_text = self._extract_text_from_response(response)
         return self._parse_synthesis_response(response_text)
@@ -255,14 +229,7 @@ class LLMAnalysisClient:
 
         prompt = self._build_evidence_quality_prompt(themes, content)
 
-        response = self._client.messages.create(
-            model=self._model,
-            max_tokens=self._max_tokens,
-            temperature=self._temperature,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
-        )
+        response = self._request(operation="analyze_evidence_quality", prompt=prompt)
 
         response_text = self._extract_text_from_response(response)
         return self._parse_evidence_quality_response(response_text)
@@ -285,7 +252,7 @@ class LLMAnalysisClient:
             if content:
                 # Truncate to reasonable length
                 truncated = content[:2000]
-                last_period = truncated.rfind('.')
+                last_period = truncated.rfind(".")
                 if last_period > len(truncated) * 0.7:
                     truncated = truncated[: last_period + 1]
 
@@ -296,9 +263,31 @@ class LLMAnalysisClient:
 
         return "\n".join(sections)
 
-    def _build_theme_extraction_prompt(
-        self, query: str, content: str, num_themes: int
-    ) -> str:
+    def _request(self, operation: str, prompt: str) -> Any:
+        """Execute a Claude request and emit usage telemetry when possible."""
+        start_time = time.time()
+        response = self._client.messages.create(
+            model=self._model,
+            max_tokens=self._max_tokens,
+            temperature=self._temperature,
+            messages=[{"role": "user", "content": prompt}],
+        )
+
+        usage = getattr(response, "usage", None)
+        if self._usage_callback and usage is not None:
+            input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
+            output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
+            duration_ms = int((time.time() - start_time) * 1000)
+            self._usage_callback(
+                operation=operation,
+                model=self._model,
+                prompt_tokens=input_tokens,
+                completion_tokens=output_tokens,
+                duration_ms=duration_ms,
+            )
+        return response
+
+    def _build_theme_extraction_prompt(self, query: str, content: str, num_themes: int) -> str:
         """Build prompt for theme extraction.
 
         Args:
@@ -338,9 +327,7 @@ Respond in JSON format:
 }}
 """
 
-    def _build_cross_reference_prompt(
-        self, themes: list[dict[str, Any]], content: str
-    ) -> str:
+    def _build_cross_reference_prompt(self, themes: list[dict[str, Any]], content: str) -> str:
         """Build prompt for cross-reference analysis.
 
         Args:
@@ -353,7 +340,7 @@ Respond in JSON format:
         theme_names = [t.get("name", "") for t in themes]
         return f"""Analyze the following research sources for consensus and disagreement points.
 
-Identified themes: {', '.join(theme_names)}
+Identified themes: {", ".join(theme_names)}
 
 {content}
 
@@ -406,7 +393,7 @@ Respond in JSON format:
         theme_names = [t.get("name", "") for t in themes]
         return f"""Analyze the following research sources about "{query}" to identify information gaps.
 
-Current themes: {', '.join(theme_names)}
+Current themes: {", ".join(theme_names)}
 
 {content}
 
@@ -451,14 +438,19 @@ Respond in JSON format:
         """
         theme_names = [t.get("name", "") for t in themes[:5]]
         consensus = cross_ref.get("consensus_points", [])[:3]
-        consensus_str = "\n".join([
-            f"- {c.get('claim', str(c))}" if isinstance(c, dict) else f"- {c}"
-            for c in consensus
-        ]) or "None identified"
+        consensus_str = (
+            "\n".join(
+                [
+                    f"- {c.get('claim', str(c))}" if isinstance(c, dict) else f"- {c}"
+                    for c in consensus
+                ]
+            )
+            or "None identified"
+        )
 
         return f"""Synthesize the following research about "{query}" into key findings.
 
-Main themes: {', '.join(theme_names)}
+Main themes: {", ".join(theme_names)}
 
 Consensus points:
 {consensus_str}
@@ -486,9 +478,7 @@ Respond in JSON format:
 }}
 """
 
-    def _build_evidence_quality_prompt(
-        self, themes: list[dict[str, Any]], content: str
-    ) -> str:
+    def _build_evidence_quality_prompt(self, themes: list[dict[str, Any]], content: str) -> str:
         """Build prompt for evidence quality analysis.
 
         Args:
@@ -501,7 +491,7 @@ Respond in JSON format:
         theme_names = [t.get("name", "") for t in themes]
         return f"""Analyze the evidence quality in the following research sources.
 
-Themes to analyze: {', '.join(theme_names)}
+Themes to analyze: {", ".join(theme_names)}
 
 {content}
 
@@ -536,7 +526,9 @@ Respond in JSON format:
 """
 
     def _parse_theme_response(
-        self, response_text: str, sources: list[dict[str, str]]  # noqa: ARG002
+        self,
+        response_text: str,
+        sources: list[dict[str, str]],  # noqa: ARG002
     ) -> list[dict[str, Any]]:
         """Parse theme extraction response.
 
@@ -549,7 +541,7 @@ Respond in JSON format:
         """
         try:
             # Try to extract JSON from response
-            json_match = re.search(r'\{[\s\S]*\}', response_text)
+            json_match = re.search(r"\{[\s\S]*\}", response_text)
             if json_match:
                 data = json.loads(json_match.group())
                 themes_raw = data.get("themes", [])
@@ -561,7 +553,7 @@ Respond in JSON format:
 
         # Fallback: parse structured text
         themes = []
-        lines = response_text.split('\n')
+        lines = response_text.split("\n")
         current_theme: dict[str, Any] | None = None
 
         for line in lines:
@@ -570,11 +562,11 @@ Respond in JSON format:
                 continue
 
             # Look for theme headers
-            if re.match(r'^\d+\.\s+', line) or line.startswith('Theme:'):
+            if re.match(r"^\d+\.\s+", line) or line.startswith("Theme:"):
                 if current_theme:
                     themes.append(current_theme)
-                theme_name = re.sub(r'^\d+\.\s*', '', line)
-                theme_name = theme_name.replace('Theme:', '').strip()
+                theme_name = re.sub(r"^\d+\.\s*", "", line)
+                theme_name = theme_name.replace("Theme:", "").strip()
                 current_theme = {
                     "name": theme_name,
                     "description": "",
@@ -583,9 +575,9 @@ Respond in JSON format:
                 }
             elif current_theme:
                 # Add to current theme
-                if line.startswith('-') or line.startswith('•'):
-                    point = line.lstrip('- •').strip()
-                    if 'http' in point:
+                if line.startswith("-") or line.startswith("•"):
+                    point = line.lstrip("- •").strip()
+                    if "http" in point:
                         current_theme["supporting_sources"].append(point)
                     else:
                         current_theme["key_points"].append(point)
@@ -607,12 +599,16 @@ Respond in JSON format:
             Dictionary with consensus and disagreement points.
         """
         try:
-            json_match = re.search(r'\{[\s\S]*\}', response_text)
+            json_match = re.search(r"\{[\s\S]*\}", response_text)
             if json_match:
                 data = json.loads(json_match.group())
                 return {
-                    "consensus_points": data.get("consensus_points", []) if isinstance(data.get("consensus_points"), list) else [],
-                    "disagreement_points": data.get("disagreement_points", []) if isinstance(data.get("disagreement_points"), list) else [],
+                    "consensus_points": data.get("consensus_points", [])
+                    if isinstance(data.get("consensus_points"), list)
+                    else [],
+                    "disagreement_points": data.get("disagreement_points", [])
+                    if isinstance(data.get("disagreement_points"), list)
+                    else [],
                     "cross_reference_claims": [],
                 }
         except (json.JSONDecodeError, KeyError):
@@ -635,7 +631,7 @@ Respond in JSON format:
             List of gap dictionaries.
         """
         try:
-            json_match = re.search(r'\{[\s\S]*\}', response_text)
+            json_match = re.search(r"\{[\s\S]*\}", response_text)
             if json_match:
                 data = json.loads(json_match.group())
                 gaps_raw = data.get("gaps", [])
@@ -647,16 +643,18 @@ Respond in JSON format:
 
         # Fallback parsing
         gaps = []
-        lines = response_text.split('\n')
+        lines = response_text.split("\n")
 
         for line in lines:
             line = line.strip()
-            if line.startswith('-') and len(line) > 20:
-                gaps.append({
-                    "gap_description": line.lstrip('- ').strip(),
-                    "importance": "Medium",
-                    "suggested_queries": [],
-                })
+            if line.startswith("-") and len(line) > 20:
+                gaps.append(
+                    {
+                        "gap_description": line.lstrip("- ").strip(),
+                        "importance": "Medium",
+                        "suggested_queries": [],
+                    }
+                )
 
         return gaps[:5]  # Limit to 5 gaps
 
@@ -670,7 +668,7 @@ Respond in JSON format:
             List of finding dictionaries.
         """
         try:
-            json_match = re.search(r'\{[\s\S]*\}', response_text)
+            json_match = re.search(r"\{[\s\S]*\}", response_text)
             if json_match:
                 data = json.loads(json_match.group())
                 findings_raw = data.get("findings", [])
@@ -682,7 +680,7 @@ Respond in JSON format:
 
         # Fallback parsing
         findings = []
-        lines = response_text.split('\n')
+        lines = response_text.split("\n")
         current_finding: dict[str, Any] | None = None
 
         for line in lines:
@@ -690,10 +688,10 @@ Respond in JSON format:
             if not line:
                 continue
 
-            if re.match(r'^\d+\.\s+', line):
+            if re.match(r"^\d+\.\s+", line):
                 if current_finding:
                     findings.append(current_finding)
-                title = re.sub(r'^\d+\.\s*', '', line)
+                title = re.sub(r"^\d+\.\s*", "", line)
                 current_finding = {
                     "title": title,
                     "description": "",
@@ -701,9 +699,9 @@ Respond in JSON format:
                     "confidence": "Medium",
                 }
             elif current_finding:
-                if line.startswith('-') or line.startswith('•'):
-                    point = line.lstrip('- •').strip()
-                    if 'http' in point:
+                if line.startswith("-") or line.startswith("•"):
+                    point = line.lstrip("- •").strip()
+                    if "http" in point:
                         current_finding["evidence"].append(point)
                 elif not current_finding["description"]:
                     current_finding["description"] = line
@@ -723,21 +721,34 @@ Respond in JSON format:
             Dictionary with evidence quality analysis.
         """
         try:
-            json_match = re.search(r'\{[\s\S]*\}', response_text)
+            json_match = re.search(r"\{[\s\S]*\}", response_text)
             if json_match:
                 data = json.loads(json_match.group())
                 return {
-                    "study_types": data.get("study_types", {}) if isinstance(data.get("study_types"), dict) else {},
-                    "evidence_conflicts": data.get("evidence_conflicts", []) if isinstance(data.get("evidence_conflicts"), list) else [],
-                    "confidence_levels": data.get("confidence_levels", {}) if isinstance(data.get("confidence_levels"), dict) else {},
-                    "evidence_summary": data.get("evidence_summary", "") if isinstance(data.get("evidence_summary"), str) else "",
+                    "study_types": data.get("study_types", {})
+                    if isinstance(data.get("study_types"), dict)
+                    else {},
+                    "evidence_conflicts": data.get("evidence_conflicts", [])
+                    if isinstance(data.get("evidence_conflicts"), list)
+                    else [],
+                    "confidence_levels": data.get("confidence_levels", {})
+                    if isinstance(data.get("confidence_levels"), dict)
+                    else {},
+                    "evidence_summary": data.get("evidence_summary", "")
+                    if isinstance(data.get("evidence_summary"), str)
+                    else "",
                 }
         except (json.JSONDecodeError, KeyError):
             pass
 
         # Fallback
         return {
-            "study_types": {"human_studies": 0, "animal_studies": 0, "in_vitro_studies": 0, "other": 0},
+            "study_types": {
+                "human_studies": 0,
+                "animal_studies": 0,
+                "in_vitro_studies": 0,
+                "other": 0,
+            },
             "evidence_conflicts": [],
             "confidence_levels": {},
             "evidence_summary": "Evidence quality analysis completed",
@@ -745,4 +756,3 @@ Respond in JSON format:
 
 
 __all__ = ["LLMAnalysisClient"]
-

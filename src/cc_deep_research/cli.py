@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +20,11 @@ from cc_deep_research.config import (
 )
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.session_store import SessionStore
+from cc_deep_research.telemetry import (
+    get_default_dashboard_db_path,
+    get_default_telemetry_dir,
+    ingest_telemetry_to_duckdb,
+)
 from cc_deep_research.tui import ResearchRunView, TerminalUI
 
 RESEARCH_PHASE_STEPS = 8
@@ -64,7 +71,7 @@ def main(ctx: click.Context) -> None:
 )
 @click.option("--no-cross-ref", is_flag=True, help="Disable cross-reference analysis")
 @click.option("--tavily-only", is_flag=True, help="Use only Tavily provider")
-@click.option("--claude-only", is_flag=True, help="Use only Claude provider")
+@click.option("--claude-only", is_flag=True, help="Use only Claude provider (not yet implemented)")
 @click.option("--no-team", is_flag=True, help="Disable agent teams, use sequential mode")
 @click.option("--team-size", "team_size", type=int, default=None, help="Override default team size")
 @click.option("--progress", is_flag=True, default=True, help="Show progress indicators")
@@ -72,7 +79,9 @@ def main(ctx: click.Context) -> None:
 @click.option("--verbose", is_flag=True, help="Show detailed output")
 @click.option("--monitor", is_flag=True, help="Show internal workflow monitoring information")
 @click.option("--parallel-mode", is_flag=True, help="Enable parallel researcher execution")
-@click.option("--num-researchers", type=int, default=None, help="Number of parallel researchers (1-8)")
+@click.option(
+    "--num-researchers", type=int, default=None, help="Number of parallel researchers (1-8)"
+)
 @click.option("--show-timeline", is_flag=True, help="Show execution timeline for parallel mode")
 @click.option("--pdf", is_flag=True, help="Generate PDF output in addition to markdown")
 @click.pass_context
@@ -255,6 +264,13 @@ def research(
             )
 
     except Exception as error:
+        if research_monitor.session_id is not None:
+            research_monitor.finalize_session(
+                total_sources=0,
+                providers=[],
+                total_time_ms=0,
+                status="failed",
+            )
         if not quiet:
             ui.show_error(str(error))
         if monitor and not quiet:
@@ -266,6 +282,79 @@ def research(
 @main.group()
 def config() -> None:
     """Manage configuration settings."""
+
+
+@main.group()
+def telemetry() -> None:
+    """Manage workflow telemetry and dashboard data."""
+
+
+@telemetry.command("ingest")
+@click.option(
+    "--base-dir",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=None,
+    help="Telemetry events directory (defaults to ~/.config/cc-deep-research/telemetry).",
+)
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path, dir_okay=False),
+    default=None,
+    help="DuckDB path for analytics output.",
+)
+def telemetry_ingest(base_dir: Path | None, db_path: Path | None) -> None:
+    """Ingest session telemetry JSONL into DuckDB tables."""
+    result = ingest_telemetry_to_duckdb(
+        base_dir=base_dir or get_default_telemetry_dir(),
+        db_path=db_path or get_default_dashboard_db_path(),
+    )
+    click.echo(f"Ingested {result['sessions']} session summaries and {result['events']} events")
+
+
+@telemetry.command("dashboard")
+@click.option(
+    "--base-dir",
+    type=click.Path(path_type=Path, file_okay=False),
+    default=None,
+    help="Telemetry events directory.",
+)
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path, dir_okay=False),
+    default=None,
+    help="DuckDB path for analytics output.",
+)
+@click.option(
+    "--port",
+    type=int,
+    default=8501,
+    show_default=True,
+    help="Port for Streamlit dashboard.",
+)
+def telemetry_dashboard(base_dir: Path | None, db_path: Path | None, port: int) -> None:
+    """Launch Streamlit dashboard for telemetry analytics."""
+    resolved_base_dir = base_dir or get_default_telemetry_dir()
+    resolved_db_path = db_path or get_default_dashboard_db_path()
+    ingest_telemetry_to_duckdb(base_dir=resolved_base_dir, db_path=resolved_db_path)
+
+    dashboard_script = Path(__file__).with_name("dashboard_app.py")
+    cmd = [
+        sys.executable,
+        "-m",
+        "streamlit",
+        "run",
+        str(dashboard_script),
+        "--server.port",
+        str(port),
+    ]
+    try:
+        subprocess.run(cmd, check=True)
+    except FileNotFoundError as exc:
+        raise click.ClickException(
+            "streamlit is not installed. Install with `pip install streamlit pandas duckdb`."
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        raise click.ClickException(f"Failed to start dashboard: {exc}") from exc
 
 
 @config.command()
