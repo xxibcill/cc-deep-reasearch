@@ -1,7 +1,7 @@
 """Tests for ValidatorAgent follow-up behavior."""
 
 from cc_deep_research.agents.validator import ValidatorAgent
-from cc_deep_research.models import ResearchDepth, ResearchSession, SearchResultItem
+from cc_deep_research.models import AnalysisResult, ResearchDepth, ResearchSession, SearchResultItem
 
 
 class TestValidatorAgent:
@@ -23,15 +23,15 @@ class TestValidatorAgent:
                 )
             ],
         )
-        analysis = {
-            "key_findings": [{"title": "Finding", "description": "Desc"}],
-            "gaps": [
+        analysis = AnalysisResult(
+            key_findings=[{"title": "Finding", "description": "Desc"}],
+            gaps=[
                 {
                     "gap_description": "missing regulatory context",
                     "suggested_queries": ["test topic regulation"],
                 }
             ],
-        }
+        )
 
         validation = agent.validate_research(
             session,
@@ -40,6 +40,6 @@ class TestValidatorAgent:
             min_sources_override=4,
         )
 
-        assert validation["needs_follow_up"] is True
-        assert "test topic regulation" in validation["follow_up_queries"]
-        assert "test topic expert analysis" in validation["follow_up_queries"]
+        assert validation.needs_follow_up is True
+        assert "test topic regulation" in validation.follow_up_queries
+        assert "test topic expert analysis" in validation.follow_up_queries
