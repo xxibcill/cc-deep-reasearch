@@ -1,11 +1,11 @@
 """Tests for TeamResearchOrchestrator."""
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from cc_deep_research.config import Config
-from cc_deep_research.models import ResearchDepth
+from cc_deep_research.models import ResearchDepth, SearchResultItem
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.orchestrator import TeamExecutionError, TeamResearchOrchestrator
 
@@ -26,8 +26,6 @@ class TestTeamResearchOrchestrator:
     @pytest.mark.asyncio
     async def test_execute_research_simple(self) -> None:
         """Test executing a simple research query with mocked providers."""
-        from unittest.mock import AsyncMock, MagicMock
-
         from cc_deep_research.models import SearchResult
         from cc_deep_research.providers import SearchProvider
 
@@ -85,6 +83,95 @@ class TestTeamResearchOrchestrator:
         assert session is not None
         assert session.query == "test query"
         assert isinstance(session.sources, list)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("depth", "analysis_method", "deep_status"),
+        [
+            (ResearchDepth.QUICK, "ai_semantic", "not_requested"),
+            (ResearchDepth.STANDARD, "ai_semantic", "not_requested"),
+            (ResearchDepth.DEEP, "shallow_keyword", "degraded"),
+        ],
+    )
+    async def test_execute_research_populates_stable_metadata_contract(
+        self,
+        depth: ResearchDepth,
+        analysis_method: str,
+        deep_status: str,
+    ) -> None:
+        """Test that execute_research writes the same top-level metadata contract."""
+        orchestrator = TeamResearchOrchestrator(Config(), ResearchMonitor(enabled=False))
+        sources = [
+            SearchResultItem(
+                url="https://example.com/source",
+                title="Example source",
+                snippet="Example snippet",
+            )
+        ]
+
+        orchestrator._initialize_team = AsyncMock()
+        orchestrator._shutdown_team = AsyncMock()
+        orchestrator._phase_analyze_strategy = AsyncMock(
+            return_value={"strategy": {"enable_quality_scoring": True}}
+        )
+        orchestrator._phase_expand_queries = AsyncMock(return_value=["test query"])
+
+        async def collect_sources(
+            queries: list[str],
+            _depth: ResearchDepth,
+            _min_sources: int | None,
+        ) -> list[SearchResultItem]:
+            orchestrator._set_provider_metadata(
+                available=["tavily"],
+                warnings=["Provider 'claude' is selected but no Claude search provider is implemented yet."],
+            )
+            return sources
+
+        orchestrator._phase_collect_sources = collect_sources
+        orchestrator._run_analysis_workflow = AsyncMock(
+            return_value=(
+                {
+                    "key_findings": ["Finding"],
+                    "themes": ["Theme"],
+                    "gaps": [],
+                    "analysis_method": analysis_method,
+                    "deep_analysis_complete": depth == ResearchDepth.DEEP,
+                },
+                {
+                    "quality_score": 0.8,
+                    "is_valid": True,
+                    "issues": [],
+                    "warnings": [],
+                    "recommendations": [],
+                    "needs_follow_up": False,
+                    "follow_up_queries": [],
+                },
+                sources,
+                [{"iteration": 1, "source_count": 1, "quality_score": 0.8, "gap_count": 0}],
+            )
+        )
+
+        session = await orchestrator.execute_research(
+            query="test query",
+            depth=depth,
+            min_sources=1,
+        )
+
+        assert set(session.metadata) == {
+            "strategy",
+            "analysis",
+            "validation",
+            "iteration_history",
+            "providers",
+            "execution",
+            "deep_analysis",
+        }
+        assert session.metadata["providers"]["configured"] == ["tavily"]
+        assert session.metadata["providers"]["available"] == ["tavily"]
+        assert session.metadata["providers"]["status"] == "degraded"
+        assert session.metadata["validation"]["quality_score"] == 0.8
+        assert session.metadata["deep_analysis"]["status"] == deep_status
+        assert session.metadata["execution"]["degraded"] is True
 
     def test_phase_analyze_strategy(self) -> None:
         """Test strategy analysis phase."""

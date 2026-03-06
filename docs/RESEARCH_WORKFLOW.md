@@ -430,6 +430,18 @@ Report sections are designed to include:
 
 The reporting layer depends on `session.metadata["analysis"]` being the canonical analysis artifact from the orchestrator.
 
+`ResearchSession.metadata` is a stable workflow contract, not an ad hoc bag of fields. Every saved session includes the same top-level keys:
+
+- `strategy`: orchestration strategy output
+- `analysis`: canonical analysis payload for reporting and UI
+- `validation`: validator output, or `{}` when no validation payload exists
+- `iteration_history`: iterative follow-up search history
+- `providers`: configured providers, available providers, warnings, and an explicit provider `status`
+- `execution`: parallel-mode intent, whether parallel collection actually ran, and any degraded-run reasons
+- `deep_analysis`: whether deep analysis was requested, whether it completed, and explicit degraded/not-requested state
+
+This contract applies to quick, standard, and deep runs. Degraded states are represented explicitly in `providers`, `execution`, and `deep_analysis` instead of being inferred from absent keys.
+
 ### 13. Persistence and Telemetry
 
 Persistence is handled by [`src/cc_deep_research/session_store.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/session_store.py).

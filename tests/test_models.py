@@ -198,6 +198,47 @@ class TestResearchSession:
         )
         assert session.total_sources == 3
 
+    def test_research_session_normalizes_metadata_contract(self) -> None:
+        """Test that session metadata always exposes the stable top-level contract."""
+        session = ResearchSession(
+            session_id="test-session-123",
+            query="test query",
+            depth=ResearchDepth.QUICK,
+        )
+
+        assert set(session.metadata) == {
+            "strategy",
+            "analysis",
+            "validation",
+            "iteration_history",
+            "providers",
+            "execution",
+            "deep_analysis",
+        }
+        assert session.metadata["providers"]["status"] == "unavailable"
+        assert session.metadata["deep_analysis"]["status"] == "not_requested"
+
+    def test_research_session_preserves_legacy_metadata_and_normalizes_deep_state(self) -> None:
+        """Test normalization of legacy metadata formats."""
+        session = ResearchSession(
+            session_id="test-session-123",
+            query="test query",
+            depth=ResearchDepth.DEEP,
+            metadata={
+                "analysis": {
+                    "analysis_method": "shallow_keyword",
+                    "deep_analysis_complete": True,
+                },
+                "providers": ["tavily"],
+            },
+        )
+
+        assert session.metadata["providers"]["configured"] == ["tavily"]
+        assert session.metadata["providers"]["status"] == "unavailable"
+        assert session.metadata["deep_analysis"]["requested"] is True
+        assert session.metadata["deep_analysis"]["status"] == "degraded"
+        assert session.metadata["execution"]["degraded"] is True
+
 
 class TestSearchOptions:
     """Tests for SearchOptions model."""

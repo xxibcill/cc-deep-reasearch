@@ -1,5 +1,7 @@
 # Task 001: Stabilize Session Metadata Contract
 
+Status: Done
+
 ## Objective
 
 Define and document a stable shape for `ResearchSession.metadata` so orchestrator changes stop depending on ad hoc dictionary conventions.

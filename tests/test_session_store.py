@@ -264,6 +264,30 @@ class TestSessionSerialization:
         assert len(restored.sources) == len(sample_session.sources)
         assert restored.metadata == sample_session.metadata
 
+    def test_deserialize_legacy_metadata_normalizes_contract(self) -> None:
+        """Test that legacy session metadata is normalized when loaded."""
+        data = {
+            "session_id": "legacy-session",
+            "query": "Legacy query",
+            "depth": "deep",
+            "metadata": {
+                "analysis": {
+                    "analysis_method": "empty",
+                    "deep_analysis_complete": False,
+                },
+                "validation": None,
+                "providers": ["tavily"],
+                "deep_analysis": False,
+            },
+        }
+
+        session = _deserialize_session(data)
+
+        assert session.metadata["providers"]["configured"] == ["tavily"]
+        assert session.metadata["validation"] == {}
+        assert session.metadata["deep_analysis"]["status"] == "degraded"
+        assert session.metadata["execution"]["degraded"] is True
+
     def test_serialize_with_searches(
         self,
         sample_session: ResearchSession,

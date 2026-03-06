@@ -87,6 +87,9 @@ class TeamResearchOrchestrator:
         self._message_bus: MessageBus | None = None
         self._agent_pool: AgentPool | None = None
         self._content_cache: dict[str, str] = {}
+        self._session_provider_metadata: dict[str, Any] = {}
+        self._session_execution_degradations: list[str] = []
+        self._used_parallel_collection = False
 
     async def execute_research(
         self,
@@ -113,6 +116,7 @@ class TeamResearchOrchestrator:
 
         # Track actual start time for accurate execution time calculation
         start_time = datetime.utcnow()
+        self._reset_session_metadata_state()
 
         self._monitor.section("Research Session")
         self._monitor.log(f"Query: {query}")
@@ -228,6 +232,9 @@ class TeamResearchOrchestrator:
                 # Fall back to sequential mode on error
                 self._monitor.log(f"Parallel execution failed: {e}")
                 self._monitor.log("Falling back to sequential mode")
+                self._note_execution_degradation(
+                    f"Parallel source collection fell back to sequential mode: {e}"
+                )
                 sources = await self._phase_collect_sources(
                     queries,
                     depth,
@@ -258,14 +265,13 @@ class TeamResearchOrchestrator:
             sources=sources,
             started_at=start_time,
             completed_at=datetime.utcnow(),
-            metadata={
-                "strategy": strategy,
-                "analysis": analysis,
-                "validation": validation,
-                "deep_analysis": analysis.get("deep_analysis_complete", False),
-                "iteration_history": iteration_history,
-                "providers": self._config.search.providers,
-            },
+            metadata=self._build_session_metadata(
+                depth=depth,
+                strategy=strategy,
+                analysis=analysis,
+                validation=validation,
+                iteration_history=iteration_history,
+            ),
         )
 
         # Summary
@@ -295,6 +301,80 @@ class TeamResearchOrchestrator:
         )
 
         return session
+
+    def _reset_session_metadata_state(self) -> None:
+        """Reset per-session metadata tracking before execution begins."""
+        self._session_provider_metadata = {
+            "configured": list(self._config.search.providers),
+            "available": [],
+            "warnings": [],
+        }
+        self._session_execution_degradations = []
+        self._used_parallel_collection = False
+
+    def _note_execution_degradation(self, reason: str) -> None:
+        """Record a session-level degradation reason once."""
+        if reason not in self._session_execution_degradations:
+            self._session_execution_degradations.append(reason)
+
+    def _set_provider_metadata(
+        self,
+        *,
+        available: list[str],
+        warnings: list[str],
+    ) -> None:
+        """Record provider-resolution metadata for the current session."""
+        self._session_provider_metadata = {
+            "configured": list(self._config.search.providers),
+            "available": list(available),
+            "warnings": list(warnings),
+        }
+        for warning in warnings:
+            self._note_execution_degradation(warning)
+
+    def _build_session_metadata(
+        self,
+        *,
+        depth: ResearchDepth,
+        strategy: dict[str, Any],
+        analysis: dict[str, Any],
+        validation: dict[str, Any] | None,
+        iteration_history: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Build the stable session metadata contract for persisted sessions."""
+        deep_analysis_complete = bool(analysis.get("deep_analysis_complete", False))
+        deep_analysis_method = str(analysis.get("analysis_method", ""))
+        deep_analysis_requested = depth == ResearchDepth.DEEP
+        deep_analysis_reason: str | None = None
+
+        if deep_analysis_requested and not deep_analysis_complete:
+            deep_analysis_reason = "Deep analysis produced no deep-analysis output."
+        elif deep_analysis_requested and deep_analysis_method == "shallow_keyword":
+            deep_analysis_reason = (
+                "Deep analysis used shallow fallback output because source content was limited."
+            )
+
+        if deep_analysis_reason:
+            self._note_execution_degradation(deep_analysis_reason)
+
+        return {
+            "strategy": strategy,
+            "analysis": analysis,
+            "validation": validation or {},
+            "iteration_history": iteration_history,
+            "providers": self._session_provider_metadata,
+            "execution": {
+                "parallel_requested": self._parallel_mode,
+                "parallel_used": self._used_parallel_collection,
+                "degraded": bool(self._session_execution_degradations),
+                "degraded_reasons": self._session_execution_degradations,
+            },
+            "deep_analysis": {
+                "requested": deep_analysis_requested,
+                "completed": deep_analysis_complete,
+                "reason": deep_analysis_reason,
+            },
+        }
 
     @staticmethod
     def _notify_phase(
@@ -521,7 +601,12 @@ class TeamResearchOrchestrator:
 
         # Initialize providers
         await collector.initialize_providers()
-        for warning in collector.get_provider_warnings():
+        provider_warnings = collector.get_provider_warnings()
+        self._set_provider_metadata(
+            available=collector.get_available_providers(),
+            warnings=provider_warnings,
+        )
+        for warning in provider_warnings:
             self._monitor.log(f"Provider warning: {warning}")
 
         # Determine max results
@@ -1102,6 +1187,20 @@ class TeamResearchOrchestrator:
         # Create Tavily provider with key rotation
         from cc_deep_research.key_rotation import KeyRotationManager
 
+        provider_warnings: list[str] = []
+        if not self._config.tavily.api_keys:
+            provider_warnings.append(
+                "Parallel source collection requires Tavily API keys, but none are configured."
+            )
+        if self._config.search.providers != ["tavily"]:
+            provider_warnings.append(
+                "Parallel source collection currently uses Tavily only, regardless of other configured providers."
+            )
+        self._set_provider_metadata(
+            available=["tavily"] if self._config.tavily.api_keys else [],
+            warnings=provider_warnings,
+        )
+
         key_manager = KeyRotationManager(self._config.tavily.api_keys)
         from cc_deep_research.providers.tavily import TavilySearchProvider
 
@@ -1188,6 +1287,7 @@ class TeamResearchOrchestrator:
             aggregator.add_result(search_result)
 
         aggregated = aggregator.get_aggregated()
+        self._used_parallel_collection = True
 
         self._monitor.log(f"Collected {len(aggregated)} unique sources (parallel)")
 
