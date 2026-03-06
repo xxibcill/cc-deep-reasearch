@@ -1,169 +1,81 @@
-# CC Deep Research - Report Quality Improvement Plan
+CC Deep Research ───────────╮
+│ Query health benefit of white tea │
+│ Depth quick │
+│ Providers tavily, claude │
+│ Output markdown │
+│ Mode agent team (4) │
+│ Monitor enabled │
+╰───────────────────────────────────────╯
+[11:30:01] === Research Session ===
+[11:30:01] Query: health benefit of white tea
+[11:30:01] Depth: quick
+[11:30:01] Output format: markdown
+[11:30:01] === Configuration ===
+[11:30:01] Providers: tavily, claude
+[11:30:01] Search depth: deep
+[11:30:01] Search mode: hybrid_parallel
+[11:30:01] Agent teams: enabled
+[11:30:01] === Execution ===
+⠋ Preparing research workflow... ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0% 0:00:00[11:30:01] === Research Session ===
+[11:30:01] Query: health benefit of white tea
+[11:30:01] Depth: quick
+[11:30:01] Session ID: research-064d9ae8222b
+[11:30:01] === Team Initialization ===
+[11:30:01] Parallel mode: 3 researchers
+[11:30:01] Team created with 6 agents
+[11:30:01] === Strategy Analysis ===
+[11:30:01] Complexity: moderate
+[11:30:01] Tasks: 2
+[11:30:01] Query variations: 1
+[11:30:01] === Query Expansion ===
+[11:30:01] Query expansion not needed (quick mode)
+[11:30:01] === Parallel Source Collection ===
+[11:30:01] Decomposed 1 queries into 1 tasks
+⠋ Collecting sources from providers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╸━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 50% 0:00:05[11:30:06] ✓ Researcher task-1: 31 sources (5608ms)
+[11:30:06] [AGGREGATOR] Processing 31 results from 31 provider(s)
+[11:30:06] [AGGREGATOR] Deduplicated: 3 duplicate(s) removed, 28 unique result(s)
+[11:30:06] [AGGREGATOR] Sorted by score (descending)
+[11:30:06] Collected 28 unique sources (parallel)
+[11:30:06] Fetching full content for top 10 sources...
+[11:30:06] === Analysis ===
+⠧ Analyzing findings ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╸━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 62% 0:00:06[11:30:07] Key findings: 4
+[11:30:07] Themes identified: 4
+[11:30:07] Gaps: 2
+[11:30:07] === Validation ===
+[11:30:07] Quality score: 0.93
+[11:30:07] Valid: False
+[11:30:07] Issues: 1
+[11:30:07] Warnings: 1
+[11:30:07] === Validation Issues ===
+[11:30:07] - Findings lack source citations
+[11:30:07] === Validation Warnings ===
+[11:30:07] - Analysis identified 2 gap(s)
+[11:30:07] === Recommendations ===
+[11:30:07] - Address identified gaps with follow-up research
+[11:30:07] === Summary ===
+[11:30:07] Total sources: 28
+[11:30:07] Key findings: 4
+[11:30:07] Quality score: 0.93
+[11:30:07] Coordination layer shut down
+[11:30:07] === Team Shutdown ===
+[11:30:07] Team shut down successfully
+Saved report: whitetea.md
+[11:30:07] === Summary ===
+[11:30:07] Total sources: 28
+[11:30:07] Providers used: tavily, claude
+[11:30:07] Total execution time: 6.3s
+╭───────────────────────────────────────────────────────────────────────────────────────────────── Research Summary ─────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ │
+│ Metric Value │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
+│ Sources 28 │
+│ Key findings 4 │
+│ Themes 4 │
+│ Gaps 2 │
+│ Execution 6.3s │
+│ Saved report whitetea.md │
+│
 
-## Executive Summary
+as you can see above. timestamp on Analysis process is less than second
 
-After running `cc-deep-research research "health benefit of white tea"` and analyzing the output against quality criteria, several critical issues were identified. This plan addresses those issues with prioritized improvements.
-
-## Issues Found in Current Report
-
-### Critical Issues
-
-1. **Garbled/Noisy Content in Key Points**
-   - Example: `"- Benefits, Taste, Uses Have you ever sipped a loose leaf tea so delicate..."`
-   - Root Cause: `ai_executor.py:_extract_key_points()` extracts sentences without proper content cleaning
-   - Impact: Reports contain marketing fluff and navigation text
-
-2. **Semantic Incoherence (Wrong Topic Association)**
-   - Example: Oral hygiene findings appear under "Weight Management Support"
-   - Root Cause: `_semantic_theme_extraction()` uses simple word matching instead of semantic relevance
-   - Impact: Findings don't match their themes, confusing readers
-
-3. **Poor Description Quality**
-   - Example: Theme descriptions start with unrelated key points
-   - Root Cause: `_generate_description()` blindly appends first key point without relevance check
-   - Impact: Descriptions are incoherent and unprofessional
-
-### Medium Issues
-
-4. **No Source Quality Differentiation**
-   - Blog posts (nelsonstea.com) treated equally with peer-reviewed sources (PubMed)
-   - No credibility scoring visible in output
-   - Impact: Readers can't distinguish reliable from unreliable sources
-
-5. **Missing Analytical Depth**
-   - No discussion of mechanisms, doses, clinical evidence
-   - No comparison of human vs. animal studies
-   - No safety/contraindication discussion
-   - Impact: Reports are superficial summaries, not deep analysis
-
-6. **No Methodology Section**
-   - Report doesn't explain how research was conducted
-   - Impact: Not reproducible, lacks transparency
-
----
-
-## Improvement Plan
-
-### Phase 1: Fix Critical Content Quality Issues (HIGH PRIORITY)
-
-#### Task 1.1: Enhance Content Cleaning in `_extract_key_points()`
-**File**: `src/cc_deep_research/agents/ai_executor.py`
-
-Changes needed:
-- [x] Improve `_clean_sentence()` to remove more artifacts:
-  - Remove sentences starting with `-` or other markdown list markers
-  - Remove sentences with marketing language ("Have you ever", "Discover", "Learn more")
-  - Remove sentences with incomplete phrases
-  - Remove sentences that are questions
-  - Remove sentences with URL fragments or navigation text
-- [x] Add semantic relevance check in `_extract_key_points()`:
-  - Only include sentences where topic-specific keywords appear together
-  - Use topic-specific word sets, not just topic name words
-
-#### Task 1.2: Fix Theme-Key Point Alignment
-**File**: `src/cc_deep_research/agents/ai_executor.py`
-
-Changes needed:
-- [x] Create topic-specific keyword sets for each theme pattern
-- [x] Only assign key points to themes where they are semantically relevant
-- [x] Add validation that key points actually relate to the topic
-
-#### Task 1.3: Improve Description Generation
-**File**: `src/cc_deep_research/agents/ai_executor.py`
-
-Changes needed:
-- [x] `_generate_description()` should:
-  - Select key points that are most relevant to the topic
-  - Summarize findings rather than just appending first key point
-  - Validate description coherence
-
-### Phase 2: Add Source Quality Scoring (MEDIUM PRIORITY)
-
-#### Task 2.1: Implement Source Credibility Scoring
-**File**: `src/cc_deep_research/credibility.py` (new module)
-
-Changes needed:
-- [x] Add domain credibility database (pubmed.gov, nih.gov = high; blogs = low)
-- [x] Score sources on credibility, relevance, freshness
-- [x] Display credibility scores in report
-- [x] Prioritize high-credibility sources in analysis
-
-#### Task 2.2: Differentiate Source Types in Report
-**File**: `src/cc_deep_research/agents/reporter.py`
-
-Changes needed:
-- [x] Mark sources as [Peer-Reviewed], [Blog], [News], etc.
-- [x] Group sources by type in Sources section
-- [x] Highlight high-credibility sources in findings
-
-### Phase 3: Add Analytical Depth (MEDIUM PRIORITY)
-
-#### Task 3.1: Add Methodology Section
-**File**: `src/cc_deep_research/agents/reporter.py`
-
-Changes needed:
-- [x] Add Methodology section to report structure
-- [x] Document search strategy, query expansion, source selection criteria
-- [x] Include limitations and scope
-
-#### Task 3.2: Enhance Cross-Reference Analysis
-**File**: `src/cc_deep_research/agents/ai_analysis_service.py`
-
-Changes needed:
-- [x] Distinguish between human studies, animal studies, in vitro studies
-- [x] Identify conflicting evidence and explain contradictions
-- [x] Add confidence levels based on evidence quality
-
-#### Task 3.3: Add Safety and Contraindications Section
-**File**: `src/cc_deep_research/agents/reporter.py`
-
-Changes needed:
-- [x] Add dedicated section for safety, side effects, contraindications
-- [x] Extract this information from sources during analysis
-
----
-
-## Implementation Priority
-
-### Immediate (Next Loop)
-1. [x] Fix `_clean_sentence()` to remove garbled content
-2. [x] Fix `_extract_key_points()` to ensure semantic relevance
-3. [x] Fix `_generate_description()` to create coherent descriptions
-
-### Short-term (After Immediate)
-4. [x] Add source credibility scoring
-5. [x] Add methodology section to reports
-
-### Medium-term
-6. [x] Add analytical depth improvements
-7. [x] Add safety/contraindication extraction
-
----
-
-## Success Criteria
-
-After implementing improvements, running the same query should produce:
-
-1. **Clean key points** - No marketing text, no navigation artifacts
-2. **Coherent themes** - Key points actually relate to their themes
-3. **Professional descriptions** - Each theme has a clear, relevant summary
-4. **Source differentiation** - Readers can identify credible sources
-5. **Methodology transparency** - Research process is documented
-6. **Analytical depth** - Beyond surface summarization
-
----
-
-## Verification
-
-After each phase, run:
-```bash
-uv run cc-deep-research research "health benefit of white tea" --monitor --output test_output.md --depth quick
-```
-
-Compare output against quality criteria:
-- Clear structure and defined scope
-- Claims supported by citations
-- Facts distinguished from interpretations
-- Analytical depth, not surface summarization
-- No marketing language or fluff
-- Reproducible methodology
+please find the way to make it more than minute. make sure it really doing their work

@@ -139,6 +139,7 @@ def run_dashboard(db_path: Path | None = None, telemetry_dir: Path | None = None
     session_options = sessions_df["session_id"].tolist()
     selected_session = st.selectbox("Select session", session_options, index=0)
     detail = query_session_detail(selected_session, db_path=dashboard_db)
+    export_payload: dict[str, object] = {"session_id": selected_session}
 
     detail_session = detail["session"]
     if detail_session is not None:
@@ -149,6 +150,20 @@ def run_dashboard(db_path: Path | None = None, telemetry_dir: Path | None = None
         d4.metric("Searches", int(detail_session[6] or 0))
         d5.metric("Tools", int(detail_session[7] or 0))
         st.caption(f"Status: {detail_session[2]} | Tokens: {int(detail_session[10] or 0)}")
+        export_payload["session_summary"] = {
+            "session_id": detail_session[0],
+            "created_at": detail_session[1],
+            "status": detail_session[2],
+            "total_time_ms": detail_session[3],
+            "total_sources": detail_session[4],
+            "instances_spawned": detail_session[5],
+            "search_queries": detail_session[6],
+            "tool_calls": detail_session[7],
+            "llm_prompt_tokens": detail_session[8],
+            "llm_completion_tokens": detail_session[9],
+            "llm_total_tokens": detail_session[10],
+            "providers_json": detail_session[11],
+        }
 
     phase_df = pd.DataFrame(
         detail["phase_durations"],
@@ -157,6 +172,7 @@ def run_dashboard(db_path: Path | None = None, telemetry_dir: Path | None = None
     if not phase_df.empty:
         st.markdown("**Phase Duration (ms)**")
         st.bar_chart(phase_df.set_index("phase")["avg_duration_ms"])
+        export_payload["phase_durations"] = phase_df.to_dict(orient="records")
 
     reasoning_df = pd.DataFrame(
         detail["reasoning_events"],
@@ -171,6 +187,9 @@ def run_dashboard(db_path: Path | None = None, telemetry_dir: Path | None = None
             reasoning_df[["timestamp", "stage", "summary"]],
             use_container_width=True,
         )
+        export_payload["reasoning_events"] = reasoning_df[
+            ["timestamp", "stage", "summary"]
+        ].to_dict(orient="records")
 
     tool_df = pd.DataFrame(
         detail["tool_calls"],
@@ -198,6 +217,7 @@ def run_dashboard(db_path: Path | None = None, telemetry_dir: Path | None = None
             use_container_width=True,
             height=250,
         )
+        export_payload["tool_calls"] = tool_df.to_dict(orient="records")
 
     llm_df = pd.DataFrame(
         detail["llm_usage"],
@@ -234,6 +254,7 @@ def run_dashboard(db_path: Path | None = None, telemetry_dir: Path | None = None
             use_container_width=True,
             height=220,
         )
+        export_payload["llm_usage"] = llm_df.to_dict(orient="records")
 
     agent_detail_df = pd.DataFrame(
         detail["agent_events"],
@@ -262,6 +283,38 @@ def run_dashboard(db_path: Path | None = None, telemetry_dir: Path | None = None
             use_container_width=True,
             height=250,
         )
+        export_payload["agent_events"] = agent_detail_df.to_dict(orient="records")
+
+    events_df_for_export = pd.DataFrame(
+        detail["events"],
+        columns=[
+            "timestamp",
+            "event_type",
+            "category",
+            "name",
+            "status",
+            "duration_ms",
+            "agent_id",
+            "metadata_json",
+        ],
+    )
+    if not events_df_for_export.empty:
+        export_payload["events"] = events_df_for_export.to_dict(orient="records")
+
+    st.markdown("**Export Selected Session**")
+    col_json, col_csv = st.columns(2)
+    col_json.download_button(
+        "Download JSON",
+        data=json.dumps(export_payload, ensure_ascii=True, indent=2, default=str),
+        file_name=f"{selected_session}_telemetry.json",
+        mime="application/json",
+    )
+    col_csv.download_button(
+        "Download Events CSV",
+        data=events_df_for_export.to_csv(index=False) if not events_df_for_export.empty else "",
+        file_name=f"{selected_session}_events.csv",
+        mime="text/csv",
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover
