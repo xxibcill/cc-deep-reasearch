@@ -15,6 +15,7 @@ from cc_deep_research.models import (
     ResearchSession,
     SearchResult,
     SearchResultItem,
+    normalize_session_metadata,
 )
 
 
@@ -195,6 +196,10 @@ def _serialize_session(session: ResearchSession) -> dict[str, Any]:
     Returns:
         Dictionary representation of the session.
     """
+    metadata = normalize_session_metadata(
+        session.metadata,
+        depth=session.depth,
+    )
     return {
         "session_id": session.session_id,
         "query": session.query,
@@ -205,7 +210,7 @@ def _serialize_session(session: ResearchSession) -> dict[str, Any]:
         ),
         "searches": [_serialize_search_result(s) for s in session.searches],
         "sources": [_serialize_source(s) for s in session.sources],
-        "metadata": session.metadata,
+        "metadata": metadata,
     }
 
 
@@ -242,10 +247,16 @@ def _deserialize_session(data: dict[str, Any]) -> ResearchSession:
     Returns:
         ResearchSession object.
     """
+    depth = ResearchDepth(data.get("depth", "deep"))
+    metadata = normalize_session_metadata(
+        data.get("metadata", {}),
+        depth=depth,
+    )
+
     return ResearchSession(
         session_id=data["session_id"],
         query=data["query"],
-        depth=ResearchDepth(data.get("depth", "deep")),
+        depth=depth,
         started_at=(
             datetime.fromisoformat(data["started_at"])
             if data.get("started_at")
@@ -258,7 +269,7 @@ def _deserialize_session(data: dict[str, Any]) -> ResearchSession:
         ),
         searches=[_deserialize_search_result(s) for s in data.get("searches", [])],
         sources=[_deserialize_source(s) for s in data.get("sources", [])],
-        metadata=data.get("metadata", {}),
+        metadata=metadata,
     )
 
 
