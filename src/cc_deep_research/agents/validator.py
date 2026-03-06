@@ -36,6 +36,8 @@ class ValidatorAgent:
         self,
         session: ResearchSession,
         analysis: dict[str, Any],
+        query: str | None = None,
+        min_sources_override: int | None = None,
     ) -> dict[str, Any]:
         """Validate research session for quality and completeness.
 
@@ -56,8 +58,10 @@ class ValidatorAgent:
         recommendations = []
 
         # Check source count
-        if session.total_sources < self._min_sources:
-            issues.append(f"Insufficient sources: {session.total_sources} < {self._min_sources}")
+        min_sources = min_sources_override or self._min_sources
+
+        if session.total_sources < min_sources:
+            issues.append(f"Insufficient sources: {session.total_sources} < {min_sources}")
             recommendations.append("Increase minimum sources or expand query variations")
 
         # Check source diversity
@@ -92,6 +96,16 @@ class ValidatorAgent:
         )
 
         is_valid = len(issues) == 0
+        follow_up_queries = self._build_follow_up_queries(
+            query=query or session.query,
+            analysis=analysis,
+            source_count=session.total_sources,
+            min_sources=min_sources,
+            diversity_check=diversity_check,
+            depth_check=depth_check,
+            citation_check=citation_check,
+        )
+        needs_follow_up = bool(issues or warnings) and bool(follow_up_queries)
 
         return {
             "is_valid": is_valid,
@@ -101,7 +115,70 @@ class ValidatorAgent:
             "quality_score": quality_score,
             "diversity_score": diversity_check["score"],
             "content_depth_score": depth_check["score"],
+            "follow_up_queries": follow_up_queries,
+            "needs_follow_up": needs_follow_up,
+            "target_source_count": max(min_sources, session.total_sources),
         }
+
+    def _build_follow_up_queries(
+        self,
+        query: str,
+        analysis: dict[str, Any],
+        source_count: int,
+        min_sources: int,
+        diversity_check: dict[str, Any],
+        depth_check: dict[str, Any],
+        citation_check: dict[str, Any],
+    ) -> list[str]:
+        """Build follow-up queries that can improve weak research runs."""
+        follow_up_queries: list[str] = []
+
+        gaps = analysis.get("gaps", [])
+        for gap in gaps:
+            if isinstance(gap, dict):
+                follow_up_queries.extend(gap.get("suggested_queries", []))
+                description = gap.get("gap_description")
+                if description:
+                    follow_up_queries.append(f"{query} {description}")
+            elif gap:
+                follow_up_queries.append(f"{query} {gap}")
+
+        if source_count < min_sources:
+            follow_up_queries.extend(
+                [
+                    f"{query} expert analysis",
+                    f"{query} primary sources",
+                ]
+            )
+
+        if not diversity_check["is_diverse"]:
+            follow_up_queries.extend(
+                [
+                    f"{query} independent review",
+                    f"{query} academic analysis",
+                ]
+            )
+
+        if not depth_check["has_depth"]:
+            follow_up_queries.extend(
+                [
+                    f"{query} report pdf",
+                    f"{query} study whitepaper",
+                ]
+            )
+
+        if not citation_check["is_complete"]:
+            follow_up_queries.append(f"{query} source evidence")
+
+        deduplicated: list[str] = []
+        seen = set()
+        for candidate in follow_up_queries:
+            cleaned = candidate.strip()
+            normalized = cleaned.lower()
+            if cleaned and normalized not in seen:
+                seen.add(normalized)
+                deduplicated.append(cleaned)
+        return deduplicated[:8]
 
     def _check_source_diversity(
         self,

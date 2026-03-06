@@ -106,23 +106,36 @@ class TestTeamResearchOrchestrator:
 
     def test_phase_expand_queries(self) -> None:
         """Test query expansion phase."""
-        config = Config()
-        monitor = ResearchMonitor(enabled=False)
-        orchestrator = TeamResearchOrchestrator(config, monitor)
-
-        query = "test query"
-        depth = ResearchDepth.DEEP
-        strategy = {
-            "strategy": {
-                "query_variations": 3,
-            },
-        }
-
         # Note: This is a placeholder test
         queries = ["test query"]  # Placeholder
 
         assert isinstance(queries, list)
         assert len(queries) >= 1
+
+    def test_follow_up_queries_are_deduplicated(self) -> None:
+        """Test that follow-up queries are deduplicated before reuse."""
+        orchestrator = TeamResearchOrchestrator(Config(), ResearchMonitor(enabled=False))
+
+        analysis = {
+            "gaps": [
+                {
+                    "gap_description": "missing regulatory context",
+                    "suggested_queries": ["query regulation", "query regulation"],
+                }
+            ]
+        }
+        validation = {
+            "needs_follow_up": True,
+            "follow_up_queries": ["query regulation", "query expert review"],
+        }
+
+        follow_up_queries = orchestrator._get_follow_up_queries(
+            "query",
+            analysis,
+            validation,
+        )
+
+        assert follow_up_queries == ["query regulation", "query expert review"]
 
     def test_team_initialization_creates_agents(self) -> None:
         """Test that team initialization creates required agents."""

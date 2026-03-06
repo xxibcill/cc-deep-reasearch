@@ -8,10 +8,12 @@ The source collector agent is responsible for:
 """
 
 import asyncio
+import time
 
 from cc_deep_research.aggregation import ResultAggregator
 from cc_deep_research.config import Config
 from cc_deep_research.models import SearchOptions, SearchResultItem
+from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.providers import SearchProvider
 from cc_deep_research.providers.tavily import TavilySearchProvider
 
@@ -26,14 +28,21 @@ class SourceCollectorAgent:
     - Error handling and retries
     """
 
-    def __init__(self, config: Config) -> None:
+    def __init__(
+        self,
+        config: Config,
+        monitor: ResearchMonitor | None = None,
+    ) -> None:
         """Initialize the source collector agent.
 
         Args:
             config: Application configuration.
+            monitor: Optional monitor for telemetry capture.
         """
         self._config = config
+        self._monitor = monitor
         self._providers: list[SearchProvider] = []
+        self._provider_warnings: list[str] = []
 
     async def initialize_providers(self) -> None:
         """Initialize search providers from configuration.
@@ -42,21 +51,39 @@ class SourceCollectorAgent:
         configured search providers and API keys.
         """
         self._providers = []
+        self._provider_warnings = []
 
-        # Initialize Tavily provider if keys are configured
-        if self._config.tavily.api_keys:
-            from cc_deep_research.key_rotation import KeyRotationManager
+        configured_providers = self._config.search.providers or ["tavily"]
 
-            key_manager = KeyRotationManager(self._config.tavily.api_keys)
-            provider = TavilySearchProvider(
-                api_key=key_manager.get_available_key(),
-                max_results=self._config.tavily.max_results,
+        for provider_name in configured_providers:
+            if provider_name == "tavily":
+                self._initialize_tavily_provider()
+                continue
+
+            if provider_name == "claude":
+                self._provider_warnings.append(
+                    "Provider 'claude' is selected but no Claude search provider is implemented yet."
+                )
+                continue
+
+            self._provider_warnings.append(f"Provider '{provider_name}' is not supported.")
+
+    def _initialize_tavily_provider(self) -> None:
+        """Initialize the Tavily provider when credentials are available."""
+        if not self._config.tavily.api_keys:
+            self._provider_warnings.append(
+                "Provider 'tavily' is selected but no Tavily API keys are configured."
             )
-            self._providers.append(provider)
+            return
 
-        # Initialize Claude WebSearch provider (placeholder)
-        # Would need to implement Claude WebSearch provider
-        # if "claude" in self._config.search.providers
+        from cc_deep_research.key_rotation import KeyRotationManager
+
+        key_manager = KeyRotationManager(self._config.tavily.api_keys)
+        provider = TavilySearchProvider(
+            api_key=key_manager.get_available_key(),
+            max_results=self._config.tavily.max_results,
+        )
+        self._providers.append(provider)
 
     async def collect_sources(
         self,
@@ -79,7 +106,7 @@ class SourceCollectorAgent:
             await self.initialize_providers()
 
         if not self._providers:
-            raise SourceCollectionError("No search providers available. Please configure API keys.")
+            raise SourceCollectionError(self._build_unavailable_message())
 
         aggregator = ResultAggregator(
             deduplicate=True,
@@ -88,7 +115,7 @@ class SourceCollectorAgent:
         )
 
         # Execute searches in parallel
-        tasks = [provider.search(query, options) for provider in self._providers]
+        tasks = [self._search_provider(provider, query, options) for provider in self._providers]
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -118,6 +145,9 @@ class SourceCollectorAgent:
         if not self._providers:
             await self.initialize_providers()
 
+        if not self._providers:
+            raise SourceCollectionError(self._build_unavailable_message())
+
         aggregator = ResultAggregator(
             deduplicate=True,
             sort_by_score=True,
@@ -128,7 +158,7 @@ class SourceCollectorAgent:
         all_tasks = []
         for query in queries:
             for provider in self._providers:
-                all_tasks.append(provider.search(query, options))
+                all_tasks.append(self._search_provider(provider, query, options))
 
         results = await asyncio.gather(*all_tasks, return_exceptions=True)
 
@@ -146,6 +176,80 @@ class SourceCollectorAgent:
             List of provider names.
         """
         return [p.get_provider_name() for p in self._providers]
+
+    def get_provider_warnings(self) -> list[str]:
+        """Return warnings collected while resolving providers."""
+        return list(self._provider_warnings)
+
+    async def close_providers(self) -> None:
+        """Close all initialized providers."""
+        await asyncio.gather(
+            *(provider.close() for provider in self._providers),
+            return_exceptions=True,
+        )
+
+    async def _search_provider(
+        self,
+        provider: SearchProvider,
+        query: str,
+        options: SearchOptions | None,
+    ) -> object:
+        """Execute one provider search and emit telemetry for visibility."""
+        start_time = time.time()
+        provider_name = provider.get_provider_name()
+        if self._monitor:
+            self._monitor.record_tool_call(
+                tool_name=f"{provider_name}.search",
+                status="started",
+                duration_ms=0,
+                query=query,
+            )
+
+        try:
+            result = await provider.search(query, options)
+            duration_ms = int((time.time() - start_time) * 1000)
+            if self._monitor:
+                self._monitor.record_search_query(
+                    query=query,
+                    provider=provider_name,
+                    result_count=len(result.results),
+                    duration_ms=duration_ms,
+                    status="success",
+                )
+                self._monitor.record_tool_call(
+                    tool_name=f"{provider_name}.search",
+                    status="success",
+                    duration_ms=duration_ms,
+                    query=query,
+                    result_count=len(result.results),
+                )
+            return result
+        except Exception as exc:
+            duration_ms = int((time.time() - start_time) * 1000)
+            if self._monitor:
+                self._monitor.record_search_query(
+                    query=query,
+                    provider=provider_name,
+                    result_count=0,
+                    duration_ms=duration_ms,
+                    status="error",
+                    error=str(exc),
+                )
+                self._monitor.record_tool_call(
+                    tool_name=f"{provider_name}.search",
+                    status="error",
+                    duration_ms=duration_ms,
+                    query=query,
+                    error=str(exc),
+                )
+            return exc
+
+    def _build_unavailable_message(self) -> str:
+        """Build a useful error message for unavailable providers."""
+        if self._provider_warnings:
+            warning_text = " ".join(self._provider_warnings)
+            return f"No search providers available. {warning_text}"
+        return "No search providers available. Please configure at least one supported provider."
 
 
 class SourceCollectionError(Exception):

@@ -14,8 +14,8 @@ from cc_deep_research.models import ResearchDepth, SearchMode
 class SearchConfig(BaseModel):
     """Search-related configuration."""
 
-    providers: list[str] = Field(default=["tavily", "claude"])
-    mode: SearchMode = Field(default=SearchMode.HYBRID_PARALLEL)
+    providers: list[str] = Field(default=["tavily"])
+    mode: SearchMode = Field(default=SearchMode.TAVILY_PRIMARY)
     depth: ResearchDepth = Field(default=ResearchDepth.DEEP)
 
 

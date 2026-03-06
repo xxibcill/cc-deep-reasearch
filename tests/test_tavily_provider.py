@@ -63,7 +63,7 @@ class TestTavilySearchProvider:
     ) -> None:
         """Test that search returns SearchResult."""
         mock_transport = httpx.MockTransport(
-            lambda request: httpx.Response(200, json=mock_response)
+            lambda _: httpx.Response(200, json=mock_response)
         )
 
         provider._client = httpx.AsyncClient(transport=mock_transport)
@@ -87,7 +87,7 @@ class TestTavilySearchProvider:
     ) -> None:
         """Test search with custom options."""
         mock_transport = httpx.MockTransport(
-            lambda request: httpx.Response(200, json=mock_response)
+            lambda _: httpx.Response(200, json=mock_response)
         )
         provider._client = httpx.AsyncClient(transport=mock_transport)
 
@@ -111,7 +111,7 @@ class TestTavilySearchProvider:
     ) -> None:
         """Test that search result includes metadata."""
         mock_transport = httpx.MockTransport(
-            lambda request: httpx.Response(200, json=mock_response)
+            lambda _: httpx.Response(200, json=mock_response)
         )
         provider._client = httpx.AsyncClient(transport=mock_transport)
 
@@ -130,7 +130,7 @@ class TestTavilySearchProvider:
     ) -> None:
         """Test handling of empty results."""
         mock_transport = httpx.MockTransport(
-            lambda request: httpx.Response(200, json={"results": []})
+            lambda _: httpx.Response(200, json={"results": []})
         )
         provider._client = httpx.AsyncClient(transport=mock_transport)
 
@@ -144,7 +144,7 @@ class TestTavilySearchProvider:
     async def test_authentication_error(self, provider: TavilySearchProvider) -> None:
         """Test handling of authentication error (401)."""
         mock_transport = httpx.MockTransport(
-            lambda request: httpx.Response(
+            lambda _: httpx.Response(
                 401,
                 json={"message": "Invalid API key"},
             )
@@ -163,7 +163,7 @@ class TestTavilySearchProvider:
     async def test_rate_limit_error(self, provider: TavilySearchProvider) -> None:
         """Test handling of rate limit error (429)."""
         mock_transport = httpx.MockTransport(
-            lambda request: httpx.Response(
+            lambda _: httpx.Response(
                 429,
                 json={"message": "Rate limit exceeded"},
                 headers={"Retry-After": "60"},
@@ -183,7 +183,7 @@ class TestTavilySearchProvider:
     async def test_network_error_timeout(self, provider: TavilySearchProvider) -> None:
         """Test handling of network timeout."""
         # Create a mock that raises TimeoutException
-        def raise_timeout(request: httpx.Request) -> httpx.Response:
+        def raise_timeout(_: httpx.Request) -> httpx.Response:
             raise httpx.TimeoutException("Connection timed out")
 
         mock_transport = httpx.MockTransport(raise_timeout)
@@ -200,7 +200,7 @@ class TestTavilySearchProvider:
     @pytest.mark.asyncio
     async def test_network_error_connect(self, provider: TavilySearchProvider) -> None:
         """Test handling of connection error."""
-        def raise_connect(request: httpx.Request) -> httpx.Response:
+        def raise_connect(_: httpx.Request) -> httpx.Response:
             raise httpx.ConnectError("Connection failed")
 
         mock_transport = httpx.MockTransport(raise_connect)
@@ -218,7 +218,7 @@ class TestTavilySearchProvider:
         """Test using provider as async context manager."""
         mock_response = {"results": []}
         mock_transport = httpx.MockTransport(
-            lambda request: httpx.Response(200, json=mock_response)
+            lambda _: httpx.Response(200, json=mock_response)
         )
 
         async with TavilySearchProvider(api_key="test") as provider:
@@ -241,7 +241,7 @@ class TestTavilySearchProvider:
             ]
         }
         mock_transport = httpx.MockTransport(
-            lambda request: httpx.Response(200, json=mock_response)
+            lambda _: httpx.Response(200, json=mock_response)
         )
         provider._client = httpx.AsyncClient(transport=mock_transport)
 
@@ -269,7 +269,7 @@ class TestTavilySearchProvider:
             ]
         }
         mock_transport = httpx.MockTransport(
-            lambda request: httpx.Response(200, json=mock_response)
+            lambda _: httpx.Response(200, json=mock_response)
         )
         provider._client = httpx.AsyncClient(transport=mock_transport)
 
@@ -287,7 +287,7 @@ class TestTavilySearchProvider:
     ) -> None:
         """Test that execution time is tracked."""
         mock_transport = httpx.MockTransport(
-            lambda request: httpx.Response(200, json=mock_response)
+            lambda _: httpx.Response(200, json=mock_response)
         )
         provider._client = httpx.AsyncClient(transport=mock_transport)
 
