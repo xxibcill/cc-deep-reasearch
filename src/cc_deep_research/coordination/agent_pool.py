@@ -1,6 +1,8 @@
-"""Agent pool for managing researcher agents.
+"""Local coordination helper for parallel researcher tasks.
 
-This module provides lifecycle management for spawned researcher agents.
+The current runtime executes parallel collection inside one Python process. This
+pool records lightweight task state for that local workflow; it is not a real
+external worker pool.
 """
 
 import asyncio
@@ -93,12 +95,12 @@ class AgentInstance:
         self.status = AgentStatus.SHUTDOWN
 
 
-class AgentPool:
-    """Pool for managing researcher agents.
+class LocalAgentPool:
+    """Track local researcher-task lifecycle for parallel collection.
 
-    This class manages the lifecycle of researcher agents spawned
-    via the Agent tool. It tracks agent status, results, and
-    provides methods for spawning and shutting down agents.
+    This class tracks placeholder agent instances that represent local parallel
+    tasks. It does not spawn separate Claude Code workers or route real remote
+    execution.
 
     Example:
         >>> pool = AgentPool(num_agents=3, config=config)
@@ -204,8 +206,7 @@ class AgentPool:
             Agent ID.
 
         Note:
-            This is a placeholder. Actual Agent tool integration
-            would use the Agent tool to spawn real agents.
+            This creates a local placeholder record only.
         """
         if not self._active:
             msg = "Cannot spawn agent: pool is not active"
@@ -222,9 +223,6 @@ class AgentPool:
         async with self._lock:
             self._agents[agent.id] = agent
 
-        # In a real implementation, this would use the Agent tool
-        # to spawn a Claude Code instance
-        # For now, we simulate spawning
         agent.status = AgentStatus.IDLE
 
         return agent.id
@@ -359,8 +357,12 @@ class AgentPool:
         }
 
 
+AgentPool = LocalAgentPool
+
+
 __all__ = [
     "AgentStatus",
     "AgentInstance",
     "AgentPool",
+    "LocalAgentPool",
 ]

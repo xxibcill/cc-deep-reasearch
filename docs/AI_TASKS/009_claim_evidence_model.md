@@ -1,5 +1,7 @@
 # Task 009: Add A Claim-Centered Analysis Model
 
+Status: Done
+
 ## Objective
 
 Introduce an intermediate representation for claims so synthesis is evidence-aware instead of only summary-oriented.

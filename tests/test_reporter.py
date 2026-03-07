@@ -5,9 +5,12 @@ import json
 from cc_deep_research.agents.reporter import ReporterAgent
 from cc_deep_research.credibility import SourceCredibilityScorer
 from cc_deep_research.models import (
+    ClaimEvidence,
+    CrossReferenceClaim,
     ResearchDepth,
     ResearchSession,
     SearchResultItem,
+    ValidationResult,
 )
 
 
@@ -192,6 +195,10 @@ class TestReporterAgent:
 
         report = agent.generate_markdown_report(session, analysis)
         assert "## Evidence Quality Analysis" in report
+        assert "### Evidence Strength" in report
+        assert "### Freshness Notes" in report
+        assert "### Primary-Source Coverage" in report
+        assert "### Contradiction Notes" in report
         assert "### Study Types" in report
         assert "### Evidence Summary" in report
 
@@ -283,6 +290,181 @@ class TestReporterAgent:
         # Check safety info is included
         assert "safety_info" in report_dict
         assert "has_safety_info" in report_dict["safety_info"]
+
+    def test_markdown_report_includes_claim_annotations_and_iteration_summary(self) -> None:
+        """Test markdown report exposes evidence annotations and follow-up impact."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test-session",
+            query="latest chip demand outlook",
+            depth=ResearchDepth.DEEP,
+            sources=[
+                SearchResultItem(
+                    url="https://sec.gov/filing",
+                    title="SEC Filing",
+                    snippet="Primary filing",
+                    source_metadata={"published_date": "2026-02-20"},
+                ),
+                SearchResultItem(
+                    url="https://reuters.com/story",
+                    title="Reuters Story",
+                    snippet="Independent confirmation",
+                    source_metadata={"published_date": "2026-02-25"},
+                ),
+                SearchResultItem(
+                    url="https://blog.example.com/opinion",
+                    title="Opinion Post",
+                    snippet="Counterpoint",
+                    source_metadata={"published_date": "2025-01-05"},
+                ),
+            ],
+            metadata={
+                "validation": ValidationResult(
+                    is_valid=False,
+                    issues=["Evidence contains substantial contradiction pressure across core claims"],
+                    warnings=["Evidence freshness does not match the query's time sensitivity"],
+                    recommendations=["Refresh the evidence base with recent reporting or current source documents"],
+                    failure_modes=["high_contradiction_pressure", "stale_evidence_for_time_sensitive_query"],
+                    evidence_diagnosis="needs_better_sources",
+                    quality_score=0.58,
+                ).model_dump(mode="python"),
+                "iteration_history": [
+                    {
+                        "iteration": 1,
+                        "source_count": 3,
+                        "quality_score": 0.42,
+                        "gap_count": 3,
+                    },
+                    {
+                        "iteration": 2,
+                        "source_count": 6,
+                        "quality_score": 0.58,
+                        "gap_count": 1,
+                    },
+                ],
+            },
+        )
+        analysis = {
+            "key_findings": [
+                {
+                    "title": "Demand remains elevated",
+                    "description": "Demand signals remain positive across supplier and market commentary.",
+                    "claims": [
+                        CrossReferenceClaim(
+                            claim="Demand remains elevated",
+                            supporting_sources=[
+                                ClaimEvidence(
+                                    url="https://sec.gov/filing",
+                                    title="SEC Filing",
+                                    published_date="2026-02-20",
+                                ),
+                                ClaimEvidence(
+                                    url="https://reuters.com/story",
+                                    title="Reuters Story",
+                                    published_date="2026-02-25",
+                                ),
+                            ],
+                            contradicting_sources=[
+                                ClaimEvidence(
+                                    url="https://blog.example.com/opinion",
+                                    title="Opinion Post",
+                                    published_date="2025-01-05",
+                                )
+                            ],
+                            consensus_level=0.67,
+                        )
+                    ],
+                }
+            ],
+            "themes": ["Demand"],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": ["Some analysts expect a correction"],
+            "gaps": ["Need direct supplier shipment data"],
+            "analysis_method": "ai_semantic",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+
+        assert "**Evidence Strength:**" in report
+        assert "**Freshness:**" in report
+        assert "**Primary-Source Coverage:**" in report
+        assert "**Contradiction Note:**" in report
+        assert "### Iteration Summary" in report
+        assert "Follow-up search materially changed the final report." in report
+
+    def test_json_report_exposes_evidence_annotations(self) -> None:
+        """Test JSON report exposes claim evidence fields for downstream tooling."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test-session",
+            query="merger approval status",
+            depth=ResearchDepth.DEEP,
+            sources=[
+                SearchResultItem(
+                    url="https://sec.gov/filing",
+                    title="SEC Filing",
+                    source_metadata={"published_date": "2026-03-01"},
+                ),
+                SearchResultItem(
+                    url="https://reuters.com/update",
+                    title="Reuters Update",
+                    source_metadata={"published_date": "2026-03-02"},
+                ),
+            ],
+            metadata={
+                "validation": ValidationResult(
+                    is_valid=True,
+                    evidence_diagnosis="sufficient",
+                    quality_score=0.86,
+                    recommendations=["Maintain citation links for each claim"],
+                ).model_dump(mode="python"),
+            },
+        )
+        analysis = {
+            "key_findings": [],
+            "themes": ["Regulatory status"],
+            "themes_detailed": [],
+            "consensus_points": ["Approval is still pending"],
+            "contention_points": [],
+            "cross_reference_claims": [
+                CrossReferenceClaim(
+                    claim="Approval is still pending",
+                    supporting_sources=[
+                        ClaimEvidence(
+                            url="https://sec.gov/filing",
+                            title="SEC Filing",
+                            published_date="2026-03-01",
+                        ),
+                        ClaimEvidence(
+                            url="https://reuters.com/update",
+                            title="Reuters Update",
+                            published_date="2026-03-02",
+                        ),
+                    ],
+                    consensus_level=0.75,
+                )
+            ],
+            "gaps": [],
+            "analysis_method": "ai_semantic",
+        }
+
+        report = json.loads(agent.generate_json_report(session, analysis))
+
+        assert "claims" in report
+        assert report["claims"][0]["claim"] == "Approval is still pending"
+        assert "evidence_strength" in report["claims"][0]
+        assert "freshness_note" in report["claims"][0]
+        assert "primary_source_note" in report["claims"][0]
+        assert "validation_rationale" in report["claims"][0]
+        assert "evidence_strength" in report
+        assert "unresolved_gaps" in report
+        assert "validation_rationale" in report
+        assert report["validation_rationale"]["status"] == "sufficient"
 
 
 class TestAIAgentIntegrationEvidence:

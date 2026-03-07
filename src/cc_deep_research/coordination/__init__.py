@@ -1,22 +1,18 @@
-"""Coordination layer for parallel agent execution.
+"""Local coordination helpers used by the orchestrator.
 
-This module provides the infrastructure for coordinating multiple
-researcher agents working in parallel.
-
-Classes:
-    MessageBus: Async queue-based message passing between agents.
-    ResearchState: Centralized state management for research sessions.
-    AgentPool: Lifecycle management for spawned researcher agents.
-    Reflection: Strategic reflection point during research.
+These types model a future coordination layer but currently operate as
+in-process helpers around the local Python pipeline.
 """
 
-from cc_deep_research.coordination.agent_pool import AgentPool
-from cc_deep_research.coordination.message_bus import MessageBus
+from cc_deep_research.coordination.agent_pool import AgentPool, LocalAgentPool
+from cc_deep_research.coordination.message_bus import LocalMessageBus, MessageBus
 from cc_deep_research.coordination.state import Reflection, ResearchState
 
 __all__ = [
     "MessageBus",
+    "LocalMessageBus",
     "ResearchState",
     "AgentPool",
+    "LocalAgentPool",
     "Reflection",
 ]

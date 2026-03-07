@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from click.testing import CliRunner
 
-from cc_deep_research.aggregation import deduplicate_by_url
 from cc_deep_research.agents import (
     AGENT_TYPE_ANALYZER,
     AGENT_TYPE_COLLECTOR,
@@ -16,6 +15,7 @@ from cc_deep_research.agents import (
     AGENT_TYPE_VALIDATOR,
 )
 from cc_deep_research.agents.query_expander import QueryExpanderAgent
+from cc_deep_research.aggregation import deduplicate_by_url
 from cc_deep_research.cli import _resolve_parallel_mode_override, main
 from cc_deep_research.config import Config
 from cc_deep_research.models import (
@@ -85,6 +85,8 @@ def _make_validation(
     quality_score: float = 0.82,
     needs_follow_up: bool = False,
     follow_up_queries: Sequence[str] | None = None,
+    failure_modes: Sequence[str] | None = None,
+    evidence_diagnosis: str = "unknown",
 ) -> ValidationResult:
     """Build a validation payload."""
     return ValidationResult(
@@ -93,6 +95,8 @@ def _make_validation(
         issues=[],
         warnings=[],
         recommendations=[],
+        failure_modes=list(failure_modes or []),
+        evidence_diagnosis=evidence_diagnosis,
         needs_follow_up=needs_follow_up,
         follow_up_queries=list(follow_up_queries or []),
         target_source_count=3,
@@ -812,6 +816,32 @@ class TestTeamResearchOrchestrator:
             "query responses",
             "query timeline",
             "query case studies",
+        ]
+
+    def test_follow_up_queries_can_be_derived_from_validation_failure_modes(self) -> None:
+        orchestrator = TeamResearchOrchestrator(Config(), ResearchMonitor(enabled=False))
+
+        analysis = _make_analysis(source_count=3)
+        validation = _make_validation(
+            needs_follow_up=True,
+            failure_modes=[
+                "weak_primary_source_coverage",
+                "high_contradiction_pressure",
+            ],
+            evidence_diagnosis="needs_better_sources",
+        )
+
+        follow_up_queries = orchestrator._get_follow_up_queries(
+            "query",
+            analysis,
+            validation,
+        )
+
+        assert follow_up_queries == [
+            "query primary sources official filings",
+            "query official guidance source documents",
+            "query conflicting evidence rebuttal",
+            "query methodology criticism response",
         ]
 
 

@@ -1,4 +1,4 @@
-"""Runtime lifecycle helpers for the research orchestrator."""
+"""Runtime lifecycle helpers for the local research orchestrator."""
 
 from __future__ import annotations
 
@@ -22,19 +22,19 @@ from cc_deep_research.agents import (
     ValidatorAgent,
 )
 from cc_deep_research.config import Config
-from cc_deep_research.coordination import AgentPool, MessageBus
+from cc_deep_research.coordination import LocalAgentPool, LocalMessageBus
 from cc_deep_research.monitoring import ResearchMonitor
-from cc_deep_research.teams import AgentSpec, ResearchTeam, TeamConfig
+from cc_deep_research.teams import AgentSpec, LocalResearchTeam, TeamConfig
 
 
 @dataclass
 class RuntimeState:
     """Concrete runtime objects created for an orchestrator session."""
 
-    team: ResearchTeam
+    team: LocalResearchTeam
     agents: dict[str, Any]
-    message_bus: MessageBus | None
-    agent_pool: AgentPool | None
+    message_bus: LocalMessageBus | None
+    agent_pool: LocalAgentPool | None
 
 
 class OrchestratorRuntime:
@@ -53,35 +53,37 @@ class OrchestratorRuntime:
         self._parallel_mode = parallel_mode
         self._num_researchers = num_researchers
 
-    async def initialize(self, existing_team: ResearchTeam | None) -> RuntimeState | None:
+    async def initialize(self, existing_team: LocalResearchTeam | None) -> RuntimeState | None:
         """Create runtime dependencies when no active team exists."""
         if existing_team is not None:
             return None
 
-        self._monitor.section("Team Initialization")
+        self._monitor.section("Runtime Initialization")
 
-        message_bus: MessageBus | None = None
-        agent_pool: AgentPool | None = None
+        message_bus: LocalMessageBus | None = None
+        agent_pool: LocalAgentPool | None = None
         if self._parallel_mode:
-            message_bus = MessageBus()
-            agent_pool = AgentPool(
+            message_bus = LocalMessageBus()
+            agent_pool = LocalAgentPool(
                 num_agents=self._num_researchers,
                 config=self._config,
                 timeout=self._config.search_team.timeout_seconds,
             )
             await agent_pool.initialize()
-            self._monitor.log(f"Parallel mode: {self._num_researchers} researchers")
+            self._monitor.log(
+                f"Parallel local collection enabled: {self._num_researchers} researcher tasks"
+            )
         else:
-            self._monitor.log("Sequential mode")
+            self._monitor.log("Sequential local collection enabled")
 
         agent_specs = self._build_agent_specs()
-        team = ResearchTeam(self._build_team_config(agent_specs), self._config)
+        team = LocalResearchTeam(self._build_team_config(agent_specs), self._config)
         agents = self._build_agents()
 
-        self._monitor.log(f"Team created with {len(agent_specs)} agents")
+        self._monitor.log(f"Created local specialist registry with {len(agent_specs)} roles")
         self._monitor.record_reasoning_summary(
             stage="team_init",
-            summary=f"Initialized {len(agent_specs)} specialist agents",
+            summary=f"Initialized {len(agent_specs)} local specialist roles",
             agent_id="orchestrator",
             agent_types=[spec.agent_type for spec in agent_specs],
         )
@@ -96,10 +98,10 @@ class OrchestratorRuntime:
     async def shutdown(
         self,
         *,
-        team: ResearchTeam | None,
+        team: LocalResearchTeam | None,
         agents: dict[str, Any],
-        message_bus: MessageBus | None,
-        agent_pool: AgentPool | None,
+        message_bus: LocalMessageBus | None,
+        agent_pool: LocalAgentPool | None,
     ) -> None:
         """Shutdown runtime dependencies and close external resources."""
         if self._parallel_mode:
@@ -107,12 +109,12 @@ class OrchestratorRuntime:
                 await message_bus.shutdown()
             if agent_pool is not None:
                 await agent_pool.shutdown()
-            self._monitor.log("Coordination layer shut down")
+            self._monitor.log("Local coordination helpers shut down")
 
         if team is not None:
             await team.shutdown()
-            self._monitor.section("Team Shutdown")
-            self._monitor.log("Team shut down successfully")
+            self._monitor.section("Runtime Shutdown")
+            self._monitor.log("Local runtime shut down successfully")
 
         collector = agents.get(AGENT_TYPE_COLLECTOR)
         if isinstance(collector, SourceCollectorAgent):

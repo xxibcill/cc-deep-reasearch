@@ -20,7 +20,18 @@ from cc_deep_research.credibility import (
     SourceCredibilityScorer,
     format_credibility_badge,
 )
-from cc_deep_research.models import QualityScore, ResearchSession, SearchResultItem
+from cc_deep_research.models import (
+    AnalysisFinding,
+    AnalysisResult,
+    ClaimEvidence,
+    ClaimFreshness,
+    CrossReferenceClaim,
+    EvidenceType,
+    QualityScore,
+    ResearchSession,
+    SearchResultItem,
+    ValidationResult,
+)
 
 
 class ReporterAgent:
@@ -73,6 +84,15 @@ class ReporterAgent:
         ## Sources (with credibility scores)
         ## Research Metadata
         """
+        analysis_result = AnalysisResult.model_validate(analysis)
+        validation_result = self._validation_result(session)
+        claims = self._collect_claims(analysis_result)
+        evidence_annotations = self._build_evidence_annotations(
+            session=session,
+            analysis=analysis_result,
+            validation=validation_result,
+            claims=claims,
+        )
         sections = []
 
         # Title
@@ -80,44 +100,60 @@ class ReporterAgent:
 
         # Executive Summary
         sections.append("## Executive Summary\n")
-        sections.append(self._generate_executive_summary(session, analysis))
+        sections.append(self._generate_executive_summary(session, analysis_result))
         sections.append("\n")
 
         # Methodology
         sections.append("## Methodology\n")
-        sections.append(self._generate_methodology_section(session, analysis))
+        sections.append(self._generate_methodology_section(session, analysis_result))
         sections.append("\n")
 
         # Key Findings
         sections.append("## Key Findings\n")
-        for i, finding in enumerate(analysis.get("key_findings", []), 1):
-            sections.append(f"### Finding {i}: {finding['title']}")
-            sections.append(f"{finding['description']}\n")
-            if finding.get("evidence"):
+        for i, finding in enumerate(analysis_result.key_findings, 1):
+            finding_obj = self._coerce_finding(finding)
+            sections.append(f"### Finding {i}: {finding_obj.title}")
+            if finding_obj.description:
+                sections.append(f"{finding_obj.description}\n")
+            if finding_obj.evidence:
                 sections.append("**Supporting Sources:**")
-                for url in finding["evidence"]:
+                for url in finding_obj.evidence:
                     # Find source index
                     for j, source in enumerate(session.sources, 1):
                         if source.url == url:
                             sections.append(f"- [{source.title}]({url}) [{j}]")
                             break
                 sections.append("")
-            if finding.get("confidence"):
-                sections.append(f"**Confidence:** {finding['confidence'].capitalize()}\n")
+            claim_annotation = self._claim_annotation_summary(finding_obj.claims)
+            if claim_annotation:
+                sections.append(f"**Evidence Strength:** {claim_annotation['strength_label']}")
+                sections.append(f"**Freshness:** {claim_annotation['freshness_note']}")
+                sections.append(
+                    f"**Primary-Source Coverage:** {claim_annotation['primary_source_note']}"
+                )
+                sections.append(f"**Contradiction Note:** {claim_annotation['contradiction_note']}\n")
+            elif finding_obj.confidence:
+                sections.append(f"**Confidence:** {finding_obj.confidence.capitalize()}\n")
 
         # Detailed Analysis
         sections.append("## Detailed Analysis\n")
-        sections.append(self._generate_detailed_analysis(session, analysis))
+        sections.append(self._generate_detailed_analysis(session, analysis_result))
         sections.append("\n")
 
         # Evidence Quality Analysis (NEW)
         sections.append("## Evidence Quality Analysis\n")
-        sections.append(self._generate_evidence_quality_section(session, analysis))
+        sections.append(
+            self._generate_evidence_quality_section(
+                session,
+                analysis_result,
+                evidence_annotations,
+            )
+        )
         sections.append("\n")
 
         # Cross-Reference Analysis
         sections.append("## Cross-Reference Analysis\n")
-        sections.append(self._generate_cross_reference_section(analysis))
+        sections.append(self._generate_cross_reference_section(analysis_result))
         sections.append("\n")
 
         # Safety and Contraindications (NEW)
@@ -128,19 +164,16 @@ class ReporterAgent:
             sections.append("\n")
 
         # Research Gaps
-        if analysis.get("gaps"):
+        if analysis_result.gaps:
             sections.append("## Research Gaps and Limitations\n")
-            for gap in analysis.get("gaps", []):
-                if isinstance(gap, dict):
-                    sections.append(f"### {gap.get('gap_description', 'Gap')}")
-                    sections.append(f"**Importance:** {gap.get('importance', 'Medium')}")
-                    if gap.get("suggested_queries"):
-                        sections.append("**Suggested follow-up queries:**")
-                        for q in gap["suggested_queries"]:
-                            sections.append(f"- {q}")
-                    sections.append("")
-                else:
-                    sections.append(f"- {gap}")
+            for gap in analysis_result.normalized_gaps():
+                sections.append(f"### {gap.gap_description}")
+                sections.append(f"**Importance:** {gap.importance or 'Medium'}")
+                if gap.suggested_queries:
+                    sections.append("**Suggested follow-up queries:**")
+                    for q in gap.suggested_queries:
+                        sections.append(f"- {q}")
+                sections.append("")
             sections.append("")
 
         # Sources (with credibility scoring)
@@ -167,10 +200,14 @@ class ReporterAgent:
         Returns:
             JSON string with complete research data.
         """
+        analysis_result = AnalysisResult.model_validate(analysis)
+        validation_result = self._validation_result(session)
+        claims = self._collect_claims(analysis_result)
+
         # Get evidence quality analysis
-        themes = analysis.get("themes_detailed", [])
+        themes = analysis_result.themes_detailed
         if not themes:
-            themes = [{"name": t, "supporting_sources": []} for t in analysis.get("themes", [])]
+            themes = [{"name": t, "supporting_sources": []} for t in analysis_result.themes]
 
         evidence_quality = self._ai_integration.analyze_evidence_quality(
             session.sources,
@@ -179,6 +216,12 @@ class ReporterAgent:
 
         # Get safety information
         safety_info = self._ai_integration.extract_safety_information(session.sources)
+        evidence_annotations = self._build_evidence_annotations(
+            session=session,
+            analysis=analysis_result,
+            validation=validation_result,
+            claims=claims,
+        )
 
         report = {
             "query": session.query,
@@ -188,7 +231,12 @@ class ReporterAgent:
             "completed_at": session.completed_at.isoformat() if session.completed_at else None,
             "execution_time_seconds": session.execution_time_seconds,
             "total_sources": session.total_sources,
-            "analysis": analysis,
+            "analysis": analysis_result.model_dump(mode="python"),
+            "claims": evidence_annotations["claims"],
+            "evidence_strength": evidence_annotations["summary"],
+            "unresolved_gaps": evidence_annotations["unresolved_gaps"],
+            "validation_rationale": evidence_annotations["validation_rationale"],
+            "iteration_summary": evidence_annotations["iteration_summary"],
             "evidence_quality": evidence_quality,
             "safety_info": safety_info,
             "sources": [
@@ -210,7 +258,7 @@ class ReporterAgent:
     def _generate_executive_summary(
         self,
         session: ResearchSession,
-        analysis: dict[str, Any],
+        analysis: AnalysisResult,
     ) -> str:
         """Generate executive summary section.
 
@@ -231,9 +279,9 @@ class ReporterAgent:
         )
 
         # Paragraph 2: Key findings (ENHANCED)
-        if analysis.get("key_findings"):
-            key_count = len(analysis["key_findings"])
-            themes = analysis.get("themes", [])[:3]
+        if analysis.key_findings:
+            key_count = len(analysis.key_findings)
+            themes = analysis.themes[:3]
             paragraphs.append(
                 f"The research identified {key_count} key findings. "
                 f"Main themes include: "
@@ -241,7 +289,7 @@ class ReporterAgent:
             )
 
             # Add method information
-            method = analysis.get("analysis_method", "basic")
+            method = analysis.analysis_method
             if method == "ai_semantic" or method == "ai_multi_pass":
                 paragraphs.append(
                     "Analysis was performed using AI-powered semantic analysis, "
@@ -254,12 +302,9 @@ class ReporterAgent:
                 )
 
         # Paragraph 3: Notes
-        gaps = analysis.get("gaps", [])
+        gaps = analysis.normalized_gaps()
         if gaps:
-            if isinstance(gaps[0], dict):
-                gap_descriptions = [g.get("gap_description", g) for g in gaps]
-            else:
-                gap_descriptions = gaps
+            gap_descriptions = [g.gap_description for g in gaps]
             paragraphs.append(
                 f"Areas requiring additional investigation include: {', '.join(gap_descriptions)}."
             )
@@ -269,7 +314,7 @@ class ReporterAgent:
     def _generate_detailed_analysis(
         self,
         session: ResearchSession,
-        analysis: dict[str, Any],
+        analysis: AnalysisResult,
     ) -> str:
         """Generate detailed analysis section.
 
@@ -283,11 +328,11 @@ class ReporterAgent:
         sections = []
 
         # Use detailed theme data if available
-        themes_detailed = analysis.get("themes_detailed", [])
+        themes_detailed = analysis.themes_detailed
 
         if not themes_detailed:
             # Fallback to basic theme names
-            themes = analysis.get("themes", [])
+            themes = analysis.themes
             for theme in themes:
                 sections.append(f"### {theme}")
                 sections.append(
@@ -400,7 +445,7 @@ class ReporterAgent:
 
     def _generate_cross_reference_section(
         self,
-        analysis: dict[str, Any],
+        analysis: AnalysisResult,
     ) -> str:
         """Generate cross-reference analysis section.
 
@@ -414,7 +459,7 @@ class ReporterAgent:
 
         # Consensus points
         sections.append("### Consensus Points")
-        consensus = analysis.get("consensus_points", [])
+        consensus = analysis.consensus_points
         if consensus:
             for point in consensus:
                 sections.append(f"- {point}")
@@ -424,7 +469,7 @@ class ReporterAgent:
 
         # Contention points
         sections.append("### Points of Contention")
-        contention = analysis.get("contention_points", [])
+        contention = analysis.contention_points
         if contention:
             for point in contention:
                 sections.append(f"- {point}")
@@ -432,21 +477,21 @@ class ReporterAgent:
             sections.append("- No major points of contention identified")
 
         # ENHANCED: Cross-reference claims with evidence
-        claims = analysis.get("cross_reference_claims", [])
+        claims = analysis.cross_reference_claims
         if claims:
             sections.append("\n### Detailed Claims Analysis")
             for claim in claims:
-                sections.append(f"\n**Claim:** {claim.get('claim', 'Unnamed claim')}")
-                if claim.get("supporting_sources"):
+                sections.append(f"\n**Claim:** {claim.claim}")
+                if claim.supporting_sources:
                     sections.append(
-                        f"- **Supporting:** {len(claim['supporting_sources'])} sources"
+                        f"- **Supporting:** {len(claim.supporting_sources)} sources"
                     )
-                if claim.get("contradicting_sources"):
+                if claim.contradicting_sources:
                     sections.append(
-                        f"- **Contradicting:** {len(claim['contradicting_sources'])} sources"
+                        f"- **Contradicting:** {len(claim.contradicting_sources)} sources"
                     )
-                if claim.get("consensus_level"):
-                    consensus_pct = claim["consensus_level"] * 100
+                if claim.consensus_level:
+                    consensus_pct = claim.consensus_level * 100
                     sections.append(f"- **Consensus Level:** {consensus_pct:.0f}%")
 
         return "\n".join(sections)
@@ -487,7 +532,7 @@ class ReporterAgent:
     def _generate_methodology_section(
         self,
         session: ResearchSession,
-        analysis: dict[str, Any],
+        analysis: AnalysisResult,
     ) -> str:
         """Generate methodology section.
 
@@ -545,7 +590,7 @@ class ReporterAgent:
 
         # Analysis method
         lines.append("### Analysis Method")
-        method = analysis.get("analysis_method", "basic")
+        method = analysis.analysis_method or "basic"
 
         method_descriptions = {
             "ai_semantic": (
@@ -599,7 +644,8 @@ class ReporterAgent:
     def _generate_evidence_quality_section(
         self,
         session: ResearchSession,
-        analysis: dict[str, Any],
+        analysis: AnalysisResult,
+        evidence_annotations: dict[str, Any],
     ) -> str:
         """Generate evidence quality analysis section.
 
@@ -613,14 +659,50 @@ class ReporterAgent:
         lines = []
 
         # Get evidence quality analysis
-        themes = analysis.get("themes_detailed", [])
+        themes = analysis.themes_detailed
         if not themes:
-            themes = [{"name": t, "supporting_sources": []} for t in analysis.get("themes", [])]
+            themes = [{"name": t, "supporting_sources": []} for t in analysis.themes]
 
         evidence_quality = self._ai_integration.analyze_evidence_quality(
             session.sources,
             themes,
         )
+
+        summary = evidence_annotations["summary"]
+        lines.append("### Evidence Strength\n")
+        lines.append(
+            f"- Strong findings: {summary['strong_claims']}"
+        )
+        lines.append(
+            f"- Moderate findings: {summary['moderate_claims']}"
+        )
+        lines.append(
+            f"- Weak findings: {summary['weak_claims']}"
+        )
+        lines.append(
+            f"- Contested findings: {summary['contested_claims']}"
+        )
+        lines.append("")
+
+        lines.append("### Freshness Notes\n")
+        lines.append(summary["freshness_note"])
+        lines.append("")
+
+        lines.append("### Primary-Source Coverage\n")
+        lines.append(summary["primary_source_note"])
+        lines.append("")
+
+        lines.append("### Contradiction Notes\n")
+        lines.append(summary["contradiction_note"])
+        lines.append("")
+
+        if evidence_annotations["iteration_summary"]:
+            iteration_summary = evidence_annotations["iteration_summary"]
+            lines.append("### Iteration Summary\n")
+            lines.append(iteration_summary["summary"])
+            for delta in iteration_summary["deltas"]:
+                lines.append(f"- {delta}")
+            lines.append("")
 
         # Study types breakdown
         study_types = evidence_quality.get("study_types", {})
@@ -680,6 +762,309 @@ class ReporterAgent:
             lines.append("")
 
         return "\n".join(lines)
+
+    def _validation_result(self, session: ResearchSession) -> ValidationResult | None:
+        """Return typed validation metadata when the session contains it."""
+        validation = session.metadata.get("validation", {})
+        if not validation:
+            return None
+        return ValidationResult.model_validate(validation)
+
+    def _coerce_finding(self, finding: AnalysisFinding | str) -> AnalysisFinding:
+        """Normalize mixed finding shapes into a typed finding."""
+        if isinstance(finding, AnalysisFinding):
+            return finding
+        return AnalysisFinding(title=str(finding), description=str(finding))
+
+    def _collect_claims(self, analysis: AnalysisResult) -> list[CrossReferenceClaim]:
+        """Return all claims attached to the analysis and its findings."""
+        claims: list[CrossReferenceClaim] = list(analysis.cross_reference_claims)
+        for finding in analysis.key_findings:
+            finding_obj = self._coerce_finding(finding)
+            claims.extend(finding_obj.claims)
+        return claims
+
+    def _build_evidence_annotations(
+        self,
+        *,
+        session: ResearchSession,
+        analysis: AnalysisResult,
+        validation: ValidationResult | None,
+        claims: list[CrossReferenceClaim],
+    ) -> dict[str, Any]:
+        """Build shared evidence annotation data for markdown and JSON reports."""
+        claim_annotations = [self._serialize_claim(claim) for claim in claims]
+        strength_counts = {
+            "strong": sum(1 for claim in claim_annotations if claim["evidence_strength"] == "strong"),
+            "moderate": sum(1 for claim in claim_annotations if claim["evidence_strength"] == "moderate"),
+            "weak": sum(1 for claim in claim_annotations if claim["evidence_strength"] == "weak"),
+            "contested": sum(1 for claim in claim_annotations if claim["is_contested"]),
+        }
+        freshness_values = [claim["freshness"] for claim in claim_annotations]
+        primary_coverages = [claim["primary_source_coverage_ratio"] for claim in claim_annotations]
+        contradiction_values = [claim["contradicting_source_count"] for claim in claim_annotations]
+        iteration_summary = self._build_iteration_summary(session)
+
+        unresolved_gaps = [
+            {
+                "gap": gap.gap_description,
+                "importance": gap.importance or "medium",
+                "suggested_queries": gap.suggested_queries,
+            }
+            for gap in analysis.normalized_gaps()
+        ]
+        if validation:
+            for issue in validation.issues:
+                unresolved_gaps.append({"gap": issue, "importance": "high", "suggested_queries": []})
+            for warning in validation.warnings:
+                unresolved_gaps.append({"gap": warning, "importance": "medium", "suggested_queries": []})
+
+        summary = {
+            "strong_claims": strength_counts["strong"],
+            "moderate_claims": strength_counts["moderate"],
+            "weak_claims": strength_counts["weak"],
+            "contested_claims": strength_counts["contested"],
+            "freshness_note": self._freshness_summary_note(freshness_values),
+            "primary_source_note": self._primary_source_summary_note(primary_coverages),
+            "contradiction_note": self._contradiction_summary_note(claim_annotations, contradiction_values),
+        }
+
+        validation_rationale = {
+            "status": validation.evidence_diagnosis if validation else "unknown",
+            "quality_score": validation.quality_score if validation else None,
+            "failure_modes": validation.failure_modes if validation else [],
+            "recommendations": validation.recommendations if validation else [],
+            "rationale": self._validation_rationale_text(validation, summary, unresolved_gaps),
+        }
+
+        return {
+            "claims": claim_annotations,
+            "summary": summary,
+            "unresolved_gaps": unresolved_gaps,
+            "validation_rationale": validation_rationale,
+            "iteration_summary": iteration_summary,
+        }
+
+    def _serialize_claim(self, claim: CrossReferenceClaim) -> dict[str, Any]:
+        """Serialize one claim into an evidence-oriented report payload."""
+        supporting = claim.supporting_sources
+        contradicting = claim.contradicting_sources
+        support_count = len(supporting)
+        contradiction_count = len(contradicting)
+        primary_ratio = self._primary_source_ratio(supporting)
+        evidence_strength = self._claim_strength_label(claim, primary_ratio)
+        return {
+            "claim": claim.claim,
+            "confidence": claim.confidence or "unknown",
+            "consensus_level": claim.consensus_level,
+            "evidence_strength": evidence_strength,
+            "supporting_source_count": support_count,
+            "contradicting_source_count": contradiction_count,
+            "is_contested": contradiction_count > 0,
+            "freshness": (claim.freshness or ClaimFreshness.UNKNOWN).value,
+            "freshness_note": self._freshness_note(claim.freshness or ClaimFreshness.UNKNOWN),
+            "primary_source_coverage_ratio": round(primary_ratio, 2),
+            "primary_source_note": self._primary_source_note(primary_ratio),
+            "contradiction_note": self._contradiction_note(support_count, contradiction_count),
+            "validation_rationale": self._claim_validation_rationale(
+                claim=claim,
+                evidence_strength=evidence_strength,
+                primary_ratio=primary_ratio,
+            ),
+            "supporting_sources": [self._serialize_evidence_item(item) for item in supporting],
+            "contradicting_sources": [self._serialize_evidence_item(item) for item in contradicting],
+        }
+
+    def _serialize_evidence_item(self, evidence: ClaimEvidence) -> dict[str, Any]:
+        """Serialize evidence details needed for downstream tooling."""
+        return {
+            "url": evidence.url,
+            "title": evidence.title,
+            "freshness": evidence.freshness.value,
+            "evidence_type": evidence.evidence_type.value,
+            "published_date": evidence.published_date,
+        }
+
+    def _claim_annotation_summary(self, claims: list[CrossReferenceClaim]) -> dict[str, str] | None:
+        """Collapse multiple claims into one compact finding-level annotation."""
+        if not claims:
+            return None
+        serialized = [self._serialize_claim(claim) for claim in claims]
+        strong_count = sum(1 for claim in serialized if claim["evidence_strength"] == "strong")
+        weak_count = sum(1 for claim in serialized if claim["evidence_strength"] == "weak")
+        contested_count = sum(1 for claim in serialized if claim["is_contested"])
+        return {
+            "strength_label": (
+                "strong"
+                if strong_count == len(serialized)
+                else "weak" if weak_count else "mixed"
+            ),
+            "freshness_note": self._freshness_summary_note(
+                [claim["freshness"] for claim in serialized]
+            ),
+            "primary_source_note": self._primary_source_summary_note(
+                [claim["primary_source_coverage_ratio"] for claim in serialized]
+            ),
+            "contradiction_note": (
+                "Some evidence is contested across sources."
+                if contested_count
+                else "No direct contradictions were attached to this finding."
+            ),
+        }
+
+    def _build_iteration_summary(self, session: ResearchSession) -> dict[str, Any] | None:
+        """Summarize iterative follow-up search when it materially changed the run."""
+        history = session.metadata.get("iteration_history", [])
+        if len(history) < 2:
+            return None
+
+        first = history[0]
+        last = history[-1]
+        deltas: list[str] = []
+        source_delta = int(last.get("source_count", 0)) - int(first.get("source_count", 0))
+        if source_delta > 0:
+            deltas.append(f"Sources increased by {source_delta} across follow-up iterations.")
+
+        first_quality = first.get("quality_score")
+        last_quality = last.get("quality_score")
+        if first_quality is not None and last_quality is not None:
+            quality_delta = float(last_quality) - float(first_quality)
+            if abs(quality_delta) >= 0.05:
+                direction = "improved" if quality_delta > 0 else "declined"
+                deltas.append(f"Validation quality {direction} by {abs(quality_delta):.2f}.")
+
+        gap_delta = int(first.get("gap_count", 0)) - int(last.get("gap_count", 0))
+        if gap_delta > 0:
+            deltas.append(f"Open gaps decreased by {gap_delta}.")
+
+        if not deltas:
+            return None
+
+        return {
+            "iterations": len(history),
+            "summary": "Follow-up search materially changed the final report.",
+            "deltas": deltas,
+        }
+
+    def _claim_strength_label(self, claim: CrossReferenceClaim, primary_ratio: float) -> str:
+        """Classify evidence strength for one claim."""
+        support_count = len(claim.supporting_sources)
+        contradiction_count = len(claim.contradicting_sources)
+        confidence = (claim.confidence or "low").lower()
+        if (
+            support_count >= 3
+            and contradiction_count == 0
+            and primary_ratio >= 0.5
+            and confidence == "high"
+        ):
+            return "strong"
+        if support_count >= 2 and contradiction_count <= 1 and confidence in {"high", "medium"}:
+            return "moderate"
+        return "weak"
+
+    def _primary_source_ratio(self, evidence: list[ClaimEvidence]) -> float:
+        """Return the share of supporting evidence from primary-like sources."""
+        if not evidence:
+            return 0.0
+        primary_like = {
+            EvidenceType.PRIMARY,
+            EvidenceType.OFFICIAL,
+            EvidenceType.RESEARCH,
+        }
+        count = sum(1 for item in evidence if item.evidence_type in primary_like)
+        return count / len(evidence)
+
+    def _freshness_note(self, freshness: ClaimFreshness) -> str:
+        """Describe the freshness bucket in plain language."""
+        mapping = {
+            ClaimFreshness.CURRENT: "Backed by current evidence.",
+            ClaimFreshness.RECENT: "Backed by recent evidence.",
+            ClaimFreshness.DATED: "Relies on older evidence.",
+            ClaimFreshness.UNKNOWN: "Evidence freshness could not be determined.",
+        }
+        return mapping[freshness]
+
+    def _primary_source_note(self, ratio: float) -> str:
+        """Describe primary-source coverage as a short sentence."""
+        if ratio >= 0.7:
+            return "Mostly supported by primary, official, or research sources."
+        if ratio >= 0.35:
+            return "Partially supported by primary, official, or research sources."
+        return "Relies heavily on secondary or unattributed sources."
+
+    def _contradiction_note(self, support_count: int, contradiction_count: int) -> str:
+        """Describe contradiction pressure for one claim."""
+        if contradiction_count == 0:
+            return "No direct contradictory evidence was attached."
+        if contradiction_count >= support_count:
+            return "Contradictory evidence is as strong as or stronger than the support."
+        return "Some contradictory evidence remains unresolved."
+
+    def _claim_validation_rationale(
+        self,
+        *,
+        claim: CrossReferenceClaim,
+        evidence_strength: str,
+        primary_ratio: float,
+    ) -> str:
+        """Explain why a claim received its evidence annotation."""
+        return (
+            f"Rated {evidence_strength} because it has {len(claim.supporting_sources)} supporting "
+            f"source(s), {len(claim.contradicting_sources)} contradicting source(s), "
+            f"{primary_ratio:.0%} primary-source coverage, and "
+            f"{(claim.freshness or ClaimFreshness.UNKNOWN).value} freshness."
+        )
+
+    def _freshness_summary_note(self, freshness_values: list[str]) -> str:
+        """Summarize freshness across all claims."""
+        if not freshness_values:
+            return "No claim-level freshness annotations were available."
+        if all(value == ClaimFreshness.CURRENT.value for value in freshness_values):
+            return "All annotated claims are backed by current evidence."
+        if any(value == ClaimFreshness.DATED.value for value in freshness_values):
+            return "Some annotated claims rely on dated evidence and should be revisited."
+        if any(value == ClaimFreshness.UNKNOWN.value for value in freshness_values):
+            return "Some evidence lacks publish dates, so freshness is only partially known."
+        return "Most annotated claims are backed by recent evidence."
+
+    def _primary_source_summary_note(self, primary_coverages: list[float]) -> str:
+        """Summarize primary-source coverage across all claims."""
+        if not primary_coverages:
+            return "Primary-source coverage could not be estimated."
+        average = sum(primary_coverages) / len(primary_coverages)
+        return self._primary_source_note(average)
+
+    def _contradiction_summary_note(
+        self,
+        claim_annotations: list[dict[str, Any]],
+        contradiction_values: list[int],
+    ) -> str:
+        """Summarize contradiction pressure across the report."""
+        if not claim_annotations:
+            return "No structured claim-level contradiction analysis was available."
+        if all(value == 0 for value in contradiction_values):
+            return "No direct contradictions were attached to the structured claims."
+        contested = sum(1 for claim in claim_annotations if claim["is_contested"])
+        return f"{contested} claim(s) include contradictory evidence that remains unresolved."
+
+    def _validation_rationale_text(
+        self,
+        validation: ValidationResult | None,
+        summary: dict[str, Any],
+        unresolved_gaps: list[dict[str, Any]],
+    ) -> str:
+        """Create one high-level rationale sentence for downstream consumers."""
+        if validation is None:
+            return "No validation metadata was captured for this report."
+        rationale = (
+            f"Validation diagnosed the report as {validation.evidence_diagnosis} "
+            f"with quality score {validation.quality_score:.2f}."
+        )
+        if summary["contested_claims"]:
+            rationale += f" {summary['contested_claims']} contested claim(s) lowered confidence."
+        if unresolved_gaps:
+            rationale += f" {len(unresolved_gaps)} unresolved gap(s) remain."
+        return rationale
 
     def _generate_safety_section(
         self,
