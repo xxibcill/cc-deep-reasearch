@@ -60,6 +60,11 @@ class ResearchPlanningService:
                 )
             ]
             strategy.strategy.query_families = query_families
+            self._monitor.record_query_variations(
+                original_query=query,
+                query_families=query_families,
+                strategy_intent=strategy.strategy.intent,
+            )
             return query_families
 
         raw_families = expander.expand_query(
@@ -80,5 +85,10 @@ class ResearchPlanningService:
             summary=f"Expanded to {len(query_families)} queries",
             agent_id="expander",
             queries=[family.query for family in query_families],
+        )
+        self._monitor.record_query_variations(
+            original_query=query,
+            query_families=query_families,
+            strategy_intent=strategy.strategy.intent,
         )
         return query_families

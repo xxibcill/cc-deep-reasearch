@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any
 
+from cc_deep_research.config import Config
 from cc_deep_research.models import (
     AnalysisResult,
     IterationHistoryRecord,
@@ -17,7 +18,13 @@ from cc_deep_research.models import (
     StrategyResult,
     ValidationResult,
 )
-from cc_deep_research.monitoring import ResearchMonitor
+from cc_deep_research.monitoring import (
+    STOP_REASON_DEGRADED_EXECUTION,
+    STOP_REASON_LIMIT_REACHED,
+    STOP_REASON_LOW_QUALITY,
+    STOP_REASON_SUCCESS,
+    ResearchMonitor,
+)
 from cc_deep_research.orchestration.phases import PhaseRunner
 from cc_deep_research.orchestration.session_builder import SessionBuilder
 
@@ -28,6 +35,7 @@ class ResearchExecutionService:
     def __init__(
         self,
         *,
+        config: Config,
         monitor: ResearchMonitor,
         phase_runner: PhaseRunner,
         session_builder: SessionBuilder,
@@ -35,6 +43,7 @@ class ResearchExecutionService:
         parallel_mode: bool,
         num_researchers: int,
     ) -> None:
+        self._config = config
         self._monitor = monitor
         self._phase_runner = phase_runner
         self._session_builder = session_builder
@@ -99,7 +108,6 @@ class ResearchExecutionService:
                 strategy=strategy,
                 raw_families=raw_query_families,
             )
-            queries = [family.query for family in strategy.strategy.query_families]
             sources = await self._phase_runner.run_phase(
                 phase_hook=phase_hook,
                 phase_key="source_collection",
@@ -145,6 +153,10 @@ class ResearchExecutionService:
                 providers=self._configured_providers(),
                 total_time_ms=int(session.execution_time_seconds * 1000),
                 status="completed",
+                stop_reason=self._resolve_stop_reason(
+                    validation=validation,
+                    iteration_history=iteration_history,
+                ),
             )
             return session
         finally:
@@ -176,3 +188,24 @@ class ResearchExecutionService:
             agent_id="orchestrator",
         )
         return session_id
+
+    def _resolve_stop_reason(
+        self,
+        *,
+        validation: ValidationResult | None,
+        iteration_history: list[IterationHistoryRecord],
+    ) -> str:
+        """Map the completed run to a stable stop reason."""
+        if validation and validation.needs_follow_up:
+            if not validation.follow_up_queries:
+                return STOP_REASON_LOW_QUALITY
+            return STOP_REASON_DEGRADED_EXECUTION
+
+        if (
+            self._config.research.enable_iterative_search
+            and iteration_history
+            and len(iteration_history) >= self._config.research.max_iterations
+        ):
+            return STOP_REASON_LIMIT_REACHED
+
+        return STOP_REASON_SUCCESS

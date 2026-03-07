@@ -48,6 +48,7 @@ cc-deep-research [COMMAND]
 Available command groups:
 
 - `research` - Run a research query and generate report output
+- `benchmark` - Run the versioned benchmark corpus (`run`)
 - `config` - Manage configuration (`show`, `set`, `init`)
 - `session` - Manage persisted sessions (`list`, `show`, `export`, `delete`)
 - `telemetry` - Ingest telemetry and launch dashboard (`ingest`, `dashboard`)
@@ -184,6 +185,40 @@ uv run mypy src/
 - [Examples](docs/EXAMPLES.md)
 - [Research Workflow Design](docs/RESEARCH_WORKFLOW.md)
 - [Research Workflow Improvement Plan](docs/RESEARCH_WORKFLOW_IMPROVEMENT_PLAN.md)
+
+## Benchmark Corpus
+
+The repository includes a versioned benchmark query corpus at [`docs/benchmark_corpus.json`](/Users/jjae/Documents/guthib/cc-deep-research/docs/benchmark_corpus.json). It is designed to stay stable across workflow changes and currently covers:
+
+- simple factual queries
+- comparison queries
+- time-sensitive queries
+- evidence-heavy science or health queries
+- market or policy queries
+
+Each case includes a `case_id`, `category`, `rationale`, and `date_sensitive` flag so scripts can segment results and handle freshness-sensitive prompts explicitly.
+
+Run the full corpus with one command:
+
+```bash
+cc-deep-research benchmark run --depth standard --output-dir benchmark_runs/latest
+```
+
+The harness writes deterministic JSON outputs for comparison:
+
+- `benchmark_runs/latest/manifest.json`
+- `benchmark_runs/latest/scorecard.json`
+- `benchmark_runs/latest/cases/<case_id>.json`
+
+Load it from Python with:
+
+```python
+from cc_deep_research.benchmark import load_benchmark_corpus
+
+corpus = load_benchmark_corpus()
+for case in corpus.cases:
+    print(case.case_id, case.category, case.query)
+```
 
 ## Requirements
 

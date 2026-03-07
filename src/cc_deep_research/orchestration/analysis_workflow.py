@@ -148,6 +148,12 @@ class AnalysisWorkflow:
             if self._config.research.enable_iterative_search
             else 1
         )
+        analysis_mode = "deep_multi_pass" if depth == ResearchDepth.DEEP else "single_pass"
+        self._monitor.record_analysis_mode(
+            depth=depth.value,
+            mode=analysis_mode,
+            deep_analysis_enabled=depth == ResearchDepth.DEEP,
+        )
 
         for iteration in range(1, max_iterations + 1):
             analysis, validation = await run_single_pass(
@@ -168,6 +174,20 @@ class AnalysisWorkflow:
             )
 
             if iteration >= max_iterations:
+                detail = f"Reached iteration limit ({max_iterations})"
+                self._monitor.record_follow_up_decision(
+                    iteration=iteration,
+                    reason="iteration_limit_reached",
+                    follow_up_queries=[],
+                    failure_modes=validation.failure_modes if validation else [],
+                    quality_score=validation.quality_score if validation else None,
+                )
+                self._monitor.record_iteration_stop(
+                    iteration=iteration,
+                    stop_reason="limit_reached",
+                    detail=detail,
+                    quality_score=validation.quality_score if validation else None,
+                )
                 break
 
             follow_up_queries = build_follow_up_queries(
@@ -177,6 +197,30 @@ class AnalysisWorkflow:
                 enable_iterative_search=self._config.research.enable_iterative_search,
             )
             if not follow_up_queries:
+                reason = (
+                    "validation_low_quality_no_queries"
+                    if validation and validation.needs_follow_up
+                    else "quality_sufficient"
+                )
+                stop_reason = "low_quality" if validation and validation.needs_follow_up else "success"
+                detail = (
+                    "Validation requested follow-up but no follow-up queries were generated"
+                    if validation and validation.needs_follow_up
+                    else "No follow-up queries were required"
+                )
+                self._monitor.record_follow_up_decision(
+                    iteration=iteration,
+                    reason=reason,
+                    follow_up_queries=[],
+                    failure_modes=validation.failure_modes if validation else [],
+                    quality_score=validation.quality_score if validation else None,
+                )
+                self._monitor.record_iteration_stop(
+                    iteration=iteration,
+                    stop_reason=stop_reason,
+                    detail=detail,
+                    quality_score=validation.quality_score if validation else None,
+                )
                 break
 
             if phase_hook is not None:
@@ -187,6 +231,13 @@ class AnalysisWorkflow:
                 agent_id="orchestrator",
                 follow_up_queries=follow_up_queries,
             )
+            self._monitor.record_follow_up_decision(
+                iteration=iteration,
+                reason="validation_requested_follow_up",
+                follow_up_queries=follow_up_queries,
+                failure_modes=validation.failure_modes if validation else [],
+                quality_score=validation.quality_score if validation else None,
+            )
             updated_sources = await collect_follow_up_sources(
                 existing_sources=sources,
                 follow_up_queries=follow_up_queries,
@@ -195,6 +246,17 @@ class AnalysisWorkflow:
             )
             if len(updated_sources) <= len(sources):
                 self._monitor.log("Follow-up search produced no new sources; stopping iterations")
+                self._monitor.record_iteration_stop(
+                    iteration=iteration,
+                    stop_reason=(
+                        "degraded_execution"
+                        if validation and validation.needs_follow_up
+                        else "success"
+                    ),
+                    detail="Follow-up collection did not add any new sources",
+                    quality_score=validation.quality_score if validation else None,
+                    follow_up_queries=follow_up_queries,
+                )
                 break
 
             sources = updated_sources
