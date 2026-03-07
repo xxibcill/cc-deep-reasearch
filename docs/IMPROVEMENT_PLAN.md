@@ -139,7 +139,7 @@ The goal is better follow-up search, not just more iterations.
 
 ### Keep graceful degradation
 
-Missing providers, sparse content, and unavailable LLM APIs should still produce usable results.
+Missing providers, sparse content, and unavailable Claude CLI analysis should still produce usable results.
 
 ### Measure changes
 

@@ -117,6 +117,8 @@ The most relevant settings are:
 - `research.deep_analysis_passes`: deep analysis intensity
 - `research.top_sources_for_content`: how many sources get full-page enrichment
 - `research.ai_integration_method`: `heuristic`, `api`, or `hybrid`
+- `research.claude_cli_path`: optional path override for the `claude` executable
+- `research.claude_cli_timeout_seconds`: timeout for each Claude CLI deep-analysis request
 - `search_team.parallel_execution`: default parallel collection mode
 - `search_team.num_researchers`: number of parallel tasks
 - `search_team.researcher_timeout`: timeout per parallel researcher
@@ -302,13 +304,13 @@ The analyzer:
 
 The AI analysis service is designed with multiple modes:
 
-- `api`: use an LLM client directly
+- `api`: use the Claude Code CLI directly
 - `heuristic`: use rule-based or lightweight logic only
-- `hybrid`: prefer LLM, fall back to heuristics
+- `hybrid`: prefer the Claude Code CLI, fall back to heuristics
 
 This split is a design decision to keep the workflow usable when:
 
-- no Anthropic key is configured
+- the Claude Code CLI is unavailable
 - cost needs to be controlled
 - content is too sparse for a strong semantic pass
 

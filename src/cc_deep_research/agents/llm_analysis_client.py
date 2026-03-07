@@ -1,6 +1,6 @@
 """LLM-powered analysis client for deep semantic analysis.
 
-This module provides actual AI-powered analysis using Anthropic's Claude API,
+This module provides AI-powered analysis using the Claude Code CLI,
 replacing heuristic-based pattern matching with real semantic understanding.
 
 Features:
@@ -10,30 +10,29 @@ Features:
 - Synthesis with proper attribution
 - Evidence quality analysis
 
-Uses streaming for chunked processing for handle large source volumes.
+Uses prompt-based CLI invocations for large-source semantic analysis.
 """
 
 import json
 import os
 import re
+import shutil
+import subprocess
 import time
 from typing import Any
 
-import anthropic
-
 
 class LLMAnalysisClient:
-    """Client for AI-powered semantic analysis using Anthropic's Claude API.
+    """Client for AI-powered semantic analysis using the Claude Code CLI.
 
     This client provides real semantic analysis that goes beyond
-    keyword matching, making actual API calls to Claude for
+    keyword matching, making actual Claude CLI calls for
     deep understanding of research content.
 
     Attributes:
-        _client: Anthropic client instance
+        _claude_cli_path: Claude CLI executable path
         _model: Model to use for analysis
-        _max_tokens: Maximum tokens per response
-        _temperature: Temperature for generation
+        _timeout_seconds: Maximum seconds per response
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
@@ -41,48 +40,21 @@ class LLMAnalysisClient:
 
         Args:
             config: Configuration dictionary with:
-                - anthropic_api_key: API key (or ANTHROPIC_API_KEY env var)
+                - claude_cli_path: Optional Claude CLI path
                 - model: Model to use (default: claude-sonnet-4-6)
-                - max_tokens: Max tokens per response
-                - temperature: Temperature for generation
+                - timeout_seconds: Max seconds per request
         """
         self._config = config
         self._model = config.get("model", "claude-sonnet-4-6")
-        self._max_tokens = config.get("max_tokens", 8192)
-        self._temperature = config.get("temperature", 0.3)
+        self._timeout_seconds = int(config.get("timeout_seconds", 180))
         self._usage_callback = config.get("usage_callback")
-
-        api_key = config.get("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
+        configured_path = config.get("claude_cli_path") or os.environ.get("CLAUDE_CLI_PATH")
+        self._claude_cli_path = configured_path or shutil.which("claude")
+        if not self._claude_cli_path:
             raise ValueError(
-                "ANTHROPIC_API_KEY not found. Set it in config or "
-                "export ANTHROPIC_API_KEY=your-key environment variable."
+                "Claude Code CLI not found. Install `claude` or set "
+                "claude_cli_path/CLAUDE_CLI_PATH."
             )
-
-        self._client = anthropic.Anthropic(api_key=api_key)
-
-    def _extract_text_from_response(self, response: Any) -> str:
-        """Extract text content from an API response.
-
-        Args:
-            response: The API response object.
-
-        Returns:
-            The text content as a string.
-        """
-        # The response content is a list of blocks
-        if response.content and len(response.content) > 0:
-            block = response.content[0]
-            # Handle both dict-style and object-style responses
-            if hasattr(block, "text"):
-                text = block.text
-                if isinstance(text, str):
-                    return text
-            if isinstance(block, dict):
-                text_val = block.get("text", "")
-                if isinstance(text_val, str):
-                    return text_val
-        return ""  # Return empty string if no text found
 
     def extract_themes(
         self,
@@ -92,7 +64,7 @@ class LLMAnalysisClient:
     ) -> list[dict[str, Any]]:
         """Extract themes using semantic analysis.
 
-        Makes actual API calls to Claude for deep understanding.
+        Makes actual Claude CLI calls for deep understanding.
 
         Args:
             sources: List of sources with url, title, content.
@@ -111,10 +83,7 @@ class LLMAnalysisClient:
 
         prompt = self._build_theme_extraction_prompt(query, content, num_themes)
 
-        response = self._request(operation="extract_themes", prompt=prompt)
-
-        # Parse the response - extract text from first content block
-        response_text = self._extract_text_from_response(response)
+        response_text = self._request(operation="extract_themes", prompt=prompt)
         return self._parse_theme_response(response_text, sources)
 
     def analyze_cross_reference(
@@ -138,9 +107,7 @@ class LLMAnalysisClient:
 
         prompt = self._build_cross_reference_prompt(themes, content)
 
-        response = self._request(operation="analyze_cross_reference", prompt=prompt)
-
-        response_text = self._extract_text_from_response(response)
+        response_text = self._request(operation="analyze_cross_reference", prompt=prompt)
         return self._parse_cross_reference_response(response_text)
 
     def identify_gaps(
@@ -166,9 +133,7 @@ class LLMAnalysisClient:
 
         prompt = self._build_gap_identification_prompt(query, themes, content)
 
-        response = self._request(operation="identify_gaps", prompt=prompt)
-
-        response_text = self._extract_text_from_response(response)
+        response_text = self._request(operation="identify_gaps", prompt=prompt)
         return self._parse_gap_response(response_text)
 
     def synthesize_findings(
@@ -199,9 +164,7 @@ class LLMAnalysisClient:
 
         prompt = self._build_synthesis_prompt(query, themes, cross_ref, gaps, content)
 
-        response = self._request(operation="synthesize_findings", prompt=prompt)
-
-        response_text = self._extract_text_from_response(response)
+        response_text = self._request(operation="synthesize_findings", prompt=prompt)
         return self._parse_synthesis_response(response_text)
 
     def analyze_evidence_quality(
@@ -229,9 +192,7 @@ class LLMAnalysisClient:
 
         prompt = self._build_evidence_quality_prompt(themes, content)
 
-        response = self._request(operation="analyze_evidence_quality", prompt=prompt)
-
-        response_text = self._extract_text_from_response(response)
+        response_text = self._request(operation="analyze_evidence_quality", prompt=prompt)
         return self._parse_evidence_quality_response(response_text)
 
     def _prepare_content_for_analysis(
@@ -263,29 +224,60 @@ class LLMAnalysisClient:
 
         return "\n".join(sections)
 
-    def _request(self, operation: str, prompt: str) -> Any:
-        """Execute a Claude request and emit usage telemetry when possible."""
-        start_time = time.time()
-        response = self._client.messages.create(
-            model=self._model,
-            max_tokens=self._max_tokens,
-            temperature=self._temperature,
-            messages=[{"role": "user", "content": prompt}],
-        )
+    def _build_command(self, prompt: str) -> list[str]:
+        """Build a Claude CLI command for a single prompt."""
+        return [
+            self._claude_cli_path,
+            "-p",
+            "--model",
+            self._model,
+            "--output-format",
+            "text",
+            "--no-session-persistence",
+            "--tools",
+            "",
+            prompt,
+        ]
 
-        usage = getattr(response, "usage", None)
-        if self._usage_callback and usage is not None:
-            input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
-            output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
-            duration_ms = int((time.time() - start_time) * 1000)
+    def _request(self, operation: str, prompt: str) -> str:
+        """Execute a Claude CLI request and emit usage telemetry when possible."""
+        start_time = time.time()
+        command = self._build_command(prompt)
+        try:
+            response = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=self._timeout_seconds,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                f"Claude CLI executable not found: {self._claude_cli_path}"
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                f"Claude CLI request timed out after {self._timeout_seconds} seconds"
+            ) from exc
+
+        duration_ms = int((time.time() - start_time) * 1000)
+        if response.returncode != 0:
+            stderr = (response.stderr or "").strip()
+            stdout = (response.stdout or "").strip()
+            error_output = stderr or stdout or "unknown Claude CLI error"
+            raise RuntimeError(
+                f"Claude CLI request failed for {operation}: {error_output}"
+            )
+
+        if self._usage_callback:
             self._usage_callback(
                 operation=operation,
                 model=self._model,
-                prompt_tokens=input_tokens,
-                completion_tokens=output_tokens,
+                prompt_tokens=0,
+                completion_tokens=0,
                 duration_ms=duration_ms,
             )
-        return response
+        return response.stdout.strip()
 
     def _build_theme_extraction_prompt(self, query: str, content: str, num_themes: int) -> str:
         """Build prompt for theme extraction.

@@ -7,13 +7,12 @@ This service provides semantic analysis capabilities using Claude models:
 - Synthesis with proper attribution
 
 Supports multiple integration methods:
-- 'api': Uses real Anthropic API calls for deep semantic analysis
+- 'api': Uses the Claude Code CLI for deep semantic analysis
 - 'heuristic': Uses pattern matching and heuristics (fast, no API cost)
-- 'hybrid': Tries API first, falls back to heuristic
+- 'hybrid': Tries the Claude Code CLI first, falls back to heuristic
 """
 
 import logging
-import os
 from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.agents.ai_agent_integration import AIAgentIntegration
@@ -30,9 +29,9 @@ class AIAnalysisService:
     """Service for AI-powered semantic analysis of research sources.
 
     This service leverages Claude models through multiple integration methods:
-    - API: Real Anthropic API calls for deep semantic understanding
+    - API: Claude Code CLI calls for deep semantic understanding
     - Heuristic: Pattern matching and heuristics for fast analysis
-    - Hybrid: API with heuristic fallback
+    - Hybrid: Claude Code CLI with heuristic fallback
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
@@ -41,7 +40,7 @@ class AIAnalysisService:
         Args:
             config: Agent configuration dictionary with:
                 - ai_integration_method: 'api', 'heuristic', or 'hybrid'
-                - anthropic_api_key: API key (or ANTHROPIC_API_KEY env var)
+                - claude_cli_path: Optional Claude CLI path override
                 - model: Model to use
                 - deep_analysis_tokens: Token limit
         """
@@ -56,38 +55,28 @@ class AIAnalysisService:
         self._ai_integration = AIAgentIntegration(config)
         self._ai_executor = AIExecutor(config)
 
-        # Initialize LLM client if using API or hybrid mode
+        # Initialize LLM client if using CLI-backed API or hybrid mode
         self._llm_client: LLMAnalysisClient | None = None
         if self._integration_method in ("api", "hybrid"):
             self._initialize_llm_client()
 
     def _initialize_llm_client(self) -> None:
-        """Initialize the LLM client for real API-based analysis."""
+        """Initialize the LLM client for Claude CLI-based analysis."""
         try:
             from cc_deep_research.agents.llm_analysis_client import LLMAnalysisClient
 
-            # Check for API key
-            api_key = self._config.get("anthropic_api_key") or os.environ.get("ANTHROPIC_API_KEY")
-            if api_key:
-                llm_config = {
-                    **self._config,
-                    "anthropic_api_key": api_key,
-                    "max_tokens": 8192,  # Per-request token limit
-                }
-                self._llm_client = LLMAnalysisClient(llm_config)
-                logger.info("LLM client initialized for deep semantic analysis")
-            else:
-                logger.warning(
-                    "ANTHROPIC_API_KEY not found. Falling back to heuristic analysis. "
-                    "Set ANTHROPIC_API_KEY environment variable for deep analysis."
-                )
-                if self._integration_method == "api":
-                    raise ValueError(
-                        "ANTHROPIC_API_KEY required for 'api' integration method. "
-                        "Set it via environment variable or config."
-                    )
+            llm_config = {
+                **self._config,
+                "timeout_seconds": self._config.get("claude_cli_timeout_seconds", 180),
+            }
+            self._llm_client = LLMAnalysisClient(llm_config)
+            logger.info("Claude CLI client initialized for deep semantic analysis")
         except ImportError as e:
             logger.warning(f"Failed to import LLMAnalysisClient: {e}")
+            if self._integration_method == "api":
+                raise
+        except ValueError as e:
+            logger.warning(f"Claude CLI unavailable. Falling back to heuristic analysis: {e}")
             if self._integration_method == "api":
                 raise
 
@@ -99,7 +88,7 @@ class AIAnalysisService:
     ) -> list[dict[str, Any]]:
         """Extract themes using semantic analysis.
 
-        Uses LLM API when available for deep semantic understanding,
+        Uses the Claude CLI when available for deep semantic understanding,
         falls back to heuristic-based extraction.
 
         Args:
@@ -129,20 +118,20 @@ class AIAnalysisService:
             if s.content or s.snippet
         ]
 
-        # Try LLM client first if available (API or hybrid mode)
+        # Try LLM client first if available (CLI or hybrid mode)
         if self._llm_client and sources_dict:
             try:
-                logger.info("Using LLM API for deep semantic theme extraction")
+                logger.info("Using Claude CLI for deep semantic theme extraction")
                 themes = self._llm_client.extract_themes(
                     sources=sources_dict,
                     query=query,
                     num_themes=num_themes,
                 )
                 if themes:
-                    logger.info(f"LLM extracted {len(themes)} themes")
+                    logger.info(f"Claude CLI extracted {len(themes)} themes")
                     return themes
             except Exception as e:
-                logger.warning(f"LLM theme extraction failed: {e}")
+                logger.warning(f"Claude CLI theme extraction failed: {e}")
                 if self._integration_method == "api":
                     raise
                 # Fall through to heuristic for hybrid mode
@@ -188,7 +177,7 @@ class AIAnalysisService:
     ) -> dict[str, Any]:
         """Perform cross-reference analysis across sources.
 
-        Uses LLM API when available for deep cross-reference analysis,
+        Uses the Claude CLI when available for deep cross-reference analysis,
         falls back to heuristic-based analysis.
 
         Args:
@@ -216,18 +205,18 @@ class AIAnalysisService:
         # Try LLM client first if available
         if self._llm_client and sources_dict and themes:
             try:
-                logger.info("Using LLM API for cross-reference analysis")
+                logger.info("Using Claude CLI for cross-reference analysis")
                 result = self._llm_client.analyze_cross_reference(
                     sources=sources_dict,
                     themes=themes,
                 )
                 logger.info(
-                    f"LLM found {len(result.get('consensus_points', []))} consensus points, "
+                    f"Claude CLI found {len(result.get('consensus_points', []))} consensus points, "
                     f"{len(result.get('disagreement_points', []))} disagreement points"
                 )
                 return result
             except Exception as e:
-                logger.warning(f"LLM cross-reference analysis failed: {e}")
+                logger.warning(f"Claude CLI cross-reference analysis failed: {e}")
                 if self._integration_method == "api":
                     raise
 
@@ -271,7 +260,7 @@ class AIAnalysisService:
     ) -> list[dict[str, Any]]:
         """Identify information gaps in the research.
 
-        Uses LLM API when available for deep gap identification,
+        Uses the Claude CLI when available for deep gap identification,
         falls back to heuristic-based analysis.
 
         Args:
@@ -300,16 +289,16 @@ class AIAnalysisService:
         # Try LLM client first if available
         if self._llm_client and sources_dict and themes:
             try:
-                logger.info("Using LLM API for gap identification")
+                logger.info("Using Claude CLI for gap identification")
                 gaps = self._llm_client.identify_gaps(
                     sources=sources_dict,
                     query=query,
                     themes=themes,
                 )
-                logger.info(f"LLM identified {len(gaps)} gaps")
+                logger.info(f"Claude CLI identified {len(gaps)} gaps")
                 return gaps
             except Exception as e:
-                logger.warning(f"LLM gap identification failed: {e}")
+                logger.warning(f"Claude CLI gap identification failed: {e}")
                 if self._integration_method == "api":
                     raise
 
@@ -330,7 +319,7 @@ class AIAnalysisService:
     ) -> list[dict[str, Any]]:
         """Synthesize key findings with proper attribution.
 
-        Uses LLM API when available for deep synthesis,
+        Uses the Claude CLI when available for deep synthesis,
         falls back to heuristic-based synthesis.
 
         Args:
@@ -360,7 +349,7 @@ class AIAnalysisService:
         # Try LLM client first if available
         if self._llm_client and sources_dict and themes:
             try:
-                logger.info("Using LLM API for findings synthesis")
+                logger.info("Using Claude CLI for findings synthesis")
                 findings = self._llm_client.synthesize_findings(
                     sources=sources_dict,
                     themes=themes,
@@ -368,10 +357,10 @@ class AIAnalysisService:
                     gaps=gaps,
                     query=query,
                 )
-                logger.info(f"LLM synthesized {len(findings)} findings")
+                logger.info(f"Claude CLI synthesized {len(findings)} findings")
                 return findings
             except Exception as e:
-                logger.warning(f"LLM synthesis failed: {e}")
+                logger.warning(f"Claude CLI synthesis failed: {e}")
                 if self._integration_method == "api":
                     raise
 

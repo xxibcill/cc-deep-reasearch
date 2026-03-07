@@ -316,7 +316,7 @@ class ResearchMonitor:
             },
         )
         self.record_tool_call(
-            tool_name="anthropic.messages.create",
+            tool_name="claude.cli.print",
             status="success",
             duration_ms=duration_ms,
             agent_id=agent_id,
