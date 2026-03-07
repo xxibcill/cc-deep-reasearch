@@ -2,7 +2,9 @@
 
 import pytest
 
+from cc_deep_research.agents.research_lead import ResearchLeadAgent
 from cc_deep_research.config import Config
+from cc_deep_research.models import ResearchDepth
 from cc_deep_research.teams import AgentSpec, ResearchTeam, TeamConfig, TeamCreationError
 
 
@@ -132,6 +134,83 @@ class TestResearchTeam:
         # Shutdown team
         await team.shutdown()
         assert not team.is_active
+
+
+class TestResearchLeadAgent:
+    """Tests for deterministic query intent classification."""
+
+    @pytest.mark.parametrize(
+        ("query", "expected_intent", "expected_sources", "time_sensitive"),
+        [
+            (
+                "Compare Nvidia and AMD data center strategy",
+                "comparative",
+                ["official_docs", "market_analysis"],
+                False,
+            ),
+            (
+                "Latest FDA guidance on GLP-1 compounding",
+                "time-sensitive",
+                ["news", "official_docs"],
+                True,
+            ),
+            (
+                "What evidence supports creatine for cognitive performance",
+                "evidence-seeking",
+                ["academic"],
+                False,
+            ),
+            (
+                "How does retrieval augmented generation work",
+                "informational",
+                ["news"],
+                False,
+            ),
+        ],
+    )
+    def test_analyze_query_classifies_intent_and_source_classes(
+        self,
+        query: str,
+        expected_intent: str,
+        expected_sources: list[str],
+        time_sensitive: bool,
+    ) -> None:
+        agent = ResearchLeadAgent({})
+
+        strategy = agent.analyze_query(query, ResearchDepth.STANDARD)
+
+        assert strategy.profile.intent == expected_intent
+        assert strategy.strategy.intent == expected_intent
+        assert strategy.profile.is_time_sensitive is time_sensitive
+        assert strategy.strategy.time_sensitive is time_sensitive
+        assert strategy.profile.target_source_classes == expected_sources
+        assert strategy.strategy.target_source_classes == expected_sources
+
+    def test_analyze_query_detects_time_sensitivity_from_explicit_date_without_year_whitelist(
+        self,
+    ) -> None:
+        agent = ResearchLeadAgent({})
+
+        strategy = agent.analyze_query(
+            "What changed in SEC climate disclosure rules in March 2027",
+            ResearchDepth.STANDARD,
+        )
+
+        assert strategy.profile.intent == "time-sensitive"
+        assert strategy.profile.is_time_sensitive is True
+        assert "news" in strategy.strategy.target_source_classes
+        assert "official_docs" in strategy.strategy.target_source_classes
+
+    def test_analyze_query_adds_compare_task_for_comparative_queries(self) -> None:
+        agent = ResearchLeadAgent({})
+
+        strategy = agent.analyze_query(
+            "Compare Anthropic versus OpenAI enterprise pricing",
+            ResearchDepth.DEEP,
+        )
+
+        assert "compare" in strategy.tasks_needed
+        assert strategy.strategy.follow_up_bias == "comparison_evidence"
 
 
 class TestTeamCreationError:

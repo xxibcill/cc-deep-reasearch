@@ -52,9 +52,18 @@ class SearchResult(BaseModel):
 class QueryProfile(BaseModel):
     """Lightweight profile derived from the incoming research query."""
 
-    intent: str
+    intent: str = Field(default="informational")
     is_time_sensitive: bool = Field(default=False)
     key_terms: list[str] = Field(default_factory=list)
+    target_source_classes: list[str] = Field(default_factory=list)
+
+
+class QueryFamily(BaseModel):
+    """A labeled query expansion with explicit retrieval purpose."""
+
+    query: str = Field(..., min_length=1)
+    family: str = Field(default="baseline")
+    intent_tags: list[str] = Field(default_factory=list)
 
 
 class StrategyPlan(BaseModel):
@@ -66,9 +75,11 @@ class StrategyPlan(BaseModel):
     enable_quality_scoring: bool = Field(default=False)
     tasks: list[str] = Field(default_factory=list)
     follow_up_bias: str = Field(default="coverage")
-    intent: str = Field(default="exploratory")
+    intent: str = Field(default="informational")
     time_sensitive: bool = Field(default=False)
     key_terms: list[str] = Field(default_factory=list)
+    target_source_classes: list[str] = Field(default_factory=list)
+    query_families: list[QueryFamily] = Field(default_factory=list)
 
 
 class StrategyResult(BaseModel):

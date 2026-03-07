@@ -30,6 +30,7 @@ from cc_deep_research.coordination import AgentPool, MessageBus
 from cc_deep_research.models import (
     AnalysisResult,
     IterationHistoryRecord,
+    QueryFamily,
     ResearchDepth,
     ResearchSession,
     SearchOptions,
@@ -202,7 +203,14 @@ class TeamResearchOrchestrator:
             status="started",
             metadata={"description": "Expanding search queries"},
         )
-        queries = await self._phase_expand_queries(query, strategy, depth)
+        raw_query_families = await self._phase_expand_queries(query, strategy, depth)
+        query_families = self._normalize_query_families(
+            original_query=query,
+            strategy=strategy,
+            raw_families=raw_query_families,
+        )
+        strategy.strategy.query_families = query_families
+        queries = [family.query for family in query_families]
         self._monitor.end_operation(query_expansion_event, success=True)
 
         # Phase 3: Collect sources (parallel or sequential)
@@ -548,7 +556,7 @@ class TeamResearchOrchestrator:
         query: str,
         strategy: StrategyResult,
         depth: ResearchDepth,
-    ) -> list[str]:
+    ) -> list[QueryFamily]:
         """Phase 2: Expand queries for comprehensive coverage.
 
         Args:
@@ -557,7 +565,7 @@ class TeamResearchOrchestrator:
             depth: Research depth mode.
 
         Returns:
-            List of query variations.
+            List of labeled query families.
         """
         self._monitor.section("Query Expansion")
 
@@ -565,25 +573,61 @@ class TeamResearchOrchestrator:
 
         if variations <= 1:
             self._monitor.log("Query expansion not needed (quick mode)")
-            return [query]
+            strategy.strategy.query_families = [
+                QueryFamily(
+                    query=query,
+                    family="baseline",
+                    intent_tags=["baseline", strategy.strategy.intent],
+                )
+            ]
+            return strategy.strategy.query_families
 
         expander: QueryExpanderAgent = self._agents[AGENT_TYPE_EXPANDER]
-        queries = expander.expand_query(
+        raw_families = expander.expand_query(
             query,
             depth,
             max_variations=variations,
             strategy=strategy.strategy.model_dump(mode="python"),
         )
+        query_families = self._normalize_query_families(
+            original_query=query,
+            strategy=strategy,
+            raw_families=raw_families,
+        )
+        strategy.strategy.query_families = query_families
 
-        self._monitor.log(f"Generated {len(queries)} query variations")
+        self._monitor.log(f"Generated {len(query_families)} query variations")
         self._monitor.record_reasoning_summary(
             stage="query_expansion",
-            summary=f"Expanded to {len(queries)} queries",
+            summary=f"Expanded to {len(query_families)} queries",
             agent_id=AGENT_TYPE_EXPANDER,
-            queries=queries,
+            queries=[family.query for family in query_families],
         )
 
-        return queries
+        return query_families
+
+    @staticmethod
+    def _normalize_query_families(
+        *,
+        original_query: str,
+        strategy: StrategyResult,
+        raw_families: list[QueryFamily | str],
+    ) -> list[QueryFamily]:
+        """Normalize expansion output into typed query-family models."""
+        normalized_families: list[QueryFamily] = []
+        for item in raw_families:
+            if isinstance(item, QueryFamily):
+                normalized_families.append(item)
+            else:
+                family = "baseline" if item == original_query else "baseline"
+                normalized_families.append(
+                    QueryFamily(
+                        query=str(item),
+                        family=family,
+                        intent_tags=[family, strategy.strategy.intent],
+                    )
+                )
+        return normalized_families
 
     async def _phase_collect_sources(
         self,
