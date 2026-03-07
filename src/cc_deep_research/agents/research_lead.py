@@ -8,6 +8,8 @@ The research lead agent is responsible for:
 - Aggregating results from all agents
 """
 
+import re
+
 from typing import Any
 
 from cc_deep_research.models import (
@@ -138,7 +140,7 @@ class ResearchLeadAgent:
         if profile.is_time_sensitive:
             base_strategy["query_variations"] += 1
 
-        if profile.intent == "comparison":
+        if profile.intent == "comparative":
             base_strategy["tasks"] = [
                 *base_strategy["tasks"],
                 "compare",
@@ -148,48 +150,243 @@ class ResearchLeadAgent:
         base_strategy["intent"] = profile.intent
         base_strategy["time_sensitive"] = profile.is_time_sensitive
         base_strategy["key_terms"] = profile.key_terms
+        base_strategy["target_source_classes"] = profile.target_source_classes
 
         return StrategyPlan(**base_strategy)
 
     def _build_query_profile(self, query: str) -> QueryProfile:
         """Build a lightweight profile for planning and expansion."""
-        lowered = query.lower()
-        comparison_terms = {"vs", "versus", "compare", "comparison", "better"}
-        time_terms = {
-            "latest",
-            "recent",
-            "today",
-            "current",
-            "new",
-            "2024",
-            "2025",
-            "2026",
-        }
-        explanatory_terms = {"how", "why", "explain", "analysis"}
-
-        words = [word.strip(".,?!:;()[]{}") for word in lowered.split()]
-        key_terms = [word for word in words if len(word) > 3][:8]
-
-        if any(term in words for term in comparison_terms):
-            intent = "comparison"
-        elif any(term in words for term in explanatory_terms):
-            intent = "explanatory"
-        else:
-            intent = "exploratory"
+        words = self._tokenize(query)
+        key_terms = self._extract_key_terms(words)
+        intent = self._classify_intent(query, words)
+        is_time_sensitive = self._detect_time_sensitivity(query, words)
+        target_source_classes = self._infer_source_classes(query, words, intent, is_time_sensitive)
 
         return QueryProfile(
             intent=intent,
-            is_time_sensitive=any(term in lowered for term in time_terms),
+            is_time_sensitive=is_time_sensitive,
             key_terms=key_terms,
+            target_source_classes=target_source_classes,
         )
 
     def _get_follow_up_bias(self, profile: QueryProfile) -> str:
         """Describe the preferred follow-up direction for the query."""
-        if profile.intent == "comparison":
+        if profile.intent == "comparative":
             return "comparison_evidence"
+        if profile.intent == "evidence-seeking":
+            return "primary_evidence"
         if profile.is_time_sensitive:
             return "recent_updates"
         return "coverage"
+
+    @staticmethod
+    def _tokenize(query: str) -> list[str]:
+        """Tokenize a query into normalized lowercase terms."""
+        return re.findall(r"[a-z0-9]+", query.lower())
+
+    @staticmethod
+    def _extract_key_terms(words: list[str]) -> list[str]:
+        """Return stable keywords with duplicates removed."""
+        stop_words = {
+            "a",
+            "an",
+            "and",
+            "are",
+            "best",
+            "can",
+            "for",
+            "from",
+            "how",
+            "in",
+            "is",
+            "of",
+            "or",
+            "the",
+            "to",
+            "what",
+            "which",
+            "who",
+            "why",
+        }
+        key_terms: list[str] = []
+        seen: set[str] = set()
+        for word in words:
+            if len(word) <= 2 or word in stop_words or word in seen:
+                continue
+            seen.add(word)
+            key_terms.append(word)
+            if len(key_terms) >= 8:
+                break
+        return key_terms
+
+    def _classify_intent(self, query: str, words: list[str]) -> str:
+        """Classify the primary research intent using deterministic signals."""
+        lowered = query.lower()
+        comparative_terms = {
+            "better",
+            "compare",
+            "comparison",
+            "versus",
+            "vs",
+            "difference",
+            "differences",
+        }
+        evidence_terms = {
+            "citation",
+            "citations",
+            "data",
+            "dataset",
+            "datasets",
+            "evidence",
+            "evidence-based",
+            "proof",
+            "prove",
+            "research",
+            "source",
+            "sources",
+            "study",
+            "studies",
+            "supporting",
+        }
+
+        if any(term in words for term in comparative_terms):
+            return "comparative"
+        if any(term in words for term in evidence_terms):
+            return "evidence-seeking"
+        if self._detect_time_sensitivity(query, words):
+            return "time-sensitive"
+        return "informational"
+
+    def _detect_time_sensitivity(self, query: str, words: list[str]) -> bool:
+        """Detect whether a query depends on recent or dated information."""
+        lowered = query.lower()
+        time_terms = {
+            "breaking",
+            "current",
+            "currently",
+            "forecast",
+            "latest",
+            "newest",
+            "now",
+            "recent",
+            "recently",
+            "today",
+            "tonight",
+            "trending",
+            "update",
+            "updates",
+            "upcoming",
+            "yesterday",
+        }
+        month_names = {
+            "january",
+            "february",
+            "march",
+            "april",
+            "may",
+            "june",
+            "july",
+            "august",
+            "september",
+            "october",
+            "november",
+            "december",
+        }
+
+        if any(term in words for term in time_terms):
+            return True
+        if "as of" in lowered or "this week" in lowered or "this month" in lowered:
+            return True
+        if any(month in words for month in month_names):
+            return True
+        return re.search(r"\b(19|20)\d{2}\b", query) is not None
+
+    def _infer_source_classes(
+        self,
+        query: str,
+        words: list[str],
+        intent: str,
+        is_time_sensitive: bool,
+    ) -> list[str]:
+        """Infer likely source classes needed to answer the query well."""
+        lowered = query.lower()
+        academic_terms = {
+            "academic",
+            "clinical",
+            "journal",
+            "meta-analysis",
+            "paper",
+            "papers",
+            "peer",
+            "peer-reviewed",
+            "research",
+            "scholar",
+            "science",
+            "scientific",
+            "study",
+            "studies",
+            "trial",
+        }
+        official_terms = {
+            "agency",
+            "compliance",
+            "court",
+            "fda",
+            "filing",
+            "filings",
+            "government",
+            "guidance",
+            "law",
+            "legal",
+            "official",
+            "policy",
+            "regulation",
+            "regulations",
+            "regulator",
+            "rule",
+            "rules",
+            "sec",
+            "standard",
+            "standards",
+        }
+        market_terms = {
+            "earnings",
+            "equity",
+            "finance",
+            "financial",
+            "forecast",
+            "industry",
+            "investment",
+            "investor",
+            "market",
+            "pricing",
+            "revenue",
+            "stock",
+            "trade",
+            "valuation",
+        }
+
+        target_source_classes: list[str] = []
+
+        def add_source_class(name: str) -> None:
+            if name not in target_source_classes:
+                target_source_classes.append(name)
+
+        if is_time_sensitive:
+            add_source_class("news")
+        if intent == "evidence-seeking" or any(term in lowered for term in academic_terms):
+            add_source_class("academic")
+        if any(term in lowered for term in official_terms):
+            add_source_class("official_docs")
+        if any(term in lowered for term in market_terms):
+            add_source_class("market_analysis")
+        if intent == "comparative":
+            add_source_class("official_docs")
+            add_source_class("market_analysis")
+        if not target_source_classes:
+            add_source_class("official_docs" if len(words) <= 4 else "news")
+
+        return target_source_classes
 
     def coordinate_research(
         self,

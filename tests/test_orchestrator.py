@@ -14,6 +14,7 @@ from cc_deep_research.agents import (
     AGENT_TYPE_LEAD,
     AGENT_TYPE_VALIDATOR,
 )
+from cc_deep_research.agents.query_expander import QueryExpanderAgent
 from cc_deep_research.cli import _resolve_parallel_mode_override, main
 from cc_deep_research.config import Config
 from cc_deep_research.models import (
@@ -21,6 +22,7 @@ from cc_deep_research.models import (
     AnalysisGap,
     AnalysisResult,
     IterationHistoryRecord,
+    QueryFamily,
     ResearchDepth,
     SearchOptions,
     SearchResultItem,
@@ -39,9 +41,10 @@ def _make_strategy(query: str, depth: ResearchDepth, query_variations: int) -> S
         complexity="moderate",
         depth=depth,
         profile={
-            "intent": "exploratory",
+            "intent": "informational",
             "is_time_sensitive": False,
             "key_terms": query.split(),
+            "target_source_classes": ["official_docs"],
         },
         strategy=StrategyPlan(
             query_variations=query_variations,
@@ -49,6 +52,10 @@ def _make_strategy(query: str, depth: ResearchDepth, query_variations: int) -> S
             enable_cross_ref=depth == ResearchDepth.DEEP,
             enable_quality_scoring=True,
             tasks=["collect", "analyze", "report"],
+            intent="informational",
+            time_sensitive=False,
+            key_terms=query.split(),
+            target_source_classes=["official_docs"],
         ),
         tasks_needed=["collect", "analyze", "report"],
     )
@@ -133,7 +140,7 @@ class FakeExpanderAgent:
         *,
         max_variations: int,
         strategy: dict[str, object],
-    ) -> list[str]:
+    ) -> list[QueryFamily]:
         self.calls.append(
             {
                 "query": query,
@@ -143,10 +150,22 @@ class FakeExpanderAgent:
             }
         )
         variants = [
-            query,
-            f"{query} background",
-            f"{query} risks",
-            f"{query} experts",
+            QueryFamily(query=query, family="baseline", intent_tags=["baseline", "informational"]),
+            QueryFamily(
+                query=f"{query} official guidance",
+                family="primary-source",
+                intent_tags=["primary-source", "informational", "evidence"],
+            ),
+            QueryFamily(
+                query=f"{query} expert analysis",
+                family="expert-analysis",
+                intent_tags=["expert-analysis", "informational", "analysis"],
+            ),
+            QueryFamily(
+                query=f"{query} risks criticism",
+                family="risk",
+                intent_tags=["risk", "informational", "risk-review"],
+            ),
         ]
         return variants[:max_variations]
 
@@ -380,6 +399,13 @@ class TestTeamResearchOrchestrator:
         assert session.metadata["providers"]["status"] == "ready"
         assert session.metadata["execution"]["degraded"] is False
         assert session.metadata["deep_analysis"]["status"] == deep_status
+        assert session.metadata["strategy"]["profile"]["intent"] == "informational"
+        assert session.metadata["strategy"]["strategy"]["target_source_classes"] == [
+            "official_docs"
+        ]
+        query_families = session.metadata["strategy"]["strategy"]["query_families"]
+        assert query_families[0]["family"] == "baseline"
+        assert "informational" in query_families[0]["intent_tags"]
         assert len(session.metadata["iteration_history"]) == 1
         assert len(session.sources) == expected_query_count * 2
 
@@ -406,6 +432,37 @@ class TestTeamResearchOrchestrator:
             assert fixtures["deep_analyzer"].calls == []
 
     @pytest.mark.asyncio
+    async def test_query_expansion_persists_family_metadata_and_uses_query_texts_for_collection(
+        self,
+    ) -> None:
+        config = Config()
+        config.search.providers = ["tavily"]
+        config.search_team.parallel_execution = False
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        collector = FakeCollectorAgent(available=["tavily"], warnings=[])
+        fixtures = _install_fake_team(orchestrator, collector=collector)
+
+        session = await orchestrator.execute_research(
+            query="market structure",
+            depth=ResearchDepth.STANDARD,
+            min_sources=2,
+        )
+
+        stored_families = session.metadata["strategy"]["strategy"]["query_families"]
+        assert [family["family"] for family in stored_families] == [
+            "baseline",
+            "primary-source",
+            "expert-analysis",
+        ]
+        assert collector.multi_calls[0][0] == [
+            "market structure",
+            "market structure official guidance",
+            "market structure expert analysis",
+        ]
+        assert fixtures["expander"].calls[0]["strategy"]["intent"] == "informational"
+
+    @pytest.mark.asyncio
     async def test_execute_research_records_missing_provider_contract(self) -> None:
         config = Config()
         config.search.providers = ["tavily", "claude"]
@@ -419,8 +476,8 @@ class TestTeamResearchOrchestrator:
             ],
             results_by_query={
                 "market structure": [],
-                "market structure background": [],
-                "market structure risks": [],
+                "market structure official guidance": [],
+                "market structure expert analysis": [],
             },
         )
         _install_fake_team(orchestrator, collector=collector)
@@ -672,6 +729,64 @@ class TestTeamResearchOrchestrator:
             "query responses",
             "query timeline",
             "query case studies",
+        ]
+
+
+class TestQueryExpanderAgent:
+    """Behavior tests for family-based query expansion."""
+
+    def test_time_sensitive_queries_include_current_updates_family(self) -> None:
+        agent = QueryExpanderAgent({})
+
+        families = agent.expand_query(
+            "Latest FDA guidance on GLP-1 compounding",
+            ResearchDepth.DEEP,
+            strategy={
+                "intent": "time-sensitive",
+                "time_sensitive": True,
+                "key_terms": ["fda", "guidance", "compounding"],
+                "target_source_classes": ["news", "official_docs"],
+            },
+        )
+
+        assert any(family.family == "current-updates" for family in families)
+        current_updates = next(family for family in families if family.family == "current-updates")
+        assert "freshness" in current_updates.intent_tags
+        assert "latest" in current_updates.query.lower()
+
+    def test_comparative_queries_include_contrast_oriented_family(self) -> None:
+        agent = QueryExpanderAgent({})
+
+        families = agent.expand_query(
+            "Compare Nvidia versus AMD data center strategy",
+            ResearchDepth.DEEP,
+            strategy={
+                "intent": "comparative",
+                "time_sensitive": False,
+                "key_terms": ["nvidia", "amd", "strategy"],
+                "target_source_classes": ["official_docs", "market_analysis"],
+            },
+        )
+
+        contrast_family = next(family for family in families if family.family == "opposing-view")
+        assert "contrast" in contrast_family.intent_tags
+        assert "tradeoffs" in contrast_family.query.lower()
+
+    def test_deduplicates_semantically_repetitive_variants(self) -> None:
+        agent = QueryExpanderAgent({})
+
+        deduplicated = agent._deduplicate_families(
+            [
+                QueryFamily(query="market structure latest updates", family="current-updates"),
+                QueryFamily(query="market structure current developments", family="expert-analysis"),
+                QueryFamily(query="market structure official guidance", family="primary-source"),
+            ]
+        )
+
+        assert len(deduplicated) == 2
+        assert [family.family for family in deduplicated] == [
+            "current-updates",
+            "primary-source",
         ]
 
 
