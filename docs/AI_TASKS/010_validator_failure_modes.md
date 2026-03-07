@@ -1,5 +1,7 @@
 # Task 010: Make Validation Failure Modes Evidence-Aware
 
+Status: done
+
 ## Objective
 
 Teach the validator to distinguish between insufficient quantity and insufficient quality of evidence.
@@ -37,3 +39,10 @@ Teach the validator to distinguish between insufficient quantity and insufficien
 ## Suggested Verification
 
 - run `pytest tests/test_validator.py tests/test_orchestrator.py`
+
+## Completion Notes
+
+- Completed on 2026-03-07
+- Validation output now reports named failure modes, evidence-quality scores, and a quantity-vs-quality diagnosis
+- Follow-up query generation reacts to validation failure modes
+- Verified with `pytest tests/test_validator.py tests/test_orchestrator.py`

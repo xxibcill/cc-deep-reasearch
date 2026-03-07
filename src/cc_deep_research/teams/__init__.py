@@ -1,11 +1,8 @@
-"""Team management for CC Deep Research CLI.
-
-This module provides team-based research orchestration using Claude's Agent Teams
-functionality, enabling parallel research through multiple specialized agents.
-"""
+"""Local team metadata exported for the orchestrator runtime."""
 
 from cc_deep_research.teams.research_team import (
     AgentSpec,
+    LocalResearchTeam,
     ResearchTeam,
     TeamConfig,
     TeamCreationError,
@@ -14,6 +11,7 @@ from cc_deep_research.teams.research_team import (
 
 __all__ = [
     "ResearchTeam",
+    "LocalResearchTeam",
     "AgentSpec",
     "TeamConfig",
     "TeamCreationError",

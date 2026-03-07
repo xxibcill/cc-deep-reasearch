@@ -1,7 +1,8 @@
-"""Async message bus for parallel agent coordination.
+"""Local async message queue used by coordination experiments.
 
-This module provides a queue-based message passing system for coordinating
-multiple researcher agents working in parallel.
+The orchestrator's current hot path does not depend on message passing between
+distributed workers. This queue remains as local scaffolding for coordination
+experiments and compatibility with the broader architecture shape.
 """
 
 import asyncio
@@ -44,12 +45,11 @@ class Message:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-class MessageBus:
-    """Async queue-based message bus for agent coordination.
+class LocalMessageBus:
+    """Local async queue for coordination experiments.
 
-    This class provides thread-safe message passing between agents using
-    asyncio queues. It supports both directed messaging (to specific
-    agents) and broadcast messaging (to all agents).
+    It supports directed and broadcast messages inside one Python process. The
+    current research workflow does not rely on it to execute research tasks.
 
     Example:
         >>> bus = MessageBus()
@@ -231,8 +231,12 @@ class MessageBus:
         return self._queue.qsize()
 
 
+MessageBus = LocalMessageBus
+
+
 __all__ = [
     "MessageType",
     "Message",
     "MessageBus",
+    "LocalMessageBus",
 ]

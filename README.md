@@ -1,6 +1,6 @@
 # CC Deep Research CLI
 
-CLI for multi-stage web research using Tavily search, agent orchestration, session persistence, and telemetry analytics.
+CLI for multi-stage web research using Tavily search, a local specialist pipeline, session persistence, and telemetry analytics.
 
 Current codebase version: `0.1.0`
 
@@ -8,7 +8,7 @@ Current codebase version: `0.1.0`
 
 - Multi-stage research workflow (strategy, query expansion, source collection, analysis, validation, reporting)
 - Depth modes: `quick`, `standard`, `deep` (default)
-- Parallel researcher execution with optional timeline view
+- Parallel local researcher-task execution with optional timeline view
 - Source quality scoring and cross-reference analysis
 - Session persistence with list/show/export/delete commands
 - Telemetry ingestion to DuckDB and Streamlit dashboard
@@ -91,7 +91,7 @@ cc-deep-research research --pdf "Topic"
 - `--format [markdown|json]`
 - `--no-cross-ref`
 - `--tavily-only`
-- `--claude-only` (present but marked not yet implemented)
+- `--claude-only` (accepted but no Claude search provider is implemented yet)
 - `--no-team`
 - `--team-size INTEGER`
 - `--progress`

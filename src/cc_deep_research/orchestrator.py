@@ -1,10 +1,10 @@
-"""Research orchestrator using agent teams."""
+"""Research orchestrator for the local staged pipeline."""
 
 from collections.abc import Callable
 from typing import Any
 
 from cc_deep_research.config import Config
-from cc_deep_research.coordination import AgentPool, MessageBus
+from cc_deep_research.coordination import LocalAgentPool, LocalMessageBus
 from cc_deep_research.models import (
     AnalysisResult,
     IterationHistoryRecord,
@@ -28,27 +28,16 @@ from cc_deep_research.orchestration import (
     SourceCollectionService,
 )
 from cc_deep_research.orchestration.helpers import build_follow_up_queries, normalize_query_families
-from cc_deep_research.teams import ResearchTeam
+from cc_deep_research.teams import LocalResearchTeam
 
 
 class TeamResearchOrchestrator:
-    """Orchestrates research using a team of specialized agents.
+    """Orchestrate the local research pipeline across specialist components.
 
-    This class provides:
-    - Team initialization with specialized research agents
-    - Task decomposition and assignment
-    - Coordination of agent execution
-    - Results aggregation and validation
-    - Research session management
-
-    The orchestrator manages the full research workflow:
-    1. Analyze query and determine strategy (lead agent)
-    2. Expand queries for comprehensive coverage (expander agent)
-    3. Collect sources from providers (collector agent)
-    4. Analyze findings (analyzer agent)
-    5. Deep analysis (deep_analyzer agent - deep mode only)
-    6. Validate quality (validator agent)
-    7. Generate reports (reporter agent)
+    The current runtime is local-only. The orchestrator executes Python agent
+    objects directly and optionally fans out source collection into parallel
+    local researcher tasks. The coordination wrappers kept here are scaffolding,
+    not a full external team runtime.
     """
 
     def __init__(
@@ -70,15 +59,15 @@ class TeamResearchOrchestrator:
         """
         self._config = config
         self._monitor = monitor or ResearchMonitor(enabled=False)
-        self._team: ResearchTeam | None = None
+        self._team: LocalResearchTeam | None = None
         self._agents: dict[str, Any] = {}
         # Use config defaults if not specified
         self._parallel_mode = (
             parallel_mode if parallel_mode is not None else config.search_team.parallel_execution
         )
         self._num_researchers = num_researchers or config.search_team.num_researchers
-        self._message_bus: MessageBus | None = None
-        self._agent_pool: AgentPool | None = None
+        self._message_bus: LocalMessageBus | None = None
+        self._agent_pool: LocalAgentPool | None = None
         self._agent_access = AgentAccess(lambda: self._agents)
         self._session_state = OrchestratorSessionState(configured_providers=[])
         self._session_builder = SessionBuilder()
@@ -113,7 +102,7 @@ class TeamResearchOrchestrator:
         min_sources: int | None = None,
         phase_hook: Callable[[str, str], None] | None = None,
     ) -> ResearchSession:
-        """Execute a research query using the agent team.
+        """Execute a research query using the local specialist pipeline.
 
         Args:
             query: Research query string.

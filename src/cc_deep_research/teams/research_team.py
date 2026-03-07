@@ -1,7 +1,9 @@
-"""Research team implementation using Claude Agent Teams.
+"""Local team metadata for the orchestrator runtime.
 
-This module provides a ResearchTeam class that wraps Claude's Agent Team
-functionality for coordinated research operations.
+This module describes the specialist roles the orchestrator wires together for a
+research run. The current implementation is local-only: the orchestrator calls
+Python agent objects directly and uses this wrapper as lifecycle metadata rather
+than as a distributed team runtime.
 """
 
 from dataclasses import dataclass, field
@@ -47,17 +49,12 @@ class TeamConfig:
     parallel_execution: bool = True
 
 
-class ResearchTeam:
-    """Manages a team of research agents for coordinated research.
+class LocalResearchTeam:
+    """Hold local specialist-role metadata for one orchestrator session.
 
-    This class wraps Claude's Agent Team functionality, providing:
-    - Team creation with specialized agents
-    - Task assignment and coordination
-    - Results aggregation from multiple agents
-    - Team lifecycle management (creation, execution, shutdown)
-
-    Note: This is a base implementation. Actual Agent tool integration
-    would be handled by the orchestrator or through appropriate SDK integration.
+    The orchestrator owns execution. This class only tracks the configured
+    specialist roster and a small in-memory placeholder state used by tests and
+    future runtime experiments.
     """
 
     def __init__(
@@ -192,15 +189,7 @@ class ResearchTeam:
         return results
 
     async def create(self) -> None:
-        """Create the agent team.
-
-        This method would use Claude's TeamCreate tool to initialize
-        the team and spawn agents.
-
-        Raises:
-            TeamCreationError: If team creation fails.
-        """
-        # TODO: Implement actual team creation using TeamCreate tool
+        """Mark the local team wrapper as active for the current session."""
         self._is_active = True
 
     async def execute_research(
@@ -209,7 +198,7 @@ class ResearchTeam:
         depth: ResearchDepth,
         _min_sources: int | None = None,
     ) -> ResearchSession:
-        """Execute a research query using the team.
+        """Return a placeholder session for compatibility tests.
 
         Args:
             query: Research query string.
@@ -219,16 +208,11 @@ class ResearchTeam:
         Returns:
             ResearchSession with results from all agents.
 
-        Raises:
-            TeamExecutionError: If research execution fails.
+        The real research workflow lives in ``TeamResearchOrchestrator`` and its
+        service objects. This method remains as a compatibility stub until the
+        project either removes the wrapper or introduces a real external team
+        runtime.
         """
-        # TODO: Implement actual team execution with:
-        # - Task decomposition
-        # - Task assignment to agents
-        # - Inter-agent coordination via SendMessage
-        # - Results aggregation
-
-        # Placeholder - return empty session
         return ResearchSession(
             session_id="placeholder",
             query=query,
@@ -236,19 +220,15 @@ class ResearchTeam:
         )
 
     async def shutdown(self) -> None:
-        """Shutdown the team and clean up resources.
-
-        This method would use Claude's TeamDelete tool to properly
-        shut down all agents and clean up team resources.
-        """
-        # Clean up agent instances
+        """Shutdown the local team wrapper and clear placeholder state."""
         for _agent_id, agent_data in self._agent_instances.items():
             agent_data["status"] = "shutdown"
 
         self._agent_instances.clear()
-
-        # TODO: Implement actual team shutdown using TeamDelete tool
         self._is_active = False
+
+
+ResearchTeam = LocalResearchTeam
 
 
 class TeamCreationError(Exception):
@@ -281,6 +261,7 @@ class TeamExecutionError(Exception):
 
 __all__ = [
     "ResearchTeam",
+    "LocalResearchTeam",
     "AgentSpec",
     "TeamConfig",
     "TeamCreationError",

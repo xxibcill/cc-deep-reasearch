@@ -1,5 +1,7 @@
 # Task 012: Strengthen Report Evidence Annotations
 
+Status: Done
+
 ## Objective
 
 Make reports communicate strength, freshness, and uncertainty of findings instead of presenting all findings with the same confidence.

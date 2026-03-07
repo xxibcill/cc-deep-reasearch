@@ -105,12 +105,12 @@ class SourceCollectionService:
         depth: ResearchDepth,
         min_sources: int | None,
     ) -> list[SearchResultItem]:
-        """Collect sources using parallel researcher tasks."""
+        """Collect sources using parallel local researcher tasks."""
         self._monitor.section("Parallel Source Collection")
         queries = [family.query for family in query_families]
 
         if agent_pool is None:
-            msg = "Agent pool not initialized for parallel mode"
+            msg = "Local agent pool not initialized for parallel mode"
             raise RuntimeError(msg)
 
         max_results_per_researcher = (

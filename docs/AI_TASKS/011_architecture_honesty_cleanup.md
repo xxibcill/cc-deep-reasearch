@@ -1,5 +1,7 @@
 # Task 011: Remove Architecture Mismatch
 
+Status: Done
+
 ## Objective
 
 Make the codebase honest about whether it is running a local pipeline or a real coordination layer.

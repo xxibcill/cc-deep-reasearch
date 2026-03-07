@@ -10,7 +10,7 @@
 6. [Research Modes](#research-modes)
 7. [Options and Flags](#options-and-flags)
 8. [Output Formats](#output-formats)
-9. [Agent Teams](#agent-teams)
+9. [Execution Model](#execution-model)
 10. [Advanced Usage](#advanced-usage)
 11. [Examples](#examples)
 12. [Troubleshooting](#troubleshooting)
@@ -22,11 +22,11 @@
 
 ### What is CC Deep Research?
 
-CC Deep Research is a powerful command-line tool that combines multiple web search providers with AI-powered agent teams to conduct comprehensive research on any topic. It leverages:
+CC Deep Research is a command-line tool for staged web research. The current runtime is a local Python pipeline with optional parallel source collection. It leverages:
 
 - **Tavily Search API** - Professional web search with advanced filtering
-- **Claude Code Search** - Built-in search capabilities using Claude's knowledge
-- **Agent Teams** - Multiple specialized AI agents working in parallel
+- **Claude CLI Analysis** - Optional Claude-backed analysis for synthesis phases
+- **Specialist Components** - Lead, collector, analyzer, validator, and reporter roles coordinated locally
 - **Quality Scoring** - Automated source evaluation and ranking
 - **Cross-Reference Analysis** - Identifies consensus and contradictions
 
@@ -34,9 +34,9 @@ CC Deep Research is a powerful command-line tool that combines multiple web sear
 
 | Feature | Description |
 |---------|-------------|
-| **Agent Team Research** | Uses 6 specialized AI agents working together |
-| **Parallel Execution** | Agents work simultaneously for faster results |
-| **Hybrid Search** | Runs Tavily and Claude Code search in parallel |
+| **Specialist Pipeline** | Uses local planner, collector, analyzer, validator, and reporter components |
+| **Parallel Execution** | Fans out source collection into local researcher tasks |
+| **Provider Handling** | Tavily is implemented; `claude` provider selection is not yet implemented |
 | **Query Expansion** | Automatically generates search variations |
 | **Iterative Search** | Analyzes gaps and performs follow-up searches |
 | **Quality Scoring** | Evaluates sources by credibility, relevance, freshness, diversity |
@@ -56,7 +56,7 @@ CC Deep Research is a powerful command-line tool that combines multiple web sear
         │                   │                   │
         ▼                   ▼                   ▼
 ┌───────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│   Tavily API  │  │  Claude Search  │  │   Config File   │
+│   Tavily API  │  │ Claude CLI (opt)│  │   Config File   │
 └───────────────┘  └─────────────────┘  └─────────────────┘
         │                   │
         └─────────┬─────────┘
@@ -68,8 +68,8 @@ CC Deep Research is a powerful command-line tool that combines multiple web sear
                   │
                   ▼
         ┌─────────────────┐
-        │   Agent Teams   │
-        │  (2-8 agents)   │
+        │ Local Pipeline  │
+        │ + task fan-out  │
         └─────────────────┘
                   │
         ┌─────────┼─────────┐
@@ -87,7 +87,7 @@ CC Deep Research is a powerful command-line tool that combines multiple web sear
 
 - **Python 3.11 or higher**
 - **Tavily API Key** - Get one at [https://tavily.com](https://tavily.com)
-- **Claude Code** - For built-in search integration (optional but recommended)
+- **Claude Code** - Optional, for Claude-backed analysis features
 
 ### Installation Using uv (Recommended)
 
@@ -182,8 +182,8 @@ Create a configuration file at `~/.config/cc-deep-research/config.yaml`:
 ```yaml
 # Search Provider Configuration
 search:
-  providers: ["tavily", "claude"]  # Available: tavily, claude
-  mode: "hybrid_parallel"          # Options: hybrid_parallel, tavily_primary, claude_primary
+  providers: ["tavily"]            # "claude" is accepted but not implemented as a search provider
+  mode: "tavily_primary"           # Options: hybrid_parallel, tavily_primary, claude_primary
   depth: "deep"                    # Options: quick, standard, deep
 
 # Tavily-specific Configuration
@@ -194,7 +194,7 @@ tavily:
 
 # Claude-specific Configuration
 claude:
-  max_results: 50                  # Maximum results from Claude search
+  max_results: 50                  # Reserved for future Claude search provider support
 
 # Research Configuration
 research:
@@ -214,12 +214,12 @@ research_agent:
   max_turns: 10                   # Maximum conversation turns
   mode: "default"                 # Options: default, bypassPermissions, dontAsk
 
-# Agent Team Configuration
+# Parallel Collection Configuration
 search_team:
-  enabled: true                   # Enable/disable agent teams
-  team_size: 4                    # Number of agents (2-8)
-  parallel_execution: true        # Run agents in parallel
-  timeout_seconds: 300            # Team timeout (30-600 seconds)
+  enabled: true                   # Retained for compatibility with existing config
+  team_size: 4                    # Describes local specialist roster metadata
+  parallel_execution: true        # Run source collection in parallel
+  timeout_seconds: 300            # Parallel-task timeout (30-600 seconds)
   fallback_to_sequential: true    # Fall back to sequential on error
 
 # Output Configuration
@@ -251,7 +251,7 @@ cc-deep-research config init --config-path /custom/path/config.yaml
 
 # Set configuration values (using dot notation)
 cc-deep-research config set tavily.api_keys key1,key2,key3
-cc-deep-research config set search.mode hybrid_parallel
+cc-deep-research config set search.mode tavily_primary
 cc-deep-research config set search_team.team_size 6
 cc-deep-research config set research.min_sources.deep 25
 cc-deep-research config set output.format json
@@ -268,13 +268,13 @@ cc-deep-research config init --force
 
 | Configuration | Default Value | Description |
 |---------------|---------------|-------------|
-| `search.providers` | `["tavily", "claude"]` | Active search providers |
-| `search.mode` | `"hybrid_parallel"` | Search execution mode |
+| `search.providers` | `["tavily"]` | Active search providers |
+| `search.mode` | `"tavily_primary"` | Search execution mode |
 | `search.depth` | `"deep"` | Default research depth |
 | `tavily.api_keys` | `[]` | Tavily API keys (set via env var) |
 | `tavily.rate_limit` | `1000` | Requests per key per month |
 | `tavily.max_results` | `100` | Max results per search |
-| `claude.max_results` | `50` | Max results from Claude |
+| `claude.max_results` | `50` | Reserved for future Claude search support |
 | `research.default_depth` | `"deep"` | Default research depth |
 | `research.min_sources.quick` | `3` | Quick mode minimum sources |
 | `research.min_sources.standard` | `10` | Standard mode minimum sources |
@@ -285,10 +285,10 @@ cc-deep-research config init --force
 | `research.enable_quality_scoring` | `true` | Enable source scoring |
 | `research_agent.model` | `"claude-sonnet-4-6"` | Claude model |
 | `research_agent.max_turns` | `10` | Max conversation turns |
-| `search_team.enabled` | `true` | Enable agent teams |
-| `search_team.team_size` | `4` | Number of agents |
-| `search_team.parallel_execution` | `true` | Parallel execution |
-| `search_team.timeout_seconds` | `300` | Team timeout |
+| `search_team.enabled` | `true` | Compatibility flag for the local runtime |
+| `search_team.team_size` | `4` | Specialist roster metadata size |
+| `search_team.parallel_execution` | `true` | Parallel source collection |
+| `search_team.timeout_seconds` | `300` | Parallel-task timeout |
 | `output.format` | `"markdown"` | Output format |
 | `output.auto_save` | `true` | Auto-save reports |
 | `output.save_dir` | `"./reports"` | Save directory |
@@ -643,7 +643,9 @@ cc-deep-research research --tavily-only "Web search only"
 
 #### `--claude-only`
 
-Use only the Claude Code search provider.
+Select only the `claude` provider.
+
+Current status: no Claude search provider is implemented, so this configuration will only produce provider warnings.
 
 **Example:**
 ```bash
@@ -654,7 +656,7 @@ cc-deep-research research --claude-only "Claude search only"
 
 #### `--no-team`
 
-Run source collection sequentially instead of using parallel researchers.
+Run source collection sequentially instead of using parallel local researcher tasks.
 
 **Use when:**
 - Simple queries don't need parallel collection
@@ -668,7 +670,7 @@ cc-deep-research research --no-team "Simple question"
 
 #### `--team-size`
 
-Override the default team size.
+Override the configured specialist roster size metadata.
 
 **Values:** Integer between 2-8
 
@@ -717,7 +719,7 @@ cc-deep-research research --verbose "Topic"
 Research query: AI safety research
 Depth: deep
 Output format: markdown
-Mode: Agent Teams (size: default)
+Mode: Local pipeline (parallel source collection)
 ```
 
 #### `--monitor`
@@ -728,7 +730,7 @@ Show internal workflow monitoring information.
 - Research session details
 - Configuration values
 - Execution stages
-- Agent team activity
+- Local pipeline activity
 - Performance metrics
 - Summary statistics
 
@@ -881,21 +883,21 @@ Both formats include:
 
 ---
 
-## Agent Teams
+## Execution Model
 
-### How Agent Teams Work
+### How the Runtime Works
 
-CC Deep Research uses multiple specialized AI agents that work together to conduct comprehensive research. Each agent has a specific role and expertise:
+CC Deep Research runs a staged local pipeline. The orchestrator invokes specialist Python components directly and optionally fans out source collection into local researcher tasks:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                   Agent Team Architecture                 │
+│                 Local Runtime Architecture                │
 └─────────────────────────────────────────────────────────┘
                             │
                             ▼
         ┌───────────────────────────────────────┐
-        │         Team Coordinator             │
-        │  (Task distribution & aggregation)   │
+        │         Orchestrator                 │
+        │   (phase ordering & aggregation)     │
         └───────────────────────────────────────┘
                     │       │       │       │
         ┌───────────┴───┐   │   ┌───┴───────────┐
@@ -913,7 +915,7 @@ CC Deep Research uses multiple specialized AI agents that work together to condu
                     └───────────────────┘
 ```
 
-### Specialized Agent Roles
+### Specialist Roles
 
 | Agent | Role | Responsibilities |
 |-------|------|-------------------|
@@ -922,17 +924,17 @@ CC Deep Research uses multiple specialized AI agents that work together to condu
 | **Analyzer** | Synthesizes information | Analyzes content, extracts key points, identifies patterns |
 | **Validator** | Quality assurance | Validates source credibility, checks completeness |
 | **Reporter** | Creates reports | Formats findings, generates citations, structures output |
-| **Coordinator** | Orchestrates workflow | Distributes tasks, coordinates agents, aggregates results |
+| **Orchestrator** | Orchestrates workflow | Orders phases, aggregates results, handles cleanup |
 
-### Team Configuration
+### Runtime Configuration
 
-Configure agent team behavior:
+Configure local pipeline and parallel collection behavior:
 
 ```yaml
-# Enable/disable agent teams
+# Parallel collection settings
 search_team:
-  enabled: true                    # Enable agent teams
-  team_size: 4                    # Number of agents (2-8)
+  enabled: true                    # Compatibility flag
+  team_size: 4                    # Specialist roster metadata
   parallel_execution: true         # Run agents in parallel
   timeout_seconds: 300            # Team timeout (30-600 seconds)
   fallback_to_sequential: true    # Fall back on error
@@ -943,20 +945,20 @@ search_team:
 # Force sequential source collection
 cc-deep-research research --no-team "Simple query"
 
-# Custom team size
+# Custom roster metadata size
 cc-deep-research research --team-size 6 "Complex topic"
 ```
 
 ### Parallel vs. Sequential Execution
 
 **Parallel Execution (Default):**
-- Multiple agents work simultaneously
+- Multiple local researcher tasks work simultaneously
 - Faster for complex queries
 - Requires more resources
 - Better for deep research
 
 **Sequential Execution:**
-- Agents work one at a time
+- Source collection runs in one local path
 - Slower but uses fewer resources
 - Better for simple queries
 - Useful for debugging
@@ -965,10 +967,10 @@ cc-deep-research research --team-size 6 "Complex topic"
 
 | Team Size | Use Case | Performance |
 |-----------|----------|-------------|
-| 2-3 | Simple queries, resource-constrained environments | Fast, minimal overhead |
-| 4-5 | Standard research (default) | Balanced performance |
-| 6-7 | Complex topics, comprehensive research | Thorough coverage |
-| 8 | Maximum depth, very complex topics | Slowest but most comprehensive |
+| 2-3 | Simple queries, resource-constrained environments | Fewer parallel tasks |
+| 4-5 | Standard research (default) | Balanced fan-out |
+| 6-7 | Complex topics, comprehensive research | Higher fan-out, more overhead |
+| 8 | Maximum depth, very complex topics | Highest fan-out, most overhead |
 
 ---
 
@@ -1073,17 +1075,17 @@ Choose which providers to use and their priority:
 
 ```yaml
 search:
-  providers: ["tavily", "claude"]    # Active providers
-  mode: "hybrid_parallel"             # Execution mode
+  providers: ["tavily"]               # Active providers
+  mode: "tavily_primary"              # Execution mode
 ```
 
 **Search modes:**
 
 | Mode | Description |
 |------|-------------|
-| `hybrid_parallel` | Runs all providers simultaneously |
-| `tavily_primary` | Tavily first, Claude as backup |
-| `claude_primary` | Claude first, Tavily as backup |
+| `hybrid_parallel` | Configuration enum accepted by the model layer |
+| `tavily_primary` | Matches the currently implemented provider path |
+| `claude_primary` | Accepted by config, but Claude search is not implemented |
 
 **Provider-specific configuration:**
 
@@ -1094,7 +1096,7 @@ tavily:
   max_results: 100
 
 claude:
-  max_results: 50
+  max_results: 50  # Reserved for future provider support
 ```
 
 ---
