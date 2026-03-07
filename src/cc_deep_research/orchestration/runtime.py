@@ -178,6 +178,8 @@ class OrchestratorRuntime:
             "ai_num_themes": self._config.research.ai_num_themes,
             "ai_deep_num_themes": self._config.research.ai_deep_num_themes,
             "ai_temperature": self._config.research.ai_temperature,
+            "claude_cli_path": self._config.research.claude_cli_path,
+            "claude_cli_timeout_seconds": self._config.research.claude_cli_timeout_seconds,
             "usage_callback": self._monitor.record_llm_usage,
         }
 

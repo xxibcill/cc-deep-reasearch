@@ -15,6 +15,8 @@ from cc_deep_research.models import (
     AnalysisFinding,
     AnalysisGap,
     AnalysisResult,
+    ClaimEvidence,
+    CrossReferenceClaim,
     SearchResultItem,
 )
 
@@ -96,13 +98,20 @@ class AnalyzerAgent:
             query=query,
         )
 
+        typed_claims = self._build_claims(
+            raw_claims=cross_ref.get("cross_reference_claims", []),
+            sources=cleaned_sources,
+            fallback_themes=themes,
+        )
+        typed_findings = self._build_findings(key_findings, typed_claims)
+
         return AnalysisResult(
-            key_findings=key_findings,
+            key_findings=typed_findings,
             themes=[t["name"] for t in themes],
             themes_detailed=themes,
             consensus_points=cross_ref["consensus_points"],
             contention_points=cross_ref["disagreement_points"],
-            cross_reference_claims=cross_ref.get("cross_reference_claims", []),
+            cross_reference_claims=typed_claims,
             gaps=gaps,
             source_count=len(cleaned_sources),
             analysis_method="ai_semantic",
@@ -372,12 +381,19 @@ class AnalyzerAgent:
         themes = self._identify_themes(sources)
         cross_ref = self._perform_cross_reference(sources)
         gaps = self._identify_gaps(sources, query)
+        typed_claims = self._build_claims(
+            raw_claims=cross_ref["claims"],
+            sources=sources,
+            fallback_themes=[],
+        )
+        typed_findings = self._attach_claims_to_fallback_findings(findings, typed_claims)
 
         return AnalysisResult(
-            key_findings=findings,
+            key_findings=typed_findings,
             themes=themes,
             consensus_points=cross_ref["consensus"],
             contention_points=cross_ref["contention"],
+            cross_reference_claims=typed_claims,
             gaps=gaps,
             source_count=len(sources),
             analysis_method="basic_keyword",
@@ -439,7 +455,7 @@ class AnalyzerAgent:
 
     def _perform_cross_reference(
         self, sources: list[SearchResultItem]  # noqa: ARG002
-    ) -> dict[str, list[str]]:
+    ) -> dict[str, list[str] | list[dict[str, Any]]]:
         """Perform cross-reference analysis across sources.
 
         Args:
@@ -454,6 +470,16 @@ class AnalyzerAgent:
         return {
             "consensus": ["Sources agree on core concepts"],
             "contention": [],
+            "claims": [
+                {
+                    "claim": source.title or source.snippet or source.url,
+                    "supporting_sources": [self._source_to_claim_evidence(source)],
+                    "contradicting_sources": [],
+                    "consensus_level": 0.2,
+                }
+                for source in sources[:5]
+                if source.title or source.snippet
+            ],
         }
 
     def _identify_gaps(
@@ -537,6 +563,208 @@ class AnalyzerAgent:
                 sections.append(f"- {gap.gap_description}\n")
 
         return "\n".join(sections)
+
+    def _build_claims(
+        self,
+        *,
+        raw_claims: list[dict[str, Any]],
+        sources: list[SearchResultItem],
+        fallback_themes: list[dict[str, Any]],
+    ) -> list[CrossReferenceClaim]:
+        """Normalize raw claim payloads into typed claim models."""
+        source_lookup = {source.url: source for source in sources}
+        typed_claims: list[CrossReferenceClaim] = []
+
+        for claim in raw_claims:
+            supporting = self._claim_evidence_list(
+                claim.get("supporting_sources", []),
+                source_lookup,
+            )
+            contradicting = self._claim_evidence_list(
+                claim.get("contradicting_sources", []),
+                source_lookup,
+            )
+            typed_claims.append(
+                CrossReferenceClaim(
+                    claim=str(claim.get("claim", "Unnamed claim")),
+                    supporting_sources=supporting,
+                    contradicting_sources=contradicting,
+                    consensus_level=float(claim.get("consensus_level", 0.0) or 0.0),
+                    confidence=claim.get("confidence"),
+                    freshness=claim.get("freshness"),
+                    evidence_type=claim.get("evidence_type"),
+                )
+            )
+
+        if typed_claims:
+            return typed_claims
+
+        for theme in fallback_themes[:5]:
+            supporting = self._claim_evidence_list(
+                theme.get("supporting_sources", []),
+                source_lookup,
+            )
+            if not supporting:
+                continue
+            typed_claims.append(
+                CrossReferenceClaim(
+                    claim=f"Key findings related to {theme.get('name', 'this topic')}",
+                    supporting_sources=supporting,
+                    consensus_level=min(1.0, len(supporting) / 5),
+                )
+            )
+
+        return typed_claims
+
+    def _build_findings(
+        self,
+        raw_findings: list[dict[str, Any]],
+        claims: list[CrossReferenceClaim],
+    ) -> list[AnalysisFinding]:
+        """Normalize AI finding payloads and link them to evidence-backed claims."""
+        findings: list[AnalysisFinding] = []
+        for finding in raw_findings:
+            evidence_urls = [
+                entry.url
+                for entry in _normalize_finding_evidence(finding.get("evidence", []))
+            ]
+            finding_claims = self._match_claims_to_finding(
+                title=str(finding.get("title", "")),
+                description=str(finding.get("description", "")),
+                evidence_urls=evidence_urls,
+                claims=claims,
+            )
+            findings.append(
+                AnalysisFinding(
+                    title=str(finding.get("title", "Unnamed finding")),
+                    description=str(finding.get("description", "")),
+                    evidence=evidence_urls,
+                    confidence=finding.get("confidence"),
+                    claims=finding_claims,
+                )
+            )
+        return findings
+
+    def _attach_claims_to_fallback_findings(
+        self,
+        findings: list[AnalysisFinding],
+        claims: list[CrossReferenceClaim],
+    ) -> list[AnalysisFinding]:
+        """Link fallback findings to the closest typed claims."""
+        linked: list[AnalysisFinding] = []
+        for finding in findings:
+            finding_claims = self._match_claims_to_finding(
+                title=finding.title,
+                description=finding.description,
+                evidence_urls=list(finding.evidence),
+                claims=claims,
+            )
+            linked.append(
+                finding.model_copy(
+                    update={
+                        "claims": finding_claims,
+                        "evidence": (
+                            list(finding.evidence)
+                            or [
+                                evidence.url
+                                for claim in finding_claims
+                                for evidence in claim.supporting_sources
+                            ]
+                        ),
+                    }
+                )
+            )
+        return linked
+
+    def _match_claims_to_finding(
+        self,
+        *,
+        title: str,
+        description: str,
+        evidence_urls: list[str],
+        claims: list[CrossReferenceClaim],
+    ) -> list[CrossReferenceClaim]:
+        """Attach the most relevant claims to one finding."""
+        title_text = f"{title} {description}".lower()
+        evidence_url_set = set(evidence_urls)
+        matched: list[CrossReferenceClaim] = []
+
+        for claim in claims:
+            claim_urls = {entry.url for entry in claim.supporting_sources}
+            if evidence_url_set and claim_urls.intersection(evidence_url_set):
+                matched.append(claim)
+                continue
+            if claim.claim.lower() in title_text or title.lower() in claim.claim.lower():
+                matched.append(claim)
+
+        return matched[:3]
+
+    def _claim_evidence_list(
+        self,
+        entries: list[Any],
+        source_lookup: dict[str, SearchResultItem],
+    ) -> list[ClaimEvidence]:
+        """Convert raw evidence references into typed claim evidence."""
+        normalized: list[ClaimEvidence] = []
+        for entry in entries:
+            if isinstance(entry, str) and entry in source_lookup:
+                normalized.append(self._source_to_claim_evidence(source_lookup[entry]))
+                continue
+            if isinstance(entry, dict):
+                url = entry.get("url") or entry.get("source_url")
+                if isinstance(url, str) and url in source_lookup:
+                    source_evidence = self._source_to_claim_evidence(source_lookup[url])
+                    merged = source_evidence.model_copy(
+                        update={
+                            "title": entry.get("title", source_evidence.title),
+                            "snippet": entry.get("snippet", source_evidence.snippet),
+                            "published_date": entry.get(
+                                "published_date",
+                                source_evidence.published_date,
+                            ),
+                            "source_metadata": {
+                                **source_evidence.source_metadata,
+                                **(
+                                    entry.get("source_metadata", {})
+                                    if isinstance(entry.get("source_metadata"), dict)
+                                    else {}
+                                ),
+                            },
+                        }
+                    )
+                    normalized.append(merged)
+                    continue
+            evidence = ClaimEvidence.model_validate(entry)
+            if evidence.url in source_lookup and not evidence.query_provenance:
+                source_evidence = self._source_to_claim_evidence(source_lookup[evidence.url])
+                evidence = source_evidence.model_copy(
+                    update={
+                        "title": evidence.title or source_evidence.title,
+                        "snippet": evidence.snippet or source_evidence.snippet,
+                        "published_date": evidence.published_date or source_evidence.published_date,
+                        "source_metadata": {
+                            **source_evidence.source_metadata,
+                            **evidence.source_metadata,
+                        },
+                    }
+                )
+            normalized.append(evidence)
+        return normalized
+
+    def _source_to_claim_evidence(self, source: SearchResultItem) -> ClaimEvidence:
+        """Project a collected source into claim evidence with provenance."""
+        return ClaimEvidence.model_validate(source)
+
+
+def _normalize_finding_evidence(entries: list[Any]) -> list[ClaimEvidence]:
+    """Normalize synthesized finding evidence into typed evidence entries."""
+    normalized: list[ClaimEvidence] = []
+    for entry in entries:
+        try:
+            normalized.append(ClaimEvidence.model_validate(entry))
+        except Exception:
+            continue
+    return normalized
 
 
 __all__ = ["AnalyzerAgent"]

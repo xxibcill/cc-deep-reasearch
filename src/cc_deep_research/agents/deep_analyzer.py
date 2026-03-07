@@ -7,7 +7,7 @@ with increased token usage for comprehensive understanding.
 from typing import Any
 
 from cc_deep_research.agents.ai_analysis_service import AIAnalysisService
-from cc_deep_research.models import SearchResultItem
+from cc_deep_research.models import ClaimEvidence, CrossReferenceClaim, SearchResultItem
 
 
 class DeepAnalyzerAgent:
@@ -58,6 +58,7 @@ class DeepAnalyzerAgent:
         pass2_results = self._pass2_cross_reference(
             sources, query, pass1_results
         )
+        claims = self._build_claims(sources, pass2_results.get("claims", []))
 
         # Pass 3: Synthesize comprehensive insights and implications
         pass3_results = self._pass3_synthesis(
@@ -72,7 +73,7 @@ class DeepAnalyzerAgent:
             "patterns": pass1_results["patterns"],
             "consensus_points": pass2_results["consensus"],
             "disagreement_points": pass2_results["disagreements"],
-            "cross_reference_claims": pass2_results.get("claims", []),
+            "cross_reference_claims": claims,
             "implications": pass3_results["implications"],
             "comprehensive_synthesis": pass3_results["synthesis"],
             "source_count": len(sources),
@@ -186,6 +187,52 @@ class DeepAnalyzerAgent:
             "implications": implications,
             "synthesis": synthesis,
         }
+
+    def _build_claims(
+        self,
+        sources: list[SearchResultItem],
+        raw_claims: list[dict[str, Any]],
+    ) -> list[CrossReferenceClaim]:
+        """Normalize deep-analysis claims with full source provenance."""
+        source_lookup = {source.url: source for source in sources}
+        claims: list[CrossReferenceClaim] = []
+        for claim in raw_claims:
+            claims.append(
+                CrossReferenceClaim(
+                    claim=str(claim.get("claim", "Unnamed claim")),
+                    supporting_sources=self._claim_evidence(
+                        claim.get("supporting_sources", []),
+                        source_lookup,
+                    ),
+                    contradicting_sources=self._claim_evidence(
+                        claim.get("contradicting_sources", []),
+                        source_lookup,
+                    ),
+                    consensus_level=float(claim.get("consensus_level", 0.0) or 0.0),
+                    confidence=claim.get("confidence"),
+                    freshness=claim.get("freshness"),
+                    evidence_type=claim.get("evidence_type"),
+                )
+            )
+        return claims
+
+    def _claim_evidence(
+        self,
+        entries: list[Any],
+        source_lookup: dict[str, SearchResultItem],
+    ) -> list[ClaimEvidence]:
+        """Attach source provenance to each claim evidence entry."""
+        normalized: list[ClaimEvidence] = []
+        for entry in entries:
+            if isinstance(entry, str) and entry in source_lookup:
+                normalized.append(ClaimEvidence.model_validate(source_lookup[entry]))
+                continue
+            evidence = ClaimEvidence.model_validate(entry)
+            if evidence.url in source_lookup and not evidence.query_provenance:
+                normalized.append(ClaimEvidence.model_validate(source_lookup[evidence.url]))
+                continue
+            normalized.append(evidence)
+        return normalized
 
     def _identify_patterns(
         self,

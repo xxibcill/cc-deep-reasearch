@@ -5,10 +5,14 @@ from datetime import datetime, timedelta
 import pytest
 
 from cc_deep_research.models import (
+    AnalysisResult,
     APIKey,
+    ClaimEvidence,
+    ClaimFreshness,
     CrossReferenceClaim,
-    QueryProvenance,
+    EvidenceType,
     QualityScore,
+    QueryProvenance,
     ResearchDepth,
     ResearchSession,
     SearchMode,
@@ -366,7 +370,9 @@ class TestCrossReferenceClaim:
         assert claim.claim == "Python is a programming language"
         assert len(claim.supporting_sources) == 2
         assert claim.contradicting_sources == []
+        assert all(isinstance(source, ClaimEvidence) for source in claim.supporting_sources)
         assert claim.consensus_level == 0.0
+        assert claim.confidence == "medium"
 
     def test_claim_with_contradictions(self) -> None:
         """Test claim with contradicting sources."""
@@ -378,3 +384,87 @@ class TestCrossReferenceClaim:
         )
         assert len(claim.contradicting_sources) == 2
         assert claim.consensus_level == 0.33
+        assert claim.confidence == "low"
+
+    def test_claim_evidence_preserves_source_provenance(self) -> None:
+        """Test claim evidence keeps provenance and derives freshness metadata."""
+        source = SearchResultItem(
+            url="https://www.sec.gov/example-filing",
+            title="Company Filing",
+            snippet="Primary filing evidence",
+            source_metadata={"published_date": "2026-02-20"},
+            query_provenance=[
+                QueryProvenance(
+                    query="company filing revenue guidance",
+                    family="primary-source",
+                    intent_tags=["evidence", "primary-source"],
+                )
+            ],
+        )
+
+        claim = CrossReferenceClaim(
+            claim="The company raised revenue guidance",
+            supporting_sources=[source],
+            contradicting_sources=["https://news.example.com/contrary-view"],
+            consensus_level=0.8,
+        )
+
+        evidence = claim.supporting_sources[0]
+        assert evidence.url == source.url
+        assert evidence.query_provenance[0].family == "primary-source"
+        assert evidence.freshness == ClaimFreshness.CURRENT
+        assert evidence.evidence_type == EvidenceType.OFFICIAL
+        assert claim.freshness == ClaimFreshness.CURRENT
+        assert claim.evidence_type == EvidenceType.OFFICIAL
+        assert claim.confidence == "low"
+
+    def test_analysis_result_accepts_structured_claims_and_finding_links(self) -> None:
+        """Test analysis result normalizes claims into typed models."""
+        result = SearchResultItem(
+            url="https://pubmed.gov/study-1",
+            title="Clinical Trial",
+            snippet="Randomized controlled trial evidence",
+            source_metadata={"published_date": "2025-12-01"},
+            query_provenance=[
+                QueryProvenance(
+                    query="clinical trial evidence",
+                    family="primary-source",
+                    intent_tags=["evidence"],
+                )
+            ],
+        )
+
+        analysis = {
+            "key_findings": [
+                {
+                    "title": "Treatment improved outcomes",
+                    "description": "Supported by a clinical trial",
+                    "evidence": [result.url],
+                    "claims": [
+                        {
+                            "claim": "Treatment improved outcomes",
+                            "supporting_sources": [result],
+                            "contradicting_sources": [],
+                            "consensus_level": 0.7,
+                        }
+                    ],
+                }
+            ],
+            "cross_reference_claims": [
+                {
+                    "claim": "Treatment improved outcomes",
+                    "supporting_sources": [result],
+                    "contradicting_sources": ["https://example.com/opinion"],
+                    "consensus_level": 0.7,
+                }
+            ],
+        }
+
+        analysis_result = AnalysisResult.model_validate(analysis)
+
+        assert len(analysis_result.cross_reference_claims) == 1
+        assert analysis_result.cross_reference_claims[0].supporting_sources[0].query_provenance[0].query == (
+            "clinical trial evidence"
+        )
+        assert analysis_result.cross_reference_claims[0].evidence_type == EvidenceType.RESEARCH
+        assert analysis_result.key_findings[0].claims[0].claim == "Treatment improved outcomes"

@@ -98,6 +98,8 @@ class TestResearchConfig:
         assert config.enable_quality_scoring is True
         assert config.deep_analysis_passes == 3
         assert config.deep_analysis_tokens == 150000
+        assert config.claude_cli_path is None
+        assert config.claude_cli_timeout_seconds == 180
 
 
 class TestOutputConfig:
@@ -172,10 +174,16 @@ class TestConfig:
         data = {
             "search": {"depth": "quick"},
             "tavily": {"api_keys": ["test-key"]},
+            "research": {
+                "claude_cli_path": "/usr/local/bin/claude",
+                "claude_cli_timeout_seconds": 240,
+            },
         }
         config = Config(**data)
         assert config.search.depth == ResearchDepth.QUICK
         assert config.tavily.api_keys == ["test-key"]
+        assert config.research.claude_cli_path == "/usr/local/bin/claude"
+        assert config.research.claude_cli_timeout_seconds == 240
 
 
 class TestLoadConfig:

@@ -84,6 +84,11 @@ class ResearchConfig(BaseModel):
         description="Method for AI integration: 'heuristic', 'agent', 'api', 'hybrid'"
     )
     ai_temperature: float = Field(default=0.3, ge=0.0, le=1.0)
+    claude_cli_path: str | None = Field(
+        default=None,
+        description="Optional path override for the Claude Code CLI executable",
+    )
+    claude_cli_timeout_seconds: int = Field(default=180, ge=30, le=900)
 
 
 class OutputConfig(BaseModel):
