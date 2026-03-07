@@ -1,5 +1,7 @@
 # Task 002: Add Typed Phase Result Models
 
+Status: Done
+
 ## Objective
 
 Replace loosely shaped dictionaries for strategy, analysis, validation, and iteration history with typed models or `TypedDict` structures.

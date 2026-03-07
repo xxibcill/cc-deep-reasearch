@@ -364,7 +364,7 @@ cc-deep-research research -o quantum_report.md "Quantum computing applications"
 # JSON output for programmatic use
 cc-deep-research research --format json "AI safety research" > results.json
 
-# Research without agent teams (faster for simple queries)
+# Research with sequential source collection (useful for simple queries)
 cc-deep-research research --no-team "Simple question"
 
 # Use only Tavily
@@ -398,7 +398,7 @@ cc-deep-research research [QUERY] [OPTIONS]
 | `--no-cross-ref` | | flag | false | Disable cross-reference analysis |
 | `--tavily-only` | | flag | false | Use only Tavily provider |
 | `--claude-only` | | flag | false | Use only Claude provider |
-| `--no-team` | | flag | false | Disable agent teams, use sequential mode |
+| `--no-team` | | flag | false | Run source collection sequentially instead of using parallel researchers |
 | `--team-size` | | int | (from config) | Override default team size |
 | `--progress` | | flag | true | Show progress indicators |
 | `--quiet` | | flag | false | Suppress output |
@@ -650,15 +650,15 @@ Use only the Claude Code search provider.
 cc-deep-research research --claude-only "Claude search only"
 ```
 
-### Agent Team Options
+### Execution Mode Options
 
 #### `--no-team`
 
-Disable agent teams and use sequential mode.
+Run source collection sequentially instead of using parallel researchers.
 
 **Use when:**
-- Simple queries don't need parallel processing
-- Troubleshooting agent team issues
+- Simple queries don't need parallel collection
+- Troubleshooting parallel collection issues
 - Reducing resource usage
 
 **Example:**
@@ -940,7 +940,7 @@ search_team:
 
 **Command-line overrides:**
 ```bash
-# Disable agent teams
+# Force sequential source collection
 cc-deep-research research --no-team "Simple query"
 
 # Custom team size
@@ -1182,7 +1182,7 @@ cc-deep-research research --team-size 8 --sources 50 --depth deep \
   "Comprehensive analysis of global supply chains"
 ```
 
-**Sequential mode for debugging:**
+**Sequential source collection for debugging:**
 ```bash
 cc-deep-research research --no-team --verbose "Test query"
 ```
@@ -1260,11 +1260,11 @@ cc-deep-research config set research.enable_iterative_search false
 
 #### Issue: "Agent team errors"
 
-**Problem:** Agent team encounters errors during execution.
+**Problem:** Parallel source collection encounters errors during execution.
 
 **Solutions:**
 ```bash
-# Use sequential mode
+# Use sequential source collection
 cc-deep-research research --no-team "Your query"
 
 # Use verbose output for debugging

@@ -72,7 +72,11 @@ def main(ctx: click.Context) -> None:
 @click.option("--no-cross-ref", is_flag=True, help="Disable cross-reference analysis")
 @click.option("--tavily-only", is_flag=True, help="Use only Tavily provider")
 @click.option("--claude-only", is_flag=True, help="Use only Claude provider (not yet implemented)")
-@click.option("--no-team", is_flag=True, help="Disable agent teams, use sequential mode")
+@click.option(
+    "--no-team",
+    is_flag=True,
+    help="Run source collection sequentially instead of using parallel researchers",
+)
 @click.option("--team-size", "team_size", type=int, default=None, help="Override default team size")
 @click.option("--progress", is_flag=True, default=True, help="Show progress indicators")
 @click.option("--quiet", is_flag=True, help="Suppress output")
@@ -140,7 +144,7 @@ def research(
 
         config = load_config()
         if no_team:
-            config.search_team.enabled = False
+            config.search_team.parallel_execution = False
         if team_size is not None:
             config.search_team.team_size = team_size
         if no_cross_ref:
@@ -150,8 +154,13 @@ def research(
         if claude_only:
             config.search.providers = ["claude"]
 
+        effective_parallel_mode = _resolve_parallel_mode_override(
+            no_team=no_team,
+            parallel_mode=parallel_mode,
+        )
+
         if not quiet:
-            team_mode = _describe_team_mode(config)
+            team_mode = _describe_execution_mode(config, effective_parallel_mode)
             ui.show_research_header(
                 ResearchRunView(
                     query=query,
@@ -173,14 +182,18 @@ def research(
         orchestrator = TeamResearchOrchestrator(
             config=config,
             monitor=research_monitor,
-            # Only pass parallel params if explicitly specified via CLI
-            parallel_mode=parallel_mode if parallel_mode else None,
+            # Only pass parallel params if explicitly specified via CLI.
+            # --no-team forces sequential collection, even if --parallel-mode is also set.
+            parallel_mode=effective_parallel_mode,
             num_researchers=num_researchers if num_researchers else None,
         )
         depth_enum = ResearchDepth(depth.lower())
 
-        # Track if parallel mode was enabled
-        parallel_enabled = parallel_mode or config.search_team.parallel_execution
+        parallel_enabled = (
+            effective_parallel_mode
+            if effective_parallel_mode is not None
+            else config.search_team.parallel_execution
+        )
 
         session = _execute_research_run(
             orchestrator=orchestrator,
@@ -601,11 +614,23 @@ def _execute_research_run(
         )
 
 
-def _describe_team_mode(config: Config) -> str:
-    """Describe team mode for display."""
-    if not config.search_team.enabled:
-        return "sequential"
-    return f"agent team ({config.search_team.team_size})"
+def _resolve_parallel_mode_override(*, no_team: bool, parallel_mode: bool) -> bool | None:
+    """Resolve the effective parallel override passed to the orchestrator."""
+    if no_team:
+        return False
+    if parallel_mode:
+        return True
+    return None
+
+
+def _describe_execution_mode(config: Config, parallel_mode_override: bool | None) -> str:
+    """Describe execution mode for display."""
+    parallel_enabled = (
+        parallel_mode_override
+        if parallel_mode_override is not None
+        else config.search_team.parallel_execution
+    )
+    return "parallel" if parallel_enabled else "sequential"
 
 
 def _log_monitor_session_start(
@@ -625,7 +650,10 @@ def _log_monitor_session_start(
     research_monitor.log(f"Providers: {', '.join(config.search.providers)}")
     research_monitor.log(f"Search depth: {config.search.depth}")
     research_monitor.log(f"Search mode: {config.search.mode}")
-    research_monitor.log(f"Agent teams: {'enabled' if config.search_team.enabled else 'disabled'}")
+    research_monitor.log(
+        "Source collection: "
+        + ("parallel" if config.search_team.parallel_execution else "sequential")
+    )
 
     research_monitor.section("Execution")
 

@@ -100,7 +100,7 @@ The `research` command controls the workflow through flags such as:
 
 Important implementation detail:
 
-- `--no-team` currently disables `config.search_team.enabled`, but the orchestrator still uses its local agent pipeline. It does not switch to a different non-agent codepath.
+- `--no-team` forces sequential source collection. It does not switch to a separate non-agent pipeline.
 - Parallel behavior is driven by `parallel_mode` and `config.search_team.parallel_execution`.
 
 ## Configuration That Shapes the Workflow
