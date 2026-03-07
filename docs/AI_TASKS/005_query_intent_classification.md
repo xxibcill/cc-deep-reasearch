@@ -1,5 +1,7 @@
 # Task 005: Upgrade Query Intent Classification
 
+Status: Done
+
 ## Objective
 
 Improve `ResearchLeadAgent.analyze_query()` so retrieval strategy is driven by explicit query intent instead of shallow heuristics.

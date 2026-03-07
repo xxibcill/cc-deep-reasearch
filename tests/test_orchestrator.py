@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from click.testing import CliRunner
 
+from cc_deep_research.aggregation import deduplicate_by_url
 from cc_deep_research.agents import (
     AGENT_TYPE_ANALYZER,
     AGENT_TYPE_COLLECTOR,
@@ -201,24 +202,28 @@ class FakeCollectorAgent:
         self,
         query: str,
         options: SearchOptions,
+        query_family: QueryFamily | None = None,
     ) -> list[SearchResultItem]:
         self.single_calls.append((query, options))
-        return self._get_results_for_query(query)
+        return self._annotate_sources(
+            self._get_results_for_query(query),
+            query_family or QueryFamily(query=query),
+        )
 
     async def collect_multiple_queries(
         self,
         queries: list[str],
         options: SearchOptions,
+        query_families: list[QueryFamily] | None = None,
     ) -> list[SearchResultItem]:
         self.multi_calls.append((list(queries), options))
         merged: list[SearchResultItem] = []
-        seen_urls: set[str] = set()
+        families_by_query = {family.query: family for family in query_families or []}
         for query in queries:
-            for source in self._get_results_for_query(query):
-                if source.url not in seen_urls:
-                    seen_urls.add(source.url)
-                    merged.append(source)
-        return merged
+            family = families_by_query.get(query, QueryFamily(query=query))
+            for source in self._annotate_sources(self._get_results_for_query(query), family):
+                merged.append(source)
+        return deduplicate_by_url(merged)
 
     async def close_providers(self) -> None:
         self.closed = True
@@ -230,6 +235,22 @@ class FakeCollectorAgent:
             slug = query.lower().replace(" ", "-")
             sources = _make_sources(slug, 2)
         return [source.model_copy(deep=True) for source in sources]
+
+    def _annotate_sources(
+        self,
+        sources: list[SearchResultItem],
+        family: QueryFamily,
+    ) -> list[SearchResultItem]:
+        """Apply query provenance to fake collector results."""
+        annotated: list[SearchResultItem] = []
+        for source in sources:
+            source.add_query_provenance(
+                query=family.query,
+                family=family.family,
+                intent_tags=list(family.intent_tags),
+            )
+            annotated.append(source)
+        return annotated
 
 
 class FakeAnalyzerAgent:
@@ -461,6 +482,68 @@ class TestTeamResearchOrchestrator:
             "market structure expert analysis",
         ]
         assert fixtures["expander"].calls[0]["strategy"]["intent"] == "informational"
+        assert session.sources[0].query_provenance[0].family == "baseline"
+        assert session.metadata["analysis"]["source_provenance"]["families"] == [
+            "baseline",
+            "primary-source",
+            "expert-analysis",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_duplicate_urls_preserve_multiple_query_families_in_session_metadata(self) -> None:
+        """Duplicate URLs should retain provenance from all contributing query families."""
+        config = Config()
+        config.search.providers = ["tavily"]
+        config.search_team.parallel_execution = False
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        shared = SearchResultItem(
+            url="https://example.com/shared",
+            title="Shared",
+            score=0.8,
+        )
+        collector = FakeCollectorAgent(
+            available=["tavily"],
+            warnings=[],
+            results_by_query={
+                "market structure": [shared],
+                "market structure official guidance": [
+                    SearchResultItem(
+                        url="https://example.com/shared",
+                        title="Shared better",
+                        score=0.95,
+                    )
+                ],
+                "market structure expert analysis": [
+                    SearchResultItem(
+                        url="https://example.com/expert",
+                        title="Expert",
+                        score=0.7,
+                    )
+                ],
+            },
+        )
+        _install_fake_team(orchestrator, collector=collector)
+
+        session = await orchestrator.execute_research(
+            query="market structure",
+            depth=ResearchDepth.STANDARD,
+            min_sources=2,
+        )
+
+        shared_source = next(
+            source for source in session.sources if source.url == "https://example.com/shared"
+        )
+        assert [entry.family for entry in shared_source.query_provenance] == [
+            "primary-source",
+            "baseline",
+        ]
+        assert session.metadata["analysis"]["source_provenance"]["multi_query_sources"] == 1
+        assert session.metadata["analysis"]["source_provenance"]["family_counts"] == {
+            "baseline": 1,
+            "primary-source": 1,
+            "expert-analysis": 1,
+        }
 
     @pytest.mark.asyncio
     async def test_execute_research_records_missing_provider_contract(self) -> None:
@@ -521,11 +604,11 @@ class TestTeamResearchOrchestrator:
         sources = _make_sources("fallback", 2)
 
         async def collect_sources(
-            queries: list[str],
+            query_families: list[QueryFamily],
             _depth: ResearchDepth,
             _min_sources: int | None,
         ) -> list[SearchResultItem]:
-            assert queries == ["parallel query"]
+            assert [family.query for family in query_families] == ["parallel query"]
             orchestrator._set_provider_metadata(available=["tavily"], warnings=[])
             return sources
 
@@ -573,11 +656,11 @@ class TestTeamResearchOrchestrator:
         sources = _make_sources("sequential", 2)
 
         async def collect_sources(
-            queries: list[str],
+            query_families: list[QueryFamily],
             _depth: ResearchDepth,
             _min_sources: int | None,
         ) -> list[SearchResultItem]:
-            assert queries == ["sequential query"]
+            assert [family.query for family in query_families] == ["sequential query"]
             orchestrator._set_provider_metadata(available=["tavily"], warnings=[])
             return sources
 

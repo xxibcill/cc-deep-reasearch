@@ -1,6 +1,7 @@
 """Result aggregation and deduplication utilities."""
 
 from datetime import datetime
+from typing import Any
 from urllib.parse import urlparse
 
 import click
@@ -47,11 +48,103 @@ def deduplicate_by_url(
 
     for result in results:
         normalized = normalize_url(result.url)
-
-        if normalized not in seen_urls or keep_highest_score and result.score > seen_urls[normalized].score:
+        existing = seen_urls.get(normalized)
+        if existing is None:
             seen_urls[normalized] = result
+            continue
+
+        if keep_highest_score and result.score > existing.score:
+            seen_urls[normalized] = _merge_duplicate_items(result, existing)
+            continue
+
+        seen_urls[normalized] = _merge_duplicate_items(existing, result)
 
     return list(seen_urls.values())
+
+
+def _merge_duplicate_items(
+    primary: SearchResultItem,
+    secondary: SearchResultItem,
+) -> SearchResultItem:
+    """Merge duplicate items while preserving query provenance."""
+    payload = primary.model_dump(mode="python")
+    payload["score"] = max(primary.score, secondary.score)
+    payload["title"] = primary.title or secondary.title
+    payload["snippet"] = _prefer_longer_text(primary.snippet, secondary.snippet)
+    payload["content"] = _prefer_longer_text(primary.content, secondary.content)
+    payload["source_metadata"] = _merge_source_metadata(
+        primary.source_metadata,
+        secondary.source_metadata,
+    )
+    payload["query_provenance"] = [
+        *primary.model_dump(mode="python").get("query_provenance", []),
+        *secondary.model_dump(mode="python").get("query_provenance", []),
+    ]
+    return SearchResultItem.model_validate(payload)
+
+
+def _prefer_longer_text(primary: str | None, secondary: str | None) -> str | None:
+    """Keep the more informative text value when merging duplicates."""
+    if not primary:
+        return secondary
+    if not secondary:
+        return primary
+    return primary if len(primary) >= len(secondary) else secondary
+
+
+def _merge_source_metadata(
+    primary: dict[str, Any],
+    secondary: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge metadata dictionaries while preserving provenance lists."""
+    merged = dict(secondary)
+    merged.update(primary)
+    merged["queries"] = _merge_string_lists(primary.get("queries"), secondary.get("queries"))
+    merged["query_families"] = _merge_string_lists(
+        primary.get("query_families"),
+        secondary.get("query_families"),
+    )
+    merged["query_provenance"] = _merge_mapping_lists(
+        primary.get("query_provenance"),
+        secondary.get("query_provenance"),
+    )
+    return merged
+
+
+def _merge_string_lists(primary: Any, secondary: Any) -> list[str]:
+    """Merge list-like string payloads without duplicates."""
+    values: list[str] = []
+    for candidate in (primary, secondary):
+        if isinstance(candidate, list):
+            values.extend(str(item) for item in candidate if item)
+    return list(dict.fromkeys(values))
+
+
+def _merge_mapping_lists(primary: Any, secondary: Any) -> list[dict[str, Any]]:
+    """Merge list-like mapping payloads without duplicate entries."""
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, tuple[str, ...]]] = set()
+    for candidate in (primary, secondary):
+        if not isinstance(candidate, list):
+            continue
+        for item in candidate:
+            if not isinstance(item, dict):
+                continue
+            query = str(item.get("query", ""))
+            family = str(item.get("family", "baseline"))
+            intent_tags = tuple(str(tag) for tag in item.get("intent_tags", []) if tag)
+            key = (query, family, intent_tags)
+            if not query or key in seen:
+                continue
+            seen.add(key)
+            merged.append(
+                {
+                    "query": query,
+                    "family": family,
+                    "intent_tags": list(intent_tags),
+                }
+            )
+    return merged
 
 
 def aggregate_results(

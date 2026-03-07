@@ -9,7 +9,13 @@ from cc_deep_research.agents import ResearcherAgent, SourceCollectorAgent
 from cc_deep_research.aggregation import ResultAggregator
 from cc_deep_research.config import Config
 from cc_deep_research.key_rotation import KeyRotationManager
-from cc_deep_research.models import ResearchDepth, SearchOptions, SearchResult, SearchResultItem
+from cc_deep_research.models import (
+    QueryFamily,
+    ResearchDepth,
+    SearchOptions,
+    SearchResult,
+    SearchResultItem,
+)
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.orchestration.helpers import decompose_parallel_tasks
 from cc_deep_research.orchestration.session_state import OrchestratorSessionState
@@ -37,11 +43,12 @@ class SourceCollectionService:
         self,
         *,
         collector: SourceCollectorAgent,
-        queries: list[str],
+        query_families: list[QueryFamily],
         depth: ResearchDepth,
     ) -> list[SearchResultItem]:
         """Collect sources through the configured provider set."""
         self._monitor.section("Source Collection")
+        queries = [family.query for family in query_families]
 
         await collector.initialize_providers()
         provider_warnings = collector.get_provider_warnings()
@@ -61,9 +68,17 @@ class SourceCollectionService:
         )
 
         if len(queries) == 1:
-            sources = await collector.collect_sources(queries[0], options)
+            sources = await collector.collect_sources(
+                queries[0],
+                options,
+                query_family=query_families[0],
+            )
         else:
-            sources = await collector.collect_multiple_queries(queries, options)
+            sources = await collector.collect_multiple_queries(
+                queries,
+                options,
+                query_families=query_families,
+            )
 
         self._monitor.log(f"Collected {len(sources)} sources")
         self._monitor.record_reasoning_summary(
@@ -86,12 +101,13 @@ class SourceCollectionService:
         self,
         *,
         agent_pool: object | None,
-        queries: list[str],
+        query_families: list[QueryFamily],
         depth: ResearchDepth,
         min_sources: int | None,
     ) -> list[SearchResultItem]:
         """Collect sources using parallel researcher tasks."""
         self._monitor.section("Parallel Source Collection")
+        queries = [family.query for family in query_families]
 
         if agent_pool is None:
             msg = "Agent pool not initialized for parallel mode"
@@ -135,8 +151,23 @@ class SourceCollectionService:
         results = await researcher.execute_multiple_tasks(tasks, timeout=researcher_timeout)
 
         all_sources: list[SearchResultItem] = []
+        families_by_query = {family.query: family for family in query_families}
         for result in results:
             if result["status"] == "success":
+                family = families_by_query.get(
+                    result.get("query", ""),
+                    QueryFamily(
+                        query=result.get("query", "") or "parallel-research",
+                        family="parallel",
+                        intent_tags=["parallel"],
+                    ),
+                )
+                for source in result["sources"]:
+                    source.add_query_provenance(
+                        query=family.query,
+                        family=family.family,
+                        intent_tags=list(family.intent_tags),
+                    )
                 all_sources.extend(result["sources"])
                 self._monitor.log(
                     f"✓ Researcher {result['task_id']}: "

@@ -50,10 +50,25 @@ class TestTavilySearchProvider:
             api_key="custom-key",
             max_results=50,
             timeout=60.0,
+            provider_name="tavily_basic",
+            strategy="basic",
         )
         assert provider._api_key == "custom-key"
         assert provider._max_results == 50
         assert provider._timeout == 60.0
+        assert provider.get_provider_name() == "tavily_basic"
+        assert provider._strategy == "basic"
+
+    def test_build_payload_uses_explicit_strategy(self, provider: TavilySearchProvider) -> None:
+        """Explicit provider strategy should override depth-derived defaults."""
+        provider._strategy = "basic"
+
+        payload = provider._build_payload(
+            "test query",
+            SearchOptions(search_depth=ResearchDepth.DEEP),
+        )
+
+        assert payload["search_depth"] == "basic"
 
     @pytest.mark.asyncio
     async def test_search_returns_results(
@@ -120,6 +135,7 @@ class TestTavilySearchProvider:
         assert "response_id" in result.metadata
         assert result.metadata["response_id"] == "test-response-id"
         assert "images" in result.metadata
+        assert result.metadata["strategy"] == "advanced"
 
         await provider.close()
 

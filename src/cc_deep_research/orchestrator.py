@@ -165,6 +165,7 @@ class TeamResearchOrchestrator:
         self,
         *,
         depth: ResearchDepth,
+        sources: list[SearchResultItem],
         strategy: StrategyResult,
         analysis: AnalysisResult,
         validation: ValidationResult | None,
@@ -173,6 +174,7 @@ class TeamResearchOrchestrator:
         """Build the stable session metadata contract for persisted sessions."""
         return self._session_state.build_metadata(
             depth=depth,
+            sources=sources,
             strategy=strategy,
             analysis=analysis,
             validation=validation,
@@ -183,21 +185,26 @@ class TeamResearchOrchestrator:
     async def _collect_sources_for_queries(
         self,
         *,
-        queries: list[str],
+        query_families: list[QueryFamily],
         depth: ResearchDepth,
         min_sources: int | None,
     ) -> list[SearchResultItem]:
         """Collect sources using the configured execution mode."""
+        queries = [family.query for family in query_families]
         if self._parallel_mode and self._agent_pool:
             try:
-                return await self._phase_parallel_research(queries, depth, min_sources)
+                return await self._phase_parallel_research(
+                    query_families,
+                    depth,
+                    min_sources,
+                )
             except Exception as exc:
                 self._monitor.log(f"Parallel execution failed: {exc}")
                 self._monitor.log("Falling back to sequential mode")
                 self._note_execution_degradation(
                     f"Parallel source collection fell back to sequential mode: {exc}"
                 )
-        return await self._phase_collect_sources(queries, depth, min_sources)
+        return await self._phase_collect_sources(query_families, depth, min_sources)
 
     def _log_session_summary(
         self,
@@ -287,14 +294,14 @@ class TeamResearchOrchestrator:
 
     async def _phase_collect_sources(
         self,
-        queries: list[str],
+        query_families: list[QueryFamily],
         depth: ResearchDepth,
         _min_sources: int | None,
     ) -> list[SearchResultItem]:
         """Phase 3: Collect sources from providers.
 
         Args:
-            queries: List of queries to search.
+            query_families: Query variations to search.
             depth: Research depth mode.
             _min_sources: Minimum sources required.
 
@@ -303,7 +310,7 @@ class TeamResearchOrchestrator:
         """
         return await self._source_collection.collect_sources(
             collector=self._agent_access.collector(),
-            queries=queries,
+            query_families=query_families,
             depth=depth,
         )
 
@@ -422,13 +429,27 @@ class TeamResearchOrchestrator:
         """Collect follow-up sources and merge them with existing sources."""
         if self._parallel_mode and self._agent_pool:
             new_sources = await self._phase_parallel_research(
-                follow_up_queries,
+                [
+                    QueryFamily(
+                        query=query,
+                        family="follow-up",
+                        intent_tags=["follow-up"],
+                    )
+                    for query in follow_up_queries
+                ],
                 depth,
                 min_sources,
             )
         else:
             new_sources = await self._phase_collect_sources(
-                follow_up_queries,
+                [
+                    QueryFamily(
+                        query=query,
+                        family="follow-up",
+                        intent_tags=["follow-up"],
+                    )
+                    for query in follow_up_queries
+                ],
                 depth,
                 min_sources,
             )
@@ -537,14 +558,14 @@ class TeamResearchOrchestrator:
 
     async def _phase_parallel_research(
         self,
-        queries: list[str],
+        query_families: list[QueryFamily],
         depth: ResearchDepth,
         min_sources: int | None,
     ) -> list[SearchResultItem]:
         """Phase 3 (Parallel): Collect sources using multiple researchers.
 
         Args:
-            queries: List of queries to search.
+            query_families: Query variations to search.
             depth: Research depth mode.
             min_sources: Minimum sources required.
 
@@ -553,7 +574,7 @@ class TeamResearchOrchestrator:
         """
         return await self._source_collection.parallel_research(
             agent_pool=self._agent_pool,
-            queries=queries,
+            query_families=query_families,
             depth=depth,
             min_sources=min_sources,
         )

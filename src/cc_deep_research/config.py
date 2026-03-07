@@ -18,6 +18,20 @@ class SearchConfig(BaseModel):
     mode: SearchMode = Field(default=SearchMode.TAVILY_PRIMARY)
     depth: ResearchDepth = Field(default=ResearchDepth.DEEP)
 
+    @field_validator("providers")
+    @classmethod
+    def normalize_provider_names(cls, values: list[str]) -> list[str]:
+        """Normalize provider names while preserving first-seen order."""
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for value in values or ["tavily"]:
+            provider_name = value.strip().lower()
+            if not provider_name or provider_name in seen:
+                continue
+            seen.add(provider_name)
+            normalized.append(provider_name)
+        return normalized or ["tavily"]
+
 
 class TavilyConfig(BaseModel):
     """Tavily-specific configuration."""

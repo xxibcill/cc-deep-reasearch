@@ -1,5 +1,7 @@
 # Task 007: Persist Query Provenance On Sources
 
+Status: Done
+
 ## Objective
 
 Record which query family and query variation produced each source so later validation and reporting can reason about evidence provenance.

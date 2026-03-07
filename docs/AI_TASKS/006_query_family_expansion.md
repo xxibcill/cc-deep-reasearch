@@ -1,5 +1,7 @@
 # Task 006: Generate Query Families Instead Of Ad Hoc Variants
 
+Status: Done
+
 ## Objective
 
 Refactor query expansion so each variation has a purpose and label rather than being a loose string permutation.

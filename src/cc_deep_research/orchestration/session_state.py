@@ -9,6 +9,7 @@ from cc_deep_research.models import (
     AnalysisResult,
     IterationHistoryRecord,
     ResearchDepth,
+    SearchResultItem,
     StrategyResult,
     ValidationResult,
 )
@@ -57,6 +58,7 @@ class OrchestratorSessionState:
         self,
         *,
         depth: ResearchDepth,
+        sources: list[SearchResultItem],
         strategy: StrategyResult,
         analysis: AnalysisResult,
         validation: ValidationResult | None,
@@ -79,9 +81,12 @@ class OrchestratorSessionState:
         if deep_analysis_reason:
             self.note_execution_degradation(deep_analysis_reason)
 
+        analysis_payload = analysis.model_dump(mode="python")
+        analysis_payload["source_provenance"] = _summarize_source_provenance(sources)
+
         return {
             "strategy": strategy.model_dump(mode="python"),
-            "analysis": analysis.model_dump(mode="python"),
+            "analysis": analysis_payload,
             "validation": validation.model_dump(mode="python") if validation else {},
             "iteration_history": [
                 record.model_dump(mode="python") for record in iteration_history
@@ -99,3 +104,31 @@ class OrchestratorSessionState:
                 "reason": deep_analysis_reason,
             },
         }
+
+
+def _summarize_source_provenance(sources: list[SearchResultItem]) -> dict[str, Any]:
+    """Build a compact provenance summary for persisted session metadata."""
+    queries: list[str] = []
+    families: list[str] = []
+    family_counts: dict[str, int] = {}
+    sources_with_provenance = 0
+    multi_query_sources = 0
+
+    for source in sources:
+        if not source.query_provenance:
+            continue
+        sources_with_provenance += 1
+        if len(source.query_provenance) > 1:
+            multi_query_sources += 1
+        for entry in source.query_provenance:
+            queries.append(entry.query)
+            families.append(entry.family)
+            family_counts[entry.family] = family_counts.get(entry.family, 0) + 1
+
+    return {
+        "sources_with_provenance": sources_with_provenance,
+        "multi_query_sources": multi_query_sources,
+        "queries": list(dict.fromkeys(queries)),
+        "families": list(dict.fromkeys(families)),
+        "family_counts": family_counts,
+    }
