@@ -105,7 +105,7 @@ class ResearchExecutionService:
                 phase_key="source_collection",
                 description="Collecting sources from providers",
                 operation=lambda: collect_sources(
-                    queries=queries,
+                    query_families=strategy.strategy.query_families,
                     depth=depth,
                     min_sources=min_sources,
                 ),

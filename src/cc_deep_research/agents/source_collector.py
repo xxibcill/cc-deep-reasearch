@@ -12,9 +12,9 @@ import time
 
 from cc_deep_research.aggregation import ResultAggregator
 from cc_deep_research.config import Config
-from cc_deep_research.models import SearchOptions, SearchResultItem
+from cc_deep_research.models import QueryFamily, SearchOptions, SearchResult, SearchResultItem
 from cc_deep_research.monitoring import ResearchMonitor
-from cc_deep_research.providers import SearchProvider
+from cc_deep_research.providers import SearchProvider, resolve_provider_specs
 from cc_deep_research.providers.tavily import TavilySearchProvider
 
 
@@ -53,26 +53,30 @@ class SourceCollectorAgent:
         self._providers = []
         self._provider_warnings = []
 
-        configured_providers = self._config.search.providers or ["tavily"]
-
-        for provider_name in configured_providers:
-            if provider_name == "tavily":
-                self._initialize_tavily_provider()
+        for provider_spec in resolve_provider_specs(self._config):
+            if provider_spec.provider_type == "tavily":
+                self._initialize_tavily_provider(provider_spec.provider_name, provider_spec.strategy)
                 continue
 
-            if provider_name == "claude":
+            if provider_spec.provider_type == "claude":
                 self._provider_warnings.append(
                     "Provider 'claude' is selected but no Claude search provider is implemented yet."
                 )
                 continue
 
-            self._provider_warnings.append(f"Provider '{provider_name}' is not supported.")
+            self._provider_warnings.append(
+                f"Provider '{provider_spec.configured_name}' is not supported."
+            )
 
-    def _initialize_tavily_provider(self) -> None:
+    def _initialize_tavily_provider(
+        self,
+        provider_name: str,
+        strategy: str | None,
+    ) -> None:
         """Initialize the Tavily provider when credentials are available."""
         if not self._config.tavily.api_keys:
             self._provider_warnings.append(
-                "Provider 'tavily' is selected but no Tavily API keys are configured."
+                f"Provider '{provider_name}' is selected but no Tavily API keys are configured."
             )
             return
 
@@ -82,6 +86,8 @@ class SourceCollectorAgent:
         provider = TavilySearchProvider(
             api_key=key_manager.get_available_key(),
             max_results=self._config.tavily.max_results,
+            provider_name=provider_name,
+            strategy=strategy or "auto",
         )
         self._providers.append(provider)
 
@@ -89,6 +95,7 @@ class SourceCollectorAgent:
         self,
         query: str,
         options: SearchOptions | None = None,
+        query_family: QueryFamily | None = None,
     ) -> list[SearchResultItem]:
         """Collect sources for a given query.
 
@@ -97,16 +104,14 @@ class SourceCollectorAgent:
             options: Search options (max_results, depth, etc.).
 
         Returns:
-            List of search result items from all providers.
-
-        Raises:
-            SourceCollectionError: If collection fails completely.
+            List of search result items from all providers. Returns an empty
+            list when no configured provider can be used or all searches fail.
         """
         if not self._providers:
             await self.initialize_providers()
 
         if not self._providers:
-            raise SourceCollectionError(self._build_unavailable_message())
+            return []
 
         aggregator = ResultAggregator(
             deduplicate=True,
@@ -115,16 +120,30 @@ class SourceCollectorAgent:
         )
 
         # Execute searches in parallel
-        tasks = [self._search_provider(provider, query, options) for provider in self._providers]
+        effective_family = query_family or QueryFamily(query=query)
+        tasks = [
+            self._search_provider(
+                provider,
+                query,
+                options,
+                query_family=effective_family,
+            )
+            for provider in self._providers
+        ]
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Process results
+        successful_results = 0
         for result in results:
             if isinstance(result, Exception):
                 # Log error but continue with other providers
                 continue
+            successful_results += 1
             aggregator.add_result(result)  # type: ignore[arg-type]
+
+        if successful_results == 0:
+            self._provider_warnings.append(self._build_all_failed_message(query))
 
         return aggregator.get_aggregated()
 
@@ -132,6 +151,7 @@ class SourceCollectorAgent:
         self,
         queries: list[str],
         options: SearchOptions | None = None,
+        query_families: list[QueryFamily] | None = None,
     ) -> list[SearchResultItem]:
         """Collect sources for multiple queries.
 
@@ -140,13 +160,14 @@ class SourceCollectorAgent:
             options: Search options.
 
         Returns:
-            Aggregated list of search result items.
+            Aggregated list of search result items. Returns an empty list when
+            no configured provider can be used or all searches fail.
         """
         if not self._providers:
             await self.initialize_providers()
 
         if not self._providers:
-            raise SourceCollectionError(self._build_unavailable_message())
+            return []
 
         aggregator = ResultAggregator(
             deduplicate=True,
@@ -156,16 +177,28 @@ class SourceCollectorAgent:
 
         # Execute all queries in parallel
         all_tasks = []
-        for query in queries:
+        for family in self._resolve_query_families(queries, query_families):
             for provider in self._providers:
-                all_tasks.append(self._search_provider(provider, query, options))
+                all_tasks.append(
+                    self._search_provider(
+                        provider,
+                        family.query,
+                        options,
+                        query_family=family,
+                    )
+                )
 
         results = await asyncio.gather(*all_tasks, return_exceptions=True)
 
         # Process results
+        successful_results = 0
         for result in results:
             if not isinstance(result, Exception):
+                successful_results += 1
                 aggregator.add_result(result)  # type: ignore[arg-type]
+
+        if successful_results == 0:
+            self._provider_warnings.append(self._build_all_failed_message(", ".join(queries)))
 
         return aggregator.get_aggregated()
 
@@ -193,6 +226,8 @@ class SourceCollectorAgent:
         provider: SearchProvider,
         query: str,
         options: SearchOptions | None,
+        *,
+        query_family: QueryFamily,
     ) -> object:
         """Execute one provider search and emit telemetry for visibility."""
         start_time = time.time()
@@ -207,6 +242,7 @@ class SourceCollectorAgent:
 
         try:
             result = await provider.search(query, options)
+            result = self._attach_query_provenance(result, query_family)
             duration_ms = int((time.time() - start_time) * 1000)
             if self._monitor:
                 self._monitor.record_search_query(
@@ -244,12 +280,49 @@ class SourceCollectorAgent:
                 )
             return exc
 
+    def _attach_query_provenance(
+        self,
+        result: SearchResult,
+        query_family: QueryFamily,
+    ) -> SearchResult:
+        """Attach query provenance to all items returned for one query variation."""
+        annotated_results: list[SearchResultItem] = []
+        for item in result.results:
+            annotated = item.model_copy(deep=True)
+            annotated.add_query_provenance(
+                query=query_family.query,
+                family=query_family.family,
+                intent_tags=list(query_family.intent_tags),
+            )
+            annotated_results.append(annotated)
+        return result.model_copy(update={"results": annotated_results}, deep=True)
+
+    def _resolve_query_families(
+        self,
+        queries: list[str],
+        query_families: list[QueryFamily] | None,
+    ) -> list[QueryFamily]:
+        """Return one query-family record for each query in collection order."""
+        if not query_families:
+            return [QueryFamily(query=query) for query in queries]
+
+        families_by_query = {family.query: family for family in query_families}
+        return [families_by_query.get(query, QueryFamily(query=query)) for query in queries]
+
     def _build_unavailable_message(self) -> str:
         """Build a useful error message for unavailable providers."""
         if self._provider_warnings:
             warning_text = " ".join(self._provider_warnings)
             return f"No search providers available. {warning_text}"
         return "No search providers available. Please configure at least one supported provider."
+
+    def _build_all_failed_message(self, query: str) -> str:
+        """Build a warning when all initialized providers fail a search."""
+        provider_names = ", ".join(self.get_available_providers()) or "configured providers"
+        return (
+            f"All initialized providers failed for query '{query}'. "
+            f"Continuing with an empty result set from: {provider_names}."
+        )
 
 
 class SourceCollectionError(Exception):

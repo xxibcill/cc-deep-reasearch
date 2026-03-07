@@ -1,5 +1,7 @@
 # Task 008: Add A Second Retrieval Path
 
+Status: Done
+
 ## Objective
 
 Reduce dependence on a single retrieval path by adding either a second provider or a richer alternative Tavily strategy mode behind the provider abstraction.

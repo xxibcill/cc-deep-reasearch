@@ -7,6 +7,7 @@ import pytest
 from cc_deep_research.models import (
     APIKey,
     CrossReferenceClaim,
+    QueryProvenance,
     QualityScore,
     ResearchDepth,
     ResearchSession,
@@ -62,6 +63,50 @@ class TestSearchResultItem:
         data = item.model_dump()
         assert data["url"] == "https://example.com"
         assert data["title"] == "Test"
+
+    def test_search_result_item_normalizes_query_provenance(self) -> None:
+        """Test query provenance is synchronized into source metadata."""
+        item = SearchResultItem(
+            url="https://example.com",
+            query_provenance=[
+                QueryProvenance(
+                    query="market structure official guidance",
+                    family="primary-source",
+                    intent_tags=["primary-source", "evidence"],
+                )
+            ],
+        )
+
+        assert item.source_metadata["query"] == "market structure official guidance"
+        assert item.source_metadata["query_family"] == "primary-source"
+        assert item.source_metadata["queries"] == ["market structure official guidance"]
+        assert item.source_metadata["query_families"] == ["primary-source"]
+
+    def test_search_result_item_loads_query_provenance_from_metadata(self) -> None:
+        """Test legacy metadata provenance is normalized to typed entries."""
+        item = SearchResultItem(
+            url="https://example.com",
+            source_metadata={
+                "query_provenance": [
+                    {
+                        "query": "market structure",
+                        "family": "baseline",
+                        "intent_tags": ["baseline", "informational"],
+                    },
+                    {
+                        "query": "market structure official guidance",
+                        "family": "primary-source",
+                        "intent_tags": ["primary-source", "evidence"],
+                    },
+                ]
+            },
+        )
+
+        assert [entry.family for entry in item.query_provenance] == [
+            "baseline",
+            "primary-source",
+        ]
+        assert item.source_metadata["query_families"] == ["baseline", "primary-source"]
 
     def test_search_result_item_score_validation(self) -> None:
         """Test score must be between 0 and 1."""

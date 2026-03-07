@@ -46,6 +46,12 @@ class TestSearchConfig:
         assert config.mode == SearchMode.TAVILY_PRIMARY
         assert config.depth == ResearchDepth.QUICK
 
+    def test_provider_names_are_normalized_and_deduplicated(self) -> None:
+        """Provider names should be normalized for explicit config selection."""
+        config = SearchConfig(providers=[" Tavily ", "tavily_basic", "TAVILY"])
+
+        assert config.providers == ["tavily", "tavily_basic"]
+
 
 class TestTavilyConfig:
     """Tests for TavilyConfig model."""

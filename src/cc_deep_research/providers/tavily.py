@@ -27,6 +27,8 @@ class TavilySearchProvider(SearchProvider):
         api_key: str,
         max_results: int = 10,
         timeout: float = 30.0,
+        provider_name: str = "tavily",
+        strategy: str = "auto",
     ) -> None:
         """Initialize Tavily search provider.
 
@@ -38,6 +40,8 @@ class TavilySearchProvider(SearchProvider):
         self._api_key = api_key
         self._max_results = max_results
         self._timeout = timeout
+        self._provider_name = provider_name
+        self._strategy = strategy
         self._client = httpx.AsyncClient(timeout=timeout)
 
     async def search(self, query: str, options: SearchOptions | None = None) -> SearchResult:
@@ -95,6 +99,7 @@ class TavilySearchProvider(SearchProvider):
                 metadata={
                     "response_id": data.get("response_id"),
                     "images": data.get("images", []),
+                    "strategy": self._resolve_search_depth(options),
                 },
                 execution_time_ms=execution_time_ms,
             )
@@ -136,8 +141,14 @@ class TavilySearchProvider(SearchProvider):
             "query": query,
             "max_results": options.max_results,
             "include_raw_content": options.include_raw_content,
-            "search_depth": "advanced" if options.search_depth.value == "deep" else "basic",
+            "search_depth": self._resolve_search_depth(options),
         }
+
+    def _resolve_search_depth(self, options: SearchOptions) -> str:
+        """Resolve the Tavily search depth for the current request."""
+        if self._strategy in {"advanced", "basic"}:
+            return self._strategy
+        return "advanced" if options.search_depth.value == "deep" else "basic"
 
     def _check_response_errors(self, response: httpx.Response, query: str) -> None:
         """Check response for errors and raise appropriate exceptions.
@@ -211,7 +222,7 @@ class TavilySearchProvider(SearchProvider):
         Returns:
             "tavily"
         """
-        return "tavily"
+        return self._provider_name
 
     async def close(self) -> None:
         """Close the HTTP client."""

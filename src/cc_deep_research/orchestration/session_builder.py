@@ -44,6 +44,7 @@ class SessionBuilder:
             completed_at=datetime.utcnow(),
             metadata=build_metadata(
                 depth=depth,
+                sources=sources,
                 strategy=strategy,
                 analysis=analysis,
                 validation=validation,

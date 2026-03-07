@@ -235,6 +235,9 @@ def _serialize_source(source: SearchResultItem) -> dict[str, Any]:
         "content": source.content,
         "score": source.score,
         "source_metadata": source.source_metadata,
+        "query_provenance": [
+            entry.model_dump(mode="python") for entry in source.query_provenance
+        ],
     }
 
 
@@ -298,6 +301,7 @@ def _deserialize_source(data: dict[str, Any]) -> SearchResultItem:
         content=data.get("content"),
         score=data.get("score", 0.0),
         source_metadata=data.get("source_metadata", {}),
+        query_provenance=data.get("query_provenance", []),
     )
 
 

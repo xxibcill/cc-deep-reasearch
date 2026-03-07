@@ -4,13 +4,17 @@ from typing import Any
 
 import pytest
 
-from cc_deep_research.models import SearchOptions, SearchResult, SearchResultItem
+from cc_deep_research.agents.source_collector import SourceCollectorAgent
+from cc_deep_research.aggregation import deduplicate_by_url
+from cc_deep_research.config import Config
+from cc_deep_research.models import SearchMode, SearchOptions, SearchResult, SearchResultItem
 from cc_deep_research.providers import (
     AuthenticationError,
     NetworkError,
     RateLimitError,
     SearchProvider,
     SearchProviderError,
+    resolve_provider_specs,
 )
 
 
@@ -301,3 +305,128 @@ class TestSearchProviderPolymorphism:
         # Test get_provider_name returns string
         name = provider.get_provider_name()
         assert isinstance(name, str)
+
+
+class TestProviderResolution:
+    """Tests for config-driven provider selection."""
+
+    def test_resolve_provider_specs_expands_hybrid_mode(self) -> None:
+        config = Config()
+        config.search.mode = SearchMode.HYBRID_PARALLEL
+        config.search.providers = ["tavily"]
+
+        specs = resolve_provider_specs(config)
+
+        assert [spec.provider_name for spec in specs] == ["tavily", "tavily_basic"]
+
+    def test_resolve_provider_specs_preserves_explicit_basic_provider(self) -> None:
+        config = Config()
+        config.search.mode = SearchMode.TAVILY_PRIMARY
+        config.search.providers = ["tavily_basic"]
+
+        specs = resolve_provider_specs(config)
+
+        assert [spec.provider_name for spec in specs] == ["tavily_basic"]
+
+
+class TestSourceCollectorDegradation:
+    """Tests for graceful fallback behavior in source collection."""
+
+    @pytest.mark.asyncio
+    async def test_initialize_providers_adds_basic_tavily_in_hybrid_mode(self) -> None:
+        config = Config()
+        config.search.mode = SearchMode.HYBRID_PARALLEL
+        config.search.providers = ["tavily"]
+        config.tavily.api_keys = ["test-key"]
+
+        collector = SourceCollectorAgent(config)
+        await collector.initialize_providers()
+
+        assert collector.get_available_providers() == ["tavily", "tavily_basic"]
+        await collector.close_providers()
+
+    @pytest.mark.asyncio
+    async def test_collect_sources_returns_empty_when_no_provider_is_available(self) -> None:
+        config = Config()
+        config.search.providers = ["tavily"]
+
+        collector = SourceCollectorAgent(config)
+
+        sources = await collector.collect_sources("test query", SearchOptions(max_results=2))
+
+        assert sources == []
+        assert collector.get_provider_warnings() == [
+            "Provider 'tavily' is selected but no Tavily API keys are configured."
+        ]
+
+    @pytest.mark.asyncio
+    async def test_collect_sources_returns_empty_when_all_providers_fail(self) -> None:
+        config = Config()
+        collector = SourceCollectorAgent(config)
+        collector._providers = [
+            MockSearchProvider(
+                name="provider_a",
+                should_fail=True,
+                fail_with=SearchProviderError("boom", "provider_a", "test query"),
+            ),
+            MockSearchProvider(
+                name="provider_b",
+                should_fail=True,
+                fail_with=NetworkError("down", "provider_b", "test query"),
+            ),
+        ]
+
+        sources = await collector.collect_sources("test query", SearchOptions(max_results=2))
+
+        assert sources == []
+        assert collector.get_provider_warnings() == [
+            "All initialized providers failed for query 'test query'. Continuing with an empty result set from: provider_a, provider_b."
+        ]
+
+
+class TestSourceProvenanceAggregation:
+    """Tests for provenance preservation during aggregation."""
+
+    def test_deduplicate_by_url_merges_query_provenance(self) -> None:
+        """Duplicate URLs from different query families should retain both origins."""
+        baseline = SearchResultItem(
+            url="https://example.com/shared",
+            title="Shared result",
+            score=0.6,
+            source_metadata={"provider": "mock"},
+            query_provenance=[
+                {
+                    "query": "market structure",
+                    "family": "baseline",
+                    "intent_tags": ["baseline", "informational"],
+                }
+            ],
+        )
+        primary_source = SearchResultItem(
+            url="https://example.com/shared/",
+            title="Shared result better",
+            snippet="Longer snippet",
+            score=0.9,
+            query_provenance=[
+                {
+                    "query": "market structure official guidance",
+                    "family": "primary-source",
+                    "intent_tags": ["primary-source", "evidence"],
+                }
+            ],
+        )
+
+        deduplicated = deduplicate_by_url([baseline, primary_source])
+
+        assert len(deduplicated) == 1
+        merged = deduplicated[0]
+        assert merged.score == 0.9
+        assert merged.title == "Shared result better"
+        assert [entry.family for entry in merged.query_provenance] == [
+            "primary-source",
+            "baseline",
+        ]
+        assert merged.source_metadata["query_families"] == [
+            "primary-source",
+            "baseline",
+        ]

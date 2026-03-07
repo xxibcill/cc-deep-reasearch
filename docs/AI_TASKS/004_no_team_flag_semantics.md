@@ -1,5 +1,7 @@
 # Task 004: Clarify `--no-team` Behavior
 
+Status: Done
+
 ## Objective
 
 Make `--no-team` mean one precise thing in code, docs, and tests.
