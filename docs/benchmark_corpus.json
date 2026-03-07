@@ -1,0 +1,46 @@
+{
+  "version": "1.0",
+  "description": "Stable benchmark prompts for evaluating research workflow changes against a fixed corpus.",
+  "cases": [
+    {
+      "case_id": "simple-capital-australia",
+      "query": "What is the capital of Australia?",
+      "category": "simple_factual",
+      "rationale": "Simple factual lookup used to catch regressions in basic retrieval and concise synthesis.",
+      "date_sensitive": false,
+      "tags": ["baseline", "factual"]
+    },
+    {
+      "case_id": "comparison-batteries-lfp-nmc",
+      "query": "Compare LFP and NMC batteries for electric vehicles in terms of cost, safety, and energy density.",
+      "category": "comparison",
+      "rationale": "Comparison query that should produce structured tradeoffs instead of isolated facts.",
+      "date_sensitive": false,
+      "tags": ["comparison", "technology"]
+    },
+    {
+      "case_id": "time-sensitive-ai-chip-rules",
+      "query": "What are the latest changes to U.S. export restrictions on advanced AI chips?",
+      "category": "time_sensitive",
+      "rationale": "Time-sensitive policy question for measuring freshness handling and explicit recency awareness.",
+      "date_sensitive": true,
+      "tags": ["policy", "freshness", "recency"]
+    },
+    {
+      "case_id": "science-health-creatine-cognition",
+      "query": "What does current evidence say about creatine supplementation and cognitive performance in adults?",
+      "category": "evidence_heavy_science_health",
+      "rationale": "Evidence-heavy science and health case that benefits from study quality, uncertainty, and evidence weighting.",
+      "date_sensitive": false,
+      "tags": ["science", "health", "evidence"]
+    },
+    {
+      "case_id": "market-policy-carbon-border",
+      "query": "How could the EU Carbon Border Adjustment Mechanism affect steel exporters in Southeast Asia?",
+      "category": "market_policy",
+      "rationale": "Market and policy query that requires combining regulatory detail with cross-border commercial effects.",
+      "date_sensitive": false,
+      "tags": ["market", "policy", "trade"]
+    }
+  ]
+}

@@ -87,6 +87,11 @@ class SourceCollectionService:
             agent_id="collector",
             query_count=len(queries),
         )
+        self._monitor.record_source_provenance(
+            query_families=query_families,
+            sources=sources,
+            stage="initial_collection",
+        )
 
         hydrated_sources = await self.fetch_content_for_top_sources(sources=sources, depth=depth)
         sources_with_content = sum(
@@ -217,6 +222,11 @@ class SourceCollectionService:
         aggregated = aggregator.get_aggregated()
         self._session_state.mark_parallel_collection_used()
         self._monitor.log(f"Collected {len(aggregated)} unique sources (parallel)")
+        self._monitor.record_source_provenance(
+            query_families=query_families,
+            sources=aggregated,
+            stage="parallel_collection",
+        )
         return await self.fetch_content_for_top_sources(sources=aggregated, depth=depth)
 
     def merge_sources(

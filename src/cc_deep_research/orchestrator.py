@@ -87,6 +87,7 @@ class TeamResearchOrchestrator:
             num_researchers=self._num_researchers,
         )
         self._execution = ResearchExecutionService(
+            config=config,
             monitor=self._monitor,
             phase_runner=self._phase_runner,
             session_builder=self._session_builder,
@@ -179,7 +180,6 @@ class TeamResearchOrchestrator:
         min_sources: int | None,
     ) -> list[SearchResultItem]:
         """Collect sources using the configured execution mode."""
-        queries = [family.query for family in query_families]
         if self._parallel_mode and self._agent_pool:
             try:
                 return await self._phase_parallel_research(

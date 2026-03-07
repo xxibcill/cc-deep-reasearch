@@ -12,6 +12,18 @@ from typing import Any
 import click
 
 from cc_deep_research.config import get_default_config_path
+from cc_deep_research.models import QueryFamily, SearchResultItem
+
+STOP_REASON_SUCCESS = "success"
+STOP_REASON_LIMIT_REACHED = "limit_reached"
+STOP_REASON_LOW_QUALITY = "low_quality"
+STOP_REASON_DEGRADED_EXECUTION = "degraded_execution"
+KNOWN_STOP_REASONS = {
+    STOP_REASON_SUCCESS,
+    STOP_REASON_LIMIT_REACHED,
+    STOP_REASON_LOW_QUALITY,
+    STOP_REASON_DEGRADED_EXECUTION,
+}
 
 
 @dataclass
@@ -61,6 +73,14 @@ class ResearchMonitor:
         self._session_dir: Path | None = None
         self._events_path: Path | None = None
         self._summary_path: Path | None = None
+
+    @staticmethod
+    def normalize_stop_reason(stop_reason: str | None) -> str:
+        """Return a supported stop-reason label."""
+        normalized = (stop_reason or STOP_REASON_SUCCESS).strip().lower().replace("-", "_")
+        if normalized in KNOWN_STOP_REASONS:
+            return normalized
+        return STOP_REASON_DEGRADED_EXECUTION
 
     def _get_timestamp(self) -> str:
         """Get formatted timestamp for log messages."""
@@ -252,6 +272,147 @@ class ResearchMonitor:
             metadata={"query": query, "result_count": result_count, **metadata},
         )
 
+    def record_query_variations(
+        self,
+        *,
+        original_query: str,
+        query_families: list[QueryFamily],
+        strategy_intent: str | None = None,
+    ) -> None:
+        """Record the generated query-family set for a session."""
+        self.emit_event(
+            event_type="query.variations",
+            category="planning",
+            name="query-expansion",
+            status="recorded",
+            metadata={
+                "original_query": original_query,
+                "variation_count": len(query_families),
+                "strategy_intent": strategy_intent,
+                "query_families": [
+                    {
+                        "query": family.query,
+                        "family": family.family,
+                        "intent_tags": list(family.intent_tags),
+                    }
+                    for family in query_families
+                ],
+            },
+        )
+
+    def record_analysis_mode(
+        self,
+        *,
+        depth: str,
+        mode: str,
+        deep_analysis_enabled: bool,
+    ) -> None:
+        """Record the selected analysis mode for the run."""
+        self.emit_event(
+            event_type="analysis.mode_selected",
+            category="analysis",
+            name=mode,
+            status="selected",
+            metadata={
+                "depth": depth,
+                "mode": mode,
+                "deep_analysis_enabled": deep_analysis_enabled,
+            },
+        )
+
+    def record_source_provenance(
+        self,
+        *,
+        query_families: list[QueryFamily],
+        sources: list[SearchResultItem],
+        stage: str,
+    ) -> None:
+        """Record which query families produced retrievable sources."""
+        counts_by_family = {family.family: 0 for family in query_families}
+        counts_by_query = {family.query: 0 for family in query_families}
+        domains_by_family = {family.family: set() for family in query_families}
+
+        for source in sources:
+            for entry in source.query_provenance:
+                counts_by_family[entry.family] = counts_by_family.get(entry.family, 0) + 1
+                counts_by_query[entry.query] = counts_by_query.get(entry.query, 0) + 1
+                domain = source.url.split("/")[2].removeprefix("www.") if "://" in source.url else ""
+                if domain:
+                    domains_by_family.setdefault(entry.family, set()).add(domain)
+
+        self.emit_event(
+            event_type="source.provenance",
+            category="retrieval",
+            name=stage,
+            status="recorded",
+            metadata={
+                "query_count": len(query_families),
+                "source_count": len(sources),
+                "families": [
+                    {
+                        "query": family.query,
+                        "family": family.family,
+                        "intent_tags": list(family.intent_tags),
+                        "source_count": counts_by_query.get(family.query, 0),
+                        "unique_domains": sorted(domains_by_family.get(family.family, set())),
+                    }
+                    for family in query_families
+                ],
+                "family_totals": counts_by_family,
+            },
+        )
+
+    def record_follow_up_decision(
+        self,
+        *,
+        iteration: int,
+        reason: str,
+        follow_up_queries: list[str],
+        failure_modes: list[str] | None = None,
+        quality_score: float | None = None,
+    ) -> None:
+        """Record why the workflow did or did not schedule follow-up work."""
+        self.emit_event(
+            event_type="follow_up.decision",
+            category="iteration",
+            name=f"iteration-{iteration}",
+            status="recorded",
+            metadata={
+                "iteration": iteration,
+                "reason": reason,
+                "follow_up_count": len(follow_up_queries),
+                "follow_up_queries": list(follow_up_queries),
+                "failure_modes": list(failure_modes or []),
+                "quality_score": quality_score,
+            },
+        )
+
+    def record_iteration_stop(
+        self,
+        *,
+        iteration: int,
+        stop_reason: str,
+        detail: str,
+        quality_score: float | None = None,
+        follow_up_queries: list[str] | None = None,
+    ) -> str:
+        """Record a standardized iterative stop reason."""
+        normalized = self.normalize_stop_reason(stop_reason)
+        self.emit_event(
+            event_type="iteration.stop",
+            category="iteration",
+            name=normalized,
+            status=normalized,
+            metadata={
+                "iteration": iteration,
+                "stop_reason": normalized,
+                "detail": detail,
+                "quality_score": quality_score,
+                "follow_up_queries": list(follow_up_queries or []),
+            },
+        )
+        return normalized
+
     def record_tool_call(
         self,
         tool_name: str,
@@ -415,11 +576,14 @@ class ResearchMonitor:
         providers: list[str],
         total_time_ms: int,
         status: str = "completed",
+        stop_reason: str = STOP_REASON_SUCCESS,
     ) -> dict[str, Any]:
         """Write summary metrics for the active session and return them."""
+        normalized_stop_reason = self.normalize_stop_reason(stop_reason)
         summary = {
             "session_id": self._session_id,
             "status": status,
+            "stop_reason": normalized_stop_reason,
             "total_sources": total_sources,
             "providers": providers,
             "total_time_ms": total_time_ms,
@@ -465,6 +629,11 @@ class ResearchMonitor:
 
 
 __all__ = [
+    "KNOWN_STOP_REASONS",
     "MonitorEvent",
     "ResearchMonitor",
+    "STOP_REASON_DEGRADED_EXECUTION",
+    "STOP_REASON_LIMIT_REACHED",
+    "STOP_REASON_LOW_QUALITY",
+    "STOP_REASON_SUCCESS",
 ]

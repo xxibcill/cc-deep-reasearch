@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from cc_deep_research.models import QueryFamily, SearchResultItem
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.telemetry import (
     ingest_telemetry_to_duckdb,
@@ -33,6 +34,30 @@ def test_monitor_persists_session_logs(tmp_path):
         completion_tokens=50,
         duration_ms=250,
     )
+    monitor.record_query_variations(
+        original_query="test query",
+        query_families=[QueryFamily(query="q1", family="baseline", intent_tags=["baseline"])],
+        strategy_intent="informational",
+    )
+    source = SearchResultItem(url="https://agency.gov/report", title="Report", score=1.0)
+    source.add_query_provenance(query="q1", family="baseline")
+    monitor.record_source_provenance(
+        query_families=[QueryFamily(query="q1", family="baseline", intent_tags=["baseline"])],
+        sources=[source],
+        stage="initial_collection",
+    )
+    monitor.record_follow_up_decision(
+        iteration=1,
+        reason="quality_sufficient",
+        follow_up_queries=[],
+        quality_score=0.9,
+    )
+    monitor.record_iteration_stop(
+        iteration=1,
+        stop_reason="success",
+        detail="No follow-up queries were required",
+        quality_score=0.9,
+    )
 
     summary = monitor.finalize_session(
         total_sources=3,
@@ -52,11 +77,15 @@ def test_monitor_persists_session_logs(tmp_path):
     assert any(e["event_type"] == "session.started" for e in lines)
     assert any(e["event_type"] == "search.query" for e in lines)
     assert any(e["event_type"] == "llm.usage" for e in lines)
+    assert any(e["event_type"] == "query.variations" for e in lines)
+    assert any(e["event_type"] == "source.provenance" for e in lines)
+    assert any(e["event_type"] == "iteration.stop" for e in lines)
 
     assert summary["instances_spawned"] == 1
     assert summary["search_queries"] == 1
     assert summary["tool_calls"] >= 2
     assert summary["llm_total_tokens"] == 150
+    assert summary["stop_reason"] == "success"
 
 
 def test_ingest_and_query_dashboard_data(tmp_path):

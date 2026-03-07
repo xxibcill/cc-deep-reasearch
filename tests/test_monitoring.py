@@ -3,7 +3,12 @@
 import re
 from unittest.mock import patch
 
-from cc_deep_research.monitoring import MonitorEvent, ResearchMonitor
+from cc_deep_research.models import QueryFamily, SearchResultItem
+from cc_deep_research.monitoring import (
+    STOP_REASON_DEGRADED_EXECUTION,
+    MonitorEvent,
+    ResearchMonitor,
+)
 
 
 class TestResearchMonitor:
@@ -229,6 +234,105 @@ class TestResearchMonitor:
         assert summary["llm_prompt_tokens"] == 10
         assert summary["llm_completion_tokens"] == 5
         assert summary["llm_total_tokens"] == 15
+
+    def test_record_query_variations_and_source_provenance(self):
+        """Query families and provenance summaries should be emitted in telemetry."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("session-123", "test query", "standard")
+        families = [
+            QueryFamily(query="baseline query", family="baseline", intent_tags=["baseline"]),
+            QueryFamily(query="official query", family="primary-source", intent_tags=["official"]),
+        ]
+        sources = [
+            SearchResultItem(
+                url="https://agency.gov/report",
+                title="Report",
+                score=1.0,
+            ),
+            SearchResultItem(
+                url="https://example.com/analysis",
+                title="Analysis",
+                score=0.8,
+            ),
+        ]
+        sources[0].add_query_provenance(query="official query", family="primary-source")
+        sources[1].add_query_provenance(query="baseline query", family="baseline")
+
+        monitor.record_query_variations(
+            original_query="test query",
+            query_families=families,
+            strategy_intent="informational",
+        )
+        monitor.record_source_provenance(
+            query_families=families,
+            sources=sources,
+            stage="initial_collection",
+        )
+
+        variation_event = next(
+            event for event in monitor._telemetry_events if event["event_type"] == "query.variations"
+        )
+        provenance_event = next(
+            event for event in monitor._telemetry_events if event["event_type"] == "source.provenance"
+        )
+
+        assert variation_event["metadata"]["variation_count"] == 2
+        assert provenance_event["metadata"]["source_count"] == 2
+        assert provenance_event["metadata"]["family_totals"]["baseline"] == 1
+        assert provenance_event["metadata"]["family_totals"]["primary-source"] == 1
+
+    def test_record_iteration_stop_normalizes_unknown_reason(self):
+        """Unknown stop reasons should fall back to degraded_execution."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("session-123", "test query", "standard")
+
+        stop_reason = monitor.record_iteration_stop(
+            iteration=2,
+            stop_reason="unexpected_reason",
+            detail="something odd happened",
+        )
+        summary = monitor.finalize_session(
+            total_sources=0,
+            providers=[],
+            total_time_ms=100,
+            stop_reason=stop_reason,
+        )
+
+        assert stop_reason == STOP_REASON_DEGRADED_EXECUTION
+        assert summary["stop_reason"] == STOP_REASON_DEGRADED_EXECUTION
+
+    def test_record_analysis_mode_and_follow_up_decision(self):
+        """Analysis mode and follow-up reason payloads should be explicit."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("session-123", "test query", "deep")
+
+        monitor.record_analysis_mode(
+            depth="deep",
+            mode="deep_multi_pass",
+            deep_analysis_enabled=True,
+        )
+        monitor.record_follow_up_decision(
+            iteration=1,
+            reason="validation_requested_follow_up",
+            follow_up_queries=["test query official guidance"],
+            failure_modes=["weak_primary_sources"],
+            quality_score=0.42,
+        )
+
+        analysis_mode_event = next(
+            event
+            for event in monitor._telemetry_events
+            if event["event_type"] == "analysis.mode_selected"
+        )
+        follow_up_event = next(
+            event
+            for event in monitor._telemetry_events
+            if event["event_type"] == "follow_up.decision"
+        )
+
+        assert analysis_mode_event["metadata"]["mode"] == "deep_multi_pass"
+        assert follow_up_event["metadata"]["reason"] == "validation_requested_follow_up"
+        assert follow_up_event["metadata"]["follow_up_count"] == 1
 
 
 class TestMonitorEvent:
