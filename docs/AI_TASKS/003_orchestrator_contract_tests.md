@@ -1,5 +1,7 @@
 # Task 003: Add Workflow Contract Tests
 
+Status: Done
+
 ## Objective
 
 Create fixture-based orchestrator tests that lock down workflow behavior before larger retrieval and validation changes land.

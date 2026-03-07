@@ -190,6 +190,46 @@ class TestResearchMonitor:
         # No events recorded
         assert len(monitor._events) == 0
 
+    def test_finalize_session_counts_parallel_and_tool_telemetry(self):
+        """Test summary counters include researcher, search, and tool telemetry."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("session-123", "test query", "standard")
+
+        monitor.log_researcher_event("spawned", "task-1")
+        monitor.record_search_query(
+            query="test query",
+            provider="tavily",
+            result_count=3,
+            duration_ms=42,
+            status="success",
+        )
+        monitor.record_tool_call(
+            tool_name="mcp.web_reader",
+            status="success",
+            duration_ms=15,
+        )
+        monitor.record_llm_usage(
+            operation="analysis",
+            model="claude-test",
+            prompt_tokens=10,
+            completion_tokens=5,
+            duration_ms=33,
+            agent_id="analyzer",
+        )
+
+        summary = monitor.finalize_session(
+            total_sources=3,
+            providers=["tavily"],
+            total_time_ms=250,
+        )
+
+        assert summary["instances_spawned"] == 1
+        assert summary["search_queries"] == 1
+        assert summary["tool_calls"] == 2
+        assert summary["llm_prompt_tokens"] == 10
+        assert summary["llm_completion_tokens"] == 5
+        assert summary["llm_total_tokens"] == 15
+
 
 class TestMonitorEvent:
     """Tests for MonitorEvent."""

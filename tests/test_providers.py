@@ -1,4 +1,6 @@
-"""Tests for search provider interface."""
+"""Tests and fixtures for search provider integrations."""
+
+from typing import Any
 
 import pytest
 
@@ -66,6 +68,80 @@ class MockSearchProvider(SearchProvider):
     def set_available(self, available: bool) -> None:
         """Set availability for testing."""
         self._is_available = available
+
+
+def build_search_result_item(
+    suffix: str,
+    *,
+    title: str | None = None,
+    snippet: str | None = None,
+    score: float = 0.9,
+    content: str | None = None,
+    source_metadata: dict[str, Any] | None = None,
+) -> SearchResultItem:
+    """Build a deterministic search result item for contract tests."""
+    return SearchResultItem(
+        url=f"https://example.com/{suffix}",
+        title=title or f"Result for {suffix}",
+        snippet=snippet or f"Snippet for {suffix}",
+        score=score,
+        content=content,
+        source_metadata=source_metadata or {},
+    )
+
+
+class FixtureSearchProvider(SearchProvider):
+    """Deterministic provider fixture for workflow contract tests."""
+
+    def __init__(
+        self,
+        *,
+        name: str = "fixture",
+        results_by_query: dict[str, list[SearchResultItem]] | None = None,
+        available: bool = True,
+        fail_with: Exception | None = None,
+    ) -> None:
+        self._name = name
+        self._results_by_query = results_by_query or {}
+        self._is_available = available
+        self._fail_with = fail_with
+        self.search_calls: list[tuple[str, SearchOptions | None]] = []
+
+    async def search(self, query: str, options: SearchOptions | None = None) -> SearchResult:
+        """Return pre-seeded results or generate stable fallback items."""
+        self.search_calls.append((query, options))
+
+        if self._fail_with is not None:
+            raise self._fail_with
+
+        items = self._results_by_query.get(query)
+        if items is None:
+            max_results = options.max_results if options else 2
+            slug = query.lower().replace(" ", "-")
+            items = [
+                build_search_result_item(
+                    f"{slug}-{index}",
+                    title=f"{query} result {index}",
+                    score=max(0.1, 1.0 - (index * 0.1)),
+                )
+                for index in range(1, max_results + 1)
+            ]
+
+        return SearchResult(
+            query=query,
+            results=[item.model_copy(deep=True) for item in items],
+            provider=self._name,
+            execution_time_ms=25,
+        )
+
+    def get_provider_name(self) -> str:
+        """Return provider name."""
+        return self._name
+
+    @property
+    def is_available(self) -> bool:
+        """Return whether the provider is available."""
+        return self._is_available
 
 
 class TestSearchProviderInterface:
