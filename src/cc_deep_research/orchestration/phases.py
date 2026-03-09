@@ -87,9 +87,11 @@ class PhaseRunner:
                 description="Performing deep multi-pass analysis",
                 operation=lambda: deep_analyze(sources, query, analysis),
             )
-            analysis = analysis.model_copy(
-                update=deep_analysis.model_dump(mode="python", exclude_unset=True)
-            )
+            # Merge deep analysis results, preserving typed nested models
+            merged_data = analysis.model_dump(mode="python")
+            deep_data = deep_analysis.model_dump(mode="python", exclude_unset=True)
+            merged_data.update(deep_data)
+            analysis = AnalysisResult.model_validate(merged_data)
 
         if not strategy.strategy.enable_quality_scoring:
             return analysis, None
