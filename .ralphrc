@@ -20,7 +20,7 @@ CLAUDE_OUTPUT_FORMAT="json"
 # Tool permissions
 # Comma-separated list of allowed tools
 # Safe git subcommands only - broad Bash(git *) allows destructive commands like git clean/git rm (Issue #149)
-ALLOWED_TOOLS="Write,Read,Edit,Bash(git *),Bash(git add *),Bash(git commit *),Bash(git commit -m *),Bash(git diff *),Bash(git log *),Bash(git status),Bash(git status *),Bash(git push *),Bash(git pull *),Bash(git fetch *),Bash(git checkout *),Bash(git branch *),Bash(git stash *),Bash(git merge *),Bash(git tag *),Bash(npm *),Bash(pytest *),Bash(pip *),Bash(pip3 *),Bash(python *),Bash(python3 *),Bash(ruff *),Bash(mypy *),Bash(uv *),Bash(.venv/*),Bash(rm *),Bash(rm -f *),Bash(PYTHONPATH=*),Bash(cd *),Bash(find *),Bash(ls *),Bash(ls -la *),Bash(sed -i * /Users/jjae/Documents/guthib/cc-deep-research/*),Bash(echo *),Skill,Bash(cat <<*)"
+ALLOWED_TOOLS="Write,Read,Edit,Bash(git *),Bash(git add *),Bash(git commit *),Bash(git commit -m *),Bash(git diff *),Bash(git log *),Bash(git status),Bash(git status *),Bash(git push *),Bash(git pull *),Bash(git fetch *),Bash(git checkout *),Bash(git branch *),Bash(git stash *),Bash(git merge *),Bash(git tag *),Bash(npm *),Bash(pytest *),Bash(pip *),Bash(pip3 *),Bash(python *),Bash(python3 *),Bash(ruff *),Bash(mypy *),Bash(uv *),Bash(uv run *),Bash(.venv/*),Bash(rm *),Bash(rm -f *),Bash(PYTHONPATH=*),Bash(RICH_TRACEBACK=1 *),Bash(export RICH_TRACEBACK=1 *),Bash(cd *),Bash(find *),Bash(ls *),Bash(ls -la *),Bash(sed -i * /Users/jjae/Documents/guthib/cc-deep-research/*),Bash(echo *),Bash(rm -f whitetea.md),Bash(rm -f whitetea2.md),Bash(rm -f whitetea3.md),Bash(rm -f whitetea4.md),Bash(rm -f /Users/jjae/Documents/guthib/cc-deep-research/whitetea),Skill,Bash(cat <<*)"
 
 # Session management
 SESSION_CONTINUITY=true
