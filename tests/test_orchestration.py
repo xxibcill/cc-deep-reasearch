@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from cc_deep_research.config import Config
 from cc_deep_research.models import (
     AnalysisFinding,
     AnalysisResult,
@@ -257,9 +258,11 @@ class TestSessionBuilder:
 class TestResearchExecutionService:
     @pytest.mark.asyncio
     async def test_execute_runs_flow_and_finalizes_session(self) -> None:
+        config = Config()
         monitor = ResearchMonitor(enabled=False)
         phase_runner = PhaseRunner(monitor=monitor)
         service = ResearchExecutionService(
+            config=config,
             monitor=monitor,
             phase_runner=phase_runner,
             session_builder=SessionBuilder(),
@@ -301,9 +304,11 @@ class TestResearchExecutionService:
 
     @pytest.mark.asyncio
     async def test_execute_always_calls_shutdown(self) -> None:
+        config = Config()
         monitor = ResearchMonitor(enabled=False)
         phase_runner = PhaseRunner(monitor=monitor)
         service = ResearchExecutionService(
+            config=config,
             monitor=monitor,
             phase_runner=phase_runner,
             session_builder=SessionBuilder(),

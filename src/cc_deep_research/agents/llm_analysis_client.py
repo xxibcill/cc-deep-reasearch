@@ -234,8 +234,6 @@ class LLMAnalysisClient:
             "--output-format",
             "text",
             "--no-session-persistence",
-            "--tools",
-            "",
             prompt,
         ]
 
@@ -257,7 +255,8 @@ class LLMAnalysisClient:
             ) from exc
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError(
-                f"Claude CLI request timed out after {self._timeout_seconds} seconds"
+                f"Claude CLI request timed out after {self._timeout_seconds} seconds. "
+                f"Try increasing claude_cli_timeout_seconds in config."
             ) from exc
 
         duration_ms = int((time.time() - start_time) * 1000)
@@ -265,16 +264,25 @@ class LLMAnalysisClient:
             stderr = (response.stderr or "").strip()
             stdout = (response.stdout or "").strip()
             error_output = stderr or stdout or "unknown Claude CLI error"
+
+            # Check for nested session error
+            if "nested session" in error_output.lower() or "inside another Claude Code session" in error_output.lower():
+                raise RuntimeError(
+                    f"Claude CLI disabled: running inside Claude Code session. "
+                    f"Set ai_integration_method='heuristic' to avoid this error."
+                )
+
             raise RuntimeError(
                 f"Claude CLI request failed for {operation}: {error_output}"
             )
 
+        # Emit usage telemetry (note: token counts are not available from CLI output)
         if self._usage_callback:
             self._usage_callback(
                 operation=operation,
                 model=self._model,
-                prompt_tokens=0,
-                completion_tokens=0,
+                prompt_tokens=0,  # CLI does not provide token counts
+                completion_tokens=0,  # CLI does not provide token counts
                 duration_ms=duration_ms,
             )
         return response.stdout.strip()
