@@ -10,9 +10,13 @@ Supports multiple integration methods:
 - 'api': Uses the Claude Code CLI for deep semantic analysis
 - 'heuristic': Uses pattern matching and heuristics (fast, no API cost)
 - 'hybrid': Tries the Claude Code CLI first, falls back to heuristic
+
+Note: When running inside a Claude Code session (CLAUDECODE env var is set),
+the CLI-based analysis is automatically disabled to avoid nested session errors.
 """
 
 import logging
+import os
 from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.agents.ai_agent_integration import AIAgentIntegration
@@ -61,7 +65,20 @@ class AIAnalysisService:
             self._initialize_llm_client()
 
     def _initialize_llm_client(self) -> None:
-        """Initialize the LLM client for Claude CLI-based analysis."""
+        """Initialize the LLM client for Claude CLI-based analysis.
+
+        Skips initialization if running inside another Claude Code session
+        (detected via CLAUDECODE environment variable) to avoid nested session errors.
+        """
+        # Check if running inside another Claude Code session
+        if os.environ.get("CLAUDECODE"):
+            logger.info(
+                "Running inside Claude Code session (CLAUDECODE=1). "
+                "Skipping CLI-based analysis to avoid nested session errors. "
+                "Using heuristic-based analysis instead."
+            )
+            return
+
         try:
             from cc_deep_research.agents.llm_analysis_client import LLMAnalysisClient
 
