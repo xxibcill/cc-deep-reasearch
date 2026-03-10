@@ -136,7 +136,7 @@ def research(
     )
 
     ui = TerminalUI(enabled=not quiet)
-    research_monitor = ResearchMonitor(enabled=monitor and not quiet)
+    research_monitor = ResearchMonitor(enabled=(monitor or show_timeline) and not quiet)
 
     try:
         from cc_deep_research.models import ResearchDepth

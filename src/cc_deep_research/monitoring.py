@@ -515,6 +515,25 @@ class ResearchMonitor:
             "timeout": "agent.timeout",
         }.get(event_type, "agent.event")
 
+        # Create MonitorEvent for timeline display
+        if self._enabled:
+            current_time = time.time()
+            # For completed events, calculate start_time from duration
+            duration_ms = metadata.get("duration_ms", 0)
+            if duration_ms and event_type == "completed":
+                start_time = current_time - (duration_ms / 1000)
+            else:
+                start_time = current_time
+            event = MonitorEvent(
+                name=f"Researcher {agent_id}",
+                category="parallel",
+                start_time=start_time,
+                end_time=current_time,
+                metadata={"event_type": event_type, **metadata},
+                status=metadata.get("status", "completed" if event_type == "completed" else event_type),
+            )
+            self._events.append(event)
+
         self.emit_event(
             event_type=mapped_type,
             category="agent",
