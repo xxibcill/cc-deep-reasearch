@@ -274,15 +274,25 @@ class FakeDeepAnalyzerAgent:
     def __init__(self) -> None:
         self.calls: list[tuple[list[SearchResultItem], str]] = []
 
-    def deep_analyze(self, sources: list[SearchResultItem], query: str) -> AnalysisResult:
+    def deep_analyze(self, sources: list[SearchResultItem], query: str) -> dict[str, object]:
+        """Return a dict like the real DeepAnalyzerAgent.deep_analyze does."""
         self.calls.append((list(sources), query))
-        return AnalysisResult(
-            themes=["Deep Theme"],
-            analysis_passes=3,
-            source_count=len(sources),
-            analysis_method="multi_pass",
-            deep_analysis_complete=True,
-        )
+        return {
+            "themes": ["Deep Theme"],
+            "themes_detailed": [],
+            "patterns": [],
+            "consensus_points": [],
+            "disagreement_points": [],
+            "cross_reference_claims": [],
+            "gaps": [],
+            "key_findings": [],
+            "implications": [],
+            "comprehensive_synthesis": "",
+            "analysis_passes": 3,
+            "source_count": len(sources),
+            "analysis_method": "multi_pass",
+            "deep_analysis_complete": True,
+        }
 
 
 class FakeValidatorAgent:

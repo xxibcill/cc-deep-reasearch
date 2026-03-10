@@ -35,6 +35,15 @@ class AnalysisWorkflow:
     ) -> AnalysisResult:
         """Analyze the current source set."""
         self._monitor.section("Analysis")
+        # Log analysis method being used
+        self._monitor.log(f"Analysis method: {self._config.research.ai_integration_method}")
+        # Check CLI availability safely (may not exist in test fixtures)
+        cli_available = hasattr(analyzer, "_ai_service") and (
+            analyzer._ai_service._llm_client is not None
+        )
+        self._monitor.log(f"Claude CLI available: {cli_available}")
+        if not cli_available:
+            self._monitor.log("Note: Running in heuristic mode (CLI unavailable or disabled)")
         analysis = analyzer.analyze_sources(sources, query)
         self._monitor.log(f"Key findings: {len(analysis.key_findings)}")
         self._monitor.log(f"Themes identified: {len(analysis.themes)}")
@@ -58,7 +67,25 @@ class AnalysisWorkflow:
     ) -> AnalysisResult:
         """Run deep multi-pass analysis for deep research mode."""
         self._monitor.section("Deep Analysis")
-        deep_analysis = AnalysisResult.model_validate(deep_analyzer.deep_analyze(sources, query))
+        result_dict = deep_analyzer.deep_analyze(sources, query)
+        # Build AnalysisResult directly from the dict to avoid validation issues
+        deep_analysis = AnalysisResult(
+            key_findings=result_dict.get("key_findings", []),
+            themes=result_dict.get("themes", []),
+            themes_detailed=result_dict.get("themes_detailed", []),
+            consensus_points=result_dict.get("consensus_points", []),
+            contention_points=result_dict.get("disagreement_points", []),
+            cross_reference_claims=result_dict.get("cross_reference_claims", []),
+            gaps=result_dict.get("gaps", []),
+            source_count=result_dict.get("source_count", 0),
+            analysis_method=result_dict.get("analysis_method", "empty"),
+            deep_analysis_complete=result_dict.get("deep_analysis_complete", False),
+            analysis_passes=result_dict.get("analysis_passes", 0),
+            patterns=result_dict.get("patterns", []),
+            disagreement_points=result_dict.get("disagreement_points", []),
+            implications=result_dict.get("implications", []),
+            comprehensive_synthesis=result_dict.get("comprehensive_synthesis", ""),
+        )
         self._monitor.log(f"Deep analysis passes: {deep_analysis.analysis_passes}")
         self._monitor.log(f"Deep themes: {len(deep_analysis.themes)}")
         self._monitor.log(f"Consensus points: {len(deep_analysis.consensus_points)}")

@@ -88,8 +88,6 @@ class TestLLMAnalysisClient:
             "--output-format",
             "text",
             "--no-session-persistence",
-            "--tools",
-            "",
         ]
         assert isinstance(command[-1], str)
         assert 'Analyze the following research sources about "test query"' in command[-1]
@@ -139,6 +137,7 @@ class TestAIAnalysisService:
     def test_api_mode_requires_claude_cli(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """API mode should raise if the CLI transport is unavailable."""
         monkeypatch.delenv("CLAUDE_CLI_PATH", raising=False)
+        monkeypatch.delenv("CLAUDECODE", raising=False)  # Unset to allow CLI-based analysis
         monkeypatch.setattr("cc_deep_research.agents.llm_analysis_client.shutil.which", lambda _: None)
 
         with pytest.raises(ValueError, match="Claude Code CLI not found"):

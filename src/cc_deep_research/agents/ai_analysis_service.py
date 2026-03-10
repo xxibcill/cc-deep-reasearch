@@ -77,6 +77,12 @@ class AIAnalysisService:
                 "Skipping CLI-based analysis to avoid nested session errors. "
                 "Using heuristic-based analysis instead."
             )
+            # User-facing warning
+            print(
+                "\n[INFO] Running inside Claude Code session - CLI-based analysis disabled. "
+                "Using heuristic fallback for analysis.\n"
+                "       Set ai_integration_method='heuristic' in config to avoid this warning.\n"
+            )
             return
 
         try:
@@ -223,6 +229,7 @@ class AIAnalysisService:
         if self._llm_client and sources_dict and themes:
             try:
                 logger.info("Using Claude CLI for cross-reference analysis")
+                print(f"[DEBUG] Using Claude CLI for cross-reference analysis ({len(sources_dict)} sources, {len(themes)} themes)")
                 result = self._llm_client.analyze_cross_reference(
                     sources=sources_dict,
                     themes=themes,
@@ -234,10 +241,13 @@ class AIAnalysisService:
                 return result
             except Exception as e:
                 logger.warning(f"Claude CLI cross-reference analysis failed: {e}")
+                print(f"[DEBUG] Claude CLI failed, falling back to heuristic analysis: {e}")
                 if self._integration_method == "api":
                     raise
 
         # Fallback to AI integration heuristics
+        logger.info("Using heuristic-based cross-reference analysis")
+        print(f"[DEBUG] Using heuristic-based cross-reference analysis")
         return self._ai_integration.analyze_cross_reference_with_ai(
             _sources=sources,
             themes=themes,
