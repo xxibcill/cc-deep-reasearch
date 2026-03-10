@@ -63,7 +63,13 @@
       "Bash(uv run cc-deep-research research \"health benefit of white tea\" --output test_improved.md --depth quick --tavily-only)",
       "Bash(uv run cc-deep-research research \"health benefit of white tea\" --output test_debug.md --depth quick --tavily-only --monitor)",
       "Bash(uv run cc-deep-research research \"health benefit of white tea\" --output test_final.md --depth quick --tavily-only)",
-      "Bash(grep -E \"\\\\.\\(md|json|rc\\)$\")"
+      "Bash(grep -E \"\\\\.\\(md|json|rc\\)$\")",
+      "Bash(find . -type d -name \"__pycache__\" -exec rm -rf {} +)",
+      "Bash(find . -name \"*.pyc\" -delete)",
+      "Bash(claude -p --model claude-sonnet-4-6 --output-format text --no-session-persistence \"Say hello\")",
+      "Bash(grep -l \"llm.usage\\\\|timeout\" ~/.config/cc-deep-research/telemetry/*/events.jsonl)",
+      "Bash(env)",
+      "Bash(claude -p --model claude-sonnet-4-6 --output-format text \"say hello\")"
     ]
   }
 }
