@@ -1208,9 +1208,51 @@ Response format (valid JSON):
         # Remove excess whitespace
         text = " ".join(text.split())
 
+        # Skip if text contains web artifact indicators (cookie notices, tracking, ads)
+        web_artifact_patterns = [
+            r'\bcookie[s]?\b',
+            r'\btracking\b',
+            r'\banalytics?\b',
+            r'\badvert',
+            r'\bad\s*click',
+            r'\badvertising\b',
+            r'\bmarketing\b',
+            r'\bsubscri',
+            r'\bnewsletter\b',
+            r'\bsign\s*up\b',
+            r'\bprivacy\s*polic',
+            r'\bterms\s*of\s*service\b',
+            r'\bGDPR\b',
+            r'\bconsent\b',
+            r'\baccept\s*cookies?\b',
+            r'\bdo\s*not\s*sell\b',
+            r'\bpersonal\s*data\b',
+            r'\bdata\s*collection\b',
+            r'\banonymous\b',
+            r'\breporting\s*information\b',
+            r'\bcollect.*information\b',
+            r'\bdevice\b.*\bdisplay',
+            r'\bgoals?\s*of\s*the\s*advertising\b',
+            r'\bjavascript\b',
+            r'\bhttps?://\S+',
+            r'\bwww\.\w+\.\w+',
+            r'\bnext\s*story\b',
+            r'\bvisit\s*doctor\b',
+            r'\bavailable\s*(tomorrow|today|at)\b',
+            r'\b\u20b9\b',  # Rupee symbol often in spammy health sites
+        ]
+        for pattern in web_artifact_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                return ""
+
         # Remove navigation/UI artifacts
         text = re.sub(r'\[.*?\]', '', text)
         text = re.sub(r'\(.*?click.*?\)', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\(https?://\S+\)', '', text)
+        text = re.sub(r'\.\.\.', '', text)
+
+        # Remove image placeholders
+        text = re.sub(r'!\[.*?\]\(.*?\)', '', text)
 
         # Truncate if too long
         if len(text) > 200:
@@ -1218,6 +1260,22 @@ Response format (valid JSON):
 
         # Skip if too short after cleaning
         if len(text) < 15:
+            return ""
+
+        # Skip if text doesn't contain relevant health/safety keywords
+        health_keywords = [
+            'effect', 'cause', 'symptom', 'pain', 'nausea', 'headache',
+            'dizziness', 'stomach', 'digestive', 'insomnia', 'anxiety',
+            'pregnan', 'breastfeed', 'allergy', 'allergic', 'rash',
+            'interact', 'medication', 'drug', 'doctor', 'physician',
+            'consult', 'health', 'dose', 'dosage', 'mg', 'daily', 'cup',
+            'caffeine', 'blood', 'heart', 'liver', 'kidney', 'sugar',
+            'diabetes', 'pressure', 'risk', 'safe', 'warning', 'caution',
+            'avoid', 'should not', 'not recommended', 'contraindicated',
+            'side', 'adverse', 'harm', 'injury', 'condition', 'disease',
+            'treatment', 'therapy', 'supplement', 'vitamin', 'mineral',
+        ]
+        if not any(kw in text.lower() for kw in health_keywords):
             return ""
 
         return text.strip()
