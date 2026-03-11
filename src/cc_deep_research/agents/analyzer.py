@@ -109,8 +109,8 @@ class AnalyzerAgent:
             key_findings=typed_findings,
             themes=[t["name"] for t in themes],
             themes_detailed=themes,
-            consensus_points=cross_ref["consensus_points"],
-            contention_points=cross_ref["disagreement_points"],
+            consensus_points=self._extract_consensus_claims(cross_ref.get("consensus_points", [])),
+            contention_points=self._extract_consensus_claims(cross_ref.get("disagreement_points", [])),
             cross_reference_claims=typed_claims,
             gaps=gaps,
             source_count=len(cleaned_sources),
@@ -155,6 +155,17 @@ class AnalyzerAgent:
             cleaned.append(cleaned_source)
 
         return cleaned
+
+    def _extract_consensus_claims(self, points: list) -> list[str]:
+        """Extract claim strings from consensus/contention point dicts.
+
+        Args:
+            points: List of dicts with 'claim' field, or list of strings.
+
+        Returns:
+            List of claim strings.
+        """
+        return [p["claim"] if isinstance(p, dict) else str(p) for p in points]
 
     def _clean_source_content(self, content: str, is_title: bool = False) -> str:
         """Clean content by removing HTML fragments, navigation text, and artifacts.
@@ -391,8 +402,8 @@ class AnalyzerAgent:
         return AnalysisResult(
             key_findings=typed_findings,
             themes=themes,
-            consensus_points=cross_ref["consensus"],
-            contention_points=cross_ref["contention"],
+            consensus_points=self._extract_consensus_claims(cross_ref.get("consensus", [])),
+            contention_points=self._extract_consensus_claims(cross_ref.get("contention", [])),
             cross_reference_claims=typed_claims,
             gaps=gaps,
             source_count=len(sources),
