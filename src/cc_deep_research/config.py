@@ -55,6 +55,31 @@ class MinSourcesConfig(BaseModel):
     deep: int = Field(default=50, ge=1)
 
 
+class ResearchQualitySettings(BaseSettings):
+    """Quality control settings for research output."""
+
+    # Source limits enforcement
+    strict_depth_limits: bool = Field(default=True)
+    enforce_quick_mode_limit: bool = Field(default=True)
+
+    # Content quality
+    enable_truncation_detection: bool = Field(default=True)
+    enable_protocol_filtering: bool = Field(default=True)
+    max_protocol_ratio: float = Field(default=0.3)
+
+    # Source quality
+    min_primary_source_ratio: float = Field(default=0.3)
+    enable_source_type_classification: bool = Field(default=True)
+
+    # Gap detection
+    enable_auto_gap_detection: bool = Field(default=True)
+    max_follow_up_iterations: int = Field(default=2)
+
+    # Output validation
+    enable_post_validation: bool = Field(default=True)
+    fail_on_validation_errors: bool = Field(default=False)
+
+
 class ResearchConfig(BaseModel):
     """Research-related configuration."""
 
@@ -62,6 +87,7 @@ class ResearchConfig(BaseModel):
     min_sources: MinSourcesConfig = Field(default_factory=MinSourcesConfig)
     enable_iterative_search: bool = Field(default=True)
     max_iterations: int = Field(default=3, ge=1)
+    quality: "ResearchQualitySettings" = Field(default_factory=ResearchQualitySettings)
     enable_cross_ref: bool = Field(default=True)
     enable_quality_scoring: bool = Field(default=True)
     deep_analysis_passes: int = Field(default=3, ge=1, le=5)

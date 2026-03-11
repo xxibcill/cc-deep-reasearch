@@ -100,7 +100,19 @@ class SourceCollectionService:
         self._monitor.log(
             f"Sources with full content: {sources_with_content}/{len(hydrated_sources)}"
         )
-        return hydrated_sources
+
+        # Apply depth-based source limits
+        depth_limits = {
+            ResearchDepth.QUICK: 5,
+            ResearchDepth.STANDARD: 15,
+            ResearchDepth.DEEP: 50,
+        }
+        limit = depth_limits.get(depth, 10)
+        limited_sources, was_limited = self.apply_source_limit(
+            sources=hydrated_sources, limit=limit, query=queries[0] if queries else "research"
+        )
+
+        return limited_sources
 
     async def parallel_research(
         self,
@@ -228,6 +240,42 @@ class SourceCollectionService:
             stage="parallel_collection",
         )
         return await self.fetch_content_for_top_sources(sources=aggregated, depth=depth)
+
+    def apply_source_limit(
+        self,
+        *,
+        sources: list[SearchResultItem],
+        limit: int,
+        query: str,
+    ) -> tuple[list[SearchResultItem], bool]:
+        """Apply source limit and signal if more sources are needed.
+
+        Args:
+            sources: List of sources to limit.
+            limit: Maximum number of sources to keep.
+            query: Query string for logging.
+
+        Returns:
+            Tuple of (limited_sources, needs_more_sources).
+        """
+        if len(sources) <= limit:
+            return sources[:limit], False  # No truncation, no need for more
+
+        # Sort by score (highest relevance first)
+        sorted_sources = sorted(
+            sources,
+            key=lambda s: getattr(s, "relevance_score", 0) or getattr(s, "score", 0),
+            reverse=True,
+        )
+
+        limited_sources = sorted_sources[:limit]
+
+        # Log that sources were limited
+        self._monitor.log(
+            f"Source limit applied: kept {len(limited_sources)}/{len(sources)} for query '{query}' (limit={limit})"
+        )
+
+        return limited_sources, True  # Truncation occurred, may need more
 
     def merge_sources(
         self,

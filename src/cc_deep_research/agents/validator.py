@@ -34,6 +34,35 @@ class ValidatorAgent:
         self._min_sources = config.get("min_sources", 5)
         self._require_diverse_domains = config.get("require_diverse_domains", True)
 
+    def is_protocol_document(self, source: SearchResultItem) -> bool:
+        """Detect if source is a clinical trial protocol without findings.
+
+        Args:
+            source: Source to check.
+
+        Returns:
+            True if source is a protocol document, False otherwise.
+        """
+        if not source.url and not source.content:
+            return False
+
+        url_lower = source.url.lower()
+        if "clinicaltrials.gov" in url_lower:
+            return True
+
+        if source.content:
+            content_lower = source.content.lower()
+            protocol_indicators = [
+                "protocol title:",
+                "protocol #",
+                "protocol document:",
+                "study protocol:",
+                "methods:",
+            ]
+            return any(indicator in content_lower for indicator in protocol_indicators)
+
+        return False
+
     def validate_research(
         self,
         session: ResearchSession,
@@ -82,6 +111,17 @@ class ValidatorAgent:
         if not depth_check["has_depth"]:
             failure_modes.append("limited_content_depth")
             warnings.append(depth_check["reason"])
+
+        # Check for high proportion of protocol documents
+        protocol_count = sum(1 for s in session.sources if self.is_protocol_document(s))
+        if protocol_count > 0:
+            protocol_ratio = protocol_count / max(len(session.sources), 1)
+            max_protocol_ratio = self._config.get("max_protocol_ratio", 0.3)
+            if protocol_ratio > max_protocol_ratio:
+                warnings.append(
+                    f"High proportion of protocol documents ({protocol_count}/{len(session.sources)} = {protocol_ratio:.0%}) - "
+                    f"these lack research findings"
+                )
 
         gaps = analysis_result.normalized_gaps()
         if gaps:

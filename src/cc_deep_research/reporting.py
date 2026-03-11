@@ -7,8 +7,9 @@ supporting multiple output formats (Markdown, JSON, HTML).
 from typing import Any
 
 from cc_deep_research.agents.reporter import ReporterAgent
+from cc_deep_research.post_validator import PostReportValidator
 from cc_deep_research.config import Config
-from cc_deep_research.models import ResearchSession
+from cc_deep_research.models import AnalysisResult, ResearchSession
 
 
 class ReportGenerator:
@@ -30,6 +31,7 @@ class ReportGenerator:
         """
         self._config = config
         self._reporter = ReporterAgent({})
+        self._post_validator = PostReportValidator(config.model_dump())
 
     def generate_markdown_report(
         self,
@@ -45,7 +47,15 @@ class ReportGenerator:
         Returns:
             Complete Markdown report string.
         """
-        return self._reporter.generate_markdown_report(session, analysis)
+        markdown = self._reporter.generate_markdown_report(session, analysis)
+        validation_result = self._post_validator.validate_report(markdown, session, AnalysisResult.model_validate(analysis))
+
+        if validation_result.get("issues"):
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Post-validation found {len(validation_result['issues'])} issues in the report")
+
+        return markdown
 
     def generate_json_report(
         self,
