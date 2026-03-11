@@ -69,7 +69,14 @@
       "Bash(claude -p --model claude-sonnet-4-6 --output-format text --no-session-persistence \"Say hello\")",
       "Bash(grep -l \"llm.usage\\\\|timeout\" ~/.config/cc-deep-research/telemetry/*/events.jsonl)",
       "Bash(env)",
-      "Bash(claude -p --model claude-sonnet-4-6 --output-format text \"say hello\")"
+      "Bash(claude -p --model claude-sonnet-4-6 --output-format text \"say hello\")",
+      "Bash(git rm:*)",
+      "Bash(git checkout:*)",
+      "Bash(python3:*)"
+    ],
+    "additionalDirectories": [
+      "/Users/jjae/.claude/plans",
+      "/tmp"
     ]
   }
 }
