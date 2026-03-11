@@ -10,7 +10,7 @@ from typing import Any
 
 import click
 
-from cc_deep_research import __version__
+from cc_deep_research.__about__ import __version__
 from cc_deep_research.benchmark import load_benchmark_corpus, run_benchmark_corpus_sync
 from cc_deep_research.config import (
     Config,

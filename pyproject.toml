@@ -14,7 +14,7 @@ dev-dependencies = [
 
 [project]
 name = "cc-deep-research"
-version = "0.1.0"
+dynamic = ["version"]
 description = "CLI tool for comprehensive web research using Tavily Search API and Claude Code"
 readme = "README.md"
 license = { text = "MIT" }
@@ -65,6 +65,9 @@ cc-deep-research = "cc_deep_research.cli:main"
 Homepage = "https://github.com/example/cc-deep-research"
 Documentation = "https://github.com/example/cc-deep-research#readme"
 Repository = "https://github.com/example/cc-deep-research"
+
+[tool.hatch.version]
+path = "src/cc_deep_research/__about__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cc_deep_research"]

@@ -1,13 +1,6 @@
 """CC Deep Research CLI - Comprehensive web research tool."""
 
-__version__ = "0.1.0"
-__author__ = "CC Deep Research Team"
-
-from cc_deep_research.text_normalization import (
-    extract_full_sentence_around_keyword,
-    is_complete_sentence,
-    normalize_content,
-)
+from cc_deep_research.__about__ import __version__
 from cc_deep_research.benchmark import (
     BenchmarkCase,
     BenchmarkCaseMetrics,
@@ -34,6 +27,13 @@ from cc_deep_research.models import (
 from cc_deep_research.orchestrator import TeamResearchOrchestrator
 from cc_deep_research.providers import SearchProvider
 from cc_deep_research.teams import ResearchTeam
+from cc_deep_research.text_normalization import (
+    extract_full_sentence_around_keyword,
+    is_complete_sentence,
+    normalize_content,
+)
+
+__author__ = "CC Deep Research Team"
 
 __all__ = [
     "__version__",
@@ -60,4 +60,7 @@ __all__ = [
     "SearchProvider",
     "ResearchTeam",
     "TeamResearchOrchestrator",
+    "extract_full_sentence_around_keyword",
+    "is_complete_sentence",
+    "normalize_content",
 ]

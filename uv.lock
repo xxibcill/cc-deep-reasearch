@@ -152,7 +152,6 @@ wheels = [
 
 [[package]]
 name = "cc-deep-research"
-version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
@@ -210,7 +209,7 @@ requires-dist = [
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "weasyprint", specifier = ">=60.0" },
 ]
-provides-extras = ["dev", "dashboard"]
+provides-extras = ["dashboard", "dev"]
 
 [package.metadata.requires-dev]
 dev = [
