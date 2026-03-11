@@ -2,11 +2,55 @@
 
 from datetime import datetime
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs, urlunparse, urlencode
 
 import click
 
 from cc_deep_research.models import SearchResult, SearchResultItem
+
+
+# Common tracking parameters to strip from URLs
+TRACKING_PARAMETERS = frozenset({
+    "srsltid",
+    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+    "fbclid", "gclid", "igshid", "mc_cid", "mc_eid",
+    "_ga", "_gid", "ref", "source", "aff", "afftrack",
+})
+
+
+def sanitize_url(url: str) -> str:
+    """Sanitize a URL by removing tracking parameters.
+
+    Removes common tracking parameters to produce canonical URLs.
+
+    Args:
+        url: URL to sanitize.
+
+    Returns:
+        Sanitized URL without tracking parameters.
+    """
+    parsed = urlparse(url)
+
+    # Parse query parameters and filter out tracking ones
+    query_params = parse_qs(parsed.query)
+    filtered_params = {
+        k: v for k, v in query_params.items()
+        if k not in TRACKING_PARAMETERS
+    }
+
+    # Rebuild URL without tracking parameters
+    new_query = urlencode(filtered_params, doseq=True)
+
+    sanitized = urlunparse((
+        parsed.scheme,
+        parsed.netloc,
+        parsed.path,
+        parsed.params,
+        new_query,
+        parsed.fragment,
+    ))
+
+    return sanitized
 
 
 def normalize_url(url: str) -> str:
@@ -297,6 +341,7 @@ class ResultAggregator:
 
 
 __all__ = [
+    "sanitize_url",
     "normalize_url",
     "deduplicate_by_url",
     "aggregate_results",

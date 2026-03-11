@@ -199,12 +199,18 @@ class StrategyResult(BaseModel):
 
 
 class AnalysisFinding(BaseModel):
-    """A single synthesized finding from the analysis phase."""
+    """A single synthesized finding from the analysis phase.
+
+    This model separates high-level summary from detailed analysis to enable
+    cleaner report rendering with distinct Key Findings and Detailed Analysis sections.
+    """
 
     title: str
-    description: str = Field(default="")
+    summary: str = Field(default="", description="1-2 sentence high-level takeaway for Key Findings section")
+    description: str = Field(default="", description="Detailed explanation for Detailed Analysis section")
+    detail_points: list[str] = Field(default_factory=list, description="Evidence-backed detail bullets for Detailed Analysis")
     source: str | None = Field(default=None)
-    evidence: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list, description="Supporting source URLs")
     confidence: str | None = Field(default=None)
     claims: list["CrossReferenceClaim"] = Field(default_factory=list)
 

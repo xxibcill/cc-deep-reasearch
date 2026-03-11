@@ -3,6 +3,11 @@
 __version__ = "0.1.0"
 __author__ = "CC Deep Research Team"
 
+from cc_deep_research.text_normalization import (
+    extract_full_sentence_around_keyword,
+    is_complete_sentence,
+    normalize_content,
+)
 from cc_deep_research.benchmark import (
     BenchmarkCase,
     BenchmarkCaseMetrics,

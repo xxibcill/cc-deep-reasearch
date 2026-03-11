@@ -32,6 +32,7 @@ from cc_deep_research.models import (
     SearchResultItem,
     ValidationResult,
 )
+from cc_deep_research.aggregation import sanitize_url
 
 
 class ReporterAgent:
@@ -108,34 +109,24 @@ class ReporterAgent:
         sections.append(self._generate_methodology_section(session, analysis_result))
         sections.append("\n")
 
-        # Key Findings
+        # Key Findings - render summary-only content for executive overview
         sections.append("## Key Findings\n")
         for i, finding in enumerate(analysis_result.key_findings, 1):
             finding_obj = self._coerce_finding(finding)
             sections.append(f"### Finding {i}: {finding_obj.title}")
-            if finding_obj.description:
-                sections.append(f"{finding_obj.description}\n")
-            if finding_obj.evidence:
-                sections.append("**Supporting Sources:**")
-                for url in finding_obj.evidence:
-                    # Find source index
-                    for j, source in enumerate(session.sources, 1):
-                        if source.url == url:
-                            sections.append(f"- [{source.title}]({url}) [{j}]")
-                            break
-                sections.append("")
-            claim_annotation = self._claim_annotation_summary(finding_obj.claims)
-            if claim_annotation:
-                sections.append(f"**Evidence Strength:** {claim_annotation['strength_label']}")
-                sections.append(f"**Freshness:** {claim_annotation['freshness_note']}")
-                sections.append(
-                    f"**Primary-Source Coverage:** {claim_annotation['primary_source_note']}"
-                )
-                sections.append(f"**Contradiction Note:** {claim_annotation['contradiction_note']}\n")
-            elif finding_obj.confidence:
+            # Use summary field for high-level takeaway (1-2 sentences)
+            summary_text = finding_obj.summary or finding_obj.description
+            if summary_text:
+                # Truncate to 1-2 sentences if summary is too long
+                summary_sentences = summary_text.split(". ")
+                if len(summary_sentences) > 2:
+                    summary_text = ". ".join(summary_sentences[:2]) + "."
+                sections.append(f"{summary_text}\n")
+            if finding_obj.confidence:
                 sections.append(f"**Confidence:** {finding_obj.confidence.capitalize()}\n")
+            sections.append("")  # Blank line between findings
 
-        # Detailed Analysis
+        # Detailed Analysis - include description, detail_points, and evidence
         sections.append("## Detailed Analysis\n")
         sections.append(self._generate_detailed_analysis(session, analysis_result))
         sections.append("\n")
@@ -327,24 +318,67 @@ class ReporterAgent:
         """
         sections = []
 
-        # Use detailed theme data if available
+        # Add key findings with detailed analysis first
+        if analysis.key_findings:
+            sections.append("### Detailed Key Findings\n")
+
+            for i, finding in enumerate(analysis.key_findings, 1):
+                finding_obj = self._coerce_finding(finding)
+
+                # Finding title
+                sections.append(f"#### Finding {i}: {finding_obj.title}")
+
+                # Detailed description
+                if finding_obj.description:
+                    description = self._clean_description(finding_obj.description)
+                    sections.append(description)
+
+                # Detail points (evidence-backed bullets)
+                if finding_obj.detail_points:
+                    sections.append("\n**Evidence-backed Details:**")
+                    for point in finding_obj.detail_points:
+                        clean_point = self._clean_description(str(point))
+                        if clean_point and len(clean_point) > 10:
+                            sections.append(f"- {clean_point}")
+
+                # Supporting sources
+                if finding_obj.evidence:
+                    sections.append("\n**Supporting Sources:**")
+                    for url in finding_obj.evidence:
+                        sanitized_url = sanitize_url(url)
+                        for j, source in enumerate(session.sources, 1):
+                            if source.url == url or source.url == sanitized_url:
+                                title = self._clean_title(source.title or "Untitled")
+                                sections.append(f"- [{title}]({sanitized_url}) [{j}]")
+                                break
+
+                # Claim annotation for evidence strength
+                claim_annotation = self._claim_annotation_summary(finding_obj.claims)
+                if claim_annotation:
+                    sections.append("\n")
+                    sections.append(f"**Evidence Strength:** {claim_annotation['strength_label']}")
+                    sections.append(f"**Freshness:** {claim_annotation['freshness_note']}")
+                    sections.append(
+                        f"**Primary-Source Coverage:** {claim_annotation['primary_source_note']}"
+                    )
+                    sections.append(f"**Contradiction Note:** {claim_annotation['contradiction_note']}")
+                elif finding_obj.confidence:
+                    sections.append("\n")
+                    sections.append(f"**Confidence:** {finding_obj.confidence.capitalize()}")
+
+                sections.append("\n\n")
+
+        # Then use detailed theme data if available
         themes_detailed = analysis.themes_detailed
 
-        if not themes_detailed:
-            # Fallback to basic theme names
-            themes = analysis.themes
-            for theme in themes:
-                sections.append(f"### {theme}")
-                sections.append(
-                    f"Analysis related to {theme} is based on multiple sources. "
-                    "Further investigation may provide additional insights.\n"
-                )
-        else:
+        if themes_detailed:
+            sections.append("### Thematic Analysis\n")
+
             # Use AI-generated detailed themes with deduplication
             cited_sources: set[str] = set()  # Track which sources have been cited
 
             for theme in themes_detailed:
-                sections.append(f"### {theme['name']}\n")
+                sections.append(f"#### {theme['name']}\n")
 
                 # Theme description
                 description = theme.get("description", "")
@@ -377,10 +411,22 @@ class ReporterAgent:
                             if source.url == url:
                                 # Clean title
                                 title = self._clean_title(source.title or "Untitled")
-                                sections.append(f"- [{title}]({url})")
+                                # Use sanitized URL
+                                sanitized_url = sanitize_url(url)
+                                sections.append(f"- [{title}]({sanitized_url})")
                                 cited_sources.add(url)
                                 break
                     sections.append("")
+        elif analysis.themes and not analysis.key_findings:
+            # Fallback to basic theme names if no detailed themes or findings
+            sections.append("### Thematic Analysis\n")
+            themes = analysis.themes
+            for theme in themes:
+                sections.append(f"#### {theme}")
+                sections.append(
+                    f"Analysis related to {theme} is based on multiple sources. "
+                    "Further investigation may provide additional insights.\n"
+                )
 
         return "\n".join(sections)
 
