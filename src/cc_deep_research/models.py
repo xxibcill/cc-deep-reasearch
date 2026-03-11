@@ -587,6 +587,31 @@ class ClaimFreshness(StrEnum):
     UNKNOWN = "unknown"
 
 
+class SourceType(StrEnum):
+    """Enhanced source classification for quality assessment."""
+
+    PRIMARY_RESEARCH = "primary_research"
+    PREPRINT = "preprint"
+    META_ANALYSIS = "meta_analysis"
+    SYSTEMATIC_REVIEW = "systematic_review"
+    MEDICAL_REFERENCE = "medical_reference"
+    COMMERCIAL_BLOG = "commercial_blog"
+    OFFICIAL_DOCUMENT = "official_document"
+    PROTOCOL_DOCUMENT = "protocol_document"
+    GENERAL_WEB = "general_web"
+
+
+class ResearchGapType(str):
+    """Types of research gaps that can be automatically detected."""
+
+    MISSING_QUANTITATIVE_DATA = "missing_quantitative_data"
+    MISSING_COMPARATIVE_STUDIES = "missing_comparative_studies"
+    MISSING_MECHANISM_DETAILS = "missing_mechanism_details"
+    MISSING_SAFETY_DATA = "missing_safety_data"
+    MISSING_CLINICAL_TRIALS = "missing_clinical_trials"
+    MISSING_LONGITUDINAL_DATA = "missing_longitudinal_data"
+
+
 def _parse_published_date(value: Any) -> datetime | None:
     """Parse loose publication dates from source metadata."""
     if not value:

@@ -148,9 +148,11 @@ class AnalyzerAgent:
 
             # Clean content
             if cleaned_source.content:
-                cleaned_source.content = self._clean_source_content(
+                raw_cleaned = self._clean_source_content(
                     cleaned_source.content, is_title=False
                 )
+                # Apply truncation detection and repair after content cleaning
+                cleaned_source.content = self.detect_and_fix_truncations(raw_cleaned)
 
             cleaned.append(cleaned_source)
 
@@ -166,6 +168,36 @@ class AnalyzerAgent:
             List of claim strings.
         """
         return [p["claim"] if isinstance(p, dict) else str(p) for p in points]
+
+    def detect_and_fix_truncations(self, text: str) -> str:
+        """Detect and repair common truncation patterns in AI-generated text.
+
+        Args:
+            text: Text to check and repair.
+
+        Returns:
+            Text with common truncation patterns repaired.
+        """
+        if not text:
+            return text
+
+        # Common AI truncation patterns with replacements
+        truncation_repairs = [
+            (r'\bFor the vast m\.\.', 'For the vast majority'),
+            (r'\bFor the vast M\.\.', 'For the vast majority'),
+            (r'\b[A-Z][a-z]{1,3}\.\.\.', lambda m: m.group(0) + 'ing'),  # m... -> ...ing
+            (r'\b[A-Z][a-z]{1,3}n\.\.\.', lambda m: m.group(0) + 'tion'),  # An... -> ...tion
+            (r'\b[A-Z][a-z]{2,3}ut\b', lambda m: m.group(0)),  # ...ut -> remove ut
+        ]
+
+        fixed_text = text
+        for pattern, replacement in truncation_repairs:
+            if callable(replacement):
+                fixed_text = re.sub(pattern, replacement, fixed_text, flags=re.IGNORECASE)
+            else:
+                fixed_text = re.sub(pattern, replacement, fixed_text, flags=re.IGNORECASE)
+
+        return fixed_text
 
     def _clean_source_content(self, content: str, is_title: bool = False) -> str:
         """Clean content by removing HTML fragments, navigation text, and artifacts.

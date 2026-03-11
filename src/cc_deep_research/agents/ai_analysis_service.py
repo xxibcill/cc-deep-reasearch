@@ -665,5 +665,110 @@ Focus on synthesizing information rather than just listing it.
 
         return "\n".join(formatted)
 
+    def detect_research_gaps(
+        self,
+        *,
+        themes: list[dict[str, Any]],
+        sources: list[SearchResultItem],
+        query: str,
+    ) -> list[dict[str, Any]]:
+        """Automatically detect research gaps from analysis.
+
+        Args:
+            themes: List of identified themes.
+            sources: List of collected sources.
+            query: Original research query.
+
+        Returns:
+            List of detected gaps with metadata.
+        """
+        gaps = []
+
+        # Combine all content for pattern matching
+        all_content = " ".join([s.content or "" for s in sources])
+        all_content_lower = all_content.lower()
+
+        # Gap 1: Missing quantitative data
+        if not re.search(r'\d+\s*(mg|g|µg|mg\/g|percent|%)\s*(per|\/|of|dose)', all_content):
+            gaps.append({
+                "type": "missing_quantitative_data",
+                "importance": "medium",
+                "description": "Quantitative measurements (mg/g, percentages, dosages) not found in sources",
+                "suggested_queries": [
+                    f"{query} quantitative analysis",
+                    f"{query} concentration mg g",
+                    f"{query} dosage recommendations",
+                ],
+            })
+
+        # Gap 2: Missing comparative studies
+        for theme in themes:
+            theme_name = theme["name"].lower()
+            if not re.search(
+                rf'{theme_name}.*(vs|compared|versus|relative to|difference between)',
+                all_content,
+                re.IGNORECASE,
+            ):
+                gaps.append({
+                    "type": "missing_comparative_studies",
+                    "importance": "high",
+                    "theme": theme_name,
+                    "description": f"Comparative studies for {theme_name} not found (e.g., vs green tea, vs black tea)",
+                    "suggested_queries": [
+                        f"{theme_name} vs green tea study",
+                        f"{theme_name} vs black tea study",
+                        f"{theme_name} comparative effectiveness",
+                    ],
+                })
+
+        # Gap 3: Missing mechanism details
+        mechanism_keywords = ["mechanism", "pathway", "biochemical", "molecular", "how", "why"]
+        has_mechanism = any(keyword in all_content_lower for keyword in mechanism_keywords)
+
+        if not has_mechanism:
+            gaps.append({
+                "type": "missing_mechanism_details",
+                "importance": "medium",
+                "description": "Mechanism of action not explained (biochemical pathways, molecular mechanisms)",
+                "suggested_queries": [
+                    f"{query} mechanism of action",
+                    f"{query} biochemical pathways",
+                    f"{query} how it works",
+                ],
+            })
+
+        # Gap 4: Missing safety data
+        safety_keywords = ["contraindication", "interaction", "adverse", "side effect", "pregnant", "children", "elderly"]
+        has_safety = any(keyword in all_content_lower for keyword in safety_keywords)
+
+        if not has_safety:
+            gaps.append({
+                "type": "missing_safety_data",
+                "importance": "medium",
+                "description": "Safety information not found (contraindications, drug interactions, side effects)",
+                "suggested_queries": [
+                    f"{query} safety contraindications",
+                    f"{query} drug interactions",
+                    f"{query} side effects clinical",
+                ],
+            })
+
+        # Gap 5: Missing clinical trials
+        clinical_keywords = ["randomized", "controlled trial", "clinical trial", "human study", "participants"]
+        has_clinical = any(keyword in all_content_lower for keyword in clinical_keywords)
+
+        if not has_clinical:
+            gaps.append({
+                "type": "missing_clinical_trials",
+                "importance": "high",
+                "description": "Human clinical trial data not found (randomized controlled trials, human studies)",
+                "suggested_queries": [
+                    f"{query} randomized controlled trial",
+                    f"{query} clinical study results",
+                    f"{query} human intervention study",
+                ],
+            })
+
+        return gaps
 
 __all__ = ["AIAnalysisService"]
