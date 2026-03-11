@@ -179,6 +179,16 @@ uv run ruff format src/ tests/
 uv run mypy src/
 ```
 
+## Versioning
+
+Project versions follow Semantic Versioning. Record user-visible changes in [`CHANGELOG.md`](CHANGELOG.md) under `Unreleased`, then cut the next version with:
+
+```bash
+uv run python scripts/bump_version.py patch
+```
+
+You can also pass an explicit version such as `uv run python scripts/bump_version.py 0.2.0`. The full release workflow is documented in [`docs/RELEASING.md`](docs/RELEASING.md).
+
 ## Documentation
 
 - [Usage Guide](docs/USAGE.md)
@@ -189,7 +199,7 @@ uv run mypy src/
 
 ## Benchmark Corpus
 
-The repository includes a versioned benchmark query corpus at [`docs/benchmark_corpus.json`](/Users/jjae/Documents/guthib/cc-deep-research/docs/benchmark_corpus.json). It is designed to stay stable across workflow changes and currently covers:
+The repository includes a versioned benchmark query corpus at [`docs/benchmark_corpus.json`](docs/benchmark_corpus.json). It is designed to stay stable across workflow changes and currently covers:
 
 - simple factual queries
 - comparison queries

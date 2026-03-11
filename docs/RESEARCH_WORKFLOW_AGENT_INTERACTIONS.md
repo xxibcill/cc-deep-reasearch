@@ -16,66 +16,187 @@ The runtime is an orchestrator-led local pipeline:
 
 ## Reality Check
 
-There are two important architecture facts to keep in mind when reading this repo:
+This section answers a simple question:
 
-1. The main workflow is real and implemented in the orchestrator and orchestration services.
-2. Some team-runtime pieces are still scaffolding:
-   - `LocalResearchTeam`
-   - `LocalMessageBus`
-   - `LocalAgentPool`
+When you run `cc-deep-research research "..."`, what is actually executing?
 
-Those classes describe the shape of a future external multi-agent runtime, but the hot path today is still local Python code calling local Python objects.
+### Short answer
 
-One more caveat: `src/cc_deep_research/orchestration/runtime.py` is empty in the current checkout. The initialization section below is inferred from the orchestrator contract, agent-access layer, and local coordination helpers around it.
+Today, the system works like this:
+
+- one local Python process runs the whole research job
+- one orchestrator object controls the order of work
+- specialist "agents" are mostly normal Python classes in the same process
+- the orchestrator calls those agents directly with method calls
+- only source collection has real concurrency, and even that is local async task fan-out
+
+So the codebase has agent roles, but not a fully autonomous agent network.
+
+### What is real today
+
+These parts are part of the real execution path for a normal CLI run:
+
+- `TeamResearchOrchestrator`
+- `ResearchExecutionService`
+- `ResearchPlanningService`
+- `SourceCollectionService`
+- `AnalysisWorkflow`
+- the specialist agents such as `ResearchLeadAgent`, `QueryExpanderAgent`, `SourceCollectorAgent`, `AnalyzerAgent`, and `ValidatorAgent`
+
+These components do real work when a user runs the CLI.
+
+### What is mostly scaffolding today
+
+These classes mostly describe a future or more ambitious architecture shape:
+
+- `LocalResearchTeam`
+- `LocalMessageBus`
+- `LocalAgentPool`
+
+They matter because they show what the project might grow into, but they are not the main engine of the current workflow.
+
+In plain terms:
+
+- `LocalResearchTeam` is not the thing that executes the whole research pipeline
+- `LocalMessageBus` is not how normal research phases talk to each other
+- `LocalAgentPool` is not a real distributed worker fleet
+
+### The easiest mental model
+
+Think of the current system like this:
+
+```mermaid
+flowchart LR
+    A["CLI"] --> B["Orchestrator"]
+    B --> C["Lead agent"]
+    B --> D["Expander agent"]
+    B --> E["Collector agent"]
+    B --> F["Analyzer agent"]
+    B --> G["Validator agent"]
+    B --> H["Reporter"]
+```
+
+That is much closer to the truth than this model:
+
+```mermaid
+flowchart LR
+    A["Agent A"] <--> B["Agent B"]
+    B <--> C["Agent C"]
+    C <--> D["Agent D"]
+    D <--> A
+```
+
+The current repo is mostly the first diagram, not the second.
+
+### What "scaffolding" means here
+
+In this document, "scaffolding" means:
+
+- the class exists
+- the class may hold metadata, placeholders, or compatibility behavior
+- but the class is not the main place where the actual research work happens
+
+Concrete examples:
+
+- `LocalResearchTeam.execute_research()` returns a placeholder session, so it is not the true workflow runner
+- `LocalMessageBus` supports sending and receiving messages, but the main research run does not depend on it
+- `LocalAgentPool` tracks local task state, but it does not launch real external agents
+
+### What "hot path" means here
+
+"Hot path" just means the code path used on a normal real run.
+
+For this repo, the hot path is roughly:
+
+1. CLI starts the run
+2. `TeamResearchOrchestrator` drives the phases
+3. specialist agents are called directly
+4. results are assembled into `ResearchSession`
+5. reporting turns that session into Markdown or JSON
+
+If a class is not involved in that path, it is not part of the main runtime.
+
+### Parallel mode is narrower than it sounds
+
+It is easy to read "multi-agent" and imagine several autonomous workers reasoning together.
+
+That is not what currently happens.
+
+What actually happens in parallel mode is:
+
+- query families are decomposed into tasks
+- `ResearcherAgent.execute_multiple_tasks()` runs those tasks concurrently
+- results are merged back into one source list
+
+So parallel mode is a search fan-out optimization, not a conversational multi-agent society.
+
+### Why this distinction matters
+
+If you are extending the project, this section tells you where to make changes:
+
+- if you want to change real workflow behavior, edit the orchestrator, orchestration services, or active specialist agents
+- if you edit only `LocalResearchTeam` or `LocalMessageBus`, you may change architecture scaffolding without changing the main CLI behavior
+
+### One more caveat
+
+`src/cc_deep_research/orchestration/runtime.py` is empty in the current checkout.
+
+So whenever this document discusses team initialization, it is describing the observable design around that file:
+
+- what the orchestrator expects
+- what the helper services use
+- what the surrounding team and coordination classes imply
+
+It is not claiming that `runtime.py` currently contains that implementation.
 
 ## End-to-End Workflow
 
 ```mermaid
 flowchart TD
-    A["User runs CLI command"] --> B["`cc_deep_research.cli:research`"]
-    B --> C["Load config and CLI flags"]
-    C --> D["Create `TeamResearchOrchestrator`"]
-    D --> E["`ResearchExecutionService.execute()`"]
+    A[User runs CLI command] --> B[cc_deep_research.cli research]
+    B --> C[Load config and CLI flags]
+    C --> D[Create TeamResearchOrchestrator]
+    D --> E[ResearchExecutionService.execute]
 
-    E --> F["Phase: team_init"]
-    F --> G["Create local team wrapper and agent registry"]
+    E --> F[Phase team_init]
+    F --> G[Create local team wrapper and agent registry]
 
-    G --> H["Phase: strategy"]
-    H --> I["`ResearchLeadAgent.analyze_query()`"]
+    G --> H[Phase strategy]
+    H --> I[ResearchLeadAgent.analyze_query]
 
-    I --> J["Phase: query_expansion"]
-    J --> K["`QueryExpanderAgent.expand_query()`"]
+    I --> J[Phase query_expansion]
+    J --> K[QueryExpanderAgent.expand_query]
 
-    K --> L{"Parallel source collection?"}
-    L -- "No" --> M["`SourceCollectorAgent.collect_sources()` or `collect_multiple_queries()`"]
-    L -- "Yes" --> N["`ResearcherAgent.execute_multiple_tasks()`"]
+    K --> L{Parallel source collection}
+    L -- No --> M[SourceCollectorAgent.collect_sources or collect_multiple_queries]
+    L -- Yes --> N[ResearcherAgent.execute_multiple_tasks]
 
-    M --> O["Aggregate, deduplicate, preserve query provenance"]
+    M --> O[Aggregate deduplicate preserve query provenance]
     N --> O
 
-    O --> P["Fetch full content for top-ranked sources"]
-    P --> Q["Phase: analysis"]
-    Q --> R["`AnalyzerAgent.analyze_sources()`"]
+    O --> P[Fetch full content for top ranked sources]
+    P --> Q[Phase analysis]
+    Q --> R[AnalyzerAgent.analyze_sources]
 
-    R --> S{"Depth = deep?"}
-    S -- "Yes" --> T["Phase: deep_analysis"]
-    T --> U["`DeepAnalyzerAgent.deep_analyze()`"]
-    S -- "No" --> V["Skip deep analysis"]
-    U --> W["Phase: validation"]
+    R --> S{Depth equals deep}
+    S -- Yes --> T[Phase deep_analysis]
+    T --> U[DeepAnalyzerAgent.deep_analyze]
+    S -- No --> V[Skip deep analysis]
+    U --> W[Phase validation]
     V --> W
 
-    W --> X["`ValidatorAgent.validate_research()`"]
-    X --> Y{"Follow-up queries needed?"}
-    Y -- "Yes" --> Z["Collect follow-up sources and rerun analysis loop"]
+    W --> X[ValidatorAgent.validate_research]
+    X --> Y{Follow up queries needed}
+    Y -- Yes --> Z[Collect follow up sources and rerun analysis loop]
     Z --> P
-    Y -- "No" --> AA["`SessionBuilder.build()`"]
+    Y -- No --> AA[SessionBuilder.build]
 
-    AA --> AB["Return `ResearchSession` to CLI"]
-    AB --> AC["`SessionStore.save_session()`"]
-    AC --> AD["`ReportGenerator`"]
-    AD --> AE["`ReporterAgent` renders Markdown/JSON"]
-    AE --> AF["Optional report quality evaluation and post-validation"]
-    AF --> AG["Print report or write output file"]
+    AA --> AB[Return ResearchSession to CLI]
+    AB --> AC[SessionStore.save_session]
+    AC --> AD[ReportGenerator]
+    AD --> AE[ReporterAgent renders Markdown or JSON]
+    AE --> AF[Optional report quality evaluation and post validation]
+    AF --> AG[Print report or write output file]
 ```
 
 ## Phase-by-Phase Breakdown
@@ -295,18 +416,18 @@ But only part of that reporting stack is wired into the normal CLI path today. `
 
 ## Agent Responsibilities
 
-| Agent | Main role | Used in main CLI workflow? | How it interacts |
-| --- | --- | --- | --- |
-| `ResearchLeadAgent` | Build the initial strategy | Yes | Called by orchestrator |
-| `QueryExpanderAgent` | Build labeled query families | Yes | Called by orchestrator |
-| `SourceCollectorAgent` | Search providers and aggregate results | Yes | Called by orchestrator |
-| `ResearcherAgent` | Execute query tasks concurrently | Yes, only in parallel collection | Called by orchestrator/service |
-| `AnalyzerAgent` | Synthesize findings from sources | Yes | Called by orchestrator |
-| `DeepAnalyzerAgent` | Run deeper multi-pass synthesis | Yes, only in deep mode | Called by orchestrator |
-| `ValidatorAgent` | Score research quality and generate follow-ups | Yes | Called by orchestrator |
-| `ReporterAgent` | Render final Markdown/JSON reports | Yes, after research completes | Called by CLI/report generator |
-| `ReportQualityEvaluatorAgent` | Score final report quality | Partially | Called by report generator |
-| `ReportRefinerAgent` | Refine weak reports | Not in the normal CLI path | Not active in main workflow |
+| Agent                         | Main role                                      | Used in main CLI workflow?       | How it interacts               |
+| ----------------------------- | ---------------------------------------------- | -------------------------------- | ------------------------------ |
+| `ResearchLeadAgent`           | Build the initial strategy                     | Yes                              | Called by orchestrator         |
+| `QueryExpanderAgent`          | Build labeled query families                   | Yes                              | Called by orchestrator         |
+| `SourceCollectorAgent`        | Search providers and aggregate results         | Yes                              | Called by orchestrator         |
+| `ResearcherAgent`             | Execute query tasks concurrently               | Yes, only in parallel collection | Called by orchestrator/service |
+| `AnalyzerAgent`               | Synthesize findings from sources               | Yes                              | Called by orchestrator         |
+| `DeepAnalyzerAgent`           | Run deeper multi-pass synthesis                | Yes, only in deep mode           | Called by orchestrator         |
+| `ValidatorAgent`              | Score research quality and generate follow-ups | Yes                              | Called by orchestrator         |
+| `ReporterAgent`               | Render final Markdown/JSON reports             | Yes, after research completes    | Called by CLI/report generator |
+| `ReportQualityEvaluatorAgent` | Score final report quality                     | Partially                        | Called by report generator     |
+| `ReportRefinerAgent`          | Refine weak reports                            | Not in the normal CLI path       | Not active in main workflow    |
 
 ## How Agents Interact
 

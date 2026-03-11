@@ -1554,4 +1554,4 @@ cc-deep-research config set tavily.api_keys new_key_1,new_key_2
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for version history and changes.
+See [CHANGELOG.md](../CHANGELOG.md) for version history and [RELEASING.md](RELEASING.md) for the release workflow.
