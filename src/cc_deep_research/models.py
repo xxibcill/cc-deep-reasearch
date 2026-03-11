@@ -287,6 +287,38 @@ class ValidationResult(BaseModel):
     target_source_count: int = Field(default=0, ge=0)
 
 
+class ReportEvaluationResult(BaseModel):
+    """Typed result from report quality evaluation phase.
+
+    This evaluates FINAL markdown report content for:
+    - Writing quality (clarity, grammar, coherence)
+    - Report structure and flow
+    - Technical accuracy of synthesized content
+    - User experience (readability, usefulness)
+    - Consistency with analysis findings
+    """
+
+    # Overall assessment
+    overall_quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    is_acceptable: bool = Field(default=False)
+
+    # Dimension scores (0-1 each)
+    writing_quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    structure_flow_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    technical_accuracy_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    user_experience_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    consistency_score: float = Field(default=0.0, ge=0.0, le=1.0)
+
+    # Issues and recommendations
+    critical_issues: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+
+    # Detailed assessment
+    dimension_assessments: dict[str, Any] = Field(default_factory=dict)
+    evaluation_method: str = Field(default="llm_analysis")
+
+
 class IterationHistoryRecord(BaseModel):
     """One iteration of the iterative analysis workflow."""
 

@@ -18,7 +18,8 @@ from cc_deep_research.agents.ai_analysis_service import AIAnalysisService
 from cc_deep_research.agents.analyzer import AnalyzerAgent
 from cc_deep_research.agents.deep_analyzer import DeepAnalyzerAgent
 from cc_deep_research.agents.query_expander import QueryExpanderAgent
-from cc_deep_research.agents.reporter import ReporterAgent
+from cc_deep_research.agents.report_quality_evaluator import ReportQualityEvaluatorAgent
+from cc_deep_research.agents.report_refiner import ReportRefinerAgent
 from cc_deep_research.agents.research_lead import ResearchLeadAgent
 from cc_deep_research.agents.researcher import ResearcherAgent
 from cc_deep_research.agents.source_collector import SourceCollectorAgent
@@ -33,6 +34,7 @@ AGENT_TYPE_DEEP_ANALYZER = "deep_analyzer"
 AGENT_TYPE_REPORTER = "reporter"
 AGENT_TYPE_VALIDATOR = "validator"
 AGENT_TYPE_RESEARCHER = "researcher"
+AGENT_TYPE_REPORT_QUALITY_EVALUATOR = "report_quality_evaluator"
 
 # Agent factory
 AGENT_REGISTRY: dict[str, type] = {
@@ -44,6 +46,8 @@ AGENT_REGISTRY: dict[str, type] = {
     AGENT_TYPE_REPORTER: ReporterAgent,
     AGENT_TYPE_VALIDATOR: ValidatorAgent,
     AGENT_TYPE_RESEARCHER: ResearcherAgent,
+    AGENT_TYPE_REPORT_QUALITY_EVALUATOR: ReportQualityEvaluatorAgent,
+    AGENT_TYPE_REPORT_REFINER: ReportRefinerAgent,
 }
 
 
@@ -68,6 +72,7 @@ __all__ = [
     "ReporterAgent",
     "ValidatorAgent",
     "ResearcherAgent",
+    "ReportQualityEvaluatorAgent",
     "AIAnalysisService",
     "AIAgentIntegration",
     "AGENT_TYPE_LEAD",
@@ -78,5 +83,7 @@ __all__ = [
     "AGENT_TYPE_REPORTER",
     "AGENT_TYPE_VALIDATOR",
     "AGENT_TYPE_RESEARCHER",
+    "AGENT_TYPE_REPORT_QUALITY_EVALUATOR",
+    "AGENT_TYPE_REPORT_REFINER",
     "get_agent_class",
 ]

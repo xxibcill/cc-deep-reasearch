@@ -79,6 +79,10 @@ class ResearchQualitySettings(BaseSettings):
     enable_post_validation: bool = Field(default=True)
     fail_on_validation_errors: bool = Field(default=False)
 
+    # Report quality evaluation
+    enable_report_quality_evaluation: bool = Field(default=True)
+    min_report_quality_score: float = Field(default=0.6, ge=0.0, le=1.0)
+
 
 class ResearchConfig(BaseModel):
     """Research-related configuration."""
@@ -107,7 +111,7 @@ class ResearchConfig(BaseModel):
     max_sources_per_theme: int = Field(default=5, ge=2, le=10)
     ai_integration_method: str = Field(
         default="hybrid",
-        description="Method for AI integration: 'heuristic', 'agent', 'api', 'hybrid'"
+        description="Method for AI integration: 'heuristic', 'agent', 'api', 'hybrid'",
     )
     ai_temperature: float = Field(default=0.3, ge=0.0, le=1.0)
     claude_cli_path: str | None = Field(
