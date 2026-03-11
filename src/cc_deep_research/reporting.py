@@ -4,12 +4,16 @@ This module provides report generation functionality for research sessions,
 supporting multiple output formats (Markdown, JSON, HTML).
 """
 
+import logging
 from typing import Any
 
+from cc_deep_research.agents.report_quality_evaluator import ReportQualityEvaluatorAgent
 from cc_deep_research.agents.reporter import ReporterAgent
-from cc_deep_research.post_validator import PostReportValidator
 from cc_deep_research.config import Config
 from cc_deep_research.models import AnalysisResult, ResearchSession
+from cc_deep_research.post_validator import PostReportValidator
+
+logger = logging.getLogger(__name__)
 
 
 class ReportGenerator:
@@ -31,6 +35,7 @@ class ReportGenerator:
         """
         self._config = config
         self._reporter = ReporterAgent({})
+        self._report_quality_evaluator = ReportQualityEvaluatorAgent(config.model_dump())
         self._post_validator = PostReportValidator(config.model_dump())
 
     def generate_markdown_report(
@@ -48,11 +53,38 @@ class ReportGenerator:
             Complete Markdown report string.
         """
         markdown = self._reporter.generate_markdown_report(session, analysis)
+
+        # Evaluate report quality (before post-validation)
+        if self._config.research.quality.enable_report_quality_evaluation:
+            quality_result = self._report_quality_evaluator.evaluate_report_quality(
+                markdown,
+                session,
+                AnalysisResult.model_validate(analysis),
+            )
+
+            logger.info(
+                f"Report quality score: {quality_result.overall_quality_score:.2f} "
+                f"(threshold: {self._config.research.quality.min_report_quality_score})"
+            )
+
+            if quality_result.critical_issues:
+                logger.warning(
+                    f"Report quality evaluation found {len(quality_result.critical_issues)} critical issues"
+                )
+                for issue in quality_result.critical_issues:
+                    logger.warning(f"  - {issue}")
+
+            if quality_result.warnings:
+                logger.info(
+                    f"Report quality evaluation found {len(quality_result.warnings)} warnings"
+                )
+                for warning in quality_result.warnings[:3]:  # Log first 3 warnings
+                    logger.info(f"  - {warning}")
+
+        # Run post-validation (regex-based checks)
         validation_result = self._post_validator.validate_report(markdown, session, AnalysisResult.model_validate(analysis))
 
         if validation_result.get("issues"):
-            import logging
-            logger = logging.getLogger(__name__)
             logger.warning(f"Post-validation found {len(validation_result['issues'])} issues in the report")
 
         return markdown

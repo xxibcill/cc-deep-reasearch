@@ -11,10 +11,14 @@ from cc_deep_research.agents import (
     AGENT_TYPE_DEEP_ANALYZER,
     AGENT_TYPE_EXPANDER,
     AGENT_TYPE_LEAD,
+    AGENT_TYPE_REPORT_QUALITY_EVALUATOR,
+    AGENT_TYPE_REPORT_REFINER,
     AGENT_TYPE_VALIDATOR,
     AnalyzerAgent,
     DeepAnalyzerAgent,
     QueryExpanderAgent,
+    ReportRefinerAgent,
+    ReportQualityEvaluatorAgent,
     ResearchLeadAgent,
     SourceCollectorAgent,
     ValidatorAgent,
@@ -48,5 +52,13 @@ class AgentAccess:
         return cast(DeepAnalyzerAgent, self._mapping_provider()[AGENT_TYPE_DEEP_ANALYZER])
 
     def validator(self) -> ValidatorAgent:
-        """Return the validator agent."""
+        """Return validator agent."""
         return cast(ValidatorAgent, self._mapping_provider()[AGENT_TYPE_VALIDATOR])
+
+    def report_quality_evaluator(self) -> ReportQualityEvaluatorAgent:
+        """Return report quality evaluator agent."""
+        return cast(ReportQualityEvaluatorAgent, self._mapping_provider()[AGENT_TYPE_REPORT_QUALITY_EVALUATOR])
+
+    def report_refiner(self) -> ReportRefinerAgent:
+        """Return report refiner agent."""
+        return cast(ReportRefinerAgent, self._mapping_provider()[AGENT_TYPE_REPORT_REFINER])

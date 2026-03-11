@@ -184,6 +184,7 @@ uv run mypy src/
 - [Usage Guide](docs/USAGE.md)
 - [Examples](docs/EXAMPLES.md)
 - [Research Workflow Design](docs/RESEARCH_WORKFLOW.md)
+- [Research Workflow and Agent Interactions](docs/RESEARCH_WORKFLOW_AGENT_INTERACTIONS.md)
 - [Research Workflow Improvement Plan](docs/RESEARCH_WORKFLOW_IMPROVEMENT_PLAN.md)
 
 ## Benchmark Corpus
