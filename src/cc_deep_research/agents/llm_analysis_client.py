@@ -302,6 +302,12 @@ class LLMAnalysisClient:
 
 {content}
 
+CRITICAL OUTPUT REQUIREMENTS:
+- Rewrite the source material into clean professional prose. DO NOT copy raw page headers or markdown syntax.
+- Ignore menus, site navigation, buttons, share widgets, newsletter prompts, and article metadata.
+- Provide complete sentences that remain understandable out of context.
+- If the source text is fragmentary, infer cautiously or omit it.
+
 For each theme, provide:
 1. A concise, descriptive theme name (e.g., "Antioxidant Properties", not "Health Benefits Drinking White")
 2. A 2-3 sentence description summarizing what the sources say about this theme
@@ -457,20 +463,30 @@ Consensus points:
 
 {content}
 
+CRITICAL OUTPUT REQUIREMENTS:
+- Rewrite the source material into clean professional prose. DO NOT copy raw page headers or markdown syntax.
+- Ignore menus, site navigation, buttons, share widgets, newsletter prompts, and article metadata.
+- Provide complete sentences that remain understandable out of context.
+- If the source text is fragmentary, infer cautiously or omit it.
+
 Task: Create 5 key findings that synthesize the research.
 
 For each finding:
 1. A clear, specific title
-2. A detailed description (2-3 sentences)
-3. List of source URLs that support this finding
-4. Confidence level (High/Medium/Low) based on source quality and quantity
+2. A summary field (1-2 sentence high-level takeaway for Key Findings section)
+3. A description field (detailed 2-3 sentence explanation for Detailed Analysis section)
+4. 3-5 detail_points (evidence-backed bullets for Detailed Analysis section)
+5. List of source URLs that support this finding
+6. Confidence level (High/Medium/Low) based on source quality and quantity
 
 Respond in JSON format:
 {{
   "findings": [
     {{
       "title": "Finding title",
-      "description": "Detailed description...",
+      "summary": "High-level takeaway (1-2 sentences)...",
+      "description": "Detailed description (2-3 sentences)...",
+      "detail_points": ["Specific evidence-backed point 1", "Specific evidence-backed point 2"],
       "evidence": ["url1", "url2"],
       "confidence": "High/Medium/Low"
     }}
@@ -673,6 +689,10 @@ Respond in JSON format:
                 data = json.loads(json_match.group())
                 findings_raw = data.get("findings", [])
                 if isinstance(findings_raw, list):
+                    # Ensure all required fields exist with defaults
+                    for finding in findings_raw:
+                        finding.setdefault("summary", finding.get("description", "")[:200])
+                        finding.setdefault("detail_points", [])
                     return findings_raw
                 return []  # Fallback for non-list response
         except (json.JSONDecodeError, KeyError):
@@ -694,7 +714,9 @@ Respond in JSON format:
                 title = re.sub(r"^\d+\.\s*", "", line)
                 current_finding = {
                     "title": title,
+                    "summary": "",
                     "description": "",
+                    "detail_points": [],
                     "evidence": [],
                     "confidence": "Medium",
                 }
@@ -703,6 +725,10 @@ Respond in JSON format:
                     point = line.lstrip("- •").strip()
                     if "http" in point:
                         current_finding["evidence"].append(point)
+                    else:
+                        current_finding["detail_points"].append(point)
+                elif not current_finding["summary"]:
+                    current_finding["summary"] = line[:200]
                 elif not current_finding["description"]:
                     current_finding["description"] = line
 
