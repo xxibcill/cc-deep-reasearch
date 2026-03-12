@@ -9,6 +9,7 @@ from cc_deep_research.cli import main
 from cc_deep_research.markdown_report_formatter import MarkdownReportFormatter
 from cc_deep_research.pdf_generator import (
     PDFGenerationError,
+    PDFGenerator,
     generate_pdf_report_from_markdown_file,
 )
 
@@ -146,3 +147,91 @@ def test_markdown_to_pdf_command_generates_pdf_via_helper(
         "output_path": output_path,
         "title": "Custom Report",
     }
+
+
+class TestPDFSectionWrappers:
+    """Test that HTML output includes semantic section wrappers."""
+
+    def test_html_has_section_wrappers(self) -> None:
+        """Test that major sections are wrapped in semantic divs."""
+        generator = PDFGenerator()
+
+        markdown = """# Test Report
+## Executive Summary
+Test summary content.
+## Sources
+1. [Source](https://example.com)
+## Research Metadata
+- Query: test
+"""
+
+        html = generator._convert_to_html(markdown)
+
+        # Check for common class (report-section appears in class attribute)
+        assert 'report-section' in html
+
+        # Check for section-specific classes
+        assert 'section-executive-summary' in html
+        assert 'section-sources' in html
+        assert 'section-metadata' in html
+
+        # Check for title block wrapper
+        assert 'section-title-block' in html
+
+    def test_css_includes_section_selectors(self) -> None:
+        """Test that section-specific CSS selectors are present."""
+        generator = PDFGenerator()
+        css = generator._get_css_styles()
+
+        # Check for section classes
+        assert '.section-executive-summary' in css
+        assert '.section-key-findings' in css
+        assert '.section-detailed-analysis' in css
+        assert '.section-sources' in css
+        assert '.section-metadata' in css
+
+        # Check for typography differences
+        assert 'Georgia' in css or 'serif' in css
+        assert '-apple-system' in css
+
+    def test_css_includes_appendix_de_emphasis(self) -> None:
+        """Test that appendix sections have de-emphasis styling."""
+        generator = PDFGenerator()
+        css = generator._get_css_styles()
+
+        # Check for appendix-specific styles
+        assert '.section-sources' in css
+        assert '.section-metadata' in css
+        assert 'color: #777' in css  # Lighter color for appendix
+        assert 'line-height: 1.3' in css  # Tighter line height for appendix
+
+        # Check for page-break rules
+        assert 'page-break-before: always' in css
+        assert 'break-before: always' in css
+
+    def test_css_includes_page_break_protection(self) -> None:
+        """Test that headings have page-break protection."""
+        generator = PDFGenerator()
+        css = generator._get_css_styles()
+
+        # Check for page-break protection on headings
+        assert 'h1, h2, h3' in css
+        assert 'page-break-after: avoid' in css
+        assert 'page-break-inside: avoid' in css
+        assert 'break-after: avoid' in css
+        assert 'break-inside: avoid' in css
+
+        # Check for orphan/widow control
+        assert 'orphans: 2' in css
+        assert 'widows: 2' in css
+
+    def test_css_removes_justify_from_body(self) -> None:
+        """Test that paragraphs are left-aligned instead of justified."""
+        generator = PDFGenerator()
+        css = generator._get_css_styles()
+
+        # Find the body p rule
+        assert 'text-align: left' in css
+        # Should NOT have justify in the main p rule
+        # (The old CSS had text-align: justify, new CSS has left)
+        assert css.count('text-align: justify') == 0

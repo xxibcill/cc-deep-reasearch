@@ -589,3 +589,149 @@ class TestAIAgentIntegrationEvidence:
         assert len(result["side_effects"]) > 0
         assert len(result["contraindications"]) > 0
         assert len(result["drug_interactions"]) > 0
+
+
+class TestReadabilityRegression:
+    """Tests for readability improvements to prevent regressions."""
+
+    def test_executive_summary_compact_with_many_gaps(self) -> None:
+        """Test that executive summary doesn't inline full gap inventory."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.DEEP,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [
+                {"gap_description": "Gap 1", "importance": "high", "suggested_queries": []},
+                {"gap_description": "Gap 2", "importance": "medium", "suggested_queries": []},
+                {"gap_description": "Gap 3", "importance": "low", "suggested_queries": []},
+            ],
+            "analysis_method": "ai_semantic"
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+
+        # Find the end of the executive summary section
+        # Executive summary ends at the end of the paragraph that follows it
+        # or at the next level-2 heading
+        import re
+        # Match from "## Executive Summary" to before "## Methodology"
+        exec_summary_match = re.search(
+            r'## Executive Summary\n(.*?)\n## Methodology',
+            report,
+            re.DOTALL
+        )
+        assert exec_summary_match is not None
+
+        exec_summary = exec_summary_match.group(1)
+
+        # Should NOT list gap descriptions inline
+        assert "Gap 1" not in exec_summary
+        assert "Gap 2" not in exec_summary
+        assert "Gap 3" not in exec_summary
+
+        # Should have pointer to gaps section
+        assert "Research Gaps and Limitations" in exec_summary
+
+        # Full gaps section should still exist with details
+        assert "## Research Gaps and Limitations" in report
+        assert "Gap 1" in report
+        assert "Gap 2" in report
+        assert "Gap 3" in report
+
+    def test_sources_section_has_summary_and_catalog(self) -> None:
+        """Test that sources section is split into summary and catalog."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        sources = [
+            SearchResultItem(url="https://pubmed.gov/1", title="Study 1", score=0.95),
+            SearchResultItem(url="https://gov.example.com/2", title="Doc 2", score=0.90),
+            SearchResultItem(url="https://blog.com/3", title="Blog 3", score=0.40),
+        ]
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.DEEP,
+            sources=sources,
+        )
+
+        analysis = {
+            "key_findings": [],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "ai_semantic"
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+
+        # Extract sources section (stop at next ## heading, not ###)
+        import re
+        sources_match = re.search(
+            r'## Sources\n(.*?)(?=\n##[A-Z]|\Z)',
+            report,
+            re.DOTALL
+        )
+        assert sources_match is not None
+
+        sources_section = sources_match.group(1)
+
+        # Should have summary subsection
+        assert "### Sources Summary" in sources_section
+        assert "Total Sources:" in sources_section
+        assert "Top Source Types:" in sources_section
+
+        # Should have full catalog subsection
+        assert "### Full Catalog" in sources_section
+
+        # All sources should still be in catalog
+        assert "Study 1" in sources_section
+        assert "Doc 2" in sources_section
+        assert "Blog 3" in sources_section
+
+    def test_report_generation_without_gaps(self) -> None:
+        """Test that reports without gaps still generate correctly."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword"
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+
+        # Executive summary should exist and not have gaps pointer
+        assert "## Executive Summary" in report
+        assert "## Research Gaps and Limitations" not in report
+
+        # Sources section should still have summary
+        assert "### Sources Summary" in report
+        assert "### Full Catalog" in report
