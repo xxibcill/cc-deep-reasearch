@@ -26,7 +26,6 @@ from cc_deep_research.models import (
 )
 from cc_deep_research.orchestrator import TeamResearchOrchestrator
 from cc_deep_research.providers import SearchProvider
-from cc_deep_research.teams import ResearchTeam
 from cc_deep_research.text_normalization import (
     extract_full_sentence_around_keyword,
     is_complete_sentence,
@@ -58,7 +57,6 @@ __all__ = [
     "run_benchmark_corpus_sync",
     "write_benchmark_report",
     "SearchProvider",
-    "ResearchTeam",
     "TeamResearchOrchestrator",
     "extract_full_sentence_around_keyword",
     "is_complete_sentence",

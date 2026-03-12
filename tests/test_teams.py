@@ -2,10 +2,13 @@
 
 import pytest
 
+import cc_deep_research
+import cc_deep_research.coordination as coordination_exports
+import cc_deep_research.teams as team_exports
 from cc_deep_research.agents.research_lead import ResearchLeadAgent
 from cc_deep_research.config import Config
 from cc_deep_research.models import ResearchDepth
-from cc_deep_research.teams import AgentSpec, ResearchTeam, TeamConfig, TeamCreationError
+from cc_deep_research.teams import AgentSpec, LocalResearchTeam, TeamConfig, TeamCreationError
 
 
 class TestAgentSpec:
@@ -63,17 +66,17 @@ class TestTeamConfig:
         assert len(config.agents) == 2
 
 
-class TestResearchTeam:
-    """Tests for ResearchTeam class."""
+class TestLocalResearchTeam:
+    """Tests for LocalResearchTeam."""
 
     def test_team_initialization(self) -> None:
-        """Test that ResearchTeam can be initialized."""
+        """Test that LocalResearchTeam can be initialized."""
         team_config = TeamConfig(
             team_name="test-team",
             team_description="Test team",
         )
         app_config = Config()
-        team = ResearchTeam(team_config, app_config)
+        team = LocalResearchTeam(team_config, app_config)
 
         assert not team.is_active
         assert team.team_name == "test-team"
@@ -90,7 +93,7 @@ class TestResearchTeam:
             agents=agents,
         )
         app_config = Config()
-        team = ResearchTeam(team_config, app_config)
+        team = LocalResearchTeam(team_config, app_config)
 
         specs = team.get_agent_specs()
         assert len(specs) == 2
@@ -108,7 +111,7 @@ class TestResearchTeam:
             agents=agents,
         )
         app_config = Config()
-        team = ResearchTeam(team_config, app_config)
+        team = LocalResearchTeam(team_config, app_config)
 
         collector = team.get_agent_by_type("collector")
         assert collector is not None
@@ -125,7 +128,7 @@ class TestResearchTeam:
             team_description="Test team",
         )
         app_config = Config()
-        team = ResearchTeam(team_config, app_config)
+        team = LocalResearchTeam(team_config, app_config)
 
         # Create team
         await team.create()
@@ -134,6 +137,49 @@ class TestResearchTeam:
         # Shutdown team
         await team.shutdown()
         assert not team.is_active
+
+    @pytest.mark.asyncio
+    async def test_team_execute_research_raises_for_placeholder_entrypoint(self) -> None:
+        """Test that direct execution through the team wrapper is rejected."""
+        team_config = TeamConfig(
+            team_name="test-team",
+            team_description="Test team",
+        )
+        app_config = Config()
+        team = LocalResearchTeam(team_config, app_config)
+
+        with pytest.raises(NotImplementedError, match="TeamResearchOrchestrator.execute_research"):
+            await team.execute_research("test query", ResearchDepth.STANDARD)
+
+    def test_team_module_exports_only_local_runtime_names(self) -> None:
+        """Test that teams exports do not advertise the old compatibility alias."""
+        assert "LocalResearchTeam" in team_exports.__all__
+        assert "ResearchTeam" not in team_exports.__all__
+        assert not hasattr(team_exports, "ResearchTeam")
+
+    def test_package_root_does_not_reexport_team_wrapper(self) -> None:
+        """Test that the package root no longer re-exports the team wrapper."""
+        assert "TeamResearchOrchestrator" in cc_deep_research.__all__
+        assert "ResearchTeam" not in cc_deep_research.__all__
+        assert not hasattr(cc_deep_research, "ResearchTeam")
+
+    def test_coordination_exports_only_local_helper_names(self) -> None:
+        """Test that coordination exports avoid the generic compatibility aliases."""
+        assert "LocalAgentPool" in coordination_exports.__all__
+        assert "LocalMessageBus" in coordination_exports.__all__
+        assert "AgentPool" not in coordination_exports.__all__
+        assert "MessageBus" not in coordination_exports.__all__
+        assert not hasattr(coordination_exports, "AgentPool")
+        assert not hasattr(coordination_exports, "MessageBus")
+
+    def test_local_team_does_not_expose_placeholder_coordination_helpers(self) -> None:
+        """Test that LocalResearchTeam only exposes lifecycle metadata helpers."""
+        team_config = TeamConfig(team_name="test-team", team_description="Test team")
+        team = LocalResearchTeam(team_config, Config())
+
+        assert not hasattr(team, "spawn_researcher")
+        assert not hasattr(team, "send_message")
+        assert not hasattr(team, "collect_results")
 
 
 class TestResearchLeadAgent:

@@ -98,7 +98,7 @@ In this document, "scaffolding" means:
 
 Concrete examples:
 
-- `LocalResearchTeam.execute_research()` returns a placeholder session, so it is not the true workflow runner
+- `LocalResearchTeam.execute_research()` raises `NotImplementedError`, so it is not the true workflow runner
 - `LocalMessageBus` supports sending and receiving messages, but the main research run does not depend on it
 - `LocalAgentPool` tracks local task state, but it does not launch real external agents
 
@@ -137,17 +137,21 @@ If you are extending the project, this section tells you where to make changes:
 - if you want to change real workflow behavior, edit the orchestrator, orchestration services, or active specialist agents
 - if you edit only `LocalResearchTeam` or `LocalMessageBus`, you may change architecture scaffolding without changing the main CLI behavior
 
-### One more caveat
+### Local runtime boundary
 
-`src/cc_deep_research/orchestration/runtime.py` is empty in the current checkout.
+`src/cc_deep_research/orchestration/runtime.py` now contains the concrete local
+runtime boundary used by the orchestrator.
 
-So whenever this document discusses team initialization, it is describing the observable design around that file:
+That module is responsible for:
 
-- what the orchestrator expects
-- what the helper services use
-- what the surrounding team and coordination classes imply
+- building the local team metadata wrapper
+- instantiating the in-process specialist agents
+- creating the optional local message bus
+- creating the optional local agent pool for parallel source fan-out
+- shutting those local resources down after the run
 
-It is not claiming that `runtime.py` currently contains that implementation.
+It still does not implement a distributed worker runtime. It makes the existing
+local runtime explicit and testable.
 
 ## End-to-End Workflow
 
@@ -573,7 +577,7 @@ That allows later stages to answer questions like:
 
 These details are important if you are extending the system:
 
-- `runtime.py` is empty in this checkout, so initialization logic is only visible indirectly through orchestrator usage.
+- `runtime.py` now makes the local runtime boundary explicit, but it still describes only one-process execution.
 - Tavily is the only implemented search provider. `claude` is accepted in config and CLI flags, but there is no working Claude search provider in the collector.
 - Parallel mode does not create truly separate specialist agents that talk over the message bus. It uses local concurrent search tasks.
 - `ReportRefinerAgent` exists but is not wired into the normal research run.

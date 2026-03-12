@@ -18,6 +18,8 @@ from cc_deep_research.agents.query_expander import QueryExpanderAgent
 from cc_deep_research.aggregation import deduplicate_by_url
 from cc_deep_research.cli import _resolve_parallel_mode_override, main
 from cc_deep_research.config import Config
+from cc_deep_research.coordination.agent_pool import LocalAgentPool
+from cc_deep_research.coordination.message_bus import LocalMessageBus
 from cc_deep_research.models import (
     AnalysisFinding,
     AnalysisGap,
@@ -32,7 +34,9 @@ from cc_deep_research.models import (
     ValidationResult,
 )
 from cc_deep_research.monitoring import ResearchMonitor
+from cc_deep_research.orchestration import OrchestratorRuntimeState
 from cc_deep_research.orchestrator import TeamExecutionError, TeamResearchOrchestrator
+from cc_deep_research.teams import LocalResearchTeam
 
 
 def _make_strategy(query: str, depth: ResearchDepth, query_variations: int) -> StrategyResult:
@@ -321,6 +325,20 @@ class FakeValidatorAgent:
         return self._validation.model_copy(deep=True)
 
 
+def test_local_runtime_types_use_explicit_local_names() -> None:
+    """Test that runtime-facing helper types are imported via their local names."""
+    runtime_state = OrchestratorRuntimeState(
+        team=MagicMock(spec=LocalResearchTeam),
+        agents={},
+        message_bus=MagicMock(spec=LocalMessageBus),
+        agent_pool=MagicMock(spec=LocalAgentPool),
+    )
+
+    assert runtime_state.team is not None
+    assert runtime_state.message_bus is not None
+    assert runtime_state.agent_pool is not None
+
+
 def _install_fake_team(
     orchestrator: TeamResearchOrchestrator,
     *,
@@ -399,6 +417,58 @@ class TestTeamResearchOrchestrator:
         assert orchestrator._config == config
         assert orchestrator._monitor == monitor
         assert orchestrator._team is None
+        assert orchestrator._runtime_state is None
+
+    @pytest.mark.asyncio
+    async def test_initialize_team_uses_concrete_local_runtime_state(self) -> None:
+        config = Config()
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+
+        await orchestrator._initialize_team()
+
+        assert isinstance(orchestrator._runtime_state, OrchestratorRuntimeState)
+        assert orchestrator._team is orchestrator._runtime_state.team
+        assert orchestrator._team is not None
+        assert orchestrator._team.is_active is True
+        assert set(orchestrator._agents) == {
+            AGENT_TYPE_LEAD,
+            AGENT_TYPE_COLLECTOR,
+            AGENT_TYPE_EXPANDER,
+            AGENT_TYPE_ANALYZER,
+            AGENT_TYPE_DEEP_ANALYZER,
+            AGENT_TYPE_VALIDATOR,
+        }
+        assert orchestrator._message_bus is orchestrator._runtime_state.message_bus
+        assert orchestrator._message_bus is not None
+        assert orchestrator._message_bus.is_active is True
+        assert orchestrator._agent_pool is not None
+        assert orchestrator._agent_pool.is_active is True
+
+    @pytest.mark.asyncio
+    async def test_shutdown_team_clears_local_runtime_state(self) -> None:
+        config = Config()
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        await orchestrator._initialize_team()
+
+        team = orchestrator._team
+        message_bus = orchestrator._message_bus
+        agent_pool = orchestrator._agent_pool
+        runtime_state = orchestrator._runtime_state
+
+        await orchestrator._shutdown_team()
+
+        assert runtime_state is not None
+        assert team is not None
+        assert message_bus is not None
+        assert agent_pool is not None
+        assert team.is_active is False
+        assert message_bus.is_active is False
+        assert agent_pool.is_active is False
+        assert orchestrator._runtime_state is None
+        assert orchestrator._team is None
+        assert orchestrator._agents == {}
+        assert orchestrator._message_bus is None
+        assert orchestrator._agent_pool is None
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

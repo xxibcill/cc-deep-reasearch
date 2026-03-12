@@ -1,6 +1,6 @@
 # Task 010: Make Validation Failure Modes Evidence-Aware
 
-Status: done
+Status: Done
 
 ## Objective
 

@@ -20,6 +20,7 @@ from cc_deep_research.orchestration import (
     AgentAccess,
     AnalysisWorkflow,
     OrchestratorRuntime,
+    OrchestratorRuntimeState,
     OrchestratorSessionState,
     PhaseRunner,
     ResearchExecutionService,
@@ -61,6 +62,7 @@ class TeamResearchOrchestrator:
         self._monitor = monitor or ResearchMonitor(enabled=False)
         self._team: LocalResearchTeam | None = None
         self._agents: dict[str, Any] = {}
+        self._runtime_state: OrchestratorRuntimeState | None = None
         # Use config defaults if not specified
         self._parallel_mode = (
             parallel_mode if parallel_mode is not None else config.search_team.parallel_execution
@@ -216,9 +218,7 @@ class TeamResearchOrchestrator:
         aspects of research.
         """
         runtime_state = await self._runtime.initialize(self._team)
-        if runtime_state is None:
-            return
-
+        self._runtime_state = runtime_state
         self._team = runtime_state.team
         self._agents = runtime_state.agents
         self._message_bus = runtime_state.message_bus
@@ -541,6 +541,8 @@ class TeamResearchOrchestrator:
             message_bus=self._message_bus,
             agent_pool=self._agent_pool,
         )
+        self._runtime_state = None
+        self._agents = {}
         self._team = None
         self._message_bus = None
         self._agent_pool = None
