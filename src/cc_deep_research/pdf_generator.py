@@ -6,13 +6,22 @@ Includes graceful degradation when WeasyPrint is not installed.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+# Set DYLD_LIBRARY_PATH before importing WeasyPrint to help find system libraries
+# This is needed on macOS when using Homebrew-installed libraries
+homebrew_lib = "/opt/homebrew/lib"
+if os.path.exists(homebrew_lib):
+    os.environ.setdefault("DYLD_LIBRARY_PATH", homebrew_lib)
+
+from cc_deep_research.markdown_report_formatter import MarkdownReportFormatter
 
 try:
     from weasyprint import CSS, HTML  # type: ignore[import-untyped]
 
     WEASYPRINT_AVAILABLE = True
-except ImportError:
+except (ImportError, OSError):
     WEASYPRINT_AVAILABLE = False
 
 try:
@@ -47,11 +56,11 @@ class PDFGenerator:
         """
         if not WEASYPRINT_AVAILABLE:
             raise PDFGenerationError(
-                "WeasyPrint is not installed. Please install it: pip install WeasyPrint"
+                "WeasyPrint is not installed. Please install it: uv add WeasyPrint"
             )
         if not MARKDOWN_AVAILABLE:
             raise PDFGenerationError(
-                "markdown package is not installed. Please install it: pip install markdown"
+                "markdown package is not installed. Please install it: uv add markdown"
             )
 
     @staticmethod
@@ -291,7 +300,30 @@ class PDFGenerator:
         """
 
 
+def generate_pdf_report_from_markdown_file(
+    input_path: Path,
+    output_path: Path | None = None,
+    title: str | None = None,
+) -> Path:
+    """Format a markdown file as a report and write it as a PDF."""
+    markdown_content = input_path.read_text(encoding="utf-8")
+    if not markdown_content.strip():
+        raise PDFGenerationError(f"Markdown input file is empty: {input_path}")
+
+    formatter = MarkdownReportFormatter()
+    formatted_report = formatter.format_report(markdown_content, source_path=input_path, title=title)
+    pdf_path = output_path or input_path.with_suffix(".pdf")
+
+    pdf_generator = PDFGenerator()
+    return pdf_generator.generate_pdf(
+        formatted_report.markdown,
+        pdf_path,
+        title=formatted_report.title,
+    )
+
+
 __all__ = [
     "PDFGenerator",
     "PDFGenerationError",
+    "generate_pdf_report_from_markdown_file",
 ]
