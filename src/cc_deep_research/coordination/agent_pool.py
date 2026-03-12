@@ -103,7 +103,7 @@ class LocalAgentPool:
     execution.
 
     Example:
-        >>> pool = AgentPool(num_agents=3, config=config)
+        >>> pool = LocalAgentPool(num_agents=3, config=config)
         >>> # Spawn agents
         >>> agent_ids = await pool.spawn_agents(["task1", "task2", "task3"])
         >>> # Wait for completion
@@ -356,13 +356,8 @@ class LocalAgentPool:
             ],
         }
 
-
-AgentPool = LocalAgentPool
-
-
 __all__ = [
     "AgentStatus",
     "AgentInstance",
-    "AgentPool",
     "LocalAgentPool",
 ]

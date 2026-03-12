@@ -52,7 +52,7 @@ class LocalMessageBus:
     current research workflow does not rely on it to execute research tasks.
 
     Example:
-        >>> bus = MessageBus()
+        >>> bus = LocalMessageBus()
         >>> # Send a task to researcher-1
         >>> await bus.send(Message(
         ...     type=MessageType.TASK,
@@ -230,13 +230,8 @@ class LocalMessageBus:
         """
         return self._queue.qsize()
 
-
-MessageBus = LocalMessageBus
-
-
 __all__ = [
     "MessageType",
     "Message",
-    "MessageBus",
     "LocalMessageBus",
 ]

@@ -16,7 +16,7 @@ The system is designed to turn a single user query into a persisted research ses
 - final report generation
 - telemetry and session persistence
 
-At a high level, the workflow is a staged local pipeline managed by the orchestrator, not by the `ResearchTeam` wrapper.
+At a high level, the workflow is a staged local pipeline managed by the orchestrator, not by the `LocalResearchTeam` wrapper.
 
 ## Primary Runtime Path
 
@@ -78,7 +78,7 @@ The workflow owner is [`src/cc_deep_research/orchestrator.py`](/Users/jjae/Docum
 - session assembly
 - cleanup
 
-Although the codebase includes a `ResearchTeam` abstraction, that public name now aliases a local lifecycle wrapper. It does not execute the research workflow itself.
+The codebase includes a `LocalResearchTeam` wrapper, but it is local lifecycle metadata only. It does not execute the research workflow itself.
 
 ## Entry Point and User Controls
 
@@ -151,9 +151,9 @@ Initialization happens in `TeamResearchOrchestrator._initialize_team()`.
 
 This phase creates:
 
-- a local `ResearchTeam` wrapper
+- a local `LocalResearchTeam` wrapper
 - a local registry of specialized agents
-- optional `MessageBus` and `AgentPool` helper instances for parallel mode
+- optional `LocalMessageBus` and `LocalAgentPool` helper instances for parallel mode
 
 The actual agent instances used by the workflow are local Python objects:
 
@@ -174,7 +174,7 @@ Design intent:
 Current reality:
 
 - the local Python agent objects perform the real work
-- `ResearchTeam`, `AgentPool`, and `MessageBus` are compatibility names for local scaffolding, not a distributed runtime
+- `LocalResearchTeam`, `LocalAgentPool`, and `LocalMessageBus` are local scaffolding, not a distributed runtime
 
 ### 2. Strategy Analysis
 
@@ -404,7 +404,7 @@ Design intent:
 Current implementation detail:
 
 - this is concurrent task execution inside one process, not true distributed or spawned external agents
-- `AgentPool` and `MessageBus` are initialized, but they are not the mechanism actually used to run task bodies today
+- `LocalAgentPool` and `LocalMessageBus` are initialized, but they are not the mechanism actually used to run task bodies today
 
 That distinction matters when changing the architecture. The codebase talks about agent teams, but the runtime is currently closer to "specialized local components with optional concurrent retrieval."
 
@@ -479,9 +479,9 @@ The project uses agent-oriented naming, but the current architecture is mixed. T
 | `DeepAnalyzerAgent` | Multi-pass deep synthesis | Real |
 | `ValidatorAgent` | Quality gate and loop trigger | Real |
 | `ReporterAgent` | Final report assembly | Real |
-| `ResearchTeam` | Local lifecycle metadata wrapper | Compatibility alias over local scaffolding |
-| `AgentPool` | Track local parallel researcher-task state | Compatibility alias over local scaffolding |
-| `MessageBus` | Local async coordination queue | Compatibility alias over local scaffolding |
+| `LocalResearchTeam` | Local lifecycle metadata wrapper | Real, local-only scaffolding |
+| `LocalAgentPool` | Track local parallel researcher-task state | Real, local-only scaffolding |
+| `LocalMessageBus` | Local async coordination queue | Real, local-only scaffolding |
 
 ## Design Principles Visible in the Code
 
@@ -569,7 +569,7 @@ The safest places to extend the workflow are:
 
 ### Introduce real multi-agent execution
 
-- treat `ResearchTeam`, `AgentPool`, and `MessageBus` as local scaffolding
+- treat `LocalResearchTeam`, `LocalAgentPool`, and `LocalMessageBus` as local scaffolding
 - keep the orchestrator as the coordination boundary
 - migrate one phase at a time rather than replacing the whole pipeline at once
 

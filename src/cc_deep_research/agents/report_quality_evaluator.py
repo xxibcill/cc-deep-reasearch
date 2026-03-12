@@ -17,7 +17,7 @@ from typing import Any
 
 from cc_deep_research.agents.ai_agent_integration import AIAgentIntegration
 from cc_deep_research.agents.ai_executor import AIExecutor
-from cc_deep_research.models import AnalysisResult, ReportEvaluationResult
+from cc_deep_research.models import AnalysisResult, ReportEvaluationResult, ResearchSession
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,7 @@ class ReportQualityEvaluatorAgent:
     def evaluate_report_quality(
         self,
         markdown: str,
+        session: ResearchSession,
         analysis: AnalysisResult,
     ) -> ReportEvaluationResult:
         """Evaluate quality of a generated markdown report.

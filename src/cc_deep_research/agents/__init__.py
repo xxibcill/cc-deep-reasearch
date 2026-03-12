@@ -20,6 +20,7 @@ from cc_deep_research.agents.deep_analyzer import DeepAnalyzerAgent
 from cc_deep_research.agents.query_expander import QueryExpanderAgent
 from cc_deep_research.agents.report_quality_evaluator import ReportQualityEvaluatorAgent
 from cc_deep_research.agents.report_refiner import ReportRefinerAgent
+from cc_deep_research.agents.reporter import ReporterAgent
 from cc_deep_research.agents.research_lead import ResearchLeadAgent
 from cc_deep_research.agents.researcher import ResearcherAgent
 from cc_deep_research.agents.source_collector import SourceCollectorAgent
@@ -35,6 +36,7 @@ AGENT_TYPE_REPORTER = "reporter"
 AGENT_TYPE_VALIDATOR = "validator"
 AGENT_TYPE_RESEARCHER = "researcher"
 AGENT_TYPE_REPORT_QUALITY_EVALUATOR = "report_quality_evaluator"
+AGENT_TYPE_REPORT_REFINER = "report_refiner"
 
 # Agent factory
 AGENT_REGISTRY: dict[str, type] = {

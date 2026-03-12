@@ -7,10 +7,9 @@ than as a distributed team runtime.
 """
 
 from dataclasses import dataclass, field
-from typing import Any
 
 from cc_deep_research.config import Config
-from cc_deep_research.models import ResearchDepth, ResearchSession
+from cc_deep_research.models import ResearchDepth
 
 
 @dataclass
@@ -53,8 +52,7 @@ class LocalResearchTeam:
     """Hold local specialist-role metadata for one orchestrator session.
 
     The orchestrator owns execution. This class only tracks the configured
-    specialist roster and a small in-memory placeholder state used by tests and
-    future runtime experiments.
+    specialist roster and session lifecycle state.
     """
 
     def __init__(
@@ -71,7 +69,6 @@ class LocalResearchTeam:
         self._config = config
         self._app_config = app_config
         self._is_active: bool = False
-        self._agent_instances: dict[str, Any] = {}
 
     @property
     def is_active(self) -> bool:
@@ -113,81 +110,6 @@ class LocalResearchTeam:
                 return agent
         return None
 
-    # Placeholder methods for actual Agent tool integration
-    # These would be implemented using Claude's Agent, TeamCreate, SendMessage tools
-
-    async def spawn_researcher(
-        self,
-        researcher_name: str,
-        task: dict[str, Any],
-    ) -> str:
-        """Spawn a researcher agent with a task.
-
-        Args:
-            researcher_name: Name for the researcher agent.
-            task: Task dictionary to assign to the researcher.
-
-        Returns:
-            Agent ID of the spawned researcher.
-
-        Note:
-            This is a placeholder. In a real implementation, this would use
-            the Agent tool to spawn a Claude Code instance.
-        """
-        import uuid
-
-        agent_id = f"{researcher_name}-{uuid.uuid4().hex[:8]}"
-
-        self._agent_instances[agent_id] = {
-            "name": researcher_name,
-            "task": task,
-            "status": "active",
-        }
-
-        return agent_id
-
-    async def send_message(
-        self,
-        recipient: str,
-        content: str,
-        message_type: str = "task",
-    ) -> None:
-        """Send a message to a specific agent.
-
-        Args:
-            recipient: Agent ID of the recipient.
-            content: Message content.
-            message_type: Type of message (task, result, status, etc.).
-
-        Note:
-            This is a placeholder. In a real implementation, this would use
-            the SendMessage tool to communicate with spawned agents.
-        """
-        if recipient in self._agent_instances:
-            # Store message in agent's instance for later retrieval
-            if "messages" not in self._agent_instances[recipient]:
-                self._agent_instances[recipient]["messages"] = []
-            self._agent_instances[recipient]["messages"].append({
-                "type": message_type,
-                "content": content,
-            })
-
-    async def collect_results(self, agent_ids: list[str]) -> dict[str, Any]:
-        """Collect results from multiple agents.
-
-        Args:
-            agent_ids: List of agent IDs to collect results from.
-
-        Returns:
-            Dictionary mapping agent IDs to their results.
-        """
-        results = {}
-        for agent_id in agent_ids:
-            if agent_id in self._agent_instances:
-                results[agent_id] = self._agent_instances[agent_id].get("results")
-
-        return results
-
     async def create(self) -> None:
         """Mark the local team wrapper as active for the current session."""
         self._is_active = True
@@ -197,38 +119,27 @@ class LocalResearchTeam:
         query: str,
         depth: ResearchDepth,
         _min_sources: int | None = None,
-    ) -> ResearchSession:
-        """Return a placeholder session for compatibility tests.
+    ) -> None:
+        """Reject direct execution through the team metadata wrapper.
 
         Args:
             query: Research query string.
             depth: Research depth mode.
             min_sources: Minimum number of sources to gather.
 
-        Returns:
-            ResearchSession with results from all agents.
-
-        The real research workflow lives in ``TeamResearchOrchestrator`` and its
-        service objects. This method remains as a compatibility stub until the
-        project either removes the wrapper or introduces a real external team
-        runtime.
+        Raises:
+            NotImplementedError: Always. The real workflow lives in
+                ``TeamResearchOrchestrator`` and the orchestration services.
         """
-        return ResearchSession(
-            session_id="placeholder",
-            query=query,
-            depth=depth,
+        msg = (
+            "LocalResearchTeam.execute_research() is not a supported workflow entrypoint. "
+            "Use TeamResearchOrchestrator.execute_research() instead."
         )
+        raise NotImplementedError(msg)
 
     async def shutdown(self) -> None:
-        """Shutdown the local team wrapper and clear placeholder state."""
-        for _agent_id, agent_data in self._agent_instances.items():
-            agent_data["status"] = "shutdown"
-
-        self._agent_instances.clear()
+        """Shutdown the local team wrapper."""
         self._is_active = False
-
-
-ResearchTeam = LocalResearchTeam
 
 
 class TeamCreationError(Exception):
@@ -260,7 +171,6 @@ class TeamExecutionError(Exception):
 
 
 __all__ = [
-    "ResearchTeam",
     "LocalResearchTeam",
     "AgentSpec",
     "TeamConfig",
