@@ -295,9 +295,9 @@ class ReporterAgent:
         # Paragraph 3: Notes
         gaps = analysis.normalized_gaps()
         if gaps:
-            gap_descriptions = [g.gap_description for g in gaps]
             paragraphs.append(
-                f"Areas requiring additional investigation include: {', '.join(gap_descriptions)}."
+                "See the Research Gaps and Limitations section for details on areas "
+                "requiring additional investigation."
             )
 
         return "\n\n".join(paragraphs)
@@ -1238,6 +1238,21 @@ class ReporterAgent:
             f"**Credibility Distribution:** {high_cred} high-credibility, "
             f"{med_cred} medium-credibility, {low_cred} low-credibility sources.\n"
         )
+
+        # Sources Summary
+        lines.append("### Sources Summary\n")
+        total_sources = len(session.sources)
+        lines.append(f"- **Total Sources:** {total_sources}\n")
+        lines.append("- **Top Source Types:**")
+        # Sort types by count and show top 3
+        type_counts = {t: len(s) for t, s in sources_by_type.items()}
+        top_types = sorted(type_counts.items(), key=lambda x: -x[1])[:3]
+        for source_type, count in top_types:
+            lines.append(f"  - {source_type}: {count}")
+        lines.append("\nSee the full catalog below for detailed source listings.\n")
+
+        # Full Catalog
+        lines.append("### Full Catalog\n")
 
         # Display sources grouped by type
         displayed_types = set()

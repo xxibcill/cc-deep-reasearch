@@ -7,6 +7,7 @@ Includes graceful degradation when WeasyPrint is not installed.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 # Set DYLD_LIBRARY_PATH before importing WeasyPrint to help find system libraries
@@ -133,6 +134,8 @@ class PDFGenerator:
 
         try:
             html = markdown.markdown(markdown_content, extensions=extensions)
+            # Wrap sections in semantic divs
+            wrapped_html = self._wrap_sections_in_html(html)
             return f"""
 <!DOCTYPE html>
 <html>
@@ -141,12 +144,73 @@ class PDFGenerator:
     <title>Research Report</title>
 </head>
 <body>
-    {html}
+    {wrapped_html}
 </body>
 </html>
             """
         except Exception as e:
             raise PDFGenerationError(f"Failed to convert Markdown to HTML: {e}") from e
+
+    def _wrap_sections_in_html(self, html_content: str) -> str:
+        """Wrap each major section in semantic HTML divs.
+
+        This enables section-specific CSS styling and helps de-emphasize
+        appendix sections like Sources and Research Metadata.
+
+        Args:
+            html_content: Raw HTML from markdown conversion.
+
+        Returns:
+            HTML with sections wrapped in semantic divs.
+        """
+        # Mapping of section heading text to CSS class
+        section_classes = {
+            "Executive Summary": "section-executive-summary",
+            "Methodology": "section-methodology",
+            "Key Findings": "section-key-findings",
+            "Detailed Analysis": "section-detailed-analysis",
+            "Evidence Quality Analysis": "section-evidence-quality",
+            "Cross-Reference Analysis": "section-cross-reference",
+            "Safety and Contraindications": "section-safety",
+            "Research Gaps and Limitations": "section-research-gaps",
+            "Sources": "section-sources",
+            "Research Metadata": "section-metadata",
+        }
+
+        # Wrap title block (h1 at start of document)
+        # Account for id attributes that markdown extension may add
+        html_content = re.sub(
+            r'(<h1[^>]*>)([^<]*)(</h1>)',
+            r'<div class="report-section section-title-block">\1\2\3</div>',
+            html_content,
+            count=1,
+        )
+
+        # Wrap each h2 section with its content
+        def wrap_h2_section(match):
+            heading_open = match.group(1)  # <h2 id="...">
+            section_name = match.group(2).strip()  # Executive Summary
+            heading_close = match.group(3)  # </h2>
+            content = match.group(4)  # Content until next h2
+
+            # Get section class, fall back to generic
+            section_class = section_classes.get(section_name, "section-generic")
+
+            return (
+                f'<div class="report-section {section_class}">'
+                f'{heading_open}{section_name}{heading_close}{content}'
+                f'</div>'
+            )
+
+        # Pattern: match h2 heading (with possible id attr) and all content until next h2 or end
+        html_content = re.sub(
+            r'(<h2[^>]*>)([^<]+)(</h2>)(.*?)(?=<h2[^>]*>|$)',
+            wrap_h2_section,
+            html_content,
+            flags=re.DOTALL,
+        )
+
+        return html_content
 
     @staticmethod
     def _get_css_styles() -> str:
@@ -172,15 +236,73 @@ class PDFGenerator:
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: Georgia, 'Times New Roman', serif;
             font-size: 11pt;
-            line-height: 1.6;
+            line-height: 1.7;
             color: #333;
             max-width: 100%;
         }
 
+        /* Long-form reading sections - serif font for better readability */
+        .section-executive-summary,
+        .section-key-findings,
+        .section-detailed-analysis,
+        .section-evidence-quality,
+        .section-cross-reference,
+        .section-safety,
+        .section-research-gaps {
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: 11pt;
+            line-height: 1.7;
+        }
+
+        /* Methodology section - utility section, sans-serif */
+        .section-methodology {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-size: 10pt;
+            line-height: 1.5;
+            color: #555;
+        }
+
+        /* Appendix sections - compact, lighter sans-serif */
+        .section-sources,
+        .section-metadata {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-size: 9pt;
+            line-height: 1.3;
+            color: #777;
+        }
+
+        /* Appendix headings */
+        .section-sources h3,
+        .section-metadata h2 {
+            font-size: 11pt;
+            color: #555;
+            margin-top: 1.5em;
+            margin-bottom: 0.8em;
+        }
+
+        /* Appendix links - quieter color */
+        .section-sources a {
+            color: #555;
+            text-decoration: none;
+        }
+
+        /* Compact source list items */
+        .section-sources ul,
+        .section-sources li {
+            margin-bottom: 0.3em;
+        }
+
+        /* Compact metadata list */
+        .section-metadata ul {
+            margin-left: 1.5em;
+            margin-bottom: 0.5em;
+        }
+
         h1 {
             color: #2c3e50;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             font-size: 24pt;
             border-bottom: 3px solid #3498db;
             padding-bottom: 10px;
@@ -190,6 +312,7 @@ class PDFGenerator:
 
         h2 {
             color: #34495e;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             font-size: 18pt;
             border-bottom: 2px solid #3498db;
             padding-bottom: 8px;
@@ -199,6 +322,7 @@ class PDFGenerator:
 
         h3 {
             color: #34495e;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             font-size: 14pt;
             margin-top: 20px;
             margin-bottom: 10px;
@@ -206,7 +330,13 @@ class PDFGenerator:
 
         p {
             margin-bottom: 12px;
-            text-align: justify;
+            text-align: left;
+        }
+
+        /* Improved paragraph spacing for long-form sections */
+        .section-executive-summary p,
+        .section-detailed-analysis p {
+            margin-bottom: 1.2em;
         }
 
         a {
@@ -228,11 +358,11 @@ class PDFGenerator:
 
         ul, ol {
             margin-left: 2em;
-            margin-bottom: 15px;
+            margin-bottom: 1.5em;
         }
 
         li {
-            margin-bottom: 5px;
+            margin-bottom: 0.8em;
         }
 
         code {
@@ -296,6 +426,26 @@ class PDFGenerator:
             border: none;
             border-top: 2px solid #dee2e6;
             margin: 20px 0;
+        }
+
+        /* Page-break protection for headings */
+        h1, h2, h3 {
+            page-break-after: avoid;
+            page-break-inside: avoid;
+            break-after: avoid;
+            break-inside: avoid;
+        }
+
+        /* Orphan control for paragraphs */
+        p {
+            orphans: 2;
+            widows: 2;
+        }
+
+        /* Page-break before full source catalog */
+        .section-sources h3:first-of-type {
+            page-break-before: always;
+            break-before: always;
         }
         """
 

@@ -19,6 +19,7 @@ The original task pack is implemented through the runtime-boundary follow-up.
 
 - Completed task records: `001` through `016`
 - Current follow-up task: [017_local_scaffolding_api_cleanup.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/AI_TASKS/017_local_scaffolding_api_cleanup.md)
+- Report readability follow-up sequence: `018` through `023`
 
 The completed task files are kept in this directory as implementation records so contributors can trace the original intent and verification notes.
 
@@ -32,6 +33,12 @@ The completed task files are kept in this directory as implementation records so
 - `013` should land before `014`.
 - `016` should land after `003` and should be treated as the concrete follow-through for the architecture-honesty work started in `011`.
 - `017` should land after `016` and should narrow the remaining compatibility API surface around the local runtime.
+- `018` should land before `019`, `021`, and `022` because those tasks need section-aware PDF hooks.
+- `019` should land before `022` so appendix styling builds on the new typographic baseline.
+- `020` can land independently of the PDF hook work, but should land before `023` so tests reflect the final executive-summary shape.
+- `021` should land after `018` and before `022` so the source appendix structure exists before it is de-emphasized.
+- `022` should land after `019` and `021`.
+- `023` should land after `018` through `022` and should lock the readability changes in place.
 
 ## Definition Of Done For This Task Pack
 
