@@ -8,9 +8,15 @@ import logging
 from typing import Any
 
 from cc_deep_research.agents.report_quality_evaluator import ReportQualityEvaluatorAgent
+from cc_deep_research.agents.report_refiner import ReportRefinerAgent
 from cc_deep_research.agents.reporter import ReporterAgent
 from cc_deep_research.config import Config
-from cc_deep_research.models import AnalysisResult, ResearchSession
+from cc_deep_research.models import (
+    AnalysisResult,
+    ReportEvaluationResult,
+    ResearchSession,
+    ValidationResult,
+)
 from cc_deep_research.post_validator import PostReportValidator
 
 logger = logging.getLogger(__name__)
@@ -25,6 +31,7 @@ class ReportGenerator:
     - HTML report generation (optional)
     - Citation formatting
     - Metadata inclusion
+    - Report quality evaluation and refinement
     """
 
     def __init__(self, config: Config) -> None:
@@ -37,6 +44,7 @@ class ReportGenerator:
         self._reporter = ReporterAgent({})
         self._report_quality_evaluator = ReportQualityEvaluatorAgent(config.model_dump())
         self._post_validator = PostReportValidator(config.model_dump())
+        self._report_refiner = ReportRefinerAgent(config.model_dump())
 
     def generate_markdown_report(
         self,
@@ -45,6 +53,12 @@ class ReportGenerator:
     ) -> str:
         """Generate a Markdown format research report.
 
+        The report pipeline:
+        1. Generate initial report from analysis
+        2. Evaluate report quality
+        3. Run post-validation (regex-based checks)
+        4. Refine report if enabled and issues detected
+
         Args:
             session: Research session with sources and metadata.
             analysis: Analysis results from analyzer agent.
@@ -52,14 +66,16 @@ class ReportGenerator:
         Returns:
             Complete Markdown report string.
         """
+        analysis_result = AnalysisResult.model_validate(analysis)
         markdown = self._reporter.generate_markdown_report(session, analysis)
 
         # Evaluate report quality (before post-validation)
+        quality_result = ReportEvaluationResult(overall_quality_score=0.0, is_acceptable=True)
         if self._config.research.quality.enable_report_quality_evaluation:
             quality_result = self._report_quality_evaluator.evaluate_report_quality(
                 markdown,
                 session,
-                AnalysisResult.model_validate(analysis),
+                analysis_result,
             )
 
             logger.info(
@@ -82,10 +98,37 @@ class ReportGenerator:
                     logger.info(f"  - {warning}")
 
         # Run post-validation (regex-based checks)
-        validation_result = self._post_validator.validate_report(markdown, session, AnalysisResult.model_validate(analysis))
+        validation_result = self._post_validator.validate_report(markdown, session, analysis_result)
 
         if validation_result.get("issues"):
             logger.warning(f"Post-validation found {len(validation_result['issues'])} issues in the report")
+
+        # Run refinement (Writer/Editor pass) if enabled
+        if self._config.research.quality.enable_report_refinement:
+            # Only refine if there are issues to address
+            has_issues = (
+                bool(quality_result.critical_issues)
+                or bool(quality_result.warnings)
+                or bool(validation_result.get("issues"))
+            )
+
+            if has_issues:
+                logger.info("Running report refinement pass to address detected issues")
+                validation_result_typed = ValidationResult(
+                    is_valid=not bool(validation_result.get("issues")),
+                    issues=validation_result.get("issues", []),
+                    warnings=validation_result.get("warnings", []),
+                    recommendations=validation_result.get("recommendations", []),
+                )
+
+                markdown = self._report_refiner.refine_report(
+                    original_markdown=markdown,
+                    validation_result=validation_result_typed,
+                    evaluation_result=quality_result,
+                    session=session,
+                    analysis=analysis_result,
+                )
+                logger.info("Report refinement pass completed")
 
         return markdown
 
@@ -153,37 +196,23 @@ def generate_executive_summary(
 ) -> str:
     """Generate executive summary section.
 
+    This function is a thin wrapper around the canonical ReporterAgent implementation.
+    It exists for backwards compatibility with the public API.
+
     Args:
         session: Research session.
         analysis: Analysis results.
 
     Returns:
         Executive summary text (2-3 paragraphs).
+
+    Note:
+        For new code, prefer using ReportGenerator which handles the full report pipeline.
+        The canonical implementation is in ReporterAgent._generate_executive_summary.
     """
-    paragraphs = []
-
-    # Paragraph 1: Overview
-    paragraphs.append(
-        f"This research investigated '{session.query}' using "
-        f"{session.total_sources} sources. The analysis focused on "
-        f"identifying key themes, consensus points, and areas of contention."
-    )
-
-    # Paragraph 2: Key findings
-    if analysis.get("key_findings"):
-        key_count = len(analysis["key_findings"])
-        paragraphs.append(
-            f"The research identified {key_count} key findings. "
-            f"Main themes include: "
-            f"{', '.join(analysis.get('themes', [])[:3])}."
-        )
-
-    # Paragraph 3: Notes
-    gaps = analysis.get("gaps", [])
-    if gaps:
-        paragraphs.append(f"Areas requiring additional investigation include: {', '.join(gaps)}.")
-
-    return "\n\n".join(paragraphs)
+    reporter = ReporterAgent({})
+    analysis_result = AnalysisResult.model_validate(analysis)
+    return reporter._generate_executive_summary(session, analysis_result)
 
 
 def format_sources_list(sources: list[Any]) -> str:

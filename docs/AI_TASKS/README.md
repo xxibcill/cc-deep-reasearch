@@ -15,11 +15,11 @@ Each task file contains:
 
 ## Current Status
 
-The original task pack is implemented through the runtime-boundary follow-up.
+All tasks in the AI Task Pack have been completed:
 
-- Completed task records: `001` through `016`
-- Current follow-up task: [017_local_scaffolding_api_cleanup.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/AI_TASKS/017_local_scaffolding_api_cleanup.md)
-- Report readability follow-up sequence: `018` through `023`
+- Completed task records: `001` through `028`
+- Report readability follow-up sequence: `018` through `023` ✓
+- Report writing cleanup follow-up sequence: `024` through `028` ✓
 
 The completed task files are kept in this directory as implementation records so contributors can trace the original intent and verification notes.
 
@@ -39,6 +39,11 @@ The completed task files are kept in this directory as implementation records so
 - `021` should land after `018` and before `022` so the source appendix structure exists before it is de-emphasized.
 - `022` should land after `019` and `021`.
 - `023` should land after `018` through `022` and should lock the readability changes in place.
+- `024` should land before `025` and `027` so Executive Summary behavior has a single implementation surface.
+- `025` should land after `024` and before `027` and `028` so the final summary wording contract is in place.
+- `026` should land after `024`; it can proceed independently of `025`, but should land before `028` so the fixture refresh reflects the real report pipeline.
+- `027` should land after `024` and `025` so the guardrails reflect the finalized summary contract.
+- `028` should land after `025`, `026`, and `027` because it is a fixture-refresh and verification task.
 
 ## Definition Of Done For This Task Pack
 

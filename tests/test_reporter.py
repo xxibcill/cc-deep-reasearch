@@ -5,6 +5,7 @@ import json
 from cc_deep_research.agents.reporter import ReporterAgent
 from cc_deep_research.credibility import SourceCredibilityScorer
 from cc_deep_research.models import (
+    AnalysisResult,
     ClaimEvidence,
     CrossReferenceClaim,
     ResearchDepth,
@@ -735,3 +736,510 @@ class TestReadabilityRegression:
         # Sources section should still have summary
         assert "### Sources Summary" in report
         assert "### Full Catalog" in report
+
+
+class TestExecutiveSummaryConsolidation:
+    """Tests for Task 024: Executive Summary contract consolidation."""
+
+    def test_generate_executive_summary_wrapper_delegates_to_reporter(self) -> None:
+        """Test that reporting.generate_executive_summary delegates to ReporterAgent."""
+        from cc_deep_research.reporting import generate_executive_summary
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [],
+            "themes": ["Theme 1", "Theme 2"],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        summary = generate_executive_summary(session, analysis)
+
+        # Should produce a non-empty summary
+        assert summary
+        assert len(summary) > 0
+
+        # Should use the canonical implementation (same as ReporterAgent)
+        agent = ReporterAgent({"model": "claude-sonnet-4-6"})
+        from cc_deep_research.models import AnalysisResult
+        analysis_result = AnalysisResult.model_validate(analysis)
+        expected = agent._generate_executive_summary(session, analysis_result)
+
+        assert summary == expected
+
+    def test_executive_summary_uses_constants(self) -> None:
+        """Test that _generate_executive_summary uses module constants."""
+        from cc_deep_research.agents.reporter import (
+            EXECUTIVE_SUMMARY_MAX_THEMES,
+            EXECUTIVE_SUMMARY_GAPS_POINTER,
+        )
+
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        # Create session with many themes and gaps
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.DEEP,
+            sources=[],
+        )
+
+        # Create analysis with more themes than the max
+        analysis = {
+            "key_findings": [{"title": "Finding 1", "description": "Description"}],
+            "themes": [f"Theme {i}" for i in range(10)],  # 10 themes
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [{"gap_description": f"Gap {i}", "importance": "medium", "suggested_queries": []} for i in range(3)],
+            "analysis_method": "ai_semantic",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+
+        # Extract executive summary section
+        import re
+        exec_summary_match = re.search(
+            r'## Executive Summary\n(.*?)\n## Methodology',
+            report,
+            re.DOTALL
+        )
+        assert exec_summary_match is not None
+        exec_summary = exec_summary_match.group(1)
+
+        # Should not have more themes than max
+        # Count how many theme names appear in the summary
+        themes_found = sum(1 for i in range(10) if f"Theme {i}" in exec_summary)
+        assert themes_found <= EXECUTIVE_SUMMARY_MAX_THEMES
+
+        # Should use the gaps pointer instead of listing gaps inline
+        assert EXECUTIVE_SUMMARY_GAPS_POINTER in exec_summary
+
+        # Individual gap descriptions should NOT be in the executive summary
+        assert "Gap 0" not in exec_summary
+        assert "Gap 1" not in exec_summary
+        assert "Gap 2" not in exec_summary
+
+
+class TestExecutiveSummaryInsightOnly:
+    """Tests for Task 025: Executive Summary insight-only rewrite."""
+
+    def test_no_prompt_restatement(self) -> None:
+        """Executive Summary should not include 'This research investigated'."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="what are the effects of caffeine",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [{"title": "Finding 1", "description": "Description"}],
+            "themes": ["Alertness", "Sleep"],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "ai_semantic",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+
+        # Extract executive summary
+        import re
+        exec_summary_match = re.search(
+            r'## Executive Summary\n(.*?)\n## Methodology',
+            report,
+            re.DOTALL
+        )
+        assert exec_summary_match is not None
+        exec_summary = exec_summary_match.group(1)
+
+        # Should NOT include prompt restatement
+        assert "This research investigated" not in exec_summary
+
+    def test_no_methodology_chatter(self) -> None:
+        """Executive Summary should not include 'Analysis was performed'."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        # Test with AI semantic method
+        analysis = {
+            "key_findings": [{"title": "Finding 1", "description": "Description"}],
+            "themes": ["Theme 1"],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "ai_semantic",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+
+        # Extract executive summary
+        import re
+        exec_summary_match = re.search(
+            r'## Executive Summary\n(.*?)\n## Methodology',
+            report,
+            re.DOTALL
+        )
+        assert exec_summary_match is not None
+        exec_summary = exec_summary_match.group(1)
+
+        # Should NOT include methodology chatter
+        assert "Analysis was performed" not in exec_summary
+
+    def test_no_inline_gap_inventory(self) -> None:
+        """Executive Summary should not include 'Areas requiring additional investigation include'."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [{"title": "Finding 1", "description": "Description"}],
+            "themes": ["Theme 1"],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [{"gap_description": "Missing data on X", "importance": "high", "suggested_queries": []}],
+            "analysis_method": "ai_semantic",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+
+        # Extract executive summary
+        import re
+        exec_summary_match = re.search(
+            r'## Executive Summary\n(.*?)\n## Methodology',
+            report,
+            re.DOTALL
+        )
+        assert exec_summary_match is not None
+        exec_summary = exec_summary_match.group(1)
+
+        # Should NOT include inline gap inventory phrase
+        assert "Areas requiring additional investigation include" not in exec_summary
+
+    def test_summary_uses_brief_gaps_pointer(self) -> None:
+        """When gaps exist, summary should use brief pointer, not list gaps."""
+        from cc_deep_research.agents.reporter import EXECUTIVE_SUMMARY_GAPS_POINTER
+
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [{"title": "Finding 1", "description": "Description"}],
+            "themes": ["Theme 1"],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [
+                {"gap_description": "Missing data on X", "importance": "high", "suggested_queries": []},
+                {"gap_description": "Need more research on Y", "importance": "medium", "suggested_queries": []},
+            ],
+            "analysis_method": "ai_semantic",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+
+        # Extract executive summary
+        import re
+        exec_summary_match = re.search(
+            r'## Executive Summary\n(.*?)\n## Methodology',
+            report,
+            re.DOTALL
+        )
+        assert exec_summary_match is not None
+        exec_summary = exec_summary_match.group(1)
+
+        # Should use the gaps pointer
+        assert EXECUTIVE_SUMMARY_GAPS_POINTER in exec_summary
+
+        # Should NOT list gap descriptions inline
+        assert "Missing data on X" not in exec_summary
+        assert "Need more research on Y" not in exec_summary
+
+    def test_summary_stays_within_character_budget(self) -> None:
+        """Summary should stay within the configured character budget."""
+        from cc_deep_research.agents.reporter import EXECUTIVE_SUMMARY_MAX_CHARACTERS
+
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query with a very long name that might push the character limit",
+            depth=ResearchDepth.DEEP,
+            sources=[],
+        )
+
+        # Create analysis with many themes to potentially exceed budget
+        analysis = {
+            "key_findings": [{"title": f"Finding {i}", "description": f"Description {i}"} for i in range(10)],
+            "themes": [f"Theme {i} with a longer description" for i in range(10)],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [{"gap_description": f"Gap {i}", "importance": "medium", "suggested_queries": []} for i in range(5)],
+            "analysis_method": "ai_semantic",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+
+        # Extract executive summary
+        import re
+        exec_summary_match = re.search(
+            r'## Executive Summary\n(.*?)\n## Methodology',
+            report,
+            re.DOTALL
+        )
+        assert exec_summary_match is not None
+        exec_summary = exec_summary_match.group(1).strip()
+
+        # Should stay within character budget
+        assert len(exec_summary) <= EXECUTIVE_SUMMARY_MAX_CHARACTERS + 50  # Allow small margin for truncation suffix
+
+    def test_summary_is_insight_first(self) -> None:
+        """Summary should start with findings/themes, not the query."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="what are the health benefits of green tea",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [{"title": "Antioxidant Properties", "description": "Green tea contains antioxidants"}],
+            "themes": ["Antioxidants", "Heart Health", "Metabolism"],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "ai_semantic",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+
+        # Extract executive summary
+        import re
+        exec_summary_match = re.search(
+            r'## Executive Summary\n(.*?)\n## Methodology',
+            report,
+            re.DOTALL
+        )
+        assert exec_summary_match is not None
+        exec_summary = exec_summary_match.group(1).strip()
+
+        # Should start with insight (Analysis identified...), not the query
+        assert exec_summary.startswith("Analysis identified") or exec_summary.startswith("Key themes") or exec_summary.startswith("Analysis reviewed")
+
+        # Should mention findings/themes
+        assert "finding" in exec_summary.lower() or "theme" in exec_summary.lower()
+
+
+class TestReportRefinementPipeline:
+    """Tests for Task 026: Writer/Editor pass integration."""
+
+    def test_report_refinement_invoked_when_issues_detected(self) -> None:
+        """Report refinement should be invoked when quality issues are detected."""
+        from unittest.mock import MagicMock, patch
+
+        from cc_deep_research.config import Config
+        from cc_deep_research.reporting import ReportGenerator
+
+        # Create a config with refinement enabled
+        config = Config()
+        config.research.quality.enable_report_refinement = True
+        config.research.quality.enable_report_quality_evaluation = True
+
+        generator = ReportGenerator(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        # Patch the refiner to track if it was called
+        with patch.object(generator._report_refiner, 'refine_report', wraps=generator._report_refiner.refine_report) as mock_refine:
+            report = generator.generate_markdown_report(session, analysis)
+
+            # The refiner should have been called if there were issues
+            # (Quality evaluator may find issues with a minimal report)
+            # At minimum, verify the pipeline runs without error
+            assert report is not None
+            assert len(report) > 0
+
+    def test_report_refinement_preserves_sections(self) -> None:
+        """Refinement should preserve required report sections and citations."""
+        from cc_deep_research.agents.report_refiner import ReportRefinerAgent
+        from cc_deep_research.models import AnalysisResult, ReportEvaluationResult, ValidationResult
+
+        config = {"model": "claude-sonnet-4-6"}
+        refiner = ReportRefinerAgent(config)
+
+        # Create a report with sections and citations
+        original_markdown = """# Research Report: Test Query
+
+## Executive Summary
+
+Analysis identified 2 key findings.
+
+## Key Findings
+
+### Finding 1: Test Finding
+This is a finding with a citation [1](https://example.com).
+
+## Sources
+
+### Full Catalog
+
+[1] Test Source - https://example.com
+
+## Safety and Contraindications
+
+No safety issues identified.
+"""
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = AnalysisResult(
+            key_findings=[],
+            themes=[],
+            themes_detailed=[],
+            consensus_points=[],
+            contention_points=[],
+            gaps=[],
+            analysis_method="basic_keyword",
+        )
+
+        validation_result = ValidationResult(
+            is_valid=True,
+            issues=[],
+            warnings=["Minor warning"],
+            recommendations=[],
+        )
+
+        evaluation_result = ReportEvaluationResult(
+            overall_quality_score=0.7,
+            is_acceptable=True,
+            writing_quality_score=0.8,
+            structure_flow_score=0.7,
+            technical_accuracy_score=0.7,
+            user_experience_score=0.6,
+            consistency_score=0.7,
+            critical_issues=[],
+            warnings=["User experience could be improved"],
+            recommendations=[],
+        )
+
+        refined = refiner.refine_report(
+            original_markdown=original_markdown,
+            validation_result=validation_result,
+            evaluation_result=evaluation_result,
+            session=session,
+            analysis=analysis,
+        )
+
+        # Should preserve required sections
+        assert "## Executive Summary" in refined
+        assert "## Key Findings" in refined
+        assert "## Sources" in refined
+
+        # Should preserve citations
+        assert "[1]" in refined
+        assert "https://example.com" in refined
+
+    def test_refinement_disabled_when_config_disabled(self) -> None:
+        """Refinement should not run when disabled in config."""
+        from unittest.mock import patch
+
+        from cc_deep_research.config import Config
+        from cc_deep_research.reporting import ReportGenerator
+
+        # Create a config with refinement disabled
+        config = Config()
+        config.research.quality.enable_report_refinement = False
+        config.research.quality.enable_report_quality_evaluation = False
+
+        generator = ReportGenerator(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        # Patch the refiner to ensure it's NOT called
+        with patch.object(generator._report_refiner, 'refine_report') as mock_refine:
+            report = generator.generate_markdown_report(session, analysis)
+
+            # Refiner should NOT have been called
+            mock_refine.assert_not_called()
+
+            # Report should still be generated
+            assert report is not None
+

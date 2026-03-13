@@ -35,6 +35,26 @@ from cc_deep_research.models import (
 from cc_deep_research.aggregation import sanitize_url
 
 
+# Executive Summary constraints
+# These constants define the size and structure limits for the Executive Summary section
+EXECUTIVE_SUMMARY_MAX_PARAGRAPHS = 3
+EXECUTIVE_SUMMARY_MAX_THEMES = 3
+EXECUTIVE_SUMMARY_MAX_CHARACTERS = 800  # Target length for PDF page fit
+
+# Phrases that should NOT appear in the Executive Summary (banned boilerplate)
+EXECUTIVE_SUMMARY_BANNED_PHRASES = [
+    "This research investigated",
+    "Analysis was performed",
+    "Areas requiring additional investigation include",
+]
+
+# Pointer text for gaps section (used instead of listing gaps inline)
+EXECUTIVE_SUMMARY_GAPS_POINTER = (
+    "See the Research Gaps and Limitations section for details on areas "
+    "requiring additional investigation."
+)
+
+
 class ReporterAgent:
     """Agent that generates research reports.
 
@@ -253,54 +273,67 @@ class ReporterAgent:
     ) -> str:
         """Generate executive summary section.
 
+        This is the canonical implementation for Executive Summary generation.
+        All summary generation should flow through this method.
+
+        The summary presents research insights directly, avoiding:
+        - Prompt restatement ("This research investigated...")
+        - Methodology chatter ("Analysis was performed...")
+        - Inline gap inventories
+
         Args:
             session: Research session.
             analysis: Analysis results.
 
         Returns:
-            Executive summary text (2-3 paragraphs).
+            Executive summary text (at most 2 short paragraphs).
+
+        Note:
+            Summary constraints are defined by module-level constants:
+            - EXECUTIVE_SUMMARY_MAX_PARAGRAPHS: Maximum number of paragraphs
+            - EXECUTIVE_SUMMARY_MAX_THEMES: Maximum themes to list
+            - EXECUTIVE_SUMMARY_MAX_CHARACTERS: Target character budget
+            - EXECUTIVE_SUMMARY_BANNED_PHRASES: Phrases that should not appear
+            - EXECUTIVE_SUMMARY_GAPS_POINTER: Text to use for gaps reference
         """
         paragraphs = []
 
-        # Paragraph 1: Overview
-        paragraphs.append(
-            f"This research investigated '{session.query}' using "
-            f"{session.total_sources} sources. The analysis focused on "
-            f"identifying key themes, consensus points, and areas of contention."
-        )
-
-        # Paragraph 2: Key findings (ENHANCED)
+        # Paragraph 1: Key findings and themes (insight-first approach)
         if analysis.key_findings:
             key_count = len(analysis.key_findings)
-            themes = analysis.themes[:3]
+            themes = analysis.themes[:EXECUTIVE_SUMMARY_MAX_THEMES]
+
+            # Build insight-first paragraph
+            finding_summary = f"Analysis identified {key_count} key finding"
+            if key_count != 1:
+                finding_summary += "s"
+            finding_summary += "."
+
+            if themes:
+                finding_summary += f" Primary themes: {', '.join(themes)}."
+            paragraphs.append(finding_summary)
+        elif analysis.themes:
+            # No findings but have themes
+            themes = analysis.themes[:EXECUTIVE_SUMMARY_MAX_THEMES]
+            paragraphs.append(f"Key themes identified: {', '.join(themes)}.")
+        else:
+            # Minimal case: just note the scope
             paragraphs.append(
-                f"The research identified {key_count} key findings. "
-                f"Main themes include: "
-                f"{', '.join(themes)}. "
+                f"Analysis reviewed {session.total_sources} sources."
             )
 
-            # Add method information
-            method = analysis.analysis_method
-            if method == "ai_semantic" or method == "ai_multi_pass":
-                paragraphs.append(
-                    "Analysis was performed using AI-powered semantic analysis, "
-                    "enabling identification of nuanced patterns and cross-source relationships."
-                )
-            elif method == "basic_keyword":
-                paragraphs.append(
-                    "Analysis was performed using keyword-based extraction due to limited source content availability. "
-                    "For deeper analysis, ensure full webpage content is accessible."
-                )
-
-        # Paragraph 3: Notes
+        # Paragraph 2: Brief gaps pointer (if gaps exist)
+        # Use at most one sentence pointing to the gaps section
         gaps = analysis.normalized_gaps()
         if gaps:
-            paragraphs.append(
-                "See the Research Gaps and Limitations section for details on areas "
-                "requiring additional investigation."
-            )
+            paragraphs.append(EXECUTIVE_SUMMARY_GAPS_POINTER)
 
-        return "\n\n".join(paragraphs)
+        # Enforce character budget by truncating if necessary
+        result = "\n\n".join(paragraphs)
+        if len(result) > EXECUTIVE_SUMMARY_MAX_CHARACTERS:
+            result = result[:EXECUTIVE_SUMMARY_MAX_CHARACTERS].rsplit(" ", 1)[0] + "."
+
+        return result
 
     def _generate_detailed_analysis(
         self,

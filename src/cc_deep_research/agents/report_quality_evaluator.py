@@ -9,6 +9,7 @@ Quality dimensions evaluated:
 - Technical accuracy of synthesized content
 - User experience (readability, usefulness)
 - Consistency with analysis findings
+- Executive Summary quality (banned phrases, size budget, gap inventory)
 """
 
 import logging
@@ -17,6 +18,11 @@ from typing import Any
 
 from cc_deep_research.agents.ai_agent_integration import AIAgentIntegration
 from cc_deep_research.agents.ai_executor import AIExecutor
+from cc_deep_research.agents.reporter import (
+    EXECUTIVE_SUMMARY_BANNED_PHRASES,
+    EXECUTIVE_SUMMARY_GAPS_POINTER,
+    EXECUTIVE_SUMMARY_MAX_CHARACTERS,
+)
 from cc_deep_research.models import AnalysisResult, ReportEvaluationResult, ResearchSession
 
 logger = logging.getLogger(__name__)
@@ -72,13 +78,14 @@ class ReportQualityEvaluatorAgent:
         technical_accuracy = self._evaluate_technical_accuracy(markdown, analysis)
         user_experience = self._evaluate_user_experience(markdown)
         consistency = self._evaluate_consistency(markdown, analysis)
+        executive_summary = self._evaluate_executive_summary(markdown, analysis)
 
         # Collect issues and warnings from all dimensions
         critical_issues = []
         warnings = []
         recommendations = []
 
-        for assessment in [writing_quality, structure_flow, technical_accuracy, user_experience, consistency]:
+        for assessment in [writing_quality, structure_flow, technical_accuracy, user_experience, consistency, executive_summary]:
             critical_issues.extend(assessment.get("critical_issues", []))
             warnings.extend(assessment.get("warnings", []))
             recommendations.extend(assessment.get("recommendations", []))
@@ -90,6 +97,7 @@ class ReportQualityEvaluatorAgent:
             "technical_accuracy": technical_accuracy["score"],
             "user_experience": user_experience["score"],
             "consistency": consistency["score"],
+            "executive_summary": executive_summary["score"],
         }
         overall_score = self._calculate_overall_score(dimension_scores)
 
@@ -103,6 +111,7 @@ class ReportQualityEvaluatorAgent:
             "technical_accuracy": technical_accuracy,
             "user_experience": user_experience,
             "consistency": consistency,
+            "executive_summary": executive_summary,
         }
 
         return ReportEvaluationResult(
@@ -370,6 +379,98 @@ class ReportQualityEvaluatorAgent:
             "recommendations": recommendations,
         }
 
+    def _evaluate_executive_summary(
+        self,
+        markdown: str,
+        analysis: AnalysisResult,
+    ) -> dict[str, Any]:
+        """Evaluate Executive Summary quality against guardrails.
+
+        This method checks for:
+        - Banned boilerplate phrases (prompt restatement, methodology chatter)
+        - Summary length exceeding the configured budget
+        - Inline gap inventories instead of brief pointer
+
+        Args:
+            markdown: Report content to evaluate.
+            analysis: Analysis results from analyzer.
+
+        Returns:
+            Dictionary with score, issues, warnings, recommendations.
+        """
+        issues: list[str] = []
+        warnings: list[str] = []
+        recommendations: list[str] = []
+
+        # Extract the Executive Summary section
+        exec_summary_match = re.search(
+            r'## Executive Summary\n(.*?)(?=\n## |\Z)',
+            markdown,
+            re.DOTALL
+        )
+
+        if not exec_summary_match:
+            issues.append("Executive Summary section not found")
+            return {
+                "score": 0.0,
+                "critical_issues": issues,
+                "warnings": warnings,
+                "recommendations": recommendations,
+            }
+
+        exec_summary = exec_summary_match.group(1).strip()
+        score = 1.0  # Start with perfect score
+
+        # Check for banned boilerplate phrases
+        for banned_phrase in EXECUTIVE_SUMMARY_BANNED_PHRASES:
+            if banned_phrase in exec_summary:
+                score -= 0.3
+                warnings.append(
+                    f"Executive Summary contains banned boilerplate phrase: '{banned_phrase}'"
+                )
+
+        # Check for length exceeding budget
+        if len(exec_summary) > EXECUTIVE_SUMMARY_MAX_CHARACTERS:
+            score -= 0.2
+            warnings.append(
+                f"Executive Summary exceeds character budget "
+                f"({len(exec_summary)} > {EXECUTIVE_SUMMARY_MAX_CHARACTERS})"
+            )
+
+        # Check for inline gap inventory (listing gaps instead of pointer)
+        # If there are gaps in analysis and the summary doesn't use the pointer
+        # but contains gap-related phrases
+        gaps = analysis.normalized_gaps()
+        if gaps:
+            # Check if summary has gap descriptions inline instead of pointer
+            has_pointer = EXECUTIVE_SUMMARY_GAPS_POINTER[:50] in exec_summary
+            has_inline_gaps = any(
+                gap.get("gap_description", "")[:30] in exec_summary
+                for gap in gaps if isinstance(gap, dict)
+            )
+
+            if has_inline_gaps and not has_pointer:
+                score -= 0.2
+                warnings.append(
+                    "Executive Summary lists gaps inline instead of using a brief pointer"
+                )
+
+        # Ensure score is within bounds
+        score = max(0.0, min(1.0, score))
+
+        if score < 0.7:
+            recommendations.append(
+                "Rewrite Executive Summary to be insight-only: remove prompt restatement, "
+                "methodology chatter, and use brief pointer for gaps"
+            )
+
+        return {
+            "score": score,
+            "critical_issues": issues,
+            "warnings": warnings,
+            "recommendations": recommendations,
+        }
+
     def _calculate_overall_score(self, dimension_scores: dict[str, float]) -> float:
         """Calculate weighted overall quality score.
 
@@ -381,11 +482,12 @@ class ReportQualityEvaluatorAgent:
         """
         # Weights based on importance
         weights = {
-            "writing_quality": 0.25,
-            "structure_flow": 0.20,
-            "technical_accuracy": 0.25,
+            "writing_quality": 0.20,
+            "structure_flow": 0.15,
+            "technical_accuracy": 0.20,
             "user_experience": 0.15,
             "consistency": 0.15,
+            "executive_summary": 0.15,
         }
 
         total_score = sum(dimension_scores[dim] * weights[dim] for dim in weights)
