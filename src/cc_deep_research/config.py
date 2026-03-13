@@ -83,6 +83,9 @@ class ResearchQualitySettings(BaseSettings):
     enable_report_quality_evaluation: bool = Field(default=True)
     min_report_quality_score: float = Field(default=0.6, ge=0.0, le=1.0)
 
+    # Report refinement (Writer/Editor pass)
+    enable_report_refinement: bool = Field(default=True)
+
 
 class ResearchConfig(BaseModel):
     """Research-related configuration."""

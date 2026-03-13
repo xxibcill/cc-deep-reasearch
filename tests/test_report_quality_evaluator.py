@@ -59,7 +59,7 @@ This is a test report.
 This report is safe.
 """
 
-        result = agent.evaluate_report_quality(markdown, analysis)
+        result = agent.evaluate_report_quality(markdown, session, analysis)
 
         assert isinstance(result, ReportEvaluationResult)
         assert 0.0 <= result.overall_quality_score <= 1.0
@@ -79,7 +79,7 @@ This report is safe.
         analysis = AnalysisResult()
         markdown = "Test report"
 
-        result = agent.evaluate_report_quality(markdown, analysis)
+        result = agent.evaluate_report_quality(markdown, session, analysis)
 
         assert result.overall_quality_score == 0.0
         assert result.is_acceptable is True
@@ -255,6 +255,7 @@ Some other themes."""
             "technical_accuracy": 1.0,
             "user_experience": 1.0,
             "consistency": 1.0,
+            "executive_summary": 1.0,
         }
         result = agent._calculate_overall_score(dimension_scores)
         assert result == 1.0
@@ -265,6 +266,7 @@ Some other themes."""
             "technical_accuracy": 0.5,
             "user_experience": 0.5,
             "consistency": 0.5,
+            "executive_summary": 0.5,
         }
         result = agent._calculate_overall_score(dimension_scores)
         assert result == 0.5
@@ -276,7 +278,7 @@ Some other themes."""
         session = ResearchSession(session_id="test", query="test", sources=[])
         analysis = AnalysisResult()
 
-        result = agent.evaluate_report_quality("", analysis)
+        result = agent.evaluate_report_quality("", session, analysis)
 
         assert isinstance(result, ReportEvaluationResult)
         # Empty reports should have lower scores due to missing sections
@@ -291,7 +293,7 @@ Some other themes."""
         analysis = AnalysisResult()
 
         markdown = "Short report."
-        result = agent.evaluate_report_quality(markdown, analysis)
+        result = agent.evaluate_report_quality(markdown, session, analysis)
 
         assert isinstance(result, ReportEvaluationResult)
         # Very short reports should have lower scores due to missing sections
@@ -321,7 +323,7 @@ Finding.
 ## Safety
 
 Safe."""
-        result = agent.evaluate_report_quality(markdown, analysis)
+        result = agent.evaluate_report_quality(markdown, session, analysis)
 
         # Since it's a minimal report, score likely < 0.7
         assert result.is_acceptable == (result.overall_quality_score >= 0.7)
@@ -349,7 +351,7 @@ Test finding.
 
 Safe."""
 
-        result = agent.evaluate_report_quality(markdown, analysis)
+        result = agent.evaluate_report_quality(markdown, session, analysis)
 
         # Check that we have dimension assessments
         assert len(result.dimension_assessments) > 0
@@ -362,9 +364,106 @@ Safe."""
         heuristic_agent = ReportQualityEvaluatorAgent({"ai_integration_method": "heuristic"})
         session = ResearchSession(session_id="test", query="test", sources=[])
         analysis = AnalysisResult()
-        result = heuristic_agent.evaluate_report_quality("Test", analysis)
+        result = heuristic_agent.evaluate_report_quality("Test", session, analysis)
         assert result.evaluation_method == "heuristic"
 
         api_agent = ReportQualityEvaluatorAgent({"ai_integration_method": "api"})
-        result = api_agent.evaluate_report_quality("Test", analysis)
+        result = api_agent.evaluate_report_quality("Test", session, analysis)
         assert result.evaluation_method == "llm_analysis"
+
+
+class TestExecutiveSummaryGuardrails:
+    """Tests for Task 027: Executive Summary quality guardrails."""
+
+    def test_banned_phrase_triggers_warning(self) -> None:
+        """Summary with banned phrase should trigger a warning."""
+        agent = ReportQualityEvaluatorAgent({})
+
+        # Report with banned phrase in Executive Summary
+        markdown = """## Executive Summary
+
+This research investigated the topic using 5 sources. The analysis focused on identifying themes.
+
+## Key Findings
+
+Finding one.
+
+## Sources
+
+[1] https://example.com
+
+## Safety
+
+Safe."""
+
+        session = ResearchSession(session_id="test", query="test", sources=[])
+        analysis = AnalysisResult()
+
+        result = agent.evaluate_report_quality(markdown, session, analysis)
+
+        # Should have warnings about banned phrase
+        assert len(result.warnings) > 0
+        assert any("banned boilerplate" in w.lower() for w in result.warnings)
+
+    def test_over_budget_summary_triggers_warning(self) -> None:
+        """Summary exceeding character budget should trigger a warning."""
+        agent = ReportQualityEvaluatorAgent({})
+
+        # Create a very long executive summary
+        long_summary = "Analysis identified 10 key findings. " * 50  # Very long
+        markdown = f"""## Executive Summary
+
+{long_summary}
+
+## Key Findings
+
+Finding one.
+
+## Sources
+
+[1] https://example.com
+
+## Safety
+
+Safe."""
+
+        session = ResearchSession(session_id="test", query="test", sources=[])
+        analysis = AnalysisResult()
+
+        result = agent.evaluate_report_quality(markdown, session, analysis)
+
+        # Should have warning about exceeding budget
+        assert any("character budget" in w.lower() for w in result.warnings)
+
+    def test_compliant_summary_no_guardrail_issues(self) -> None:
+        """Insight-only summary should not trigger guardrail warnings."""
+        agent = ReportQualityEvaluatorAgent({})
+
+        # Compliant insight-only summary
+        markdown = """## Executive Summary
+
+Analysis identified 3 key findings. Primary themes: Theme A, Theme B, Theme C.
+
+## Key Findings
+
+Finding one.
+
+## Sources
+
+[1] https://example.com
+
+## Safety
+
+Safe."""
+
+        session = ResearchSession(session_id="test", query="test", sources=[])
+        analysis = AnalysisResult()
+
+        result = agent.evaluate_report_quality(markdown, session, analysis)
+
+        # Should NOT have warnings about banned phrases or character budget
+        guardrail_warnings = [
+            w for w in result.warnings
+            if "banned boilerplate" in w.lower() or "character budget" in w.lower()
+        ]
+        assert len(guardrail_warnings) == 0
