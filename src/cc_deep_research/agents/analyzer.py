@@ -7,8 +7,10 @@ The analyzer agent is responsible for:
 - Detecting consensus and disagreement across sources
 """
 
+from __future__ import annotations
+
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.agents.ai_analysis_service import AIAnalysisService
 from cc_deep_research.models import (
@@ -19,11 +21,10 @@ from cc_deep_research.models import (
     CrossReferenceClaim,
     SearchResultItem,
 )
-from cc_deep_research.text_normalization import (
-    extract_full_sentence_around_keyword,
-    is_complete_sentence,
-    normalize_content,
-)
+from cc_deep_research.text_normalization import normalize_content
+
+if TYPE_CHECKING:
+    from cc_deep_research.monitoring import ResearchMonitor
 
 
 class AnalyzerAgent:
@@ -36,14 +37,18 @@ class AnalyzerAgent:
     - Synthesizes coherent analysis
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        config: dict[str, Any],
+        monitor: ResearchMonitor | None = None,
+    ) -> None:
         """Initialize the analyzer agent.
 
         Args:
             config: Agent configuration dictionary.
         """
         self._config = config
-        self._ai_service = AIAnalysisService(config)
+        self._ai_service = AIAnalysisService(config, monitor=monitor)
 
     def analyze_sources(
         self,

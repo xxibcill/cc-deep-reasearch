@@ -120,18 +120,35 @@ Telemetry files are written under:
 - `~/.config/cc-deep-research/telemetry/<session_id>/events.jsonl`
 - `~/.config/cc-deep-research/telemetry/<session_id>/summary.json`
 
-Ingest and launch dashboard:
+Recommended operator workflow:
 
 ```bash
 # Install dashboard dependencies
 pip install "cc-deep-research[dashboard]"
 
-# Ingest telemetry into DuckDB
-cc-deep-research telemetry ingest
+# Start a monitored run
+cc-deep-research research --monitor "Topic"
 
-# Launch Streamlit dashboard
-cc-deep-research telemetry dashboard --port 8501
+# Launch the live dashboard
+cc-deep-research telemetry dashboard --port 8501 --refresh-seconds 5 --tail-limit 200
+
+# Optional: refresh historical analytics without opening the UI
+cc-deep-research telemetry ingest
 ```
+
+The dashboard now reads active `events.jsonl` sessions directly, so you can inspect:
+
+- the current phase of an in-flight run
+- recent event tail entries with filters
+- agent activity
+- Claude CLI stdout and stderr chunks with terminal status
+
+Common failure modes:
+
+- Missing dashboard dependencies: install `cc-deep-research[dashboard]`
+- No telemetry yet: start a research run first, or point `telemetry dashboard` at a populated `--base-dir`
+- Nested Claude session fallback: when running inside Claude Code, Claude CLI analysis is disabled and the workflow falls back to heuristic analysis
+- Claude timeout or subprocess failure: inspect the Claude subprocess pane in the dashboard for `timeout`, `failed`, or `failed_to_start` events
 
 ## Session Management
 

@@ -20,6 +20,7 @@ class PhaseRunner:
 
     def __init__(self, *, monitor: ResearchMonitor) -> None:
         self._monitor = monitor
+        self._current_phase_id: str | None = None
 
     @staticmethod
     def notify_phase(
@@ -33,6 +34,11 @@ class PhaseRunner:
             return
         phase_hook(phase_key, description)
 
+    @property
+    def current_phase_id(self) -> str | None:
+        """Return the current phase event ID, if any."""
+        return self._current_phase_id
+
     async def run_phase(
         self,
         *,
@@ -40,24 +46,80 @@ class PhaseRunner:
         phase_key: str,
         description: str,
         operation: Callable[[], Awaitable[Any]],
+        metadata: dict[str, Any] | None = None,
     ) -> Any:
-        """Run a monitored phase and return the operation result."""
+        """Run a monitored phase with full lifecycle events.
+
+        Emits phase.started, runs the operation, then emits phase.completed
+        or phase.failed depending on outcome. Uses parent-child correlation
+        so child events can be attributed to this phase.
+
+        Args:
+            phase_hook: Optional callback for phase progress.
+            phase_key: Unique identifier for the phase.
+            description: Human-readable description.
+            operation: Async function to execute.
+            metadata: Optional additional metadata.
+
+        Returns:
+            The result of the operation.
+
+        Raises:
+            Exception: Re-raises any exception from the operation.
+        """
         self.notify_phase(phase_hook, phase_key=phase_key, description=description)
+
+        # Emit phase.started and get event ID for parent-child correlation
+        phase_event_id = self._monitor.emit_event(
+            event_type="phase.started",
+            category="phase",
+            name=phase_key,
+            status="started",
+            metadata={"description": description, **(metadata or {})},
+        )
+
+        # Push this phase as parent for any child events
+        self._monitor.push_parent(phase_event_id)
+        self._current_phase_id = phase_event_id
+
         phase_event = self._monitor.start_operation(
             name=phase_key,
             category="phase",
             description=description,
         )
-        self._monitor.emit_event(
-            event_type="phase.started",
-            category="phase",
-            name=phase_key,
-            status="started",
-            metadata={"description": description},
-        )
-        result = await operation()
-        self._monitor.end_operation(phase_event, success=True)
-        return result
+
+        try:
+            result = await operation()
+            self._monitor.end_operation(phase_event, success=True)
+            self._monitor.emit_event(
+                event_type="phase.completed",
+                category="phase",
+                name=phase_key,
+                status="completed",
+                duration_ms=phase_event.duration_ms,
+                metadata={"description": description, **(metadata or {})},
+            )
+            return result
+        except Exception as exc:
+            self._monitor.end_operation(phase_event, success=False)
+            self._monitor.emit_event(
+                event_type="phase.failed",
+                category="phase",
+                name=phase_key,
+                status="failed",
+                duration_ms=phase_event.duration_ms,
+                metadata={
+                    "description": description,
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                    **(metadata or {}),
+                },
+            )
+            raise
+        finally:
+            # Pop this phase from parent stack
+            self._monitor.pop_parent()
+            self._current_phase_id = None
 
     async def run_analysis_pass(
         self,

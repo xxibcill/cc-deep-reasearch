@@ -22,6 +22,41 @@ from cc_deep_research.orchestration.session_state import OrchestratorSessionStat
 from cc_deep_research.providers.tavily import TavilySearchProvider
 
 
+def _emit_agent_lifecycle(
+    monitor: ResearchMonitor,
+    *,
+    event_type: str,
+    agent_id: str,
+    agent_type: str,
+    status: str,
+    parent_event_id: str | None = None,
+    metadata: dict | None = None,
+) -> str:
+    """Emit a standardized agent lifecycle event.
+
+    Args:
+        monitor: The research monitor.
+        event_type: Type of event (e.g., 'agent.spawned', 'agent.completed').
+        agent_id: Unique identifier for the agent instance.
+        agent_type: Type of agent (e.g., 'researcher', 'collector').
+        status: Status of the event (e.g., 'started', 'completed', 'failed').
+        parent_event_id: Optional parent event ID for correlation.
+        metadata: Optional additional metadata.
+
+    Returns:
+        The event ID for correlation.
+    """
+    return monitor.emit_event(
+        event_type=event_type,
+        category="agent",
+        name=agent_type,
+        agent_id=agent_id,
+        status=status,
+        parent_event_id=parent_event_id,
+        metadata={"agent_type": agent_type, **(metadata or {})},
+    )
+
+
 class SourceCollectionService:
     """Encapsulate sequential and parallel source collection workflows."""
 
@@ -156,8 +191,24 @@ class SourceCollectionService:
         researcher = ResearcherAgent(self._config, provider, monitor=self._monitor)
         tasks = decompose_parallel_tasks(queries)
 
+        # Get current parent for agent events
+        current_parent = self._monitor.current_parent_id
+
         self._monitor.log(f"Decomposed {len(queries)} queries into {len(tasks)} tasks")
+
+        # Emit agent.spawned events for each task with parent correlation
+        task_agent_ids: dict[str, str] = {}
         for task in tasks:
+            agent_event_id = _emit_agent_lifecycle(
+                self._monitor,
+                event_type="agent.spawned",
+                agent_id=task["task_id"],
+                agent_type="researcher",
+                status="spawned",
+                parent_event_id=current_parent,
+                metadata={"query": task["query"]},
+            )
+            task_agent_ids[task["task_id"]] = agent_event_id
             self._monitor.log_researcher_event(
                 event_type="spawned",
                 agent_id=task["task_id"],
@@ -170,6 +221,9 @@ class SourceCollectionService:
         all_sources: list[SearchResultItem] = []
         families_by_query = {family.query: family for family in query_families}
         for result in results:
+            task_id = result["task_id"]
+            agent_event_id = task_agent_ids.get(task_id)
+
             if result["status"] == "success":
                 family = families_by_query.get(
                     result.get("query", ""),
@@ -187,13 +241,28 @@ class SourceCollectionService:
                     )
                 all_sources.extend(result["sources"])
                 self._monitor.log(
-                    f"✓ Researcher {result['task_id']}: "
+                    f"✓ Researcher {task_id}: "
                     f"{result['source_count']} sources "
                     f"({result['execution_time_ms']:.0f}ms)"
                 )
+
+                # Emit agent.completed with parent correlation
+                _emit_agent_lifecycle(
+                    self._monitor,
+                    event_type="agent.completed",
+                    agent_id=task_id,
+                    agent_type="researcher",
+                    status="completed",
+                    parent_event_id=agent_event_id,
+                    metadata={
+                        "source_count": result["source_count"],
+                        "duration_ms": int(result["execution_time_ms"]),
+                        "query": result.get("query", ""),
+                    },
+                )
                 self._monitor.log_researcher_event(
                     event_type="completed",
-                    agent_id=result["task_id"],
+                    agent_id=task_id,
                     source_count=result["source_count"],
                     duration_ms=int(result["execution_time_ms"]),
                     status="completed",
@@ -201,18 +270,32 @@ class SourceCollectionService:
                 self._monitor.record_reasoning_summary(
                     stage="researcher_task",
                     summary=f"Executed query and gathered {result['source_count']} sources",
-                    agent_id=result["task_id"],
+                    agent_id=task_id,
                     query=result.get("query", ""),
                 )
                 continue
 
             self._monitor.log(
-                f"✗ Researcher {result['task_id']}: "
+                f"✗ Researcher {task_id}: "
                 f"{result['status']} - {result.get('error', 'Unknown error')}"
+            )
+
+            # Emit agent.failed with parent correlation
+            _emit_agent_lifecycle(
+                self._monitor,
+                event_type="agent.failed" if result["status"] != "timeout" else "agent.timeout",
+                agent_id=task_id,
+                agent_type="researcher",
+                status=result["status"],
+                parent_event_id=agent_event_id,
+                metadata={
+                    "error": result.get("error", "Unknown error"),
+                    "query": result.get("query", ""),
+                },
             )
             self._monitor.log_researcher_event(
                 event_type="failed" if result["status"] != "timeout" else "timeout",
-                agent_id=result["task_id"],
+                agent_id=task_id,
                 status=result["status"],
                 error=result.get("error", "Unknown error"),
             )
@@ -348,6 +431,19 @@ class SourceCollectionService:
         if cached_content is not None:
             return cached_content
 
+        # Get current parent for tool event correlation
+        current_parent = self._monitor.current_parent_id
+
+        # Emit tool.started event
+        tool_event_id = self._monitor.emit_event(
+            event_type="tool.started",
+            category="tool",
+            name="mcp.web_reader",
+            status="started",
+            parent_event_id=current_parent,
+            metadata={"url": url},
+        )
+
         try:
             from mcp__web_reader__webReader import webReader  # type: ignore[import-not-found]
 
@@ -358,41 +454,85 @@ class SourceCollectionService:
                 return_format="markdown",
                 retain_images=False,
             )
+            duration_ms = int((time.time() - start_time) * 1000)
 
             if isinstance(result, dict) and "content" in result:
                 content = str(result["content"])
                 self._content_cache[url] = content
+                self._monitor.emit_event(
+                    event_type="tool.completed",
+                    category="tool",
+                    name="mcp.web_reader",
+                    status="completed",
+                    duration_ms=duration_ms,
+                    parent_event_id=tool_event_id,
+                    metadata={"url": url, "content_length": len(content)},
+                )
                 self._monitor.record_tool_call(
                     tool_name="mcp.web_reader",
                     status="success",
-                    duration_ms=int((time.time() - start_time) * 1000),
+                    duration_ms=duration_ms,
                     url=url,
                 )
                 return content
 
             if isinstance(result, str):
                 self._content_cache[url] = result
+                self._monitor.emit_event(
+                    event_type="tool.completed",
+                    category="tool",
+                    name="mcp.web_reader",
+                    status="completed",
+                    duration_ms=duration_ms,
+                    parent_event_id=tool_event_id,
+                    metadata={"url": url, "content_length": len(result)},
+                )
                 self._monitor.record_tool_call(
                     tool_name="mcp.web_reader",
                     status="success",
-                    duration_ms=int((time.time() - start_time) * 1000),
+                    duration_ms=duration_ms,
                     url=url,
                 )
                 return result
 
+            self._monitor.emit_event(
+                event_type="tool.failed",
+                category="tool",
+                name="mcp.web_reader",
+                status="failed",
+                duration_ms=duration_ms,
+                parent_event_id=tool_event_id,
+                metadata={"url": url, "error": "No content returned"},
+            )
             self._monitor.record_tool_call(
                 tool_name="mcp.web_reader",
                 status="error",
-                duration_ms=int((time.time() - start_time) * 1000),
+                duration_ms=duration_ms,
                 url=url,
                 error="No content returned",
             )
             return None
         except ImportError:
             self._monitor.log("web_reader MCP not available, skipping content fetch")
+            self._monitor.emit_event(
+                event_type="tool.failed",
+                category="tool",
+                name="mcp.web_reader",
+                status="unavailable",
+                parent_event_id=tool_event_id,
+                metadata={"url": url, "error": "web_reader MCP not available"},
+            )
             return None
         except Exception as exc:
             self._monitor.log(f"Error fetching page content: {exc}")
+            self._monitor.emit_event(
+                event_type="tool.failed",
+                category="tool",
+                name="mcp.web_reader",
+                status="failed",
+                parent_event_id=tool_event_id,
+                metadata={"url": url, "error": str(exc), "error_type": type(exc).__name__},
+            )
             self._monitor.record_tool_call(
                 tool_name="mcp.web_reader",
                 status="error",

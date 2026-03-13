@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -33,6 +35,9 @@ class MonitorEvent:
     name: str
     category: str  # config, provider, aggregation, deduplication, etc.
     start_time: float
+    event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    parent_event_id: str | None = None
+    sequence_number: int = 0
     end_time: float | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     status: str = "in_progress"  # in_progress, completed, failed
@@ -74,6 +79,11 @@ class ResearchMonitor:
         self._events_path: Path | None = None
         self._summary_path: Path | None = None
 
+        # Event correlation support
+        self._sequence_counter: int = 0
+        self._parent_stack: list[str] = []  # Stack of parent event IDs
+        self._emit_lock = threading.Lock()
+
     @staticmethod
     def normalize_stop_reason(stop_reason: str | None) -> str:
         """Return a supported stop-reason label."""
@@ -105,9 +115,15 @@ class ResearchMonitor:
         query: str,
         depth: str,
         **metadata: Any,
-    ) -> None:
-        """Set active session and initialize persistent telemetry files."""
+    ) -> str:
+        """Set active session and initialize persistent telemetry files.
+
+        Returns:
+            The session event ID for correlation purposes.
+        """
         self._session_id = session_id
+        self._sequence_counter = 0  # Reset sequence for new session
+        self._parent_stack = []  # Clear parent stack for new session
 
         if self._persist:
             self._session_dir = self._telemetry_dir / session_id
@@ -115,13 +131,40 @@ class ResearchMonitor:
             self._events_path = self._session_dir / "events.jsonl"
             self._summary_path = self._session_dir / "summary.json"
 
-        self.emit_event(
+        session_event_id = self.emit_event(
             event_type="session.started",
             category="session",
             name="research-session",
             status="started",
             metadata={"query": query, "depth": depth, **metadata},
         )
+
+        # Push session event as initial parent
+        self.push_parent(session_event_id)
+
+        return session_event_id
+
+    def _generate_event_id(self) -> str:
+        """Generate a unique event ID."""
+        return str(uuid.uuid4())
+
+    def _get_next_sequence(self) -> int:
+        """Get the next sequence number for event ordering."""
+        self._sequence_counter += 1
+        return self._sequence_counter
+
+    @property
+    def current_parent_id(self) -> str | None:
+        """Return the current parent event ID from the stack, if any."""
+        return self._parent_stack[-1] if self._parent_stack else None
+
+    def push_parent(self, event_id: str) -> None:
+        """Push an event ID onto the parent stack for child event correlation."""
+        self._parent_stack.append(event_id)
+
+    def pop_parent(self) -> str | None:
+        """Pop and return the current parent event ID from the stack."""
+        return self._parent_stack.pop() if self._parent_stack else None
 
     def emit_event(
         self,
@@ -132,25 +175,56 @@ class ResearchMonitor:
         duration_ms: int | None = None,
         agent_id: str | None = None,
         metadata: dict[str, Any] | None = None,
-    ) -> None:
-        """Emit a structured telemetry event and persist it when configured."""
-        payload = {
-            "timestamp": self._get_utc_timestamp(),
-            "session_id": self._session_id,
-            "event_type": event_type,
-            "category": category,
-            "name": name,
-            "status": status,
-            "duration_ms": duration_ms,
-            "agent_id": agent_id,
-            "metadata": metadata or {},
-        }
+        event_id: str | None = None,
+        parent_event_id: str | None = None,
+    ) -> str:
+        """Emit a structured telemetry event and persist it when configured.
 
-        self._telemetry_events.append(payload)
-        if self._persist and self._events_path is not None:
-            with open(self._events_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(payload, ensure_ascii=True))
-                f.write("\n")
+        Args:
+            event_type: The type of event (e.g., 'session.started', 'phase.completed').
+            category: The event category (e.g., 'session', 'phase', 'agent').
+            name: A human-readable name for the event.
+            status: The event status (e.g., 'started', 'completed', 'failed').
+            duration_ms: Optional duration in milliseconds.
+            agent_id: Optional agent identifier.
+            metadata: Optional structured metadata payload.
+            event_id: Optional explicit event ID (auto-generated if not provided).
+            parent_event_id: Optional parent event ID for correlation.
+                If not provided, uses the current parent from the stack.
+
+        Returns:
+            The event ID for correlation purposes.
+        """
+        # Use provided event_id or generate one
+        actual_event_id = event_id or self._generate_event_id()
+
+        # Use provided parent_event_id or the current stack top
+        actual_parent_id = parent_event_id
+        if actual_parent_id is None and self._parent_stack:
+            actual_parent_id = self._parent_stack[-1]
+
+        with self._emit_lock:
+            payload = {
+                "event_id": actual_event_id,
+                "parent_event_id": actual_parent_id,
+                "sequence_number": self._get_next_sequence(),
+                "timestamp": self._get_utc_timestamp(),
+                "session_id": self._session_id,
+                "event_type": event_type,
+                "category": category,
+                "name": name,
+                "status": status,
+                "duration_ms": duration_ms,
+                "agent_id": agent_id,
+                "metadata": metadata or {},
+            }
+            self._telemetry_events.append(payload)
+            if self._persist and self._events_path is not None:
+                with open(self._events_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(payload, ensure_ascii=True))
+                    f.write("\n")
+
+        return actual_event_id
 
     def section(self, name: str) -> None:
         """Start a new section with a header."""
@@ -201,10 +275,15 @@ class ResearchMonitor:
 
     def start_operation(self, name: str, category: str, **metadata: Any) -> MonitorEvent:
         """Start tracking an operation."""
+        event_id = self._generate_event_id()
+        parent_id = self.current_parent_id
+
         event = MonitorEvent(
             name=name,
             category=category,
             start_time=time.time(),
+            event_id=event_id,
+            parent_event_id=parent_id,
             metadata=metadata,
         )
         if self._enabled:
@@ -216,6 +295,8 @@ class ResearchMonitor:
             name=name,
             status="started",
             metadata=metadata,
+            event_id=event_id,
+            parent_event_id=parent_id,
         )
         return event
 
@@ -230,6 +311,8 @@ class ResearchMonitor:
             status=event.status,
             duration_ms=event.duration_ms,
             metadata=event.metadata,
+            event_id=event.event_id,
+            parent_event_id=event.parent_event_id,
         )
 
     def record_metric(self, name: str, value: Any, category: str) -> None:
@@ -628,8 +711,13 @@ class ResearchMonitor:
                 for e in self._telemetry_events
                 if e["event_type"] == "llm.usage"
             ),
+            "event_count": len(self._telemetry_events),
             "created_at": self._get_utc_timestamp(),
         }
+
+        # Pop session parent if it exists
+        if self._parent_stack:
+            self.pop_parent()
 
         self.emit_event(
             event_type="session.finished",
