@@ -364,6 +364,9 @@ cc-deep-research research -o quantum_report.md "Quantum computing applications"
 # JSON output for programmatic use
 cc-deep-research research --format json "AI safety research" > results.json
 
+# HTML output for browser review or downstream PDF conversion
+cc-deep-research research --format html -o ai-safety.html "AI safety research"
+
 # Research with sequential source collection (useful for simple queries)
 cc-deep-research research --no-team "Simple question"
 
@@ -415,6 +418,9 @@ cc-deep-research research -d quick -o weather.md "Weather patterns in 2024"
 
 # JSON output with custom sources
 cc-deep-research research -s 30 --format json "Machine learning algorithms" > ml.json
+
+# HTML output with custom sources
+cc-deep-research research -s 30 --format html -o ml.html "Machine learning algorithms"
 
 # Monitor workflow execution
 cc-deep-research research --monitor "Complex topic requiring deep analysis"
@@ -623,11 +629,12 @@ cc-deep-research research -o ~/reports/quantum.md "Quantum computing"
 
 Set the output format.
 
-**Values:** `markdown` (default), `json`
+**Values:** `markdown` (default), `json`, `html`
 
 **Example:**
 ```bash
 cc-deep-research research --format json "Topic" > results.json
+cc-deep-research research --format html -o report.html "Topic"
 ```
 
 ### Provider Options
@@ -871,9 +878,28 @@ JSON output provides programmatic access to research data, suitable for:
 }
 ```
 
+### HTML Format
+
+HTML output renders the same canonical report structure used by the PDF export
+pipeline and is useful for:
+
+- **Browser review** before generating a PDF
+- **Debugging layout** and semantic section wrappers
+- **Embedding reports** in systems that accept HTML documents
+- **HTML-first workflows** where PDF is a later render step
+
+**Example:**
+```bash
+cc-deep-research research --format html -o report.html "Quantum Computing Applications"
+cc-deep-research markdown-to-html notes.md
+```
+
+HTML output includes the same major sections and uses the shared export
+stylesheet that also drives PDF rendering.
+
 ### Output Structure
 
-Both formats include:
+All report formats include the same logical sections:
 
 1. **Executive Summary** - 2-3 paragraph overview
 2. **Key Findings** - Organized sections with detailed analysis

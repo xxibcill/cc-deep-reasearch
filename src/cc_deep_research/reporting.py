@@ -11,6 +11,7 @@ from cc_deep_research.agents.report_quality_evaluator import ReportQualityEvalua
 from cc_deep_research.agents.report_refiner import ReportRefinerAgent
 from cc_deep_research.agents.reporter import ReporterAgent
 from cc_deep_research.config import Config
+from cc_deep_research.html_report_renderer import HTMLReportRenderer
 from cc_deep_research.models import (
     AnalysisResult,
     ReportEvaluationResult,
@@ -148,6 +149,24 @@ class ReportGenerator:
         """
         return self._reporter.generate_json_report(session, analysis)
 
+    def generate_html_report(
+        self,
+        session: ResearchSession,
+        analysis: dict[str, Any],
+    ) -> str:
+        """Generate a styled HTML report from the canonical markdown report."""
+        markdown_report = self.generate_markdown_report(session, analysis)
+        return self.render_html_report(markdown_report)
+
+    def render_html_report(
+        self,
+        markdown_report: str,
+        title: str | None = None,
+    ) -> str:
+        """Render a markdown report as a styled HTML document."""
+        renderer = HTMLReportRenderer()
+        return renderer.render_document(markdown_report, title=title)
+
     def save_report(
         self,
         report: str,
@@ -158,7 +177,7 @@ class ReportGenerator:
 
         Args:
             report: Report content string.
-            output_format: Format of the report (markdown, json).
+            output_format: Format of the report (markdown, json, html).
             output_path: Optional file path to save to.
 
         Returns:

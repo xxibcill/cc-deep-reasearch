@@ -6,6 +6,11 @@ import pytest
 from click.testing import CliRunner
 
 from cc_deep_research.cli import main
+from cc_deep_research.html_report_renderer import (
+    HTMLReportGenerationError,
+    HTMLReportRenderer,
+    generate_html_report_from_markdown_file,
+)
 from cc_deep_research.markdown_report_formatter import MarkdownReportFormatter
 from cc_deep_research.pdf_generator import (
     PDFGenerationError,
@@ -100,6 +105,64 @@ def test_generate_pdf_report_from_markdown_file_rejects_empty_input(tmp_path: Pa
         generate_pdf_report_from_markdown_file(input_path=input_path)
 
 
+def test_generate_html_report_from_markdown_file_rejects_empty_input(tmp_path: Path) -> None:
+    input_path = tmp_path / "empty.md"
+    input_path.write_text("   \n", encoding="utf-8")
+
+    with pytest.raises(HTMLReportGenerationError, match="Markdown input file is empty"):
+        generate_html_report_from_markdown_file(input_path=input_path)
+
+
+def test_generate_pdf_report_from_markdown_file_uses_html_renderer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_path = tmp_path / "notes.md"
+    output_path = tmp_path / "notes-report.pdf"
+    input_path.write_text("# Notes\n\nHello report.\n", encoding="utf-8")
+
+    captured: dict[str, object] = {}
+
+    def fake_render_document(
+        _self: HTMLReportRenderer,
+        markdown_content: str,
+        title: str | None = None,
+    ) -> str:
+        captured["markdown_content"] = markdown_content
+        captured["title"] = title
+        return "<html><body>report</body></html>"
+
+    def fake_generate_pdf_from_html(
+        _self: PDFGenerator,
+        html_content: str,
+        output_path: Path,
+    ) -> Path:
+        captured["html_content"] = html_content
+        captured["output_path"] = output_path
+        output_path.write_bytes(b"%PDF-1.4\n")
+        return output_path
+
+    monkeypatch.setattr(
+        "cc_deep_research.html_report_renderer.HTMLReportRenderer.render_document",
+        fake_render_document,
+    )
+    monkeypatch.setattr(
+        "cc_deep_research.pdf_generator.PDFGenerator.generate_pdf_from_html",
+        fake_generate_pdf_from_html,
+    )
+
+    pdf_path = generate_pdf_report_from_markdown_file(
+        input_path=input_path,
+        output_path=output_path,
+    )
+
+    assert pdf_path == output_path
+    assert captured["html_content"] == "<html><body>report</body></html>"
+    assert captured["output_path"] == output_path
+    assert captured["title"] == "Notes"
+    assert "## Executive Summary" in str(captured["markdown_content"])
+
+
 def test_markdown_to_pdf_command_generates_pdf_via_helper(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -149,39 +212,91 @@ def test_markdown_to_pdf_command_generates_pdf_via_helper(
     }
 
 
-class TestPDFSectionWrappers:
-    """Test that HTML output includes semantic section wrappers."""
+def test_markdown_to_html_command_generates_html_via_helper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_path = tmp_path / "notes.md"
+    output_path = tmp_path / "notes-report.html"
+    input_path.write_text("# Notes\n\nHello report.\n", encoding="utf-8")
+
+    captured: dict[str, object] = {}
+
+    def fake_generate_html_report_from_markdown_file(
+        input_path: Path,
+        output_path: Path | None = None,
+        title: str | None = None,
+    ) -> Path:
+        captured["input_path"] = input_path
+        captured["output_path"] = output_path
+        captured["title"] = title
+        html_path = output_path or input_path.with_suffix(".html")
+        html_path.write_text("<html></html>", encoding="utf-8")
+        return html_path
+
+    monkeypatch.setattr(
+        "cc_deep_research.html_report_renderer.generate_html_report_from_markdown_file",
+        fake_generate_html_report_from_markdown_file,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "markdown-to-html",
+            str(input_path),
+            "-o",
+            str(output_path),
+            "--title",
+            "Custom Report",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert output_path.exists()
+    assert captured == {
+        "input_path": input_path,
+        "output_path": output_path,
+        "title": "Custom Report",
+    }
+
+
+class TestHTMLReportRenderer:
+    """Test that HTML export includes semantic wrappers and shared styles."""
 
     def test_html_has_section_wrappers(self) -> None:
         """Test that major sections are wrapped in semantic divs."""
-        generator = PDFGenerator()
+        renderer = HTMLReportRenderer()
 
         markdown = """# Test Report
 ## Executive Summary
 Test summary content.
+## Safety
+Safety note.
 ## Sources
 1. [Source](https://example.com)
 ## Research Metadata
 - Query: test
 """
 
-        html = generator._convert_to_html(markdown)
+        html = renderer.render_document(markdown)
 
         # Check for common class (report-section appears in class attribute)
         assert 'report-section' in html
 
         # Check for section-specific classes
         assert 'section-executive-summary' in html
+        assert 'section-safety' in html
         assert 'section-sources' in html
         assert 'section-metadata' in html
 
         # Check for title block wrapper
         assert 'section-title-block' in html
+        assert "<style>" in html
 
     def test_css_includes_section_selectors(self) -> None:
         """Test that section-specific CSS selectors are present."""
-        generator = PDFGenerator()
-        css = generator._get_css_styles()
+        css = HTMLReportRenderer.get_stylesheet()
 
         # Check for section classes
         assert '.section-executive-summary' in css
@@ -196,8 +311,7 @@ Test summary content.
 
     def test_css_includes_appendix_de_emphasis(self) -> None:
         """Test that appendix sections have de-emphasis styling."""
-        generator = PDFGenerator()
-        css = generator._get_css_styles()
+        css = HTMLReportRenderer.get_stylesheet()
 
         # Check for appendix-specific styles
         assert '.section-sources' in css
@@ -211,8 +325,7 @@ Test summary content.
 
     def test_css_includes_page_break_protection(self) -> None:
         """Test that headings have page-break protection."""
-        generator = PDFGenerator()
-        css = generator._get_css_styles()
+        css = HTMLReportRenderer.get_stylesheet()
 
         # Check for page-break protection on headings
         assert 'h1, h2, h3' in css
@@ -227,8 +340,7 @@ Test summary content.
 
     def test_css_removes_justify_from_body(self) -> None:
         """Test that paragraphs are left-aligned instead of justified."""
-        generator = PDFGenerator()
-        css = generator._get_css_styles()
+        css = HTMLReportRenderer.get_stylesheet()
 
         # Find the body p rule
         assert 'text-align: left' in css
