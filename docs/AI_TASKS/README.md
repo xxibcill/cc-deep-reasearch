@@ -15,9 +15,10 @@ Each task file contains:
 
 ## Current Status
 
-All tasks in the AI Task Pack have been completed:
+The original task pack remains completed, and one new follow-up task is planned:
 
 - Completed task records: `001` through `028`
+- Planned follow-up: `029_html_first_pdf_pipeline.md`
 - Report readability follow-up sequence: `018` through `023` ✓
 - Report writing cleanup follow-up sequence: `024` through `028` ✓
 

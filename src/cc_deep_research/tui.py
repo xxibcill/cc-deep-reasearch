@@ -182,6 +182,10 @@ class TerminalUI:
             self._console.print(Syntax(report, "json", word_wrap=True))
             return
 
+        if output_format == "html":
+            self._console.print(Syntax(report, "html", word_wrap=True))
+            return
+
         self._console.print(report)
 
     def show_config(self, rows: list[tuple[str, str]]) -> None:

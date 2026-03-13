@@ -12,7 +12,7 @@ Current codebase version: `0.1.0`
 - Source quality scoring and cross-reference analysis
 - Session persistence with list/show/export/delete commands
 - Telemetry ingestion to DuckDB and Streamlit dashboard
-- Markdown and JSON report output, optional PDF export
+- Markdown, HTML, and JSON report output, optional PDF export via HTML rendering
 - Config file + environment-variable driven settings
 
 ## Installation
@@ -45,9 +45,11 @@ cc-deep-research research "What are the latest developments in quantum computing
 cc-deep-research [COMMAND]
 ```
 
-Available command groups:
+Available top-level commands and groups:
 
 - `research` - Run a research query and generate report output
+- `markdown-to-html` - Convert an existing markdown file into a styled HTML report
+- `markdown-to-pdf` - Convert an existing markdown file into a styled PDF report
 - `benchmark` - Run the versioned benchmark corpus (`run`)
 - `config` - Manage configuration (`show`, `set`, `init`)
 - `session` - Manage persisted sessions (`list`, `show`, `export`, `delete`)
@@ -71,6 +73,9 @@ cc-deep-research research -o reports/topic.md "Topic"
 # JSON output
 cc-deep-research research --format json "Topic" > result.json
 
+# HTML output
+cc-deep-research research --format html -o reports/topic.html "Topic"
+
 # Disable team mode (sequential)
 cc-deep-research research --no-team "Topic"
 
@@ -82,6 +87,10 @@ cc-deep-research research --monitor "Topic"
 
 # Generate PDF in addition to report output
 cc-deep-research research --pdf "Topic"
+
+# Convert an existing markdown report into HTML, then PDF
+cc-deep-research markdown-to-html reports/topic.md
+cc-deep-research markdown-to-pdf reports/topic.md
 ```
 
 ## Research Flags (Current)
@@ -89,7 +98,7 @@ cc-deep-research research --pdf "Topic"
 - `-d, --depth [quick|standard|deep]`
 - `-s, --sources INTEGER`
 - `-o, --output FILE`
-- `--format [markdown|json]`
+- `--format [markdown|json|html]`
 - `--no-cross-ref`
 - `--tavily-only`
 - `--claude-only` (accepted but no Claude search provider is implemented yet)

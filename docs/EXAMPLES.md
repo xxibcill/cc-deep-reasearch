@@ -222,6 +222,21 @@ cc-deep-research research --format json "AI safety" | python analyze.py
 }
 ```
 
+### HTML Output
+
+Generate a styled HTML report for browser review or downstream PDF rendering:
+
+```bash
+# Write a styled HTML report directly from research output
+cc-deep-research research --format html -o results.html "Machine learning trends"
+
+# Convert an existing markdown report to HTML
+cc-deep-research markdown-to-html notes.md
+
+# Convert the same markdown report to PDF
+cc-deep-research markdown-to-pdf notes.md
+```
+
 ### Combining Formats
 
 Generate both formats for different uses:

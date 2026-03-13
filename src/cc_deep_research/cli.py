@@ -66,7 +66,7 @@ def main(ctx: click.Context) -> None:
 @click.option(
     "--format",
     "output_format",
-    type=click.Choice(["markdown", "json"], case_sensitive=False),
+    type=click.Choice(["markdown", "json", "html"], case_sensitive=False),
     default="markdown",
     help="Output format (default: markdown)",
 )
@@ -216,10 +216,15 @@ def research(
         reporter = ReportGenerator(config)
         analysis = session.metadata.get("analysis", {})
 
-        if output_format == "markdown":
-            report = reporter.generate_markdown_report(session, analysis)
-        else:
+        markdown_report: str | None = None
+        if output_format == "json":
             report = reporter.generate_json_report(session, analysis)
+        else:
+            markdown_report = reporter.generate_markdown_report(session, analysis)
+            if output_format == "html":
+                report = reporter.render_html_report(markdown_report)
+            else:
+                report = markdown_report
 
         output_path = Path(output) if output else None
         if output_path is not None:
@@ -239,17 +244,16 @@ def research(
 
             try:
                 pdf_gen = PDFGenerator()
-                if output_format == "json":
+                if markdown_report is None:
                     markdown_report = reporter.generate_markdown_report(session, analysis)
-                else:
-                    markdown_report = report
+                html_report = reporter.render_html_report(markdown_report)
 
                 if output_path:
                     pdf_path = output_path.with_suffix(".pdf")
                 else:
                     pdf_path = Path("research_report.pdf")
 
-                pdf_gen.generate_pdf(markdown_report, pdf_path, title=query)
+                pdf_gen.generate_pdf_from_html(html_report, pdf_path)
                 if not quiet:
                     ui.show_report_saved(pdf_path)
             except PDFGenerationError as e:
@@ -331,6 +335,45 @@ def markdown_to_pdf(input_path: Path, output: Path | None, title: str | None) ->
 
     ui = TerminalUI(enabled=True)
     ui.show_report_saved(pdf_path)
+
+
+@main.command("markdown-to-html")
+@click.argument(
+    "input_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Output HTML path (defaults to the input filename with a .html extension).",
+)
+@click.option(
+    "--title",
+    default=None,
+    help="Optional report title override.",
+)
+def markdown_to_html(input_path: Path, output: Path | None, title: str | None) -> None:
+    """Convert a markdown file into a formatted HTML report."""
+    from cc_deep_research.html_report_renderer import (
+        HTMLReportGenerationError,
+        generate_html_report_from_markdown_file,
+    )
+
+    try:
+        html_path = generate_html_report_from_markdown_file(
+            input_path=input_path,
+            output_path=output,
+            title=title,
+        )
+    except HTMLReportGenerationError as error:
+        raise click.ClickException(str(error)) from error
+    except OSError as error:
+        raise click.ClickException(f"Failed to read markdown input: {error}") from error
+
+    ui = TerminalUI(enabled=True)
+    ui.show_report_saved(html_path)
 
 
 @main.group()
@@ -639,7 +682,7 @@ def session_show(session_id: str, as_json: bool) -> None:
 @click.option(
     "--format",
     "output_format",
-    type=click.Choice(["markdown", "json"], case_sensitive=False),
+    type=click.Choice(["markdown", "json", "html"], case_sensitive=False),
     default="markdown",
     help="Output format (default: markdown)",
 )
@@ -661,10 +704,12 @@ def session_export(session_id: str, output: str, output_format: str) -> None:
     reporter = ReportGenerator(config)
     analysis = session_obj.metadata.get("analysis", {})
 
-    if output_format == "markdown":
-        report = reporter.generate_markdown_report(session_obj, analysis)
-    else:
+    if output_format == "json":
         report = reporter.generate_json_report(session_obj, analysis)
+    elif output_format == "html":
+        report = reporter.generate_html_report(session_obj, analysis)
+    else:
+        report = reporter.generate_markdown_report(session_obj, analysis)
 
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)

@@ -288,7 +288,7 @@ class MarkdownReportFormatter:
         generated_lines = [
             f"- Source file: {source_path.name}",
             f"- Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}",
-            "- Formatter: markdown-to-pdf",
+            "- Formatter: markdown-report-formatter",
         ]
 
         existing = canonical_sections.get("Research Metadata")

@@ -398,6 +398,7 @@ class TestTeamResearchOrchestrator:
         result = runner.invoke(main, ["research", "--help"])
 
         assert result.exit_code == 0
+        assert "[markdown|json|html]" in result.output
         assert "--no-team" in result.output
         assert "Run source collection sequentially instead of" in result.output
         assert "using parallel researchers" in result.output
