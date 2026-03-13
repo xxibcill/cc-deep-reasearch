@@ -3,6 +3,8 @@
 import re
 from unittest.mock import patch
 
+import pytest
+
 from cc_deep_research.models import QueryFamily, SearchResultItem
 from cc_deep_research.monitoring import (
     STOP_REASON_DEGRADED_EXECUTION,
@@ -369,3 +371,445 @@ class TestMonitorEvent:
         )
 
         assert event.duration_ms == 500
+
+
+class TestEventCorrelation:
+    """Tests for event correlation and parent-child relationships."""
+
+    def test_monitor_event_has_event_id(self):
+        """Test that MonitorEvent has a unique event_id."""
+        event1 = MonitorEvent(name="test1", category="test", start_time=0.0)
+        event2 = MonitorEvent(name="test2", category="test", start_time=0.0)
+
+        assert event1.event_id != event2.event_id
+        assert len(event1.event_id) == 36  # UUID format
+
+    def test_monitor_event_parent_event_id(self):
+        """Test that MonitorEvent can have a parent_event_id."""
+        event = MonitorEvent(
+            name="child",
+            category="test",
+            start_time=0.0,
+            parent_event_id="parent-123",
+        )
+
+        assert event.parent_event_id == "parent-123"
+
+    def test_emit_event_returns_event_id(self):
+        """Test that emit_event returns a unique event_id."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard")
+
+        event_id = monitor.emit_event(
+            event_type="test.event",
+            category="test",
+            name="test",
+        )
+
+        assert event_id is not None
+        assert len(event_id) == 36  # UUID format
+
+    def test_emit_event_includes_correlation_fields(self):
+        """Test that emitted events include correlation fields."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard")
+
+        parent_id = monitor.emit_event(
+            event_type="parent.event",
+            category="test",
+            name="parent",
+        )
+
+        child_id = monitor.emit_event(
+            event_type="child.event",
+            category="test",
+            name="child",
+            parent_event_id=parent_id,
+        )
+
+        # Find the child event
+        child_event = next(
+            e for e in monitor._telemetry_events if e["event_id"] == child_id
+        )
+
+        assert child_event["parent_event_id"] == parent_id
+        assert child_event["sequence_number"] > 0
+
+    def test_sequence_numbers_increase(self):
+        """Test that sequence numbers increase monotonically."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard")
+
+        ids = [
+            monitor.emit_event(event_type=f"event.{i}", category="test", name=f"event{i}")
+            for i in range(5)
+        ]
+
+        events = [e for e in monitor._telemetry_events if e["event_id"] in ids]
+        events.sort(key=lambda e: e["sequence_number"])
+
+        sequence_numbers = [e["sequence_number"] for e in events]
+        assert sequence_numbers == sorted(sequence_numbers)
+        assert len(set(sequence_numbers)) == 5  # All unique
+
+    def test_parent_stack_current_parent_id(self):
+        """Test the parent stack for managing current parent."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+
+        assert monitor.current_parent_id is None
+
+        monitor.push_parent("parent-1")
+        assert monitor.current_parent_id == "parent-1"
+
+        monitor.push_parent("parent-2")
+        assert monitor.current_parent_id == "parent-2"
+
+        popped = monitor.pop_parent()
+        assert popped == "parent-2"
+        assert monitor.current_parent_id == "parent-1"
+
+    def test_set_session_pushes_parent(self):
+        """Test that set_session pushes the session event as parent."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+
+        session_id = monitor.set_session("test-session", "query", "standard")
+
+        assert monitor.current_parent_id == session_id
+
+    def test_emit_event_uses_current_parent(self):
+        """Test that emit_event uses current parent from stack when not specified."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        session_event_id = monitor.set_session("test-session", "query", "standard")
+
+        # Emit event without explicit parent_event_id
+        child_id = monitor.emit_event(
+            event_type="child.event",
+            category="test",
+            name="child",
+        )
+
+        child_event = next(
+            e for e in monitor._telemetry_events if e["event_id"] == child_id
+        )
+
+        # Should have session event as parent
+        assert child_event["parent_event_id"] == session_event_id
+
+    def test_start_operation_inherits_parent(self):
+        """Test that start_operation inherits parent from stack."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        session_event_id = monitor.set_session("test-session", "query", "standard")
+
+        op_event = monitor.start_operation("test-op", "test")
+
+        assert op_event.parent_event_id == session_event_id
+
+    def test_start_operation_has_event_id(self):
+        """Test that start_operation creates events with event_id."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard")
+
+        op_event = monitor.start_operation("test-op", "test")
+
+        assert op_event.event_id is not None
+        assert len(op_event.event_id) == 36  # UUID format
+
+    def test_finalize_session_pops_parent(self):
+        """Test that finalize_session pops the session parent."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard")
+
+        assert monitor.current_parent_id is not None
+
+        monitor.finalize_session(total_sources=0, providers=[], total_time_ms=100)
+
+        assert monitor.current_parent_id is None
+
+    def test_sequence_resets_on_new_session(self):
+        """Test that sequence counter resets for new sessions."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+
+        # First session
+        monitor.set_session("session-1", "query", "standard")
+        monitor.emit_event(event_type="event.1", category="test", name="event1")
+        monitor.emit_event(event_type="event.2", category="test", name="event2")
+        monitor.emit_event(event_type="event.3", category="test", name="event3")
+
+        # Should have 4 events (1 session.started + 3 explicit events)
+        first_session_count = monitor._sequence_counter
+        assert first_session_count == 4
+
+        # Second session - counter should reset
+        monitor.set_session("session-2", "query", "standard")
+        monitor.emit_event(event_type="event.4", category="test", name="event4")
+
+        # Should be 2 (1 session.started + 1 explicit event)
+        assert monitor._sequence_counter == 2
+
+
+class TestPhaseRunnerInstrumentation:
+    """Tests for phase runner lifecycle events."""
+
+    @pytest.mark.asyncio
+    async def test_run_phase_emits_started_and_completed(self):
+        """PhaseRunner.run_phase should emit started and completed events."""
+        from cc_deep_research.orchestration.phases import PhaseRunner
+
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        runner = PhaseRunner(monitor=monitor)
+        monitor.set_session("test-session", "query", "standard")
+
+        async def operation():
+            return "result"
+
+        await runner.run_phase(
+            phase_hook=None,
+            phase_key="test_phase",
+            description="Test phase",
+            operation=operation,
+        )
+
+        # Filter for phase-specific events (phase.started, phase.completed)
+        phase_events = [e for e in monitor._telemetry_events if e["event_type"].startswith("phase.")]
+
+        started = next(e for e in phase_events if e["event_type"] == "phase.started")
+        completed = next(e for e in phase_events if e["event_type"] == "phase.completed")
+
+        assert started["name"] == "test_phase"
+        assert started["status"] == "started"
+        assert completed["name"] == "test_phase"
+        assert completed["status"] == "completed"
+        assert completed["duration_ms"] is not None
+
+    @pytest.mark.asyncio
+    async def test_run_phase_sets_parent_for_children(self):
+        """PhaseRunner.run_phase should set parent for child events."""
+        from cc_deep_research.orchestration.phases import PhaseRunner
+
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        runner = PhaseRunner(monitor=monitor)
+        monitor.set_session("test-session", "query", "standard")
+
+        child_event_ids = []
+
+        async def operation():
+            # Emit a child event during the phase
+            child_id = monitor.emit_event(
+                event_type="child.event",
+                category="test",
+                name="child",
+            )
+            child_event_ids.append(child_id)
+            return "result"
+
+        await runner.run_phase(
+            phase_hook=None,
+            phase_key="test_phase",
+            description="Test phase",
+            operation=operation,
+        )
+
+        # Find the phase.started event
+        phase_started = next(
+            e for e in monitor._telemetry_events
+            if e["event_type"] == "phase.started" and e["name"] == "test_phase"
+        )
+
+        # Find the child event
+        child_event = next(
+            e for e in monitor._telemetry_events
+            if e["event_id"] == child_event_ids[0]
+        )
+
+        # Child should have phase as parent
+        assert child_event["parent_event_id"] == phase_started["event_id"]
+
+    @pytest.mark.asyncio
+    async def test_run_phase_emits_failed_on_exception(self):
+        """PhaseRunner.run_phase should emit phase.failed on exception."""
+        from cc_deep_research.orchestration.phases import PhaseRunner
+
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        runner = PhaseRunner(monitor=monitor)
+        monitor.set_session("test-session", "query", "standard")
+
+        async def failing_operation():
+            raise ValueError("Test error")
+
+        with pytest.raises(ValueError):
+            await runner.run_phase(
+                phase_hook=None,
+                phase_key="failing_phase",
+                description="Failing phase",
+                operation=failing_operation,
+            )
+
+        # Filter for phase-specific events (phase.started, phase.failed)
+        phase_events = [e for e in monitor._telemetry_events if e["event_type"].startswith("phase.")]
+
+        started = next(e for e in phase_events if e["event_type"] == "phase.started")
+        failed = next(e for e in phase_events if e["event_type"] == "phase.failed")
+
+        assert started["name"] == "failing_phase"
+        assert failed["name"] == "failing_phase"
+        assert failed["status"] == "failed"
+        assert "error_type" in failed["metadata"]
+        assert "error_message" in failed["metadata"]
+
+    @pytest.mark.asyncio
+    async def test_run_phase_pops_parent_after_completion(self):
+        """PhaseRunner.run_phase should pop parent after completion."""
+        from cc_deep_research.orchestration.phases import PhaseRunner
+
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        runner = PhaseRunner(monitor=monitor)
+        session_id = monitor.set_session("test-session", "query", "standard")
+
+        # Parent should be session event
+        assert monitor.current_parent_id == session_id
+
+        async def operation():
+            # During phase, parent should still be set
+            return "result"
+
+        await runner.run_phase(
+            phase_hook=None,
+            phase_key="test_phase",
+            description="Test phase",
+            operation=operation,
+        )
+
+        # After phase, current_parent_id should be back to session
+        assert monitor.current_parent_id == session_id
+
+    @pytest.mark.asyncio
+    async def test_run_phase_tracks_current_phase_id(self):
+        """PhaseRunner should track current_phase_id during execution."""
+        from cc_deep_research.orchestration.phases import PhaseRunner
+
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        runner = PhaseRunner(monitor=monitor)
+        monitor.set_session("test-session", "query", "standard")
+
+        captured_phase_id = None
+
+        async def operation():
+            nonlocal captured_phase_id
+            captured_phase_id = runner.current_phase_id
+            return "result"
+
+        await runner.run_phase(
+            phase_hook=None,
+            phase_key="test_phase",
+            description="Test phase",
+            operation=operation,
+        )
+
+        # During operation, current_phase_id should be set
+        assert captured_phase_id is not None
+
+        # After operation, current_phase_id should be None
+        assert runner.current_phase_id is None
+
+
+class TestAgentLifecycleEvents:
+    """Tests for agent lifecycle event emission."""
+
+    def test_emit_agent_lifecycle_helper(self):
+        """Test the agent lifecycle helper function."""
+        from cc_deep_research.orchestration.source_collection import _emit_agent_lifecycle
+
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard")
+
+        event_id = _emit_agent_lifecycle(
+            monitor,
+            event_type="agent.spawned",
+            agent_id="researcher-1",
+            agent_type="researcher",
+            status="spawned",
+            metadata={"query": "test query"},
+        )
+
+        assert event_id is not None
+
+        event = next(e for e in monitor._telemetry_events if e["event_id"] == event_id)
+        assert event["event_type"] == "agent.spawned"
+        assert event["category"] == "agent"
+        assert event["agent_id"] == "researcher-1"
+        assert event["metadata"]["agent_type"] == "researcher"
+        assert event["metadata"]["query"] == "test query"
+
+    def test_emit_agent_lifecycle_with_parent(self):
+        """Test agent lifecycle events with parent correlation."""
+        from cc_deep_research.orchestration.source_collection import _emit_agent_lifecycle
+
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard")
+
+        parent_id = monitor.emit_event(
+            event_type="phase.started",
+            category="phase",
+            name="source_collection",
+            status="started",
+        )
+
+        event_id = _emit_agent_lifecycle(
+            monitor,
+            event_type="agent.spawned",
+            agent_id="researcher-1",
+            agent_type="researcher",
+            status="spawned",
+            parent_event_id=parent_id,
+        )
+
+        event = next(e for e in monitor._telemetry_events if e["event_id"] == event_id)
+        assert event["parent_event_id"] == parent_id
+
+
+class TestToolLifecycleEvents:
+    """Tests for tool lifecycle event emission."""
+
+    @pytest.mark.asyncio
+    async def test_tool_events_have_parent_correlation(self):
+        """Tool events should be correlated with parent phase."""
+        from cc_deep_research.orchestration.phases import PhaseRunner
+
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        runner = PhaseRunner(monitor=monitor)
+        monitor.set_session("test-session", "query", "standard")
+
+        tool_event_ids = []
+
+        async def operation_with_tool():
+            # Simulate tool call during phase
+            tool_id = monitor.emit_event(
+                event_type="tool.started",
+                category="tool",
+                name="web_fetch",
+                status="started",
+            )
+            tool_event_ids.append(tool_id)
+            return "result"
+
+        await runner.run_phase(
+            phase_hook=None,
+            phase_key="content_fetch",
+            description="Fetching content",
+            operation=operation_with_tool,
+        )
+
+        # Find phase event
+        phase_event = next(
+            e for e in monitor._telemetry_events
+            if e["event_type"] == "phase.started" and e["name"] == "content_fetch"
+        )
+
+        # Find tool event
+        tool_event = next(
+            e for e in monitor._telemetry_events
+            if e["event_id"] == tool_event_ids[0]
+        )
+
+        # Tool should have phase as parent
+        assert tool_event["parent_event_id"] == phase_event["event_id"]

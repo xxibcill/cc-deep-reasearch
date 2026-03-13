@@ -15,8 +15,11 @@ Note: When running inside a Claude Code session (CLAUDECODE env var is set),
 the CLI-based analysis is automatically disabled to avoid nested session errors.
 """
 
+from __future__ import annotations
+
 import logging
 import os
+import re
 from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.agents.ai_agent_integration import AIAgentIntegration
@@ -25,6 +28,7 @@ from cc_deep_research.models import SearchResultItem
 
 if TYPE_CHECKING:
     from cc_deep_research.agents.llm_analysis_client import LLMAnalysisClient
+    from cc_deep_research.monitoring import ResearchMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +42,11 @@ class AIAnalysisService:
     - Hybrid: Claude Code CLI with heuristic fallback
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        config: dict[str, Any],
+        monitor: ResearchMonitor | None = None,
+    ) -> None:
         """Initialize AI analysis service.
 
         Args:
@@ -54,6 +62,7 @@ class AIAnalysisService:
         self._num_themes = config.get("ai_num_themes", 8)
         self._deep_num_themes = config.get("ai_deep_num_themes", 12)
         self._integration_method = config.get("ai_integration_method", "heuristic")
+        self._monitor = monitor
 
         # Initialize heuristic-based components
         self._ai_integration = AIAgentIntegration(config)
@@ -92,7 +101,7 @@ class AIAnalysisService:
                 **self._config,
                 "timeout_seconds": self._config.get("claude_cli_timeout_seconds", 180),
             }
-            self._llm_client = LLMAnalysisClient(llm_config)
+            self._llm_client = LLMAnalysisClient(llm_config, monitor=self._monitor)
             logger.info("Claude CLI client initialized for deep semantic analysis")
         except ImportError as e:
             logger.warning(f"Failed to import LLMAnalysisClient: {e}")
@@ -229,7 +238,10 @@ class AIAnalysisService:
         if self._llm_client and sources_dict and themes:
             try:
                 logger.info("Using Claude CLI for cross-reference analysis")
-                print(f"[DEBUG] Using Claude CLI for cross-reference analysis ({len(sources_dict)} sources, {len(themes)} themes)")
+                print(
+                    f"[DEBUG] Using Claude CLI for cross-reference analysis "
+                    f"({len(sources_dict)} sources, {len(themes)} themes)"
+                )
                 result = self._llm_client.analyze_cross_reference(
                     sources=sources_dict,
                     themes=themes,
@@ -247,7 +259,7 @@ class AIAnalysisService:
 
         # Fallback to AI integration heuristics
         logger.info("Using heuristic-based cross-reference analysis")
-        print(f"[DEBUG] Using heuristic-based cross-reference analysis")
+        print("[DEBUG] Using heuristic-based cross-reference analysis")
         return self._ai_integration.analyze_cross_reference_with_ai(
             _sources=sources,
             themes=themes,

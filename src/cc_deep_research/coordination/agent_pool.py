@@ -12,6 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from cc_deep_research.config import Config
+from cc_deep_research.coordination._clock import monotonic_time
 
 
 class AgentStatus(StrEnum):
@@ -37,8 +38,8 @@ class AgentInstance:
         task: Task assigned to the agent.
         result: Result from the agent (if completed).
         error: Error from the agent (if failed).
-        spawned_at: Unix timestamp when agent was spawned.
-        completed_at: Unix timestamp when agent completed (if applicable).
+        spawned_at: Monotonic timestamp when agent was spawned.
+        completed_at: Monotonic timestamp when agent completed (if applicable).
     """
 
     id: str = field(default_factory=lambda: str(uuid4()))
@@ -47,7 +48,7 @@ class AgentInstance:
     task: dict[str, Any] | None = None
     result: dict[str, Any] | None = None
     error: Exception | None = None
-    spawned_at: float = field(default_factory=asyncio.get_event_loop().time)
+    spawned_at: float = field(default_factory=monotonic_time)
     completed_at: float | None = None
 
     @property
@@ -69,7 +70,7 @@ class AgentInstance:
         """
         self.status = AgentStatus.COMPLETED
         self.result = result
-        self.completed_at = asyncio.get_event_loop().time()
+        self.completed_at = monotonic_time()
 
     def mark_failed(self, error: Exception) -> None:
         """Mark the agent as failed with an error.
@@ -79,12 +80,12 @@ class AgentInstance:
         """
         self.status = AgentStatus.FAILED
         self.error = error
-        self.completed_at = asyncio.get_event_loop().time()
+        self.completed_at = monotonic_time()
 
     def mark_timeout(self) -> None:
         """Mark the agent as timed out."""
         self.status = AgentStatus.TIMEOUT
-        self.completed_at = asyncio.get_event_loop().time()
+        self.completed_at = monotonic_time()
 
     def mark_active(self) -> None:
         """Mark the agent as active (executing a task)."""
@@ -297,7 +298,7 @@ class LocalAgentPool:
             asyncio.TimeoutError: If timeout is exceeded.
         """
         timeout = timeout or self._timeout
-        deadline = asyncio.get_event_loop().time() + timeout
+        deadline = monotonic_time() + timeout
 
         while self._active:
             completed = self.completed_count
@@ -312,7 +313,7 @@ class LocalAgentPool:
                 }
 
             # Check for timeout
-            if asyncio.get_event_loop().time() > deadline:
+            if monotonic_time() > deadline:
                 msg = f"Agent pool timeout after {timeout}s"
                 raise TimeoutError(msg)
 

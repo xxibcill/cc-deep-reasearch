@@ -161,8 +161,11 @@ class OrchestratorRuntime:
                 monitor=self._monitor,
             ),
             AGENT_TYPE_EXPANDER: QueryExpanderAgent({}),
-            AGENT_TYPE_ANALYZER: AnalyzerAgent(research_settings),
-            AGENT_TYPE_DEEP_ANALYZER: DeepAnalyzerAgent(research_settings),
+            AGENT_TYPE_ANALYZER: AnalyzerAgent(research_settings, monitor=self._monitor),
+            AGENT_TYPE_DEEP_ANALYZER: DeepAnalyzerAgent(
+                research_settings,
+                monitor=self._monitor,
+            ),
             AGENT_TYPE_VALIDATOR: ValidatorAgent(research_settings),
         }
 

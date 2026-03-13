@@ -11,6 +11,8 @@ from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
+from cc_deep_research.coordination._clock import monotonic_time
+
 
 class MessageType(StrEnum):
     """Types of messages that can be sent through the message bus."""
@@ -32,7 +34,7 @@ class Message:
         sender_id: ID of the agent that sent the message.
         recipient_id: ID of the intended recipient (None for broadcast).
         content: Message content.
-        timestamp: Unix timestamp when message was created.
+        timestamp: Monotonic timestamp when message was created.
         metadata: Optional additional metadata.
     """
 
@@ -41,7 +43,7 @@ class Message:
     sender_id: str = "orchestrator"
     recipient_id: str | None = None
     content: Any = None
-    timestamp: float = field(default_factory=asyncio.get_event_loop().time)
+    timestamp: float = field(default_factory=monotonic_time)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

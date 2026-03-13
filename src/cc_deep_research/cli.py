@@ -477,10 +477,13 @@ def telemetry() -> None:
 )
 def telemetry_ingest(base_dir: Path | None, db_path: Path | None) -> None:
     """Ingest session telemetry JSONL into DuckDB tables."""
-    result = ingest_telemetry_to_duckdb(
-        base_dir=base_dir or get_default_telemetry_dir(),
-        db_path=db_path or get_default_dashboard_db_path(),
-    )
+    try:
+        result = ingest_telemetry_to_duckdb(
+            base_dir=base_dir or get_default_telemetry_dir(),
+            db_path=db_path or get_default_dashboard_db_path(),
+        )
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc)) from exc
     click.echo(f"Ingested {result['sessions']} session summaries and {result['events']} events")
 
 
@@ -504,11 +507,34 @@ def telemetry_ingest(base_dir: Path | None, db_path: Path | None) -> None:
     show_default=True,
     help="Port for Streamlit dashboard.",
 )
-def telemetry_dashboard(base_dir: Path | None, db_path: Path | None, port: int) -> None:
+@click.option(
+    "--refresh-seconds",
+    type=int,
+    default=5,
+    show_default=True,
+    help="Auto-refresh interval for the live dashboard (0 disables auto-refresh).",
+)
+@click.option(
+    "--tail-limit",
+    type=int,
+    default=200,
+    show_default=True,
+    help="Maximum live events and subprocess chunks to display per session view.",
+)
+def telemetry_dashboard(
+    base_dir: Path | None,
+    db_path: Path | None,
+    port: int,
+    refresh_seconds: int,
+    tail_limit: int,
+) -> None:
     """Launch Streamlit dashboard for telemetry analytics."""
     resolved_base_dir = base_dir or get_default_telemetry_dir()
     resolved_db_path = db_path or get_default_dashboard_db_path()
-    ingest_telemetry_to_duckdb(base_dir=resolved_base_dir, db_path=resolved_db_path)
+    try:
+        ingest_telemetry_to_duckdb(base_dir=resolved_base_dir, db_path=resolved_db_path)
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc)) from exc
 
     dashboard_script = Path(__file__).with_name("dashboard_app.py")
     cmd = [
@@ -519,12 +545,21 @@ def telemetry_dashboard(base_dir: Path | None, db_path: Path | None, port: int) 
         str(dashboard_script),
         "--server.port",
         str(port),
+        "--",
+        "--db-path",
+        str(resolved_db_path),
+        "--telemetry-dir",
+        str(resolved_base_dir),
+        "--refresh-seconds",
+        str(refresh_seconds),
+        "--tail-limit",
+        str(tail_limit),
     ]
     try:
         subprocess.run(cmd, check=True)
     except FileNotFoundError as exc:
         raise click.ClickException(
-            "streamlit is not installed. Install with `pip install streamlit pandas duckdb`."
+            "streamlit is not installed. Install with `pip install \"cc-deep-research[dashboard]\"`."
         ) from exc
     except subprocess.CalledProcessError as exc:
         raise click.ClickException(f"Failed to start dashboard: {exc}") from exc

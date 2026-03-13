@@ -1232,6 +1232,37 @@ cc-deep-research research --verbose --monitor "Problematic query"
 cc-deep-research research --quiet -o report.md "Automated research" > /dev/null
 ```
 
+### Live Monitoring Dashboard
+
+Use the dashboard when you need to inspect an active run instead of waiting for the session to finish.
+
+```bash
+# Start a monitored run in one terminal
+cc-deep-research research --monitor "Complex topic"
+
+# Open the live dashboard in another terminal
+cc-deep-research telemetry dashboard --port 8501 --refresh-seconds 5 --tail-limit 200
+```
+
+The dashboard combines two data paths:
+
+- live session reads from `events.jsonl` so active runs appear immediately
+- historical DuckDB analytics for completed session trends and summaries
+
+Use the dashboard to answer:
+
+- what phase is running now
+- what happened most recently
+- which agent is active
+- what the Claude CLI subprocess most recently printed to stdout or stderr
+
+Useful dashboard command options:
+
+- `--refresh-seconds 0` disables auto-refresh
+- `--tail-limit N` limits the event tail and subprocess chunk panes
+- `--base-dir PATH` points the dashboard at a non-default telemetry directory
+- `--db-path PATH` stores historical analytics in a custom DuckDB file
+
 ---
 
 ## Troubleshooting
@@ -1285,6 +1316,40 @@ cc-deep-research research --team-size 2 "Your query"
 # Disable iterative search
 cc-deep-research config set research.enable_iterative_search false
 ```
+
+#### Issue: "Dashboard dependencies are missing"
+
+**Problem:** `telemetry dashboard` fails because Streamlit, pandas, or DuckDB are not installed.
+
+**Solutions:**
+```bash
+pip install "cc-deep-research[dashboard]"
+```
+
+#### Issue: "Dashboard shows no telemetry yet"
+
+**Problem:** The dashboard opens but there are no active or historical sessions to inspect.
+
+**Solutions:**
+```bash
+# Start a monitored run first
+cc-deep-research research --monitor "Your query"
+
+# Or point the dashboard at an existing telemetry directory
+cc-deep-research telemetry dashboard --base-dir /path/to/telemetry
+```
+
+#### Issue: "Claude CLI disabled inside Claude Code"
+
+**Problem:** Claude-backed analysis falls back to heuristics because the run is already inside a Claude Code session.
+
+**Solutions:**
+```bash
+# Use heuristic mode explicitly to avoid the fallback warning
+cc-deep-research config set research.ai_integration_method heuristic
+```
+
+The dashboard will still show the failure or fallback events in the live session view.
 
 #### Issue: "Agent team errors"
 

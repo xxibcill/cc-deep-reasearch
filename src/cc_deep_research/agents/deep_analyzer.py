@@ -4,10 +4,15 @@ The deep analyzer agent performs extended multi-pass analysis
 with increased token usage for comprehensive understanding.
 """
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.agents.ai_analysis_service import AIAnalysisService
 from cc_deep_research.models import ClaimEvidence, CrossReferenceClaim, SearchResultItem
+
+if TYPE_CHECKING:
+    from cc_deep_research.monitoring import ResearchMonitor
 
 
 class DeepAnalyzerAgent:
@@ -19,7 +24,11 @@ class DeepAnalyzerAgent:
     - Pass 3: Synthesize comprehensive insights and implications
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        config: dict[str, Any],
+        monitor: ResearchMonitor | None = None,
+    ) -> None:
         """Initialize deep analyzer agent.
 
         Args:
@@ -27,7 +36,7 @@ class DeepAnalyzerAgent:
         """
         self._config = config
         self._passes = config.get("deep_analysis_passes", 3)
-        self._ai_service = AIAnalysisService(config)
+        self._ai_service = AIAnalysisService(config, monitor=monitor)
 
     def deep_analyze(
         self,
