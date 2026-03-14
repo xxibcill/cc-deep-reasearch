@@ -92,7 +92,8 @@
       "Bash(python -c \"import md_to_pdf; print\\(dir\\(md_to_pdf\\)\\)\")",
       "Bash(brew reinstall:*)",
       "Bash(python -c \"import weasyprint; print\\(''WeasyPrint loaded successfully''\\)\")",
-      "Bash(DYLD_LIBRARY_PATH=/opt/homebrew/lib uv run cc-deep-research markdown-to-pdf harness.md -o harness_report.pdf --title \"Agent Harness\")"
+      "Bash(DYLD_LIBRARY_PATH=/opt/homebrew/lib uv run cc-deep-research markdown-to-pdf harness.md -o harness_report.pdf --title \"Agent Harness\")",
+      "Bash(git clone:*)"
     ],
     "additionalDirectories": [
       "/Users/jjae/.claude/plans",

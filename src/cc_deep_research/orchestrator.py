@@ -80,13 +80,18 @@ class TeamResearchOrchestrator:
             num_researchers=self._num_researchers,
         )
         self._analysis_workflow = AnalysisWorkflow(config=config, monitor=self._monitor)
-        self._planning = ResearchPlanningService(monitor=self._monitor)
+        self._planning = ResearchPlanningService(
+            monitor=self._monitor,
+            config=self._config,
+            session_state=self._session_state,
+        )
         self._phase_runner = PhaseRunner(monitor=self._monitor)
         self._runtime = OrchestratorRuntime(
             config=config,
             monitor=self._monitor,
             parallel_mode=self._parallel_mode,
             num_researchers=self._num_researchers,
+            llm_event_callback=self._handle_llm_router_event,
         )
         self._execution = ResearchExecutionService(
             config=config,
@@ -139,6 +144,37 @@ class TeamResearchOrchestrator:
     def _reset_session_metadata_state(self) -> None:
         """Reset per-session metadata tracking before execution begins."""
         self._session_state.reset(list(self._config.search.providers))
+
+    def _handle_llm_router_event(self, event: dict[str, Any]) -> None:
+        """Update session metadata from routed LLM execution events."""
+        event_type = event.get("event_type")
+        if event_type == "route_completion":
+            agent_id = str(event.get("agent_id", "unknown"))
+            transport = str(event.get("transport", "unknown"))
+            provider = str(event.get("provider", "unknown"))
+            model = str(event.get("model", "unknown"))
+            self._session_state.set_llm_actual_route(
+                agent_id=agent_id,
+                transport=transport,
+                provider=provider,
+                model=model,
+                source="actual" if event.get("success", True) else "failed",
+            )
+            self._session_state.record_llm_route_usage(
+                agent_id=agent_id,
+                transport=transport,
+                prompt_tokens=int(event.get("prompt_tokens", 0) or 0),
+                completion_tokens=int(event.get("completion_tokens", 0) or 0),
+                latency_ms=int(event.get("latency_ms", 0) or 0),
+                error=not bool(event.get("success", True)),
+            )
+        elif event_type == "route_fallback":
+            self._session_state.record_llm_route_fallback(
+                agent_id=str(event.get("agent_id", "unknown")),
+                original_transport=str(event.get("original_transport", "unknown")),
+                fallback_transport=str(event.get("fallback_transport", "unknown")),
+                reason=str(event.get("reason", "unknown")),
+            )
 
     def _note_execution_degradation(self, reason: str) -> None:
         """Record a session-level degradation reason once."""
@@ -223,6 +259,12 @@ class TeamResearchOrchestrator:
         self._agents = runtime_state.agents
         self._message_bus = runtime_state.message_bus
         self._agent_pool = runtime_state.agent_pool
+        self._planning = ResearchPlanningService(
+            monitor=self._monitor,
+            config=self._config,
+            registry=runtime_state.llm_registry,
+            session_state=self._session_state,
+        )
 
     async def _phase_analyze_strategy(
         self,

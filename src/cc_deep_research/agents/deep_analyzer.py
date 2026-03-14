@@ -12,6 +12,7 @@ from cc_deep_research.agents.ai_analysis_service import AIAnalysisService
 from cc_deep_research.models import ClaimEvidence, CrossReferenceClaim, SearchResultItem
 
 if TYPE_CHECKING:
+    from cc_deep_research.llm.router import LLMRouter
     from cc_deep_research.monitoring import ResearchMonitor
 
 
@@ -28,6 +29,7 @@ class DeepAnalyzerAgent:
         self,
         config: dict[str, Any],
         monitor: ResearchMonitor | None = None,
+        llm_router: "LLMRouter | None" = None,
     ) -> None:
         """Initialize deep analyzer agent.
 
@@ -36,7 +38,12 @@ class DeepAnalyzerAgent:
         """
         self._config = config
         self._passes = config.get("deep_analysis_passes", 3)
-        self._ai_service = AIAnalysisService(config, monitor=monitor)
+        self._ai_service = AIAnalysisService(
+            config,
+            monitor=monitor,
+            llm_router=llm_router,
+            agent_id="deep_analyzer",
+        )
 
     def deep_analyze(
         self,

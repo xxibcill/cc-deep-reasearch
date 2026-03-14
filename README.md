@@ -120,14 +120,16 @@ Telemetry files are written under:
 - `~/.config/cc-deep-research/telemetry/<session_id>/events.jsonl`
 - `~/.config/cc-deep-research/telemetry/<session_id>/summary.json`
 
+Telemetry persistence is enabled for normal `research` runs. `--monitor` only turns on console monitoring output.
+
 Recommended operator workflow:
 
 ```bash
 # Install dashboard dependencies
 pip install "cc-deep-research[dashboard]"
 
-# Start a monitored run
-cc-deep-research research --monitor "Topic"
+# Start a research run (add --monitor if you also want console logs)
+cc-deep-research research "Topic"
 
 # Launch the live dashboard
 cc-deep-research telemetry dashboard --port 8501 --refresh-seconds 5 --tail-limit 200
@@ -190,6 +192,91 @@ Default highlights from current code:
 - `search_team.num_researchers: 3`
 - `output.format: "markdown"`
 
+## LLM Routing Configuration
+
+CC Deep Research supports multiple LLM backends for agent-level routing. The system can route different agents to different LLM providers based on availability and configuration.
+
+### Supported Transports
+
+| Transport | Description | Best For |
+|-----------|-------------|----------|
+| `claude_cli` | Claude Code CLI subprocess | Full Claude capabilities, nested session detection |
+| `openrouter_api` | OpenRouter API | Multi-model access, cost optimization |
+| `cerebras_api` | Cerebras API | Fast inference, low latency |
+| `heuristic` | Rule-based fallback | No external dependencies |
+
+### Configuration
+
+Configure LLM routing in `~/.config/cc-deep-research/config.yaml`:
+
+```yaml
+llm:
+  # Claude CLI configuration
+  claude_cli:
+    enabled: true
+    model: "claude-sonnet-4-6"
+    timeout_seconds: 120
+
+  # OpenRouter configuration
+  openrouter:
+    enabled: false
+    api_key: "${OPENROUTER_API_KEY}"
+    model: "anthropic/claude-sonnet-4"
+    base_url: "https://openrouter.ai/api/v1"
+
+  # Cerebras configuration
+  cerebras:
+    enabled: false
+    api_key: "${CEREBRAS_API_KEY}"
+    model: "llama-3.3-70b"
+    base_url: "https://api.cerebras.ai/v1"
+
+  # Fallback order when primary transport fails
+  fallback_order:
+    - "claude_cli"
+    - "openrouter"
+    - "cerebras"
+    - "heuristic"
+
+  # Per-agent route defaults (optional)
+  route_defaults:
+    analyzer: "openrouter"      # Use OpenRouter for analysis
+    deep_analyzer: "cerebras"   # Use Cerebras for deep analysis
+    report_quality_evaluator: "claude_cli"  # Use Claude CLI for report evaluation
+    reporter: "claude_cli"      # Default route for report-generation helpers
+    default: "claude_cli"
+```
+
+### Mixed-Route Sessions
+
+The planner can assign different routes to different agents within the same session. For example:
+
+- **Analyzer agent** → OpenRouter (cost-effective for large context)
+- **Deep analyzer agent** → Cerebras (fast structured synthesis)
+- **Report quality evaluator** → Claude CLI (high-quality final pass)
+
+This allows operators to optimize for both cost and quality across one run. The active CLI path now routes analyzer, deep analyzer, and report-quality evaluation through the shared LLM layer, while preserving heuristic fallback when no external transport is available.
+
+### Nested Session Detection
+
+When running inside Claude Code, the system automatically detects the nested session and falls back to alternative transports or heuristic analysis. This prevents recursive Claude CLI calls.
+
+### Telemetry and Route Tracking
+
+Each session records LLM route usage in telemetry:
+
+```bash
+# View route analytics for a session
+cc-deep-research telemetry dashboard
+# Navigate to "LLM Route Analytics" section
+```
+
+Route telemetry includes:
+- Transport used per agent
+- Token counts by transport
+- Fallback events and reasons
+- Latency metrics per route
+
 ## Development
 
 ```bash
@@ -218,6 +305,7 @@ You can also pass an explicit version such as `uv run python scripts/bump_versio
 ## Documentation
 
 - [Usage Guide](docs/USAGE.md)
+- [Telemetry Architecture](docs/TELEMETRY.md)
 - [Examples](docs/EXAMPLES.md)
 - [Research Workflow Design](docs/RESEARCH_WORKFLOW.md)
 - [Research Workflow and Agent Interactions](docs/RESEARCH_WORKFLOW_AGENT_INTERACTIONS.md)

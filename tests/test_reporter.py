@@ -1207,6 +1207,7 @@ No safety issues identified.
         from unittest.mock import patch
 
         from cc_deep_research.config import Config
+        from cc_deep_research.models import ReportEvaluationResult
         from cc_deep_research.reporting import ReportGenerator
 
         # Create a config with refinement disabled
@@ -1243,3 +1244,57 @@ No safety issues identified.
             # Report should still be generated
             assert report is not None
 
+    def test_report_generator_records_report_route_usage(self) -> None:
+        """Report generation should project evaluator route usage into session metadata."""
+        from unittest.mock import patch
+
+        from cc_deep_research.config import Config
+        from cc_deep_research.models import ReportEvaluationResult
+        from cc_deep_research.reporting import ReportGenerator
+
+        config = Config()
+        config.research.quality.enable_report_refinement = False
+
+        generator = ReportGenerator(config)
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+            metadata={
+                "llm_routes": {
+                    "planned_routes": {
+                        "report_quality_evaluator": {
+                            "transport": "openrouter_api",
+                            "provider": "openrouter",
+                            "model": "anthropic/claude-sonnet-4",
+                            "source": "planner",
+                        }
+                    }
+                }
+            },
+        )
+        analysis = {
+            "key_findings": [],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        with patch.object(
+            generator._report_quality_evaluator,
+            "evaluate_report_quality_sync",
+            return_value=ReportEvaluationResult(overall_quality_score=0.8, is_acceptable=True),
+        ):
+            generator._report_quality_evaluator._last_transport_used = "openrouter_api"
+            generator.generate_markdown_report(session, analysis)
+
+        assert session.metadata["llm_routes"]["actual_routes"]["report_quality_evaluator"] == {
+            "transport": "openrouter_api",
+            "provider": "openrouter",
+            "model": "anthropic/claude-sonnet-4",
+            "source": "actual",
+        }

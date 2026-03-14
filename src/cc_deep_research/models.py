@@ -196,6 +196,10 @@ class StrategyResult(BaseModel):
     profile: QueryProfile
     strategy: StrategyPlan
     tasks_needed: list[str] = Field(default_factory=list)
+    llm_plan: "LLMPlanModel | None" = Field(
+        default=None,
+        description="Per-agent LLM route plan from the planner",
+    )
 
 
 class AnalysisFinding(BaseModel):
@@ -388,6 +392,7 @@ class SessionMetadataContract(BaseModel):
     providers: SessionProvidersMetadata = Field(default_factory=SessionProvidersMetadata)
     execution: SessionExecutionMetadata = Field(default_factory=SessionExecutionMetadata)
     deep_analysis: SessionDeepAnalysisMetadata = Field(default_factory=SessionDeepAnalysisMetadata)
+    llm_routes: dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"extra": "allow"}
 
@@ -494,7 +499,7 @@ def normalize_session_metadata(
 
     The normalized contract always includes the same top-level keys:
     ``strategy``, ``analysis``, ``validation``, ``iteration_history``,
-    ``providers``, ``execution``, and ``deep_analysis``.
+    ``providers``, ``execution``, ``deep_analysis``, and ``llm_routes``.
     """
     raw_metadata = dict(metadata or {})
     configured = list(configured_providers or [])
@@ -527,6 +532,7 @@ def normalize_session_metadata(
             degraded_reasons=degraded_reasons,
         ),
         deep_analysis=deep_analysis,
+        llm_routes=_mapping_dict(raw_metadata.get("llm_routes", {})),
     )
     return contract.model_dump(mode="python")
 
@@ -593,6 +599,86 @@ class SearchMode(StrEnum):
     HYBRID_PARALLEL = "hybrid_parallel"
     TAVILY_PRIMARY = "tavily_primary"
     CLAUDE_PRIMARY = "claude_primary"
+
+
+class LLMTransportType(StrEnum):
+    """Transport mechanism for LLM operations."""
+
+    CLAUDE_CLI = "claude_cli"
+    OPENROUTER_API = "openrouter_api"
+    CEREBRAS_API = "cerebras_api"
+    HEURISTIC = "heuristic"
+
+
+class LLMProviderType(StrEnum):
+    """LLM provider identifier."""
+
+    CLAUDE = "claude"
+    OPENROUTER = "openrouter"
+    CEREBRAS = "cerebras"
+    HEURISTIC = "heuristic"
+
+
+class LLMRouteModel(BaseModel):
+    """Route configuration for a single LLM transport.
+
+    This model is used in strategy output to specify which LLM
+    route an agent should use for its operations.
+    """
+
+    transport: LLMTransportType = Field(
+        default=LLMTransportType.CLAUDE_CLI,
+        description="Transport mechanism for this route",
+    )
+    provider: LLMProviderType = Field(
+        default=LLMProviderType.CLAUDE,
+        description="LLM provider for this route",
+    )
+    model: str = Field(
+        default="claude-sonnet-4-6",
+        description="Model identifier for the provider",
+    )
+    enabled: bool = Field(
+        default=True,
+        description="Whether this route is available for use",
+    )
+
+
+class LLMPlanModel(BaseModel):
+    """Per-agent LLM route plan from strategy output.
+
+    The planner emits this model to specify which LLM route each
+    agent should use during the research session.
+    """
+
+    agent_routes: dict[str, LLMRouteModel] = Field(
+        default_factory=dict,
+        description="Mapping from agent ID to its assigned route",
+    )
+    fallback_order: list[LLMTransportType] = Field(
+        default_factory=lambda: [
+            LLMTransportType.CLAUDE_CLI,
+            LLMTransportType.OPENROUTER_API,
+            LLMTransportType.CEREBRAS_API,
+            LLMTransportType.HEURISTIC,
+        ],
+        description="Ordered list of fallback transports",
+    )
+    default_route: LLMRouteModel = Field(
+        default_factory=LLMRouteModel,
+        description="Default route for agents without explicit assignment",
+    )
+
+    def get_route_for_agent(self, agent_id: str) -> LLMRouteModel:
+        """Get the route for a specific agent.
+
+        Args:
+            agent_id: The agent identifier.
+
+        Returns:
+            The assigned route or the default route if not explicitly assigned.
+        """
+        return self.agent_routes.get(agent_id, self.default_route)
 
 
 class QualityScore(BaseModel):

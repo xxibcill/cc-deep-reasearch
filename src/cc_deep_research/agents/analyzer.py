@@ -24,6 +24,7 @@ from cc_deep_research.models import (
 from cc_deep_research.text_normalization import normalize_content
 
 if TYPE_CHECKING:
+    from cc_deep_research.llm.router import LLMRouter
     from cc_deep_research.monitoring import ResearchMonitor
 
 
@@ -41,6 +42,7 @@ class AnalyzerAgent:
         self,
         config: dict[str, Any],
         monitor: ResearchMonitor | None = None,
+        llm_router: "LLMRouter | None" = None,
     ) -> None:
         """Initialize the analyzer agent.
 
@@ -48,7 +50,12 @@ class AnalyzerAgent:
             config: Agent configuration dictionary.
         """
         self._config = config
-        self._ai_service = AIAnalysisService(config, monitor=monitor)
+        self._ai_service = AIAnalysisService(
+            config,
+            monitor=monitor,
+            llm_router=llm_router,
+            agent_id="analyzer",
+        )
 
     def analyze_sources(
         self,

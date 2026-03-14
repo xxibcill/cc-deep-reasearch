@@ -452,3 +452,101 @@ def test_query_live_subprocess_streams_enforces_chunk_limit(tmp_path):
     assert len(streams[0]["stdout_chunks"]) == 2
     assert streams[0]["dropped_stdout_chunks"] == 3
     assert [chunk["content"] for chunk in streams[0]["stdout_chunks"]] == ["chunk-3\n", "chunk-4\n"]
+
+
+def test_query_live_llm_route_analytics(tmp_path):
+    """Live LLM route analytics should aggregate route events by transport and provider."""
+    from cc_deep_research.telemetry import query_live_llm_route_analytics
+
+    monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+    monitor.set_session("live-llm-route", query="test query", depth="standard")
+
+    # Record route selections
+    monitor.record_llm_route_selected(
+        agent_id="analyzer",
+        transport="openrouter_api",
+        provider="openrouter",
+        model="claude-sonnet-4-6",
+        source="planner",
+    )
+    monitor.record_llm_route_selected(
+        agent_id="validator",
+        transport="cerebras_api",
+        provider="cerebras",
+        model="llama-3.3-70b",
+        source="planner",
+    )
+
+    # Record route completions
+    monitor.record_llm_route_completion(
+        agent_id="analyzer",
+        transport="openrouter_api",
+        provider="openrouter",
+        model="claude-sonnet-4-6",
+        operation="analyze",
+        duration_ms=1500,
+        success=True,
+        prompt_tokens=1000,
+        completion_tokens=500,
+    )
+    monitor.record_llm_route_completion(
+        agent_id="analyzer",
+        transport="openrouter_api",
+        provider="openrouter",
+        model="claude-sonnet-4-6",
+        operation="analyze",
+        duration_ms=1200,
+        success=True,
+        prompt_tokens=500,
+        completion_tokens=300,
+    )
+    # Record fallback
+    monitor.record_llm_route_fallback(
+        agent_id="researcher",
+        original_transport="claude_cli",
+        fallback_transport="openrouter_api",
+        reason="timeout",
+    )
+
+    monitor.finalize_session(total_sources=10, providers=["tavily"], total_time_ms=5000)
+
+    # Query analytics
+    analytics = query_live_llm_route_analytics("live-llm-route", base_dir=tmp_path)
+
+    assert analytics["total_requests"] == 2
+    assert analytics["fallback_count"] == 1
+    assert "openrouter_api" in analytics["transport_summary"]
+    assert analytics["transport_summary"]["openrouter_api"]["requests"] == 2
+    assert analytics["transport_summary"]["openrouter_api"]["tokens"] == 2300
+    assert "analyzer" in analytics["agent_summary"]
+    assert analytics["agent_summary"]["analyzer"]["requests"] == 2
+    assert analytics["agent_summary"]["analyzer"]["tokens"] == 2300
+    assert analytics["agent_summary"]["analyzer"]["transports"] == ["openrouter_api"]
+    assert "analyzer" in analytics["planned_routes"]
+    assert analytics["planned_routes"]["analyzer"]["transport"] == "openrouter_api"
+    assert analytics["planned_routes"]["validator"]["transport"] == "cerebras_api"
+    assert len(analytics["route_fallbacks"]) == 1
+
+
+def test_query_live_session_detail_includes_llm_route_analytics(tmp_path):
+    """Live session detail should include LLM route analytics."""
+    monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+    monitor.set_session("live-llm-detail", query="test query", depth="standard")
+
+    monitor.record_llm_route_completion(
+        agent_id="analyzer",
+        transport="openrouter_api",
+        provider="openrouter",
+        model="claude-sonnet-4-6",
+        operation="analyze",
+        duration_ms=1500,
+        success=True,
+        prompt_tokens=1000,
+        completion_tokens=500,
+    )
+
+    detail = query_live_session_detail("live-llm-detail", base_dir=tmp_path)
+
+    assert "llm_route_analytics" in detail
+    assert detail["llm_route_analytics"]["total_requests"] == 1
+    assert detail["llm_route_analytics"]["transport_summary"]["openrouter_api"]["requests"] == 1

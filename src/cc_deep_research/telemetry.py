@@ -438,6 +438,7 @@ def query_live_session_detail(
             "agent_timeline": [],
             "event_tree": {"root_events": [], "total_events": 0, "session_id": session_id},
             "subprocess_streams": [],
+            "llm_route_analytics": _build_llm_route_streams([]),
             "active_phase": None,
         }
 
@@ -474,6 +475,7 @@ def query_live_session_detail(
             events,
             chunk_limit=subprocess_chunk_limit,
         ),
+        "llm_route_analytics": _build_llm_route_streams(events),
         "active_phase": _current_phase_from_events(events),
     }
 
@@ -1078,6 +1080,264 @@ def query_event_tree(
     }
 
 
+def _build_llm_route_streams(
+    events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Build LLM route analytics from telemetry events.
+
+    Args:
+        events: List of normalized telemetry events.
+
+    Returns:
+        Dictionary with LLM route analytics including:
+        - route_selections: List of route selection events
+        - route_fallbacks: List of fallback events
+        - route_completions: List of completion events
+        - transport_summary: Usage stats by transport type
+        - provider_summary: Usage stats by provider
+        - agent_summary: Usage stats by agent
+    """
+    route_selections = [
+        e for e in events if e.get("event_type") == "llm.route_selected"
+    ]
+    route_fallbacks = [
+        e for e in events if e.get("event_type") == "llm.route_fallback"
+    ]
+    route_completions = [
+        e for e in events if e.get("event_type") == "llm.route_completion"
+    ]
+    route_requests = [
+        e for e in events if e.get("event_type") == "llm.route_request"
+    ]
+
+    # Transport summary
+    transport_summary: dict[str, dict[str, Any]] = {}
+    for event in route_completions:
+        metadata = event.get("metadata", {})
+        transport = metadata.get("transport", "unknown")
+        if transport not in transport_summary:
+            transport_summary[transport] = {
+                "requests": 0,
+                "tokens": 0,
+                "errors": 0,
+                "total_latency_ms": 0,
+            }
+        transport_summary[transport]["requests"] += 1
+        transport_summary[transport]["tokens"] += metadata.get("total_tokens", 0)
+        transport_summary[transport]["total_latency_ms"] += event.get("duration_ms", 0)
+        if not metadata.get("success", True):
+            transport_summary[transport]["errors"] += 1
+
+    # Calculate average latency
+    for transport, stats in transport_summary.items():
+        if stats["requests"] > 0:
+            stats["avg_latency_ms"] = stats["total_latency_ms"] // stats["requests"]
+        else:
+            stats["avg_latency_ms"] = 0
+
+    # Provider summary
+    provider_summary: dict[str, dict[str, Any]] = {}
+    for event in route_completions:
+        metadata = event.get("metadata", {})
+        provider = metadata.get("provider", "unknown")
+        if provider not in provider_summary:
+            provider_summary[provider] = {
+                "requests": 0,
+                "tokens": 0,
+                "errors": 0,
+            }
+        provider_summary[provider]["requests"] += 1
+        provider_summary[provider]["tokens"] += metadata.get("total_tokens", 0)
+        if not metadata.get("success", True):
+            provider_summary[provider]["errors"] += 1
+
+    # Agent summary
+    agent_summary: dict[str, dict[str, Any]] = {}
+    for event in route_completions:
+        metadata = event.get("metadata", {})
+        agent_id = event.get("agent_id") or "unknown"
+        if agent_id not in agent_summary:
+            agent_summary[agent_id] = {
+                "requests": 0,
+                "tokens": 0,
+                "errors": 0,
+                "transports": set(),
+                "providers": set(),
+            }
+        agent_summary[agent_id]["requests"] += 1
+        agent_summary[agent_id]["tokens"] += metadata.get("total_tokens", 0)
+        agent_summary[agent_id]["transports"].add(metadata.get("transport", "unknown"))
+        agent_summary[agent_id]["providers"].add(metadata.get("provider", "unknown"))
+        if not metadata.get("success", True):
+            agent_summary[agent_id]["errors"] += 1
+
+    # Convert sets to lists for JSON serialization
+    for agent_id, stats in agent_summary.items():
+        stats["transports"] = sorted(stats["transports"])
+        stats["providers"] = sorted(stats["providers"])
+
+    # Planned routes (from route_selected events)
+    planned_routes: dict[str, dict[str, str]] = {}
+    for event in route_selections:
+        metadata = event.get("metadata", {})
+        agent_id = event.get("agent_id") or "unknown"
+        planned_routes[agent_id] = {
+            "transport": metadata.get("transport", "unknown"),
+            "provider": metadata.get("provider", "unknown"),
+            "model": metadata.get("model", "unknown"),
+            "source": metadata.get("source", "unknown"),
+        }
+
+    return {
+        "route_selections": route_selections,
+        "route_fallbacks": route_fallbacks,
+        "route_completions": route_completions,
+        "route_requests": route_requests,
+        "transport_summary": transport_summary,
+        "provider_summary": provider_summary,
+        "agent_summary": agent_summary,
+        "planned_routes": planned_routes,
+        "fallback_count": len(route_fallbacks),
+        "total_requests": len(route_completions),
+    }
+
+
+def query_live_llm_route_analytics(
+    session_id: str,
+    *,
+    base_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Return LLM route analytics for a live session.
+
+    Args:
+        session_id: The session identifier.
+        base_dir: Optional base directory for telemetry files.
+
+    Returns:
+        Dictionary with LLM route analytics.
+    """
+    detail = query_live_session_detail(session_id, base_dir=base_dir)
+    events = detail["events"]
+    return _build_llm_route_streams(events)
+
+
+def query_llm_route_analytics(
+    session_id: str,
+    db_path: Path | None = None,
+) -> dict[str, Any]:
+    """Return LLM route analytics from DuckDB for a session.
+
+    Args:
+        session_id: The session identifier.
+        db_path: Optional path to the DuckDB database.
+
+    Returns:
+        Dictionary with LLM route analytics.
+    """
+    database_path = db_path or get_default_dashboard_db_path()
+    if not database_path.exists():
+        return {
+            "route_selections": [],
+            "route_fallbacks": [],
+            "route_completions": [],
+            "route_requests": [],
+            "transport_summary": {},
+            "provider_summary": {},
+            "agent_summary": {},
+            "planned_routes": {},
+            "fallback_count": 0,
+            "total_requests": 0,
+        }
+
+    try:
+        import duckdb
+    except ImportError as exc:  # pragma: no cover - import guard
+        raise RuntimeError(_missing_dashboard_dependency_message("LLM route analytics")) from exc
+
+    conn = duckdb.connect(str(database_path), read_only=True)
+
+    # Get all LLM route events for this session
+    llm_events = conn.execute(
+        """
+        SELECT
+            event_id,
+            parent_event_id,
+            sequence_number,
+            timestamp,
+            event_type,
+            name,
+            status,
+            duration_ms,
+            agent_id,
+            metadata_json
+        FROM telemetry_events
+        WHERE session_id = ?
+          AND category = 'llm'
+          AND event_type IN ('llm.route_selected', 'llm.route_fallback',
+                             'llm.route_request', 'llm.route_completion')
+        ORDER BY sequence_number ASC, timestamp ASC NULLS LAST
+        """,
+        [session_id],
+    ).fetchall()
+
+    conn.close()
+
+    # Convert to normalized event format
+    events = [
+        {
+            "event_id": row[0],
+            "parent_event_id": row[1],
+            "sequence_number": row[2],
+            "timestamp": row[3],
+            "event_type": row[4],
+            "name": row[5],
+            "status": row[6],
+            "duration_ms": row[7],
+            "agent_id": row[8],
+            "metadata": json.loads(row[9]) if row[9] else {},
+        }
+        for row in llm_events
+    ]
+
+    return _build_llm_route_streams(events)
+
+
+def query_llm_route_summary(
+    session_id: str,
+    *,
+    base_dir: Path | None = None,
+    db_path: Path | None = None,
+) -> dict[str, Any]:
+    """Return a summary of LLM route usage for a session.
+
+    This function prefers live telemetry files when available,
+    falling back to DuckDB when necessary.
+
+    Args:
+        session_id: The session identifier.
+        base_dir: Optional base directory for telemetry files.
+        db_path: Optional path to the DuckDB database.
+
+    Returns:
+        Dictionary with LLM route summary including:
+        - transports: Dict of transport -> usage stats
+        - providers: Dict of provider -> usage stats
+        - agents: Dict of agent_id -> route info
+        - planned_routes: Dict of agent_id -> planned route
+        - fallback_count: Number of fallback events
+        - total_requests: Total number of LLM requests
+    """
+    # Try live telemetry first
+    telemetry_dir = base_dir or get_default_telemetry_dir()
+    session_dir = telemetry_dir / session_id
+
+    if session_dir.exists():
+        return query_live_llm_route_analytics(session_id, base_dir=base_dir)
+
+    # Fall back to DuckDB
+    return query_llm_route_analytics(session_id, db_path=db_path)
+
+
 __all__ = [
     "get_default_dashboard_db_path",
     "get_default_telemetry_dir",
@@ -1088,8 +1348,11 @@ __all__ = [
     "query_live_agent_timeline",
     "query_live_event_tail",
     "query_live_event_tree",
+    "query_live_llm_route_analytics",
     "query_live_session_detail",
     "query_live_sessions",
     "query_live_subprocess_streams",
+    "query_llm_route_analytics",
+    "query_llm_route_summary",
     "query_session_detail",
 ]

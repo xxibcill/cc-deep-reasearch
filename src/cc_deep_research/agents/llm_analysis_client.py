@@ -92,9 +92,13 @@ class LLMAnalysisClient:
         self._model = config.get("model", "claude-sonnet-4-6")
         self._timeout_seconds = int(config.get("timeout_seconds", 180))
         self._usage_callback = config.get("usage_callback")
+        self._request_executor = config.get("request_executor")
         self._monitor = monitor
         configured_path = config.get("claude_cli_path") or os.environ.get("CLAUDE_CLI_PATH")
         self._claude_cli_path = configured_path or shutil.which("claude")
+        if self._request_executor is not None:
+            self._claude_cli_path = self._claude_cli_path or "router"
+            return
         if not self._claude_cli_path:
             raise ValueError(
                 "Claude Code CLI not found. Install `claude` or set "
@@ -422,6 +426,12 @@ class LLMAnalysisClient:
         Raises:
             RuntimeError: On CLI failure, timeout, or missing executable.
         """
+        if self._request_executor is not None:
+            try:
+                return str(self._request_executor(operation, prompt))
+            except Exception as exc:
+                raise RuntimeError(str(exc)) from exc
+
         start_time = time.time()
         command = self._build_command(prompt)
         prompt_preview = self._sanitize_prompt_preview(prompt)

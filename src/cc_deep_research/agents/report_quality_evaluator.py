@@ -10,11 +10,19 @@ Quality dimensions evaluated:
 - User experience (readability, usefulness)
 - Consistency with analysis findings
 - Executive Summary quality (banned phrases, size budget, gap inventory)
+
+LLM Routing:
+This agent supports the shared LLM routing layer. When an LLMRouter is provided,
+it can use LLM-based evaluation for more nuanced quality assessment. Otherwise,
+it falls back to heuristic-based evaluation.
 """
 
+from __future__ import annotations
+
+import asyncio
 import logging
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.agents.ai_agent_integration import AIAgentIntegration
 from cc_deep_research.agents.ai_executor import AIExecutor
@@ -23,9 +31,19 @@ from cc_deep_research.agents.reporter import (
     EXECUTIVE_SUMMARY_GAPS_POINTER,
     EXECUTIVE_SUMMARY_MAX_CHARACTERS,
 )
-from cc_deep_research.models import AnalysisResult, ReportEvaluationResult, ResearchSession
+from cc_deep_research.models import (
+    AnalysisResult,
+    ReportEvaluationResult,
+    ResearchSession,
+)
+
+if TYPE_CHECKING:
+    from cc_deep_research.llm.router import LLMRouter
 
 logger = logging.getLogger(__name__)
+
+# Agent identifier for LLM routing
+AGENT_ID = "report_quality_evaluator"
 
 
 class ReportQualityEvaluatorAgent:
@@ -37,24 +55,213 @@ class ReportQualityEvaluatorAgent:
     - Technical accuracy of synthesized content
     - User experience aspects (readability, usefulness)
     - Consistency with findings from analysis
+
+    LLM Routing Support:
+    When an LLMRouter is provided, this agent can use LLM-based evaluation
+    for more nuanced quality assessment. The route is resolved through the
+    shared routing layer, which supports:
+    - Claude CLI (for Claude-powered evaluation)
+    - OpenRouter API (for API-based evaluation)
+    - Cerebras API (for fast inference)
+    - Heuristic fallback (when no LLM available)
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        config: dict[str, Any],
+        *,
+        llm_router: "LLMRouter | None" = None,
+    ) -> None:
         """Initialize the report quality evaluator.
 
         Args:
             config: Agent configuration dictionary.
+            llm_router: Optional LLM router for shared routing layer integration.
         """
         self._config = config
         self._enabled = config.get("enable_report_quality_evaluation", True)
         self._min_acceptable_score = config.get("min_report_quality_score", 0.6)
         self._integration_method = config.get("ai_integration_method", "heuristic")
+        self._llm_router = llm_router
 
-        # Initialize AI components
+        # Initialize AI components (legacy support)
         self._ai_integration = AIAgentIntegration(config)
         self._ai_executor = AIExecutor(config)
 
-    def evaluate_report_quality(
+        # Track which transport was actually used
+        self._last_transport_used: str = "heuristic"
+
+    @property
+    def last_transport_used(self) -> str:
+        """Return the transport type used for the last evaluation."""
+        return self._last_transport_used
+
+    async def evaluate_with_llm(
+        self,
+        markdown: str,
+        session: ResearchSession,
+        analysis: AnalysisResult,
+    ) -> dict[str, Any] | None:
+        """Evaluate report quality using LLM via the shared routing layer.
+
+        This method attempts to use the configured LLM transport for more
+        nuanced quality assessment. If no LLM is available, returns None
+        to signal fallback to heuristic evaluation.
+
+        Args:
+            markdown: Generated markdown report content.
+            session: The research session.
+            analysis: Analysis results from analyzer.
+
+        Returns:
+            Dictionary with LLM-based evaluation results, or None if
+            LLM evaluation is not available.
+        """
+        if self._llm_router is None:
+            return None
+
+        if not self._llm_router.is_available(AGENT_ID):
+            return None
+
+        # Build evaluation prompt
+        prompt = self._build_llm_evaluation_prompt(markdown, analysis)
+
+        try:
+            response = await self._llm_router.execute(
+                agent_id=AGENT_ID,
+                prompt=prompt,
+                system_prompt=self._get_system_prompt(),
+                metadata={
+                    "operation": "report_quality_evaluation",
+                    "session_id": session.session_id,
+                },
+            )
+
+            # Track transport used
+            self._last_transport_used = response.transport.value
+
+            if response.content:
+                return self._parse_llm_response(response.content)
+
+        except Exception as e:
+            logger.warning(f"LLM evaluation failed, falling back to heuristic: {e}")
+            self._last_transport_used = "heuristic"
+
+        return None
+
+    def _build_llm_evaluation_prompt(
+        self,
+        markdown: str,
+        analysis: AnalysisResult,
+    ) -> str:
+        """Build the evaluation prompt for the LLM.
+
+        Args:
+            markdown: Report content to evaluate.
+            analysis: Analysis results for context.
+
+        Returns:
+            The evaluation prompt.
+        """
+        # Truncate markdown if too long
+        max_chars = 8000
+        truncated_markdown = markdown[:max_chars]
+        if len(markdown) > max_chars:
+            truncated_markdown += "\n... [truncated]"
+
+        findings_summary = "\n".join(f"- {f}" for f in analysis.key_findings[:5])
+        themes_summary = ", ".join(analysis.themes[:5])
+
+        return f"""Evaluate the quality of this research report on a scale of 0.0 to 1.0 for each dimension.
+
+REPORT CONTENT:
+{truncated_markdown}
+
+EXPECTED FINDINGS (from analysis):
+{findings_summary}
+
+EXPECTED THEMES:
+{themes_summary}
+
+Provide your evaluation in this exact JSON format:
+{{
+    "writing_quality": {{
+        "score": <0.0-1.0>,
+        "issues": ["issue1", ...],
+        "recommendations": ["rec1", ...]
+    }},
+    "structure_flow": {{
+        "score": <0.0-1.0>,
+        "issues": ["issue1", ...],
+        "recommendations": ["rec1", ...]
+    }},
+    "technical_accuracy": {{
+        "score": <0.0-1.0>,
+        "issues": ["issue1", ...],
+        "recommendations": ["rec1", ...]
+    }},
+    "user_experience": {{
+        "score": <0.0-1.0>,
+        "issues": ["issue1", ...],
+        "recommendations": ["rec1", ...]
+    }},
+    "consistency": {{
+        "score": <0.0-1.0>,
+        "issues": ["issue1", ...],
+        "recommendations": ["rec1", ...]
+    }},
+    "executive_summary": {{
+        "score": <0.0-1.0>,
+        "issues": ["issue1", ...],
+        "recommendations": ["rec1", ...]
+    }}
+}}
+
+Focus on:
+- Writing quality: clarity, grammar, coherence
+- Structure: logical flow, proper sections
+- Technical accuracy: correct representation of findings
+- User experience: readability, actionability
+- Consistency: alignment with analysis findings
+- Executive summary: concise, insight-focused"""
+
+    def _get_system_prompt(self) -> str:
+        """Get the system prompt for LLM evaluation."""
+        return """You are an expert research report quality evaluator. Your task is to assess research reports for quality across multiple dimensions. Provide objective, constructive feedback with specific scores and actionable recommendations. Always respond with valid JSON in the exact format requested."""
+
+    def _parse_llm_response(self, content: str) -> dict[str, Any]:
+        """Parse the LLM response into structured evaluation data.
+
+        Args:
+            content: The LLM response content.
+
+        Returns:
+            Parsed evaluation dictionary.
+        """
+        import json
+
+        # Try to extract JSON from the response
+        try:
+            # Find JSON object in response
+            start = content.find("{")
+            end = content.rfind("}") + 1
+            if start >= 0 and end > start:
+                json_str = content[start:end]
+                return json.loads(json_str)
+        except json.JSONDecodeError:
+            pass
+
+        # Return empty structure if parsing fails
+        return {
+            "writing_quality": {"score": 0.5, "issues": [], "recommendations": []},
+            "structure_flow": {"score": 0.5, "issues": [], "recommendations": []},
+            "technical_accuracy": {"score": 0.5, "issues": [], "recommendations": []},
+            "user_experience": {"score": 0.5, "issues": [], "recommendations": []},
+            "consistency": {"score": 0.5, "issues": [], "recommendations": []},
+            "executive_summary": {"score": 0.5, "issues": [], "recommendations": []},
+        }
+
+    async def evaluate_report_quality(
         self,
         markdown: str,
         session: ResearchSession,
@@ -62,16 +269,154 @@ class ReportQualityEvaluatorAgent:
     ) -> ReportEvaluationResult:
         """Evaluate quality of a generated markdown report.
 
+        This method first attempts LLM-based evaluation if an LLMRouter is
+        configured and available. If LLM evaluation fails or is unavailable,
+        it falls back to heuristic-based evaluation.
+
         Args:
             markdown: Generated markdown report content.
+            session: The research session.
             analysis: Analysis results from analyzer.
 
         Returns:
             ReportEvaluationResult with quality assessment.
         """
         if not self._enabled:
+            self._last_transport_used = "disabled"
             return ReportEvaluationResult(overall_quality_score=0.0, is_acceptable=True)
 
+        # Try LLM-based evaluation first
+        llm_result = await self.evaluate_with_llm(markdown, session, analysis)
+
+        if llm_result is not None:
+            # Use LLM-based evaluation
+            return self._build_result_from_llm(llm_result, markdown, analysis)
+
+        # Fall back to heuristic evaluation
+        self._last_transport_used = "heuristic"
+        return self._evaluate_with_heuristics(markdown, analysis)
+
+    def evaluate_report_quality_sync(
+        self,
+        markdown: str,
+        session: ResearchSession,
+        analysis: AnalysisResult,
+    ) -> ReportEvaluationResult:
+        """Synchronous wrapper for evaluate_report_quality.
+
+        This method provides backward compatibility for code that cannot
+        use async/await. It runs the async evaluation in a new event loop.
+
+        Args:
+            markdown: Generated markdown report content.
+            session: The research session.
+            analysis: Analysis results from analyzer.
+
+        Returns:
+            ReportEvaluationResult with quality assessment.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop is not None:
+            # Already in an async context - create a task
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(
+                    asyncio.run,
+                    self.evaluate_report_quality(markdown, session, analysis),
+                )
+                return future.result()
+        else:
+            # No running loop - create one
+            return asyncio.run(self.evaluate_report_quality(markdown, session, analysis))
+
+    def _build_result_from_llm(
+        self,
+        llm_result: dict[str, Any],
+        markdown: str,
+        analysis: AnalysisResult,
+    ) -> ReportEvaluationResult:
+        """Build a ReportEvaluationResult from LLM evaluation output.
+
+        Args:
+            llm_result: Parsed LLM evaluation result.
+            markdown: Original markdown for any additional checks.
+            analysis: Analysis results.
+
+        Returns:
+            ReportEvaluationResult with LLM-based scores.
+        """
+        # Extract scores from LLM result
+        writing_quality = llm_result.get("writing_quality", {})
+        structure_flow = llm_result.get("structure_flow", {})
+        technical_accuracy = llm_result.get("technical_accuracy", {})
+        user_experience = llm_result.get("user_experience", {})
+        consistency = llm_result.get("consistency", {})
+        executive_summary = llm_result.get("executive_summary", {})
+
+        # Also run executive summary guardrails check
+        exec_summary_guardrails = self._evaluate_executive_summary(markdown, analysis)
+
+        dimension_scores = {
+            "writing_quality": writing_quality.get("score", 0.5),
+            "structure_flow": structure_flow.get("score", 0.5),
+            "technical_accuracy": technical_accuracy.get("score", 0.5),
+            "user_experience": user_experience.get("score", 0.5),
+            "consistency": consistency.get("score", 0.5),
+            "executive_summary": executive_summary.get("score", 0.5),
+        }
+
+        overall_score = self._calculate_overall_score(dimension_scores)
+        is_acceptable = overall_score >= self._min_acceptable_score
+
+        # Collect issues and recommendations
+        critical_issues = exec_summary_guardrails.get("critical_issues", [])
+        warnings = []
+        recommendations = []
+
+        for dimension_name, dimension_data in llm_result.items():
+            if isinstance(dimension_data, dict):
+                warnings.extend(dimension_data.get("issues", []))
+                recommendations.extend(dimension_data.get("recommendations", []))
+
+        # Add guardrails warnings
+        warnings.extend(exec_summary_guardrails.get("warnings", []))
+
+        return ReportEvaluationResult(
+            overall_quality_score=overall_score,
+            is_acceptable=is_acceptable,
+            writing_quality_score=dimension_scores["writing_quality"],
+            structure_flow_score=dimension_scores["structure_flow"],
+            technical_accuracy_score=dimension_scores["technical_accuracy"],
+            user_experience_score=dimension_scores["user_experience"],
+            consistency_score=dimension_scores["consistency"],
+            critical_issues=critical_issues,
+            warnings=warnings,
+            recommendations=recommendations,
+            dimension_assessments=llm_result,
+            evaluation_method="llm_analysis",
+        )
+
+    def _evaluate_with_heuristics(
+        self,
+        markdown: str,
+        analysis: AnalysisResult,
+    ) -> ReportEvaluationResult:
+        """Evaluate report quality using heuristic methods.
+
+        This is the fallback evaluation when LLM is not available.
+
+        Args:
+            markdown: Report content to evaluate.
+            analysis: Analysis results from analyzer.
+
+        Returns:
+            ReportEvaluationResult with heuristic-based assessment.
+        """
         # Evaluate each quality dimension
         writing_quality = self._evaluate_writing_quality(markdown)
         structure_flow = self._evaluate_structure_and_flow(markdown)
@@ -126,7 +471,7 @@ class ReportQualityEvaluatorAgent:
             warnings=warnings,
             recommendations=recommendations,
             dimension_assessments=dimension_assessments,
-            evaluation_method="llm_analysis" if self._integration_method in ("api", "hybrid") else "heuristic",
+            evaluation_method="heuristic",
         )
 
     def _evaluate_writing_quality(self, markdown: str) -> dict[str, Any]:

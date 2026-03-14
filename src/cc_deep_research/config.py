@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
@@ -186,6 +186,106 @@ class AgentTeamConfig(BaseModel):
     max_reflection_points: int = Field(default=5, ge=1, le=10)
 
 
+# LLM Routing Configuration
+
+
+class LLMClaudeCLIConfig(BaseModel):
+    """Claude CLI transport configuration."""
+
+    enabled: bool = Field(default=True)
+    path: str | None = Field(
+        default=None,
+        description="Optional path override for the Claude Code CLI executable",
+    )
+    timeout_seconds: int = Field(default=180, ge=30, le=900)
+    model: str = Field(default="claude-sonnet-4-6")
+
+
+class LLMOpenRouterConfig(BaseModel):
+    """OpenRouter API transport configuration."""
+
+    enabled: bool = Field(default=False)
+    api_key: str | None = Field(default=None)
+    base_url: str = Field(default="https://openrouter.ai/api/v1")
+    timeout_seconds: int = Field(default=120, ge=30, le=600)
+    model: str = Field(default="anthropic/claude-sonnet-4")
+    extra_headers: dict[str, str] = Field(default_factory=dict)
+
+
+class LLMCerebrasConfig(BaseModel):
+    """Cerebras API transport configuration."""
+
+    enabled: bool = Field(default=False)
+    api_key: str | None = Field(default=None)
+    base_url: str = Field(default="https://api.cerebras.ai/v1")
+    timeout_seconds: int = Field(default=60, ge=10, le=300)
+    model: str = Field(default="llama-3.3-70b")
+
+
+class LLMRouteDefaults(BaseModel):
+    """Default route assignments for agents."""
+
+    analyzer: str = Field(default="claude_cli")
+    deep_analyzer: str = Field(default="claude_cli")
+    report_quality_evaluator: str = Field(default="claude_cli")
+    reporter: str = Field(default="claude_cli")
+    default: str = Field(default="claude_cli")
+
+
+class LLMConfig(BaseModel):
+    """LLM routing configuration.
+
+    This configuration tree controls how agents select LLM providers
+    for their operations. It supports multiple transports (Claude CLI,
+    OpenRouter, Cerebras) with per-agent route selection.
+    """
+
+    claude_cli: LLMClaudeCLIConfig = Field(default_factory=LLMClaudeCLIConfig)
+    openrouter: LLMOpenRouterConfig = Field(default_factory=LLMOpenRouterConfig)
+    cerebras: LLMCerebrasConfig = Field(default_factory=LLMCerebrasConfig)
+    route_defaults: LLMRouteDefaults = Field(default_factory=LLMRouteDefaults)
+
+    # Fallback order when primary route fails
+    fallback_order: list[str] = Field(
+        default_factory=lambda: ["claude_cli", "openrouter", "cerebras", "heuristic"]
+    )
+
+    def get_enabled_transports(self) -> list[str]:
+        """Get list of enabled transport names.
+
+        Returns:
+            List of enabled transport names in fallback order.
+        """
+        transports = []
+        for name in self.fallback_order:
+            if name == "claude_cli" and self.claude_cli.enabled:
+                transports.append(name)
+            elif name == "openrouter" and self.openrouter.enabled and self.openrouter.api_key:
+                transports.append(name)
+            elif name == "cerebras" and self.cerebras.enabled and self.cerebras.api_key:
+                transports.append(name)
+            elif name == "heuristic":
+                transports.append(name)
+        return transports
+
+    def get_route_for_agent(self, agent_id: str) -> str:
+        """Get the default route for an agent.
+
+        Args:
+            agent_id: The agent identifier.
+
+        Returns:
+            The transport name for the agent.
+        """
+        route_map = {
+            "analyzer": self.route_defaults.analyzer,
+            "deep_analyzer": self.route_defaults.deep_analyzer,
+            "report_quality_evaluator": self.route_defaults.report_quality_evaluator,
+            "reporter": self.route_defaults.reporter,
+        }
+        return route_map.get(agent_id, self.route_defaults.default)
+
+
 class Config(BaseModel):
     """Main configuration model."""
 
@@ -197,6 +297,7 @@ class Config(BaseModel):
     search_team: AgentTeamConfig = Field(default_factory=AgentTeamConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     display: DisplayConfig = Field(default_factory=DisplayConfig)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
 
 
 class Settings(BaseSettings):
@@ -339,6 +440,11 @@ __all__ = [
     "DisplayConfig",
     "MinSourcesConfig",
     "Settings",
+    "LLMConfig",
+    "LLMClaudeCLIConfig",
+    "LLMOpenRouterConfig",
+    "LLMCerebrasConfig",
+    "LLMRouteDefaults",
     "load_config",
     "save_config",
     "get_default_config",

@@ -55,6 +55,19 @@ class TestLLMAnalysisClient:
         with pytest.raises(ValueError, match="Claude Code CLI not found"):
             LLMAnalysisClient({})
 
+    def test_init_allows_request_executor_without_claude_cli(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A routed executor should bypass local CLI discovery."""
+        monkeypatch.delenv("CLAUDE_CLI_PATH", raising=False)
+        monkeypatch.setattr("cc_deep_research.agents.llm_analysis_client.shutil.which", lambda _: None)
+
+        client = LLMAnalysisClient(
+            {"request_executor": lambda operation, prompt: f"{operation}:{prompt}"}
+        )
+
+        assert client._claude_cli_path == "router"
+
     def test_extract_themes_uses_claude_cli(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -461,3 +474,34 @@ class TestAIAnalysisService:
 
         assert isinstance(service._llm_client, FakeClient)
         assert captured["monitor"] is monitor
+
+    def test_service_uses_router_backed_client_when_available(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Router-backed analysis should initialize without local CLI lookup."""
+        captured: dict[str, object] = {}
+
+        class FakeClient:
+            def __init__(self, config, monitor=None):
+                captured["config"] = config
+                captured["monitor"] = monitor
+
+        class FakeRouter:
+            def is_available(self, agent_id: str) -> bool:
+                captured["agent_id"] = agent_id
+                return True
+
+        monkeypatch.setattr(
+            "cc_deep_research.agents.llm_analysis_client.LLMAnalysisClient",
+            FakeClient,
+        )
+
+        service = AIAnalysisService(
+            {"ai_integration_method": "api"},
+            llm_router=FakeRouter(),
+            agent_id="deep_analyzer",
+        )
+
+        assert isinstance(service._llm_client, FakeClient)
+        assert captured["agent_id"] == "deep_analyzer"
+        assert callable(captured["config"]["request_executor"])
