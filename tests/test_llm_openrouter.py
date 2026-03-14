@@ -23,6 +23,7 @@ from cc_deep_research.llm.openrouter import OpenRouterTransport
 def create_route(
     *,
     api_key: str = "test-api-key",
+    api_keys: list[str] | None = None,
     base_url: str = "https://openrouter.ai/api/v1",
     model: str = "anthropic/claude-sonnet-4",
     timeout_seconds: int = 120,
@@ -31,6 +32,7 @@ def create_route(
     """Create a test LLMRoute with OpenRouter configuration."""
     extra = {
         "api_key": api_key,
+        "api_keys": api_keys or [],
         "base_url": base_url,
     }
     if extra_headers:
@@ -78,9 +80,27 @@ class MockAsyncClient:
         pass
 
     async def post(self, url: str, json: dict, headers: dict) -> MagicMock:
+        del url, json, headers
         if isinstance(self._response, Exception):
             raise self._response
         return self._response
+
+
+class SequenceMockAsyncClient(MockAsyncClient):
+    """Mock client that returns a sequence of responses."""
+
+    def __init__(self, responses: list[MagicMock | Exception]):
+        super().__init__(None)
+        self._responses = list(responses)
+        self.request_headers: list[dict] = []
+
+    async def post(self, url: str, json: dict, headers: dict) -> MagicMock:
+        del url, json
+        self.request_headers.append(headers)
+        response = self._responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 class TestOpenRouterTransport:
@@ -217,6 +237,7 @@ class TestOpenRouterTransport:
 
         class CapturingMockClient(MockAsyncClient):
             async def post(self, url: str, json: dict, headers: dict) -> MagicMock:
+                del url, headers
                 captured_payload.update(json)
                 mock_response = create_mock_response(
                     status_code=200,
@@ -297,6 +318,64 @@ class TestOpenRouterTransport:
                 await transport.execute(request)
 
         assert exc_info.value.retry_after_seconds is None
+
+    @pytest.mark.asyncio
+    async def test_execute_rotates_to_next_api_key_after_429(self) -> None:
+        """Test execute retries with the next key after a 429."""
+        responses = [
+            create_mock_response(status_code=429, headers={"Retry-After": "15"}),
+            create_mock_response(
+                status_code=200,
+                json_data={
+                    "id": "resp-123",
+                    "model": "anthropic/claude-sonnet-4",
+                    "choices": [
+                        {
+                            "message": {"content": "Rotated response"},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 4, "completion_tokens": 5, "total_tokens": 9},
+                },
+            ),
+        ]
+        mock_client = SequenceMockAsyncClient(responses)
+        transport = OpenRouterTransport(
+            create_route(
+                api_key="key-1",
+                api_keys=["key-1", "key-2"],
+            )
+        )
+
+        with patch.object(httpx, "AsyncClient", return_value=mock_client):
+            response = await transport.execute(LLMRequest(prompt="Test prompt"))
+
+        assert response.content == "Rotated response"
+        assert mock_client.request_headers[0]["Authorization"] == "Bearer key-1"
+        assert mock_client.request_headers[1]["Authorization"] == "Bearer key-2"
+
+    @pytest.mark.asyncio
+    async def test_execute_rate_limit_error_when_all_keys_are_exhausted(self) -> None:
+        """Test execute raises when every configured key returns 429."""
+        responses = [
+            create_mock_response(status_code=429, headers={"Retry-After": "15"}),
+            create_mock_response(status_code=429, headers={"Retry-After": "30"}),
+        ]
+        mock_client = SequenceMockAsyncClient(responses)
+        transport = OpenRouterTransport(
+            create_route(
+                api_key="key-1",
+                api_keys=["key-1", "key-2"],
+            )
+        )
+
+        with (
+            patch.object(httpx, "AsyncClient", return_value=mock_client),
+            pytest.raises(LLMRateLimitError) as exc_info,
+        ):
+            await transport.execute(LLMRequest(prompt="Test prompt"))
+
+        assert exc_info.value.retry_after_seconds == 30
 
     @pytest.mark.asyncio
     async def test_execute_provider_error_400(self) -> None:

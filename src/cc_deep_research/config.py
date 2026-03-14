@@ -2,13 +2,32 @@
 
 import os
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings
 
 from cc_deep_research.models import ResearchDepth, SearchMode
+
+
+def _normalize_api_key_list(*values: str | list[str] | None) -> list[str]:
+    """Normalize API keys while preserving first-seen order."""
+    normalized: list[str] = []
+    seen: set[str] = set()
+
+    for value in values:
+        candidates = value if isinstance(value, list) else [value]
+        for candidate in candidates:
+            if candidate is None:
+                continue
+            key = candidate.strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            normalized.append(key)
+
+    return normalized
 
 
 class SearchConfig(BaseModel):
@@ -206,10 +225,21 @@ class LLMOpenRouterConfig(BaseModel):
 
     enabled: bool = Field(default=False)
     api_key: str | None = Field(default=None)
+    api_keys: list[str] = Field(default_factory=list)
     base_url: str = Field(default="https://openrouter.ai/api/v1")
     timeout_seconds: int = Field(default=120, ge=30, le=600)
     model: str = Field(default="anthropic/claude-sonnet-4")
     extra_headers: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("api_keys")
+    @classmethod
+    def normalize_api_keys(cls, values: list[str]) -> list[str]:
+        """Normalize configured OpenRouter API keys."""
+        return _normalize_api_key_list(values)
+
+    def get_api_keys(self) -> list[str]:
+        """Return the configured OpenRouter keys in priority order."""
+        return _normalize_api_key_list(self.api_key, self.api_keys)
 
 
 class LLMCerebrasConfig(BaseModel):
@@ -217,9 +247,20 @@ class LLMCerebrasConfig(BaseModel):
 
     enabled: bool = Field(default=False)
     api_key: str | None = Field(default=None)
+    api_keys: list[str] = Field(default_factory=list)
     base_url: str = Field(default="https://api.cerebras.ai/v1")
     timeout_seconds: int = Field(default=60, ge=10, le=300)
     model: str = Field(default="llama-3.3-70b")
+
+    @field_validator("api_keys")
+    @classmethod
+    def normalize_api_keys(cls, values: list[str]) -> list[str]:
+        """Normalize configured Cerebras API keys."""
+        return _normalize_api_key_list(values)
+
+    def get_api_keys(self) -> list[str]:
+        """Return the configured Cerebras keys in priority order."""
+        return _normalize_api_key_list(self.api_key, self.api_keys)
 
 
 class LLMRouteDefaults(BaseModel):
@@ -258,13 +299,13 @@ class LLMConfig(BaseModel):
         """
         transports = []
         for name in self.fallback_order:
-            if name == "claude_cli" and self.claude_cli.enabled:
-                transports.append(name)
-            elif name == "openrouter" and self.openrouter.enabled and self.openrouter.api_key:
-                transports.append(name)
-            elif name == "cerebras" and self.cerebras.enabled and self.cerebras.api_key:
-                transports.append(name)
-            elif name == "heuristic":
+            is_enabled = (
+                (name == "claude_cli" and self.claude_cli.enabled)
+                or (name == "openrouter" and self.openrouter.enabled and self.openrouter.get_api_keys())
+                or (name == "cerebras" and self.cerebras.enabled and self.cerebras.get_api_keys())
+                or name == "heuristic"
+            )
+            if is_enabled:
                 transports.append(name)
         return transports
 
@@ -327,7 +368,19 @@ def _parse_api_keys_from_env() -> list[str]:
     env_value = os.environ.get("TAVILY_API_KEYS", "")
     if not env_value:
         return []
-    return [k.strip() for k in env_value.split(",") if k.strip()]
+    return _normalize_api_key_list(env_value.split(","))
+
+
+def _parse_provider_api_keys_from_env(
+    list_env_var: str,
+    single_env_var: str,
+) -> list[str]:
+    """Parse provider API keys from multi-key or single-key env vars."""
+    list_value = os.environ.get(list_env_var, "")
+    single_value = os.environ.get(single_env_var, "")
+
+    parsed_list = list_value.split(",") if list_value else []
+    return _normalize_api_key_list(parsed_list, single_value)
 
 
 def get_default_config_path() -> Path:
@@ -367,6 +420,22 @@ def load_config(config_path: Path | None = None) -> Config:
     api_keys = _parse_api_keys_from_env()
     if api_keys:
         config.tavily.api_keys = api_keys
+
+    openrouter_api_keys = _parse_provider_api_keys_from_env(
+        "OPENROUTER_API_KEYS",
+        "OPENROUTER_API_KEY",
+    )
+    if openrouter_api_keys:
+        config.llm.openrouter.api_keys = openrouter_api_keys
+        config.llm.openrouter.api_key = openrouter_api_keys[0]
+
+    cerebras_api_keys = _parse_provider_api_keys_from_env(
+        "CEREBRAS_API_KEYS",
+        "CEREBRAS_API_KEY",
+    )
+    if cerebras_api_keys:
+        config.llm.cerebras.api_keys = cerebras_api_keys
+        config.llm.cerebras.api_key = cerebras_api_keys[0]
 
     if settings.depth:
         config.search.depth = settings.depth
