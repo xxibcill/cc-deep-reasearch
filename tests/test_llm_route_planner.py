@@ -1,6 +1,5 @@
 """Tests for LLM route planner."""
 from unittest.mock import MagicMock
-
 from cc_deep_research.config import Config
 from cc_deep_research.llm.base import LLMProviderType, LLMTransportType
 from cc_deep_research.models import (

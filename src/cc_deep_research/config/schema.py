@@ -34,6 +34,25 @@ def _normalize_api_key_list(*values: str | list[str] | None) -> list[str]:
     return normalized
 
 
+def _normalize_api_key_list(*values: str | list[str] | None) -> list[str]:
+    """Normalize API keys while preserving first-seen order."""
+    normalized: list[str] = []
+    seen: set[str] = set()
+
+    for value in values:
+        candidates = value if isinstance(value, list) else [value]
+        for candidate in candidates:
+            if candidate is None:
+                continue
+            key = candidate.strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            normalized.append(key)
+
+    return normalized
+
+
 class SearchConfig(BaseModel):
     """Search-related configuration."""
 
@@ -244,7 +263,6 @@ class LLMCerebrasConfig(BaseModel):
         """Return the configured Cerebras keys in priority order."""
         return _normalize_api_key_list(self.api_key, self.api_keys)
 
-
 class LLMAnthropicConfig(BaseModel):
     """Anthropic API transport configuration."""
 
@@ -265,7 +283,6 @@ class LLMAnthropicConfig(BaseModel):
     def get_api_keys(self) -> list[str]:
         """Return the configured Anthropic keys in priority order."""
         return _normalize_api_key_list(self.api_key, self.api_keys)
-
 
 class LLMRouteDefaults(BaseModel):
     """Default route assignments for agents."""
@@ -395,6 +412,142 @@ class Settings(BaseSettings):
     }
 
 
+def _parse_api_keys_from_env() -> list[str]:
+    """Parse TAVILY_API_KEYS from environment variable.
+
+    Returns:
+        List of API keys from comma-separated env var.
+    """
+    env_value = os.environ.get("TAVILY_API_KEYS", "")
+    if not env_value:
+        return []
+    return _normalize_api_key_list(env_value.split(","))
+
+
+def _parse_provider_api_keys_from_env(
+    list_env_var: str,
+    single_env_var: str,
+) -> list[str]:
+    """Parse provider API keys from multi-key or single-key env vars."""
+    list_value = os.environ.get(list_env_var, "")
+    single_value = os.environ.get(single_env_var, "")
+
+    parsed_list = list_value.split(",") if list_value else []
+    return _normalize_api_key_list(parsed_list, single_value)
+
+
+def get_default_config_path() -> Path:
+    """Get the default configuration file path."""
+    xdg_config = os.environ.get("XDG_CONFIG_HOME")
+    if xdg_config:
+        return Path(xdg_config) / "cc-deep-research" / "config.yaml"
+    return Path.home() / ".config" / "cc-deep-research" / "config.yaml"
+
+
+def load_config(config_path: Path | None = None) -> Config:
+    """Load configuration from file and environment variables.
+
+    Args:
+        config_path: Optional path to config file. If not provided,
+                     uses default location.
+
+    Returns:
+        Config object with merged settings.
+    """
+    settings = Settings()
+
+    # Determine config path
+    if config_path is None:
+        config_path = settings.config_path or get_default_config_path()
+
+    # Load from file if exists
+    config_data: dict[str, Any] = {}
+    if config_path.exists():
+        with open(config_path) as f:
+            config_data = yaml.safe_load(f) or {}
+
+    # Create config from file data
+    config = Config(**config_data)
+
+    # Apply environment variable overrides
+    api_keys = _parse_api_keys_from_env()
+    if api_keys:
+        config.tavily.api_keys = api_keys
+
+    openrouter_api_keys = _parse_provider_api_keys_from_env(
+        "OPENROUTER_API_KEYS",
+        "OPENROUTER_API_KEY",
+    )
+    if openrouter_api_keys:
+        config.llm.openrouter.api_keys = openrouter_api_keys
+        config.llm.openrouter.api_key = openrouter_api_keys[0]
+
+    cerebras_api_keys = _parse_provider_api_keys_from_env(
+        "CEREBRAS_API_KEYS",
+        "CEREBRAS_API_KEY",
+    )
+    if cerebras_api_keys:
+        config.llm.cerebras.api_keys = cerebras_api_keys
+        config.llm.cerebras.api_key = cerebras_api_keys[0]
+
+    if settings.depth:
+        config.search.depth = settings.depth
+        config.research.default_depth = settings.depth
+
+    if settings.output_format:
+        config.output.format = settings.output_format
+
+    if settings.no_color:
+        config.display.color = "never"
+
+    return config
+
+
+def save_config(config: Config, config_path: Path | None = None) -> None:
+    """Save configuration to file.
+
+    Args:
+        config: Config object to save.
+        config_path: Optional path to save to. Uses default if not provided.
+    """
+    if config_path is None:
+        config_path = get_default_config_path()
+
+    # Ensure directory exists
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Convert to dict and save (use json mode to serialize enums as strings)
+    config_data = config.model_dump(mode="json")
+
+    with open(config_path, "w") as f:
+        yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+
+
+def get_default_config() -> Config:
+    """Get a default configuration.
+
+    Returns:
+        Config object with default values.
+    """
+    return Config()
+
+
+def create_default_config_file(config_path: Path | None = None) -> Path:
+    """Create a default configuration file.
+
+    Args:
+        config_path: Optional path for config file.
+
+    Returns:
+        Path to the created config file.
+    """
+    if config_path is None:
+        config_path = get_default_config_path()
+
+    config = get_default_config()
+    save_config(config, config_path)
+
+    return config_path
 __all__ = [
     "AgentConfig",
     "AgentTeamConfig",
