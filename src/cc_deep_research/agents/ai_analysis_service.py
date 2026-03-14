@@ -17,6 +17,7 @@ the CLI-based analysis is automatically disabled to avoid nested session errors.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -28,6 +29,7 @@ from cc_deep_research.models import SearchResultItem
 
 if TYPE_CHECKING:
     from cc_deep_research.agents.llm_analysis_client import LLMAnalysisClient
+    from cc_deep_research.llm.router import LLMRouter
     from cc_deep_research.monitoring import ResearchMonitor
 
 logger = logging.getLogger(__name__)
@@ -46,6 +48,8 @@ class AIAnalysisService:
         self,
         config: dict[str, Any],
         monitor: ResearchMonitor | None = None,
+        llm_router: "LLMRouter | None" = None,
+        agent_id: str = "analyzer",
     ) -> None:
         """Initialize AI analysis service.
 
@@ -63,6 +67,8 @@ class AIAnalysisService:
         self._deep_num_themes = config.get("ai_deep_num_themes", 12)
         self._integration_method = config.get("ai_integration_method", "heuristic")
         self._monitor = monitor
+        self._llm_router = llm_router
+        self._agent_id = agent_id
 
         # Initialize heuristic-based components
         self._ai_integration = AIAgentIntegration(config)
@@ -74,12 +80,25 @@ class AIAnalysisService:
             self._initialize_llm_client()
 
     def _initialize_llm_client(self) -> None:
-        """Initialize the LLM client for Claude CLI-based analysis.
+        """Initialize the LLM client for routed or Claude CLI-backed analysis."""
+        if self._llm_router is not None and self._llm_router.is_available(self._agent_id):
+            try:
+                from cc_deep_research.agents.llm_analysis_client import LLMAnalysisClient
 
-        Skips initialization if running inside another Claude Code session
-        (detected via CLAUDECODE environment variable) to avoid nested session errors.
-        """
-        # Check if running inside another Claude Code session
+                llm_config = {
+                    **self._config,
+                    "timeout_seconds": self._config.get("claude_cli_timeout_seconds", 180),
+                    "request_executor": self._execute_via_router,
+                }
+                self._llm_client = LLMAnalysisClient(llm_config, monitor=self._monitor)
+                logger.info("Shared LLM router initialized for semantic analysis")
+                return
+            except Exception as e:  # pragma: no cover - defensive fallback
+                logger.warning(f"LLM router unavailable. Falling back to heuristic analysis: {e}")
+                if self._integration_method == "api":
+                    raise
+                return
+
         if os.environ.get("CLAUDECODE"):
             logger.info(
                 "Running inside Claude Code session (CLAUDECODE=1). "
@@ -111,6 +130,38 @@ class AIAnalysisService:
             logger.warning(f"Claude CLI unavailable. Falling back to heuristic analysis: {e}")
             if self._integration_method == "api":
                 raise
+
+    def _execute_via_router(self, operation: str, prompt: str) -> str:
+        """Execute one analysis prompt through the shared LLM router."""
+        if self._llm_router is None:
+            raise RuntimeError("LLM router is not configured")
+
+        async def _run() -> str:
+            response = await self._llm_router.execute(
+                agent_id=self._agent_id,
+                prompt=prompt,
+                metadata={"operation": operation, "agent_id": self._agent_id},
+            )
+            return response.content
+
+        return self._run_coroutine(_run())
+
+    @staticmethod
+    def _run_coroutine(coroutine: Any) -> Any:
+        """Run a coroutine from synchronous code."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop is None:
+            return asyncio.run(coroutine)
+
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(asyncio.run, coroutine)
+            return future.result()
 
     def extract_themes_semantically(
         self,

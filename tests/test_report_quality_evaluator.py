@@ -2,7 +2,10 @@
 
 import pytest
 
-from cc_deep_research.agents.report_quality_evaluator import ReportQualityEvaluatorAgent
+from cc_deep_research.agents.report_quality_evaluator import (
+    AGENT_ID,
+    ReportQualityEvaluatorAgent,
+)
 from cc_deep_research.models import AnalysisResult, ReportEvaluationResult, ResearchSession, SearchResultItem
 
 
@@ -59,7 +62,7 @@ This is a test report.
 This report is safe.
 """
 
-        result = agent.evaluate_report_quality(markdown, session, analysis)
+        result = agent.evaluate_report_quality_sync(markdown, session, analysis)
 
         assert isinstance(result, ReportEvaluationResult)
         assert 0.0 <= result.overall_quality_score <= 1.0
@@ -79,7 +82,7 @@ This report is safe.
         analysis = AnalysisResult()
         markdown = "Test report"
 
-        result = agent.evaluate_report_quality(markdown, session, analysis)
+        result = agent.evaluate_report_quality_sync(markdown, session, analysis)
 
         assert result.overall_quality_score == 0.0
         assert result.is_acceptable is True
@@ -278,7 +281,7 @@ Some other themes."""
         session = ResearchSession(session_id="test", query="test", sources=[])
         analysis = AnalysisResult()
 
-        result = agent.evaluate_report_quality("", session, analysis)
+        result = agent.evaluate_report_quality_sync("", session, analysis)
 
         assert isinstance(result, ReportEvaluationResult)
         # Empty reports should have lower scores due to missing sections
@@ -293,7 +296,7 @@ Some other themes."""
         analysis = AnalysisResult()
 
         markdown = "Short report."
-        result = agent.evaluate_report_quality(markdown, session, analysis)
+        result = agent.evaluate_report_quality_sync(markdown, session, analysis)
 
         assert isinstance(result, ReportEvaluationResult)
         # Very short reports should have lower scores due to missing sections
@@ -323,7 +326,7 @@ Finding.
 ## Safety
 
 Safe."""
-        result = agent.evaluate_report_quality(markdown, session, analysis)
+        result = agent.evaluate_report_quality_sync(markdown, session, analysis)
 
         # Since it's a minimal report, score likely < 0.7
         assert result.is_acceptable == (result.overall_quality_score >= 0.7)
@@ -351,7 +354,7 @@ Test finding.
 
 Safe."""
 
-        result = agent.evaluate_report_quality(markdown, session, analysis)
+        result = agent.evaluate_report_quality_sync(markdown, session, analysis)
 
         # Check that we have dimension assessments
         assert len(result.dimension_assessments) > 0
@@ -364,12 +367,12 @@ Safe."""
         heuristic_agent = ReportQualityEvaluatorAgent({"ai_integration_method": "heuristic"})
         session = ResearchSession(session_id="test", query="test", sources=[])
         analysis = AnalysisResult()
-        result = heuristic_agent.evaluate_report_quality("Test", session, analysis)
+        result = heuristic_agent.evaluate_report_quality_sync("Test", session, analysis)
         assert result.evaluation_method == "heuristic"
 
         api_agent = ReportQualityEvaluatorAgent({"ai_integration_method": "api"})
-        result = api_agent.evaluate_report_quality("Test", session, analysis)
-        assert result.evaluation_method == "llm_analysis"
+        result = api_agent.evaluate_report_quality_sync("Test", session, analysis)
+        assert result.evaluation_method == "heuristic"  # Falls back to heuristic without LLM router
 
 
 class TestExecutiveSummaryGuardrails:
@@ -399,7 +402,7 @@ Safe."""
         session = ResearchSession(session_id="test", query="test", sources=[])
         analysis = AnalysisResult()
 
-        result = agent.evaluate_report_quality(markdown, session, analysis)
+        result = agent.evaluate_report_quality_sync(markdown, session, analysis)
 
         # Should have warnings about banned phrase
         assert len(result.warnings) > 0
@@ -430,7 +433,7 @@ Safe."""
         session = ResearchSession(session_id="test", query="test", sources=[])
         analysis = AnalysisResult()
 
-        result = agent.evaluate_report_quality(markdown, session, analysis)
+        result = agent.evaluate_report_quality_sync(markdown, session, analysis)
 
         # Should have warning about exceeding budget
         assert any("character budget" in w.lower() for w in result.warnings)
@@ -459,7 +462,7 @@ Safe."""
         session = ResearchSession(session_id="test", query="test", sources=[])
         analysis = AnalysisResult()
 
-        result = agent.evaluate_report_quality(markdown, session, analysis)
+        result = agent.evaluate_report_quality_sync(markdown, session, analysis)
 
         # Should NOT have warnings about banned phrases or character budget
         guardrail_warnings = [
@@ -467,3 +470,244 @@ Safe."""
             if "banned boilerplate" in w.lower() or "character budget" in w.lower()
         ]
         assert len(guardrail_warnings) == 0
+
+
+class TestLLMRouterIntegration:
+    """Tests for LLM router integration in ReportQualityEvaluatorAgent."""
+
+    def test_agent_accepts_llm_router(self) -> None:
+        """Test that agent can be initialized with LLM router."""
+        from unittest.mock import MagicMock
+
+        mock_router = MagicMock()
+        agent = ReportQualityEvaluatorAgent({}, llm_router=mock_router)
+
+        assert agent._llm_router is mock_router
+
+    def test_agent_without_llm_router_uses_heuristics(self) -> None:
+        """Test that agent without LLM router uses heuristic evaluation."""
+        agent = ReportQualityEvaluatorAgent({})
+
+        session = ResearchSession(session_id="test", query="test", sources=[])
+        analysis = AnalysisResult()
+        markdown = """## Executive Summary
+
+Test summary.
+
+## Key Findings
+
+Test finding.
+
+## Sources
+
+[1] https://example.com
+
+## Safety
+
+Safe."""
+
+        result = agent.evaluate_report_quality_sync(markdown, session, analysis)
+
+        assert result.evaluation_method == "heuristic"
+        assert agent.last_transport_used == "heuristic"
+
+    @pytest.mark.asyncio
+    async def test_async_evaluation_without_llm_router(self) -> None:
+        """Test async evaluation falls back to heuristics without router."""
+        agent = ReportQualityEvaluatorAgent({})
+
+        session = ResearchSession(session_id="test", query="test", sources=[])
+        analysis = AnalysisResult()
+        markdown = """## Executive Summary
+
+Test summary.
+
+## Key Findings
+
+Test finding.
+
+## Sources
+
+[1] https://example.com
+
+## Safety
+
+Safe."""
+
+        result = await agent.evaluate_report_quality(markdown, session, analysis)
+
+        assert isinstance(result, ReportEvaluationResult)
+        assert result.evaluation_method == "heuristic"
+
+    @pytest.mark.asyncio
+    async def test_llm_evaluation_when_router_unavailable(self) -> None:
+        """Test that evaluation falls back when router reports unavailable."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_router = MagicMock()
+        mock_router.is_available = MagicMock(return_value=False)
+        agent = ReportQualityEvaluatorAgent({}, llm_router=mock_router)
+
+        session = ResearchSession(session_id="test", query="test", sources=[])
+        analysis = AnalysisResult()
+        markdown = """## Executive Summary
+
+Test summary.
+
+## Key Findings
+
+Test finding.
+
+## Sources
+
+[1] https://example.com
+
+## Safety
+
+Safe."""
+
+        result = await agent.evaluate_report_quality(markdown, session, analysis)
+
+        assert isinstance(result, ReportEvaluationResult)
+        assert result.evaluation_method == "heuristic"
+
+    @pytest.mark.asyncio
+    async def test_llm_evaluation_with_mock_response(self) -> None:
+        """Test LLM evaluation with mocked router response."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from cc_deep_research.llm.base import (
+            LLMProviderType,
+            LLMResponse,
+            LLMTransportType,
+        )
+
+        # Create mock router that returns a successful response
+        mock_router = MagicMock()
+        mock_router.is_available = MagicMock(return_value=True)
+        mock_router.execute = AsyncMock(
+            return_value=LLMResponse(
+                content=json.dumps({
+                    "writing_quality": {"score": 0.9, "issues": [], "recommendations": []},
+                    "structure_flow": {"score": 0.85, "issues": [], "recommendations": []},
+                    "technical_accuracy": {"score": 0.8, "issues": [], "recommendations": []},
+                    "user_experience": {"score": 0.75, "issues": [], "recommendations": []},
+                    "consistency": {"score": 0.9, "issues": [], "recommendations": []},
+                    "executive_summary": {"score": 0.85, "issues": [], "recommendations": []},
+                }),
+                model="test-model",
+                provider=LLMProviderType.OPENROUTER,
+                transport=LLMTransportType.OPENROUTER_API,
+                latency_ms=500,
+                finish_reason="stop",
+            )
+        )
+
+        agent = ReportQualityEvaluatorAgent({}, llm_router=mock_router)
+
+        session = ResearchSession(session_id="test", query="test", sources=[])
+        analysis = AnalysisResult(
+            key_findings=["Test finding"],
+            themes=["Test theme"],
+        )
+        markdown = """## Executive Summary
+
+Test summary with key insights.
+
+## Key Findings
+
+Test finding one.
+
+## Sources
+
+[1] https://example.com
+
+## Safety
+
+Safe."""
+
+        result = await agent.evaluate_report_quality(markdown, session, analysis)
+
+        assert isinstance(result, ReportEvaluationResult)
+        assert result.evaluation_method == "llm_analysis"
+        assert result.overall_quality_score > 0.7
+        assert agent.last_transport_used == "openrouter_api"
+
+
+class TestMixedRouteIntegration:
+    """Tests for mixed-route sessions where different agents use different transports."""
+
+    @pytest.mark.asyncio
+    async def test_different_agents_can_use_different_routes(self) -> None:
+        """Test that analyzer and evaluator can use different LLM routes."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from cc_deep_research.llm.base import (
+            LLMProviderType,
+            LLMResponse,
+            LLMTransportType,
+        )
+
+        # Create mock router that returns different responses based on agent_id
+        def mock_execute(agent_id, *args, **kwargs):
+            if agent_id == "report_quality_evaluator":
+                return LLMResponse(
+                    content=json.dumps({
+                        "writing_quality": {"score": 0.85, "issues": [], "recommendations": []},
+                        "structure_flow": {"score": 0.8, "issues": [], "recommendations": []},
+                        "technical_accuracy": {"score": 0.9, "issues": [], "recommendations": []},
+                        "user_experience": {"score": 0.75, "issues": [], "recommendations": []},
+                        "consistency": {"score": 0.85, "issues": [], "recommendations": []},
+                        "executive_summary": {"score": 0.8, "issues": [], "recommendations": []},
+                    }),
+                    model="cerebras-llama",
+                    provider=LLMProviderType.CEREBRAS,
+                    transport=LLMTransportType.CEREBRAS_API,
+                    latency_ms=100,
+                    finish_reason="stop",
+                )
+            else:
+                return LLMResponse(
+                    content="Analysis result",
+                    model="claude-sonnet",
+                    provider=LLMProviderType.CLAUDE,
+                    transport=LLMTransportType.CLAUDE_CLI,
+                    latency_ms=2000,
+                    finish_reason="stop",
+                )
+
+        mock_router = MagicMock()
+        mock_router.is_available = MagicMock(return_value=True)
+        mock_router.execute = AsyncMock(side_effect=mock_execute)
+
+        # Create evaluator with mock router
+        agent = ReportQualityEvaluatorAgent({}, llm_router=mock_router)
+
+        session = ResearchSession(session_id="test", query="test", sources=[])
+        analysis = AnalysisResult(
+            key_findings=["Test finding"],
+            themes=["Test theme"],
+        )
+        markdown = """## Executive Summary
+
+Test summary.
+
+## Key Findings
+
+Test finding one.
+
+## Sources
+
+[1] https://example.com
+
+## Safety
+
+Safe."""
+
+        result = await agent.evaluate_report_quality(markdown, session, analysis)
+
+        assert result.evaluation_method == "llm_analysis"
+        assert agent.last_transport_used == "cerebras_api"
+
+
+import json

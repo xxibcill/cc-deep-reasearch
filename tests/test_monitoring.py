@@ -813,3 +813,227 @@ class TestToolLifecycleEvents:
 
         # Tool should have phase as parent
         assert tool_event["parent_event_id"] == phase_event["event_id"]
+
+
+class TestLLMRouteTelemetry:
+    """Tests for LLM route telemetry events."""
+
+    def test_record_llm_route_selected(self):
+        """Test recording LLM route selection."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard")
+
+        monitor.record_llm_route_selected(
+            agent_id="analyzer",
+            transport="openrouter_api",
+            provider="openrouter",
+            model="claude-sonnet-4-6",
+            source="planner",
+        )
+
+        event = next(
+            e for e in monitor._telemetry_events
+            if e["event_type"] == "llm.route_selected"
+        )
+
+        assert event["agent_id"] == "analyzer"
+        assert event["category"] == "llm"
+        assert event["status"] == "selected"
+        assert event["metadata"]["transport"] == "openrouter_api"
+        assert event["metadata"]["provider"] == "openrouter"
+        assert event["metadata"]["model"] == "claude-sonnet-4-6"
+        assert event["metadata"]["source"] == "planner"
+
+    def test_record_llm_route_fallback(self):
+        """Test recording LLM route fallback."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard")
+
+        monitor.record_llm_route_fallback(
+            agent_id="analyzer",
+            original_transport="claude_cli",
+            fallback_transport="openrouter_api",
+            reason="nested_session_detected",
+        )
+
+        event = next(
+            e for e in monitor._telemetry_events
+            if e["event_type"] == "llm.route_fallback"
+        )
+
+        assert event["agent_id"] == "analyzer"
+        assert event["status"] == "fallback"
+        assert event["metadata"]["original_transport"] == "claude_cli"
+        assert event["metadata"]["fallback_transport"] == "openrouter_api"
+        assert event["metadata"]["reason"] == "nested_session_detected"
+
+    def test_record_llm_route_request(self):
+        """Test recording LLM route request start."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard")
+
+        monitor.record_llm_route_request(
+            agent_id="analyzer",
+            transport="openrouter_api",
+            provider="openrouter",
+            model="claude-sonnet-4-6",
+            operation="analyze_sources",
+        )
+
+        event = next(
+            e for e in monitor._telemetry_events
+            if e["event_type"] == "llm.route_request"
+        )
+
+        assert event["agent_id"] == "analyzer"
+        assert event["status"] == "started"
+        assert event["name"] == "analyze_sources"
+        assert event["metadata"]["transport"] == "openrouter_api"
+        assert event["metadata"]["provider"] == "openrouter"
+        assert event["metadata"]["model"] == "claude-sonnet-4-6"
+        assert event["metadata"]["operation"] == "analyze_sources"
+
+    def test_record_llm_route_completion_success(self):
+        """Test recording successful LLM route completion."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard")
+
+        monitor.record_llm_route_completion(
+            agent_id="analyzer",
+            transport="openrouter_api",
+            provider="openrouter",
+            model="claude-sonnet-4-6",
+            operation="analyze_sources",
+            duration_ms=1500,
+            success=True,
+            prompt_tokens=1000,
+            completion_tokens=500,
+        )
+
+        event = next(
+            e for e in monitor._telemetry_events
+            if e["event_type"] == "llm.route_completion"
+        )
+
+        assert event["agent_id"] == "analyzer"
+        assert event["status"] == "completed"
+        assert event["duration_ms"] == 1500
+        assert event["metadata"]["transport"] == "openrouter_api"
+        assert event["metadata"]["provider"] == "openrouter"
+        assert event["metadata"]["model"] == "claude-sonnet-4-6"
+        assert event["metadata"]["success"] is True
+        assert event["metadata"]["prompt_tokens"] == 1000
+        assert event["metadata"]["completion_tokens"] == 500
+        assert event["metadata"]["total_tokens"] == 1500
+
+    def test_record_llm_route_completion_failure(self):
+        """Test recording failed LLM route completion."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard")
+
+        monitor.record_llm_route_completion(
+            agent_id="analyzer",
+            transport="cerebras_api",
+            provider="cerebras",
+            model="llama-3.3-70b",
+            operation="analyze_sources",
+            duration_ms=30000,
+            success=False,
+        )
+
+        event = next(
+            e for e in monitor._telemetry_events
+            if e["event_type"] == "llm.route_completion"
+        )
+
+        assert event["status"] == "failed"
+        assert event["metadata"]["success"] is False
+
+    def test_build_llm_route_summary(self):
+        """Test building LLM route summary from telemetry events."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard")
+
+        # Record various LLM route events
+        monitor.record_llm_route_selected(
+            agent_id="analyzer",
+            transport="openrouter_api",
+            provider="openrouter",
+            model="claude-sonnet-4-6",
+            source="planner",
+        )
+
+        monitor.record_llm_route_completion(
+            agent_id="analyzer",
+            transport="openrouter_api",
+            provider="openrouter",
+            model="claude-sonnet-4-6",
+            operation="analyze",
+            duration_ms=1500,
+            success=True,
+            prompt_tokens=1000,
+            completion_tokens=500,
+        )
+
+        monitor.record_llm_route_completion(
+            agent_id="validator",
+            transport="cerebras_api",
+            provider="cerebras",
+            model="llama-3.3-70b",
+            operation="validate",
+            duration_ms=800,
+            success=True,
+            prompt_tokens=500,
+            completion_tokens=200,
+        )
+
+        monitor.record_llm_route_fallback(
+            agent_id="researcher",
+            original_transport="claude_cli",
+            fallback_transport="openrouter_api",
+            reason="timeout",
+        )
+
+        summary = monitor._build_llm_route_summary()
+
+        assert summary["total_requests"] == 2
+        assert summary["fallback_count"] == 1
+        assert "openrouter_api" in summary["transports"]
+        assert "cerebras_api" in summary["transports"]
+        assert summary["transports"]["openrouter_api"]["requests"] == 1
+        assert summary["transports"]["openrouter_api"]["tokens"] == 1500
+        assert summary["transports"]["cerebras_api"]["requests"] == 1
+        assert summary["transports"]["cerebras_api"]["tokens"] == 700
+        assert "analyzer" in summary["agents"]
+        assert "validator" in summary["agents"]
+        assert summary["agents"]["analyzer"]["request_count"] == 1
+        assert summary["agents"]["analyzer"]["total_tokens"] == 1500
+        assert "analyzer" in summary["planned_routes"]
+        assert summary["planned_routes"]["analyzer"]["transport"] == "openrouter_api"
+
+    def test_finalize_session_includes_llm_route_summary(self):
+        """Test that finalize_session includes LLM route summary."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard")
+
+        monitor.record_llm_route_completion(
+            agent_id="analyzer",
+            transport="openrouter_api",
+            provider="openrouter",
+            model="claude-sonnet-4-6",
+            operation="analyze",
+            duration_ms=1500,
+            success=True,
+            prompt_tokens=1000,
+            completion_tokens=500,
+        )
+
+        summary = monitor.finalize_session(
+            total_sources=10,
+            providers=["tavily"],
+            total_time_ms=5000,
+        )
+
+        assert "llm_route" in summary
+        assert summary["llm_route"]["total_requests"] == 1
+        assert "openrouter_api" in summary["llm_route"]["transports"]

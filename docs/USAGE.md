@@ -295,6 +295,42 @@ cc-deep-research config init --force
 | `display.color` | `"auto"` | Color output |
 | `display.progress` | `"auto"` | Progress indicators |
 
+### LLM Routing
+
+The active runtime supports agent-level LLM routing for analysis and report-quality evaluation. Configure it under `llm` in the same config file:
+
+```yaml
+llm:
+  claude_cli:
+    enabled: true
+    model: "claude-sonnet-4-6"
+
+  openrouter:
+    enabled: false
+    api_key: "${OPENROUTER_API_KEY}"
+    model: "anthropic/claude-sonnet-4"
+
+  cerebras:
+    enabled: false
+    api_key: "${CEREBRAS_API_KEY}"
+    model: "llama-3.3-70b"
+
+  fallback_order:
+    - "claude_cli"
+    - "openrouter"
+    - "cerebras"
+    - "heuristic"
+
+  route_defaults:
+    analyzer: "openrouter"
+    deep_analyzer: "cerebras"
+    report_quality_evaluator: "claude_cli"
+    reporter: "claude_cli"
+    default: "claude_cli"
+```
+
+Planner-selected routes are applied per session. In one run, `analyzer` can use OpenRouter, `deep_analyzer` can use Cerebras, and `report_quality_evaluator` can still use Claude CLI. If no configured transport is available, the runtime falls back to `heuristic`.
+
 ---
 
 ## Quick Start
@@ -1236,9 +1272,11 @@ cc-deep-research research --quiet -o report.md "Automated research" > /dev/null
 
 Use the dashboard when you need to inspect an active run instead of waiting for the session to finish.
 
+Telemetry files are written for normal `research` runs. `--monitor` only adds console monitoring output.
+
 ```bash
-# Start a monitored run in one terminal
-cc-deep-research research --monitor "Complex topic"
+# Start a research run in one terminal
+cc-deep-research research "Complex topic"
 
 # Open the live dashboard in another terminal
 cc-deep-research telemetry dashboard --port 8501 --refresh-seconds 5 --tail-limit 200
@@ -1262,6 +1300,8 @@ Useful dashboard command options:
 - `--tail-limit N` limits the event tail and subprocess chunk panes
 - `--base-dir PATH` points the dashboard at a non-default telemetry directory
 - `--db-path PATH` stores historical analytics in a custom DuckDB file
+
+For the implementation-level architecture and event model, see [`docs/TELEMETRY.md`](TELEMETRY.md).
 
 ---
 

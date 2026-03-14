@@ -2,17 +2,38 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from cc_deep_research.agents import QueryExpanderAgent, ResearchLeadAgent
+from cc_deep_research.config import Config
 from cc_deep_research.models import QueryFamily, ResearchDepth, StrategyResult
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.orchestration.helpers import normalize_query_families
+from cc_deep_research.orchestration.llm_route_planner import (
+    LLMRoutePlanner,
+    create_llm_plan,
+)
+
+if TYPE_CHECKING:
+    from cc_deep_research.llm.registry import LLMRouteRegistry
+    from cc_deep_research.orchestration.session_state import OrchestratorSessionState
 
 
 class ResearchPlanningService:
     """Handle strategy analysis and query-family expansion."""
 
-    def __init__(self, *, monitor: ResearchMonitor) -> None:
+    def __init__(
+        self,
+        *,
+        monitor: ResearchMonitor,
+        config: Config | None = None,
+        registry: "LLMRouteRegistry | None" = None,
+        session_state: "OrchestratorSessionState | None" = None,
+    ) -> None:
         self._monitor = monitor
+        self._config = config
+        self._registry = registry
+        self._session_state = session_state
 
     async def analyze_strategy(
         self,
@@ -27,6 +48,20 @@ class ResearchPlanningService:
         self._monitor.log(f"Complexity: {strategy.complexity}")
         self._monitor.log(f"Tasks: {len(strategy.tasks_needed)}")
         self._monitor.log(f"Query variations: {strategy.strategy.query_variations}")
+
+        # Create LLM route plan if config is available
+        if self._config is not None:
+            llm_plan = create_llm_plan(self._config, strategy)
+            strategy.llm_plan = llm_plan
+
+            if self._registry is not None:
+                planner = LLMRoutePlanner(self._config)
+                planner.update_registry_from_plan(llm_plan, self._registry)
+                self._monitor.log(
+                    f"LLM routes: default={llm_plan.default_route.transport.value}"
+                )
+            self._record_planned_routes(llm_plan)
+
         self._monitor.record_reasoning_summary(
             stage="strategy",
             summary=(
@@ -37,6 +72,43 @@ class ResearchPlanningService:
             agent_id="lead",
         )
         return strategy
+
+    def _record_planned_routes(self, llm_plan: object) -> None:
+        """Persist planned routes into telemetry and session metadata."""
+        if not hasattr(llm_plan, "agent_routes") or not hasattr(llm_plan, "default_route"):
+            return
+
+        default_route = llm_plan.default_route
+        self._monitor.record_llm_route_selected(
+            agent_id="default",
+            transport=default_route.transport.value,
+            provider=default_route.provider.value,
+            model=default_route.model,
+            source="planner",
+        )
+        if self._session_state is not None:
+            self._session_state.set_llm_planned_route(
+                agent_id="default",
+                transport=default_route.transport.value,
+                provider=default_route.provider.value,
+                model=default_route.model,
+            )
+
+        for agent_id, route in llm_plan.agent_routes.items():
+            self._monitor.record_llm_route_selected(
+                agent_id=agent_id,
+                transport=route.transport.value,
+                provider=route.provider.value,
+                model=route.model,
+                source="planner",
+            )
+            if self._session_state is not None:
+                self._session_state.set_llm_planned_route(
+                    agent_id=agent_id,
+                    transport=route.transport.value,
+                    provider=route.provider.value,
+                    model=route.model,
+                )
 
     async def expand_queries(
         self,

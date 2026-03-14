@@ -12,6 +12,8 @@ from cc_deep_research.agents.report_refiner import ReportRefinerAgent
 from cc_deep_research.agents.reporter import ReporterAgent
 from cc_deep_research.config import Config
 from cc_deep_research.html_report_renderer import HTMLReportRenderer
+from cc_deep_research.llm import LLMRouteRegistry, LLMRouter
+from cc_deep_research.llm.base import LLMProviderType, LLMTransportType
 from cc_deep_research.models import (
     AnalysisResult,
     ReportEvaluationResult,
@@ -43,7 +45,12 @@ class ReportGenerator:
         """
         self._config = config
         self._reporter = ReporterAgent({})
-        self._report_quality_evaluator = ReportQualityEvaluatorAgent(config.model_dump())
+        self._llm_registry = LLMRouteRegistry(config.llm)
+        self._llm_router = LLMRouter(self._llm_registry)
+        self._report_quality_evaluator = ReportQualityEvaluatorAgent(
+            config.model_dump(),
+            llm_router=self._llm_router,
+        )
         self._post_validator = PostReportValidator(config.model_dump())
         self._report_refiner = ReportRefinerAgent(config.model_dump())
 
@@ -68,12 +75,13 @@ class ReportGenerator:
             Complete Markdown report string.
         """
         analysis_result = AnalysisResult.model_validate(analysis)
+        self._configure_report_quality_route(session)
         markdown = self._reporter.generate_markdown_report(session, analysis)
 
         # Evaluate report quality (before post-validation)
         quality_result = ReportEvaluationResult(overall_quality_score=0.0, is_acceptable=True)
         if self._config.research.quality.enable_report_quality_evaluation:
-            quality_result = self._report_quality_evaluator.evaluate_report_quality(
+            quality_result = self._report_quality_evaluator.evaluate_report_quality_sync(
                 markdown,
                 session,
                 analysis_result,
@@ -131,7 +139,67 @@ class ReportGenerator:
                 )
                 logger.info("Report refinement pass completed")
 
+        self._update_session_route_metadata(session)
         return markdown
+
+    def _configure_report_quality_route(self, session: ResearchSession) -> None:
+        """Apply any planner-selected route for report evaluation."""
+        self._llm_registry.clear()
+        planned_routes = session.metadata.get("llm_routes", {}).get("planned_routes", {})
+        route_data = planned_routes.get("report_quality_evaluator")
+        if not isinstance(route_data, dict):
+            return
+
+        transport = self._transport_from_value(route_data.get("transport"))
+        provider = self._provider_from_value(route_data.get("provider"))
+        if transport is None or provider is None:
+            return
+
+        route = self._llm_registry.get_route_for_transport(transport)
+        route.provider = provider
+        route.model = str(route_data.get("model", route.model))
+        self._llm_registry.set_route(
+            "report_quality_evaluator",
+            route,
+        )
+
+    def _update_session_route_metadata(self, session: ResearchSession) -> None:
+        """Mirror report-evaluation route usage into session metadata."""
+        transport = self._report_quality_evaluator.last_transport_used
+        if transport in {"disabled", ""}:
+            return
+
+        llm_routes = session.metadata.setdefault("llm_routes", {})
+        actual_routes = llm_routes.setdefault("actual_routes", {})
+        planned_routes = llm_routes.get("planned_routes", {})
+        planned = planned_routes.get("report_quality_evaluator", {})
+        provider = planned.get("provider", "heuristic")
+        model = planned.get("model", "heuristic")
+
+        if transport == "heuristic":
+            provider = "heuristic"
+            model = "heuristic"
+
+        actual_routes["report_quality_evaluator"] = {
+            "transport": transport,
+            "provider": provider,
+            "model": model,
+            "source": "actual",
+        }
+
+    @staticmethod
+    def _transport_from_value(value: Any) -> LLMTransportType | None:
+        try:
+            return LLMTransportType(str(value))
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _provider_from_value(value: Any) -> LLMProviderType | None:
+        try:
+            return LLMProviderType(str(value))
+        except ValueError:
+            return None
 
     def generate_json_report(
         self,

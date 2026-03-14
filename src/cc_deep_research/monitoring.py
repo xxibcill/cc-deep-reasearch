@@ -569,6 +569,156 @@ class ResearchMonitor:
             tokens=total_tokens,
         )
 
+    def record_llm_route_selected(
+        self,
+        *,
+        agent_id: str,
+        transport: str,
+        provider: str,
+        model: str,
+        source: str = "planner",
+        **metadata: Any,
+    ) -> None:
+        """Record when an LLM route is selected for an agent.
+
+        Args:
+            agent_id: The agent identifier.
+            transport: The transport type (claude_cli, openrouter_api, cerebras_api, heuristic).
+            provider: The provider type (claude, openrouter, cerebras, heuristic).
+            model: The model identifier.
+            source: Where the route came from (planner, config, fallback).
+            **metadata: Additional route metadata.
+        """
+        self.emit_event(
+            event_type="llm.route_selected",
+            category="llm",
+            name="route-selection",
+            status="selected",
+            agent_id=agent_id,
+            metadata={
+                "transport": transport,
+                "provider": provider,
+                "model": model,
+                "source": source,
+                **metadata,
+            },
+        )
+
+    def record_llm_route_fallback(
+        self,
+        *,
+        agent_id: str,
+        original_transport: str,
+        fallback_transport: str,
+        reason: str,
+        **metadata: Any,
+    ) -> None:
+        """Record when an LLM route fallback occurs.
+
+        Args:
+            agent_id: The agent identifier.
+            original_transport: The transport that failed or was unavailable.
+            fallback_transport: The fallback transport being used.
+            reason: Reason for the fallback.
+            **metadata: Additional fallback metadata.
+        """
+        self.emit_event(
+            event_type="llm.route_fallback",
+            category="llm",
+            name="route-fallback",
+            status="fallback",
+            agent_id=agent_id,
+            metadata={
+                "original_transport": original_transport,
+                "fallback_transport": fallback_transport,
+                "reason": reason,
+                **metadata,
+            },
+        )
+
+    def record_llm_route_request(
+        self,
+        *,
+        agent_id: str,
+        transport: str,
+        provider: str,
+        model: str,
+        operation: str,
+        **metadata: Any,
+    ) -> None:
+        """Record the start of an LLM request through a specific route.
+
+        Args:
+            agent_id: The agent identifier.
+            transport: The transport type being used.
+            provider: The provider type being used.
+            model: The model being used.
+            operation: The operation name.
+            **metadata: Additional request metadata.
+        """
+        self.emit_event(
+            event_type="llm.route_request",
+            category="llm",
+            name=operation,
+            status="started",
+            agent_id=agent_id,
+            metadata={
+                "transport": transport,
+                "provider": provider,
+                "model": model,
+                "operation": operation,
+                **metadata,
+            },
+        )
+
+    def record_llm_route_completion(
+        self,
+        *,
+        agent_id: str,
+        transport: str,
+        provider: str,
+        model: str,
+        operation: str,
+        duration_ms: int,
+        success: bool = True,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        **metadata: Any,
+    ) -> None:
+        """Record the completion of an LLM request through a specific route.
+
+        Args:
+            agent_id: The agent identifier.
+            transport: The transport type that was used.
+            provider: The provider type that was used.
+            model: The model that was used.
+            operation: The operation name.
+            duration_ms: Request duration in milliseconds.
+            success: Whether the request succeeded.
+            prompt_tokens: Number of prompt tokens used.
+            completion_tokens: Number of completion tokens generated.
+            **metadata: Additional completion metadata.
+        """
+        self.emit_event(
+            event_type="llm.route_completion",
+            category="llm",
+            name=operation,
+            status="completed" if success else "failed",
+            duration_ms=duration_ms,
+            agent_id=agent_id,
+            metadata={
+                "transport": transport,
+                "provider": provider,
+                "model": model,
+                "operation": operation,
+                "success": success,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+                **metadata,
+            },
+        )
+
     def log_researcher_event(
         self,
         event_type: str,
@@ -672,6 +822,93 @@ class ResearchMonitor:
 
             self.log(f"{status_emoji} {event.name} ({duration}) - {event.metadata}")
 
+    def _build_llm_route_summary(self) -> dict[str, Any]:
+        """Build a summary of LLM route usage from telemetry events.
+
+        Returns:
+            Dictionary with route usage statistics by transport, provider, and agent.
+        """
+        route_selections = [
+            e for e in self._telemetry_events if e["event_type"] == "llm.route_selected"
+        ]
+        route_fallbacks = [
+            e for e in self._telemetry_events if e["event_type"] == "llm.route_fallback"
+        ]
+        route_completions = [
+            e for e in self._telemetry_events if e["event_type"] == "llm.route_completion"
+        ]
+
+        # Count by transport
+        transport_counts: dict[str, int] = {}
+        transport_tokens: dict[str, int] = {}
+        transport_errors: dict[str, int] = {}
+
+        # Count by provider
+        provider_counts: dict[str, int] = {}
+
+        # Count by agent
+        agent_routes: dict[str, dict[str, Any]] = {}
+
+        for event in route_completions:
+            metadata = event.get("metadata", {})
+            transport = metadata.get("transport", "unknown")
+            provider = metadata.get("provider", "unknown")
+            agent_id = event.get("agent_id") or "unknown"
+            success = metadata.get("success", True)
+            tokens = metadata.get("total_tokens", 0)
+
+            transport_counts[transport] = transport_counts.get(transport, 0) + 1
+            provider_counts[provider] = provider_counts.get(provider, 0) + 1
+            transport_tokens[transport] = transport_tokens.get(transport, 0) + tokens
+
+            if not success:
+                transport_errors[transport] = transport_errors.get(transport, 0) + 1
+
+            if agent_id not in agent_routes:
+                agent_routes[agent_id] = {
+                    "transport": transport,
+                    "provider": provider,
+                    "model": metadata.get("model", "unknown"),
+                    "request_count": 0,
+                    "total_tokens": 0,
+                    "errors": 0,
+                }
+            agent_routes[agent_id]["request_count"] += 1
+            agent_routes[agent_id]["total_tokens"] += tokens
+            if not success:
+                agent_routes[agent_id]["errors"] += 1
+
+        # Track planned routes
+        planned_routes: dict[str, dict[str, str]] = {}
+        for event in route_selections:
+            metadata = event.get("metadata", {})
+            agent_id = event.get("agent_id") or "unknown"
+            planned_routes[agent_id] = {
+                "transport": metadata.get("transport", "unknown"),
+                "provider": metadata.get("provider", "unknown"),
+                "model": metadata.get("model", "unknown"),
+                "source": metadata.get("source", "unknown"),
+            }
+
+        return {
+            "transports": {
+                transport: {
+                    "requests": transport_counts.get(transport, 0),
+                    "tokens": transport_tokens.get(transport, 0),
+                    "errors": transport_errors.get(transport, 0),
+                }
+                for transport in set(transport_counts) | set(transport_tokens)
+            },
+            "providers": {
+                provider: {"requests": provider_counts.get(provider, 0)}
+                for provider in provider_counts
+            },
+            "agents": agent_routes,
+            "planned_routes": planned_routes,
+            "fallback_count": len(route_fallbacks),
+            "total_requests": len(route_completions),
+        }
+
     def finalize_session(
         self,
         total_sources: int,
@@ -682,6 +919,8 @@ class ResearchMonitor:
     ) -> dict[str, Any]:
         """Write summary metrics for the active session and return them."""
         normalized_stop_reason = self.normalize_stop_reason(stop_reason)
+        llm_route_summary = self._build_llm_route_summary()
+
         summary = {
             "session_id": self._session_id,
             "status": status,
@@ -711,6 +950,7 @@ class ResearchMonitor:
                 for e in self._telemetry_events
                 if e["event_type"] == "llm.usage"
             ),
+            "llm_route": llm_route_summary,
             "event_count": len(self._telemetry_events),
             "created_at": self._get_utc_timestamp(),
         }

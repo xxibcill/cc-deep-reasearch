@@ -11,6 +11,11 @@ import yaml
 from cc_deep_research.config import (
     Config,
     DisplayConfig,
+    LLMCerebrasConfig,
+    LLMClaudeCLIConfig,
+    LLMConfig,
+    LLMOpenRouterConfig,
+    LLMRouteDefaults,
     OutputConfig,
     ResearchConfig,
     SearchConfig,
@@ -359,3 +364,204 @@ class TestParseApiKeysFromEnv:
         with patch.dict(os.environ, {"TAVILY_API_KEYS": ""}):
             keys = _parse_api_keys_from_env()
             assert keys == []
+
+
+class TestLLMClaudeCLIConfig:
+    """Tests for LLMClaudeCLIConfig model."""
+
+    def test_default_claude_cli_config(self) -> None:
+        """Test default LLMClaudeCLIConfig values."""
+        config = LLMClaudeCLIConfig()
+        assert config.enabled is True
+        assert config.path is None
+        assert config.timeout_seconds == 180
+        assert config.model == "claude-sonnet-4-6"
+
+    def test_custom_claude_cli_config(self) -> None:
+        """Test custom LLMClaudeCLIConfig values."""
+        config = LLMClaudeCLIConfig(
+            enabled=False,
+            path="/custom/claude",
+            timeout_seconds=300,
+            model="claude-opus-4-6",
+        )
+        assert config.enabled is False
+        assert config.path == "/custom/claude"
+        assert config.timeout_seconds == 300
+        assert config.model == "claude-opus-4-6"
+
+    def test_timeout_validation(self) -> None:
+        """Test timeout validation."""
+        with pytest.raises(ValueError):
+            LLMClaudeCLIConfig(timeout_seconds=15)
+        with pytest.raises(ValueError):
+            LLMClaudeCLIConfig(timeout_seconds=1000)
+
+
+class TestLLMOpenRouterConfig:
+    """Tests for LLMOpenRouterConfig model."""
+
+    def test_default_openrouter_config(self) -> None:
+        """Test default LLMOpenRouterConfig values."""
+        config = LLMOpenRouterConfig()
+        assert config.enabled is False
+        assert config.api_key is None
+        assert config.base_url == "https://openrouter.ai/api/v1"
+        assert config.timeout_seconds == 120
+        assert config.model == "anthropic/claude-sonnet-4"
+
+    def test_custom_openrouter_config(self) -> None:
+        """Test custom LLMOpenRouterConfig values."""
+        config = LLMOpenRouterConfig(
+            enabled=True,
+            api_key="sk-test-key",
+            base_url="https://custom.openrouter.ai/v1",
+            timeout_seconds=60,
+            model="openai/gpt-4",
+            extra_headers={"X-Custom": "value"},
+        )
+        assert config.enabled is True
+        assert config.api_key == "sk-test-key"
+        assert config.base_url == "https://custom.openrouter.ai/v1"
+        assert config.extra_headers == {"X-Custom": "value"}
+
+
+class TestLLMCerebrasConfig:
+    """Tests for LLMCerebrasConfig model."""
+
+    def test_default_cerebras_config(self) -> None:
+        """Test default LLMCerebrasConfig values."""
+        config = LLMCerebrasConfig()
+        assert config.enabled is False
+        assert config.api_key is None
+        assert config.base_url == "https://api.cerebras.ai/v1"
+        assert config.timeout_seconds == 60
+        assert config.model == "llama-3.3-70b"
+
+    def test_custom_cerebras_config(self) -> None:
+        """Test custom LLMCerebrasConfig values."""
+        config = LLMCerebrasConfig(
+            enabled=True,
+            api_key="cerebras-key",
+            timeout_seconds=30,
+            model="llama-3.1-8b",
+        )
+        assert config.enabled is True
+        assert config.api_key == "cerebras-key"
+        assert config.timeout_seconds == 30
+
+
+class TestLLMRouteDefaults:
+    """Tests for LLMRouteDefaults model."""
+
+    def test_default_route_defaults(self) -> None:
+        """Test default LLMRouteDefaults values."""
+        defaults = LLMRouteDefaults()
+        assert defaults.analyzer == "claude_cli"
+        assert defaults.deep_analyzer == "claude_cli"
+        assert defaults.report_quality_evaluator == "claude_cli"
+        assert defaults.reporter == "claude_cli"
+        assert defaults.default == "claude_cli"
+
+    def test_custom_route_defaults(self) -> None:
+        """Test custom LLMRouteDefaults values."""
+        defaults = LLMRouteDefaults(
+            analyzer="openrouter",
+            deep_analyzer="cerebras",
+            default="heuristic",
+        )
+        assert defaults.analyzer == "openrouter"
+        assert defaults.deep_analyzer == "cerebras"
+        assert defaults.default == "heuristic"
+
+
+class TestLLMConfig:
+    """Tests for LLMConfig model."""
+
+    def test_default_llm_config(self) -> None:
+        """Test default LLMConfig values."""
+        config = LLMConfig()
+        assert isinstance(config.claude_cli, LLMClaudeCLIConfig)
+        assert isinstance(config.openrouter, LLMOpenRouterConfig)
+        assert isinstance(config.cerebras, LLMCerebrasConfig)
+        assert isinstance(config.route_defaults, LLMRouteDefaults)
+        assert config.claude_cli.enabled is True
+        assert config.openrouter.enabled is False
+        assert config.cerebras.enabled is False
+
+    def test_get_enabled_transports_default(self) -> None:
+        """Test get_enabled_transports with default config."""
+        config = LLMConfig()
+        transports = config.get_enabled_transports()
+        assert "claude_cli" in transports
+        assert "heuristic" in transports
+        assert "openrouter" not in transports
+        assert "cerebras" not in transports
+
+    def test_get_enabled_transports_with_api_keys(self) -> None:
+        """Test get_enabled_transports with API keys configured."""
+        config = LLMConfig(
+            openrouter=LLMOpenRouterConfig(enabled=True, api_key="test-key"),
+            cerebras=LLMCerebrasConfig(enabled=True, api_key="cerebras-key"),
+        )
+        transports = config.get_enabled_transports()
+        assert "claude_cli" in transports
+        assert "openrouter" in transports
+        assert "cerebras" in transports
+        assert "heuristic" in transports
+
+    def test_get_enabled_transports_respects_fallback_order(self) -> None:
+        """Test get_enabled_transports respects fallback order."""
+        config = LLMConfig(
+            fallback_order=["cerebras", "openrouter", "claude_cli", "heuristic"],
+            openrouter=LLMOpenRouterConfig(enabled=True, api_key="test-key"),
+            cerebras=LLMCerebrasConfig(enabled=True, api_key="cerebras-key"),
+        )
+        transports = config.get_enabled_transports()
+        assert transports[0] == "cerebras"
+        assert transports[1] == "openrouter"
+        assert transports[2] == "claude_cli"
+
+    def test_get_route_for_agent(self) -> None:
+        """Test get_route_for_agent returns correct route."""
+        config = LLMConfig(
+            route_defaults=LLMRouteDefaults(
+                analyzer="openrouter",
+                deep_analyzer="cerebras",
+            )
+        )
+        assert config.get_route_for_agent("analyzer") == "openrouter"
+        assert config.get_route_for_agent("deep_analyzer") == "cerebras"
+        assert config.get_route_for_agent("unknown_agent") == "claude_cli"
+
+    def test_llm_config_in_main_config(self) -> None:
+        """Test LLMConfig is included in main Config."""
+        config = Config()
+        assert isinstance(config.llm, LLMConfig)
+        assert config.llm.claude_cli.enabled is True
+
+    def test_llm_config_serialization(self) -> None:
+        """Test LLMConfig can be serialized."""
+        config = Config(
+            llm=LLMConfig(
+                openrouter=LLMOpenRouterConfig(enabled=True, api_key="test-key"),
+            )
+        )
+        data = config.model_dump()
+        assert "llm" in data
+        assert data["llm"]["openrouter"]["enabled"] is True
+        assert data["llm"]["openrouter"]["api_key"] == "test-key"
+
+    def test_llm_config_from_dict(self) -> None:
+        """Test Config can be created with LLM config from dict."""
+        data = {
+            "llm": {
+                "claude_cli": {"enabled": False, "timeout_seconds": 300},
+                "openrouter": {"enabled": True, "api_key": "test-key"},
+            }
+        }
+        config = Config(**data)
+        assert config.llm.claude_cli.enabled is False
+        assert config.llm.claude_cli.timeout_seconds == 300
+        assert config.llm.openrouter.enabled is True
+        assert config.llm.openrouter.api_key == "test-key"

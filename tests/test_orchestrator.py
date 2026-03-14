@@ -444,6 +444,42 @@ class TestTeamResearchOrchestrator:
         assert orchestrator._message_bus.is_active is True
         assert orchestrator._agent_pool is not None
         assert orchestrator._agent_pool.is_active is True
+        assert orchestrator._runtime_state.llm_registry is not None
+        assert orchestrator._runtime_state.llm_router is not None
+        assert orchestrator._planning._registry is orchestrator._runtime_state.llm_registry
+
+    def test_llm_router_events_update_session_metadata(self) -> None:
+        """Routed LLM execution should flow into session metadata summaries."""
+        orchestrator = TeamResearchOrchestrator(Config(), ResearchMonitor(enabled=False))
+        orchestrator._reset_session_metadata_state()
+
+        orchestrator._handle_llm_router_event(
+            {
+                "event_type": "route_fallback",
+                "agent_id": "analyzer",
+                "original_transport": "claude_cli",
+                "fallback_transport": "openrouter_api",
+                "reason": "primary_route_unavailable_or_failed",
+            }
+        )
+        orchestrator._handle_llm_router_event(
+            {
+                "event_type": "route_completion",
+                "agent_id": "analyzer",
+                "transport": "openrouter_api",
+                "provider": "openrouter",
+                "model": "anthropic/claude-sonnet-4",
+                "success": True,
+                "latency_ms": 120,
+                "prompt_tokens": 10,
+                "completion_tokens": 25,
+            }
+        )
+
+        llm_routes = orchestrator._session_state.get_llm_route_summary()
+        assert llm_routes["actual_routes"]["analyzer"]["transport"] == "openrouter_api"
+        assert llm_routes["usage_stats"]["analyzer:openrouter_api"]["total_tokens"] == 35
+        assert llm_routes["fallback_count"] == 1
 
     @pytest.mark.asyncio
     async def test_shutdown_team_clears_local_runtime_state(self) -> None:

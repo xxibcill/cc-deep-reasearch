@@ -201,6 +201,116 @@ def _render_subprocess_detail(subprocesses: list[dict[str, Any]]) -> None:
     right.code(stderr_text or "(no stderr)")
 
 
+def _render_llm_route_analytics(analytics: dict[str, Any]) -> None:
+    """Render the LLM route analytics pane."""
+    import streamlit as st
+
+    st.subheader("LLM Route Analytics")
+    if not analytics or analytics.get("total_requests", 0) == 0:
+        st.info("No LLM route activity recorded for this session.")
+        return
+
+    # Summary metrics
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Requests", analytics.get("total_requests", 0))
+    c2.metric("Fallback Events", analytics.get("fallback_count", 0))
+    c3.metric("Transports Used", len(analytics.get("transport_summary", {})))
+    c4.metric("Agents", len(analytics.get("agent_summary", {})))
+
+    # Transport summary
+    transport_summary = analytics.get("transport_summary", {})
+    if transport_summary:
+        st.markdown("**Transport Summary**")
+        transport_rows = []
+        for transport, stats in transport_summary.items():
+            transport_rows.append(
+                {
+                    "transport": transport,
+                    "requests": stats.get("requests", 0),
+                    "tokens": stats.get("tokens", 0),
+                    "errors": stats.get("errors", 0),
+                    "avg_latency_ms": stats.get("avg_latency_ms", 0),
+                }
+            )
+        if transport_rows:
+            import pandas as pd
+
+            st.dataframe(pd.DataFrame(transport_rows), width="stretch", height=120)
+
+    # Provider summary
+    provider_summary = analytics.get("provider_summary", {})
+    if provider_summary:
+        st.markdown("**Provider Summary**")
+        provider_rows = []
+        for provider, stats in provider_summary.items():
+            provider_rows.append(
+                {
+                    "provider": provider,
+                    "requests": stats.get("requests", 0),
+                    "tokens": stats.get("tokens", 0),
+                    "errors": stats.get("errors", 0),
+                }
+            )
+        if provider_rows:
+            import pandas as pd
+
+            st.dataframe(pd.DataFrame(provider_rows), width="stretch", height=120)
+
+    # Agent summary
+    agent_summary = analytics.get("agent_summary", {})
+    if agent_summary:
+        st.markdown("**Agent Route Usage**")
+        agent_rows = []
+        for agent_id, stats in agent_summary.items():
+            agent_rows.append(
+                {
+                    "agent_id": agent_id,
+                    "requests": stats.get("requests", 0),
+                    "tokens": stats.get("tokens", 0),
+                    "errors": stats.get("errors", 0),
+                    "transports": ", ".join(stats.get("transports", [])),
+                    "providers": ", ".join(stats.get("providers", [])),
+                }
+            )
+        if agent_rows:
+            import pandas as pd
+
+            st.dataframe(pd.DataFrame(agent_rows), width="stretch", height=150)
+
+    # Planned routes
+    planned_routes = analytics.get("planned_routes", {})
+    if planned_routes:
+        st.markdown("**Planned Routes**")
+        planned_rows = []
+        for agent_id, route in planned_routes.items():
+            planned_rows.append(
+                {
+                    "agent_id": agent_id,
+                    "transport": route.get("transport", "unknown"),
+                    "provider": route.get("provider", "unknown"),
+                    "model": route.get("model", "unknown"),
+                    "source": route.get("source", "unknown"),
+                }
+            )
+        if planned_rows:
+            import pandas as pd
+
+            st.dataframe(pd.DataFrame(planned_rows), width="stretch", height=100)
+
+    # Fallback events
+    fallbacks = analytics.get("route_fallbacks", [])
+    if fallbacks:
+        with st.expander(f"Fallback Events ({len(fallbacks)})", expanded=False):
+            for fb in fallbacks:
+                metadata = fb.get("metadata", {})
+                st.caption(
+                    f"Agent: {fb.get('agent_id', 'unknown')} | "
+                    f"{metadata.get('original_transport', 'unknown')} -> "
+                    f"{metadata.get('fallback_transport', 'unknown')} | "
+                    f"Reason: {metadata.get('reason', 'unknown')}"
+                )
+
+
 def run_dashboard(
     db_path: Path | None = None,
     telemetry_dir: Path | None = None,
@@ -491,12 +601,14 @@ def run_dashboard(
     latest_session = latest_detail["session"]
     if latest_session is not None:
         _render_subprocess_detail(latest_detail["subprocess_streams"])
+        _render_llm_route_analytics(latest_detail.get("llm_route_analytics", {}))
         export_payload = {
             "session": latest_session,
             "summary": latest_detail["summary"],
             "event_tail": latest_detail["event_tail"],
             "active_phase": latest_detail["active_phase"],
             "subprocess_streams": latest_detail["subprocess_streams"],
+            "llm_route_analytics": latest_detail.get("llm_route_analytics", {}),
         }
         st.download_button(
             "Download Live Session JSON",

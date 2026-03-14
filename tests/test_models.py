@@ -11,7 +11,12 @@ from cc_deep_research.models import (
     ClaimFreshness,
     CrossReferenceClaim,
     EvidenceType,
+    LLMPlanModel,
+    LLMProviderType,
+    LLMRouteModel,
+    LLMTransportType,
     QualityScore,
+    QueryProfile,
     QueryProvenance,
     ResearchDepth,
     ResearchSession,
@@ -19,6 +24,8 @@ from cc_deep_research.models import (
     SearchOptions,
     SearchResult,
     SearchResultItem,
+    StrategyPlan,
+    StrategyResult,
 )
 
 
@@ -263,9 +270,11 @@ class TestResearchSession:
             "providers",
             "execution",
             "deep_analysis",
+            "llm_routes",
         }
         assert session.metadata["providers"]["status"] == "unavailable"
         assert session.metadata["deep_analysis"]["status"] == "not_requested"
+        assert session.metadata["llm_routes"] == {}
 
     def test_research_session_preserves_legacy_metadata_and_normalizes_deep_state(self) -> None:
         """Test normalization of legacy metadata formats."""
@@ -287,6 +296,30 @@ class TestResearchSession:
         assert session.metadata["deep_analysis"]["requested"] is True
         assert session.metadata["deep_analysis"]["status"] == "degraded"
         assert session.metadata["execution"]["degraded"] is True
+
+    def test_research_session_preserves_llm_route_metadata(self) -> None:
+        """LLM route metadata should survive session normalization."""
+        session = ResearchSession(
+            session_id="test-session-123",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            metadata={
+                "llm_routes": {
+                    "planned_routes": {
+                        "analyzer": {
+                            "transport": "openrouter_api",
+                            "provider": "openrouter",
+                            "model": "anthropic/claude-sonnet-4",
+                        }
+                    }
+                }
+            },
+        )
+
+        assert (
+            session.metadata["llm_routes"]["planned_routes"]["analyzer"]["transport"]
+            == "openrouter_api"
+        )
 
 
 class TestSearchOptions:
@@ -468,3 +501,171 @@ class TestCrossReferenceClaim:
         )
         assert analysis_result.cross_reference_claims[0].evidence_type == EvidenceType.RESEARCH
         assert analysis_result.key_findings[0].claims[0].claim == "Treatment improved outcomes"
+
+
+class TestLLMTransportType:
+    """Tests for LLMTransportType enum."""
+
+    def test_transport_type_values(self) -> None:
+        """Test LLMTransportType enum values."""
+        assert LLMTransportType.CLAUDE_CLI.value == "claude_cli"
+        assert LLMTransportType.OPENROUTER_API.value == "openrouter_api"
+        assert LLMTransportType.CEREBRAS_API.value == "cerebras_api"
+        assert LLMTransportType.HEURISTIC.value == "heuristic"
+
+
+class TestLLMProviderType:
+    """Tests for LLMProviderType enum."""
+
+    def test_provider_type_values(self) -> None:
+        """Test LLMProviderType enum values."""
+        assert LLMProviderType.CLAUDE.value == "claude"
+        assert LLMProviderType.OPENROUTER.value == "openrouter"
+        assert LLMProviderType.CEREBRAS.value == "cerebras"
+        assert LLMProviderType.HEURISTIC.value == "heuristic"
+
+
+class TestLLMRouteModel:
+    """Tests for LLMRouteModel."""
+
+    def test_default_route(self) -> None:
+        """Test default LLMRouteModel values."""
+        route = LLMRouteModel()
+        assert route.transport == LLMTransportType.CLAUDE_CLI
+        assert route.provider == LLMProviderType.CLAUDE
+        assert route.model == "claude-sonnet-4-6"
+        assert route.enabled is True
+
+    def test_custom_route(self) -> None:
+        """Test custom LLMRouteModel values."""
+        route = LLMRouteModel(
+            transport=LLMTransportType.OPENROUTER_API,
+            provider=LLMProviderType.OPENROUTER,
+            model="anthropic/claude-opus-4",
+            enabled=False,
+        )
+        assert route.transport == LLMTransportType.OPENROUTER_API
+        assert route.provider == LLMProviderType.OPENROUTER
+        assert route.model == "anthropic/claude-opus-4"
+        assert route.enabled is False
+
+    def test_route_serialization(self) -> None:
+        """Test LLMRouteModel serialization."""
+        route = LLMRouteModel(
+            transport=LLMTransportType.CEREBRAS_API,
+            provider=LLMProviderType.CEREBRAS,
+            model="llama-3.3-70b",
+        )
+        data = route.model_dump()
+        assert data["transport"] == "cerebras_api"
+        assert data["provider"] == "cerebras"
+        assert data["model"] == "llama-3.3-70b"
+
+
+class TestLLMPlanModel:
+    """Tests for LLMPlanModel."""
+
+    def test_default_plan(self) -> None:
+        """Test default LLMPlanModel values."""
+        plan = LLMPlanModel()
+        assert plan.agent_routes == {}
+        assert LLMTransportType.CLAUDE_CLI in plan.fallback_order
+        assert isinstance(plan.default_route, LLMRouteModel)
+
+    def test_get_route_for_agent_default(self) -> None:
+        """Test get_route_for_agent returns default for unknown agent."""
+        plan = LLMPlanModel()
+        route = plan.get_route_for_agent("unknown_agent")
+        assert route.transport == LLMTransportType.CLAUDE_CLI
+        assert route.provider == LLMProviderType.CLAUDE
+
+    def test_get_route_for_agent_assigned(self) -> None:
+        """Test get_route_for_agent returns assigned route."""
+        plan = LLMPlanModel(
+            agent_routes={
+                "analyzer": LLMRouteModel(
+                    transport=LLMTransportType.OPENROUTER_API,
+                    provider=LLMProviderType.OPENROUTER,
+                    model="anthropic/claude-sonnet-4",
+                )
+            }
+        )
+        route = plan.get_route_for_agent("analyzer")
+        assert route.transport == LLMTransportType.OPENROUTER_API
+        assert route.provider == LLMProviderType.OPENROUTER
+
+    def test_custom_fallback_order(self) -> None:
+        """Test custom fallback order."""
+        plan = LLMPlanModel(
+            fallback_order=[
+                LLMTransportType.CEREBRAS_API,
+                LLMTransportType.OPENROUTER_API,
+                LLMTransportType.HEURISTIC,
+            ]
+        )
+        assert plan.fallback_order[0] == LLMTransportType.CEREBRAS_API
+        assert LLMTransportType.CLAUDE_CLI not in plan.fallback_order
+
+    def test_plan_serialization(self) -> None:
+        """Test LLMPlanModel serialization."""
+        plan = LLMPlanModel(
+            agent_routes={
+                "analyzer": LLMRouteModel(
+                    transport=LLMTransportType.CEREBRAS_API,
+                    provider=LLMProviderType.CEREBRAS,
+                )
+            }
+        )
+        data = plan.model_dump()
+        assert "agent_routes" in data
+        assert "analyzer" in data["agent_routes"]
+        assert data["agent_routes"]["analyzer"]["transport"] == "cerebras_api"
+
+
+class TestStrategyResultWithLLMPlan:
+    """Tests for StrategyResult with LLM plan."""
+
+    def test_strategy_result_without_llm_plan(self) -> None:
+        """Test StrategyResult without LLM plan."""
+        result = StrategyResult(
+            query="test query",
+            complexity="moderate",
+            depth=ResearchDepth.DEEP,
+            profile=QueryProfile(),
+            strategy=StrategyPlan(),
+        )
+        assert result.llm_plan is None
+
+    def test_strategy_result_with_llm_plan(self) -> None:
+        """Test StrategyResult with LLM plan."""
+        result = StrategyResult(
+            query="test query",
+            complexity="moderate",
+            depth=ResearchDepth.DEEP,
+            profile=QueryProfile(),
+            strategy=StrategyPlan(),
+            llm_plan=LLMPlanModel(
+                agent_routes={
+                    "analyzer": LLMRouteModel(
+                        transport=LLMTransportType.OPENROUTER_API,
+                        provider=LLMProviderType.OPENROUTER,
+                    )
+                }
+            ),
+        )
+        assert result.llm_plan is not None
+        assert result.llm_plan.get_route_for_agent("analyzer").transport == LLMTransportType.OPENROUTER_API
+
+    def test_strategy_result_serialization_with_llm_plan(self) -> None:
+        """Test StrategyResult serialization with LLM plan."""
+        result = StrategyResult(
+            query="test query",
+            complexity="moderate",
+            depth=ResearchDepth.DEEP,
+            profile=QueryProfile(),
+            strategy=StrategyPlan(),
+            llm_plan=LLMPlanModel(),
+        )
+        data = result.model_dump()
+        assert "llm_plan" in data
+        assert "agent_routes" in data["llm_plan"]

@@ -21,6 +21,7 @@ from cc_deep_research.agents import (
 )
 from cc_deep_research.config import Config
 from cc_deep_research.coordination import LocalAgentPool, LocalMessageBus
+from cc_deep_research.llm import LLMRouteRegistry, LLMRouter
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.teams import AgentSpec, LocalResearchTeam, TeamConfig
 
@@ -33,6 +34,8 @@ class OrchestratorRuntimeState:
     agents: dict[str, Any]
     message_bus: LocalMessageBus
     agent_pool: LocalAgentPool | None
+    llm_registry: LLMRouteRegistry | None = None
+    llm_router: LLMRouter | None = None
 
 
 class OrchestratorRuntime:
@@ -45,11 +48,13 @@ class OrchestratorRuntime:
         monitor: ResearchMonitor,
         parallel_mode: bool,
         num_researchers: int,
+        llm_event_callback: Any = None,
     ) -> None:
         self._config = config
         self._monitor = monitor
         self._parallel_mode = parallel_mode
         self._num_researchers = num_researchers
+        self._llm_event_callback = llm_event_callback
         self._state: OrchestratorRuntimeState | None = None
 
     async def initialize(
@@ -68,11 +73,19 @@ class OrchestratorRuntime:
 
         message_bus = LocalMessageBus()
         agent_pool = await self._initialize_agent_pool()
+        llm_registry = LLMRouteRegistry(config=self._config.llm)
+        llm_router = LLMRouter(
+            llm_registry,
+            monitor=self._monitor,
+            telemetry_callback=self._llm_event_callback,
+        )
         self._state = OrchestratorRuntimeState(
             team=team,
-            agents=self._build_agents(),
+            agents=self._build_agents(llm_router=llm_router),
             message_bus=message_bus,
             agent_pool=agent_pool,
+            llm_registry=llm_registry,
+            llm_router=llm_router,
         )
         return self._state
 
@@ -151,7 +164,7 @@ class OrchestratorRuntime:
             parallel_execution=self._parallel_mode,
         )
 
-    def _build_agents(self) -> dict[str, Any]:
+    def _build_agents(self, *, llm_router: LLMRouter) -> dict[str, Any]:
         """Instantiate the local specialist objects used by the workflow."""
         research_settings = self._config.research.model_dump(mode="python")
         return {
@@ -161,10 +174,15 @@ class OrchestratorRuntime:
                 monitor=self._monitor,
             ),
             AGENT_TYPE_EXPANDER: QueryExpanderAgent({}),
-            AGENT_TYPE_ANALYZER: AnalyzerAgent(research_settings, monitor=self._monitor),
+            AGENT_TYPE_ANALYZER: AnalyzerAgent(
+                research_settings,
+                monitor=self._monitor,
+                llm_router=llm_router,
+            ),
             AGENT_TYPE_DEEP_ANALYZER: DeepAnalyzerAgent(
                 research_settings,
                 monitor=self._monitor,
+                llm_router=llm_router,
             ),
             AGENT_TYPE_VALIDATOR: ValidatorAgent(research_settings),
         }
