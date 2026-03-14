@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from contextlib import suppress
+from typing import Any
 
 from cc_deep_research.config import LLMConfig
 from cc_deep_research.llm.base import (
@@ -86,29 +88,33 @@ class LLMRouteRegistry:
                 extra={"path": self._config.claude_cli.path},
             )
         elif transport == LLMTransportType.OPENROUTER_API:
+            api_keys = self._config.openrouter.get_api_keys()
             return LLMRoute(
                 transport=LLMTransportType.OPENROUTER_API,
                 provider=LLMProviderType.OPENROUTER,
                 model=self._config.openrouter.model,
                 timeout_seconds=self._config.openrouter.timeout_seconds,
                 enabled=self._config.openrouter.enabled
-                and bool(self._config.openrouter.api_key),
+                and bool(api_keys),
                 extra={
-                    "api_key": self._config.openrouter.api_key,
+                    "api_key": api_keys[0] if api_keys else None,
+                    "api_keys": api_keys,
                     "base_url": self._config.openrouter.base_url,
                     "extra_headers": self._config.openrouter.extra_headers,
                 },
             )
         elif transport == LLMTransportType.CEREBRAS_API:
+            api_keys = self._config.cerebras.get_api_keys()
             return LLMRoute(
                 transport=LLMTransportType.CEREBRAS_API,
                 provider=LLMProviderType.CEREBRAS,
                 model=self._config.cerebras.model,
                 timeout_seconds=self._config.cerebras.timeout_seconds,
                 enabled=self._config.cerebras.enabled
-                and bool(self._config.cerebras.api_key),
+                and bool(api_keys),
                 extra={
-                    "api_key": self._config.cerebras.api_key,
+                    "api_key": api_keys[0] if api_keys else None,
+                    "api_keys": api_keys,
                     "base_url": self._config.cerebras.base_url,
                 },
             )
@@ -285,7 +291,7 @@ class LLMRouteRegistry:
             data: The event data.
         """
         if self._telemetry_callback:
-            try:
+            with suppress(Exception):
                 self._telemetry_callback(
                     {
                         "event_type": event_type,
@@ -293,8 +299,6 @@ class LLMRouteRegistry:
                         **data,
                     }
                 )
-            except Exception:
-                pass  # Don't fail operations due to telemetry errors
 
     def get_summary(self) -> dict[str, Any]:
         """Get a summary of the current registry state.

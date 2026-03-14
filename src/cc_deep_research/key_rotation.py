@@ -45,6 +45,7 @@ class KeyRotationManager:
         ]
         self._current_index = 0
         self._disable_duration = timedelta(minutes=disable_duration_minutes)
+        self._disabled_until: dict[str, datetime] = {}
         self._rotation_events: list[dict[str, Any]] = []
 
     def get_available_key(self) -> str:
@@ -83,8 +84,19 @@ class KeyRotationManager:
             True if key is available, False otherwise.
         """
         if key.disabled:
+            disabled_until = self._disabled_until.get(key.key)
+            if disabled_until is not None and datetime.utcnow() >= disabled_until:
+                self._disabled_until.pop(key.key, None)
+                self._reenable_key(key)
+                return True
+
             # Check if disable duration has passed
-            if key.last_used and datetime.utcnow() - key.last_used > self._disable_duration:
+            if (
+                disabled_until is None
+                and key.last_used
+                and datetime.utcnow() - key.last_used > self._disable_duration
+            ):
+                self._disabled_until.pop(key.key, None)
                 self._reenable_key(key)
                 return True
             return False
@@ -119,16 +131,26 @@ class KeyRotationManager:
                     self._log_rotation_event("exhausted", key.key)
                 break
 
-    def mark_rate_limited(self, key_str: str) -> None:
+    def mark_rate_limited(
+        self,
+        key_str: str,
+        *,
+        retry_after_seconds: int | None = None,
+    ) -> None:
         """Mark a key as rate limited (temporarily disabled).
 
         Args:
             key_str: The API key that was rate limited.
+            retry_after_seconds: Optional provider-specific cooldown override.
         """
         for key in self._keys:
             if key.key == key_str:
                 key.disabled = True
                 key.last_used = datetime.utcnow()
+                disable_until = key.last_used + self._disable_duration
+                if retry_after_seconds is not None and retry_after_seconds > 0:
+                    disable_until = key.last_used + timedelta(seconds=retry_after_seconds)
+                self._disabled_until[key.key] = disable_until
                 self._rotate_to_next()
                 self._log_rotation_event("rate_limited", key.key)
                 logger.warning(f"API key rate limited, rotating: {self._mask_key(key.key)}")
@@ -154,10 +176,11 @@ class KeyRotationManager:
         """
         earliest: datetime | None = None
         for key in self._keys:
-            if key.last_used:
+            reset_time = self._disabled_until.get(key.key)
+            if reset_time is None and key.last_used:
                 reset_time = key.last_used + self._disable_duration
-                if earliest is None or reset_time < earliest:
-                    earliest = reset_time
+            if reset_time is not None and (earliest is None or reset_time < earliest):
+                earliest = reset_time
         return earliest
 
     def _mask_key(self, key: str) -> str:
@@ -193,6 +216,7 @@ class KeyRotationManager:
         for key in self._keys:
             key.requests_used = 0
             key.disabled = False
+        self._disabled_until.clear()
         logger.info("Reset all API key counters")
 
     @property

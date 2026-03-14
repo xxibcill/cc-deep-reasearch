@@ -1,7 +1,5 @@
 """Tests for LLM route registry."""
 
-import pytest
-
 from cc_deep_research.config import (
     LLMCerebrasConfig,
     LLMClaudeCLIConfig,
@@ -49,6 +47,22 @@ class TestLLMRouteRegistry:
         # Unknown agent should get default
         route = registry.get_route("unknown_agent")
         assert route.transport == LLMTransportType.CEREBRAS_API
+
+    def test_registry_includes_all_provider_api_keys_in_route_extra(self) -> None:
+        """Test provider routes include multi-key configuration."""
+        config = LLMConfig(
+            route_defaults=LLMRouteDefaults(analyzer="openrouter"),
+            openrouter=LLMOpenRouterConfig(
+                enabled=True,
+                api_keys=["key-1", "key-2"],
+            ),
+        )
+        registry = LLMRouteRegistry(config)
+
+        route = registry.get_route("analyzer")
+
+        assert route.extra["api_key"] == "key-1"
+        assert route.extra["api_keys"] == ["key-1", "key-2"]
 
     def test_set_route_overrides_default(self) -> None:
         """Test set_route overrides config default."""
