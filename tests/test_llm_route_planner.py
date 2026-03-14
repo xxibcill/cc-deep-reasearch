@@ -3,9 +3,7 @@
 import os
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from cc_deep_research.config import Config, LLMConfig
+from cc_deep_research.config import Config
 from cc_deep_research.llm.base import LLMProviderType, LLMTransportType
 from cc_deep_research.models import (
     LLMPlanModel,
@@ -26,8 +24,10 @@ def create_test_config(
     claude_cli_enabled: bool = True,
     openrouter_enabled: bool = False,
     openrouter_api_key: str | None = None,
+    openrouter_api_keys: list[str] | None = None,
     cerebras_enabled: bool = False,
     cerebras_api_key: str | None = None,
+    cerebras_api_keys: list[str] | None = None,
     fallback_order: list[str] | None = None,
 ) -> Config:
     """Create a test config with LLM settings."""
@@ -36,8 +36,10 @@ def create_test_config(
     config.llm.claude_cli.enabled = claude_cli_enabled
     config.llm.openrouter.enabled = openrouter_enabled
     config.llm.openrouter.api_key = openrouter_api_key
+    config.llm.openrouter.api_keys = openrouter_api_keys or []
     config.llm.cerebras.enabled = cerebras_enabled
     config.llm.cerebras.api_key = cerebras_api_key
+    config.llm.cerebras.api_keys = cerebras_api_keys or []
 
     if fallback_order:
         config.llm.fallback_order = fallback_order
@@ -130,7 +132,6 @@ class TestLLMRoutePlanner:
     def test_plan_routes_nested_session_constraint(self) -> None:
         """Test that nested session blocks Claude CLI."""
         config = create_test_config()
-        strategy = create_test_strategy()
 
         planner = LLMRoutePlanner(config)
 
@@ -142,27 +143,29 @@ class TestLLMRoutePlanner:
     def test_plan_routes_claude_cli_available(self) -> None:
         """Test Claude CLI availability check."""
         config = create_test_config()
-        strategy = create_test_strategy()
 
         planner = LLMRoutePlanner(config)
 
         # Clear CLAUDECODE env var
-        with patch.dict(os.environ, {}, clear=True):
-            with patch("shutil.which", return_value="/usr/bin/claude"):
-                available = planner._check_claude_cli_available()
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("shutil.which", return_value="/usr/bin/claude"),
+        ):
+            available = planner._check_claude_cli_available()
 
         assert available is True
 
     def test_plan_routes_claude_cli_no_executable(self) -> None:
         """Test Claude CLI unavailable when no executable."""
         config = create_test_config()
-        strategy = create_test_strategy()
 
         planner = LLMRoutePlanner(config)
 
-        with patch.dict(os.environ, {}, clear=True):
-            with patch("shutil.which", return_value=None):
-                available = planner._check_claude_cli_available()
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("shutil.which", return_value=None),
+        ):
+            available = planner._check_claude_cli_available()
 
         assert available is False
 
@@ -171,6 +174,18 @@ class TestLLMRoutePlanner:
         config = create_test_config(
             openrouter_enabled=True,
             openrouter_api_key="test-key",
+        )
+
+        planner = LLMRoutePlanner(config)
+        available = planner._check_openrouter_available()
+
+        assert available is True
+
+    def test_plan_routes_openrouter_available_with_api_key_list(self) -> None:
+        """Test OpenRouter availability check with multiple keys."""
+        config = create_test_config(
+            openrouter_enabled=True,
+            openrouter_api_keys=["test-key-1", "test-key-2"],
         )
 
         planner = LLMRoutePlanner(config)
@@ -207,6 +222,18 @@ class TestLLMRoutePlanner:
         config = create_test_config(
             cerebras_enabled=True,
             cerebras_api_key="test-key",
+        )
+
+        planner = LLMRoutePlanner(config)
+        available = planner._check_cerebras_available()
+
+        assert available is True
+
+    def test_plan_routes_cerebras_available_with_api_key_list(self) -> None:
+        """Test Cerebras availability check with multiple keys."""
+        config = create_test_config(
+            cerebras_enabled=True,
+            cerebras_api_keys=["test-key-1", "test-key-2"],
         )
 
         planner = LLMRoutePlanner(config)

@@ -10,7 +10,7 @@ import os
 import shutil
 from typing import TYPE_CHECKING
 
-from cc_deep_research.config import Config, LLMConfig
+from cc_deep_research.config import Config
 from cc_deep_research.llm.base import LLMRoute, LLMRoutePlan
 from cc_deep_research.models import (
     LLMPlanModel,
@@ -57,7 +57,7 @@ class LLMRoutePlanner:
         self._config = config
         self._llm_config = config.llm
 
-    def plan_routes(self, strategy: StrategyResult) -> LLMPlanModel:
+    def plan_routes(self, _strategy: StrategyResult) -> LLMPlanModel:
         """Create a per-agent LLM route plan based on availability.
 
         Args:
@@ -161,7 +161,7 @@ class LLMRoutePlanner:
         if not self._llm_config.openrouter.enabled:
             return False
 
-        return bool(self._llm_config.openrouter.api_key)
+        return bool(self._llm_config.openrouter.get_api_keys())
 
     def _check_cerebras_available(self) -> bool:
         """Check if Cerebras transport is available.
@@ -176,7 +176,7 @@ class LLMRoutePlanner:
         if not self._llm_config.cerebras.enabled:
             return False
 
-        return bool(self._llm_config.cerebras.api_key)
+        return bool(self._llm_config.cerebras.get_api_keys())
 
     def _build_fallback_order(
         self,
@@ -216,7 +216,7 @@ class LLMRoutePlanner:
 
     def _select_default_route(
         self,
-        availability: dict[LLMTransportType, bool],
+        _availability: dict[LLMTransportType, bool],
         fallback_order: list[LLMTransportType],
     ) -> LLMRouteModel:
         """Select the default route from available transports.
@@ -338,7 +338,7 @@ class LLMRoutePlanner:
     def update_registry_from_plan(
         self,
         plan: LLMPlanModel,
-        registry: "LLMRouteRegistry",
+        registry: LLMRouteRegistry,
     ) -> None:
         """Update the session registry from the plan.
 
@@ -348,7 +348,7 @@ class LLMRoutePlanner:
         """
         runtime_plan = LLMRoutePlan(
             agent_routes={
-                agent_id: LLMRoute(
+                agent_id: self._build_runtime_route(
                     transport=route_model.transport,
                     provider=route_model.provider,
                     model=route_model.model,
@@ -357,7 +357,7 @@ class LLMRoutePlanner:
                 for agent_id, route_model in plan.agent_routes.items()
             },
             fallback_order=list(plan.fallback_order),
-            default_route=LLMRoute(
+            default_route=self._build_runtime_route(
                 transport=plan.default_route.transport,
                 provider=plan.default_route.provider,
                 model=plan.default_route.model,
@@ -370,6 +370,48 @@ class LLMRoutePlanner:
             return
         for agent_id, route in runtime_plan.agent_routes.items():
             registry.set_route(agent_id, route)
+
+    def _build_runtime_route(
+        self,
+        *,
+        transport: LLMTransportType,
+        provider: LLMProviderType,
+        model: str,
+        enabled: bool,
+    ) -> LLMRoute:
+        """Build a runtime route with transport-specific configuration."""
+        extra: dict[str, str | list[str] | dict[str, str] | None] = {}
+        timeout_seconds = 180
+
+        if transport == LLMTransportType.OPENROUTER_API:
+            api_keys = self._llm_config.openrouter.get_api_keys()
+            timeout_seconds = self._llm_config.openrouter.timeout_seconds
+            extra = {
+                "api_key": api_keys[0] if api_keys else None,
+                "api_keys": api_keys,
+                "base_url": self._llm_config.openrouter.base_url,
+                "extra_headers": self._llm_config.openrouter.extra_headers,
+            }
+        elif transport == LLMTransportType.CEREBRAS_API:
+            api_keys = self._llm_config.cerebras.get_api_keys()
+            timeout_seconds = self._llm_config.cerebras.timeout_seconds
+            extra = {
+                "api_key": api_keys[0] if api_keys else None,
+                "api_keys": api_keys,
+                "base_url": self._llm_config.cerebras.base_url,
+            }
+        elif transport == LLMTransportType.CLAUDE_CLI:
+            timeout_seconds = self._llm_config.claude_cli.timeout_seconds
+            extra = {"path": self._llm_config.claude_cli.path}
+
+        return LLMRoute(
+            transport=transport,
+            provider=provider,
+            model=model,
+            enabled=enabled,
+            timeout_seconds=timeout_seconds,
+            extra=extra,
+        )
 
 
 def create_llm_plan(

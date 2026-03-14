@@ -233,6 +233,25 @@ class TestLoadConfig:
                 # Env var should override
                 assert "env-key1" in config.tavily.api_keys
 
+    def test_load_config_with_llm_env_overrides(self) -> None:
+        """Test loading config with OpenRouter and Cerebras env var overrides."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "config.yaml"
+
+            with patch.dict(
+                os.environ,
+                {
+                    "OPENROUTER_API_KEYS": "openrouter-1, openrouter-2",
+                    "CEREBRAS_API_KEY": "cerebras-1",
+                },
+            ):
+                config = load_config(config_path)
+
+        assert config.llm.openrouter.api_key == "openrouter-1"
+        assert config.llm.openrouter.api_keys == ["openrouter-1", "openrouter-2"]
+        assert config.llm.cerebras.api_key == "cerebras-1"
+        assert config.llm.cerebras.api_keys == ["cerebras-1"]
+
 
 class TestSaveConfig:
     """Tests for save_config function."""
@@ -406,6 +425,7 @@ class TestLLMOpenRouterConfig:
         config = LLMOpenRouterConfig()
         assert config.enabled is False
         assert config.api_key is None
+        assert config.api_keys == []
         assert config.base_url == "https://openrouter.ai/api/v1"
         assert config.timeout_seconds == 120
         assert config.model == "anthropic/claude-sonnet-4"
@@ -415,6 +435,7 @@ class TestLLMOpenRouterConfig:
         config = LLMOpenRouterConfig(
             enabled=True,
             api_key="sk-test-key",
+            api_keys=["sk-test-key", "sk-second-key"],
             base_url="https://custom.openrouter.ai/v1",
             timeout_seconds=60,
             model="openai/gpt-4",
@@ -422,6 +443,7 @@ class TestLLMOpenRouterConfig:
         )
         assert config.enabled is True
         assert config.api_key == "sk-test-key"
+        assert config.get_api_keys() == ["sk-test-key", "sk-second-key"]
         assert config.base_url == "https://custom.openrouter.ai/v1"
         assert config.extra_headers == {"X-Custom": "value"}
 
@@ -434,6 +456,7 @@ class TestLLMCerebrasConfig:
         config = LLMCerebrasConfig()
         assert config.enabled is False
         assert config.api_key is None
+        assert config.api_keys == []
         assert config.base_url == "https://api.cerebras.ai/v1"
         assert config.timeout_seconds == 60
         assert config.model == "llama-3.3-70b"
@@ -443,11 +466,13 @@ class TestLLMCerebrasConfig:
         config = LLMCerebrasConfig(
             enabled=True,
             api_key="cerebras-key",
+            api_keys=["cerebras-key", "cerebras-key-2"],
             timeout_seconds=30,
             model="llama-3.1-8b",
         )
         assert config.enabled is True
         assert config.api_key == "cerebras-key"
+        assert config.get_api_keys() == ["cerebras-key", "cerebras-key-2"]
         assert config.timeout_seconds == 30
 
 
@@ -509,6 +534,18 @@ class TestLLMConfig:
         assert "openrouter" in transports
         assert "cerebras" in transports
         assert "heuristic" in transports
+
+    def test_get_enabled_transports_with_api_key_lists(self) -> None:
+        """Test get_enabled_transports with multi-key provider configs."""
+        config = LLMConfig(
+            openrouter=LLMOpenRouterConfig(enabled=True, api_keys=["test-key-1", "test-key-2"]),
+            cerebras=LLMCerebrasConfig(enabled=True, api_keys=["cerebras-key-1"]),
+        )
+
+        transports = config.get_enabled_transports()
+
+        assert "openrouter" in transports
+        assert "cerebras" in transports
 
     def test_get_enabled_transports_respects_fallback_order(self) -> None:
         """Test get_enabled_transports respects fallback order."""

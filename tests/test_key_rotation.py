@@ -93,6 +93,20 @@ class TestKeyRotationManager:
         status = manager.get_key_status()
         assert status[0]["disabled"] is True
 
+    def test_mark_rate_limited_uses_retry_after_override(self) -> None:
+        """Test rate-limit cooldown can follow provider Retry-After headers."""
+        manager = KeyRotationManager(
+            api_keys=["key1"],
+            requests_limit=5,
+            disable_duration_minutes=60,
+        )
+
+        manager.mark_rate_limited("key1", retry_after_seconds=30)
+
+        reset_time = manager._get_earliest_reset_time()
+        assert reset_time is not None
+        assert reset_time < datetime.utcnow() + timedelta(minutes=1)
+
     def test_key_reenable_after_duration(self) -> None:
         """Test that disabled key is re-enabled after duration."""
         manager = KeyRotationManager(
