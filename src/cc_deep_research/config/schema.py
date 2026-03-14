@@ -53,6 +53,25 @@ def _normalize_api_key_list(*values: str | list[str] | None) -> list[str]:
     return normalized
 
 
+def _normalize_api_key_list(*values: str | list[str] | None) -> list[str]:
+    """Normalize API keys while preserving first-seen order."""
+    normalized: list[str] = []
+    seen: set[str] = set()
+
+    for value in values:
+        candidates = value if isinstance(value, list) else [value]
+        for candidate in candidates:
+            if candidate is None:
+                continue
+            key = candidate.strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            normalized.append(key)
+
+    return normalized
+
+
 class SearchConfig(BaseModel):
     """Search-related configuration."""
 
