@@ -175,6 +175,60 @@ def register_routes(app: FastAPI) -> None:
             status_code=202,
         )
 
+    @app.get("/api/research-runs/{run_id}")
+    async def get_research_run_status(run_id: str) -> JSONResponse:
+        """Get the status of a research run.
+
+        Args:
+            run_id: The research run identifier.
+
+        Returns:
+            JSON response with run status, session_id, and result metadata.
+        """
+        job_registry = get_job_registry(app)
+        job = job_registry.get_job(run_id)
+
+        if job is None:
+            return JSONResponse(
+                content={"error": f"Research run not found: {run_id}"},
+                status_code=404,
+            )
+
+        response: dict = {
+            "run_id": job.run_id,
+            "status": job.status.value,
+            "created_at": job.created_at.isoformat(),
+        }
+
+        if job.session_id:
+            response["session_id"] = job.session_id
+
+        if job.started_at:
+            response["started_at"] = job.started_at.isoformat()
+
+        if job.completed_at:
+            response["completed_at"] = job.completed_at.isoformat()
+
+        if job.error:
+            response["error"] = job.error
+
+        if job.result is not None:
+            response["result"] = {
+                "session_id": job.result.session_id,
+                "report_format": job.result.report.format.value,
+                "report_path": str(job.result.report.path) if job.result.report.path else None,
+                "artifacts": [
+                    {
+                        "kind": artifact.kind.value,
+                        "path": str(artifact.path),
+                        "media_type": artifact.media_type,
+                    }
+                    for artifact in job.result.artifacts
+                ],
+            }
+
+        return JSONResponse(content=response)
+
     @app.get("/api/sessions")
     async def list_sessions(
         active_only: bool = False,
