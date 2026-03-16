@@ -12,6 +12,13 @@ from cc_deep_research.models import (
     SearchResult,
     SearchResultItem,
 )
+from cc_deep_research.config import Config
+from cc_deep_research.research_runs import (
+    ResearchArtifactKind,
+    ResearchOutputFormat,
+    ResearchRunRequest,
+    materialize_research_run_output,
+)
 from cc_deep_research.session_store import (
     SessionStore,
     _deserialize_session,
@@ -263,6 +270,93 @@ class TestSessionSerialization:
         assert restored.completed_at == sample_session.completed_at
         assert len(restored.sources) == len(sample_session.sources)
         assert restored.metadata == sample_session.metadata
+
+
+class StubReportGenerator:
+    """Test double for deterministic output materialization."""
+
+    def generate_markdown_report(self, _session: ResearchSession, _analysis: dict) -> str:
+        return "# Report\n\nMarkdown body."
+
+    def generate_json_report(self, _session: ResearchSession, _analysis: dict) -> str:
+        return '{"report":"json"}'
+
+    def render_html_report(self, markdown_report: str) -> str:
+        return f"<html>{markdown_report}</html>"
+
+
+class StubPDFGenerator:
+    """Test double for PDF output generation."""
+
+    def generate_pdf_from_html(self, html_content: str, output_path: Path) -> Path:
+        del html_content
+        pdf_path = output_path.with_suffix(".pdf")
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
+        pdf_path.write_bytes(b"%PDF-1.4\n")
+        return pdf_path
+
+
+class TestResearchRunOutputMaterialization:
+    """Tests for shared output persistence helpers."""
+
+    def test_materialize_output_persists_session_and_requested_artifacts(
+        self,
+        temp_session_dir: Path,
+        sample_session: ResearchSession,
+        tmp_path: Path,
+    ) -> None:
+        """The shared helper should persist session, report, and PDF artifacts."""
+        session_store = SessionStore(session_dir=temp_session_dir)
+        output_path = tmp_path / "reports" / "report.html"
+
+        result = materialize_research_run_output(
+            session=sample_session,
+            config=Config(),
+            request=ResearchRunRequest(
+                query=sample_session.query,
+                output_path=output_path,
+                output_format=ResearchOutputFormat.HTML,
+                pdf_enabled=True,
+            ),
+            session_store=session_store,
+            reporter=StubReportGenerator(),
+            pdf_generator=StubPDFGenerator(),
+        )
+
+        assert result.session_id == sample_session.session_id
+        assert result.report.path == output_path
+        assert result.report.media_type == "text/html"
+        assert output_path.read_text(encoding="utf-8") == "<html># Report\n\nMarkdown body.</html>"
+        assert session_store.session_exists(sample_session.session_id) is True
+        assert result.warnings == []
+        assert [artifact.kind for artifact in result.artifacts] == [
+            ResearchArtifactKind.SESSION,
+            ResearchArtifactKind.REPORT,
+            ResearchArtifactKind.PDF,
+        ]
+        assert result.artifacts[2].path == output_path.with_suffix(".pdf")
+
+    def test_materialize_output_returns_report_without_writing_when_no_output_path(
+        self,
+        temp_session_dir: Path,
+        sample_session: ResearchSession,
+    ) -> None:
+        """The helper should still return report content when no file write is requested."""
+        result = materialize_research_run_output(
+            session=sample_session,
+            config=Config(),
+            request=ResearchRunRequest(
+                query=sample_session.query,
+                output_format=ResearchOutputFormat.JSON,
+            ),
+            session_store=SessionStore(session_dir=temp_session_dir),
+            reporter=StubReportGenerator(),
+        )
+
+        assert result.report.format == ResearchOutputFormat.JSON
+        assert result.report.path is None
+        assert result.report.content == '{"report":"json"}'
+        assert [artifact.kind for artifact in result.artifacts] == [ResearchArtifactKind.SESSION]
 
     def test_deserialize_legacy_metadata_normalizes_contract(self) -> None:
         """Test that legacy session metadata is normalized when loaded."""

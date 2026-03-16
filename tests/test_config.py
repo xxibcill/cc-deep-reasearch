@@ -28,6 +28,10 @@ from cc_deep_research.config import (
     save_config,
 )
 from cc_deep_research.models import ResearchDepth, SearchMode
+from cc_deep_research.research_runs import (
+    ResearchRunRequest,
+    apply_research_request_config_overrides,
+)
 
 
 class TestSearchConfig:
@@ -189,6 +193,35 @@ class TestConfig:
         assert config.tavily.api_keys == ["test-key"]
         assert config.research.claude_cli_path == "/usr/local/bin/claude"
         assert config.research.claude_cli_timeout_seconds == 240
+
+
+class TestResearchRunConfigOverrides:
+    """Tests for shared config override normalization."""
+
+    def test_applies_shared_request_overrides_without_mutating_source_config(self) -> None:
+        """Request overrides should be reusable outside the CLI command body."""
+        config = Config()
+
+        updated = apply_research_request_config_overrides(
+            config,
+            ResearchRunRequest(
+                query="test query",
+                search_providers=["CLAUDE"],
+                cross_reference_enabled=False,
+                team_size=6,
+                parallel_mode=False,
+            ),
+        )
+
+        assert updated.search.providers == ["claude"]
+        assert updated.research.enable_cross_ref is False
+        assert updated.search_team.team_size == 6
+        assert updated.search_team.parallel_execution is False
+
+        assert config.search.providers == ["tavily"]
+        assert config.research.enable_cross_ref is True
+        assert config.search_team.team_size == 4
+        assert config.search_team.parallel_execution is True
 
 
 class TestLoadConfig:

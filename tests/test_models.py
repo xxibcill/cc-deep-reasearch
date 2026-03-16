@@ -27,6 +27,13 @@ from cc_deep_research.models import (
     StrategyPlan,
     StrategyResult,
 )
+from cc_deep_research.research_runs import (
+    ResearchOutputFormat,
+    ResearchRunArtifact,
+    ResearchRunRequest,
+    ResearchRunReport,
+    ResearchRunResult,
+)
 
 
 class TestSearchResultItem:
@@ -253,6 +260,59 @@ class TestResearchSession:
             sources=sources,
         )
         assert session.total_sources == 3
+
+
+class TestResearchRunRequest:
+    """Tests for the shared research-run request contract."""
+
+    def test_normalizes_provider_overrides(self) -> None:
+        """Provider overrides should be normalized without CLI-specific names."""
+        request = ResearchRunRequest(
+            query="test query",
+            search_providers=[" Tavily ", "claude", "TAVILY"],
+        )
+
+        assert request.search_providers == ["tavily", "claude"]
+
+    def test_defaults_to_markdown_output(self) -> None:
+        """Markdown should remain the default serialized report format."""
+        request = ResearchRunRequest(query="test query")
+
+        assert request.output_format == ResearchOutputFormat.MARKDOWN
+        assert request.parallel_mode is None
+        assert request.cross_reference_enabled is None
+
+
+class TestResearchRunResult:
+    """Tests for the shared research-run result contract."""
+
+    def test_exposes_session_identity_and_report_metadata(self) -> None:
+        """Completed run results should keep session identity and report metadata together."""
+        session = ResearchSession(
+            session_id="shared-run-session",
+            query="test query",
+        )
+
+        result = ResearchRunResult(
+            session=session,
+            report=ResearchRunReport(
+                format=ResearchOutputFormat.HTML,
+                content="<html></html>",
+                media_type="text/html",
+            ),
+            artifacts=[
+                ResearchRunArtifact(
+                    kind="session",
+                    path="session.json",
+                    format="json",
+                    media_type="application/json",
+                )
+            ],
+        )
+
+        assert result.session_id == "shared-run-session"
+        assert result.report.format == ResearchOutputFormat.HTML
+        assert result.artifacts[0].format == "json"
 
     def test_research_session_normalizes_metadata_contract(self) -> None:
         """Test that session metadata always exposes the stable top-level contract."""
