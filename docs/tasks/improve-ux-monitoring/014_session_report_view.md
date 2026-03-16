@@ -1,6 +1,6 @@
 # Task 014: Add Final Report View To The Session Page
 
-Status: Planned
+Status: Complete
 
 ## Objective
 
