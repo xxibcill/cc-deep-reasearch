@@ -8,7 +8,8 @@ import yaml
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings
 
-from cc_deep_research.models import ResearchDepth, SearchMode
+from cc_deep_research.models.search import ResearchDepth
+from cc_deep_research.models.support import SearchMode
 
 
 def _normalize_api_key_list(*values: str | list[str] | None) -> list[str]:

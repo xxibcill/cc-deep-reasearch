@@ -5,14 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from cc_deep_research.models import (
+from cc_deep_research.models.analysis import (
     AnalysisResult,
     IterationHistoryRecord,
-    ResearchDepth,
-    SearchResultItem,
     StrategyResult,
     ValidationResult,
 )
+from cc_deep_research.models.search import ResearchDepth, SearchResultItem
 
 
 @dataclass

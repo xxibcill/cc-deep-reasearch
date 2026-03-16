@@ -6,15 +6,14 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
-from cc_deep_research.models import (
+from cc_deep_research.models.analysis import (
     AnalysisResult,
     IterationHistoryRecord,
-    ResearchDepth,
-    ResearchSession,
-    SearchResultItem,
     StrategyResult,
     ValidationResult,
 )
+from cc_deep_research.models.search import ResearchDepth, SearchResultItem
+from cc_deep_research.models.session import ResearchSession
 
 
 class SessionBuilder:

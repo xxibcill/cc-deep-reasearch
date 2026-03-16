@@ -90,6 +90,39 @@ def test_telemetry_ingest_reports_missing_dashboard_dependencies(
     assert 'pip install "cc-deep-research[dashboard]"' in result.output
 
 
+def test_telemetry_ingest_passes_paths_to_ingestion(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """The ingest command should pass explicit telemetry paths through unchanged."""
+    captured: dict[str, object] = {}
+
+    def fake_ingest(*, base_dir: Path | None = None, db_path: Path | None = None):
+        captured["base_dir"] = base_dir
+        captured["db_path"] = db_path
+        return {"sessions": 2, "events": 5}
+
+    monkeypatch.setattr("cc_deep_research.cli.ingest_telemetry_to_duckdb", fake_ingest)
+
+    runner = CliRunner()
+    db_path = tmp_path / "telemetry.duckdb"
+    result = runner.invoke(
+        main,
+        [
+            "telemetry",
+            "ingest",
+            "--base-dir",
+            str(tmp_path),
+            "--db-path",
+            str(db_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["base_dir"] == tmp_path
+    assert captured["db_path"] == db_path
+
+
 def test_telemetry_dashboard_reports_missing_dashboard_dependencies(
     monkeypatch,
 ) -> None:

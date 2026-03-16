@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any
 
-from cc_deep_research.models import APIKey
+from cc_deep_research.models.support import APIKey
 
 logger = logging.getLogger(__name__)
 

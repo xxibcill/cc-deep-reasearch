@@ -12,12 +12,12 @@ from typing import TYPE_CHECKING
 
 from cc_deep_research.config import Config
 from cc_deep_research.llm.base import LLMRoute, LLMRoutePlan
-from cc_deep_research.models import (
+from cc_deep_research.models.analysis import StrategyResult
+from cc_deep_research.models.llm import (
     LLMPlanModel,
     LLMProviderType,
     LLMRouteModel,
     LLMTransportType,
-    StrategyResult,
 )
 
 if TYPE_CHECKING:
