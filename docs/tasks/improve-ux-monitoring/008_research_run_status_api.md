@@ -1,6 +1,6 @@
 # Task 008: Add Research Run Status API
 
-Status: Planned
+Status: Complete
 
 ## Objective
 
