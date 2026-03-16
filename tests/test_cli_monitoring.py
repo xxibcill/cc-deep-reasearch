@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import importlib
 import subprocess
 from pathlib import Path
 
 from click.testing import CliRunner
 
 from cc_deep_research.cli import main
+
+CLI_MAIN_MODULE = importlib.import_module("cc_deep_research.cli.main")
 
 
 def test_telemetry_dashboard_passes_live_monitoring_args(
@@ -27,8 +30,8 @@ def test_telemetry_dashboard_passes_live_monitoring_args(
         captured["check"] = check
         return subprocess.CompletedProcess(args=command, returncode=0)
 
-    monkeypatch.setattr("cc_deep_research.cli.ingest_telemetry_to_duckdb", fake_ingest)
-    monkeypatch.setattr("cc_deep_research.cli.subprocess.run", fake_run)
+    monkeypatch.setattr(CLI_MAIN_MODULE, "ingest_telemetry_to_duckdb", fake_ingest)
+    monkeypatch.setattr(CLI_MAIN_MODULE.subprocess, "run", fake_run)
 
     runner = CliRunner()
     db_path = tmp_path / "telemetry.duckdb"
@@ -80,7 +83,7 @@ def test_telemetry_ingest_reports_missing_dashboard_dependencies(
             'Install with `pip install "cc-deep-research[dashboard]"`.'
         )
 
-    monkeypatch.setattr("cc_deep_research.cli.ingest_telemetry_to_duckdb", fake_ingest)
+    monkeypatch.setattr(CLI_MAIN_MODULE, "ingest_telemetry_to_duckdb", fake_ingest)
 
     runner = CliRunner()
     result = runner.invoke(main, ["telemetry", "ingest"])
@@ -102,7 +105,7 @@ def test_telemetry_ingest_passes_paths_to_ingestion(
         captured["db_path"] = db_path
         return {"sessions": 2, "events": 5}
 
-    monkeypatch.setattr("cc_deep_research.cli.ingest_telemetry_to_duckdb", fake_ingest)
+    monkeypatch.setattr(CLI_MAIN_MODULE, "ingest_telemetry_to_duckdb", fake_ingest)
 
     runner = CliRunner()
     db_path = tmp_path / "telemetry.duckdb"
@@ -135,7 +138,7 @@ def test_telemetry_dashboard_reports_missing_dashboard_dependencies(
             'Install with `pip install "cc-deep-research[dashboard]"`.'
         )
 
-    monkeypatch.setattr("cc_deep_research.cli.ingest_telemetry_to_duckdb", fake_ingest)
+    monkeypatch.setattr(CLI_MAIN_MODULE, "ingest_telemetry_to_duckdb", fake_ingest)
 
     runner = CliRunner()
     result = runner.invoke(main, ["telemetry", "dashboard"])

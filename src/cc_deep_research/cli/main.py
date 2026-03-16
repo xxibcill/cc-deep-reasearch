@@ -1,8 +1,7 @@
-"""CLI entry point for CC Deep Research."""
+"""CLI command registration for CC Deep Research."""
 
 from __future__ import annotations
 
-import asyncio
 import subprocess
 import sys
 from pathlib import Path
@@ -28,7 +27,16 @@ from cc_deep_research.telemetry import (
 )
 from cc_deep_research.tui import ResearchRunView, TerminalUI
 
-RESEARCH_PHASE_STEPS = 8
+from .shared import (
+    describe_execution_mode,
+    execute_research_run,
+    format_config_value,
+    load_config_from_path,
+    log_monitor_session_start,
+    parse_config_value,
+    resolve_config_target,
+    resolve_parallel_mode_override,
+)
 
 
 @click.group()
@@ -163,13 +171,13 @@ def research(
         if claude_only:
             config.search.providers = ["claude"]
 
-        effective_parallel_mode = _resolve_parallel_mode_override(
+        effective_parallel_mode = resolve_parallel_mode_override(
             no_team=no_team,
             parallel_mode=parallel_mode,
         )
 
         if not quiet:
-            team_mode = _describe_execution_mode(config, effective_parallel_mode)
+            team_mode = describe_execution_mode(config, effective_parallel_mode)
             ui.show_research_header(
                 ResearchRunView(
                     query=query,
@@ -186,29 +194,30 @@ def research(
                 )
 
         if monitor and not quiet:
-            _log_monitor_session_start(research_monitor, query, depth, output_format, config)
+            log_monitor_session_start(
+                research_monitor,
+                query=query,
+                depth=depth,
+                output_format=output_format,
+                config=config,
+            )
 
-        # Create event router if real-time monitoring is enabled
         event_router = None
         if enable_realtime:
+            import asyncio
+
             from cc_deep_research.event_router import EventRouter
 
             event_router = EventRouter()
-            # Start the event router (it will be started in a background task)
-            import asyncio
-
             asyncio.create_task(event_router.start())
 
         orchestrator = TeamResearchOrchestrator(
             config=config,
             monitor=research_monitor,
-            # Only pass parallel params if explicitly specified via CLI.
-            # --no-team forces sequential collection, even if --parallel-mode is also set.
             parallel_mode=effective_parallel_mode,
             num_researchers=num_researchers if num_researchers else None,
         )
 
-        # Pass event router to monitor
         if event_router:
             research_monitor._event_router = event_router
         depth_enum = ResearchDepth(depth.lower())
@@ -219,7 +228,7 @@ def research(
             else config.search_team.parallel_execution
         )
 
-        session = _execute_research_run(
+        session = execute_research_run(
             orchestrator=orchestrator,
             query=query,
             depth=depth_enum,
@@ -228,11 +237,9 @@ def research(
             ui=ui,
         )
 
-        # Show timeline if requested and parallel mode was enabled
         if show_timeline and parallel_enabled and not quiet:
             research_monitor.show_timeline()
 
-        # Save session to store for later retrieval
         session_store = SessionStore()
         session_store.save_session(session)
 
@@ -261,7 +268,6 @@ def research(
             else:
                 ui.show_report(report, output_format)
 
-        # Generate PDF if requested
         if pdf:
             from cc_deep_research.pdf_generator import PDFGenerationError, PDFGenerator
 
@@ -270,21 +276,18 @@ def research(
                 if markdown_report is None:
                     markdown_report = reporter.generate_markdown_report(session, analysis)
                 html_report = reporter.render_html_report(markdown_report)
-
-                if output_path:
-                    pdf_path = output_path.with_suffix(".pdf")
-                else:
-                    pdf_path = Path("research_report.pdf")
-
+                pdf_path = output_path.with_suffix(".pdf") if output_path else Path(
+                    "research_report.pdf"
+                )
                 pdf_gen.generate_pdf_from_html(html_report, pdf_path)
                 if not quiet:
                     ui.show_report_saved(pdf_path)
-            except PDFGenerationError as e:
+            except PDFGenerationError as error:
                 if not quiet:
-                    ui.show_error(str(e))
-            except Exception as e:
+                    ui.show_error(str(error))
+            except Exception as error:
                 if not quiet:
-                    ui.show_error(f"Failed to generate PDF: {e}")
+                    ui.show_error(f"Failed to generate PDF: {error}")
 
         if monitor and not quiet:
             research_monitor.section("Summary")
@@ -356,8 +359,7 @@ def markdown_to_pdf(input_path: Path, output: Path | None, title: str | None) ->
     except OSError as error:
         raise click.ClickException(f"Failed to read markdown input: {error}") from error
 
-    ui = TerminalUI(enabled=True)
-    ui.show_report_saved(pdf_path)
+    TerminalUI(enabled=True).show_report_saved(pdf_path)
 
 
 @main.command("markdown-to-html")
@@ -395,8 +397,7 @@ def markdown_to_html(input_path: Path, output: Path | None, title: str | None) -
     except OSError as error:
         raise click.ClickException(f"Failed to read markdown input: {error}") from error
 
-    ui = TerminalUI(enabled=True)
-    ui.show_report_saved(html_path)
+    TerminalUI(enabled=True).show_report_saved(html_path)
 
 
 @main.group()
@@ -505,8 +506,8 @@ def telemetry_ingest(base_dir: Path | None, db_path: Path | None) -> None:
             base_dir=base_dir or get_default_telemetry_dir(),
             db_path=db_path or get_default_dashboard_db_path(),
         )
-    except RuntimeError as exc:
-        raise click.ClickException(str(exc)) from exc
+    except RuntimeError as error:
+        raise click.ClickException(str(error)) from error
     click.echo(f"Ingested {result['sessions']} session summaries and {result['events']} events")
 
 
@@ -556,10 +557,10 @@ def telemetry_dashboard(
     resolved_db_path = db_path or get_default_dashboard_db_path()
     try:
         ingest_telemetry_to_duckdb(base_dir=resolved_base_dir, db_path=resolved_db_path)
-    except RuntimeError as exc:
-        raise click.ClickException(str(exc)) from exc
+    except RuntimeError as error:
+        raise click.ClickException(str(error)) from error
 
-    dashboard_script = Path(__file__).with_name("dashboard_app.py")
+    dashboard_script = Path(__file__).resolve().parent.parent / "dashboard_app.py"
     cmd = [
         sys.executable,
         "-m",
@@ -580,12 +581,12 @@ def telemetry_dashboard(
     ]
     try:
         subprocess.run(cmd, check=True)
-    except FileNotFoundError as exc:
+    except FileNotFoundError as error:
         raise click.ClickException(
             "streamlit is not installed. Install with `pip install \"cc-deep-research[dashboard]\"`."
-        ) from exc
-    except subprocess.CalledProcessError as exc:
-        raise click.ClickException(f"Failed to start dashboard: {exc}") from exc
+        ) from error
+    except subprocess.CalledProcessError as error:
+        raise click.ClickException(f"Failed to start dashboard: {error}") from error
 
 
 @config.command()
@@ -598,23 +599,15 @@ def telemetry_dashboard(
     help="Path to config file (uses default if not specified)",
 )
 def set(key: str, value: str, config_path: str | None) -> None:
-    """Set a configuration value.
-
-    KEY is the configuration key in dot notation (e.g., tavily.api_keys).
-    VALUE is the value to set.
-    """
-    config_obj = _load_config_from_path(config_path)
-    target, final_key = _resolve_config_target(config_obj, key)
-
-    current_value = getattr(target, final_key)
-    parsed_value = _parse_config_value(current_value, value, key)
+    """Set a configuration value."""
+    config_obj = load_config_from_path(config_path)
+    target, final_key = resolve_config_target(config_obj, key)
+    parsed_value = parse_config_value(getattr(target, final_key), value, key)
     setattr(target, final_key, parsed_value)
 
     save_path = Path(config_path) if config_path else get_default_config_path()
     save_config(config_obj, save_path)
-
-    ui = TerminalUI(enabled=True)
-    ui.show_config_updated(key, str(parsed_value), save_path)
+    TerminalUI(enabled=True).show_config_updated(key, str(parsed_value), save_path)
 
 
 @config.command()
@@ -626,12 +619,11 @@ def set(key: str, value: str, config_path: str | None) -> None:
 )
 def show(config_path: str | None) -> None:
     """Show current configuration."""
-    config_obj = _load_config_from_path(config_path)
-
+    config_obj = load_config_from_path(config_path)
     rows = [
         ("search.providers", ", ".join(config_obj.search.providers)),
-        ("search.mode", _format_config_value(config_obj.search.mode)),
-        ("search.depth", _format_config_value(config_obj.search.depth)),
+        ("search.mode", format_config_value(config_obj.search.mode)),
+        ("search.depth", format_config_value(config_obj.search.depth)),
         ("tavily.api_keys", f"{len(config_obj.tavily.api_keys)} configured"),
         ("tavily.max_results", str(config_obj.tavily.max_results)),
         ("search_team.enabled", str(config_obj.search_team.enabled).lower()),
@@ -639,9 +631,7 @@ def show(config_path: str | None) -> None:
         ("output.format", config_obj.output.format),
         ("output.save_dir", config_obj.output.save_dir),
     ]
-
-    ui = TerminalUI(enabled=True)
-    ui.show_config(rows)
+    TerminalUI(enabled=True).show_config(rows)
 
 
 @config.command()
@@ -655,7 +645,6 @@ def show(config_path: str | None) -> None:
 def init(config_path: str | None, force: bool) -> None:
     """Create a default configuration file."""
     save_path = Path(config_path) if config_path else get_default_config_path()
-
     if save_path.exists() and not force:
         click.echo(
             f"Error: Config file already exists at {save_path}. Use --force to overwrite.",
@@ -664,8 +653,7 @@ def init(config_path: str | None, force: bool) -> None:
         raise click.Abort()
 
     created_path = create_default_config_file(save_path)
-    ui = TerminalUI(enabled=True)
-    ui.show_config_updated("config", "initialized", created_path)
+    TerminalUI(enabled=True).show_config_updated("config", "initialized", created_path)
 
 
 @main.command()
@@ -688,30 +676,23 @@ def init(config_path: str | None, force: bool) -> None:
     help="Enable real-time WebSocket streaming",
 )
 def dashboard(host: str, port: int, enable_realtime: bool) -> None:
-    """Start the real-time monitoring dashboard server.
-
-    This starts a FastAPI server with WebSocket support for real-time
-    event streaming to the web dashboard.
-    """
+    """Start the real-time monitoring dashboard server."""
     from cc_deep_research.event_router import EventRouter
     from cc_deep_research.web_server import start_server
 
     click.echo(f"Starting monitoring dashboard on http://{host}:{port}")
     click.echo("Press Ctrl+C to stop the server")
 
-    # Create event router if real-time is enabled
     event_router = EventRouter() if enable_realtime else None
-
     try:
         start_server(host=host, port=port, event_router=event_router)
     except KeyboardInterrupt:
         click.echo("\nDashboard server stopped.")
-    except Exception as e:
-        click.echo(f"Error starting dashboard: {e}", err=True)
-        raise click.Abort() from e
+    except Exception as error:
+        click.echo(f"Error starting dashboard: {error}", err=True)
+        raise click.Abort() from error
 
 
-# Session management commands
 @main.group()
 def session() -> None:
     """Manage research sessions."""
@@ -722,13 +703,8 @@ def session() -> None:
 @click.option("--offset", type=int, default=0, help="Number of sessions to skip")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def session_list(limit: int, offset: int, as_json: bool) -> None:
-    """List all saved research sessions.
-
-    Shows session ID, query, depth, and timestamp for each session.
-    """
-    store = SessionStore()
-    sessions = store.list_sessions(limit=limit, offset=offset)
-
+    """List all saved research sessions."""
+    sessions = SessionStore().list_sessions(limit=limit, offset=offset)
     if not sessions:
         click.echo("No saved sessions found.")
         return
@@ -739,21 +715,16 @@ def session_list(limit: int, offset: int, as_json: bool) -> None:
         click.echo(json_module.dumps(sessions, indent=2))
         return
 
-    ui = TerminalUI(enabled=True)
-    ui.show_session_list(sessions)
+    TerminalUI(enabled=True).show_session_list(sessions)
 
 
 @session.command("show")
 @click.argument("session_id", required=True)
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def session_show(session_id: str, as_json: bool) -> None:
-    """Show details of a specific research session.
-
-    SESSION_ID is the identifier of the session to display.
-    """
+    """Show details of a specific research session."""
     store = SessionStore()
     session_obj = store.load_session(session_id)
-
     if session_obj is None:
         click.echo(f"Error: Session '{session_id}' not found.", err=True)
         raise click.Abort()
@@ -767,8 +738,7 @@ def session_show(session_id: str, as_json: bool) -> None:
         click.echo(reporter.generate_json_report(session_obj, analysis))
         return
 
-    ui = TerminalUI(enabled=True)
-    ui.show_session_details(session_obj)
+    TerminalUI(enabled=True).show_session_details(session_obj)
 
 
 @session.command("export")
@@ -788,13 +758,9 @@ def session_show(session_id: str, as_json: bool) -> None:
     help="Output format (default: markdown)",
 )
 def session_export(session_id: str, output: str, output_format: str) -> None:
-    """Export a research session to a file.
-
-    SESSION_ID is the identifier of the session to export.
-    """
+    """Export a research session to a file."""
     store = SessionStore()
     session_obj = store.load_session(session_id)
-
     if session_obj is None:
         click.echo(f"Error: Session '{session_id}' not found.", err=True)
         raise click.Abort()
@@ -815,21 +781,15 @@ def session_export(session_id: str, output: str, output_format: str) -> None:
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(report, encoding="utf-8")
-
-    ui = TerminalUI(enabled=True)
-    ui.show_report_saved(output_path)
+    TerminalUI(enabled=True).show_report_saved(output_path)
 
 
 @session.command("delete")
 @click.argument("session_id", required=True)
 @click.option("--force", is_flag=True, help="Skip confirmation prompt")
 def session_delete(session_id: str, force: bool) -> None:
-    """Delete a research session.
-
-    SESSION_ID is the identifier of the session to delete.
-    """
+    """Delete a research session."""
     store = SessionStore()
-
     if not store.session_exists(session_id):
         click.echo(f"Error: Session '{session_id}' not found.", err=True)
         raise click.Abort()
@@ -845,133 +805,4 @@ def session_delete(session_id: str, force: bool) -> None:
         raise click.Abort()
 
 
-def _execute_research_run(
-    orchestrator: Any,
-    query: str,
-    depth: Any,
-    min_sources: int | None,
-    progress: bool,
-    ui: TerminalUI,
-) -> Any:
-    """Run the orchestrator and optionally render phase progress."""
-    if progress:
-        with ui.create_phase_progress(RESEARCH_PHASE_STEPS) as tracker:
-            session = asyncio.run(
-                orchestrator.execute_research(
-                    query=query,
-                    depth=depth,
-                    min_sources=min_sources,
-                    phase_hook=tracker.on_phase,
-                )
-            )
-            tracker.mark_complete()
-            return session
-
-    with ui.status("Running research workflow..."):
-        return asyncio.run(
-            orchestrator.execute_research(
-                query=query,
-                depth=depth,
-                min_sources=min_sources,
-            )
-        )
-
-
-def _resolve_parallel_mode_override(*, no_team: bool, parallel_mode: bool) -> bool | None:
-    """Resolve the effective parallel override passed to the orchestrator."""
-    if no_team:
-        return False
-    if parallel_mode:
-        return True
-    return None
-
-
-def _describe_execution_mode(config: Config, parallel_mode_override: bool | None) -> str:
-    """Describe execution mode for display."""
-    parallel_enabled = (
-        parallel_mode_override
-        if parallel_mode_override is not None
-        else config.search_team.parallel_execution
-    )
-    return "parallel" if parallel_enabled else "sequential"
-
-
-def _log_monitor_session_start(
-    research_monitor: ResearchMonitor,
-    query: str,
-    depth: str,
-    output_format: str,
-    config: Config,
-) -> None:
-    """Emit monitor startup metadata."""
-    research_monitor.section("Research Session")
-    research_monitor.log(f"Query: {query}")
-    research_monitor.log(f"Depth: {depth}")
-    research_monitor.log(f"Output format: {output_format}")
-
-    research_monitor.section("Configuration")
-    research_monitor.log(f"Providers: {', '.join(config.search.providers)}")
-    research_monitor.log(f"Search depth: {config.search.depth}")
-    research_monitor.log(f"Search mode: {config.search.mode}")
-    research_monitor.log(
-        "Source collection: "
-        + ("parallel" if config.search_team.parallel_execution else "sequential")
-    )
-
-    research_monitor.section("Execution")
-
-
-def _load_config_from_path(config_path: str | None) -> Config:
-    """Load configuration from default location or a provided path."""
-    if config_path is None:
-        return load_config()
-    return load_config(Path(config_path))
-
-
-def _resolve_config_target(config_obj: Config, key: str) -> tuple[Any, str]:
-    """Resolve object and attribute for a dot-notation configuration key."""
-    key_parts = key.split(".")
-    target: Any = config_obj
-
-    for part in key_parts[:-1]:
-        if not hasattr(target, part):
-            click.echo(f"Error: Invalid configuration key: {key}", err=True)
-            raise click.Abort()
-        target = getattr(target, part)
-
-    final_key = key_parts[-1]
-    if not hasattr(target, final_key):
-        click.echo(f"Error: Invalid configuration key: {key}", err=True)
-        raise click.Abort()
-
-    return target, final_key
-
-
-def _parse_config_value(current_value: Any, value: str, key: str) -> Any:
-    """Parse CLI string values into the target config field type."""
-    if isinstance(current_value, list):
-        return [item.strip() for item in value.split(",") if item.strip()]
-
-    if isinstance(current_value, bool):
-        return value.lower() in {"true", "1", "yes", "on"}
-
-    if isinstance(current_value, int):
-        try:
-            return int(value)
-        except ValueError as error:
-            click.echo(f"Error: Expected integer value for {key}, got: {value}", err=True)
-            raise click.Abort() from error
-
-    return value
-
-
-def _format_config_value(value: Any) -> str:
-    """Format config values for display."""
-    enum_value = getattr(value, "value", None)
-    if enum_value is not None:
-        return str(enum_value)
-    return str(value)
-
-
-if __name__ == "__main__":
-    main()
+__all__ = ["Config", "ingest_telemetry_to_duckdb", "main", "subprocess"]

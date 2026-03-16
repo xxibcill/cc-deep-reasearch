@@ -1,10 +1,9 @@
-"""Configuration management for CC Deep Research CLI."""
+"""Configuration schema models."""
 
-import os
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Any
 
-import yaml
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings
 
@@ -78,32 +77,19 @@ class MinSourcesConfig(BaseModel):
 class ResearchQualitySettings(BaseSettings):
     """Quality control settings for research output."""
 
-    # Source limits enforcement
     strict_depth_limits: bool = Field(default=True)
     enforce_quick_mode_limit: bool = Field(default=True)
-
-    # Content quality
     enable_truncation_detection: bool = Field(default=True)
     enable_protocol_filtering: bool = Field(default=True)
     max_protocol_ratio: float = Field(default=0.3)
-
-    # Source quality
     min_primary_source_ratio: float = Field(default=0.3)
     enable_source_type_classification: bool = Field(default=True)
-
-    # Gap detection
     enable_auto_gap_detection: bool = Field(default=True)
     max_follow_up_iterations: int = Field(default=2)
-
-    # Output validation
     enable_post_validation: bool = Field(default=True)
     fail_on_validation_errors: bool = Field(default=False)
-
-    # Report quality evaluation
     enable_report_quality_evaluation: bool = Field(default=True)
     min_report_quality_score: float = Field(default=0.6, ge=0.0, le=1.0)
-
-    # Report refinement (Writer/Editor pass)
     enable_report_refinement: bool = Field(default=True)
 
 
@@ -114,20 +100,14 @@ class ResearchConfig(BaseModel):
     min_sources: MinSourcesConfig = Field(default_factory=MinSourcesConfig)
     enable_iterative_search: bool = Field(default=True)
     max_iterations: int = Field(default=3, ge=1)
-    quality: "ResearchQualitySettings" = Field(default_factory=ResearchQualitySettings)
+    quality: ResearchQualitySettings = Field(default_factory=ResearchQualitySettings)
     enable_cross_ref: bool = Field(default=True)
     enable_quality_scoring: bool = Field(default=True)
     deep_analysis_passes: int = Field(default=3, ge=1, le=5)
     deep_analysis_tokens: int = Field(default=150000, ge=100000, le=300000)
-
-    # Content fetching configuration
     top_sources_for_content: int = Field(default=15, ge=5, le=30)
-
-    # Content quality configuration
     content_min_quality_threshold: int = Field(default=100, ge=50, le=500)
     enable_content_cleaning: bool = Field(default=True)
-
-    # AI analysis configuration
     ai_analysis_enabled: bool = Field(default=True)
     ai_num_themes: int = Field(default=8, ge=3, le=15)
     ai_deep_num_themes: int = Field(default=12, ge=5, le=20)
@@ -157,12 +137,13 @@ class OutputConfig(BaseModel):
 
     @field_validator("format")
     @classmethod
-    def validate_format(cls, v: str) -> str:
+    def validate_format(cls, value: str) -> str:
         """Validate output format."""
         allowed = {"markdown", "json", "html"}
-        if v.lower() not in allowed:
+        normalized = value.lower()
+        if normalized not in allowed:
             raise ValueError(f"format must be one of {allowed}")
-        return v.lower()
+        return normalized
 
 
 class DisplayConfig(BaseModel):
@@ -174,12 +155,13 @@ class DisplayConfig(BaseModel):
 
     @field_validator("color", "progress")
     @classmethod
-    def validate_auto_never_always(cls, v: str) -> str:
+    def validate_auto_never_always(cls, value: str) -> str:
         """Validate auto/never/always fields."""
         allowed = {"always", "auto", "never"}
-        if v.lower() not in allowed:
+        normalized = value.lower()
+        if normalized not in allowed:
             raise ValueError(f"must be one of {allowed}")
-        return v.lower()
+        return normalized
 
 
 class AgentConfig(BaseModel):
@@ -187,7 +169,7 @@ class AgentConfig(BaseModel):
 
     model: str = Field(default="claude-sonnet-4-6")
     max_turns: int = Field(default=10, ge=1, le=50)
-    mode: str = Field(default="default")  # default, bypassPermissions, dontAsk
+    mode: str = Field(default="default")
 
 
 class AgentTeamConfig(BaseModel):
@@ -198,15 +180,10 @@ class AgentTeamConfig(BaseModel):
     parallel_execution: bool = Field(default=True)
     timeout_seconds: int = Field(default=300, ge=30, le=600)
     fallback_to_sequential: bool = Field(default=True)
-
-    # Parallel execution configuration
     num_researchers: int = Field(default=3, ge=1, le=8)
     researcher_timeout: int = Field(default=120, ge=30, le=300)
     enable_reflection: bool = Field(default=True)
     max_reflection_points: int = Field(default=5, ge=1, le=10)
-
-
-# LLM Routing Configuration
 
 
 class LLMClaudeCLIConfig(BaseModel):
@@ -275,35 +252,32 @@ class LLMRouteDefaults(BaseModel):
 
 
 class LLMConfig(BaseModel):
-    """LLM routing configuration.
-
-    This configuration tree controls how agents select LLM providers
-    for their operations. It supports multiple transports (Claude CLI,
-    OpenRouter, Cerebras) with per-agent route selection.
-    """
+    """LLM routing configuration."""
 
     claude_cli: LLMClaudeCLIConfig = Field(default_factory=LLMClaudeCLIConfig)
     openrouter: LLMOpenRouterConfig = Field(default_factory=LLMOpenRouterConfig)
     cerebras: LLMCerebrasConfig = Field(default_factory=LLMCerebrasConfig)
     route_defaults: LLMRouteDefaults = Field(default_factory=LLMRouteDefaults)
-
-    # Fallback order when primary route fails
     fallback_order: list[str] = Field(
         default_factory=lambda: ["claude_cli", "openrouter", "cerebras", "heuristic"]
     )
 
     def get_enabled_transports(self) -> list[str]:
-        """Get list of enabled transport names.
-
-        Returns:
-            List of enabled transport names in fallback order.
-        """
-        transports = []
+        """Get list of enabled transport names in fallback order."""
+        transports: list[str] = []
         for name in self.fallback_order:
             is_enabled = (
                 (name == "claude_cli" and self.claude_cli.enabled)
-                or (name == "openrouter" and self.openrouter.enabled and self.openrouter.get_api_keys())
-                or (name == "cerebras" and self.cerebras.enabled and self.cerebras.get_api_keys())
+                or (
+                    name == "openrouter"
+                    and self.openrouter.enabled
+                    and self.openrouter.get_api_keys()
+                )
+                or (
+                    name == "cerebras"
+                    and self.cerebras.enabled
+                    and self.cerebras.get_api_keys()
+                )
                 or name == "heuristic"
             )
             if is_enabled:
@@ -311,14 +285,7 @@ class LLMConfig(BaseModel):
         return transports
 
     def get_route_for_agent(self, agent_id: str) -> str:
-        """Get the default route for an agent.
-
-        Args:
-            agent_id: The agent identifier.
-
-        Returns:
-            The transport name for the agent.
-        """
+        """Get the default route for an agent."""
         route_map = {
             "analyzer": self.route_defaults.analyzer,
             "deep_analyzer": self.route_defaults.deep_analyzer,
@@ -353,13 +320,10 @@ class DashboardConfig(BaseModel):
 class Settings(BaseSettings):
     """Application settings with environment variable support."""
 
-    # Environment variable overrides (not including TAVILY_API_KEYS - handled separately)
     config_path: Path | None = Field(default=None, alias="CC_DEEP_RESEARCH_CONFIG")
     depth: ResearchDepth | None = Field(default=None, alias="CC_DEEP_RESEARCH_DEPTH")
     output_format: str | None = Field(default=None, alias="CC_DEEP_RESEARCH_FORMAT")
     no_color: bool = Field(default=False, alias="NO_COLOR")
-
-    # Dashboard settings
     dashboard_enabled: bool = Field(default=False, alias="DASHBOARD_ENABLED")
     dashboard_host: str | None = Field(default=None, alias="DASHBOARD_HOST")
     dashboard_port: int | None = Field(default=None, alias="DASHBOARD_PORT")
@@ -373,164 +337,24 @@ class Settings(BaseSettings):
     }
 
 
-def _parse_api_keys_from_env() -> list[str]:
-    """Parse TAVILY_API_KEYS from environment variable.
-
-    Returns:
-        List of API keys from comma-separated env var.
-    """
-    env_value = os.environ.get("TAVILY_API_KEYS", "")
-    if not env_value:
-        return []
-    return _normalize_api_key_list(env_value.split(","))
-
-
-def _parse_provider_api_keys_from_env(
-    list_env_var: str,
-    single_env_var: str,
-) -> list[str]:
-    """Parse provider API keys from multi-key or single-key env vars."""
-    list_value = os.environ.get(list_env_var, "")
-    single_value = os.environ.get(single_env_var, "")
-
-    parsed_list = list_value.split(",") if list_value else []
-    return _normalize_api_key_list(parsed_list, single_value)
-
-
-def get_default_config_path() -> Path:
-    """Get the default configuration file path."""
-    xdg_config = os.environ.get("XDG_CONFIG_HOME")
-    if xdg_config:
-        return Path(xdg_config) / "cc-deep-research" / "config.yaml"
-    return Path.home() / ".config" / "cc-deep-research" / "config.yaml"
-
-
-def load_config(config_path: Path | None = None) -> Config:
-    """Load configuration from file and environment variables.
-
-    Args:
-        config_path: Optional path to config file. If not provided,
-                     uses default location.
-
-    Returns:
-        Config object with merged settings.
-    """
-    settings = Settings()
-
-    # Determine config path
-    if config_path is None:
-        config_path = settings.config_path or get_default_config_path()
-
-    # Load from file if exists
-    config_data: dict[str, Any] = {}
-    if config_path.exists():
-        with open(config_path) as f:
-            config_data = yaml.safe_load(f) or {}
-
-    # Create config from file data
-    config = Config(**config_data)
-
-    # Apply environment variable overrides
-    api_keys = _parse_api_keys_from_env()
-    if api_keys:
-        config.tavily.api_keys = api_keys
-
-    openrouter_api_keys = _parse_provider_api_keys_from_env(
-        "OPENROUTER_API_KEYS",
-        "OPENROUTER_API_KEY",
-    )
-    if openrouter_api_keys:
-        config.llm.openrouter.api_keys = openrouter_api_keys
-        config.llm.openrouter.api_key = openrouter_api_keys[0]
-
-    cerebras_api_keys = _parse_provider_api_keys_from_env(
-        "CEREBRAS_API_KEYS",
-        "CEREBRAS_API_KEY",
-    )
-    if cerebras_api_keys:
-        config.llm.cerebras.api_keys = cerebras_api_keys
-        config.llm.cerebras.api_key = cerebras_api_keys[0]
-
-    if settings.depth:
-        config.search.depth = settings.depth
-        config.research.default_depth = settings.depth
-
-    if settings.output_format:
-        config.output.format = settings.output_format
-
-    if settings.no_color:
-        config.display.color = "never"
-
-    return config
-
-
-def save_config(config: Config, config_path: Path | None = None) -> None:
-    """Save configuration to file.
-
-    Args:
-        config: Config object to save.
-        config_path: Optional path to save to. Uses default if not provided.
-    """
-    if config_path is None:
-        config_path = get_default_config_path()
-
-    # Ensure directory exists
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Convert to dict and save (use json mode to serialize enums as strings)
-    config_data = config.model_dump(mode="json")
-
-    with open(config_path, "w") as f:
-        yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
-
-
-def get_default_config() -> Config:
-    """Get a default configuration.
-
-    Returns:
-        Config object with default values.
-    """
-    return Config()
-
-
-def create_default_config_file(config_path: Path | None = None) -> Path:
-    """Create a default configuration file.
-
-    Args:
-        config_path: Optional path for config file.
-
-    Returns:
-        Path to the created config file.
-    """
-    if config_path is None:
-        config_path = get_default_config_path()
-
-    config = get_default_config()
-    save_config(config, config_path)
-
-    return config_path
-
-
 __all__ = [
-    "Config",
-    "SearchConfig",
-    "TavilyConfig",
-    "ClaudeConfig",
-    "ResearchConfig",
     "AgentConfig",
     "AgentTeamConfig",
-    "OutputConfig",
+    "ClaudeConfig",
+    "Config",
+    "DashboardConfig",
     "DisplayConfig",
-    "MinSourcesConfig",
-    "Settings",
-    "LLMConfig",
-    "LLMClaudeCLIConfig",
-    "LLMOpenRouterConfig",
     "LLMCerebrasConfig",
+    "LLMClaudeCLIConfig",
+    "LLMConfig",
+    "LLMOpenRouterConfig",
     "LLMRouteDefaults",
-    "load_config",
-    "save_config",
-    "get_default_config",
-    "get_default_config_path",
-    "create_default_config_file",
+    "MinSourcesConfig",
+    "OutputConfig",
+    "ResearchConfig",
+    "ResearchQualitySettings",
+    "SearchConfig",
+    "Settings",
+    "TavilyConfig",
+    "_normalize_api_key_list",
 ]

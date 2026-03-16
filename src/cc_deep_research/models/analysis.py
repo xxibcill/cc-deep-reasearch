@@ -7,8 +7,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from .llm import LLMPlanModel
+from .quality import CrossReferenceClaim
 from .search import QueryFamily, QueryProfile, ResearchDepth
-from .support import CrossReferenceClaim
 
 
 class StrategyPlan(BaseModel):

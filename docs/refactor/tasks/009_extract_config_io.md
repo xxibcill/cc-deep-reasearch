@@ -1,6 +1,6 @@
 # Task 009: Extract Config IO
 
-Status: Planned
+Status: Done
 
 ## Objective
 
