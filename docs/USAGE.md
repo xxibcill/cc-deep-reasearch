@@ -79,6 +79,16 @@ CC Deep Research is a command-line tool for staged web research. The current run
 └──────────┘ └──────────┘ └──────────┘
 ```
 
+### Python API Surface
+
+The stable package-root API is intentionally small. Prefer:
+
+- `from cc_deep_research import TeamResearchOrchestrator`
+- `from cc_deep_research import ResearchDepth, ResearchSession, SearchOptions, SearchResult, SearchResultItem`
+- `from cc_deep_research import SearchProvider`
+
+For benchmark helpers, text normalization helpers, CLI commands, or telemetry internals, import from their direct modules instead of relying on `cc_deep_research.__init__`.
+
 ---
 
 ## Installation
@@ -138,6 +148,15 @@ cc-deep-research --help
 
 # Display research command help
 cc-deep-research research --help
+```
+
+If you are running the Next.js dashboard against a non-default backend host, set one of these before `npm run dev` or `npm run build` inside [`dashboard/`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard):
+
+```bash
+export NEXT_PUBLIC_CC_BACKEND_ORIGIN=http://localhost:8000
+# optional explicit overrides
+export NEXT_PUBLIC_CC_API_BASE_URL=http://localhost:8000/api
+export NEXT_PUBLIC_CC_WS_BASE_URL=ws://localhost:8000/ws
 ```
 
 ---

@@ -1,4 +1,19 @@
-// Telemetry event types
+export type TelemetryMetadata = Record<string, unknown>;
+
+export interface ApiTelemetryEvent {
+  event_id: string;
+  parent_event_id: string | null;
+  sequence_number: number | null;
+  timestamp: string;
+  session_id: string;
+  event_type: string;
+  category: string;
+  name: string;
+  status: string;
+  duration_ms: number | null;
+  agent_id: string | null;
+  metadata: TelemetryMetadata;
+}
 
 export interface TelemetryEvent {
   eventId: string;
@@ -12,18 +27,36 @@ export interface TelemetryEvent {
   status: string;
   durationMs: number | null;
   agentId: string | null;
-  metadata: Record<string, any>;
+  metadata: TelemetryMetadata;
+}
+
+export interface ApiSession {
+  session_id: string;
+  created_at: string | null;
+  total_time_ms: number | null;
+  total_sources: number | null;
+  status: string;
+  active: boolean;
+  event_count: number | null;
+  last_event_at: string | null;
 }
 
 export interface Session {
   sessionId: string;
-  createdAt?: string;
-  totalTimeMs?: number;
-  totalSources?: number;
+  createdAt: string | null;
+  totalTimeMs: number | null;
+  totalSources: number;
   status: string;
   active: boolean;
-  eventCount?: number;
-  lastEventAt?: string;
+  eventCount: number | null;
+  lastEventAt: string | null;
+}
+
+export interface ApiServerMessage {
+  type: 'event' | 'history' | 'error' | 'pong';
+  event?: ApiTelemetryEvent;
+  events?: ApiTelemetryEvent[];
+  error?: string;
 }
 
 export interface ServerMessage {
@@ -74,11 +107,11 @@ export interface ToolExecution {
   duration: number;
   status: 'success' | 'failed';
   request: {
-    parameters: Record<string, any>;
+    parameters: Record<string, unknown>;
     prompt?: string;
   };
   response: {
-    result?: any;
+    result?: unknown;
     error?: string;
     tokens?: number;
     latency?: number;
@@ -100,7 +133,7 @@ export interface LLMReasoning {
   latency: number;
   prompt: string;
   response: string;
-  metadata: Record<string, any>;
+  metadata: TelemetryMetadata;
 }
 
 export type EventFilter = {

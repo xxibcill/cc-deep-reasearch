@@ -1,6 +1,6 @@
 # Task 017: Reduce Public Package Exports
 
-Status: Planned
+Status: Done
 
 ## Objective
 

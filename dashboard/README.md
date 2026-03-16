@@ -25,6 +25,15 @@ npm run dev
 
 The dashboard will be available at http://localhost:3000
 
+To point the dashboard at a different backend without code edits, create `.env.local` or export runtime variables before starting Next.js:
+
+\`\`\`bash
+NEXT_PUBLIC_CC_BACKEND_ORIGIN=http://localhost:8000
+# optional explicit overrides
+NEXT_PUBLIC_CC_API_BASE_URL=http://localhost:8000/api
+NEXT_PUBLIC_CC_WS_BASE_URL=ws://localhost:8000/ws
+\`\`\`
+
 ## Build
 
 \`\`\`bash
@@ -45,22 +54,19 @@ npm run build
 
 \`\`\`
 src/
-├── app/              # Next.js App Router pages
-│   ├── layout.tsx  # Root layout
-│   ├── page.tsx     # Home page (session list)
-│   └── session/    # Session detail pages
-├── components/      # React components
-├── hooks/          # Custom React hooks
-├── lib/            # Utility functions (WebSocket, API)
-└── types/          # TypeScript type definitions
+├── app/               # Next.js App Router pages
+├── components/        # Reusable page sections and tables
+├── hooks/             # Shared dashboard state
+├── lib/               # Runtime config, API, websocket, transformers
+└── types/             # Frontend and API payload types
 \`\`\`
 
 ## API Integration
 
 The dashboard connects to the CC Deep Research backend:
 
-- **WebSocket**: \`ws://localhost:8000/ws/session/{sessionId}\` - Real-time event streaming
-- **REST API**: \`http://localhost:8000/api/sessions\` - Session management
+- **WebSocket**: \`${NEXT_PUBLIC_CC_WS_BASE_URL}/session/{sessionId}\` with \`ws://localhost:8000/ws\` as the local default
+- **REST API**: \`${NEXT_PUBLIC_CC_API_BASE_URL}/sessions\` with \`http://localhost:8000/api\` as the local default
 
 ## Backend Setup
 
