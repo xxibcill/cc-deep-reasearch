@@ -100,7 +100,8 @@
       "Bash(postcss.config.js:*)",
       "Bash(dashboard/README.md:*)",
       "Bash(README.md:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(lsof -ti:8000)"
     ],
     "additionalDirectories": [
       "/Users/jjae/.claude/plans",

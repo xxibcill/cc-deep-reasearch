@@ -66,9 +66,9 @@ flowchart TD
 
 ## Workflow Owner
 
-The workflow owner is [`src/cc_deep_research/orchestrator.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestrator.py).
+The stable public workflow entry point is [`src/cc_deep_research/orchestrator.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestrator.py), but most phase execution internals now live under [`src/cc_deep_research/orchestration/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestration).
 
-`TeamResearchOrchestrator.execute_research()` is the authoritative implementation of the pipeline. It handles:
+`TeamResearchOrchestrator.execute_research()` remains the public facade for the pipeline. It delegates to orchestration services that handle:
 
 - phase ordering
 - monitor events
@@ -82,7 +82,15 @@ The codebase includes a `LocalResearchTeam` wrapper, but it is local lifecycle m
 
 ## Entry Point and User Controls
 
-The CLI entry point is [`src/cc_deep_research/cli/main.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/main.py).
+The CLI bootstrap entry point is [`src/cc_deep_research/cli/main.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/main.py).
+
+Command handlers are split by concern under [`src/cc_deep_research/cli/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli):
+
+- research execution: [`src/cc_deep_research/cli/research.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/research.py)
+- config commands: [`src/cc_deep_research/cli/config.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/config.py)
+- telemetry commands: [`src/cc_deep_research/cli/telemetry.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/telemetry.py)
+- real-time dashboard backend command: [`src/cc_deep_research/cli/dashboard.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/dashboard.py)
+- saved-session commands: [`src/cc_deep_research/cli/session.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/session.py)
 
 The `research` command controls the workflow through flags such as:
 
@@ -106,6 +114,12 @@ Important implementation detail:
 ## Configuration That Shapes the Workflow
 
 The workflow is parameterized by the config package rooted at [`src/cc_deep_research/config/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/config).
+
+Post-refactor responsibilities are split as:
+
+- schema models and settings: [`src/cc_deep_research/config/schema.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/config/schema.py)
+- file loading and persistence: [`src/cc_deep_research/config/io.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/config/io.py)
+- defaults and path helpers: [`src/cc_deep_research/config/defaults.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/config/defaults.py)
 
 The most relevant settings are:
 
@@ -150,6 +164,8 @@ Telemetry and dashboard code now have explicit module boundaries:
 - live JSONL session readers: [`src/cc_deep_research/telemetry/live.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/live.py)
 - DuckDB ingestion: [`src/cc_deep_research/telemetry/ingest.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/ingest.py)
 - DuckDB analytics queries: [`src/cc_deep_research/telemetry/query.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/query.py)
+- telemetry compatibility exports: [`src/cc_deep_research/telemetry/__init__.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/__init__.py)
+- real-time monitoring backend: [`src/cc_deep_research/web_server.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/web_server.py) and [`src/cc_deep_research/event_router.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/event_router.py)
 - dashboard runtime config and network clients: [`dashboard/src/lib/runtime-config.ts`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/lib/runtime-config.ts), [`dashboard/src/lib/api.ts`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/lib/api.ts), and [`dashboard/src/lib/websocket.ts`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/lib/websocket.ts)
 
 ## Phase-by-Phase Design
@@ -586,7 +602,7 @@ The safest places to extend the workflow are:
 
 When changing the workflow:
 
-1. Start with the orchestrator because it defines phase order and contracts.
+1. Start with [`src/cc_deep_research/orchestrator.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestrator.py) and the relevant module in [`src/cc_deep_research/orchestration/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestration) because phase order now spans the public facade and split orchestration services.
 2. Treat `ResearchSession.metadata` as part of the workflow API.
 3. Preserve graceful fallback behavior.
 4. Keep iterative search semantics intact unless intentionally redesigning them.
@@ -597,6 +613,7 @@ When changing the workflow:
 
 - [`src/cc_deep_research/cli/main.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/main.py)
 - [`src/cc_deep_research/orchestrator.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestrator.py)
+- [`src/cc_deep_research/orchestration/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestration)
 - [`src/cc_deep_research/config/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/config)
 - [`src/cc_deep_research/models/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/models)
 - [`src/cc_deep_research/aggregation.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/aggregation.py)
