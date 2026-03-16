@@ -5,16 +5,18 @@ from typing import Any
 
 from cc_deep_research.config import Config
 from cc_deep_research.coordination import LocalAgentPool, LocalMessageBus
-from cc_deep_research.models import (
+from cc_deep_research.models.analysis import (
     AnalysisResult,
     IterationHistoryRecord,
-    QueryFamily,
-    ResearchDepth,
-    ResearchSession,
-    SearchResultItem,
     StrategyResult,
     ValidationResult,
 )
+from cc_deep_research.models.search import (
+    QueryFamily,
+    ResearchDepth,
+    SearchResultItem,
+)
+from cc_deep_research.models.session import ResearchSession
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.orchestration import (
     AgentAccess,
