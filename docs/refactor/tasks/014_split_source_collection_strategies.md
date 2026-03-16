@@ -1,6 +1,6 @@
 # Task 014: Split Source Collection Strategies
 
-Status: Planned
+Status: Done
 
 ## Objective
 

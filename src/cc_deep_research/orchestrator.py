@@ -22,6 +22,7 @@ from cc_deep_research.orchestration import (
     AgentAccess,
     AnalysisWorkflow,
     OrchestratorRuntime,
+    ResearchExecutionHooks,
     OrchestratorRuntimeState,
     OrchestratorSessionState,
     PhaseRunner,
@@ -93,7 +94,7 @@ class TeamResearchOrchestrator:
             monitor=self._monitor,
             parallel_mode=self._parallel_mode,
             num_researchers=self._num_researchers,
-            llm_event_callback=self._handle_llm_router_event,
+            llm_event_callback=self._session_state.handle_llm_router_event,
         )
         self._execution = ResearchExecutionService(
             config=config,
@@ -104,7 +105,6 @@ class TeamResearchOrchestrator:
             parallel_mode=self._parallel_mode,
             num_researchers=self._num_researchers,
         )
-
     async def execute_research(
         self,
         query: str,
@@ -131,65 +131,27 @@ class TeamResearchOrchestrator:
             depth=depth,
             min_sources=min_sources,
             phase_hook=phase_hook,
-            reset_session_state=self._reset_session_metadata_state,
-            initialize_team=self._initialize_team,
-            analyze_strategy=self._phase_analyze_strategy,
-            expand_queries=self._phase_expand_queries,
-            normalize_query_families=self._normalize_query_families,
-            collect_sources=self._collect_sources_for_queries,
-            run_analysis_workflow=self._run_analysis_workflow,
-            build_metadata=self._build_session_metadata,
-            log_session_summary=self._log_session_summary,
-            shutdown_team=self._shutdown_team,
+            hooks=self._build_execution_hooks(),
         )
 
     def _reset_session_metadata_state(self) -> None:
         """Reset per-session metadata tracking before execution begins."""
         self._session_state.reset(list(self._config.search.providers))
 
-    def _handle_llm_router_event(self, event: dict[str, Any]) -> None:
-        """Update session metadata from routed LLM execution events."""
-        event_type = event.get("event_type")
-        if event_type == "route_completion":
-            agent_id = str(event.get("agent_id", "unknown"))
-            transport = str(event.get("transport", "unknown"))
-            provider = str(event.get("provider", "unknown"))
-            model = str(event.get("model", "unknown"))
-            self._session_state.set_llm_actual_route(
-                agent_id=agent_id,
-                transport=transport,
-                provider=provider,
-                model=model,
-                source="actual" if event.get("success", True) else "failed",
-            )
-            self._session_state.record_llm_route_usage(
-                agent_id=agent_id,
-                transport=transport,
-                prompt_tokens=int(event.get("prompt_tokens", 0) or 0),
-                completion_tokens=int(event.get("completion_tokens", 0) or 0),
-                latency_ms=int(event.get("latency_ms", 0) or 0),
-                error=not bool(event.get("success", True)),
-            )
-        elif event_type == "route_fallback":
-            self._session_state.record_llm_route_fallback(
-                agent_id=str(event.get("agent_id", "unknown")),
-                original_transport=str(event.get("original_transport", "unknown")),
-                fallback_transport=str(event.get("fallback_transport", "unknown")),
-                reason=str(event.get("reason", "unknown")),
-            )
-
-    def _note_execution_degradation(self, reason: str) -> None:
-        """Record a session-level degradation reason once."""
-        self._session_state.note_execution_degradation(reason)
-
-    def _set_provider_metadata(
-        self,
-        *,
-        available: list[str],
-        warnings: list[str],
-    ) -> None:
-        """Record provider-resolution metadata for the current session."""
-        self._session_state.set_provider_metadata(available=available, warnings=warnings)
+    def _build_execution_hooks(self) -> ResearchExecutionHooks:
+        """Build the current execution hook bundle for the orchestration flow."""
+        return ResearchExecutionHooks(
+            reset_session_state=self._reset_session_metadata_state,
+            initialize_team=self._initialize_team,
+            analyze_strategy=self._phase_analyze_strategy,
+            expand_queries=self._phase_expand_queries,
+            normalize_query_families=self._normalize_query_families,
+            collect_sources=self._collect_sources,
+            run_analysis_workflow=self._run_analysis_workflow,
+            build_metadata=self._build_session_metadata,
+            log_session_summary=self._log_session_summary,
+            shutdown_team=self._shutdown_team,
+        )
 
     def _build_session_metadata(
         self,
@@ -212,7 +174,7 @@ class TeamResearchOrchestrator:
             parallel_requested=self._parallel_mode,
         )
 
-    async def _collect_sources_for_queries(
+    async def _collect_sources(
         self,
         *,
         query_families: list[QueryFamily],
@@ -220,20 +182,14 @@ class TeamResearchOrchestrator:
         min_sources: int | None,
     ) -> list[SearchResultItem]:
         """Collect sources using the configured execution mode."""
-        if self._parallel_mode and self._agent_pool:
-            try:
-                return await self._phase_parallel_research(
-                    query_families,
-                    depth,
-                    min_sources,
-                )
-            except Exception as exc:
-                self._monitor.log(f"Parallel execution failed: {exc}")
-                self._monitor.log("Falling back to sequential mode")
-                self._note_execution_degradation(
-                    f"Parallel source collection fell back to sequential mode: {exc}"
-                )
-        return await self._phase_collect_sources(query_families, depth, min_sources)
+        return await self._source_collection.collect_with_fallback(
+            collector=self._agent_access.collector(),
+            agent_pool=self._agent_pool,
+            query_families=query_families,
+            depth=depth,
+            min_sources=min_sources,
+            prefer_parallel=self._parallel_mode,
+        )
 
     def _log_session_summary(
         self,
@@ -256,11 +212,7 @@ class TeamResearchOrchestrator:
         aspects of research.
         """
         runtime_state = await self._runtime.initialize(self._team)
-        self._runtime_state = runtime_state
-        self._team = runtime_state.team
-        self._agents = runtime_state.agents
-        self._message_bus = runtime_state.message_bus
-        self._agent_pool = runtime_state.agent_pool
+        self._apply_runtime_state(runtime_state)
         self._planning = ResearchPlanningService(
             monitor=self._monitor,
             config=self._config,
@@ -460,32 +412,14 @@ class TeamResearchOrchestrator:
         min_sources: int | None,
     ) -> list[SearchResultItem]:
         """Collect follow-up sources and merge them with existing sources."""
-        if self._parallel_mode and self._agent_pool:
-            new_sources = await self._phase_parallel_research(
-                [
-                    QueryFamily(
-                        query=query,
-                        family="follow-up",
-                        intent_tags=["follow-up"],
-                    )
-                    for query in follow_up_queries
-                ],
-                depth,
-                min_sources,
-            )
-        else:
-            new_sources = await self._phase_collect_sources(
-                [
-                    QueryFamily(
-                        query=query,
-                        family="follow-up",
-                        intent_tags=["follow-up"],
-                    )
-                    for query in follow_up_queries
-                ],
-                depth,
-                min_sources,
-            )
+        new_sources = await self._source_collection.collect_follow_up_sources(
+            collector=self._agent_access.collector(),
+            agent_pool=self._agent_pool,
+            follow_up_queries=follow_up_queries,
+            depth=depth,
+            min_sources=min_sources,
+            prefer_parallel=self._parallel_mode,
+        )
 
         self._monitor.section("Iterative Follow-up Search")
         self._monitor.log(f"Follow-up queries: {len(follow_up_queries)}")
@@ -539,96 +473,29 @@ class TeamResearchOrchestrator:
         if validation:
             self._analysis_workflow.log_validation_results(validation)
 
-    async def _fetch_content_for_top_sources(
-        self,
-        sources: list[SearchResultItem],
-        depth: ResearchDepth,
-    ) -> list[SearchResultItem]:
-        """Fetch full content for top-scoring sources.
-
-        Args:
-            sources: List of collected sources.
-            depth: Research depth mode.
-
-        Returns:
-            Sources with content filled in for top sources.
-        """
-
-        return await self._source_collection.fetch_content_for_top_sources(
-            sources=sources,
-            depth=depth,
-        )
-
-    async def _populate_source_content(self, source: SearchResultItem) -> None:
-        """Populate a source with fetched content when available."""
-        await self._source_collection.populate_source_content(source)
-
-    async def _fetch_page_content(self, url: str) -> str | None:
-        """Fetch page content using web_reader MCP tool.
-
-        Args:
-            url: URL to fetch content from.
-
-        Returns:
-            Page content as string, or None if fetch fails.
-        """
-        return await self._source_collection.fetch_page_content(url)
-
     async def _shutdown_team(self) -> None:
         """Shutdown the research team.
 
         Cleans up all team resources and agents.
         """
-        await self._runtime.shutdown(
-            team=self._team,
-            agents=self._agents,
-            message_bus=self._message_bus,
-            agent_pool=self._agent_pool,
-        )
+        await self._runtime.shutdown()
+        self._clear_runtime_state()
+
+    def _apply_runtime_state(self, runtime_state: OrchestratorRuntimeState) -> None:
+        """Mirror runtime state into compatibility attributes used by tests and helpers."""
+        self._runtime_state = runtime_state
+        self._team = runtime_state.team
+        self._agents = runtime_state.agents
+        self._message_bus = runtime_state.message_bus
+        self._agent_pool = runtime_state.agent_pool
+
+    def _clear_runtime_state(self) -> None:
+        """Clear compatibility attributes after runtime shutdown."""
         self._runtime_state = None
-        self._agents = {}
         self._team = None
+        self._agents = {}
         self._message_bus = None
         self._agent_pool = None
-
-    async def _phase_parallel_research(
-        self,
-        query_families: list[QueryFamily],
-        depth: ResearchDepth,
-        min_sources: int | None,
-    ) -> list[SearchResultItem]:
-        """Phase 3 (Parallel): Collect sources using multiple researchers.
-
-        Args:
-            query_families: Query variations to search.
-            depth: Research depth mode.
-            min_sources: Minimum sources required.
-
-        Returns:
-            Aggregated list of search result items.
-        """
-        return await self._source_collection.parallel_research(
-            agent_pool=self._agent_pool,
-            query_families=query_families,
-            depth=depth,
-            min_sources=min_sources,
-        )
-
-    def _decompose_tasks(
-        self,
-        queries: list[str],
-    ) -> list[dict[str, str]]:
-        """Decompose research into parallel tasks.
-
-        Args:
-            queries: List of queries to decompose.
-
-        Returns:
-            List of task dictionaries.
-        """
-        from cc_deep_research.orchestration.helpers import decompose_parallel_tasks
-
-        return decompose_parallel_tasks(queries)
 
 
 class OrchestratorError(Exception):
