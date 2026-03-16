@@ -207,7 +207,7 @@ flowchart TD
 
 ### 1. CLI bootstrap
 
-Entry point: `src/cc_deep_research/cli.py`
+Entry point: `src/cc_deep_research/cli/main.py`
 
 The CLI:
 
