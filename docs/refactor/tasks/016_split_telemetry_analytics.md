@@ -1,6 +1,6 @@
 # Task 016: Split Telemetry Analytics
 
-Status: Planned
+Status: Done
 
 ## Objective
 

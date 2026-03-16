@@ -30,6 +30,8 @@ Thumbs.db
 # Node modules (if using Node.js projects)
 node_modules/
 dashboard/node_modules/
+.next/
+dashboard/.next/
 
 # Python cache (if using Python projects)
 __pycache__/
