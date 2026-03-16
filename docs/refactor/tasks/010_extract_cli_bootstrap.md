@@ -1,6 +1,6 @@
 # Task 010: Extract CLI Bootstrap
 
-Status: Planned
+Status: Done
 
 ## Objective
 

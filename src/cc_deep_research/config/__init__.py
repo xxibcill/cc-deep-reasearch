@@ -1,0 +1,51 @@
+"""Configuration compatibility exports."""
+
+from .defaults import create_default_config_file, get_default_config, get_default_config_path
+from .io import _parse_api_keys_from_env, load_config, save_config
+from .schema import (
+    AgentConfig,
+    AgentTeamConfig,
+    ClaudeConfig,
+    Config,
+    DashboardConfig,
+    DisplayConfig,
+    LLMCerebrasConfig,
+    LLMClaudeCLIConfig,
+    LLMConfig,
+    LLMOpenRouterConfig,
+    LLMRouteDefaults,
+    MinSourcesConfig,
+    OutputConfig,
+    ResearchConfig,
+    ResearchQualitySettings,
+    SearchConfig,
+    Settings,
+    TavilyConfig,
+)
+
+__all__ = [
+    "AgentConfig",
+    "AgentTeamConfig",
+    "ClaudeConfig",
+    "Config",
+    "DashboardConfig",
+    "DisplayConfig",
+    "LLMCerebrasConfig",
+    "LLMClaudeCLIConfig",
+    "LLMConfig",
+    "LLMOpenRouterConfig",
+    "LLMRouteDefaults",
+    "MinSourcesConfig",
+    "OutputConfig",
+    "ResearchConfig",
+    "ResearchQualitySettings",
+    "SearchConfig",
+    "Settings",
+    "TavilyConfig",
+    "_parse_api_keys_from_env",
+    "create_default_config_file",
+    "get_default_config",
+    "get_default_config_path",
+    "load_config",
+    "save_config",
+]

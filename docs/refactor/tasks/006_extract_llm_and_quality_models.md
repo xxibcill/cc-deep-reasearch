@@ -1,6 +1,6 @@
 # Task 006: Extract LLM And Quality Models
 
-Status: Planned
+Status: Done
 
 ## Objective
 
