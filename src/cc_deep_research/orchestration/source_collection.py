@@ -1,311 +1,34 @@
-"""Source collection services used by the orchestrator."""
+"""Source collection facade and shared helpers for orchestrator workflows."""
 
 from __future__ import annotations
 
 import asyncio
 import time
 
-from cc_deep_research.agents import ResearcherAgent, SourceCollectorAgent
 from cc_deep_research.aggregation import ResultAggregator
 from cc_deep_research.config import Config
-from cc_deep_research.key_rotation import KeyRotationManager
-from cc_deep_research.models.search import (
-    QueryFamily,
-    ResearchDepth,
-    SearchOptions,
-    SearchResult,
-    SearchResultItem,
-)
+from cc_deep_research.models.search import QueryFamily, ResearchDepth, SearchResult, SearchResultItem
 from cc_deep_research.monitoring import ResearchMonitor
-from cc_deep_research.orchestration.helpers import decompose_parallel_tasks
 from cc_deep_research.orchestration.session_state import OrchestratorSessionState
-from cc_deep_research.providers.tavily import TavilySearchProvider
+
+from .source_collection_parallel import ParallelSourceCollectionStrategy, _emit_agent_lifecycle
+from .source_collection_sequential import SequentialSourceCollectionStrategy
 
 
-def _emit_agent_lifecycle(
-    monitor: ResearchMonitor,
-    *,
-    event_type: str,
-    agent_id: str,
-    agent_type: str,
-    status: str,
-    parent_event_id: str | None = None,
-    metadata: dict | None = None,
-) -> str:
-    """Emit a standardized agent lifecycle event.
+class SourceAggregationService:
+    """Share source aggregation rules across collection strategies."""
 
-    Args:
-        monitor: The research monitor.
-        event_type: Type of event (e.g., 'agent.spawned', 'agent.completed').
-        agent_id: Unique identifier for the agent instance.
-        agent_type: Type of agent (e.g., 'researcher', 'collector').
-        status: Status of the event (e.g., 'started', 'completed', 'failed').
-        parent_event_id: Optional parent event ID for correlation.
-        metadata: Optional additional metadata.
-
-    Returns:
-        The event ID for correlation.
-    """
-    return monitor.emit_event(
-        event_type=event_type,
-        category="agent",
-        name=agent_type,
-        agent_id=agent_id,
-        status=status,
-        parent_event_id=parent_event_id,
-        metadata={"agent_type": agent_type, **(metadata or {})},
-    )
-
-
-class SourceCollectionService:
-    """Encapsulate sequential and parallel source collection workflows."""
-
-    def __init__(
-        self,
-        *,
-        config: Config,
-        monitor: ResearchMonitor,
-        session_state: OrchestratorSessionState,
-        num_researchers: int,
-    ) -> None:
-        self._config = config
+    def __init__(self, *, monitor: ResearchMonitor) -> None:
         self._monitor = monitor
-        self._session_state = session_state
-        self._num_researchers = num_researchers
-        self._content_cache: dict[str, str] = {}
 
-    async def collect_sources(
-        self,
-        *,
-        collector: SourceCollectorAgent,
-        query_families: list[QueryFamily],
-        depth: ResearchDepth,
-    ) -> list[SearchResultItem]:
-        """Collect sources through the configured provider set."""
-        self._monitor.section("Source Collection")
-        queries = [family.query for family in query_families]
-
-        await collector.initialize_providers()
-        provider_warnings = collector.get_provider_warnings()
-        self._session_state.set_provider_metadata(
-            available=collector.get_available_providers(),
-            warnings=provider_warnings,
-        )
-        for warning in provider_warnings:
-            self._monitor.log(f"Provider warning: {warning}")
-
-        max_results = self._config.research.min_sources.__dict__[depth.value]
-        options = SearchOptions(
-            max_results=max_results,
-            search_depth=depth,
-            monitor=self._monitor.is_enabled(),
-            include_raw_content=True,
-        )
-
-        if len(queries) == 1:
-            sources = await collector.collect_sources(
-                queries[0],
-                options,
-                query_family=query_families[0],
-            )
-        else:
-            sources = await collector.collect_multiple_queries(
-                queries,
-                options,
-                query_families=query_families,
-            )
-
-        self._monitor.log(f"Collected {len(sources)} sources")
-        self._monitor.record_reasoning_summary(
-            stage="source_collection",
-            summary=f"Collected {len(sources)} unique sources",
-            agent_id="collector",
-            query_count=len(queries),
-        )
-        self._monitor.record_source_provenance(
-            query_families=query_families,
-            sources=sources,
-            stage="initial_collection",
-        )
-
-        hydrated_sources = await self.fetch_content_for_top_sources(sources=sources, depth=depth)
-        sources_with_content = sum(
-            1 for source in hydrated_sources if source.content and len(source.content) > 500
-        )
-        self._monitor.log(
-            f"Sources with full content: {sources_with_content}/{len(hydrated_sources)}"
-        )
-
-        # Apply depth-based source limits
-        depth_limits = {
-            ResearchDepth.QUICK: 5,
-            ResearchDepth.STANDARD: 15,
-            ResearchDepth.DEEP: 50,
-        }
-        limit = depth_limits.get(depth, 10)
-        limited_sources, was_limited = self.apply_source_limit(
-            sources=hydrated_sources, limit=limit, query=queries[0] if queries else "research"
-        )
-
-        return limited_sources
-
-    async def parallel_research(
-        self,
-        *,
-        agent_pool: object | None,
-        query_families: list[QueryFamily],
-        depth: ResearchDepth,
-        min_sources: int | None,
-    ) -> list[SearchResultItem]:
-        """Collect sources using parallel local researcher tasks."""
-        self._monitor.section("Parallel Source Collection")
-        queries = [family.query for family in query_families]
-
-        if agent_pool is None:
-            msg = "Local agent pool not initialized for parallel mode"
-            raise RuntimeError(msg)
-
-        max_results_per_researcher = (
-            min_sources or self._config.research.min_sources.__dict__[depth.value]
-        ) // self._num_researchers
-
-        provider_warnings: list[str] = []
-        if not self._config.tavily.api_keys:
-            provider_warnings.append(
-                "Parallel source collection requires Tavily API keys, but none are configured."
-            )
-        if self._config.search.providers != ["tavily"]:
-            provider_warnings.append(
-                "Parallel source collection currently uses Tavily only, regardless of other configured providers."
-            )
-        self._session_state.set_provider_metadata(
-            available=["tavily"] if self._config.tavily.api_keys else [],
-            warnings=provider_warnings,
-        )
-
-        key_manager = KeyRotationManager(self._config.tavily.api_keys)
-        provider = TavilySearchProvider(
-            api_key=key_manager.get_available_key(),
-            max_results=max_results_per_researcher,
-        )
-        researcher = ResearcherAgent(self._config, provider, monitor=self._monitor)
-        tasks = decompose_parallel_tasks(queries)
-
-        # Get current parent for agent events
-        current_parent = self._monitor.current_parent_id
-
-        self._monitor.log(f"Decomposed {len(queries)} queries into {len(tasks)} tasks")
-
-        # Emit agent.spawned events for each task with parent correlation
-        task_agent_ids: dict[str, str] = {}
-        for task in tasks:
-            agent_event_id = _emit_agent_lifecycle(
-                self._monitor,
-                event_type="agent.spawned",
-                agent_id=task["task_id"],
-                agent_type="researcher",
-                status="spawned",
-                parent_event_id=current_parent,
-                metadata={"query": task["query"]},
-            )
-            task_agent_ids[task["task_id"]] = agent_event_id
-            self._monitor.log_researcher_event(
-                event_type="spawned",
-                agent_id=task["task_id"],
-                query=task["query"],
-            )
-
-        researcher_timeout = getattr(self._config.search_team, "researcher_timeout", 120)
-        results = await researcher.execute_multiple_tasks(tasks, timeout=researcher_timeout)
-
-        all_sources: list[SearchResultItem] = []
-        families_by_query = {family.query: family for family in query_families}
-        for result in results:
-            task_id = result["task_id"]
-            agent_event_id = task_agent_ids.get(task_id)
-
-            if result["status"] == "success":
-                family = families_by_query.get(
-                    result.get("query", ""),
-                    QueryFamily(
-                        query=result.get("query", "") or "parallel-research",
-                        family="parallel",
-                        intent_tags=["parallel"],
-                    ),
-                )
-                for source in result["sources"]:
-                    source.add_query_provenance(
-                        query=family.query,
-                        family=family.family,
-                        intent_tags=list(family.intent_tags),
-                    )
-                all_sources.extend(result["sources"])
-                self._monitor.log(
-                    f"✓ Researcher {task_id}: "
-                    f"{result['source_count']} sources "
-                    f"({result['execution_time_ms']:.0f}ms)"
-                )
-
-                # Emit agent.completed with parent correlation
-                _emit_agent_lifecycle(
-                    self._monitor,
-                    event_type="agent.completed",
-                    agent_id=task_id,
-                    agent_type="researcher",
-                    status="completed",
-                    parent_event_id=agent_event_id,
-                    metadata={
-                        "source_count": result["source_count"],
-                        "duration_ms": int(result["execution_time_ms"]),
-                        "query": result.get("query", ""),
-                    },
-                )
-                self._monitor.log_researcher_event(
-                    event_type="completed",
-                    agent_id=task_id,
-                    source_count=result["source_count"],
-                    duration_ms=int(result["execution_time_ms"]),
-                    status="completed",
-                )
-                self._monitor.record_reasoning_summary(
-                    stage="researcher_task",
-                    summary=f"Executed query and gathered {result['source_count']} sources",
-                    agent_id=task_id,
-                    query=result.get("query", ""),
-                )
-                continue
-
-            self._monitor.log(
-                f"✗ Researcher {task_id}: "
-                f"{result['status']} - {result.get('error', 'Unknown error')}"
-            )
-
-            # Emit agent.failed with parent correlation
-            _emit_agent_lifecycle(
-                self._monitor,
-                event_type="agent.failed" if result["status"] != "timeout" else "agent.timeout",
-                agent_id=task_id,
-                agent_type="researcher",
-                status=result["status"],
-                parent_event_id=agent_event_id,
-                metadata={
-                    "error": result.get("error", "Unknown error"),
-                    "query": result.get("query", ""),
-                },
-            )
-            self._monitor.log_researcher_event(
-                event_type="failed" if result["status"] != "timeout" else "timeout",
-                agent_id=task_id,
-                status=result["status"],
-                error=result.get("error", "Unknown error"),
-            )
-
+    def aggregate_parallel_sources(self, sources: list[SearchResultItem]) -> list[SearchResultItem]:
+        """Deduplicate and rank sources collected by parallel researchers."""
         aggregator = ResultAggregator(
             deduplicate=True,
             sort_by_score=True,
             monitor=self._monitor.is_enabled(),
         )
-        for source in all_sources:
+        for source in sources:
             aggregator.add_result(
                 SearchResult(
                     query="parallel-research",
@@ -313,16 +36,7 @@ class SourceCollectionService:
                     provider="tavily",
                 )
             )
-
-        aggregated = aggregator.get_aggregated()
-        self._session_state.mark_parallel_collection_used()
-        self._monitor.log(f"Collected {len(aggregated)} unique sources (parallel)")
-        self._monitor.record_source_provenance(
-            query_families=query_families,
-            sources=aggregated,
-            stage="parallel_collection",
-        )
-        return await self.fetch_content_for_top_sources(sources=aggregated, depth=depth)
+        return aggregator.get_aggregated()
 
     def apply_source_limit(
         self,
@@ -331,34 +45,21 @@ class SourceCollectionService:
         limit: int,
         query: str,
     ) -> tuple[list[SearchResultItem], bool]:
-        """Apply source limit and signal if more sources are needed.
-
-        Args:
-            sources: List of sources to limit.
-            limit: Maximum number of sources to keep.
-            query: Query string for logging.
-
-        Returns:
-            Tuple of (limited_sources, needs_more_sources).
-        """
+        """Apply source limit and signal if more sources may still be needed."""
         if len(sources) <= limit:
-            return sources[:limit], False  # No truncation, no need for more
+            return sources[:limit], False
 
-        # Sort by score (highest relevance first)
         sorted_sources = sorted(
             sources,
-            key=lambda s: getattr(s, "relevance_score", 0) or getattr(s, "score", 0),
+            key=lambda source: getattr(source, "relevance_score", 0)
+            or getattr(source, "score", 0),
             reverse=True,
         )
-
         limited_sources = sorted_sources[:limit]
-
-        # Log that sources were limited
         self._monitor.log(
             f"Source limit applied: kept {len(limited_sources)}/{len(sources)} for query '{query}' (limit={limit})"
         )
-
-        return limited_sources, True  # Truncation occurred, may need more
+        return limited_sources, True
 
     def merge_sources(
         self,
@@ -385,6 +86,20 @@ class SourceCollectionService:
                     )
                 )
         return aggregator.get_aggregated()
+
+
+class SourceContentHydrator:
+    """Populate top-ranked sources with fetched page content when available."""
+
+    def __init__(
+        self,
+        *,
+        config: Config,
+        monitor: ResearchMonitor,
+    ) -> None:
+        self._config = config
+        self._monitor = monitor
+        self._content_cache: dict[str, str] = {}
 
     async def fetch_content_for_top_sources(
         self,
@@ -431,10 +146,7 @@ class SourceCollectionService:
         if cached_content is not None:
             return cached_content
 
-        # Get current parent for tool event correlation
         current_parent = self._monitor.current_parent_id
-
-        # Emit tool.started event
         tool_event_id = self._monitor.emit_event(
             event_type="tool.started",
             category="tool",
@@ -541,3 +253,179 @@ class SourceCollectionService:
                 error=str(exc),
             )
             return None
+
+
+class SourceCollectionService:
+    """Coordinate sequential and parallel source collection strategies."""
+
+    def __init__(
+        self,
+        *,
+        config: Config,
+        monitor: ResearchMonitor,
+        session_state: OrchestratorSessionState,
+        num_researchers: int,
+    ) -> None:
+        self._monitor = monitor
+        self._session_state = session_state
+        self._aggregation = SourceAggregationService(monitor=monitor)
+        self._hydrator = SourceContentHydrator(config=config, monitor=monitor)
+        self._sequential = SequentialSourceCollectionStrategy(
+            config=config,
+            monitor=monitor,
+            session_state=session_state,
+            hydrate_sources=self._hydrate_sources,
+            apply_source_limit=self._aggregation.apply_source_limit,
+        )
+        self._parallel = ParallelSourceCollectionStrategy(
+            config=config,
+            monitor=monitor,
+            session_state=session_state,
+            num_researchers=num_researchers,
+            hydrate_sources=self._hydrate_sources,
+            aggregate_sources=self._aggregation.aggregate_parallel_sources,
+        )
+
+    async def collect_with_fallback(
+        self,
+        *,
+        collector: object,
+        agent_pool: object | None,
+        query_families: list[QueryFamily],
+        depth: ResearchDepth,
+        min_sources: int | None,
+        prefer_parallel: bool,
+    ) -> list[SearchResultItem]:
+        """Collect sources, falling back to sequential mode when parallel fails."""
+        if prefer_parallel and agent_pool is not None:
+            try:
+                return await self.parallel_research(
+                    agent_pool=agent_pool,
+                    query_families=query_families,
+                    depth=depth,
+                    min_sources=min_sources,
+                )
+            except Exception as exc:
+                self._monitor.log(f"Parallel execution failed: {exc}")
+                self._monitor.log("Falling back to sequential mode")
+                self._session_state.note_execution_degradation(
+                    f"Parallel source collection fell back to sequential mode: {exc}"
+                )
+
+        return await self.collect_sources(
+            collector=collector,
+            query_families=query_families,
+            depth=depth,
+        )
+
+    async def collect_follow_up_sources(
+        self,
+        *,
+        collector: object,
+        agent_pool: object | None,
+        follow_up_queries: list[str],
+        depth: ResearchDepth,
+        min_sources: int | None,
+        prefer_parallel: bool,
+    ) -> list[SearchResultItem]:
+        """Collect follow-up sources using the same execution mode rules."""
+        return await self.collect_with_fallback(
+            collector=collector,
+            agent_pool=agent_pool,
+            query_families=[
+                QueryFamily(
+                    query=query,
+                    family="follow-up",
+                    intent_tags=["follow-up"],
+                )
+                for query in follow_up_queries
+            ],
+            depth=depth,
+            min_sources=min_sources,
+            prefer_parallel=prefer_parallel,
+        )
+
+    async def collect_sources(
+        self,
+        *,
+        collector: object,
+        query_families: list[QueryFamily],
+        depth: ResearchDepth,
+    ) -> list[SearchResultItem]:
+        """Run the sequential provider-backed collection strategy."""
+        return await self._sequential.collect(
+            collector=collector,
+            query_families=query_families,
+            depth=depth,
+        )
+
+    async def parallel_research(
+        self,
+        *,
+        agent_pool: object | None,
+        query_families: list[QueryFamily],
+        depth: ResearchDepth,
+        min_sources: int | None,
+    ) -> list[SearchResultItem]:
+        """Run the parallel researcher-backed collection strategy."""
+        return await self._parallel.collect(
+            agent_pool=agent_pool,
+            query_families=query_families,
+            depth=depth,
+            min_sources=min_sources,
+        )
+
+    def merge_sources(
+        self,
+        *,
+        existing_sources: list[SearchResultItem],
+        new_sources: list[SearchResultItem],
+    ) -> list[SearchResultItem]:
+        """Merge and deduplicate sources while preserving ranking."""
+        return self._aggregation.merge_sources(
+            existing_sources=existing_sources,
+            new_sources=new_sources,
+        )
+
+    def apply_source_limit(
+        self,
+        *,
+        sources: list[SearchResultItem],
+        limit: int,
+        query: str,
+    ) -> tuple[list[SearchResultItem], bool]:
+        """Expose the shared limit helper for compatibility."""
+        return self._aggregation.apply_source_limit(sources=sources, limit=limit, query=query)
+
+    async def fetch_content_for_top_sources(
+        self,
+        *,
+        sources: list[SearchResultItem],
+        depth: ResearchDepth,
+    ) -> list[SearchResultItem]:
+        """Expose the hydrator for compatibility."""
+        return await self._hydrator.fetch_content_for_top_sources(sources=sources, depth=depth)
+
+    async def populate_source_content(self, source: SearchResultItem) -> None:
+        """Expose the hydrator for compatibility."""
+        await self._hydrator.populate_source_content(source)
+
+    async def fetch_page_content(self, url: str) -> str | None:
+        """Expose the hydrator for compatibility."""
+        return await self._hydrator.fetch_page_content(url)
+
+    async def _hydrate_sources(
+        self,
+        sources: list[SearchResultItem],
+        depth: ResearchDepth,
+    ) -> list[SearchResultItem]:
+        """Adapt the shared hydrator to the strategy callback signature."""
+        return await self._hydrator.fetch_content_for_top_sources(sources=sources, depth=depth)
+
+
+__all__ = [
+    "SourceAggregationService",
+    "SourceCollectionService",
+    "SourceContentHydrator",
+    "_emit_agent_lifecycle",
+]

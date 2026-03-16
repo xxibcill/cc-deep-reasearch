@@ -86,6 +86,36 @@ class OrchestratorSessionState:
         """Mark that the session used parallel collection."""
         self.used_parallel_collection = True
 
+    def handle_llm_router_event(self, event: dict[str, Any]) -> None:
+        """Update session metadata from routed LLM execution events."""
+        event_type = event.get("event_type")
+        if event_type == "route_completion":
+            agent_id = str(event.get("agent_id", "unknown"))
+            self.set_llm_actual_route(
+                agent_id=agent_id,
+                transport=str(event.get("transport", "unknown")),
+                provider=str(event.get("provider", "unknown")),
+                model=str(event.get("model", "unknown")),
+                source="actual" if event.get("success", True) else "failed",
+            )
+            self.record_llm_route_usage(
+                agent_id=agent_id,
+                transport=str(event.get("transport", "unknown")),
+                prompt_tokens=int(event.get("prompt_tokens", 0) or 0),
+                completion_tokens=int(event.get("completion_tokens", 0) or 0),
+                latency_ms=int(event.get("latency_ms", 0) or 0),
+                error=not bool(event.get("success", True)),
+            )
+            return
+
+        if event_type == "route_fallback":
+            self.record_llm_route_fallback(
+                agent_id=str(event.get("agent_id", "unknown")),
+                original_transport=str(event.get("original_transport", "unknown")),
+                fallback_transport=str(event.get("fallback_transport", "unknown")),
+                reason=str(event.get("reason", "unknown")),
+            )
+
     def set_llm_planned_route(
         self,
         agent_id: str,

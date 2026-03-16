@@ -16,7 +16,7 @@ from cc_deep_research.models import (
     ValidationResult,
 )
 from cc_deep_research.monitoring import ResearchMonitor
-from cc_deep_research.orchestration.execution import ResearchExecutionService
+from cc_deep_research.orchestration.execution import ResearchExecutionHooks, ResearchExecutionService
 from cc_deep_research.orchestration.phases import PhaseRunner
 from cc_deep_research.orchestration.planning import ResearchPlanningService
 from cc_deep_research.orchestration.session_builder import SessionBuilder
@@ -249,6 +249,7 @@ class TestSessionBuilder:
             "providers",
             "execution",
             "deep_analysis",
+            "llm_routes",
         }
         assert session.metadata["execution"]["parallel_requested"] is False
         assert session.started_at == started_at
@@ -279,11 +280,7 @@ class TestResearchExecutionService:
         sources = []
         hook = MagicMock()
 
-        session = await service.execute(
-            query="market structure",
-            depth=ResearchDepth.STANDARD,
-            min_sources=2,
-            phase_hook=hook,
+        hooks = ResearchExecutionHooks(
             reset_session_state=MagicMock(),
             initialize_team=AsyncMock(),
             analyze_strategy=AsyncMock(return_value=strategy),
@@ -291,9 +288,22 @@ class TestResearchExecutionService:
             normalize_query_families=MagicMock(return_value=query_families),
             collect_sources=AsyncMock(return_value=sources),
             run_analysis_workflow=AsyncMock(return_value=(analysis, validation, sources, [])),
-            build_metadata=MagicMock(return_value={"status": "ok"}),
+            build_metadata=MagicMock(
+                return_value={
+                    "providers": {"configured": []},
+                    "execution": {"parallel_requested": False},
+                }
+            ),
             log_session_summary=MagicMock(),
             shutdown_team=AsyncMock(),
+        )
+
+        session = await service.execute(
+            query="market structure",
+            depth=ResearchDepth.STANDARD,
+            min_sources=2,
+            phase_hook=hook,
+            hooks=hooks,
         )
 
         assert session.query == "market structure"
@@ -318,22 +328,26 @@ class TestResearchExecutionService:
         )
         shutdown_team = AsyncMock()
 
+        hooks = ResearchExecutionHooks(
+            reset_session_state=MagicMock(),
+            initialize_team=AsyncMock(side_effect=RuntimeError("boom")),
+            analyze_strategy=AsyncMock(),
+            expand_queries=AsyncMock(),
+            normalize_query_families=MagicMock(),
+            collect_sources=AsyncMock(),
+            run_analysis_workflow=AsyncMock(),
+            build_metadata=MagicMock(),
+            log_session_summary=MagicMock(),
+            shutdown_team=shutdown_team,
+        )
+
         with pytest.raises(RuntimeError, match="boom"):
             await service.execute(
                 query="market structure",
                 depth=ResearchDepth.STANDARD,
                 min_sources=2,
                 phase_hook=None,
-                reset_session_state=MagicMock(),
-                initialize_team=AsyncMock(side_effect=RuntimeError("boom")),
-                analyze_strategy=AsyncMock(),
-                expand_queries=AsyncMock(),
-                normalize_query_families=MagicMock(),
-                collect_sources=AsyncMock(),
-                run_analysis_workflow=AsyncMock(),
-                build_metadata=MagicMock(),
-                log_session_summary=MagicMock(),
-                shutdown_team=shutdown_team,
+                hooks=hooks,
             )
 
         shutdown_team.assert_awaited_once()

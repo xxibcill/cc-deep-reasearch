@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -56,29 +57,10 @@ class ResearchExecutionService:
         depth: ResearchDepth,
         min_sources: int | None,
         phase_hook: Callable[[str, str], None] | None,
-        reset_session_state: Callable[[], None],
-        initialize_team: Callable[[], Awaitable[None]],
-        analyze_strategy: Callable[[str, ResearchDepth], Awaitable[StrategyResult]],
-        expand_queries: Callable[[str, StrategyResult, ResearchDepth], Awaitable[list[QueryFamily]]],
-        normalize_query_families: Callable[..., list[QueryFamily]],
-        collect_sources: Callable[..., Awaitable[list[SearchResultItem]]],
-        run_analysis_workflow: Callable[
-            ...,
-            Awaitable[
-                tuple[
-                    AnalysisResult,
-                    ValidationResult | None,
-                    list[SearchResultItem],
-                    list[IterationHistoryRecord],
-                ]
-            ],
-        ],
-        build_metadata: Callable[..., dict[str, Any]],
-        log_session_summary: Callable[..., None],
-        shutdown_team: Callable[[], Awaitable[None]],
+        hooks: ResearchExecutionHooks,
     ) -> ResearchSession:
         """Execute a full research session using injected callbacks."""
-        reset_session_state()
+        hooks.reset_session_state()
         start_time = datetime.utcnow()
         session_id = self._initialize_session(query=query, depth=depth)
 
@@ -87,21 +69,21 @@ class ResearchExecutionService:
                 phase_hook=phase_hook,
                 phase_key="team_init",
                 description="Initializing agent team",
-                operation=initialize_team,
+                operation=hooks.initialize_team,
             )
             strategy = await self._phase_runner.run_phase(
                 phase_hook=phase_hook,
                 phase_key="strategy",
                 description="Analyzing research strategy",
-                operation=lambda: analyze_strategy(query, depth),
+                operation=lambda: hooks.analyze_strategy(query, depth),
             )
             raw_query_families = await self._phase_runner.run_phase(
                 phase_hook=phase_hook,
                 phase_key="query_expansion",
                 description="Expanding search queries",
-                operation=lambda: expand_queries(query, strategy, depth),
+                operation=lambda: hooks.expand_queries(query, strategy, depth),
             )
-            strategy.strategy.query_families = normalize_query_families(
+            strategy.strategy.query_families = hooks.normalize_query_families(
                 original_query=query,
                 strategy=strategy,
                 raw_families=raw_query_families,
@@ -110,13 +92,13 @@ class ResearchExecutionService:
                 phase_hook=phase_hook,
                 phase_key="source_collection",
                 description="Collecting sources from providers",
-                operation=lambda: collect_sources(
+                operation=lambda: hooks.collect_sources(
                     query_families=strategy.strategy.query_families,
                     depth=depth,
                     min_sources=min_sources,
                 ),
             )
-            analysis, validation, sources, iteration_history = await run_analysis_workflow(
+            analysis, validation, sources, iteration_history = await hooks.run_analysis_workflow(
                 query=query,
                 depth=depth,
                 strategy=strategy,
@@ -134,9 +116,9 @@ class ResearchExecutionService:
                 analysis=analysis,
                 validation=validation,
                 iteration_history=iteration_history,
-                build_metadata=build_metadata,
+                build_metadata=hooks.build_metadata,
             )
-            log_session_summary(
+            hooks.log_session_summary(
                 source_count=len(sources),
                 finding_count=len(analysis.key_findings),
                 validation=validation,
@@ -163,7 +145,7 @@ class ResearchExecutionService:
                 phase_key="cleanup",
                 description="Cleaning up team resources",
             )
-            await shutdown_team()
+            await hooks.shutdown_team()
 
     def _initialize_session(self, *, query: str, depth: ResearchDepth) -> str:
         """Initialize monitor state for a new research session."""
@@ -207,3 +189,29 @@ class ResearchExecutionService:
             return STOP_REASON_LIMIT_REACHED
 
         return STOP_REASON_SUCCESS
+
+
+@dataclass(slots=True)
+class ResearchExecutionHooks:
+    """Stable hook bundle used by the execution service."""
+
+    reset_session_state: Callable[[], None]
+    initialize_team: Callable[[], Awaitable[None]]
+    analyze_strategy: Callable[[str, ResearchDepth], Awaitable[StrategyResult]]
+    expand_queries: Callable[[str, StrategyResult, ResearchDepth], Awaitable[list[QueryFamily]]]
+    normalize_query_families: Callable[..., list[QueryFamily]]
+    collect_sources: Callable[..., Awaitable[list[SearchResultItem]]]
+    run_analysis_workflow: Callable[
+        ...,
+        Awaitable[
+            tuple[
+                AnalysisResult,
+                ValidationResult | None,
+                list[SearchResultItem],
+                list[IterationHistoryRecord],
+            ]
+        ],
+    ]
+    build_metadata: Callable[..., dict[str, Any]]
+    log_session_summary: Callable[..., None]
+    shutdown_team: Callable[[], Awaitable[None]]
