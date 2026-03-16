@@ -58,6 +58,7 @@ class ResearchMonitor:
         enabled: bool = False,
         persist: bool = True,
         telemetry_dir: Path | None = None,
+        event_router: Any | None = None,
     ) -> None:
         """Initialize the monitor.
 
@@ -65,6 +66,7 @@ class ResearchMonitor:
             enabled: Whether console monitoring output is active.
             persist: Whether telemetry events should be persisted to disk.
             telemetry_dir: Base directory for telemetry session folders.
+            event_router: Optional EventRouter for real-time event streaming.
         """
         self._enabled = enabled
         self._persist = persist
@@ -78,6 +80,9 @@ class ResearchMonitor:
         self._session_dir: Path | None = None
         self._events_path: Path | None = None
         self._summary_path: Path | None = None
+
+        # Real-time event routing
+        self._event_router = event_router
 
         # Event correlation support
         self._sequence_counter: int = 0
@@ -108,6 +113,11 @@ class ResearchMonitor:
     def session_id(self) -> str | None:
         """Return current session id if initialized."""
         return self._session_id
+
+    @property
+    def real_time_enabled(self) -> bool:
+        """Check if real-time streaming is active."""
+        return self._event_router is not None and self._event_router.is_active()
 
     def set_session(
         self,
@@ -223,6 +233,18 @@ class ResearchMonitor:
                 with open(self._events_path, "a", encoding="utf-8") as f:
                     f.write(json.dumps(payload, ensure_ascii=True))
                     f.write("\n")
+
+        # Publish to event router for real-time delivery
+        if self._event_router and self._session_id:
+            import asyncio
+
+            # Create async task to publish (non-blocking)
+            try:
+                loop = asyncio.get_event_loop()
+                asyncio.create_task(self._event_router.publish(self._session_id, payload))
+            except RuntimeError:
+                # No event loop running, skip publishing
+                pass
 
         return actual_event_id
 
