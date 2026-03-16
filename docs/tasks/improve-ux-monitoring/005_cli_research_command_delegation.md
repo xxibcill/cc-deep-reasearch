@@ -1,6 +1,6 @@
 # Task 005: Slim The CLI Research Command
 
-Status: Planned
+Status: Complete
 
 ## Objective
 
@@ -31,4 +31,3 @@ Turn the `cc-deep-research research` command into a thin adapter that delegates 
 ## Suggested Verification
 
 - run `uv run pytest tests/test_cli_monitoring.py tests/test_orchestrator.py`
-
