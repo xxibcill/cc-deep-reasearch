@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from typing import cast
@@ -12,7 +13,9 @@ from fastapi.responses import JSONResponse
 
 from cc_deep_research.config import get_default_config_path
 from cc_deep_research.event_router import EventRouter, WebSocketConnection
-from cc_deep_research.research_runs.jobs import ResearchRunJobRegistry
+from cc_deep_research.research_runs.jobs import ResearchRunJob, ResearchRunJobRegistry
+from cc_deep_research.research_runs.models import ResearchRunRequest
+from cc_deep_research.research_runs.service import ResearchRunService
 from cc_deep_research.telemetry import (
     get_default_telemetry_dir,
     query_dashboard_data,
@@ -126,6 +129,51 @@ def register_routes(app: FastAPI) -> None:
             "message": "CC Deep Research Monitoring API",
             "version": "1.0.0",
         }
+
+    @app.post("/api/research-runs")
+    async def start_research_run(request: ResearchRunRequest) -> JSONResponse:
+        """Start a new research run from the browser.
+
+        Args:
+            request: The research run request parameters.
+
+        Returns:
+            JSON response with run_id for status polling.
+        """
+        job_registry = get_job_registry(app)
+        event_router = get_event_router(app)
+
+        # Create job entry in registry
+        job = job_registry.create_job(request)
+
+        # Define background execution coroutine
+        async def execute_research_run(job: ResearchRunJob) -> None:
+            """Execute the research run and update job status in a thread."""
+            service = ResearchRunService()
+            try:
+                job_registry.mark_running(job.run_id)
+                # Run the synchronous service in a thread to avoid blocking
+                result = await asyncio.to_thread(
+                    service.run,
+                    job.request,
+                    event_router=event_router,
+                )
+                job_registry.mark_completed(job.run_id, result=result)
+            except Exception as e:
+                job_registry.mark_failed(job.run_id, error=str(e))
+
+        # Spawn background task
+        task = asyncio.create_task(execute_research_run(job))
+        job_registry.attach_task(job.run_id, task)
+
+        # Return immediately with run identifier
+        return JSONResponse(
+            content={
+                "run_id": job.run_id,
+                "status": job.status.value,
+            },
+            status_code=202,
+        )
 
     @app.get("/api/sessions")
     async def list_sessions(
