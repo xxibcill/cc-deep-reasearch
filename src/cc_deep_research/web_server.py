@@ -11,11 +11,13 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from cc_deep_research.config import get_default_config_path
+from cc_deep_research.config import get_default_config_path, load_config
 from cc_deep_research.event_router import EventRouter, WebSocketConnection
+from cc_deep_research.reporting import ReportGenerator
 from cc_deep_research.research_runs.jobs import ResearchRunJob, ResearchRunJobRegistry
-from cc_deep_research.research_runs.models import ResearchRunRequest
+from cc_deep_research.research_runs.models import ResearchOutputFormat, ResearchRunRequest
 from cc_deep_research.research_runs.service import ResearchRunService
+from cc_deep_research.session_store import SessionStore
 from cc_deep_research.telemetry import (
     get_default_telemetry_dir,
     query_dashboard_data,
@@ -352,6 +354,76 @@ def register_routes(app: FastAPI) -> None:
         events = events[offset : offset + limit] if offset > 0 else events[:limit]
 
         return JSONResponse(content={"events": events, "count": len(events)})
+
+    @app.get("/api/sessions/{session_id}/report")
+    async def get_session_report(
+        session_id: str,
+        format: str = "markdown",
+    ) -> JSONResponse:
+        """Get the rendered report for a completed session.
+
+        Args:
+            session_id: The session ID.
+            format: Output format (markdown, json, html).
+
+        Returns:
+            JSON response with report content and metadata.
+        """
+        # Validate format
+        try:
+            output_format = ResearchOutputFormat(format.lower())
+        except ValueError:
+            return JSONResponse(
+                content={
+                    "error": f"Invalid format: {format}. Supported: markdown, json, html"
+                },
+                status_code=400,
+            )
+
+        # Load session from store
+        store = SessionStore()
+        session = store.load_session(session_id)
+
+        if session is None:
+            return JSONResponse(
+                content={"error": f"Session not found: {session_id}"},
+                status_code=404,
+            )
+
+        # Check if session has analysis data
+        analysis = session.metadata.get("analysis", {})
+        if not analysis:
+            return JSONResponse(
+                content={"error": "Session has no analysis data yet"},
+                status_code=404,
+            )
+
+        # Generate report in requested format
+        from cc_deep_research.config import load_config
+        from cc_deep_research.reporting import ReportGenerator
+
+        config = load_config()
+        reporter = ReportGenerator(config)
+
+        if output_format == ResearchOutputFormat.JSON:
+            content = reporter.generate_json_report(session, analysis)
+            media_type = "application/json"
+        elif output_format == ResearchOutputFormat.HTML:
+            markdown = reporter.generate_markdown_report(session, analysis)
+            content = reporter.render_html_report(markdown)
+            media_type = "text/html"
+        else:
+            content = reporter.generate_markdown_report(session, analysis)
+            media_type = "text/markdown"
+
+        return JSONResponse(
+            content={
+                "session_id": session_id,
+                "format": output_format.value,
+                "media_type": media_type,
+                "content": content,
+            }
+        )
 
     @app.websocket("/ws/session/{session_id}")
     async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
