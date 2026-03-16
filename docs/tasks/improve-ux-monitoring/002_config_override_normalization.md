@@ -1,6 +1,6 @@
 # Task 002: Extract Config Override Normalization
 
-Status: Planned
+Status: Complete
 
 ## Objective
 
@@ -30,4 +30,3 @@ Move CLI-specific config mutation logic into a reusable helper that can be calle
 ## Suggested Verification
 
 - run `uv run pytest tests/test_config.py tests/test_cli_monitoring.py`
-
