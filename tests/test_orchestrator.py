@@ -808,6 +808,48 @@ class TestTeamResearchOrchestrator:
         orchestrator._phase_parallel_research.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_execute_research_reports_top_level_phase_order(self) -> None:
+        config = Config()
+        config.search.providers = ["tavily"]
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        orchestrator._monitor.set_session = MagicMock()
+        orchestrator._initialize_team = AsyncMock()
+        orchestrator._shutdown_team = AsyncMock()
+        orchestrator._phase_analyze_strategy = AsyncMock(
+            return_value=_make_strategy("phase order", ResearchDepth.STANDARD, 1)
+        )
+        orchestrator._phase_expand_queries = AsyncMock(
+            return_value=[QueryFamily(query="phase order")]
+        )
+        orchestrator._phase_collect_sources = AsyncMock(return_value=_make_sources("phase-order", 2))
+        orchestrator._run_analysis_workflow = AsyncMock(
+            return_value=(
+                _make_analysis(source_count=2),
+                _make_validation(),
+                _make_sources("phase-order", 2),
+                [IterationHistoryRecord(iteration=1, source_count=2, quality_score=0.82, gap_count=0)],
+            )
+        )
+
+        phase_events: list[tuple[str, str]] = []
+
+        await orchestrator.execute_research(
+            query="phase order",
+            depth=ResearchDepth.STANDARD,
+            phase_hook=lambda key, description: phase_events.append((key, description)),
+        )
+
+        assert [phase for phase, _description in phase_events] == [
+            "team_init",
+            "strategy",
+            "query_expansion",
+            "source_collection",
+            "complete",
+            "cleanup",
+        ]
+
+    @pytest.mark.asyncio
     async def test_workflow_stops_when_validation_needs_no_follow_up(self) -> None:
         config = Config()
         config.research.max_iterations = 3

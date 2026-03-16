@@ -10,11 +10,9 @@ from pathlib import Path
 from typing import Any
 
 from cc_deep_research.config import get_default_config_path
-from cc_deep_research.models import (
-    ResearchDepth,
+from cc_deep_research.models.search import ResearchDepth, SearchResult, SearchResultItem
+from cc_deep_research.models.session import (
     ResearchSession,
-    SearchResult,
-    SearchResultItem,
     normalize_session_metadata,
 )
 

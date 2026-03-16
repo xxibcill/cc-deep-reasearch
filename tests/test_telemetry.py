@@ -337,6 +337,30 @@ def test_query_live_sessions_reports_active_run(tmp_path):
     assert sessions[0]["status"] == "running"
 
 
+def test_query_live_event_tail_normalizes_legacy_event_shape(tmp_path):
+    """Live tail queries should fill required fields for legacy event records."""
+    session_dir = tmp_path / "legacy-live"
+    session_dir.mkdir(parents=True)
+    events_file = session_dir / "events.jsonl"
+    with open(events_file, "w", encoding="utf-8") as f:
+        f.write(json.dumps({
+            "timestamp": "2024-01-01T00:00:00Z",
+            "event_type": "legacy.event",
+            "category": "legacy",
+            "name": "event",
+            "metadata": [],
+        }))
+        f.write("\n")
+
+    event = query_live_event_tail("legacy-live", base_dir=tmp_path, limit=1)[0]
+
+    assert event["event_id"] == "legacy-live-event-1"
+    assert event["sequence_number"] == 1
+    assert event["session_id"] == "legacy-live"
+    assert event["status"] == "unknown"
+    assert event["metadata"] == {}
+
+
 def test_query_live_session_detail_returns_tail_and_phase(tmp_path):
     """Live session detail should expose event tails, agent timeline, and active phase."""
     monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)

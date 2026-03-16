@@ -321,6 +321,35 @@ class TestResearchSession:
             == "openrouter_api"
         )
 
+    def test_domain_modules_preserve_root_compatibility(self) -> None:
+        """Split model modules should preserve root imports for callers."""
+        from cc_deep_research.models.analysis import AnalysisResult as AnalysisResultModel
+        from cc_deep_research.models.search import (
+            ResearchDepth as SearchResearchDepth,
+            SearchResultItem as SearchResultItemModel,
+        )
+        from cc_deep_research.models.session import (
+            ResearchSession as SessionResearchSession,
+            normalize_session_metadata,
+        )
+
+        assert AnalysisResultModel is AnalysisResult
+        assert SearchResearchDepth is ResearchDepth
+        assert SearchResultItemModel is SearchResultItem
+        assert SessionResearchSession is ResearchSession
+        assert set(
+            normalize_session_metadata({}, depth=ResearchDepth.STANDARD)
+        ) == {
+            "strategy",
+            "analysis",
+            "validation",
+            "iteration_history",
+            "providers",
+            "execution",
+            "deep_analysis",
+            "llm_routes",
+        }
+
 
 class TestSearchOptions:
     """Tests for SearchOptions model."""
