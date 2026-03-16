@@ -30,6 +30,21 @@ export interface TelemetryEvent {
   metadata: TelemetryMetadata;
 }
 
+export type TelemetryStatus =
+  | 'pending'
+  | 'scheduled'
+  | 'started'
+  | 'running'
+  | 'completed'
+  | 'success'
+  | 'failed'
+  | 'error'
+  | 'timeout'
+  | 'selected'
+  | 'fallback'
+  | 'recorded'
+  | 'unknown';
+
 export interface ApiSession {
   session_id: string;
   created_at: string | null;
@@ -75,37 +90,59 @@ export interface ClientMessage {
 export interface WorkflowNode {
   id: string;
   name: string;
-  type: 'agent' | 'phase';
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'timeout';
-  startTime: string;
+  type: 'session' | 'phase' | 'agent';
+  status: TelemetryStatus;
+  startTime: string | null;
   endTime: string | null;
-  agentId: string;
+  agentId: string | null;
+  phase: string | null;
+  eventIds: string[];
+  latestEventId: string | null;
 }
 
 export interface WorkflowEdge {
+  id: string;
   source: string;
   target: string;
-  phase: string;
+  phase: string | null;
+  status: TelemetryStatus;
+  eventId: string | null;
+  label: string;
 }
 
 export interface AgentExecution {
   id: string;
   agentId: string;
   agentName: string;
+  phase: string | null;
   startTime: number;
-  endTime: number;
-  status: string;
+  endTime: number | null;
+  status: TelemetryStatus;
   duration: number;
+  eventIds: string[];
+  markers: Array<{
+    id: string;
+    label: string;
+    timestamp: number;
+    type: 'tool' | 'llm' | 'phase';
+    status: TelemetryStatus;
+    eventId: string;
+  }>;
 }
 
 export interface ToolExecution {
   id: string;
   toolName: string;
   agentId: string;
+  phase: string | null;
+  startedAt: number;
   startTime: number;
   endTime: number;
   duration: number;
-  status: 'success' | 'failed';
+  status: TelemetryStatus;
+  eventId: string;
+  parentEventId: string | null;
+  summary: string;
   request: {
     parameters: Record<string, unknown>;
     prompt?: string;
@@ -125,20 +162,45 @@ export interface LLMReasoning {
   model: string;
   provider: string;
   transport: string;
+  status: TelemetryStatus;
+  phase: string | null;
   startTime: number;
-  endTime: number;
+  endTime: number | null;
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
   latency: number;
   prompt: string;
   response: string;
+  requestEventId: string | null;
+  completionEventId: string | null;
+  routeEventId: string | null;
+  fallbackEventId: string | null;
+  finishReason: string | null;
   metadata: TelemetryMetadata;
+}
+
+export interface TelemetryDerivedState {
+  graph: {
+    nodes: WorkflowNode[];
+    edges: WorkflowEdge[];
+  };
+  timeline: AgentExecution[];
+  toolExecutions: ToolExecution[];
+  llmReasoning: LLMReasoning[];
+  phases: string[];
+  agents: string[];
+  tools: string[];
+  providers: string[];
+  statuses: string[];
+  eventTypes: string[];
 }
 
 export type EventFilter = {
   phase: string[];
   agent: string[];
+  tool: string[];
+  provider: string[];
   status: string[];
   eventTypes: string[];
   timeRange: { start: number; end: number } | null;

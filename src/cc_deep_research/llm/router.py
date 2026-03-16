@@ -38,6 +38,15 @@ class LLMRouter:
         self._telemetry_callback = telemetry_callback
         self._transport_cache: dict[tuple[str, str, str], BaseLLMTransport] = {}
 
+    @staticmethod
+    def _preview_text(value: str | None, *, max_chars: int = 240) -> str | None:
+        if not value:
+            return None
+        compact = " ".join(value.split())
+        if len(compact) <= max_chars:
+            return compact
+        return compact[:max_chars].rstrip() + "..."
+
     def get_transport(self, agent_id: str) -> BaseLLMTransport | None:
         """Return the primary transport configured for the agent."""
         route = self._registry.get_route(agent_id)
@@ -128,7 +137,12 @@ class LLMRouter:
                     reason="primary_route_unavailable_or_failed",
                 )
 
-            self._record_route_request(agent_id=agent_id, route=route, operation=operation)
+            self._record_route_request(
+                agent_id=agent_id,
+                route=route,
+                operation=operation,
+                prompt_preview=self._preview_text(prompt),
+            )
             try:
                 response = await transport.execute(request)
             except LLMError as exc:
@@ -150,7 +164,10 @@ class LLMRouter:
                 duration_ms=response.latency_ms,
                 prompt_tokens=response.usage.get("prompt_tokens", 0),
                 completion_tokens=response.usage.get("completion_tokens", 0),
-                metadata={"finish_reason": response.finish_reason},
+                metadata={
+                    "finish_reason": response.finish_reason,
+                    "response_preview": self._preview_text(response.content),
+                },
             )
             return response
 
@@ -169,7 +186,14 @@ class LLMRouter:
         )
         return heuristic_response
 
-    def _record_route_request(self, *, agent_id: str, route: LLMRoute, operation: str) -> None:
+    def _record_route_request(
+        self,
+        *,
+        agent_id: str,
+        route: LLMRoute,
+        operation: str,
+        prompt_preview: str | None = None,
+    ) -> None:
         if self._monitor is not None:
             self._monitor.record_llm_route_request(
                 agent_id=agent_id,
@@ -177,6 +201,7 @@ class LLMRouter:
                 provider=route.provider.value,
                 model=route.model,
                 operation=operation,
+                prompt_preview=prompt_preview,
             )
         self._emit_event(
             "route_request",
@@ -185,6 +210,7 @@ class LLMRouter:
             provider=route.provider.value,
             model=route.model,
             operation=operation,
+            prompt_preview=prompt_preview,
         )
 
     def _record_route_completion(
