@@ -1,6 +1,6 @@
 # Task 017: Rewrite Monitoring Docs Around The Browser-First Flow
 
-Status: Planned
+Status: Complete
 
 ## Objective
 

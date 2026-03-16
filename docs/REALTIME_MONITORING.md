@@ -2,7 +2,24 @@
 
 This document summarizes the browser-based monitoring stack that sits alongside the file-backed telemetry system.
 
-Use this path when you want a live operator console in the browser. If you want the Streamlit telemetry analytics UI instead, use `cc-deep-research telemetry dashboard`.
+## Quick Start (Browser-First)
+
+The fastest way to get started is to use the combined launcher:
+
+```bash
+cd /Users/jjae/Documents/guthib/cc-deep-research/dashboard
+npm install
+npm run dev
+```
+
+This starts:
+- **Backend API**: http://localhost:8000
+- **Frontend Dashboard**: http://localhost:3000
+
+Then open http://localhost:3000 in your browser to:
+1. Start research directly from the home page
+2. Watch live progress in real-time
+3. View the final report when complete
 
 ## Architecture
 
@@ -47,6 +64,9 @@ It handles:
 - `GET /api/sessions`
 - `GET /api/sessions/{session_id}`
 - `GET /api/sessions/{session_id}/events`
+- `POST /api/research-runs` - Start a new research run from the browser
+- `GET /api/research-runs/{run_id}` - Get run status
+- `GET /api/sessions/{session_id}/report` - Get final report
 - `GET /ws/session/{session_id}`
 
 The HTTP endpoints combine live telemetry reads with dashboard analytics helpers, while the WebSocket endpoint streams new events for one session.
@@ -68,6 +88,7 @@ The frontend is a Next.js app in [`dashboard/`](/Users/jjae/Documents/guthib/cc-
 Important pieces:
 
 - home page session list: [`dashboard/src/components/session-list.tsx`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/components/session-list.tsx)
+- research start form: [`dashboard/src/components/start-research-form.tsx`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/components/start-research-form.tsx)
 - session detail screen: [`dashboard/src/components/session-details.tsx`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/components/session-details.tsx)
 - local dashboard store: [`dashboard/src/hooks/useDashboard.ts`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/hooks/useDashboard.ts)
 - API client: [`dashboard/src/lib/api.ts`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/lib/api.ts)
@@ -76,8 +97,10 @@ Important pieces:
 
 Current UX surface:
 
+- research start form on home page
 - session overview page
-- per-session detail page
+- per-session detail page with live status summary
+- final report view
 - live connection state
 - D3 workflow graph with pan, zoom, and click-to-inspect nodes
 - agent swimlane timeline with concurrent markers
@@ -85,30 +108,50 @@ Current UX surface:
 - dedicated LLM reasoning panel
 - virtualized event table and raw JSON inspection modal
 
-## How To Run
+## Development Options
 
-### 1. Start the backend
+### Combined Launcher (Recommended)
 
-```bash
-cd /Users/jjae/Documents/guthib/cc-deep-research
-uv run cc-deep-research dashboard --port 8000
-```
-
-### 2. Start a research run with real-time streaming
-
-```bash
-uv run cc-deep-research research "your research query" --enable-realtime
-```
-
-### 3. Start the frontend
+Start both backend and frontend together:
 
 ```bash
 cd /Users/jjae/Documents/guthib/cc-deep-research/dashboard
-npm install
 npm run dev
 ```
 
-If the backend is not on `http://localhost:8000`, set one of these before `npm run dev`:
+This starts:
+- **Backend**: http://localhost:8000
+- **Frontend**: http://localhost:3000
+
+Press Ctrl+C to stop both processes.
+
+### Frontend-Only Development
+
+For frontend debugging without the backend:
+
+```bash
+cd /Users/jjae/Documents/guthib/cc-deep-research/dashboard
+npm run dev:frontend
+```
+
+### CLI-Driven Research (Legacy)
+
+If you prefer starting research from the terminal:
+
+```bash
+# Terminal 1: Start the backend
+uv run cc-deep-research dashboard --port 8000
+
+# Terminal 2: Start the frontend
+cd dashboard && npm run dev:frontend
+
+# Terminal 3: Run research
+uv run cc-deep-research research "your query" --enable-realtime
+```
+
+## Environment Variables
+
+If the backend is not on `http://localhost:8000`, set one of these before starting:
 
 ```bash
 export NEXT_PUBLIC_CC_BACKEND_ORIGIN=http://localhost:8000
