@@ -22,6 +22,7 @@ The original task pack remains completed, and new follow-up tasks are planned:
 - Planned follow-up: `029_html_first_pdf_pipeline.md`
 - Planned observability follow-up sequence: `030` through `035`
 - Planned LLM-routing follow-up sequence: `036` through `044`
+- Planned dashboard enhancement follow-up sequence: `045` through `050`
 - Report readability follow-up sequence: `018` through `023` ✓
 - Report writing cleanup follow-up sequence: `024` through `028` ✓
 
@@ -60,6 +61,11 @@ The completed task files are kept in this directory as implementation records so
 - `042` should land after `037` through `041` because the analyzer path is the first active route consumer.
 - `043` should land after `037` and preferably after `038` through `042` so telemetry reflects the final route and transport behavior.
 - `044` should land after `042` and `043` because secondary-agent adoption and docs should describe the real mixed-session implementation rather than the planned contract.
+- `045` and `046` can land after `033` and `034`; they can proceed in parallel because they deliver separate visualizations over the same live session data.
+- `047` should land after `031` through `033` so detailed tool payloads and parent-child timing context are already present in telemetry.
+- `048` should land after `042` and `043` so the reasoning panel reads from the stabilized LLM route and telemetry shape rather than a moving target.
+- `049` can land independently after `034`, but should land before broad dashboard polish work if the team wants later UI changes to share one component foundation.
+- `050` should land after `045` through `049` because performance tuning should target the real graph, timeline, and drill-down surfaces instead of placeholders.
 
 ## Definition Of Done For This Task Pack
 
