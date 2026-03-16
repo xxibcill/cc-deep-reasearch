@@ -1,6 +1,6 @@
 # Task 003: Extract Report Output Materialization
 
-Status: Planned
+Status: Complete
 
 ## Objective
 
@@ -30,4 +30,3 @@ Separate post-run output handling from orchestration so report rendering, sessio
 ## Suggested Verification
 
 - run `uv run pytest tests/test_orchestrator.py tests/test_markdown_to_pdf.py tests/test_session_store.py`
-
