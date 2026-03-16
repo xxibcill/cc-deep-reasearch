@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "dev:full": "node scripts/dev.mjs",
+    "dev": "node scripts/dev.mjs",
+    "dev:frontend": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"

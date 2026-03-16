@@ -20,11 +20,27 @@ npm install
 
 ## Development
 
+### Quick Start (Recommended)
+
+Start both the backend API and frontend dashboard together:
+
 \`\`\`bash
 npm run dev
 \`\`\`
 
-The dashboard will be available at http://localhost:3000
+This starts:
+- **Backend API**: http://localhost:8000
+- **Frontend Dashboard**: http://localhost:3000
+
+The combined launcher handles graceful shutdown with Ctrl+C and labels logs clearly.
+
+### Frontend-Only Development
+
+For frontend-only debugging without the backend:
+
+\`\`\`bash
+npm run dev:frontend
+\`\`\`
 
 To point the dashboard at a different backend without code edits, create `.env.local` or export runtime variables before starting Next.js:
 
