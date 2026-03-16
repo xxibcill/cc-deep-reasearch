@@ -1,6 +1,6 @@
 # Task 001: Introduce Shared Research Run Contract
 
-Status: Planned
+Status: Complete
 
 ## Objective
 
@@ -30,4 +30,3 @@ Define a typed, framework-agnostic contract for starting a research run and retu
 ## Suggested Verification
 
 - run `uv run pytest tests/test_models.py`
-
