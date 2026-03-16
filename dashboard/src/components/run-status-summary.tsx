@@ -11,6 +11,7 @@ import type { ResearchRunStatusResponse, ResearchRunStatus } from '@/types/telem
 interface RunStatusSummaryProps {
   runId: string;
   onSessionIdResolved?: (sessionId: string) => void;
+  onStatusChange?: (status: ResearchRunStatus) => void;
 }
 
 function statusIcon(status: ResearchRunStatus) {
@@ -60,7 +61,7 @@ function formatDuration(start?: string, end?: string): string {
   return `${Math.round(durationMs / 60000)}m`;
 }
 
-export function RunStatusSummary({ runId, onSessionIdResolved }: RunStatusSummaryProps) {
+export function RunStatusSummary({ runId, onSessionIdResolved, onStatusChange }: RunStatusSummaryProps) {
   const [status, setStatus] = useState<ResearchRunStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,6 +75,11 @@ export function RunStatusSummary({ runId, onSessionIdResolved }: RunStatusSummar
         if (!mounted) return;
         setStatus(response);
         setError(null);
+
+        // Notify parent of status changes
+        if (onStatusChange) {
+          onStatusChange(response.status);
+        }
 
         // Notify parent when session ID is resolved
         if (response.session_id && onSessionIdResolved) {
@@ -99,7 +105,7 @@ export function RunStatusSummary({ runId, onSessionIdResolved }: RunStatusSummar
       mounted = false;
       if (intervalId) clearInterval(intervalId);
     };
-  }, [runId, onSessionIdResolved]);
+  }, [runId, onSessionIdResolved, onStatusChange]);
 
   if (error) {
     return (
