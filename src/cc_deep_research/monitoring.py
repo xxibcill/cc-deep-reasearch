@@ -119,6 +119,10 @@ class ResearchMonitor:
         """Check if real-time streaming is active."""
         return self._event_router is not None and self._event_router.is_active()
 
+    def set_event_router(self, event_router: Any | None) -> None:
+        """Attach or clear the event router used for real-time delivery."""
+        self._event_router = event_router
+
     def set_session(
         self,
         session_id: str,
@@ -240,7 +244,7 @@ class ResearchMonitor:
 
             # Create async task to publish (non-blocking)
             try:
-                loop = asyncio.get_event_loop()
+                asyncio.get_running_loop()
                 asyncio.create_task(self._event_router.publish(self._session_id, payload))
             except RuntimeError:
                 # No event loop running, skip publishing

@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
-from contextlib import asynccontextmanager
-from pathlib import Path
-from typing import Any
+from contextlib import asynccontextmanager, suppress
+from dataclasses import dataclass
+from typing import cast
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.websockets import WebSocketState
 
-from cc_deep_research.config import Config, get_default_config_path
+from cc_deep_research.config import get_default_config_path
 from cc_deep_research.event_router import EventRouter, WebSocketConnection
+from cc_deep_research.research_runs.jobs import ResearchRunJobRegistry
 from cc_deep_research.telemetry import (
     get_default_telemetry_dir,
     query_dashboard_data,
@@ -23,21 +21,41 @@ from cc_deep_research.telemetry import (
 )
 
 
+@dataclass(slots=True)
+class DashboardBackendRuntime:
+    """Process-local runtime dependencies owned by the FastAPI app."""
+
+    event_router: EventRouter
+    jobs: ResearchRunJobRegistry
+
+    async def start(self) -> None:
+        """Start shared realtime infrastructure."""
+        await self.event_router.start()
+
+    async def stop(self) -> None:
+        """Stop shared infrastructure and cancel in-flight jobs."""
+        await self.jobs.cancel_all()
+        await self.event_router.stop()
+
+
 @asynccontextmanager
-async def lifespan(app: FastAPI):  # noqa: ARG001
+async def lifespan(app: FastAPI):
     """Manage application lifecycle."""
-    # Start event router
-    await app.state.event_router.start()
+    runtime = get_backend_runtime(app)
+    await runtime.start()
     yield
-    # Shutdown event router
-    await app.state.event_router.stop()
+    await runtime.stop()
 
 
-def create_app(event_router: EventRouter | None = None) -> FastAPI:
+def create_app(
+    event_router: EventRouter | None = None,
+    job_registry: ResearchRunJobRegistry | None = None,
+) -> FastAPI:
     """Create FastAPI application.
 
     Args:
         event_router: Optional EventRouter for WebSocket broadcasting.
+        job_registry: Optional in-process run registry for browser-started jobs.
 
     Returns:
         Configured FastAPI application.
@@ -49,8 +67,10 @@ def create_app(event_router: EventRouter | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Store event router in app state
-    app.state.event_router = event_router or EventRouter()
+    app.state.dashboard_runtime = DashboardBackendRuntime(
+        event_router=event_router or EventRouter(),
+        jobs=job_registry or ResearchRunJobRegistry(),
+    )
 
     # Configure CORS
     app.add_middleware(
@@ -61,6 +81,7 @@ def create_app(event_router: EventRouter | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
+    register_routes(app)
     return app
 
 
@@ -74,6 +95,21 @@ def get_app() -> FastAPI:
     if _app is None:
         _app = create_app()
     return _app
+
+
+def get_backend_runtime(app: FastAPI) -> DashboardBackendRuntime:
+    """Return the typed dashboard runtime stored on the app."""
+    return cast(DashboardBackendRuntime, app.state.dashboard_runtime)
+
+
+def get_event_router(app: FastAPI) -> EventRouter:
+    """Return the shared event router from app runtime state."""
+    return get_backend_runtime(app).event_router
+
+
+def get_job_registry(app: FastAPI) -> ResearchRunJobRegistry:
+    """Return the shared job registry from app runtime state."""
+    return get_backend_runtime(app).jobs
 
 
 def register_routes(app: FastAPI) -> None:
@@ -227,7 +263,7 @@ def register_routes(app: FastAPI) -> None:
 
         # Create connection wrapper
         connection = WebSocketConnection(websocket, session_id)
-        event_router = websocket.app.state.event_router
+        event_router = get_event_router(websocket.app)
 
         # Subscribe to session events
         await event_router.subscribe(session_id, connection)
@@ -284,18 +320,17 @@ def register_routes(app: FastAPI) -> None:
         except Exception as e:
             # Error occurred
             await event_router.unsubscribe(session_id, connection)
-            try:
+            with suppress(Exception):
                 await connection.send_json(
                     {"type": "error", "error": str(e)}
                 )
-            except Exception:
-                pass
 
 
 def start_server(
     host: str = "localhost",
     port: int = 8000,
     event_router: EventRouter | None = None,
+    job_registry: ResearchRunJobRegistry | None = None,
 ) -> None:
     """Start the FastAPI server.
 
@@ -303,11 +338,11 @@ def start_server(
         host: Host to bind to.
         port: Port to listen on.
         event_router: Optional EventRouter for WebSocket broadcasting.
+        job_registry: Optional process-local registry for browser-started runs.
     """
     import uvicorn
 
-    app = create_app(event_router)
-    register_routes(app)
+    app = create_app(event_router=event_router, job_registry=job_registry)
 
     uvicorn.run(
         app,
@@ -318,8 +353,12 @@ def start_server(
 
 
 __all__ = [
+    "DashboardBackendRuntime",
     "create_app",
+    "get_backend_runtime",
     "get_app",
+    "get_event_router",
+    "get_job_registry",
     "register_routes",
     "start_server",
 ]

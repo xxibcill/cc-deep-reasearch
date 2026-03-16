@@ -1,6 +1,6 @@
 # Task 004: Build Shared Research Run Service
 
-Status: Planned
+Status: Complete
 
 ## Objective
 
@@ -36,4 +36,3 @@ Create a single service that owns end-to-end research execution for both CLI and
 ## Suggested Verification
 
 - run `uv run pytest tests/test_orchestrator.py tests/test_reporter.py tests/test_session_store.py`
-

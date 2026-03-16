@@ -1,6 +1,6 @@
 # Task 006: Add Dashboard Backend Runtime State
 
-Status: Planned
+Status: Complete
 
 ## Objective
 
@@ -30,4 +30,3 @@ Give the FastAPI app a server-owned runtime container for active research jobs a
 ## Suggested Verification
 
 - run `uv run pytest tests/test_monitoring.py tests/test_orchestrator.py`
-
