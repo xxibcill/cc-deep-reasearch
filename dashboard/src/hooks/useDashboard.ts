@@ -14,6 +14,7 @@ interface DashboardState {
   selectedEvent: TelemetryEvent | null;
   replaceEvents: (events: TelemetryEvent[]) => void;
   appendEvent: (event: TelemetryEvent) => void;
+  appendEvents: (events: TelemetryEvent[]) => void;
   setConnected: (connected: boolean) => void;
   setSelectedEvent: (event: TelemetryEvent | null) => void;
   resetSessionState: () => void;
@@ -33,6 +34,14 @@ function sortEvents(events: TelemetryEvent[]): TelemetryEvent[] {
     }
     return left.timestamp.localeCompare(right.timestamp);
   });
+}
+
+function mergeEvents(existing: TelemetryEvent[], incoming: TelemetryEvent[]): TelemetryEvent[] {
+  const byId = new Map(existing.map((event) => [event.eventId, event]));
+  for (const event of incoming) {
+    byId.set(event.eventId, event);
+  }
+  return sortEvents(Array.from(byId.values())).slice(-4000);
 }
 
 const useDashboardStore = create<DashboardState>((set) => ({
@@ -61,8 +70,10 @@ const useDashboardStore = create<DashboardState>((set) => ({
       if (state.events.some((existing) => existing.eventId === event.eventId)) {
         return {};
       }
-      return { events: sortEvents([...state.events, event]).slice(-1000) };
+      return { events: mergeEvents(state.events, [event]) };
     }),
+  appendEvents: (events) =>
+    set((state) => ({ events: mergeEvents(state.events, events) })),
   setConnected: (connected) => set({ connected }),
   setSelectedEvent: (selectedEvent) => set({ selectedEvent }),
   resetSessionState: () =>
@@ -76,6 +87,8 @@ const useDashboardStore = create<DashboardState>((set) => ({
   filters: {
     phase: [],
     agent: [],
+    tool: [],
+    provider: [],
     status: [],
     eventTypes: [],
     timeRange: null,

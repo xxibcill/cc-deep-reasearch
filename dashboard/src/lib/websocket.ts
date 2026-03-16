@@ -1,9 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import useDashboardStore from '@/hooks/useDashboard';
 import { dashboardRuntimeConfig } from '@/lib/runtime-config';
 import { normalizeServerMessage } from '@/lib/telemetry-transformers';
-import { ClientMessage } from '@/types/telemetry';
+import { ClientMessage, TelemetryEvent } from '@/types/telemetry';
 
 export function useWebSocket(sessionId: string | null) {
   const connected = useDashboardStore((state) => state.connected);
@@ -12,15 +12,34 @@ export function useWebSocket(sessionId: string | null) {
   const reconnectTimeoutRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const shouldReconnectRef = useRef(false);
+  const eventBufferRef = useRef<TelemetryEvent[]>([]);
+  const flushHandleRef = useRef<number | null>(null);
 
-  const clearReconnectTimeout = () => {
+  const flushBufferedEvents = useCallback(() => {
+    flushHandleRef.current = null;
+    const buffered = eventBufferRef.current;
+    if (buffered.length === 0) {
+      return;
+    }
+    eventBufferRef.current = [];
+    useDashboardStore.getState().appendEvents(buffered);
+  }, []);
+
+  const scheduleFlush = useCallback(() => {
+    if (flushHandleRef.current !== null) {
+      return;
+    }
+    flushHandleRef.current = window.setTimeout(flushBufferedEvents, 80);
+  }, [flushBufferedEvents]);
+
+  const clearReconnectTimeout = useCallback(() => {
     if (reconnectTimeoutRef.current !== null) {
       window.clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
-  };
+  }, []);
 
-  const connect = () => {
+  const connect = useCallback(() => {
     if (!sessionId) return;
 
     const wsUrl = `${dashboardRuntimeConfig.websocketBaseUrl}/session/${sessionId}`;
@@ -54,7 +73,8 @@ export function useWebSocket(sessionId: string | null) {
         }
 
         if (message.type === 'event' && message.event) {
-          useDashboardStore.getState().appendEvent(message.event);
+          eventBufferRef.current.push(message.event);
+          scheduleFlush();
         } else if (message.type === 'history' && message.events) {
           useDashboardStore.getState().replaceEvents(message.events);
         } else if (message.type === 'error') {
@@ -86,11 +106,16 @@ export function useWebSocket(sessionId: string | null) {
         }, delay);
       }
     };
-  };
+  }, [scheduleFlush, sessionId]);
 
-  const disconnect = () => {
+  const disconnect = useCallback(() => {
     shouldReconnectRef.current = false;
     clearReconnectTimeout();
+    if (flushHandleRef.current !== null) {
+      window.clearTimeout(flushHandleRef.current);
+      flushHandleRef.current = null;
+    }
+    flushBufferedEvents();
 
     if (wsRef.current) {
       wsRef.current.onclose = null;
@@ -98,7 +123,7 @@ export function useWebSocket(sessionId: string | null) {
       wsRef.current = null;
     }
     useDashboardStore.getState().setConnected(false);
-  };
+  }, [clearReconnectTimeout, flushBufferedEvents]);
 
   useEffect(() => {
     useDashboardStore.getState().setSessionId(sessionId);
@@ -114,7 +139,7 @@ export function useWebSocket(sessionId: string | null) {
       disconnect();
       useDashboardStore.getState().resetSessionState();
     };
-  }, [sessionId]);
+  }, [connect, disconnect, sessionId]);
 
-  return { connected, events, connect, disconnect };
+  return { connected, events };
 }

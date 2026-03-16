@@ -79,8 +79,11 @@ Current UX surface:
 - session overview page
 - per-session detail page
 - live connection state
-- event table and JSON inspection modal
-- placeholder graph and timeline views for future visualization work
+- D3 workflow graph with pan, zoom, and click-to-inspect nodes
+- agent swimlane timeline with concurrent markers
+- dedicated tool execution panel
+- dedicated LLM reasoning panel
+- virtualized event table and raw JSON inspection modal
 
 ## How To Run
 
@@ -118,3 +121,5 @@ export NEXT_PUBLIC_CC_WS_BASE_URL=ws://localhost:8000/ws
 - `cc-deep-research dashboard` starts the FastAPI backend only. The Next.js frontend is run separately from [`dashboard/`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard).
 - `cc-deep-research telemetry dashboard` is a different command that launches the Streamlit analytics UI.
 - Dashboard-related environment variables currently live in [`src/cc_deep_research/config/schema.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/config/schema.py) as settings support, but the dashboard CLI currently takes host and port directly from command flags.
+- The dashboard UI now uses local `shadcn/ui`-style primitives declared in [`dashboard/components.json`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/components.json) and implemented in [`dashboard/src/components/ui/`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/components/ui).
+- Live-session performance depends on buffered WebSocket updates, lazy-loaded heavy panels, and a virtualized event table. If a session is especially noisy, those are the first guardrails to preserve before adding more visualization work.
