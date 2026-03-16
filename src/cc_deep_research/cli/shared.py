@@ -10,42 +10,74 @@ import click
 
 from cc_deep_research.config import Config, load_config
 from cc_deep_research.monitoring import ResearchMonitor
+from cc_deep_research.research_runs import ResearchRunRequest
 from cc_deep_research.tui import TerminalUI
 
 RESEARCH_PHASE_STEPS = 8
 
 
-def execute_research_run(
+class TerminalResearchRunExecutionAdapter:
+    """Execute a shared research run while preserving terminal UX."""
+
+    def __init__(
+        self,
+        *,
+        progress: bool,
+        ui: TerminalUI,
+    ) -> None:
+        self._progress = progress
+        self._ui = ui
+
+    def execute(self, *, execute_with_phase_hook: Any) -> Any:
+        """Run the workflow with terminal progress or a plain status message."""
+        if self._progress:
+            with self._ui.create_phase_progress(RESEARCH_PHASE_STEPS) as tracker:
+                session = asyncio.run(execute_with_phase_hook(tracker.on_phase))
+                tracker.mark_complete()
+                return session
+
+        with self._ui.status("Running research workflow..."):
+            return asyncio.run(execute_with_phase_hook(None))
+
+
+def build_research_run_request(
     *,
-    orchestrator: Any,
     query: str,
     depth: Any,
     min_sources: int | None,
-    progress: bool,
-    ui: TerminalUI,
-) -> Any:
-    """Run the orchestrator and optionally render phase progress."""
-    if progress:
-        with ui.create_phase_progress(RESEARCH_PHASE_STEPS) as tracker:
-            session = asyncio.run(
-                orchestrator.execute_research(
-                    query=query,
-                    depth=depth,
-                    min_sources=min_sources,
-                    phase_hook=tracker.on_phase,
-                )
-            )
-            tracker.mark_complete()
-            return session
-
-    with ui.status("Running research workflow..."):
-        return asyncio.run(
-            orchestrator.execute_research(
-                query=query,
-                depth=depth,
-                min_sources=min_sources,
-            )
-        )
+    output: str | None,
+    output_format: str,
+    no_cross_ref: bool,
+    tavily_only: bool,
+    claude_only: bool,
+    no_team: bool,
+    team_size: int | None,
+    parallel_mode: bool,
+    num_researchers: int | None,
+    enable_realtime: bool,
+    pdf: bool,
+) -> ResearchRunRequest:
+    """Translate CLI flags into the shared research-run request."""
+    return ResearchRunRequest(
+        query=query,
+        depth=depth,
+        min_sources=min_sources,
+        output_path=output,
+        output_format=output_format,
+        search_providers=_resolve_provider_override(
+            tavily_only=tavily_only,
+            claude_only=claude_only,
+        ),
+        cross_reference_enabled=False if no_cross_ref else None,
+        team_size=team_size,
+        parallel_mode=resolve_parallel_mode_override(
+            no_team=no_team,
+            parallel_mode=parallel_mode,
+        ),
+        num_researchers=num_researchers,
+        realtime_enabled=enable_realtime,
+        pdf_enabled=pdf,
+    )
 
 
 def resolve_parallel_mode_override(*, no_team: bool, parallel_mode: bool) -> bool | None:
@@ -145,10 +177,21 @@ def format_config_value(value: Any) -> str:
     return str(value)
 
 
+def _resolve_provider_override(*, tavily_only: bool, claude_only: bool) -> list[str] | None:
+    """Map CLI provider flags to the shared override contract."""
+    providers: list[str] | None = None
+    if tavily_only:
+        providers = ["tavily"]
+    if claude_only:
+        providers = ["claude"]
+    return providers
+
+
 __all__ = [
     "RESEARCH_PHASE_STEPS",
+    "TerminalResearchRunExecutionAdapter",
+    "build_research_run_request",
     "describe_execution_mode",
-    "execute_research_run",
     "format_config_value",
     "load_config_from_path",
     "log_monitor_session_start",
