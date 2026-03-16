@@ -4,16 +4,14 @@ from __future__ import annotations
 
 import click
 
-from cc_deep_research.monitoring import STOP_REASON_DEGRADED_EXECUTION, ResearchMonitor
-from cc_deep_research.research_runs import (
-    ResearchRunRequest,
-    materialize_research_run_output,
-)
+from cc_deep_research.monitoring import ResearchMonitor
+from cc_deep_research.research_runs import ResearchRunService
 from cc_deep_research.tui import ResearchRunView, TerminalUI
 
 from .shared import (
+    TerminalResearchRunExecutionAdapter,
+    build_research_run_request,
     describe_execution_mode,
-    execute_research_run,
     log_monitor_session_start,
 )
 
@@ -142,12 +140,10 @@ def register_research_commands(cli: click.Group) -> None:
         research_monitor = ResearchMonitor(enabled=(monitor or show_timeline) and not quiet)
 
         try:
+            from cc_deep_research.event_router import EventRouter
             from cc_deep_research.models import ResearchDepth
-            from cc_deep_research.orchestrator import TeamResearchOrchestrator
-            from cc_deep_research.config import load_config
-            from cc_deep_research.research_runs import apply_research_request_config_overrides
 
-            request = _build_research_run_request(
+            request = build_research_run_request(
                 query=query,
                 depth=ResearchDepth(depth.lower()),
                 min_sources=min_sources,
@@ -163,10 +159,12 @@ def register_research_commands(cli: click.Group) -> None:
                 enable_realtime=enable_realtime,
                 pdf=pdf,
             )
-            config = apply_research_request_config_overrides(load_config(), request)
+            service = ResearchRunService()
+            prepared_run = service.prepare(request)
+            config = prepared_run.config
 
             if not quiet:
-                team_mode = describe_execution_mode(config, None)
+                team_mode = describe_execution_mode(config, request.parallel_mode)
                 ui.show_research_header(
                     ResearchRunView(
                         query=query,
@@ -191,42 +189,22 @@ def register_research_commands(cli: click.Group) -> None:
                     config=config,
                 )
 
-            event_router = None
-            if enable_realtime:
-                import asyncio
-
-                from cc_deep_research.event_router import EventRouter
-
-                event_router = EventRouter()
-                asyncio.create_task(event_router.start())
-
-            orchestrator = TeamResearchOrchestrator(
-                config=config,
-                monitor=research_monitor,
-                parallel_mode=request.parallel_mode,
-                num_researchers=request.num_researchers,
-            )
-
-            if event_router:
-                research_monitor._event_router = event_router
-
-            session = execute_research_run(
-                orchestrator=orchestrator,
-                query=query,
-                depth=request.depth,
-                min_sources=request.min_sources,
+            event_router = EventRouter() if request.realtime_enabled else None
+            execution_adapter = TerminalResearchRunExecutionAdapter(
                 progress=progress and not quiet,
                 ui=ui,
             )
+            result = service.run_prepared(
+                prepared_run,
+                monitor=research_monitor,
+                execution_adapter=execution_adapter,
+                event_router=event_router,
+            )
+            session = result.session
 
             if show_timeline and config.search_team.parallel_execution and not quiet:
                 research_monitor.show_timeline()
 
-            result = materialize_research_run_output(
-                session=session,
-                config=config,
-                request=request,
-            )
             analysis = session.metadata.get("analysis", {})
 
             output_path = result.report.path
@@ -266,14 +244,6 @@ def register_research_commands(cli: click.Group) -> None:
                 )
 
         except Exception as error:
-            if research_monitor.session_id is not None:
-                research_monitor.finalize_session(
-                    total_sources=0,
-                    providers=[],
-                    total_time_ms=0,
-                    status="failed",
-                    stop_reason=STOP_REASON_DEGRADED_EXECUTION,
-                )
             if not quiet:
                 ui.show_error(str(error))
             if monitor and not quiet:
@@ -283,62 +253,3 @@ def register_research_commands(cli: click.Group) -> None:
 
 
 __all__ = ["register_research_commands"]
-
-
-def _build_research_run_request(
-    *,
-    query: str,
-    depth,
-    min_sources: int | None,
-    output: str | None,
-    output_format: str,
-    no_cross_ref: bool,
-    tavily_only: bool,
-    claude_only: bool,
-    no_team: bool,
-    team_size: int | None,
-    parallel_mode: bool,
-    num_researchers: int | None,
-    enable_realtime: bool,
-    pdf: bool,
-) -> ResearchRunRequest:
-    """Translate CLI flags into the shared research-run request."""
-    return ResearchRunRequest(
-        query=query,
-        depth=depth,
-        min_sources=min_sources,
-        output_path=output,
-        output_format=output_format,
-        search_providers=_resolve_provider_override(
-            tavily_only=tavily_only,
-            claude_only=claude_only,
-        ),
-        cross_reference_enabled=False if no_cross_ref else None,
-        team_size=team_size,
-        parallel_mode=_resolve_parallel_mode_setting(
-            no_team=no_team,
-            parallel_mode=parallel_mode,
-        ),
-        num_researchers=num_researchers,
-        realtime_enabled=enable_realtime,
-        pdf_enabled=pdf,
-    )
-
-
-def _resolve_provider_override(*, tavily_only: bool, claude_only: bool) -> list[str] | None:
-    """Map CLI provider flags to the shared override contract."""
-    providers: list[str] | None = None
-    if tavily_only:
-        providers = ["tavily"]
-    if claude_only:
-        providers = ["claude"]
-    return providers
-
-
-def _resolve_parallel_mode_setting(*, no_team: bool, parallel_mode: bool) -> bool | None:
-    """Map CLI execution flags to one parallel-mode override."""
-    if no_team:
-        return False
-    if parallel_mode:
-        return True
-    return None
