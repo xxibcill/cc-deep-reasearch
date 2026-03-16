@@ -89,15 +89,15 @@ class OrchestratorRuntime:
         )
         return self._state
 
-    async def shutdown(
-        self,
-        *,
-        team: LocalResearchTeam | None,
-        agents: dict[str, Any],
-        message_bus: LocalMessageBus | None,
-        agent_pool: LocalAgentPool | None,
-    ) -> None:
+    async def shutdown(self) -> None:
         """Tear down the concrete local runtime and clear cached state."""
+        if self._state is None:
+            return
+
+        team = self._state.team
+        agents = self._state.agents
+        message_bus = self._state.message_bus
+        agent_pool = self._state.agent_pool
         collector = agents.get(AGENT_TYPE_COLLECTOR)
         if isinstance(collector, SourceCollectorAgent):
             await collector.close_providers()

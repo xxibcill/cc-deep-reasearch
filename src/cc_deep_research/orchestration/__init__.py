@@ -2,7 +2,7 @@
 
 from cc_deep_research.orchestration.agent_access import AgentAccess
 from cc_deep_research.orchestration.analysis_workflow import AnalysisWorkflow
-from cc_deep_research.orchestration.execution import ResearchExecutionService
+from cc_deep_research.orchestration.execution import ResearchExecutionHooks, ResearchExecutionService
 from cc_deep_research.orchestration.llm_route_planner import (
     LLMRoutePlanner,
     create_llm_plan,
@@ -17,6 +17,7 @@ from cc_deep_research.orchestration.source_collection import SourceCollectionSer
 __all__ = [
     "AgentAccess",
     "AnalysisWorkflow",
+    "ResearchExecutionHooks",
     "ResearchExecutionService",
     "PhaseRunner",
     "OrchestratorRuntime",

@@ -367,15 +367,19 @@ def _install_fake_team(
         }
 
     async def fetch_content(
+        *,
         sources: list[SearchResultItem],
-        _depth: ResearchDepth,
+        depth: ResearchDepth,
     ) -> list[SearchResultItem]:
+        del depth
         for source in sources:
             source.content = source.content or ("x" * 600)
         return sources
 
     orchestrator._initialize_team = initialize_team
-    orchestrator._fetch_content_for_top_sources = AsyncMock(side_effect=fetch_content)
+    orchestrator._source_collection._hydrator.fetch_content_for_top_sources = AsyncMock(
+        side_effect=fetch_content
+    )
     orchestrator._shutdown_team = AsyncMock()
     orchestrator._monitor.set_session = MagicMock()
 
@@ -453,7 +457,7 @@ class TestTeamResearchOrchestrator:
         orchestrator = TeamResearchOrchestrator(Config(), ResearchMonitor(enabled=False))
         orchestrator._reset_session_metadata_state()
 
-        orchestrator._handle_llm_router_event(
+        orchestrator._session_state.handle_llm_router_event(
             {
                 "event_type": "route_fallback",
                 "agent_id": "analyzer",
@@ -462,7 +466,7 @@ class TestTeamResearchOrchestrator:
                 "reason": "primary_route_unavailable_or_failed",
             }
         )
-        orchestrator._handle_llm_router_event(
+        orchestrator._session_state.handle_llm_router_event(
             {
                 "event_type": "route_completion",
                 "agent_id": "analyzer",
@@ -713,6 +717,7 @@ class TestTeamResearchOrchestrator:
             parallel_mode=True,
         )
         orchestrator._agent_pool = object()
+        orchestrator._agents = {AGENT_TYPE_COLLECTOR: object()}
         orchestrator._monitor.set_session = MagicMock()
         orchestrator._initialize_team = AsyncMock()
         orchestrator._shutdown_team = AsyncMock()
@@ -720,20 +725,24 @@ class TestTeamResearchOrchestrator:
             return_value=_make_strategy("parallel query", ResearchDepth.STANDARD, 1)
         )
         orchestrator._phase_expand_queries = AsyncMock(return_value=["parallel query"])
-        orchestrator._phase_parallel_research = AsyncMock(side_effect=RuntimeError("parallel boom"))
+        orchestrator._source_collection.parallel_research = AsyncMock(
+            side_effect=RuntimeError("parallel boom")
+        )
 
         sources = _make_sources("fallback", 2)
 
         async def collect_sources(
+            *,
+            collector: object,
             query_families: list[QueryFamily],
-            _depth: ResearchDepth,
-            _min_sources: int | None,
+            depth: ResearchDepth,
         ) -> list[SearchResultItem]:
+            del collector, depth
             assert [family.query for family in query_families] == ["parallel query"]
-            orchestrator._set_provider_metadata(available=["tavily"], warnings=[])
+            orchestrator._session_state.set_provider_metadata(available=["tavily"], warnings=[])
             return sources
 
-        orchestrator._phase_collect_sources = AsyncMock(side_effect=collect_sources)
+        orchestrator._source_collection.collect_sources = AsyncMock(side_effect=collect_sources)
         orchestrator._run_analysis_workflow = AsyncMock(
             return_value=(
                 _make_analysis(source_count=len(sources)),
@@ -756,7 +765,7 @@ class TestTeamResearchOrchestrator:
         assert session.metadata["execution"]["degraded_reasons"] == [
             "Parallel source collection fell back to sequential mode: parallel boom"
         ]
-        orchestrator._phase_collect_sources.assert_awaited_once()
+        orchestrator._source_collection.collect_sources.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_execute_research_uses_sequential_collection_when_parallel_disabled(self) -> None:
@@ -765,6 +774,7 @@ class TestTeamResearchOrchestrator:
         config.search_team.parallel_execution = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        orchestrator._agents = {AGENT_TYPE_COLLECTOR: object()}
         orchestrator._monitor.set_session = MagicMock()
         orchestrator._initialize_team = AsyncMock()
         orchestrator._shutdown_team = AsyncMock()
@@ -772,20 +782,22 @@ class TestTeamResearchOrchestrator:
             return_value=_make_strategy("sequential query", ResearchDepth.STANDARD, 1)
         )
         orchestrator._phase_expand_queries = AsyncMock(return_value=["sequential query"])
-        orchestrator._phase_parallel_research = AsyncMock()
+        orchestrator._source_collection.parallel_research = AsyncMock()
 
         sources = _make_sources("sequential", 2)
 
         async def collect_sources(
+            *,
+            collector: object,
             query_families: list[QueryFamily],
-            _depth: ResearchDepth,
-            _min_sources: int | None,
+            depth: ResearchDepth,
         ) -> list[SearchResultItem]:
+            del collector, depth
             assert [family.query for family in query_families] == ["sequential query"]
-            orchestrator._set_provider_metadata(available=["tavily"], warnings=[])
+            orchestrator._session_state.set_provider_metadata(available=["tavily"], warnings=[])
             return sources
 
-        orchestrator._phase_collect_sources = AsyncMock(side_effect=collect_sources)
+        orchestrator._source_collection.collect_sources = AsyncMock(side_effect=collect_sources)
         orchestrator._run_analysis_workflow = AsyncMock(
             return_value=(
                 _make_analysis(source_count=len(sources)),
@@ -804,8 +816,8 @@ class TestTeamResearchOrchestrator:
         assert session.metadata["providers"]["status"] == "ready"
         assert session.metadata["execution"]["parallel_requested"] is False
         assert session.metadata["execution"]["parallel_used"] is False
-        orchestrator._phase_collect_sources.assert_awaited_once()
-        orchestrator._phase_parallel_research.assert_not_awaited()
+        orchestrator._source_collection.collect_sources.assert_awaited_once()
+        orchestrator._source_collection.parallel_research.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_execute_research_reports_top_level_phase_order(self) -> None:
@@ -822,7 +834,7 @@ class TestTeamResearchOrchestrator:
         orchestrator._phase_expand_queries = AsyncMock(
             return_value=[QueryFamily(query="phase order")]
         )
-        orchestrator._phase_collect_sources = AsyncMock(return_value=_make_sources("phase-order", 2))
+        orchestrator._collect_sources = AsyncMock(return_value=_make_sources("phase-order", 2))
         orchestrator._run_analysis_workflow = AsyncMock(
             return_value=(
                 _make_analysis(source_count=2),

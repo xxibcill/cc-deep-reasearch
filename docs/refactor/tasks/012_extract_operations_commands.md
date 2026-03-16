@@ -1,6 +1,6 @@
 # Task 012: Extract Operations Commands
 
-Status: Planned
+Status: Done
 
 ## Objective
 
