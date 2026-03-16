@@ -1,6 +1,6 @@
 # Task 011: Extract Research And Render Commands
 
-Status: Planned
+Status: Done
 
 ## Objective
 

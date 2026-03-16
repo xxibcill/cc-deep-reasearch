@@ -1,6 +1,6 @@
 # Task 015: Split Monitoring And Live Telemetry
 
-Status: Planned
+Status: Done
 
 ## Objective
 
