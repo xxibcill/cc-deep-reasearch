@@ -89,6 +89,12 @@ def main(ctx: click.Context) -> None:
 )
 @click.option("--show-timeline", is_flag=True, help="Show execution timeline for parallel mode")
 @click.option("--pdf", is_flag=True, help="Generate PDF output in addition to markdown")
+@click.option(
+    "--enable-realtime",
+    is_flag=True,
+    default=False,
+    help="Enable real-time event streaming to dashboard",
+)
 @click.pass_context
 def research(
     ctx: click.Context,
@@ -110,6 +116,7 @@ def research(
     num_researchers: int | None,
     show_timeline: bool,
     pdf: bool,
+    enable_realtime: bool,
 ) -> None:
     """Execute a research query and generate a report."""
     ctx.obj.update(
@@ -130,6 +137,7 @@ def research(
             "monitor": monitor,
             "parallel_mode": parallel_mode,
             "num_researchers": num_researchers,
+            "enable_realtime": enable_realtime,
             "show_timeline": show_timeline,
             "pdf": pdf,
         }
@@ -180,6 +188,17 @@ def research(
         if monitor and not quiet:
             _log_monitor_session_start(research_monitor, query, depth, output_format, config)
 
+        # Create event router if real-time monitoring is enabled
+        event_router = None
+        if enable_realtime:
+            from cc_deep_research.event_router import EventRouter
+
+            event_router = EventRouter()
+            # Start the event router (it will be started in a background task)
+            import asyncio
+
+            asyncio.create_task(event_router.start())
+
         orchestrator = TeamResearchOrchestrator(
             config=config,
             monitor=research_monitor,
@@ -188,6 +207,10 @@ def research(
             parallel_mode=effective_parallel_mode,
             num_researchers=num_researchers if num_researchers else None,
         )
+
+        # Pass event router to monitor
+        if event_router:
+            research_monitor._event_router = event_router
         depth_enum = ResearchDepth(depth.lower())
 
         parallel_enabled = (
@@ -643,6 +666,49 @@ def init(config_path: str | None, force: bool) -> None:
     created_path = create_default_config_file(save_path)
     ui = TerminalUI(enabled=True)
     ui.show_config_updated("config", "initialized", created_path)
+
+
+@main.command()
+@click.option(
+    "--host",
+    type=str,
+    default="localhost",
+    help="Host to bind to (default: localhost)",
+)
+@click.option(
+    "--port",
+    type=int,
+    default=8000,
+    help="Port to listen on (default: 8000)",
+)
+@click.option(
+    "--enable-realtime",
+    is_flag=True,
+    default=True,
+    help="Enable real-time WebSocket streaming",
+)
+def dashboard(host: str, port: int, enable_realtime: bool) -> None:
+    """Start the real-time monitoring dashboard server.
+
+    This starts a FastAPI server with WebSocket support for real-time
+    event streaming to the web dashboard.
+    """
+    from cc_deep_research.event_router import EventRouter
+    from cc_deep_research.web_server import start_server
+
+    click.echo(f"Starting monitoring dashboard on http://{host}:{port}")
+    click.echo("Press Ctrl+C to stop the server")
+
+    # Create event router if real-time is enabled
+    event_router = EventRouter() if enable_realtime else None
+
+    try:
+        start_server(host=host, port=port, event_router=event_router)
+    except KeyboardInterrupt:
+        click.echo("\nDashboard server stopped.")
+    except Exception as e:
+        click.echo(f"Error starting dashboard: {e}", err=True)
+        raise click.Abort() from e
 
 
 # Session management commands

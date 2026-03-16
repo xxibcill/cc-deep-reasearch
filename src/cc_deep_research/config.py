@@ -341,6 +341,14 @@ class Config(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
 
 
+class DashboardConfig(BaseModel):
+    """Dashboard configuration for real-time monitoring."""
+
+    enabled: bool = Field(default=False)
+    host: str = Field(default="localhost")
+    port: int = Field(default=8000)
+
+
 class Settings(BaseSettings):
     """Application settings with environment variable support."""
 
@@ -349,6 +357,11 @@ class Settings(BaseSettings):
     depth: ResearchDepth | None = Field(default=None, alias="CC_DEEP_RESEARCH_DEPTH")
     output_format: str | None = Field(default=None, alias="CC_DEEP_RESEARCH_FORMAT")
     no_color: bool = Field(default=False, alias="NO_COLOR")
+
+    # Dashboard settings
+    dashboard_enabled: bool = Field(default=False, alias="DASHBOARD_ENABLED")
+    dashboard_host: str | None = Field(default=None, alias="DASHBOARD_HOST")
+    dashboard_port: int | None = Field(default=None, alias="DASHBOARD_PORT")
 
     model_config = {
         "env_file": ".env",
