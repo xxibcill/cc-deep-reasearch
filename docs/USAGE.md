@@ -89,6 +89,17 @@ The stable package-root API is intentionally small. Prefer:
 
 For benchmark helpers, text normalization helpers, CLI commands, or telemetry internals, import from their direct modules instead of relying on `cc_deep_research.__init__`.
 
+### Post-Refactor Layout
+
+Contributor-facing module boundaries now follow the split package layout:
+
+- CLI bootstrap and command registration: [`src/cc_deep_research/cli/main.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/main.py)
+- CLI command handlers: [`src/cc_deep_research/cli/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli)
+- config schema and file IO: [`src/cc_deep_research/config/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/config)
+- runtime models: [`src/cc_deep_research/models/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/models)
+- orchestration internals: [`src/cc_deep_research/orchestration/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestration)
+- telemetry live readers and analytics: [`src/cc_deep_research/telemetry/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry)
+
 ---
 
 ## Installation
@@ -221,7 +232,7 @@ research:
   min_sources:
     quick: 3                       # Minimum sources for quick mode
     standard: 10                   # Minimum sources for standard mode
-    deep: 20                       # Minimum sources for deep mode
+    deep: 50                       # Minimum sources for deep mode
   enable_iterative_search: true   # Perform follow-up searches
   max_iterations: 3                # Maximum follow-up iterations
   enable_cross_ref: true           # Perform cross-reference analysis
@@ -297,7 +308,7 @@ cc-deep-research config init --force
 | `research.default_depth` | `"deep"` | Default research depth |
 | `research.min_sources.quick` | `3` | Quick mode minimum sources |
 | `research.min_sources.standard` | `10` | Standard mode minimum sources |
-| `research.min_sources.deep` | `20` | Deep mode minimum sources |
+| `research.min_sources.deep` | `50` | Deep mode minimum sources |
 | `research.enable_iterative_search` | `true` | Enable follow-up searches |
 | `research.max_iterations` | `3` | Max follow-up iterations |
 | `research.enable_cross_ref` | `true` | Enable cross-reference analysis |
@@ -580,6 +591,95 @@ cc-deep-research config init --config-path /custom/path/config.yaml
 cc-deep-research config init --force
 ```
 
+### `cc-deep-research telemetry ingest`
+
+Ingest persisted telemetry JSONL into DuckDB tables for analytics.
+
+**Usage:**
+```bash
+cc-deep-research telemetry ingest [OPTIONS]
+```
+
+**Options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--base-dir` | path | telemetry dir | Telemetry session directory |
+| `--db-path` | path | dashboard DB | DuckDB output path |
+
+**Examples:**
+```bash
+cc-deep-research telemetry ingest
+cc-deep-research telemetry ingest --base-dir ~/.config/cc-deep-research/telemetry
+cc-deep-research telemetry ingest --db-path ./tmp/dashboard.duckdb
+```
+
+### `cc-deep-research telemetry dashboard`
+
+Launch the Streamlit telemetry dashboard for live tails and historical DuckDB analytics.
+
+**Usage:**
+```bash
+cc-deep-research telemetry dashboard [OPTIONS]
+```
+
+**Options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--base-dir` | path | telemetry dir | Telemetry session directory |
+| `--db-path` | path | dashboard DB | DuckDB analytics path |
+| `--port` | int | `8501` | Streamlit dashboard port |
+| `--refresh-seconds` | int | `5` | Auto-refresh interval (`0` disables refresh) |
+| `--tail-limit` | int | `200` | Max live events and subprocess chunks shown |
+
+**Example:**
+```bash
+cc-deep-research telemetry dashboard --port 8501 --refresh-seconds 5 --tail-limit 200
+```
+
+### `cc-deep-research dashboard`
+
+Start the FastAPI backend used by the Next.js operator console in [`dashboard/`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard).
+
+**Usage:**
+```bash
+cc-deep-research dashboard [OPTIONS]
+```
+
+**Options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--host` | text | `localhost` | Host to bind |
+| `--port` | int | `8000` | HTTP/WebSocket port |
+| `--enable-realtime` | flag | enabled | Enable WebSocket event streaming |
+
+**Example:**
+```bash
+cc-deep-research dashboard --host localhost --port 8000
+```
+
+### `cc-deep-research session`
+
+Manage saved research sessions produced by completed runs.
+
+**Subcommands:**
+
+| Command | Purpose |
+|---------|---------|
+| `session list` | List saved sessions |
+| `session show SESSION_ID` | Show one saved session |
+| `session export SESSION_ID --output PATH` | Export a session as markdown, JSON, or HTML |
+| `session delete SESSION_ID` | Delete a saved session |
+
+**Examples:**
+```bash
+cc-deep-research session list --limit 10
+cc-deep-research session show research-abc123
+cc-deep-research session export research-abc123 --format json --output ./session.json
+```
+
 ---
 
 ## Research Modes
@@ -616,7 +716,7 @@ cc-deep-research research -d standard "History of electric vehicles"
 
 **Use for:** Comprehensive research, detailed understanding, academic work
 
-- **Sources:** 20+ (minimum 20)
+- **Sources:** 50+ (minimum 50)
 - **Time:** 5-10 minutes
 - **Features:** Comprehensive analysis, full cross-referencing, quality scoring
 - **Best for:** Thorough research, complex topics, reports
@@ -630,8 +730,8 @@ cc-deep-research research -d deep "Impact of AI on healthcare industry"
 
 | Feature | Quick | Standard | Deep |
 |---------|-------|----------|------|
-| Minimum Sources | 3 | 10 | 20 |
-| Typical Sources | 3-5 | 10-15 | 20+ |
+| Minimum Sources | 3 | 10 | 50 |
+| Typical Sources | 3-5 | 10-15 | 50+ |
 | Execution Time | 1-2 min | 3-5 min | 5-10 min |
 | Query Expansion | Basic | Moderate | Comprehensive |
 | Iterative Search | No | Yes | Yes |
@@ -1287,9 +1387,9 @@ cc-deep-research research --verbose --monitor "Problematic query"
 cc-deep-research research --quiet -o report.md "Automated research" > /dev/null
 ```
 
-### Live Monitoring Dashboard
+### Monitoring Dashboards
 
-Use the dashboard when you need to inspect an active run instead of waiting for the session to finish.
+There are two operator-facing dashboard paths, and they serve different purposes.
 
 Telemetry files are written for normal `research` runs. `--monitor` only adds console monitoring output.
 
@@ -1297,11 +1397,11 @@ Telemetry files are written for normal `research` runs. `--monitor` only adds co
 # Start a research run in one terminal
 cc-deep-research research "Complex topic"
 
-# Open the live dashboard in another terminal
+# Open the telemetry dashboard in another terminal
 cc-deep-research telemetry dashboard --port 8501 --refresh-seconds 5 --tail-limit 200
 ```
 
-The dashboard combines two data paths:
+The Streamlit telemetry dashboard combines two data paths:
 
 - live session reads from `events.jsonl` so active runs appear immediately
 - historical DuckDB analytics for completed session trends and summaries
@@ -1319,6 +1419,26 @@ Useful dashboard command options:
 - `--tail-limit N` limits the event tail and subprocess chunk panes
 - `--base-dir PATH` points the dashboard at a non-default telemetry directory
 - `--db-path PATH` stores historical analytics in a custom DuckDB file
+
+For the browser-based operator console, start the FastAPI backend and then run the Next.js frontend:
+
+```bash
+# Terminal 1: backend
+cc-deep-research dashboard --port 8000
+
+# Terminal 2: frontend
+cd dashboard
+npm install
+npm run dev
+```
+
+If the backend is not on the default host, set one of these before `npm run dev` or `npm run build`:
+
+```bash
+export NEXT_PUBLIC_CC_BACKEND_ORIGIN=http://localhost:8000
+export NEXT_PUBLIC_CC_API_BASE_URL=http://localhost:8000/api
+export NEXT_PUBLIC_CC_WS_BASE_URL=ws://localhost:8000/ws
+```
 
 For the implementation-level architecture and event model, see [`docs/TELEMETRY.md`](TELEMETRY.md).
 
