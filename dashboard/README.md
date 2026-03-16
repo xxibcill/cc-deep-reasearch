@@ -5,11 +5,12 @@ Real-time interactive monitoring dashboard for CC Deep Research with workflow vi
 ## Features
 
 - **Real-time Event Streaming**: WebSocket-based live updates without manual refresh
-- **Multiple View Modes**: Switch between Workflow Graph, Agent Timeline, and Event Table
+- **Multiple View Modes**: Switch between a D3 workflow graph, an agent swimlane timeline, and a virtualized event table
 - **Session Management**: View and manage all research sessions
-- **Event Filtering**: Filter events by phase, agent, status, and event type
-- **Detailed Inspection**: Click any event to see full details including metadata
+- **Event Filtering**: Filter by phase, agent, tool, provider, status, and event type
+- **Detailed Inspection**: Dedicated tool execution and LLM reasoning panels plus raw event inspection
 - **Live Status Indicators**: See connection status and event counts in real-time
+- **Live Performance Guardrails**: WebSocket batching, virtualized event rendering, and lazy-loaded heavy panels
 
 ## Installation
 
@@ -45,8 +46,9 @@ npm run build
 - **Next.js 14**: React framework with App Router
 - **TypeScript**: Type-safe development
 - **Tailwind CSS**: Utility-first styling
+- **shadcn/ui conventions**: shared UI primitives in `src/components/ui/` backed by `components.json`
 - **Zustand**: Lightweight state management
-- **D3.js**: Data visualization (planned for workflow graphs)
+- **D3.js**: Workflow graph visualization
 - **WebSocket**: Real-time event streaming
 - **Lucide React**: Icon library
 
@@ -55,7 +57,7 @@ npm run build
 \`\`\`
 src/
 ├── app/               # Next.js App Router pages
-├── components/        # Reusable page sections and tables
+├── components/        # Reusable page sections, visualizations, and ui primitives
 ├── hooks/             # Shared dashboard state
 ├── lib/               # Runtime config, API, websocket, transformers
 └── types/             # Frontend and API payload types
@@ -84,12 +86,12 @@ To use the dashboard with real-time monitoring:
 
 3. Open the dashboard in a browser and select the session to monitor
 
-## Future Enhancements
+## Component Foundation
 
-- [ ] D3.js workflow graph visualization
-- [ ] Agent swimlane timeline with parallel execution
-- [ ] Tool execution detail view with syntax highlighting
-- [ ] LLM reasoning panel with prompt/response display
-- [ ] Advanced filtering and search
-- [ ] Export functionality (JSON, CSV)
-- [ ] Dark mode toggle
+The dashboard now uses shared `shadcn/ui`-style primitives from [`src/components/ui/`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/components/ui) with class merging from [`src/lib/utils.ts`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/lib/utils.ts). The local setup is declared in [`components.json`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/components.json) so later dashboard panels can reuse the same dialog, tabs, badge, select, card, and scrollable-pane vocabulary.
+
+## Performance Notes
+
+- WebSocket updates are buffered briefly before they hit React state.
+- The event table renders a moving window instead of the full list.
+- Graph, timeline, tool, and LLM detail panels are lazy-loaded on the session page.
