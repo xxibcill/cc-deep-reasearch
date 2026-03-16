@@ -1,18 +1,35 @@
 import axios from 'axios';
-import { Session, TelemetryEvent } from '@/types/telemetry';
+import { dashboardRuntimeConfig } from '@/lib/runtime-config';
+import { normalizeEvent, normalizeSession } from '@/lib/telemetry-transformers';
+import { ApiSession, ApiTelemetryEvent, Session, TelemetryEvent } from '@/types/telemetry';
 
-const API_BASE_URL = 'http://localhost:8000/api';
+const apiClient = axios.create({
+  baseURL: dashboardRuntimeConfig.apiBaseUrl,
+});
+
+interface SessionsResponse {
+  sessions: ApiSession[];
+}
+
+interface SessionResponse {
+  session: ApiSession;
+}
+
+interface SessionEventsResponse {
+  events: ApiTelemetryEvent[];
+  count: number;
+}
 
 export async function getSessions(activeOnly = false, limit = 100): Promise<Session[]> {
-  const response = await axios.get(`${API_BASE_URL}/sessions`, {
+  const response = await apiClient.get<SessionsResponse>('/sessions', {
     params: { active_only: activeOnly, limit },
   });
-  return response.data.sessions;
+  return response.data.sessions.map(normalizeSession);
 }
 
 export async function getSession(sessionId: string): Promise<{ session: Session }> {
-  const response = await axios.get(`${API_BASE_URL}/sessions/${sessionId}`);
-  return response.data;
+  const response = await apiClient.get<SessionResponse>(`/sessions/${sessionId}`);
+  return { session: normalizeSession(response.data.session) };
 }
 
 export async function getSessionEvents(
@@ -20,8 +37,11 @@ export async function getSessionEvents(
   limit = 1000,
   offset = 0
 ): Promise<{ events: TelemetryEvent[]; count: number }> {
-  const response = await axios.get(`${API_BASE_URL}/sessions/${sessionId}/events`, {
+  const response = await apiClient.get<SessionEventsResponse>(`/sessions/${sessionId}/events`, {
     params: { limit, offset },
   });
-  return response.data;
+  return {
+    events: response.data.events.map(normalizeEvent),
+    count: response.data.count,
+  };
 }

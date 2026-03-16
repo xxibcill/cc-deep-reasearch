@@ -82,7 +82,7 @@ The codebase includes a `LocalResearchTeam` wrapper, but it is local lifecycle m
 
 ## Entry Point and User Controls
 
-The CLI entry point is [`src/cc_deep_research/cli.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli.py).
+The CLI entry point is [`src/cc_deep_research/cli/main.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/main.py).
 
 The `research` command controls the workflow through flags such as:
 
@@ -105,7 +105,7 @@ Important implementation detail:
 
 ## Configuration That Shapes the Workflow
 
-The workflow is parameterized by [`src/cc_deep_research/config.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/config.py).
+The workflow is parameterized by the config package rooted at [`src/cc_deep_research/config/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/config).
 
 The most relevant settings are:
 
@@ -125,7 +125,7 @@ The most relevant settings are:
 
 ## Data Model
 
-The core runtime model lives in [`src/cc_deep_research/models.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/models.py).
+The core runtime models live in the package rooted at [`src/cc_deep_research/models/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/models).
 
 The main objects are:
 
@@ -142,6 +142,15 @@ The main objects are:
 - original query
 - depth
 - metadata such as strategy, analysis, validation, iteration history, and provider list
+
+## Supporting Boundaries
+
+Telemetry and dashboard code now have explicit module boundaries:
+
+- live JSONL session readers: [`src/cc_deep_research/telemetry/live.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/live.py)
+- DuckDB ingestion: [`src/cc_deep_research/telemetry/ingest.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/ingest.py)
+- DuckDB analytics queries: [`src/cc_deep_research/telemetry/query.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/query.py)
+- dashboard runtime config and network clients: [`dashboard/src/lib/runtime-config.ts`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/lib/runtime-config.ts), [`dashboard/src/lib/api.ts`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/lib/api.ts), and [`dashboard/src/lib/websocket.ts`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/lib/websocket.ts)
 
 ## Phase-by-Phase Design
 
@@ -586,10 +595,10 @@ When changing the workflow:
 
 ## Relevant Files
 
-- [`src/cc_deep_research/cli.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli.py)
+- [`src/cc_deep_research/cli/main.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/main.py)
 - [`src/cc_deep_research/orchestrator.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestrator.py)
-- [`src/cc_deep_research/config.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/config.py)
-- [`src/cc_deep_research/models.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/models.py)
+- [`src/cc_deep_research/config/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/config)
+- [`src/cc_deep_research/models/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/models)
 - [`src/cc_deep_research/aggregation.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/aggregation.py)
 - [`src/cc_deep_research/agents/research_lead.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/research_lead.py)
 - [`src/cc_deep_research/agents/query_expander.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/query_expander.py)
