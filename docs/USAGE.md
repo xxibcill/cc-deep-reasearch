@@ -43,7 +43,7 @@ CC Deep Research is a command-line tool for staged web research. The current run
 | **Cross-Reference Analysis** | Identifies consensus points and contradictions |
 | **Multiple Formats** | Markdown, JSON, and HTML output options |
 | **API Key Rotation** - Automatic failover with multiple API keys |
-| **Progress Monitoring** | Real-time progress indicators and detailed logging |
+| **Progress Monitoring** | Browser-based live monitoring, terminal monitor output, and telemetry analytics |
 
 ### Architecture Overview
 
@@ -375,6 +375,23 @@ export TAVILY_API_KEYS=your_api_key_here
 cc-deep-research research "What are the latest developments in quantum computing?"
 ```
 
+### Live Monitoring In The Browser
+
+For the current monitoring workflow, start the combined dashboard launcher and run research from the browser home page:
+
+```bash
+cd /Users/jjae/Documents/guthib/cc-deep-research/dashboard
+npm install
+npm run dev
+```
+
+This starts:
+
+- backend API on `http://localhost:8000`
+- frontend dashboard on `http://localhost:3000`
+
+Then open `http://localhost:3000`, submit a query from the home page, watch live progress, and open the final session report when the run completes.
+
 ### Understanding the Output
 
 The tool generates a comprehensive report with the following structure:
@@ -463,16 +480,21 @@ cc-deep-research research [QUERY] [OPTIONS]
 | `--depth` | `-d` | choice | `deep` | Research depth mode (`quick`, `standard`, `deep`) |
 | `--sources` | `-s` | int | (from config) | Minimum number of sources to gather |
 | `--output` | `-o` | path | (stdout) | Output file path for the report |
-| `--format` | | choice | `markdown` | Output format (`markdown`, `json`) |
+| `--format` | | choice | `markdown` | Output format (`markdown`, `json`, `html`) |
 | `--no-cross-ref` | | flag | false | Disable cross-reference analysis |
 | `--tavily-only` | | flag | false | Use only Tavily provider |
-| `--claude-only` | | flag | false | Use only Claude provider |
+| `--claude-only` | | flag | false | Select only the `claude` provider (currently emits provider warnings) |
 | `--no-team` | | flag | false | Run source collection sequentially instead of using parallel researchers |
 | `--team-size` | | int | (from config) | Override default team size |
+| `--parallel-mode` | | flag | false | Force parallel researcher execution for this run |
+| `--num-researchers` | | int | (from config) | Override the number of parallel researchers (1-8) |
 | `--progress` | | flag | true | Show progress indicators |
 | `--quiet` | | flag | false | Suppress output |
 | `--verbose` | | flag | false | Show detailed output |
-| `--monitor` | | flag | false | Show internal workflow monitoring |
+| `--monitor` | | flag | false | Show terminal workflow monitoring output |
+| `--show-timeline` | | flag | false | Show the execution timeline after a parallel run |
+| `--pdf` | | flag | false | Generate PDF output in addition to the selected report format |
+| `--enable-realtime` | | flag | false | Enable the shared real-time event router used by dashboard-backed runs |
 
 **Examples:**
 ```bash
@@ -488,8 +510,15 @@ cc-deep-research research -s 30 --format json "Machine learning algorithms" > ml
 # HTML output with custom sources
 cc-deep-research research -s 30 --format html -o ml.html "Machine learning algorithms"
 
-# Monitor workflow execution
+# Monitor workflow execution in the terminal
 cc-deep-research research --monitor "Complex topic requiring deep analysis"
+
+# Show a parallel execution timeline after the run completes
+cc-deep-research research --parallel-mode --num-researchers 4 --show-timeline \
+  "Complex topic requiring deep analysis"
+
+# Generate PDF output alongside the main report
+cc-deep-research research --pdf -o report.md "Complex topic requiring deep analysis"
 
 # Quiet mode for scripts
 cc-deep-research research --quiet -o report.md "Topic" > /dev/null
@@ -841,6 +870,26 @@ Override the configured specialist roster size metadata.
 cc-deep-research research --team-size 6 "Complex topic"
 ```
 
+#### `--parallel-mode`
+
+Force parallel researcher execution for this run when you want to override the configured mode.
+
+**Example:**
+```bash
+cc-deep-research research --parallel-mode "Complex topic"
+```
+
+#### `--num-researchers`
+
+Override the number of parallel researchers used during source collection.
+
+**Values:** Integer between 1-8
+
+**Example:**
+```bash
+cc-deep-research research --parallel-mode --num-researchers 4 "Complex topic"
+```
+
 ### Display Options
 
 #### `--progress`
@@ -886,7 +935,7 @@ Mode: Local pipeline (parallel source collection)
 
 #### `--monitor`
 
-Show internal workflow monitoring information.
+Show internal workflow monitoring information in the terminal.
 
 **Shows:**
 - Research session details
@@ -896,9 +945,42 @@ Show internal workflow monitoring information.
 - Performance metrics
 - Summary statistics
 
+This does not launch the browser dashboard. It only adds terminal monitor output.
+
 **Example:**
 ```bash
 cc-deep-research research --monitor "Complex topic"
+```
+
+#### `--show-timeline`
+
+Show a terminal timeline after a parallel run completes.
+
+Use this with `--parallel-mode` when you want a compact execution trace without opening the browser dashboard.
+
+**Example:**
+```bash
+cc-deep-research research --parallel-mode --show-timeline "Complex topic"
+```
+
+#### `--enable-realtime`
+
+Enable the shared event router used by the browser monitoring backend.
+
+In normal browser-first usage you do not pass this yourself; runs started from the dashboard home page already use the backend's shared router. Keep this for integrations or advanced local development.
+
+**Example:**
+```bash
+cc-deep-research research --enable-realtime "Topic"
+```
+
+#### `--pdf`
+
+Generate a PDF artifact in addition to the main report output.
+
+**Example:**
+```bash
+cc-deep-research research --pdf -o report.md "Topic"
 ```
 
 ### Cross-Reference Options
@@ -1372,9 +1454,16 @@ cc-deep-research research --no-team --verbose "Test query"
 
 ### Monitoring and Debugging
 
-**Monitor workflow execution:**
+For live operator visibility, prefer the browser dashboard. Use `--monitor` when you want extra terminal output during a CLI run.
+
+**Terminal monitoring output:**
 ```bash
 cc-deep-research research --monitor "Complex topic"
+```
+
+**Parallel timeline in the terminal:**
+```bash
+cc-deep-research research --parallel-mode --show-timeline "Complex topic"
 ```
 
 **Verbose output for troubleshooting:**
@@ -1394,7 +1483,41 @@ There are two operator-facing dashboard paths, and they serve different purposes
 Telemetry files are written for normal `research` runs. `--monitor` only adds console monitoring output.
 
 ```bash
-# Start a research run in one terminal
+# Recommended: start backend + frontend together
+cd /Users/jjae/Documents/guthib/cc-deep-research/dashboard
+npm install
+npm run dev
+```
+
+Then open `http://localhost:3000` and start research from the home page. That browser-first flow gives you:
+
+- live progress updates over WebSocket
+- session and report views in the same UI
+- no separate `research` terminal required
+
+If you want to run backend and frontend separately for development:
+
+```bash
+# Terminal 1: backend API only
+cc-deep-research dashboard --port 8000
+
+# Terminal 2: frontend only
+cd /Users/jjae/Documents/guthib/cc-deep-research/dashboard
+npm run dev:frontend
+```
+
+If the backend is not on the default host, set one of these before `npm run dev` or `npm run build`:
+
+```bash
+export NEXT_PUBLIC_CC_BACKEND_ORIGIN=http://localhost:8000
+export NEXT_PUBLIC_CC_API_BASE_URL=http://localhost:8000/api
+export NEXT_PUBLIC_CC_WS_BASE_URL=ws://localhost:8000/ws
+```
+
+The separate Streamlit telemetry dashboard is still available for live tails and historical analytics:
+
+```bash
+# Start a research run from the CLI
 cc-deep-research research "Complex topic"
 
 # Open the telemetry dashboard in another terminal
@@ -1419,26 +1542,6 @@ Useful dashboard command options:
 - `--tail-limit N` limits the event tail and subprocess chunk panes
 - `--base-dir PATH` points the dashboard at a non-default telemetry directory
 - `--db-path PATH` stores historical analytics in a custom DuckDB file
-
-For the browser-based operator console, start the FastAPI backend and then run the Next.js frontend:
-
-```bash
-# Terminal 1: backend
-cc-deep-research dashboard --port 8000
-
-# Terminal 2: frontend
-cd dashboard
-npm install
-npm run dev
-```
-
-If the backend is not on the default host, set one of these before `npm run dev` or `npm run build`:
-
-```bash
-export NEXT_PUBLIC_CC_BACKEND_ORIGIN=http://localhost:8000
-export NEXT_PUBLIC_CC_API_BASE_URL=http://localhost:8000/api
-export NEXT_PUBLIC_CC_WS_BASE_URL=ws://localhost:8000/ws
-```
 
 For the implementation-level architecture and event model, see [`docs/TELEMETRY.md`](TELEMETRY.md).
 
@@ -1511,12 +1614,21 @@ pip install "cc-deep-research[dashboard]"
 
 **Solutions:**
 ```bash
-# Start a monitored run first
-cc-deep-research research --monitor "Your query"
+# Browser-first monitoring: start the combined launcher
+cd /Users/jjae/Documents/guthib/cc-deep-research/dashboard
+npm run dev
 
-# Or point the dashboard at an existing telemetry directory
+# Then open http://localhost:3000 and launch a run from the home page
+
+# Or, for the Streamlit telemetry dashboard, point it at an existing telemetry directory
 cc-deep-research telemetry dashboard --base-dir /path/to/telemetry
 ```
+
+Notes:
+
+- the browser dashboard shows live runs started through its backend
+- the Streamlit telemetry dashboard reads persisted telemetry from normal `research` runs
+- `--monitor` adds terminal logs but is not required for telemetry persistence
 
 #### Issue: "Claude CLI disabled inside Claude Code"
 
