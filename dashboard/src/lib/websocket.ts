@@ -1,26 +1,36 @@
-import { useEffect, useRef, useState } from 'react';
-import { ServerMessage, ClientMessage, TelemetryEvent } from '@/types/telemetry';
+import { useEffect, useRef } from 'react';
+
+import useDashboardStore from '@/hooks/useDashboard';
+import { dashboardRuntimeConfig } from '@/lib/runtime-config';
+import { normalizeServerMessage } from '@/lib/telemetry-transformers';
+import { ClientMessage } from '@/types/telemetry';
 
 export function useWebSocket(sessionId: string | null) {
-  const [connected, setConnected] = useState(false);
-  const [events, setEvents] = useState<TelemetryEvent[]>([]);
+  const connected = useDashboardStore((state) => state.connected);
+  const events = useDashboardStore((state) => state.events);
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef(0);
+  const shouldReconnectRef = useRef(false);
+
+  const clearReconnectTimeout = () => {
+    if (reconnectTimeoutRef.current !== null) {
+      window.clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+  };
 
   const connect = () => {
     if (!sessionId) return;
 
-    const wsUrl = `ws://localhost:8000/ws/session/${sessionId}`;
+    const wsUrl = `${dashboardRuntimeConfig.websocketBaseUrl}/session/${sessionId}`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log('WebSocket connected');
-      setConnected(true);
+      useDashboardStore.getState().setConnected(true);
       reconnectAttemptsRef.current = 0;
 
-      // Subscribe to session
       const subscribeMessage: ClientMessage = {
         type: 'subscribe',
         sessionId,
@@ -38,12 +48,15 @@ export function useWebSocket(sessionId: string | null) {
 
     ws.onmessage = (event) => {
       try {
-        const message: ServerMessage = JSON.parse(event.data);
-        
+        const message = normalizeServerMessage(JSON.parse(event.data));
+        if (!message) {
+          return;
+        }
+
         if (message.type === 'event' && message.event) {
-          setEvents(prev => [...prev, message.event!]);
+          useDashboardStore.getState().appendEvent(message.event);
         } else if (message.type === 'history' && message.events) {
-          setEvents(message.events);
+          useDashboardStore.getState().replaceEvents(message.events);
         } else if (message.type === 'error') {
           console.error('WebSocket error:', message.error);
         }
@@ -54,19 +67,20 @@ export function useWebSocket(sessionId: string | null) {
 
     ws.onerror = (error) => {
       console.error('WebSocket error:', error);
-      setConnected(false);
+      useDashboardStore.getState().setConnected(false);
     };
 
     ws.onclose = () => {
-      console.log('WebSocket disconnected');
-      setConnected(false);
-      
-      // Attempt to reconnect with exponential backoff
+      useDashboardStore.getState().setConnected(false);
+
+      if (!shouldReconnectRef.current) {
+        return;
+      }
+
       if (reconnectAttemptsRef.current < 5) {
         const delay = Math.pow(2, reconnectAttemptsRef.current) * 1000;
-        console.log(`Reconnecting in ${delay}ms...`);
-        
-        reconnectTimeoutRef.current = setTimeout(() => {
+
+        reconnectTimeoutRef.current = window.setTimeout(() => {
           reconnectAttemptsRef.current += 1;
           connect();
         }, delay);
@@ -75,19 +89,22 @@ export function useWebSocket(sessionId: string | null) {
   };
 
   const disconnect = () => {
+    shouldReconnectRef.current = false;
+    clearReconnectTimeout();
+
     if (wsRef.current) {
+      wsRef.current.onclose = null;
       wsRef.current.close();
       wsRef.current = null;
     }
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-    }
-    setConnected(false);
+    useDashboardStore.getState().setConnected(false);
   };
 
-  // Connect when sessionId changes
   useEffect(() => {
+    useDashboardStore.getState().setSessionId(sessionId);
+
     if (sessionId) {
+      shouldReconnectRef.current = true;
       connect();
     } else {
       disconnect();
@@ -95,6 +112,7 @@ export function useWebSocket(sessionId: string | null) {
 
     return () => {
       disconnect();
+      useDashboardStore.getState().resetSessionState();
     };
   }, [sessionId]);
 
