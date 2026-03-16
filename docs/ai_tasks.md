@@ -30,41 +30,33 @@ The interactive real-time monitoring dashboard has been successfully implemented
 - ✅ Dashboard README
 - ✅ Implementation summary guide
 
-### Future Enhancements (Not Yet Implemented)
+### Future Enhancements (Planned Task Pack)
 
-These can be added incrementally:
+The dashboard follow-up work is now broken into implementation-sized tasks in [`docs/AI_TASKS`](/Users/jjae/Documents/guthib/cc-deep-research/docs/AI_TASKS).
 
-1. **D3.js Workflow Graph**
-   - Force-directed graph visualization
-   - Agent nodes with status indicators
-   - Phase transitions and dependencies
-   - Click-to-drill-down
+1. [Task 045: D3 workflow graph visualization](/Users/jjae/Documents/guthib/cc-deep-research/docs/AI_TASKS/045_d3_workflow_graph_visualization.md)
+   - Replace the graph placeholder with an interactive live execution graph
+   - Add node and edge inspection tied to telemetry details
 
-2. **Agent Timeline**
-   - Swimlane layout with time axis
-   - Parallel execution visualization
-   - Hover tooltips and filtering
+2. [Task 046: Agent timeline swimlane view](/Users/jjae/Documents/guthib/cc-deep-research/docs/AI_TASKS/046_agent_timeline_swimlane_view.md)
+   - Turn the timeline placeholder into a concurrent swimlane visualization
+   - Surface durations, hand-offs, and idle gaps by agent
 
-3. **Tool Execution Detail**
-   - Expandable tool call details
-   - Syntax highlighting for request/response
-   - Duration bars and status indicators
+3. [Task 047: Tool execution detail drill-down](/Users/jjae/Documents/guthib/cc-deep-research/docs/AI_TASKS/047_tool_execution_detail_drilldown.md)
+   - Add expandable tool execution details with readable payload formatting
+   - Show duration, status, and failure context without raw JSON spelunking
 
-4. **LLM Reasoning Panel**
-   - Prompt/response display
-   - Token usage visualization
-   - Metadata display (model, provider, transport)
+4. [Task 048: LLM reasoning panel](/Users/jjae/Documents/guthib/cc-deep-research/docs/AI_TASKS/048_llm_reasoning_panel.md)
+   - Add prompt and response inspection with token and route metadata
+   - Group related LLM telemetry into one inspectable interaction view
 
-5. **shadcn/ui Integration**
-   - Pre-built accessible components
-   - Dialog, Table, Select, Badge components
-   - Improved styling consistency
+5. [Task 049: shadcn/ui dashboard integration](/Users/jjae/Documents/guthib/cc-deep-research/docs/AI_TASKS/049_shadcn_ui_dashboard_integration.md)
+   - Introduce reusable dialog, table, badge, select, and scroll primitives
+   - Replace current hand-rolled inspection UI where shared components help
 
-6. **Performance Optimization**
-   - Virtual scrolling for long lists
-   - Event debouncing (100ms)
-   - D3.js rendering optimization
-   - Lazy loading for historical sessions
+6. [Task 050: Dashboard performance optimization](/Users/jjae/Documents/guthib/cc-deep-research/docs/AI_TASKS/050_dashboard_performance_optimization.md)
+   - Add list windowing, update debouncing, and heavy-panel lazy loading
+   - Tune D3 and session-page rendering for longer live sessions
 
 ## How to Use
 
