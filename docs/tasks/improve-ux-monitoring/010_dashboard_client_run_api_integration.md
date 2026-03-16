@@ -1,6 +1,6 @@
 # Task 010: Add Dashboard Client Support For Run APIs
 
-Status: Planned
+Status: Complete
 
 ## Objective
 
