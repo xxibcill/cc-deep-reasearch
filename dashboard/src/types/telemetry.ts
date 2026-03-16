@@ -207,3 +207,62 @@ export type EventFilter = {
 };
 
 export type ViewMode = 'graph' | 'timeline' | 'table';
+
+// Research Run API types
+
+export type ResearchRunStatus = 'queued' | 'running' | 'completed' | 'failed';
+
+export type ResearchOutputFormat = 'markdown' | 'json' | 'html';
+
+export type ResearchArtifactKind = 'session' | 'report' | 'pdf';
+
+export interface ResearchRunRequest {
+  query: string;
+  depth?: 'quick' | 'standard' | 'deep';
+  min_sources?: number | null;
+  output_format?: ResearchOutputFormat;
+  search_providers?: string[] | null;
+  cross_reference_enabled?: boolean | null;
+  team_size?: number | null;
+  parallel_mode?: boolean | null;
+  num_researchers?: number | null;
+  realtime_enabled?: boolean;
+  pdf_enabled?: boolean;
+}
+
+export interface ResearchRunArtifact {
+  kind: ResearchArtifactKind;
+  path: string;
+  format: string | null;
+  media_type: string | null;
+}
+
+export interface ResearchRunResult {
+  session_id: string;
+  report_format: ResearchOutputFormat;
+  report_path: string | null;
+  artifacts: ResearchRunArtifact[];
+}
+
+export interface StartResearchRunResponse {
+  run_id: string;
+  status: ResearchRunStatus;
+}
+
+export interface ResearchRunStatusResponse {
+  run_id: string;
+  status: ResearchRunStatus;
+  created_at: string;
+  session_id?: string;
+  started_at?: string;
+  completed_at?: string;
+  error?: string;
+  result?: ResearchRunResult;
+}
+
+export interface SessionReportResponse {
+  session_id: string;
+  format: ResearchOutputFormat;
+  media_type: string;
+  content: string;
+}
