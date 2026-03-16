@@ -9,7 +9,7 @@ from cc_deep_research.agents import ResearcherAgent, SourceCollectorAgent
 from cc_deep_research.aggregation import ResultAggregator
 from cc_deep_research.config import Config
 from cc_deep_research.key_rotation import KeyRotationManager
-from cc_deep_research.models import (
+from cc_deep_research.models.search import (
     QueryFamily,
     ResearchDepth,
     SearchOptions,

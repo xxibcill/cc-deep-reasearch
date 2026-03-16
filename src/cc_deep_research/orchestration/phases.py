@@ -5,13 +5,8 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from cc_deep_research.models import (
-    AnalysisResult,
-    ResearchDepth,
-    SearchResultItem,
-    StrategyResult,
-    ValidationResult,
-)
+from cc_deep_research.models.analysis import AnalysisResult, StrategyResult, ValidationResult
+from cc_deep_research.models.search import ResearchDepth, SearchResultItem
 from cc_deep_research.monitoring import ResearchMonitor
 
 
