@@ -1,6 +1,6 @@
 # Task 007: Add Start Research Run API
 
-Status: Planned
+Status: Complete
 
 ## Objective
 
