@@ -1,6 +1,6 @@
 # Task 007: Add Models Compatibility Layer
 
-Status: Planned
+Status: Done
 
 ## Objective
 
