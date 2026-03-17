@@ -3,21 +3,21 @@
 This project uses a local, file-backed telemetry pipeline. Runtime telemetry is written into per-session JSONL files, optionally ingested into DuckDB for historical analytics, and consumed by two operator UIs:
 
 - the Streamlit telemetry dashboard launched by `cc-deep-research telemetry dashboard`
-- the FastAPI + Next.js real-time operator console launched with `cc-deep-research dashboard` plus the frontend in [`dashboard/`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard)
+- the FastAPI + Next.js real-time operator console launched with `cc-deep-research dashboard` plus the frontend in [`dashboard/`](../dashboard)
 
 ## Core Boundaries
 
 The implementation is split across these modules:
 
-- monitor emission and session finalization: [`src/cc_deep_research/monitoring.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/monitoring.py)
-- telemetry compatibility exports: [`src/cc_deep_research/telemetry/__init__.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/__init__.py)
-- live JSONL readers: [`src/cc_deep_research/telemetry/live.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/live.py)
-- DuckDB ingestion: [`src/cc_deep_research/telemetry/ingest.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/ingest.py)
-- DuckDB analytics queries: [`src/cc_deep_research/telemetry/query.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/query.py)
-- telemetry CLI commands: [`src/cc_deep_research/cli/telemetry.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/telemetry.py)
-- real-time dashboard backend: [`src/cc_deep_research/cli/dashboard.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/dashboard.py), [`src/cc_deep_research/web_server.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/web_server.py), and [`src/cc_deep_research/event_router.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/event_router.py)
-- Streamlit dashboard app: [`src/cc_deep_research/dashboard_app.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/dashboard_app.py)
-- Next.js operator console: [`dashboard/src/`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src)
+- monitor emission and session finalization: [`src/cc_deep_research/monitoring.py`](../src/cc_deep_research/monitoring.py)
+- telemetry compatibility exports: [`src/cc_deep_research/telemetry/__init__.py`](../src/cc_deep_research/telemetry/__init__.py)
+- live JSONL readers: [`src/cc_deep_research/telemetry/live.py`](../src/cc_deep_research/telemetry/live.py)
+- DuckDB ingestion: [`src/cc_deep_research/telemetry/ingest.py`](../src/cc_deep_research/telemetry/ingest.py)
+- DuckDB analytics queries: [`src/cc_deep_research/telemetry/query.py`](../src/cc_deep_research/telemetry/query.py)
+- telemetry CLI commands: [`src/cc_deep_research/cli/telemetry.py`](../src/cc_deep_research/cli/telemetry.py)
+- real-time dashboard backend: [`src/cc_deep_research/cli/dashboard.py`](../src/cc_deep_research/cli/dashboard.py), [`src/cc_deep_research/web_server.py`](../src/cc_deep_research/web_server.py), and [`src/cc_deep_research/event_router.py`](../src/cc_deep_research/event_router.py)
+- Streamlit dashboard app: [`src/cc_deep_research/dashboard_app.py`](../src/cc_deep_research/dashboard_app.py)
+- Next.js operator console: [`dashboard/src/`](../dashboard/src)
 
 ## End-to-End Flow
 
@@ -72,7 +72,7 @@ Each research run gets a session directory under the telemetry base dir:
 - `~/.config/cc-deep-research/telemetry/<session_id>/events.jsonl`
 - `~/.config/cc-deep-research/telemetry/<session_id>/summary.json`
 
-The default telemetry path is computed by [`get_default_telemetry_dir()`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/live.py) in [`src/cc_deep_research/telemetry/live.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/live.py), which places telemetry next to the main config file.
+The default telemetry path is computed by [`get_default_telemetry_dir()`](../src/cc_deep_research/telemetry/live.py) in [`src/cc_deep_research/telemetry/live.py`](../src/cc_deep_research/telemetry/live.py), which places telemetry next to the main config file.
 
 Session setup and finalization happen in the orchestration runtime:
 
@@ -94,7 +94,7 @@ These fields support ordered tails, event trees, grouped subprocess streams, and
 
 ## Phase Instrumentation
 
-[`src/cc_deep_research/orchestration/phases.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestration/phases.py) emits both lifecycle and timing records:
+[`src/cc_deep_research/orchestration/phases.py`](../src/cc_deep_research/orchestration/phases.py) emits both lifecycle and timing records:
 
 - `phase.started`
 - `phase.completed`
@@ -126,7 +126,7 @@ These are the main event families currently used by the codebase.
 
 ## Live Query Path
 
-Live views read directly from session files through helpers in [`src/cc_deep_research/telemetry/live.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/live.py):
+Live views read directly from session files through helpers in [`src/cc_deep_research/telemetry/live.py`](../src/cc_deep_research/telemetry/live.py):
 
 - `query_live_sessions()`
 - `query_live_session_detail()`
@@ -159,7 +159,7 @@ Historical analytics are built by ingesting session files into DuckDB with:
 
 Ingestion is session-replacement based, so repeated ingest runs are safe.
 
-Historical dashboard views use helpers in [`src/cc_deep_research/telemetry/query.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/query.py):
+Historical dashboard views use helpers in [`src/cc_deep_research/telemetry/query.py`](../src/cc_deep_research/telemetry/query.py):
 
 - `query_dashboard_data()`
 - `query_session_detail()`
@@ -182,7 +182,7 @@ does three things:
 
 1. resolves the telemetry directory and DuckDB path
 2. runs an ingest pass
-3. launches Streamlit against [`src/cc_deep_research/dashboard_app.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/dashboard_app.py)
+3. launches Streamlit against [`src/cc_deep_research/dashboard_app.py`](../src/cc_deep_research/dashboard_app.py)
 
 This dashboard combines:
 
@@ -204,14 +204,14 @@ starts the FastAPI backend that serves:
 - `GET /api/sessions/{session_id}/events`
 - `GET /ws/session/{session_id}`
 
-The Next.js frontend in [`dashboard/`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard) consumes those endpoints for the browser-based operator console.
+The Next.js frontend in [`dashboard/`](../dashboard) consumes those endpoints for the browser-based operator console.
 
 ## Relationship to Session Persistence
 
 Telemetry is separate from the saved research-session output.
 
 - telemetry stores observability data under the telemetry directory
-- user-facing session results are stored separately by [`src/cc_deep_research/session_store.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/session_store.py)
+- user-facing session results are stored separately by [`src/cc_deep_research/session_store.py`](../src/cc_deep_research/session_store.py)
 
 That separation lets the project answer both:
 
@@ -234,7 +234,7 @@ That extra installs:
 - `pandas`
 - `streamlit`
 
-The browser-based operator console also requires frontend dependencies under [`dashboard/`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard):
+The browser-based operator console also requires frontend dependencies under [`dashboard/`](../dashboard):
 
 ```bash
 cd dashboard
@@ -250,8 +250,8 @@ When adding telemetry:
 2. Prefer stable `event_type` values and keep variable data inside `metadata`.
 3. Reuse existing categories such as `phase`, `agent`, `tool`, `search`, `llm`, or `reasoning`.
 4. Preserve parent/child correlation by emitting inside the active phase or by passing `parent_event_id`.
-5. If the event should appear in dashboards or analytics, update the relevant helper in [`src/cc_deep_research/telemetry/live.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/live.py), [`src/cc_deep_research/telemetry/query.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/query.py), or the compatibility exports in [`src/cc_deep_research/telemetry/__init__.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/__init__.py).
-6. Add tests in [`tests/test_monitoring.py`](/Users/jjae/Documents/guthib/cc-deep-research/tests/test_monitoring.py) or [`tests/test_telemetry.py`](/Users/jjae/Documents/guthib/cc-deep-research/tests/test_telemetry.py).
+5. If the event should appear in dashboards or analytics, update the relevant helper in [`src/cc_deep_research/telemetry/live.py`](../src/cc_deep_research/telemetry/live.py), [`src/cc_deep_research/telemetry/query.py`](../src/cc_deep_research/telemetry/query.py), or the compatibility exports in [`src/cc_deep_research/telemetry/__init__.py`](../src/cc_deep_research/telemetry/__init__.py).
+6. Add tests in [`tests/test_monitoring.py`](../tests/test_monitoring.py) or [`tests/test_telemetry.py`](../tests/test_telemetry.py).
 
 ## Known Limitations
 

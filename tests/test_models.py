@@ -30,8 +30,8 @@ from cc_deep_research.models import (
 from cc_deep_research.research_runs import (
     ResearchOutputFormat,
     ResearchRunArtifact,
-    ResearchRunRequest,
     ResearchRunReport,
+    ResearchRunRequest,
     ResearchRunResult,
 )
 
@@ -386,10 +386,14 @@ class TestResearchRunResult:
         from cc_deep_research.models.analysis import AnalysisResult as AnalysisResultModel
         from cc_deep_research.models.search import (
             ResearchDepth as SearchResearchDepth,
+        )
+        from cc_deep_research.models.search import (
             SearchResultItem as SearchResultItemModel,
         )
         from cc_deep_research.models.session import (
             ResearchSession as SessionResearchSession,
+        )
+        from cc_deep_research.models.session import (
             normalize_session_metadata,
         )
 
@@ -590,6 +594,45 @@ class TestCrossReferenceClaim:
         )
         assert analysis_result.cross_reference_claims[0].evidence_type == EvidenceType.RESEARCH
         assert analysis_result.key_findings[0].claims[0].claim == "Treatment improved outcomes"
+
+    def test_analysis_result_normalizes_structured_cross_reference_points(self) -> None:
+        """Structured Claude cross-reference payloads should coerce to strings."""
+        analysis_result = AnalysisResult.model_validate(
+            {
+                "consensus_points": [
+                    {
+                        "claim": "Multiple vendors reported logical-qubit progress",
+                        "strength": "moderate",
+                        "supporting_sources": ["https://example.com/1"],
+                    }
+                ],
+                "contention_points": [
+                    {
+                        "claim": "Commercial timelines remain disputed",
+                        "perspectives": [
+                            {"view": "Fault tolerance is near-term", "sources": ["https://example.com/2"]},
+                            {"view": "Useful scale is still years away", "sources": ["https://example.com/3"]},
+                        ],
+                    }
+                ],
+                "disagreement_points": [
+                    {
+                        "perspectives": [
+                            {"view": "Neutral-atom systems are advancing fastest"},
+                            {"view": "Superconducting systems still lead in scale"},
+                        ]
+                    }
+                ],
+            }
+        )
+
+        assert analysis_result.consensus_points == [
+            "Multiple vendors reported logical-qubit progress"
+        ]
+        assert analysis_result.contention_points == ["Commercial timelines remain disputed"]
+        assert analysis_result.disagreement_points == [
+            "Neutral-atom systems are advancing fastest vs. Superconducting systems still lead in scale"
+        ]
 
 
 class TestLLMTransportType:

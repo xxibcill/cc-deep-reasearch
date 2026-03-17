@@ -14,12 +14,12 @@ Give the FastAPI app a server-owned runtime container for active research jobs a
 
 ## Target Files
 
-- `/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/research_runs/jobs.py`
-- `/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/web_server.py`
+- `src/cc_deep_research/research_runs/jobs.py`
+- `src/cc_deep_research/web_server.py`
 
 ## Dependencies
 
-- [004_research_run_service.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/004_research_run_service.md)
+- [004_research_run_service.md](004_research_run_service.md)
 
 ## Acceptance Criteria
 

@@ -15,7 +15,7 @@ Create a single development launcher that starts the backend API and Next.js fro
 
 ## Target Files
 
-- `/Users/jjae/Documents/guthib/cc-deep-research/dashboard/scripts/dev.mjs`
+- `dashboard/scripts/dev.mjs`
 
 ## Dependencies
 
@@ -29,5 +29,5 @@ Create a single development launcher that starts the backend API and Next.js fro
 
 ## Suggested Verification
 
-- run `node /Users/jjae/Documents/guthib/cc-deep-research/dashboard/scripts/dev.mjs`
+- run `node dashboard/scripts/dev.mjs`
 

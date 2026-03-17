@@ -2,7 +2,7 @@
 
 This document turns the current workflow design into a concrete improvement roadmap. It focuses on correctness, research quality, architectural clarity, operability, and extensibility.
 
-It is written against the current implementation described in [RESEARCH_WORKFLOW.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/RESEARCH_WORKFLOW.md).
+It is written against the current implementation described in [RESEARCH_WORKFLOW.md](RESEARCH_WORKFLOW.md).
 
 ## Executive Summary
 
@@ -581,15 +581,15 @@ The workflow should be considered materially improved when:
 
 ## Related Files
 
-- [RESEARCH_WORKFLOW.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/RESEARCH_WORKFLOW.md)
-- [`src/cc_deep_research/orchestrator.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestrator.py)
-- [`src/cc_deep_research/agents/research_lead.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/research_lead.py)
-- [`src/cc_deep_research/agents/query_expander.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/query_expander.py)
-- [`src/cc_deep_research/agents/source_collector.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/source_collector.py)
-- [`src/cc_deep_research/agents/analyzer.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/analyzer.py)
-- [`src/cc_deep_research/agents/deep_analyzer.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/deep_analyzer.py)
-- [`src/cc_deep_research/agents/validator.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/validator.py)
-- [`src/cc_deep_research/agents/reporter.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/reporter.py)
-- [`src/cc_deep_research/coordination/agent_pool.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/coordination/agent_pool.py)
-- [`src/cc_deep_research/coordination/message_bus.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/coordination/message_bus.py)
-- [`src/cc_deep_research/monitoring.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/monitoring.py)
+- [RESEARCH_WORKFLOW.md](RESEARCH_WORKFLOW.md)
+- [`src/cc_deep_research/orchestrator.py`](../src/cc_deep_research/orchestrator.py)
+- [`src/cc_deep_research/agents/research_lead.py`](../src/cc_deep_research/agents/research_lead.py)
+- [`src/cc_deep_research/agents/query_expander.py`](../src/cc_deep_research/agents/query_expander.py)
+- [`src/cc_deep_research/agents/source_collector.py`](../src/cc_deep_research/agents/source_collector.py)
+- [`src/cc_deep_research/agents/analyzer.py`](../src/cc_deep_research/agents/analyzer.py)
+- [`src/cc_deep_research/agents/deep_analyzer.py`](../src/cc_deep_research/agents/deep_analyzer.py)
+- [`src/cc_deep_research/agents/validator.py`](../src/cc_deep_research/agents/validator.py)
+- [`src/cc_deep_research/agents/reporter.py`](../src/cc_deep_research/agents/reporter.py)
+- [`src/cc_deep_research/coordination/agent_pool.py`](../src/cc_deep_research/coordination/agent_pool.py)
+- [`src/cc_deep_research/coordination/message_bus.py`](../src/cc_deep_research/coordination/message_bus.py)
+- [`src/cc_deep_research/monitoring.py`](../src/cc_deep_research/monitoring.py)

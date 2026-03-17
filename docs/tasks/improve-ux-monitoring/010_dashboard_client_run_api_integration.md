@@ -14,14 +14,14 @@ Teach the dashboard client layer about the new run-management API endpoints.
 
 ## Target Files
 
-- `/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/types/telemetry.ts`
-- `/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/lib/api.ts`
+- `dashboard/src/types/telemetry.ts`
+- `dashboard/src/lib/api.ts`
 
 ## Dependencies
 
-- [007_start_research_run_api.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/007_start_research_run_api.md)
-- [008_research_run_status_api.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/008_research_run_status_api.md)
-- [009_session_report_api.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/009_session_report_api.md)
+- [007_start_research_run_api.md](007_start_research_run_api.md)
+- [008_research_run_status_api.md](008_research_run_status_api.md)
+- [009_session_report_api.md](009_session_report_api.md)
 
 ## Acceptance Criteria
 
@@ -31,5 +31,5 @@ Teach the dashboard client layer about the new run-management API endpoints.
 
 ## Suggested Verification
 
-- run `npm run build` in `/Users/jjae/Documents/guthib/cc-deep-research/dashboard`
+- run `npm run build` in `dashboard`
 

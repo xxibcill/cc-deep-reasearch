@@ -66,7 +66,7 @@ flowchart TD
 
 ## Workflow Owner
 
-The stable public workflow entry point is [`src/cc_deep_research/orchestrator.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestrator.py), but most phase execution internals now live under [`src/cc_deep_research/orchestration/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestration).
+The stable public workflow entry point is [`src/cc_deep_research/orchestrator.py`](../src/cc_deep_research/orchestrator.py), but most phase execution internals now live under [`src/cc_deep_research/orchestration/`](../src/cc_deep_research/orchestration).
 
 `TeamResearchOrchestrator.execute_research()` remains the public facade for the pipeline. It delegates to orchestration services that handle:
 
@@ -82,15 +82,15 @@ The codebase includes a `LocalResearchTeam` wrapper, but it is local lifecycle m
 
 ## Entry Point and User Controls
 
-The CLI bootstrap entry point is [`src/cc_deep_research/cli/main.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/main.py).
+The CLI bootstrap entry point is [`src/cc_deep_research/cli/main.py`](../src/cc_deep_research/cli/main.py).
 
-Command handlers are split by concern under [`src/cc_deep_research/cli/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli):
+Command handlers are split by concern under [`src/cc_deep_research/cli/`](../src/cc_deep_research/cli):
 
-- research execution: [`src/cc_deep_research/cli/research.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/research.py)
-- config commands: [`src/cc_deep_research/cli/config.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/config.py)
-- telemetry commands: [`src/cc_deep_research/cli/telemetry.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/telemetry.py)
-- real-time dashboard backend command: [`src/cc_deep_research/cli/dashboard.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/dashboard.py)
-- saved-session commands: [`src/cc_deep_research/cli/session.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/session.py)
+- research execution: [`src/cc_deep_research/cli/research.py`](../src/cc_deep_research/cli/research.py)
+- config commands: [`src/cc_deep_research/cli/config.py`](../src/cc_deep_research/cli/config.py)
+- telemetry commands: [`src/cc_deep_research/cli/telemetry.py`](../src/cc_deep_research/cli/telemetry.py)
+- real-time dashboard backend command: [`src/cc_deep_research/cli/dashboard.py`](../src/cc_deep_research/cli/dashboard.py)
+- saved-session commands: [`src/cc_deep_research/cli/session.py`](../src/cc_deep_research/cli/session.py)
 
 The `research` command controls the workflow through flags such as:
 
@@ -113,13 +113,13 @@ Important implementation detail:
 
 ## Configuration That Shapes the Workflow
 
-The workflow is parameterized by the config package rooted at [`src/cc_deep_research/config/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/config).
+The workflow is parameterized by the config package rooted at [`src/cc_deep_research/config/`](../src/cc_deep_research/config).
 
 Post-refactor responsibilities are split as:
 
-- schema models and settings: [`src/cc_deep_research/config/schema.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/config/schema.py)
-- file loading and persistence: [`src/cc_deep_research/config/io.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/config/io.py)
-- defaults and path helpers: [`src/cc_deep_research/config/defaults.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/config/defaults.py)
+- schema models and settings: [`src/cc_deep_research/config/schema.py`](../src/cc_deep_research/config/schema.py)
+- file loading and persistence: [`src/cc_deep_research/config/io.py`](../src/cc_deep_research/config/io.py)
+- defaults and path helpers: [`src/cc_deep_research/config/defaults.py`](../src/cc_deep_research/config/defaults.py)
 
 The most relevant settings are:
 
@@ -139,7 +139,7 @@ The most relevant settings are:
 
 ## Data Model
 
-The core runtime models live in the package rooted at [`src/cc_deep_research/models/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/models).
+The core runtime models live in the package rooted at [`src/cc_deep_research/models/`](../src/cc_deep_research/models).
 
 The main objects are:
 
@@ -161,12 +161,12 @@ The main objects are:
 
 Telemetry and dashboard code now have explicit module boundaries:
 
-- live JSONL session readers: [`src/cc_deep_research/telemetry/live.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/live.py)
-- DuckDB ingestion: [`src/cc_deep_research/telemetry/ingest.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/ingest.py)
-- DuckDB analytics queries: [`src/cc_deep_research/telemetry/query.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/query.py)
-- telemetry compatibility exports: [`src/cc_deep_research/telemetry/__init__.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/__init__.py)
-- real-time monitoring backend: [`src/cc_deep_research/web_server.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/web_server.py) and [`src/cc_deep_research/event_router.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/event_router.py)
-- dashboard runtime config and network clients: [`dashboard/src/lib/runtime-config.ts`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/lib/runtime-config.ts), [`dashboard/src/lib/api.ts`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/lib/api.ts), and [`dashboard/src/lib/websocket.ts`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/lib/websocket.ts)
+- live JSONL session readers: [`src/cc_deep_research/telemetry/live.py`](../src/cc_deep_research/telemetry/live.py)
+- DuckDB ingestion: [`src/cc_deep_research/telemetry/ingest.py`](../src/cc_deep_research/telemetry/ingest.py)
+- DuckDB analytics queries: [`src/cc_deep_research/telemetry/query.py`](../src/cc_deep_research/telemetry/query.py)
+- telemetry compatibility exports: [`src/cc_deep_research/telemetry/__init__.py`](../src/cc_deep_research/telemetry/__init__.py)
+- real-time monitoring backend: [`src/cc_deep_research/web_server.py`](../src/cc_deep_research/web_server.py) and [`src/cc_deep_research/event_router.py`](../src/cc_deep_research/event_router.py)
+- dashboard runtime config and network clients: [`dashboard/src/lib/runtime-config.ts`](../dashboard/src/lib/runtime-config.ts), [`dashboard/src/lib/api.ts`](../dashboard/src/lib/api.ts), and [`dashboard/src/lib/websocket.ts`](../dashboard/src/lib/websocket.ts)
 
 ## Phase-by-Phase Design
 
@@ -203,7 +203,7 @@ Current reality:
 
 ### 2. Strategy Analysis
 
-Strategy analysis is handled by [`src/cc_deep_research/agents/research_lead.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/research_lead.py).
+Strategy analysis is handled by [`src/cc_deep_research/agents/research_lead.py`](../src/cc_deep_research/agents/research_lead.py).
 
 The lead agent:
 
@@ -229,7 +229,7 @@ Design tradeoff:
 
 ### 3. Query Expansion
 
-Query expansion is handled by [`src/cc_deep_research/agents/query_expander.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/query_expander.py).
+Query expansion is handled by [`src/cc_deep_research/agents/query_expander.py`](../src/cc_deep_research/agents/query_expander.py).
 
 Expansion is depth-sensitive:
 
@@ -255,7 +255,7 @@ Current limitation:
 
 ### 4. Source Collection
 
-Source collection is handled by [`src/cc_deep_research/agents/source_collector.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/source_collector.py).
+Source collection is handled by [`src/cc_deep_research/agents/source_collector.py`](../src/cc_deep_research/agents/source_collector.py).
 
 The collector:
 
@@ -270,7 +270,7 @@ Provider behavior today:
 - Tavily is implemented
 - Claude is declared in config and CLI flags but is not implemented as a real provider
 
-The Tavily provider lives in [`src/cc_deep_research/providers/tavily.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/providers/tavily.py) and returns normalized `SearchResultItem` objects with:
+The Tavily provider lives in [`src/cc_deep_research/providers/tavily.py`](../src/cc_deep_research/providers/tavily.py) and returns normalized `SearchResultItem` objects with:
 
 - URL
 - title
@@ -281,7 +281,7 @@ The Tavily provider lives in [`src/cc_deep_research/providers/tavily.py`](/Users
 
 ### 5. Aggregation and Deduplication
 
-Aggregation is handled by [`src/cc_deep_research/aggregation.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/aggregation.py).
+Aggregation is handled by [`src/cc_deep_research/aggregation.py`](../src/cc_deep_research/aggregation.py).
 
 The aggregator:
 
@@ -315,7 +315,7 @@ Operational note:
 
 ### 7. Analysis
 
-Primary analysis is handled by [`src/cc_deep_research/agents/analyzer.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/analyzer.py) with support from [`src/cc_deep_research/agents/ai_analysis_service.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/ai_analysis_service.py).
+Primary analysis is handled by [`src/cc_deep_research/agents/analyzer.py`](../src/cc_deep_research/agents/analyzer.py) with support from [`src/cc_deep_research/agents/ai_analysis_service.py`](../src/cc_deep_research/agents/ai_analysis_service.py).
 
 The analyzer:
 
@@ -341,7 +341,7 @@ This split is a design decision to keep the workflow usable when:
 
 ### 8. Deep Analysis
 
-Deep mode adds `DeepAnalyzerAgent`, implemented in [`src/cc_deep_research/agents/deep_analyzer.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/deep_analyzer.py).
+Deep mode adds `DeepAnalyzerAgent`, implemented in [`src/cc_deep_research/agents/deep_analyzer.py`](../src/cc_deep_research/agents/deep_analyzer.py).
 
 This pass is designed as a second analysis layer, not just "more sources".
 
@@ -363,7 +363,7 @@ Current implementation:
 
 ### 9. Validation
 
-Validation is handled by [`src/cc_deep_research/agents/validator.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/validator.py).
+Validation is handled by [`src/cc_deep_research/agents/validator.py`](../src/cc_deep_research/agents/validator.py).
 
 The validator scores whether the run is usable by checking:
 
@@ -412,7 +412,7 @@ Iteration history is stored in `session.metadata["iteration_history"]`.
 
 ### 11. Parallel Research Mode
 
-Parallel collection is implemented inside the orchestrator and [`src/cc_deep_research/agents/researcher.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/researcher.py).
+Parallel collection is implemented inside the orchestrator and [`src/cc_deep_research/agents/researcher.py`](../src/cc_deep_research/agents/researcher.py).
 
 In parallel mode:
 
@@ -435,7 +435,7 @@ That distinction matters when changing the architecture. The codebase talks abou
 
 ### 12. Report Generation
 
-Reporting is handled by [`src/cc_deep_research/reporting.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/reporting.py) and [`src/cc_deep_research/agents/reporter.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/reporter.py).
+Reporting is handled by [`src/cc_deep_research/reporting.py`](../src/cc_deep_research/reporting.py) and [`src/cc_deep_research/agents/reporter.py`](../src/cc_deep_research/agents/reporter.py).
 
 The reporter generates:
 
@@ -471,7 +471,7 @@ This contract applies to quick, standard, and deep runs. Degraded states are rep
 
 ### 13. Persistence and Telemetry
 
-Persistence is handled by [`src/cc_deep_research/session_store.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/session_store.py).
+Persistence is handled by [`src/cc_deep_research/session_store.py`](../src/cc_deep_research/session_store.py).
 
 Each run is saved as a JSON session file containing:
 
@@ -602,7 +602,7 @@ The safest places to extend the workflow are:
 
 When changing the workflow:
 
-1. Start with [`src/cc_deep_research/orchestrator.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestrator.py) and the relevant module in [`src/cc_deep_research/orchestration/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestration) because phase order now spans the public facade and split orchestration services.
+1. Start with [`src/cc_deep_research/orchestrator.py`](../src/cc_deep_research/orchestrator.py) and the relevant module in [`src/cc_deep_research/orchestration/`](../src/cc_deep_research/orchestration) because phase order now spans the public facade and split orchestration services.
 2. Treat `ResearchSession.metadata` as part of the workflow API.
 3. Preserve graceful fallback behavior.
 4. Keep iterative search semantics intact unless intentionally redesigning them.
@@ -611,20 +611,20 @@ When changing the workflow:
 
 ## Relevant Files
 
-- [`src/cc_deep_research/cli/main.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/main.py)
-- [`src/cc_deep_research/orchestrator.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestrator.py)
-- [`src/cc_deep_research/orchestration/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestration)
-- [`src/cc_deep_research/config/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/config)
-- [`src/cc_deep_research/models/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/models)
-- [`src/cc_deep_research/aggregation.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/aggregation.py)
-- [`src/cc_deep_research/agents/research_lead.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/research_lead.py)
-- [`src/cc_deep_research/agents/query_expander.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/query_expander.py)
-- [`src/cc_deep_research/agents/source_collector.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/source_collector.py)
-- [`src/cc_deep_research/agents/researcher.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/researcher.py)
-- [`src/cc_deep_research/agents/analyzer.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/analyzer.py)
-- [`src/cc_deep_research/agents/deep_analyzer.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/deep_analyzer.py)
-- [`src/cc_deep_research/agents/validator.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/validator.py)
-- [`src/cc_deep_research/agents/reporter.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/reporter.py)
-- [`src/cc_deep_research/coordination/agent_pool.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/coordination/agent_pool.py)
-- [`src/cc_deep_research/coordination/message_bus.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/coordination/message_bus.py)
-- [`src/cc_deep_research/session_store.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/session_store.py)
+- [`src/cc_deep_research/cli/main.py`](../src/cc_deep_research/cli/main.py)
+- [`src/cc_deep_research/orchestrator.py`](../src/cc_deep_research/orchestrator.py)
+- [`src/cc_deep_research/orchestration/`](../src/cc_deep_research/orchestration)
+- [`src/cc_deep_research/config/`](../src/cc_deep_research/config)
+- [`src/cc_deep_research/models/`](../src/cc_deep_research/models)
+- [`src/cc_deep_research/aggregation.py`](../src/cc_deep_research/aggregation.py)
+- [`src/cc_deep_research/agents/research_lead.py`](../src/cc_deep_research/agents/research_lead.py)
+- [`src/cc_deep_research/agents/query_expander.py`](../src/cc_deep_research/agents/query_expander.py)
+- [`src/cc_deep_research/agents/source_collector.py`](../src/cc_deep_research/agents/source_collector.py)
+- [`src/cc_deep_research/agents/researcher.py`](../src/cc_deep_research/agents/researcher.py)
+- [`src/cc_deep_research/agents/analyzer.py`](../src/cc_deep_research/agents/analyzer.py)
+- [`src/cc_deep_research/agents/deep_analyzer.py`](../src/cc_deep_research/agents/deep_analyzer.py)
+- [`src/cc_deep_research/agents/validator.py`](../src/cc_deep_research/agents/validator.py)
+- [`src/cc_deep_research/agents/reporter.py`](../src/cc_deep_research/agents/reporter.py)
+- [`src/cc_deep_research/coordination/agent_pool.py`](../src/cc_deep_research/coordination/agent_pool.py)
+- [`src/cc_deep_research/coordination/message_bus.py`](../src/cc_deep_research/coordination/message_bus.py)
+- [`src/cc_deep_research/session_store.py`](../src/cc_deep_research/session_store.py)
