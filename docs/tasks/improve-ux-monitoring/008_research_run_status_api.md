@@ -14,14 +14,14 @@ Expose a status endpoint so the dashboard can poll job state without relying onl
 
 ## Target Files
 
-- `/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/web_server.py`
-- `/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/research_runs/jobs.py`
-- `/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/research_runs/models.py`
+- `src/cc_deep_research/web_server.py`
+- `src/cc_deep_research/research_runs/jobs.py`
+- `src/cc_deep_research/research_runs/models.py`
 
 ## Dependencies
 
-- [006_dashboard_backend_runtime_state.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/006_dashboard_backend_runtime_state.md)
-- [007_start_research_run_api.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/007_start_research_run_api.md)
+- [006_dashboard_backend_runtime_state.md](006_dashboard_backend_runtime_state.md)
+- [007_start_research_run_api.md](007_start_research_run_api.md)
 
 ## Acceptance Criteria
 

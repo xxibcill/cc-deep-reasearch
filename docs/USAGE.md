@@ -32,18 +32,18 @@ CC Deep Research is a command-line tool for staged web research. The current run
 
 ### Key Features
 
-| Feature | Description |
-|---------|-------------|
-| **Specialist Pipeline** | Uses local planner, collector, analyzer, validator, and reporter components |
-| **Parallel Execution** | Fans out source collection into local researcher tasks |
-| **Provider Handling** | Tavily is implemented; `claude` provider selection is not yet implemented |
-| **Query Expansion** | Automatically generates search variations |
-| **Iterative Search** | Analyzes gaps and performs follow-up searches |
-| **Quality Scoring** | Evaluates sources by credibility, relevance, freshness, diversity |
-| **Cross-Reference Analysis** | Identifies consensus points and contradictions |
-| **Multiple Formats** | Markdown, JSON, and HTML output options |
+| Feature                                                          | Description                                                                     |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| **Specialist Pipeline**                                          | Uses local planner, collector, analyzer, validator, and reporter components     |
+| **Parallel Execution**                                           | Fans out source collection into local researcher tasks                          |
+| **Provider Handling**                                            | Tavily is implemented; `claude` provider selection is not yet implemented       |
+| **Query Expansion**                                              | Automatically generates search variations                                       |
+| **Iterative Search**                                             | Analyzes gaps and performs follow-up searches                                   |
+| **Quality Scoring**                                              | Evaluates sources by credibility, relevance, freshness, diversity               |
+| **Cross-Reference Analysis**                                     | Identifies consensus points and contradictions                                  |
+| **Multiple Formats**                                             | Markdown, JSON, and HTML output options                                         |
 | **API Key Rotation** - Automatic failover with multiple API keys |
-| **Progress Monitoring** | Browser-based live monitoring, terminal monitor output, and telemetry analytics |
+| **Progress Monitoring**                                          | Browser-based live monitoring, terminal monitor output, and telemetry analytics |
 
 ### Architecture Overview
 
@@ -93,12 +93,12 @@ For benchmark helpers, text normalization helpers, CLI commands, or telemetry in
 
 Contributor-facing module boundaries now follow the split package layout:
 
-- CLI bootstrap and command registration: [`src/cc_deep_research/cli/main.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/main.py)
-- CLI command handlers: [`src/cc_deep_research/cli/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli)
-- config schema and file IO: [`src/cc_deep_research/config/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/config)
-- runtime models: [`src/cc_deep_research/models/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/models)
-- orchestration internals: [`src/cc_deep_research/orchestration/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestration)
-- telemetry live readers and analytics: [`src/cc_deep_research/telemetry/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry)
+- CLI bootstrap and command registration: [`src/cc_deep_research/cli/main.py`](../src/cc_deep_research/cli/main.py)
+- CLI command handlers: [`src/cc_deep_research/cli/`](../src/cc_deep_research/cli)
+- config schema and file IO: [`src/cc_deep_research/config/`](../src/cc_deep_research/config)
+- runtime models: [`src/cc_deep_research/models/`](../src/cc_deep_research/models)
+- orchestration internals: [`src/cc_deep_research/orchestration/`](../src/cc_deep_research/orchestration)
+- telemetry live readers and analytics: [`src/cc_deep_research/telemetry/`](../src/cc_deep_research/telemetry)
 
 ---
 
@@ -161,7 +161,7 @@ cc-deep-research --help
 cc-deep-research research --help
 ```
 
-If you are running the Next.js dashboard against a non-default backend host, set one of these before `npm run dev` or `npm run build` inside [`dashboard/`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard):
+If you are running the Next.js dashboard against a non-default backend host, set one of these before `npm run dev` or `npm run build` inside [`dashboard/`](../dashboard):
 
 ```bash
 export NEXT_PUBLIC_CC_BACKEND_ORIGIN=http://localhost:8000
@@ -212,59 +212,59 @@ Create a configuration file at `~/.config/cc-deep-research/config.yaml`:
 ```yaml
 # Search Provider Configuration
 search:
-  providers: ["tavily"]            # "claude" is accepted but not implemented as a search provider
-  mode: "tavily_primary"           # Options: hybrid_parallel, tavily_primary, claude_primary
-  depth: "deep"                    # Options: quick, standard, deep
+  providers: ['tavily'] # "claude" is accepted but not implemented as a search provider
+  mode: 'tavily_primary' # Options: hybrid_parallel, tavily_primary, claude_primary
+  depth: 'deep' # Options: quick, standard, deep
 
 # Tavily-specific Configuration
 tavily:
-  api_keys: ["key1", "key2"]       # List of API keys for rotation
-  rate_limit: 1000                 # Requests per key per month
-  max_results: 100                 # Maximum results per search
+  api_keys: ['key1', 'key2'] # List of API keys for rotation
+  rate_limit: 1000 # Requests per key per month
+  max_results: 100 # Maximum results per search
 
 # Claude-specific Configuration
 claude:
-  max_results: 50                  # Reserved for future Claude search provider support
+  max_results: 50 # Reserved for future Claude search provider support
 
 # Research Configuration
 research:
-  default_depth: "deep"            # Default research depth
+  default_depth: 'deep' # Default research depth
   min_sources:
-    quick: 3                       # Minimum sources for quick mode
-    standard: 10                   # Minimum sources for standard mode
-    deep: 50                       # Minimum sources for deep mode
-  enable_iterative_search: true   # Perform follow-up searches
-  max_iterations: 3                # Maximum follow-up iterations
-  enable_cross_ref: true           # Perform cross-reference analysis
-  enable_quality_scoring: true     # Score and rank sources
+    quick: 3 # Minimum sources for quick mode
+    standard: 10 # Minimum sources for standard mode
+    deep: 50 # Minimum sources for deep mode
+  enable_iterative_search: true # Perform follow-up searches
+  max_iterations: 3 # Maximum follow-up iterations
+  enable_cross_ref: true # Perform cross-reference analysis
+  enable_quality_scoring: true # Score and rank sources
 
 # Agent Configuration
 research_agent:
-  model: "claude-sonnet-4-6"      # Claude model to use
-  max_turns: 10                   # Maximum conversation turns
-  mode: "default"                 # Options: default, bypassPermissions, dontAsk
+  model: 'claude-sonnet-4-6' # Claude model to use
+  max_turns: 10 # Maximum conversation turns
+  mode: 'default' # Options: default, bypassPermissions, dontAsk
 
 # Parallel Collection Configuration
 search_team:
-  enabled: true                   # Retained for compatibility with existing config
-  team_size: 4                    # Describes local specialist roster metadata
-  parallel_execution: true        # Run source collection in parallel
-  timeout_seconds: 300            # Parallel-task timeout (30-600 seconds)
-  fallback_to_sequential: true    # Fall back to sequential on error
+  enabled: true # Retained for compatibility with existing config
+  team_size: 4 # Describes local specialist roster metadata
+  parallel_execution: true # Run source collection in parallel
+  timeout_seconds: 300 # Parallel-task timeout (30-600 seconds)
+  fallback_to_sequential: true # Fall back to sequential on error
 
 # Output Configuration
 output:
-  format: "markdown"               # Options: markdown, json, html
-  auto_save: true                 # Automatically save reports
-  save_dir: "./reports"            # Directory for saved reports
-  include_metadata: true           # Include session metadata
+  format: 'markdown' # Options: markdown, json, html
+  auto_save: true # Automatically save reports
+  save_dir: './reports' # Directory for saved reports
+  include_metadata: true # Include session metadata
   include_cross_ref_analysis: true # Include cross-reference analysis
 
 # Display Configuration
 display:
-  color: "auto"                    # Options: always, auto, never
-  progress: "auto"                 # Options: always, auto, never
-  verbose: false                   # Enable verbose output
+  color: 'auto' # Options: always, auto, never
+  progress: 'auto' # Options: always, auto, never
+  verbose: false # Enable verbose output
 ```
 
 ### Using the Config Command
@@ -296,34 +296,34 @@ cc-deep-research config init --force
 
 ### Default Configuration Values
 
-| Configuration | Default Value | Description |
-|---------------|---------------|-------------|
-| `search.providers` | `["tavily"]` | Active search providers |
-| `search.mode` | `"tavily_primary"` | Search execution mode |
-| `search.depth` | `"deep"` | Default research depth |
-| `tavily.api_keys` | `[]` | Tavily API keys (set via env var) |
-| `tavily.rate_limit` | `1000` | Requests per key per month |
-| `tavily.max_results` | `100` | Max results per search |
-| `claude.max_results` | `50` | Reserved for future Claude search support |
-| `research.default_depth` | `"deep"` | Default research depth |
-| `research.min_sources.quick` | `3` | Quick mode minimum sources |
-| `research.min_sources.standard` | `10` | Standard mode minimum sources |
-| `research.min_sources.deep` | `50` | Deep mode minimum sources |
-| `research.enable_iterative_search` | `true` | Enable follow-up searches |
-| `research.max_iterations` | `3` | Max follow-up iterations |
-| `research.enable_cross_ref` | `true` | Enable cross-reference analysis |
-| `research.enable_quality_scoring` | `true` | Enable source scoring |
-| `research_agent.model` | `"claude-sonnet-4-6"` | Claude model |
-| `research_agent.max_turns` | `10` | Max conversation turns |
-| `search_team.enabled` | `true` | Compatibility flag for the local runtime |
-| `search_team.team_size` | `4` | Specialist roster metadata size |
-| `search_team.parallel_execution` | `true` | Parallel source collection |
-| `search_team.timeout_seconds` | `300` | Parallel-task timeout |
-| `output.format` | `"markdown"` | Output format |
-| `output.auto_save` | `true` | Auto-save reports |
-| `output.save_dir` | `"./reports"` | Save directory |
-| `display.color` | `"auto"` | Color output |
-| `display.progress` | `"auto"` | Progress indicators |
+| Configuration                      | Default Value         | Description                               |
+| ---------------------------------- | --------------------- | ----------------------------------------- |
+| `search.providers`                 | `["tavily"]`          | Active search providers                   |
+| `search.mode`                      | `"tavily_primary"`    | Search execution mode                     |
+| `search.depth`                     | `"deep"`              | Default research depth                    |
+| `tavily.api_keys`                  | `[]`                  | Tavily API keys (set via env var)         |
+| `tavily.rate_limit`                | `1000`                | Requests per key per month                |
+| `tavily.max_results`               | `100`                 | Max results per search                    |
+| `claude.max_results`               | `50`                  | Reserved for future Claude search support |
+| `research.default_depth`           | `"deep"`              | Default research depth                    |
+| `research.min_sources.quick`       | `3`                   | Quick mode minimum sources                |
+| `research.min_sources.standard`    | `10`                  | Standard mode minimum sources             |
+| `research.min_sources.deep`        | `50`                  | Deep mode minimum sources                 |
+| `research.enable_iterative_search` | `true`                | Enable follow-up searches                 |
+| `research.max_iterations`          | `3`                   | Max follow-up iterations                  |
+| `research.enable_cross_ref`        | `true`                | Enable cross-reference analysis           |
+| `research.enable_quality_scoring`  | `true`                | Enable source scoring                     |
+| `research_agent.model`             | `"claude-sonnet-4-6"` | Claude model                              |
+| `research_agent.max_turns`         | `10`                  | Max conversation turns                    |
+| `search_team.enabled`              | `true`                | Compatibility flag for the local runtime  |
+| `search_team.team_size`            | `4`                   | Specialist roster metadata size           |
+| `search_team.parallel_execution`   | `true`                | Parallel source collection                |
+| `search_team.timeout_seconds`      | `300`                 | Parallel-task timeout                     |
+| `output.format`                    | `"markdown"`          | Output format                             |
+| `output.auto_save`                 | `true`                | Auto-save reports                         |
+| `output.save_dir`                  | `"./reports"`         | Save directory                            |
+| `display.color`                    | `"auto"`              | Color output                              |
+| `display.progress`                 | `"auto"`              | Progress indicators                       |
 
 ### LLM Routing
 
@@ -333,30 +333,30 @@ The active runtime supports agent-level LLM routing for analysis and report-qual
 llm:
   claude_cli:
     enabled: true
-    model: "claude-sonnet-4-6"
+    model: 'claude-sonnet-4-6'
 
   openrouter:
     enabled: false
-    api_key: "${OPENROUTER_API_KEY}"
-    model: "anthropic/claude-sonnet-4"
+    api_key: '${OPENROUTER_API_KEY}'
+    model: 'anthropic/claude-sonnet-4'
 
   cerebras:
     enabled: false
-    api_key: "${CEREBRAS_API_KEY}"
-    model: "llama-3.3-70b"
+    api_key: '${CEREBRAS_API_KEY}'
+    model: 'llama-3.3-70b'
 
   fallback_order:
-    - "claude_cli"
-    - "openrouter"
-    - "cerebras"
-    - "heuristic"
+    - 'claude_cli'
+    - 'openrouter'
+    - 'cerebras'
+    - 'heuristic'
 
   route_defaults:
-    analyzer: "openrouter"
-    deep_analyzer: "cerebras"
-    report_quality_evaluator: "claude_cli"
-    reporter: "claude_cli"
-    default: "claude_cli"
+    analyzer: 'openrouter'
+    deep_analyzer: 'cerebras'
+    report_quality_evaluator: 'claude_cli'
+    reporter: 'claude_cli'
+    default: 'claude_cli'
 ```
 
 Planner-selected routes are applied per session. In one run, `analyzer` can use OpenRouter, `deep_analyzer` can use Cerebras, and `report_quality_evaluator` can still use Claude CLI. If no configured transport is available, the runtime falls back to `heuristic`.
@@ -372,7 +372,7 @@ Planner-selected routes are applied per session. In one run, `analyzer` can use 
 export TAVILY_API_KEYS=your_api_key_here
 
 # Run a simple research query
-cc-deep-research research "What are the latest developments in quantum computing?"
+uv run cc-deep-research research "What are the latest developments in quantum computing?"
 ```
 
 ### Live Monitoring In The Browser
@@ -380,7 +380,7 @@ cc-deep-research research "What are the latest developments in quantum computing
 For the current monitoring workflow, start the combined dashboard launcher and run research from the browser home page:
 
 ```bash
-cd /Users/jjae/Documents/guthib/cc-deep-research/dashboard
+cd dashboard
 npm install
 npm run dev
 ```
@@ -400,31 +400,39 @@ The tool generates a comprehensive report with the following structure:
 # Research Report: Latest Developments in Quantum Computing
 
 ## Executive Summary
+
 [2-3 paragraph summary of key findings...]
 
 ## Key Findings
 
 ### 1. Recent Breakthroughs in Quantum Error Correction
+
 [Detailed analysis with citations...]
 [1] https://example.com/article1
 [2] https://example.com/article2
 
 ### 2. Scaling Quantum Computers to 1000+ Qubits
+
 [Detailed analysis with citations...]
 [3] https://example.com/article3
 
 ## Cross-Reference Analysis
+
 ### Consensus Points
+
 - [Agreed-upon facts from multiple sources...]
 
 ### Areas of Contention
+
 - [Disagreements or conflicting information...]
 
 ## Sources
+
 1. [Title](https://example.com/article1) - Description
 2. [Title](https://example.com/article2) - Description
 
 ## Metadata
+
 - **Query:** What are the latest developments in quantum computing?
 - **Depth:** Deep
 - **Sources:** 25
@@ -466,37 +474,40 @@ cc-deep-research research --tavily-only "Web development trends 2024"
 Execute a research query and generate a report.
 
 **Usage:**
+
 ```bash
 cc-deep-research research [QUERY] [OPTIONS]
 ```
 
 **Required Argument:**
+
 - `QUERY` - The research topic or question to investigate
 
 **Options:**
 
-| Option | Short | Type | Default | Description |
-|--------|-------|------|---------|-------------|
-| `--depth` | `-d` | choice | `deep` | Research depth mode (`quick`, `standard`, `deep`) |
-| `--sources` | `-s` | int | (from config) | Minimum number of sources to gather |
-| `--output` | `-o` | path | (stdout) | Output file path for the report |
-| `--format` | | choice | `markdown` | Output format (`markdown`, `json`, `html`) |
-| `--no-cross-ref` | | flag | false | Disable cross-reference analysis |
-| `--tavily-only` | | flag | false | Use only Tavily provider |
-| `--claude-only` | | flag | false | Select only the `claude` provider (currently emits provider warnings) |
-| `--no-team` | | flag | false | Run source collection sequentially instead of using parallel researchers |
-| `--team-size` | | int | (from config) | Override default team size |
-| `--parallel-mode` | | flag | false | Force parallel researcher execution for this run |
-| `--num-researchers` | | int | (from config) | Override the number of parallel researchers (1-8) |
-| `--progress` | | flag | true | Show progress indicators |
-| `--quiet` | | flag | false | Suppress output |
-| `--verbose` | | flag | false | Show detailed output |
-| `--monitor` | | flag | false | Show terminal workflow monitoring output |
-| `--show-timeline` | | flag | false | Show the execution timeline after a parallel run |
-| `--pdf` | | flag | false | Generate PDF output in addition to the selected report format |
-| `--enable-realtime` | | flag | false | Enable the shared real-time event router used by dashboard-backed runs |
+| Option              | Short | Type   | Default       | Description                                                              |
+| ------------------- | ----- | ------ | ------------- | ------------------------------------------------------------------------ |
+| `--depth`           | `-d`  | choice | `deep`        | Research depth mode (`quick`, `standard`, `deep`)                        |
+| `--sources`         | `-s`  | int    | (from config) | Minimum number of sources to gather                                      |
+| `--output`          | `-o`  | path   | (stdout)      | Output file path for the report                                          |
+| `--format`          |       | choice | `markdown`    | Output format (`markdown`, `json`, `html`)                               |
+| `--no-cross-ref`    |       | flag   | false         | Disable cross-reference analysis                                         |
+| `--tavily-only`     |       | flag   | false         | Use only Tavily provider                                                 |
+| `--claude-only`     |       | flag   | false         | Select only the `claude` provider (currently emits provider warnings)    |
+| `--no-team`         |       | flag   | false         | Run source collection sequentially instead of using parallel researchers |
+| `--team-size`       |       | int    | (from config) | Override default team size                                               |
+| `--parallel-mode`   |       | flag   | false         | Force parallel researcher execution for this run                         |
+| `--num-researchers` |       | int    | (from config) | Override the number of parallel researchers (1-8)                        |
+| `--progress`        |       | flag   | true          | Show progress indicators                                                 |
+| `--quiet`           |       | flag   | false         | Suppress output                                                          |
+| `--verbose`         |       | flag   | false         | Show detailed output                                                     |
+| `--monitor`         |       | flag   | false         | Show terminal workflow monitoring output                                 |
+| `--show-timeline`   |       | flag   | false         | Show the execution timeline after a parallel run                         |
+| `--pdf`             |       | flag   | false         | Generate PDF output in addition to the selected report format            |
+| `--enable-realtime` |       | flag   | false         | Enable the shared real-time event router used by dashboard-backed runs   |
 
 **Examples:**
+
 ```bash
 # Basic deep research
 cc-deep-research research "Climate change impacts on agriculture"
@@ -529,21 +540,24 @@ cc-deep-research research --quiet -o report.md "Topic" > /dev/null
 Set a configuration value.
 
 **Usage:**
+
 ```bash
 cc-deep-research config set [KEY] [VALUE] [OPTIONS]
 ```
 
 **Required Arguments:**
+
 - `KEY` - Configuration key in dot notation (e.g., `tavily.api_keys`)
 - `VALUE` - Value to set
 
 **Options:**
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
+| Option          | Type | Default   | Description         |
+| --------------- | ---- | --------- | ------------------- |
 | `--config-path` | path | (default) | Path to config file |
 
 **Examples:**
+
 ```bash
 # Set API keys
 cc-deep-research config set tavily.api_keys key1,key2,key3
@@ -566,22 +580,25 @@ cc-deep-research config set output.save_dir ~/research/reports
 Display current configuration.
 
 **Usage:**
+
 ```bash
 cc-deep-research config show [OPTIONS]
 ```
 
 **Options:**
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
+| Option          | Type | Default   | Description         |
+| --------------- | ---- | --------- | ------------------- |
 | `--config-path` | path | (default) | Path to config file |
 
 **Example:**
+
 ```bash
 cc-deep-research config show
 ```
 
 **Output:**
+
 ```
 Current configuration:
   Search providers: tavily, claude
@@ -597,18 +614,20 @@ Current configuration:
 Create a default configuration file.
 
 **Usage:**
+
 ```bash
 cc-deep-research config init [OPTIONS]
 ```
 
 **Options:**
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--config-path` | path | (default) | Path to config file |
-| `--force` | flag | false | Overwrite existing config file |
+| Option          | Type | Default   | Description                    |
+| --------------- | ---- | --------- | ------------------------------ |
+| `--config-path` | path | (default) | Path to config file            |
+| `--force`       | flag | false     | Overwrite existing config file |
 
 **Examples:**
+
 ```bash
 # Initialize default config
 cc-deep-research config init
@@ -625,18 +644,20 @@ cc-deep-research config init --force
 Ingest persisted telemetry JSONL into DuckDB tables for analytics.
 
 **Usage:**
+
 ```bash
 cc-deep-research telemetry ingest [OPTIONS]
 ```
 
 **Options:**
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
+| Option       | Type | Default       | Description                 |
+| ------------ | ---- | ------------- | --------------------------- |
 | `--base-dir` | path | telemetry dir | Telemetry session directory |
-| `--db-path` | path | dashboard DB | DuckDB output path |
+| `--db-path`  | path | dashboard DB  | DuckDB output path          |
 
 **Examples:**
+
 ```bash
 cc-deep-research telemetry ingest
 cc-deep-research telemetry ingest --base-dir ~/.config/cc-deep-research/telemetry
@@ -648,43 +669,47 @@ cc-deep-research telemetry ingest --db-path ./tmp/dashboard.duckdb
 Launch the Streamlit telemetry dashboard for live tails and historical DuckDB analytics.
 
 **Usage:**
+
 ```bash
 cc-deep-research telemetry dashboard [OPTIONS]
 ```
 
 **Options:**
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--base-dir` | path | telemetry dir | Telemetry session directory |
-| `--db-path` | path | dashboard DB | DuckDB analytics path |
-| `--port` | int | `8501` | Streamlit dashboard port |
-| `--refresh-seconds` | int | `5` | Auto-refresh interval (`0` disables refresh) |
-| `--tail-limit` | int | `200` | Max live events and subprocess chunks shown |
+| Option              | Type | Default       | Description                                  |
+| ------------------- | ---- | ------------- | -------------------------------------------- |
+| `--base-dir`        | path | telemetry dir | Telemetry session directory                  |
+| `--db-path`         | path | dashboard DB  | DuckDB analytics path                        |
+| `--port`            | int  | `8501`        | Streamlit dashboard port                     |
+| `--refresh-seconds` | int  | `5`           | Auto-refresh interval (`0` disables refresh) |
+| `--tail-limit`      | int  | `200`         | Max live events and subprocess chunks shown  |
 
 **Example:**
+
 ```bash
 cc-deep-research telemetry dashboard --port 8501 --refresh-seconds 5 --tail-limit 200
 ```
 
 ### `cc-deep-research dashboard`
 
-Start the FastAPI backend used by the Next.js operator console in [`dashboard/`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard).
+Start the FastAPI backend used by the Next.js operator console in [`dashboard/`](../dashboard).
 
 **Usage:**
+
 ```bash
 cc-deep-research dashboard [OPTIONS]
 ```
 
 **Options:**
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--host` | text | `localhost` | Host to bind |
-| `--port` | int | `8000` | HTTP/WebSocket port |
-| `--enable-realtime` | flag | enabled | Enable WebSocket event streaming |
+| Option              | Type | Default     | Description                      |
+| ------------------- | ---- | ----------- | -------------------------------- |
+| `--host`            | text | `localhost` | Host to bind                     |
+| `--port`            | int  | `8000`      | HTTP/WebSocket port              |
+| `--enable-realtime` | flag | enabled     | Enable WebSocket event streaming |
 
 **Example:**
+
 ```bash
 cc-deep-research dashboard --host localhost --port 8000
 ```
@@ -695,14 +720,15 @@ Manage saved research sessions produced by completed runs.
 
 **Subcommands:**
 
-| Command | Purpose |
-|---------|---------|
-| `session list` | List saved sessions |
-| `session show SESSION_ID` | Show one saved session |
+| Command                                   | Purpose                                     |
+| ----------------------------------------- | ------------------------------------------- |
+| `session list`                            | List saved sessions                         |
+| `session show SESSION_ID`                 | Show one saved session                      |
 | `session export SESSION_ID --output PATH` | Export a session as markdown, JSON, or HTML |
-| `session delete SESSION_ID` | Delete a saved session |
+| `session delete SESSION_ID`               | Delete a saved session                      |
 
 **Examples:**
+
 ```bash
 cc-deep-research session list --limit 10
 cc-deep-research session show research-abc123
@@ -723,6 +749,7 @@ cc-deep-research session export research-abc123 --format json --output ./session
 - **Best for:** Simple questions, quick lookups
 
 **Example:**
+
 ```bash
 cc-deep-research research -d quick "What is the population of Tokyo?"
 ```
@@ -737,6 +764,7 @@ cc-deep-research research -d quick "What is the population of Tokyo?"
 - **Best for:** Learning about a topic, general research
 
 **Example:**
+
 ```bash
 cc-deep-research research -d standard "History of electric vehicles"
 ```
@@ -751,22 +779,23 @@ cc-deep-research research -d standard "History of electric vehicles"
 - **Best for:** Thorough research, complex topics, reports
 
 **Example:**
+
 ```bash
 cc-deep-research research -d deep "Impact of AI on healthcare industry"
 ```
 
 ### Comparison Table
 
-| Feature | Quick | Standard | Deep |
-|---------|-------|----------|------|
-| Minimum Sources | 3 | 10 | 50 |
-| Typical Sources | 3-5 | 10-15 | 50+ |
-| Execution Time | 1-2 min | 3-5 min | 5-10 min |
-| Query Expansion | Basic | Moderate | Comprehensive |
-| Iterative Search | No | Yes | Yes |
-| Cross-Reference | No | Basic | Full |
-| Quality Scoring | Basic | Moderate | Advanced |
-| Best For | Fact-checking | General research | Thorough research |
+| Feature          | Quick         | Standard         | Deep              |
+| ---------------- | ------------- | ---------------- | ----------------- |
+| Minimum Sources  | 3             | 10               | 50                |
+| Typical Sources  | 3-5           | 10-15            | 50+               |
+| Execution Time   | 1-2 min       | 3-5 min          | 5-10 min          |
+| Query Expansion  | Basic         | Moderate         | Comprehensive     |
+| Iterative Search | No            | Yes              | Yes               |
+| Cross-Reference  | No            | Basic            | Full              |
+| Quality Scoring  | Basic         | Moderate         | Advanced          |
+| Best For         | Fact-checking | General research | Thorough research |
 
 ---
 
@@ -781,6 +810,7 @@ Set the research depth mode.
 **Values:** `quick`, `standard`, `deep` (default)
 
 **Examples:**
+
 ```bash
 cc-deep-research research -d quick "Simple query"
 cc-deep-research research -d standard "Moderate query"
@@ -794,6 +824,7 @@ Override the minimum number of sources to gather.
 **Values:** Positive integer
 
 **Example:**
+
 ```bash
 cc-deep-research research -s 50 "Comprehensive topic"
 ```
@@ -805,6 +836,7 @@ Specify the output file path for the report.
 **Values:** File path
 
 **Example:**
+
 ```bash
 cc-deep-research research -o ~/reports/quantum.md "Quantum computing"
 ```
@@ -816,6 +848,7 @@ Set the output format.
 **Values:** `markdown` (default), `json`, `html`
 
 **Example:**
+
 ```bash
 cc-deep-research research --format json "Topic" > results.json
 cc-deep-research research --format html -o report.html "Topic"
@@ -828,6 +861,7 @@ cc-deep-research research --format html -o report.html "Topic"
 Use only the Tavily search provider.
 
 **Example:**
+
 ```bash
 cc-deep-research research --tavily-only "Web search only"
 ```
@@ -839,6 +873,7 @@ Select only the `claude` provider.
 Current status: no Claude search provider is implemented, so this configuration will only produce provider warnings.
 
 **Example:**
+
 ```bash
 cc-deep-research research --claude-only "Claude search only"
 ```
@@ -850,11 +885,13 @@ cc-deep-research research --claude-only "Claude search only"
 Run source collection sequentially instead of using parallel local researcher tasks.
 
 **Use when:**
+
 - Simple queries don't need parallel collection
 - Troubleshooting parallel collection issues
 - Reducing resource usage
 
 **Example:**
+
 ```bash
 cc-deep-research research --no-team "Simple question"
 ```
@@ -866,6 +903,7 @@ Override the configured specialist roster size metadata.
 **Values:** Integer between 2-8
 
 **Example:**
+
 ```bash
 cc-deep-research research --team-size 6 "Complex topic"
 ```
@@ -875,6 +913,7 @@ cc-deep-research research --team-size 6 "Complex topic"
 Force parallel researcher execution for this run when you want to override the configured mode.
 
 **Example:**
+
 ```bash
 cc-deep-research research --parallel-mode "Complex topic"
 ```
@@ -886,6 +925,7 @@ Override the number of parallel researchers used during source collection.
 **Values:** Integer between 1-8
 
 **Example:**
+
 ```bash
 cc-deep-research research --parallel-mode --num-researchers 4 "Complex topic"
 ```
@@ -897,6 +937,7 @@ cc-deep-research research --parallel-mode --num-researchers 4 "Complex topic"
 Show progress indicators (default: enabled).
 
 **Example:**
+
 ```bash
 cc-deep-research research --progress "Topic"
 cc-deep-research research --no-progress "Topic"
@@ -907,11 +948,13 @@ cc-deep-research research --no-progress "Topic"
 Suppress all output (except errors and file save confirmation).
 
 **Use when:**
+
 - Running in scripts/cron jobs
 - Redirecting output to file
 - Automated workflows
 
 **Example:**
+
 ```bash
 cc-deep-research research --quiet -o report.md "Topic"
 ```
@@ -921,11 +964,13 @@ cc-deep-research research --quiet -o report.md "Topic"
 Show detailed output including configuration and execution details.
 
 **Example:**
+
 ```bash
 cc-deep-research research --verbose "Topic"
 ```
 
 **Sample verbose output:**
+
 ```
 Research query: AI safety research
 Depth: deep
@@ -938,6 +983,7 @@ Mode: Local pipeline (parallel source collection)
 Show internal workflow monitoring information in the terminal.
 
 **Shows:**
+
 - Research session details
 - Configuration values
 - Execution stages
@@ -948,6 +994,7 @@ Show internal workflow monitoring information in the terminal.
 This does not launch the browser dashboard. It only adds terminal monitor output.
 
 **Example:**
+
 ```bash
 cc-deep-research research --monitor "Complex topic"
 ```
@@ -959,6 +1006,7 @@ Show a terminal timeline after a parallel run completes.
 Use this with `--parallel-mode` when you want a compact execution trace without opening the browser dashboard.
 
 **Example:**
+
 ```bash
 cc-deep-research research --parallel-mode --show-timeline "Complex topic"
 ```
@@ -970,6 +1018,7 @@ Enable the shared event router used by the browser monitoring backend.
 In normal browser-first usage you do not pass this yourself; runs started from the dashboard home page already use the backend's shared router. Keep this for integrations or advanced local development.
 
 **Example:**
+
 ```bash
 cc-deep-research research --enable-realtime "Topic"
 ```
@@ -979,6 +1028,7 @@ cc-deep-research research --enable-realtime "Topic"
 Generate a PDF artifact in addition to the main report output.
 
 **Example:**
+
 ```bash
 cc-deep-research research --pdf -o report.md "Topic"
 ```
@@ -990,11 +1040,13 @@ cc-deep-research research --pdf -o report.md "Topic"
 Disable cross-reference analysis.
 
 **Use when:**
+
 - Faster execution needed
 - Simple queries where cross-referencing isn't necessary
 - Processing large result sets
 
 **Example:**
+
 ```bash
 cc-deep-research research --no-cross-ref "Simple topic"
 ```
@@ -1013,20 +1065,24 @@ The default output format is Markdown, which provides:
 - **Markdown syntax** compatible with most editors and viewers
 
 **Sample output:**
+
 ```markdown
 # Research Report: Quantum Computing Applications
 
 ## Executive Summary
+
 Quantum computing has emerged as a transformative technology with applications across multiple industries...
 
 ## Key Findings
 
 ### 1. Pharmaceutical Research
+
 Quantum computers are revolutionizing drug discovery by simulating molecular interactions...
 [1] https://nature.com/quantum-drug-discovery
 [2] https://science.org/quantum-simulations
 
 ### 2. Cryptography
+
 Post-quantum cryptography is becoming essential as quantum computers threaten current encryption...
 [3] https://nist.gov/post-quantum
 [4] https://ieee.org/quantum-crypto
@@ -1034,20 +1090,24 @@ Post-quantum cryptography is becoming essential as quantum computers threaten cu
 ## Cross-Reference Analysis
 
 ### Consensus Points
+
 - Quantum computing will disrupt cryptography within 10-15 years [1][3][4]
 - Pharmaceutical applications are among the most promising near-term use cases [1][2]
 
 ### Areas of Contention
+
 - Timeline for practical quantum advantage varies from 3-10 years [1] vs. 10-20 years [4]
 - Commercial viability estimates differ significantly across sources
 
 ## Sources
+
 1. [Quantum Drug Discovery Breakthroughs](https://nature.com/quantum-drug-discovery) - Nature Journal
 2. [Molecular Simulation Advances](https://science.org/quantum-simulations) - Science Magazine
 3. [Post-Quantum Cryptography Standards](https://nist.gov/post-quantum) - NIST
 4. [Quantum Threat Timeline](https://ieee.org/quantum-crypto) - IEEE Spectrum
 
 ## Metadata
+
 - **Query:** Quantum Computing Applications
 - **Depth:** Deep
 - **Sources:** 25
@@ -1066,6 +1126,7 @@ JSON output provides programmatic access to research data, suitable for:
 - **API responses** in web applications
 
 **Sample output:**
+
 ```json
 {
   "query": "Quantum Computing Applications",
@@ -1088,9 +1149,7 @@ JSON output provides programmatic access to research data, suitable for:
     }
   ],
   "cross_reference_analysis": {
-    "consensus_points": [
-      "Quantum computing will disrupt cryptography within 10-15 years"
-    ],
+    "consensus_points": ["Quantum computing will disrupt cryptography within 10-15 years"],
     "areas_of_contention": [
       "Timeline for practical quantum advantage varies from 3-10 years vs. 10-20 years"
     ]
@@ -1126,6 +1185,7 @@ pipeline and is useful for:
 - **HTML-first workflows** where PDF is a later render step
 
 **Example:**
+
 ```bash
 cc-deep-research research --format html -o report.html "Quantum Computing Applications"
 cc-deep-research markdown-to-html notes.md
@@ -1180,14 +1240,14 @@ CC Deep Research runs a staged local pipeline. The orchestrator invokes speciali
 
 ### Specialist Roles
 
-| Agent | Role | Responsibilities |
-|-------|------|-------------------|
-| **Query Expander** | Generates search variations | Creates related queries, explores different angles |
-| **Source Collector** | Gathers sources | Searches multiple providers, collects URLs and content |
-| **Analyzer** | Synthesizes information | Analyzes content, extracts key points, identifies patterns |
-| **Validator** | Quality assurance | Validates source credibility, checks completeness |
-| **Reporter** | Creates reports | Formats findings, generates citations, structures output |
-| **Orchestrator** | Orchestrates workflow | Orders phases, aggregates results, handles cleanup |
+| Agent                | Role                        | Responsibilities                                           |
+| -------------------- | --------------------------- | ---------------------------------------------------------- |
+| **Query Expander**   | Generates search variations | Creates related queries, explores different angles         |
+| **Source Collector** | Gathers sources             | Searches multiple providers, collects URLs and content     |
+| **Analyzer**         | Synthesizes information     | Analyzes content, extracts key points, identifies patterns |
+| **Validator**        | Quality assurance           | Validates source credibility, checks completeness          |
+| **Reporter**         | Creates reports             | Formats findings, generates citations, structures output   |
+| **Orchestrator**     | Orchestrates workflow       | Orders phases, aggregates results, handles cleanup         |
 
 ### Runtime Configuration
 
@@ -1196,14 +1256,15 @@ Configure local pipeline and parallel collection behavior:
 ```yaml
 # Parallel collection settings
 search_team:
-  enabled: true                    # Compatibility flag
-  team_size: 4                    # Specialist roster metadata
-  parallel_execution: true         # Run agents in parallel
-  timeout_seconds: 300            # Team timeout (30-600 seconds)
-  fallback_to_sequential: true    # Fall back on error
+  enabled: true # Compatibility flag
+  team_size: 4 # Specialist roster metadata
+  parallel_execution: true # Run agents in parallel
+  timeout_seconds: 300 # Team timeout (30-600 seconds)
+  fallback_to_sequential: true # Fall back on error
 ```
 
 **Command-line overrides:**
+
 ```bash
 # Force sequential source collection
 cc-deep-research research --no-team "Simple query"
@@ -1215,12 +1276,14 @@ cc-deep-research research --team-size 6 "Complex topic"
 ### Parallel vs. Sequential Execution
 
 **Parallel Execution (Default):**
+
 - Multiple local researcher tasks work simultaneously
 - Faster for complex queries
 - Requires more resources
 - Better for deep research
 
 **Sequential Execution:**
+
 - Source collection runs in one local path
 - Slower but uses fewer resources
 - Better for simple queries
@@ -1228,12 +1291,12 @@ cc-deep-research research --team-size 6 "Complex topic"
 
 ### Team Size Guidelines
 
-| Team Size | Use Case | Performance |
-|-----------|----------|-------------|
-| 2-3 | Simple queries, resource-constrained environments | Fewer parallel tasks |
-| 4-5 | Standard research (default) | Balanced fan-out |
-| 6-7 | Complex topics, comprehensive research | Higher fan-out, more overhead |
-| 8 | Maximum depth, very complex topics | Highest fan-out, most overhead |
+| Team Size | Use Case                                          | Performance                    |
+| --------- | ------------------------------------------------- | ------------------------------ |
+| 2-3       | Simple queries, resource-constrained environments | Fewer parallel tasks           |
+| 4-5       | Standard research (default)                       | Balanced fan-out               |
+| 6-7       | Complex topics, comprehensive research            | Higher fan-out, more overhead  |
+| 8         | Maximum depth, very complex topics                | Highest fan-out, most overhead |
 
 ---
 
@@ -1268,6 +1331,7 @@ cc-deep-research config set tavily.api_keys key1,key2,key3
 ```
 
 **Benefits:**
+
 - **Load balancing** - Distributes requests across keys
 - **Failover** - Automatically switches if one key fails
 - **Rate limit management** - Each key has its own limit
@@ -1284,6 +1348,7 @@ research:
 ```
 
 **How it works:**
+
 1. Initial search gathers sources
 2. Analyzer identifies gaps or unclear areas
 3. Generates follow-up queries
@@ -1291,6 +1356,7 @@ research:
 5. Aggregates all findings
 
 **Disable for speed:**
+
 ```bash
 cc-deep-research research --no-iterative "Quick topic"
 ```
@@ -1305,6 +1371,7 @@ research:
 ```
 
 **Scoring criteria:**
+
 - **Credibility** - Domain authority, source reputation
 - **Relevance** - Match to query terms
 - **Freshness** - Publication date recency
@@ -1323,11 +1390,13 @@ research:
 ```
 
 **What it provides:**
+
 - **Consensus Points** - Facts agreed upon by multiple sources
 - **Areas of Contention** - Conflicting information or disagreements
 - **Source Attribution** - Which sources support each point
 
 **Disable for speed:**
+
 ```bash
 cc-deep-research research --no-cross-ref "Simple topic"
 ```
@@ -1338,28 +1407,28 @@ Choose which providers to use and their priority:
 
 ```yaml
 search:
-  providers: ["tavily"]               # Active providers
-  mode: "tavily_primary"              # Execution mode
+  providers: ['tavily'] # Active providers
+  mode: 'tavily_primary' # Execution mode
 ```
 
 **Search modes:**
 
-| Mode | Description |
-|------|-------------|
-| `hybrid_parallel` | Configuration enum accepted by the model layer |
-| `tavily_primary` | Matches the currently implemented provider path |
-| `claude_primary` | Accepted by config, but Claude search is not implemented |
+| Mode              | Description                                              |
+| ----------------- | -------------------------------------------------------- |
+| `hybrid_parallel` | Configuration enum accepted by the model layer           |
+| `tavily_primary`  | Matches the currently implemented provider path          |
+| `claude_primary`  | Accepted by config, but Claude search is not implemented |
 
 **Provider-specific configuration:**
 
 ```yaml
 tavily:
-  api_keys: ["key1", "key2"]
+  api_keys: ['key1', 'key2']
   rate_limit: 1000
   max_results: 100
 
 claude:
-  max_results: 50  # Reserved for future provider support
+  max_results: 50 # Reserved for future provider support
 ```
 
 ---
@@ -1369,16 +1438,19 @@ claude:
 ### Basic Research Queries
 
 **Simple fact-check:**
+
 ```bash
 cc-deep-research research -d quick "What is the capital of Australia?"
 ```
 
 **Topic overview:**
+
 ```bash
 cc-deep-research research -d standard "History of electric vehicles"
 ```
 
 **Comprehensive research:**
+
 ```bash
 cc-deep-research research "Impact of AI on healthcare industry"
 ```
@@ -1386,18 +1458,21 @@ cc-deep-research research "Impact of AI on healthcare industry"
 ### Complex Research Scenarios
 
 **Multi-faceted topic:**
+
 ```bash
 cc-deep-research research --team-size 6 --sources 30 \
   "Economic, social, and environmental impacts of renewable energy transition"
 ```
 
 **Technical deep-dive:**
+
 ```bash
 cc-deep-research research --monitor --format json \
   "Latest breakthroughs in quantum error correction" > quantum_ec.json
 ```
 
 **Comparative analysis:**
+
 ```bash
 cc-deep-research research \
   "Comparison of cloud computing providers: AWS vs Azure vs Google Cloud"
@@ -1406,16 +1481,19 @@ cc-deep-research research \
 ### Saving and Exporting Reports
 
 **Save to specific location:**
+
 ```bash
 cc-deep-research research -o ~/reports/renewable-energy.md "Renewable energy trends"
 ```
 
 **Multiple reports with timestamp:**
+
 ```bash
 cc-deep-research research -o "reports/ai-$(date +%Y%m%d).md" "AI developments"
 ```
 
 **JSON for automation:**
+
 ```bash
 cc-deep-research research --format json "Machine learning trends" | \
   jq '.sources | length'  # Count sources using jq
@@ -1424,11 +1502,13 @@ cc-deep-research research --format json "Machine learning trends" | \
 ### Using Different Output Formats
 
 **Markdown for documentation:**
+
 ```bash
 cc-deep-research research --format markdown -o docs/api.md "REST API best practices"
 ```
 
 **JSON for data analysis:**
+
 ```bash
 cc-deep-research research --format json "Climate data" | \
   python analyze_data.py
@@ -1437,17 +1517,20 @@ cc-deep-research research --format json "Climate data" | \
 ### Team Configuration Examples
 
 **Small team for quick queries:**
+
 ```bash
 cc-deep-research research --team-size 2 --no-cross-ref "Quick lookup"
 ```
 
 **Large team for comprehensive research:**
+
 ```bash
 cc-deep-research research --team-size 8 --sources 50 --depth deep \
   "Comprehensive analysis of global supply chains"
 ```
 
 **Sequential source collection for debugging:**
+
 ```bash
 cc-deep-research research --no-team --verbose "Test query"
 ```
@@ -1457,21 +1540,25 @@ cc-deep-research research --no-team --verbose "Test query"
 For live operator visibility, prefer the browser dashboard. Use `--monitor` when you want extra terminal output during a CLI run.
 
 **Terminal monitoring output:**
+
 ```bash
 cc-deep-research research --monitor "Complex topic"
 ```
 
 **Parallel timeline in the terminal:**
+
 ```bash
 cc-deep-research research --parallel-mode --show-timeline "Complex topic"
 ```
 
 **Verbose output for troubleshooting:**
+
 ```bash
 cc-deep-research research --verbose --monitor "Problematic query"
 ```
 
 **Quiet mode for automation:**
+
 ```bash
 cc-deep-research research --quiet -o report.md "Automated research" > /dev/null
 ```
@@ -1484,7 +1571,7 @@ Telemetry files are written for normal `research` runs. `--monitor` only adds co
 
 ```bash
 # Recommended: start backend + frontend together
-cd /Users/jjae/Documents/guthib/cc-deep-research/dashboard
+cd dashboard
 npm install
 npm run dev
 ```
@@ -1502,7 +1589,7 @@ If you want to run backend and frontend separately for development:
 cc-deep-research dashboard --port 8000
 
 # Terminal 2: frontend only
-cd /Users/jjae/Documents/guthib/cc-deep-research/dashboard
+cd dashboard
 npm run dev:frontend
 ```
 
@@ -1556,6 +1643,7 @@ For the implementation-level architecture and event model, see [`docs/TELEMETRY.
 **Problem:** The tool cannot find Tavily API keys.
 
 **Solutions:**
+
 ```bash
 # Set environment variable
 export TAVILY_API_KEYS=your_api_key_here
@@ -1572,6 +1660,7 @@ cc-deep-research config show
 **Problem:** Tavily API key has reached its monthly limit.
 
 **Solutions:**
+
 ```bash
 # Add multiple API keys for rotation
 export TAVILY_API_KEYS=key1,key2,key3
@@ -1585,6 +1674,7 @@ cc-deep-research research --claude-only "Your query"
 **Problem:** Research takes too long and times out.
 
 **Solutions:**
+
 ```bash
 # Reduce research depth
 cc-deep-research research -d quick "Your query"
@@ -1604,6 +1694,7 @@ cc-deep-research config set research.enable_iterative_search false
 **Problem:** `telemetry dashboard` fails because Streamlit, pandas, or DuckDB are not installed.
 
 **Solutions:**
+
 ```bash
 pip install "cc-deep-research[dashboard]"
 ```
@@ -1613,9 +1704,10 @@ pip install "cc-deep-research[dashboard]"
 **Problem:** The dashboard opens but there are no active or historical sessions to inspect.
 
 **Solutions:**
+
 ```bash
 # Browser-first monitoring: start the combined launcher
-cd /Users/jjae/Documents/guthib/cc-deep-research/dashboard
+cd dashboard
 npm run dev
 
 # Then open http://localhost:3000 and launch a run from the home page
@@ -1635,6 +1727,7 @@ Notes:
 **Problem:** Claude-backed analysis falls back to heuristics because the run is already inside a Claude Code session.
 
 **Solutions:**
+
 ```bash
 # Use heuristic mode explicitly to avoid the fallback warning
 cc-deep-research config set research.ai_integration_method heuristic
@@ -1647,6 +1740,7 @@ The dashboard will still show the failure or fallback events in the live session
 **Problem:** Parallel source collection encounters errors during execution.
 
 **Solutions:**
+
 ```bash
 # Use sequential source collection
 cc-deep-research research --no-team "Your query"
@@ -1663,6 +1757,7 @@ cc-deep-research research --team-size 2 "Your query"
 **Problem:** Tool cannot locate configuration file.
 
 **Solutions:**
+
 ```bash
 # Initialize default config
 cc-deep-research config init
@@ -1742,6 +1837,7 @@ export HTTPS_PROXY=http://proxy.example.com:8080
 ### Getting Help
 
 **Display help:**
+
 ```bash
 # General help
 cc-deep-research --help
@@ -1754,11 +1850,13 @@ cc-deep-research config --help
 ```
 
 **Check version:**
+
 ```bash
 cc-deep-research --version
 ```
 
 **Verbose debugging:**
+
 ```bash
 cc-deep-research research --verbose --monitor "Test query"
 ```
@@ -1769,29 +1867,32 @@ cc-deep-research research --verbose --monitor "Test query"
 
 ### Choosing the Right Research Depth
 
-| Use Case | Recommended Depth | Reasoning |
-|----------|-------------------|-----------|
-| Quick fact-check | Quick | Fast, minimal overhead |
-| Simple questions | Quick or Standard | Balance of speed and depth |
-| Topic overview | Standard | Good coverage without excessive time |
-| Learning a new topic | Standard | Sufficient detail for understanding |
-| Comprehensive research | Deep | Maximum depth and analysis |
-| Academic work | Deep | Full citations and cross-referencing |
-| Competitive analysis | Deep | Thorough coverage of all aspects |
+| Use Case               | Recommended Depth | Reasoning                            |
+| ---------------------- | ----------------- | ------------------------------------ |
+| Quick fact-check       | Quick             | Fast, minimal overhead               |
+| Simple questions       | Quick or Standard | Balance of speed and depth           |
+| Topic overview         | Standard          | Good coverage without excessive time |
+| Learning a new topic   | Standard          | Sufficient detail for understanding  |
+| Comprehensive research | Deep              | Maximum depth and analysis           |
+| Academic work          | Deep              | Full citations and cross-referencing |
+| Competitive analysis   | Deep              | Thorough coverage of all aspects     |
 
 ### Optimizing for Speed vs. Depth
 
 **For speed (fast results):**
+
 ```bash
 cc-deep-research research -d quick --no-team --no-cross-ref "Simple query"
 ```
 
 **For balanced performance:**
+
 ```bash
 cc-deep-research research -d standard --team-size 4 "Moderate query"
 ```
 
 **For depth (comprehensive results):**
+
 ```bash
 cc-deep-research research -d deep --team-size 6 --sources 30 "Complex query"
 ```
@@ -1799,6 +1900,7 @@ cc-deep-research research -d deep --team-size 6 --sources 30 "Complex query"
 ### Managing Multiple Research Sessions
 
 **Organize reports by topic:**
+
 ```bash
 mkdir -p ~/research/{ai,quantum,climate}
 cc-deep-research research -o ~/research/ai/report.md "AI topic"
@@ -1806,11 +1908,13 @@ cc-deep-research research -o ~/research/quantum/report.md "Quantum topic"
 ```
 
 **Use timestamped filenames:**
+
 ```bash
 cc-deep-research research -o "reports/$(date +%Y%m%d-%H%M%S).md" "Dynamic topic"
 ```
 
 **Automate with scripts:**
+
 ```bash
 #!/bin/bash
 # research.sh
@@ -1823,6 +1927,7 @@ cc-deep-research research -o "$OUTPUT" "$TOPIC"
 ### Effective Query Formulation
 
 **Be specific:**
+
 ```bash
 # Better
 cc-deep-research research "Impact of GPT-4 on software development productivity"
@@ -1832,21 +1937,25 @@ cc-deep-research research "AI and programming"
 ```
 
 **Include context:**
+
 ```bash
 cc-deep-research research "Python 3.11 performance improvements over Python 3.10"
 ```
 
 **Use natural language:**
+
 ```bash
 cc-deep-research research "What are the best practices for securing AWS S3 buckets?"
 ```
 
 **Ask for comparisons:**
+
 ```bash
 cc-deep-research research "PostgreSQL vs MongoDB: performance comparison for analytical workloads"
 ```
 
 **Request examples:**
+
 ```bash
 cc-deep-research research "Real-world applications of edge computing in manufacturing"
 ```
@@ -1854,18 +1963,21 @@ cc-deep-research research "Real-world applications of edge computing in manufact
 ### Resource Management
 
 **Limit concurrent sessions:**
+
 ```bash
 # Avoid running multiple deep research sessions simultaneously
 # Instead, queue them or use smaller teams
 ```
 
 **Monitor API usage:**
+
 ```bash
 # Check Tavily dashboard for API key usage
 # Rotate keys before hitting limits
 ```
 
 **Clean up old reports:**
+
 ```bash
 # Remove old research reports
 find reports/ -name "*.md" -mtime +30 -delete
@@ -1874,6 +1986,7 @@ find reports/ -name "*.md" -mtime +30 -delete
 ### Integration with Workflows
 
 **Use in CI/CD:**
+
 ```bash
 # GitHub Actions example
 - name: Research
@@ -1883,12 +1996,14 @@ find reports/ -name "*.md" -mtime +30 -delete
 ```
 
 **Combine with other tools:**
+
 ```bash
 # Research then analyze
 cc-deep-research research --format json "Topic" | python analyze.py
 ```
 
 **Automate periodic research:**
+
 ```bash
 # Cron job for daily research
 0 9 * * * /path/to/research.sh "Daily topic" >> ~/logs/research.log 2>&1
@@ -1897,6 +2012,7 @@ cc-deep-research research --format json "Topic" | python analyze.py
 ### Security Best Practices
 
 **Protect API keys:**
+
 ```bash
 # Never commit API keys to version control
 echo "*.key" >> .gitignore
@@ -1904,6 +2020,7 @@ echo "api_keys.env" >> .gitignore
 ```
 
 **Use environment variables:**
+
 ```bash
 # Store in secure location
 # Add to .bashrc or .zshrc with proper permissions
@@ -1912,6 +2029,7 @@ source ~/.env/cc-deep-research
 ```
 
 **Rotate keys regularly:**
+
 ```bash
 # Update API keys periodically
 cc-deep-research config set tavily.api_keys new_key_1,new_key_2

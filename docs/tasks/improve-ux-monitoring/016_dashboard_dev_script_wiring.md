@@ -14,12 +14,12 @@ Make `npm run dev` inside `dashboard/` use the new combined launcher by default.
 
 ## Target Files
 
-- `/Users/jjae/Documents/guthib/cc-deep-research/dashboard/package.json`
-- `/Users/jjae/Documents/guthib/cc-deep-research/dashboard/README.md`
+- `dashboard/package.json`
+- `dashboard/README.md`
 
 ## Dependencies
 
-- [015_dashboard_dev_launcher_script.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/015_dashboard_dev_launcher_script.md)
+- [015_dashboard_dev_launcher_script.md](015_dashboard_dev_launcher_script.md)
 
 ## Acceptance Criteria
 
@@ -29,5 +29,5 @@ Make `npm run dev` inside `dashboard/` use the new combined launcher by default.
 
 ## Suggested Verification
 
-- run `npm run dev` in `/Users/jjae/Documents/guthib/cc-deep-research/dashboard`
+- run `npm run dev` in `dashboard`
 

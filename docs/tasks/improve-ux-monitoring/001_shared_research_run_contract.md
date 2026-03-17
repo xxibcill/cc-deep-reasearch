@@ -14,8 +14,8 @@ Define a typed, framework-agnostic contract for starting a research run and retu
 
 ## Target Files
 
-- `/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/research_runs/models.py`
-- `/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/research_runs/__init__.py`
+- `src/cc_deep_research/research_runs/models.py`
+- `src/cc_deep_research/research_runs/__init__.py`
 
 ## Dependencies
 

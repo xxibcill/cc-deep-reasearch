@@ -25,7 +25,7 @@ npm install
 Start both the backend API and frontend dashboard together:
 
 \`\`\`bash
-npm run dev
+../scripts/dashboard-dev
 \`\`\`
 
 This starts:
@@ -33,6 +33,12 @@ This starts:
 - **Frontend Dashboard**: http://localhost:3000
 
 The combined launcher handles graceful shutdown with Ctrl+C and labels logs clearly.
+
+If you prefer running from inside the dashboard directory, use:
+
+\`\`\`bash
+npm run dev
+\`\`\`
 
 ### Frontend-Only Development
 
@@ -104,7 +110,7 @@ To use the dashboard with real-time monitoring:
 
 ## Component Foundation
 
-The dashboard now uses shared `shadcn/ui`-style primitives from [`src/components/ui/`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/components/ui) with class merging from [`src/lib/utils.ts`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/lib/utils.ts). The local setup is declared in [`components.json`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/components.json) so later dashboard panels can reuse the same dialog, tabs, badge, select, card, and scrollable-pane vocabulary.
+The dashboard now uses shared `shadcn/ui`-style primitives from [`src/components/ui/`](src/components/ui) with class merging from [`src/lib/utils.ts`](src/lib/utils.ts). The local setup is declared in [`components.json`](components.json) so later dashboard panels can reuse the same dialog, tabs, badge, select, card, and scrollable-pane vocabulary.
 
 ## Performance Notes
 

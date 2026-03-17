@@ -14,14 +14,14 @@ Make the session page explain run state clearly instead of showing only raw even
 
 ## Target Files
 
-- `/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/app/session/[id]/page.tsx`
-- `/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/components/session-details.tsx`
-- `/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/hooks/useDashboard.ts`
+- `dashboard/src/app/session/[id]/page.tsx`
+- `dashboard/src/components/session-details.tsx`
+- `dashboard/src/hooks/useDashboard.ts`
 
 ## Dependencies
 
-- [008_research_run_status_api.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/008_research_run_status_api.md)
-- [012_submit_and_redirect_flow.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/012_submit_and_redirect_flow.md)
+- [008_research_run_status_api.md](008_research_run_status_api.md)
+- [012_submit_and_redirect_flow.md](012_submit_and_redirect_flow.md)
 
 ## Acceptance Criteria
 
@@ -31,5 +31,5 @@ Make the session page explain run state clearly instead of showing only raw even
 
 ## Suggested Verification
 
-- run `npm run build` in `/Users/jjae/Documents/guthib/cc-deep-research/dashboard`
+- run `npm run build` in `dashboard`
 

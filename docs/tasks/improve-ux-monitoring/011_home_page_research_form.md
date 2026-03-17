@@ -17,12 +17,12 @@ Make the home page a launch surface, not only a session browser.
 
 ## Target Files
 
-- `/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/app/page.tsx`
-- `/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/components/start-research-form.tsx`
+- `dashboard/src/app/page.tsx`
+- `dashboard/src/components/start-research-form.tsx`
 
 ## Dependencies
 
-- [010_dashboard_client_run_api_integration.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/010_dashboard_client_run_api_integration.md)
+- [010_dashboard_client_run_api_integration.md](010_dashboard_client_run_api_integration.md)
 
 ## Acceptance Criteria
 
@@ -32,5 +32,5 @@ Make the home page a launch surface, not only a session browser.
 
 ## Suggested Verification
 
-- run `npm run build` in `/Users/jjae/Documents/guthib/cc-deep-research/dashboard`
+- run `npm run build` in `dashboard`
 

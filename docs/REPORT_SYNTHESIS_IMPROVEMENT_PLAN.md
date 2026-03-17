@@ -2,7 +2,7 @@
 
 This plan translates the human feedback on the generated research report into concrete system changes for the current pipeline.
 
-It is based on the observed failures in [`whitetea.md`](/Users/jjae/Documents/guthib/cc-deep-research/whitetea.md) and the current implementation in the analyzer, AI analysis, reporter, and post-validation layers.
+It is based on the observed failures in [`whitetea.md`](../whitetea.md) and the current implementation in the analyzer, AI analysis, reporter, and post-validation layers.
 
 ## Objective
 
@@ -25,9 +25,9 @@ Observed symptoms:
 
 Current code signals:
 
-- [`src/cc_deep_research/agents/analyzer.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/analyzer.py) already cleans source text, but the filtering is regex-heavy and shallow.
-- [`src/cc_deep_research/agents/llm_analysis_client.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/llm_analysis_client.py) asks for synthesized findings, but does not explicitly forbid menus, headers, or formatting artifacts.
-- [`src/cc_deep_research/agents/ai_executor.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/ai_executor.py) can fold theme key points directly into finding descriptions, which preserves noisy text if the upstream themes are noisy.
+- [`src/cc_deep_research/agents/analyzer.py`](../src/cc_deep_research/agents/analyzer.py) already cleans source text, but the filtering is regex-heavy and shallow.
+- [`src/cc_deep_research/agents/llm_analysis_client.py`](../src/cc_deep_research/agents/llm_analysis_client.py) asks for synthesized findings, but does not explicitly forbid menus, headers, or formatting artifacts.
+- [`src/cc_deep_research/agents/ai_executor.py`](../src/cc_deep_research/agents/ai_executor.py) can fold theme key points directly into finding descriptions, which preserves noisy text if the upstream themes are noisy.
 
 ### 2. Key Findings and Detailed Analysis are structurally redundant
 
@@ -38,7 +38,7 @@ Observed symptoms:
 
 Current code signals:
 
-- [`src/cc_deep_research/agents/reporter.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/reporter.py) renders `analysis_result.key_findings` into `## Key Findings` and separately renders `analysis.themes_detailed` into `## Detailed Analysis`, but both are derived from the same synthesized material without a schema distinction between summary and detail.
+- [`src/cc_deep_research/agents/reporter.py`](../src/cc_deep_research/agents/reporter.py) renders `analysis_result.key_findings` into `## Key Findings` and separately renders `analysis.themes_detailed` into `## Detailed Analysis`, but both are derived from the same synthesized material without a schema distinction between summary and detail.
 
 ### 3. Fragmented snippets appear in safety and contradiction output
 
@@ -50,9 +50,9 @@ Observed symptoms:
 
 Current code signals:
 
-- [`src/cc_deep_research/agents/ai_agent_integration.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/ai_agent_integration.py) extracts safety information with regex captures that stop at the first period and then aggressively truncate long content.
-- [`src/cc_deep_research/agents/analyzer.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/analyzer.py) tries to repair truncation after cleaning, but the repair logic is heuristic and not sentence-aware.
-- [`src/cc_deep_research/post_validator.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/post_validator.py) only warns on some truncation patterns; it does not enforce complete-sentence output.
+- [`src/cc_deep_research/agents/ai_agent_integration.py`](../src/cc_deep_research/agents/ai_agent_integration.py) extracts safety information with regex captures that stop at the first period and then aggressively truncate long content.
+- [`src/cc_deep_research/agents/analyzer.py`](../src/cc_deep_research/agents/analyzer.py) tries to repair truncation after cleaning, but the repair logic is heuristic and not sentence-aware.
+- [`src/cc_deep_research/post_validator.py`](../src/cc_deep_research/post_validator.py) only warns on some truncation patterns; it does not enforce complete-sentence output.
 
 ### 4. Tracked URLs leak into the final references
 
@@ -63,8 +63,8 @@ Observed symptoms:
 
 Current code signals:
 
-- [`src/cc_deep_research/aggregation.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/aggregation.py) normalizes URLs for deduplication but does not sanitize the stored source URL used in output.
-- [`src/cc_deep_research/agents/reporter.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/reporter.py) prints raw `source.url` values directly in the Markdown and JSON reports.
+- [`src/cc_deep_research/aggregation.py`](../src/cc_deep_research/aggregation.py) normalizes URLs for deduplication but does not sanitize the stored source URL used in output.
+- [`src/cc_deep_research/agents/reporter.py`](../src/cc_deep_research/agents/reporter.py) prints raw `source.url` values directly in the Markdown and JSON reports.
 
 ## Target State
 
