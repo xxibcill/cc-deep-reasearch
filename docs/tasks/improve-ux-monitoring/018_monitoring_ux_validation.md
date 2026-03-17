@@ -15,16 +15,16 @@ Lock in the new workflow with targeted regression coverage and one explicit end-
 
 ## Target Files
 
-- `/Users/jjae/Documents/guthib/cc-deep-research/tests/`
-- `/Users/jjae/Documents/guthib/cc-deep-research/dashboard/`
-- `/Users/jjae/Documents/guthib/cc-deep-research/docs/REALTIME_MONITORING.md`
+- `tests/`
+- `dashboard/`
+- `docs/REALTIME_MONITORING.md`
 
 ## Dependencies
 
-- [005_cli_research_command_delegation.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/005_cli_research_command_delegation.md)
-- [009_session_report_api.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/009_session_report_api.md)
-- [014_session_report_view.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/014_session_report_view.md)
-- [017_browser_first_monitoring_docs.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/017_browser_first_monitoring_docs.md)
+- [005_cli_research_command_delegation.md](005_cli_research_command_delegation.md)
+- [009_session_report_api.md](009_session_report_api.md)
+- [014_session_report_view.md](014_session_report_view.md)
+- [017_browser_first_monitoring_docs.md](017_browser_first_monitoring_docs.md)
 
 ## Acceptance Criteria
 
@@ -40,5 +40,5 @@ Lock in the new workflow with targeted regression coverage and one explicit end-
 ## Suggested Verification
 
 - run targeted `uv run pytest ...` for new backend coverage
-- run `npm run build` in `/Users/jjae/Documents/guthib/cc-deep-research/dashboard`
+- run `npm run build` in `dashboard`
 - manually validate one full research run from the browser UI

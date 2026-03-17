@@ -14,14 +14,14 @@ Expose the final rendered report to the browser through a stable API instead of 
 
 ## Target Files
 
-- `/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/web_server.py`
-- `/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/session_store.py`
-- `/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/research_runs/output.py`
+- `src/cc_deep_research/web_server.py`
+- `src/cc_deep_research/session_store.py`
+- `src/cc_deep_research/research_runs/output.py`
 
 ## Dependencies
 
-- [003_report_output_materialization.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/003_report_output_materialization.md)
-- [008_research_run_status_api.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/008_research_run_status_api.md)
+- [003_report_output_materialization.md](003_report_output_materialization.md)
+- [008_research_run_status_api.md](008_research_run_status_api.md)
 
 ## Acceptance Criteria
 

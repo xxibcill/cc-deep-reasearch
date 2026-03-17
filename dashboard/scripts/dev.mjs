@@ -8,6 +8,7 @@
  */
 
 import { spawn } from 'child_process';
+import net from 'net';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -16,8 +17,8 @@ const __dirname = dirname(__filename);
 const rootDir = resolve(__dirname, '..');
 const projectRoot = resolve(__dirname, '..', '..');
 
-const BACKEND_PORT = process.env.BACKEND_PORT || '8000';
-const FRONTEND_PORT = process.env.FRONTEND_PORT || '3000';
+const DEFAULT_BACKEND_PORT = Number.parseInt(process.env.BACKEND_PORT || '8000', 10);
+const DEFAULT_FRONTEND_PORT = Number.parseInt(process.env.FRONTEND_PORT || '3000', 10);
 
 // Colors for log prefixes
 const COLORS = {
@@ -32,8 +33,61 @@ function log(prefix, message) {
   console.log(`[${timestamp}] ${prefix}${message}${COLORS.reset}`);
 }
 
-function startBackend() {
-  log(COLORS.cyan, '[backend] Starting FastAPI server...');
+function findAvailablePort(startPort, excludedPorts = new Set()) {
+  return new Promise((resolvePort, reject) => {
+    const tryPort = (port) => {
+      if (excludedPorts.has(port)) {
+        tryPort(port + 1);
+        return;
+      }
+
+      const server = net.createServer();
+
+      server.once('error', (error) => {
+        server.close(() => {
+          if (error.code === 'EADDRINUSE' || error.code === 'EACCES') {
+            tryPort(port + 1);
+            return;
+          }
+          reject(error);
+        });
+      });
+
+      server.once('listening', () => {
+        const address = server.address();
+        const resolvedPort = typeof address === 'object' && address ? address.port : port;
+        server.close(() => resolvePort(resolvedPort));
+      });
+
+      server.listen(port, '0.0.0.0');
+    };
+
+    tryPort(startPort);
+  });
+}
+
+function attachLogs(child, prefixColor, label) {
+  const forward = (stream) => {
+    stream.on('data', (data) => {
+      const lines = data.toString().split(/\r?\n/);
+      for (const line of lines) {
+        if (line.length > 0) {
+          log(prefixColor, `[${label}] ${line}`);
+        }
+      }
+    });
+  };
+
+  forward(child.stdout);
+  forward(child.stderr);
+
+  child.on('error', (error) => {
+    log(prefixColor, `[${label}] failed to start: ${error.message}`);
+  });
+}
+
+function startBackend(port) {
+  log(COLORS.cyan, `[backend] Starting FastAPI server on port ${port}...`);
 
   const backend = spawn('uv', [
     'run',
@@ -41,96 +95,112 @@ function startBackend() {
     'cc_deep_research.web_server:create_app',
     '--factory',
     '--host', '0.0.0.0',
-    '--port', BACKEND_PORT,
+    '--port', String(port),
     '--reload',
   ], {
     cwd: projectRoot,
     stdio: 'pipe',
-    shell: true,
   });
 
-  backend.stdout.on('data', (data) => {
-    const lines = data.toString().trim().split('\n');
-    for (const line of lines) {
-      log(COLORS.cyan, `[backend] ${line}`);
-    }
-  });
-
-  backend.stderr.on('data', (data) => {
-    const lines = data.toString().trim().split('\n');
-    for (const line of lines) {
-      log(COLORS.cyan, `[backend] ${line}`);
-    }
-  });
+  attachLogs(backend, COLORS.cyan, 'backend');
 
   return backend;
 }
 
-function startFrontend() {
-  log(COLORS.magenta, '[frontend] Starting Next.js dev server...');
+function startFrontend(frontendPort, backendPort) {
+  log(COLORS.magenta, `[frontend] Starting Next.js dev server on port ${frontendPort}...`);
 
-  const frontend = spawn('npm', ['run', 'dev'], {
+  const frontend = spawn('npm', ['run', 'dev:frontend'], {
     cwd: rootDir,
     stdio: 'pipe',
-    shell: true,
     env: {
       ...process.env,
-      PORT: FRONTEND_PORT,
-      NEXT_PUBLIC_API_BASE_URL: `http://localhost:${BACKEND_PORT}`,
+      PORT: String(frontendPort),
+      NEXT_PUBLIC_API_BASE_URL: `http://localhost:${backendPort}`,
     },
   });
 
-  frontend.stdout.on('data', (data) => {
-    const lines = data.toString().trim().split('\n');
-    for (const line of lines) {
-      log(COLORS.magenta, `[frontend] ${line}`);
-    }
-  });
-
-  frontend.stderr.on('data', (data) => {
-    const lines = data.toString().trim().split('\n');
-    for (const line of lines) {
-      log(COLORS.magenta, `[frontend] ${line}`);
-    }
-  });
+  attachLogs(frontend, COLORS.magenta, 'frontend');
 
   return frontend;
 }
 
-// Main
-log(COLORS.green, 'Starting CC Deep Research Dashboard development environment...');
-log(COLORS.green, `Backend:  http://localhost:${BACKEND_PORT}`);
-log(COLORS.green, `Frontend: http://localhost:${FRONTEND_PORT}`);
-console.log('');
-
-const backend = startBackend();
-const frontend = startFrontend();
+let backend;
+let frontend;
+let isShuttingDown = false;
 
 // Handle graceful shutdown
-const shutdown = (signal) => {
-  log(COLORS.green, `\nReceived ${signal}, shutting down...`);
+const shutdown = (reason, exitCode = 0) => {
+  if (isShuttingDown) {
+    return;
+  }
 
-  frontend.kill('SIGTERM');
-  backend.kill('SIGTERM');
+  isShuttingDown = true;
+  log(COLORS.green, `\nReceived ${reason}, shutting down...`);
+
+  if (frontend && !frontend.killed) {
+    frontend.kill('SIGTERM');
+  }
+
+  if (backend && !backend.killed) {
+    backend.kill('SIGTERM');
+  }
 
   setTimeout(() => {
     log(COLORS.green, 'Goodbye!');
-    process.exit(0);
+    process.exit(exitCode);
   }, 1000);
 };
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-// Handle child process exits
-frontend.on('exit', (code) => {
-  if (code !== 0 && code !== null) {
-    log(COLORS.reset, `[frontend] exited with code ${code}`);
-  }
-});
+function attachExitHandlers() {
+  frontend.on('exit', (code, signal) => {
+    if (isShuttingDown) {
+      return;
+    }
 
-backend.on('exit', (code) => {
-  if (code !== 0 && code !== null) {
-    log(COLORS.reset, `[backend] exited with code ${code}`);
+    const detail = code !== null ? `code ${code}` : `signal ${signal ?? 'unknown'}`;
+    log(COLORS.reset, `[frontend] exited with ${detail}`);
+    shutdown('frontend exit', code ?? 1);
+  });
+
+  backend.on('exit', (code, signal) => {
+    if (isShuttingDown) {
+      return;
+    }
+
+    const detail = code !== null ? `code ${code}` : `signal ${signal ?? 'unknown'}`;
+    log(COLORS.reset, `[backend] exited with ${detail}`);
+    shutdown('backend exit', code ?? 1);
+  });
+}
+
+async function main() {
+  const backendPort = await findAvailablePort(DEFAULT_BACKEND_PORT);
+  const frontendPort = await findAvailablePort(
+    DEFAULT_FRONTEND_PORT,
+    new Set([backendPort]),
+  );
+
+  log(COLORS.green, 'Starting CC Deep Research Dashboard development environment...');
+  if (backendPort !== DEFAULT_BACKEND_PORT) {
+    log(COLORS.green, `Preferred backend port ${DEFAULT_BACKEND_PORT} is busy, using ${backendPort}`);
   }
+  if (frontendPort !== DEFAULT_FRONTEND_PORT) {
+    log(COLORS.green, `Preferred frontend port ${DEFAULT_FRONTEND_PORT} is busy, using ${frontendPort}`);
+  }
+  log(COLORS.green, `Backend:  http://localhost:${backendPort}`);
+  log(COLORS.green, `Frontend: http://localhost:${frontendPort}`);
+  console.log('');
+
+  backend = startBackend(backendPort);
+  frontend = startFrontend(frontendPort, backendPort);
+  attachExitHandlers();
+}
+
+main().catch((error) => {
+  log(COLORS.reset, `Failed to start development environment: ${error.message}`);
+  process.exit(1);
 });

@@ -15,15 +15,15 @@ Replace the current multi-terminal monitoring instructions with the new browser-
 
 ## Target Files
 
-- `/Users/jjae/Documents/guthib/cc-deep-research/README.md`
-- `/Users/jjae/Documents/guthib/cc-deep-research/docs/REALTIME_MONITORING.md`
-- `/Users/jjae/Documents/guthib/cc-deep-research/docs/USAGE.md`
-- `/Users/jjae/Documents/guthib/cc-deep-research/dashboard/README.md`
+- `README.md`
+- `docs/REALTIME_MONITORING.md`
+- `docs/USAGE.md`
+- `dashboard/README.md`
 
 ## Dependencies
 
-- [016_dashboard_dev_script_wiring.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/016_dashboard_dev_script_wiring.md)
-- [014_session_report_view.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/014_session_report_view.md)
+- [016_dashboard_dev_script_wiring.md](016_dashboard_dev_script_wiring.md)
+- [014_session_report_view.md](014_session_report_view.md)
 
 ## Acceptance Criteria
 

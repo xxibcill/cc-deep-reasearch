@@ -15,12 +15,12 @@ Turn the `cc-deep-research research` command into a thin adapter that delegates 
 
 ## Target Files
 
-- `/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/research.py`
-- `/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/shared.py`
+- `src/cc_deep_research/cli/research.py`
+- `src/cc_deep_research/cli/shared.py`
 
 ## Dependencies
 
-- [004_research_run_service.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/004_research_run_service.md)
+- [004_research_run_service.md](004_research_run_service.md)
 
 ## Acceptance Criteria
 

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .llm import LLMPlanModel
 from .quality import CrossReferenceClaim
@@ -93,6 +94,21 @@ class AnalysisResult(BaseModel):
 
     model_config = {"extra": "allow"}
 
+    @field_validator(
+        "consensus_points",
+        "contention_points",
+        "disagreement_points",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_cross_reference_points(cls, value: Any) -> list[str]:
+        """Coerce LLM-produced claim objects into display-friendly strings."""
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            value = [value]
+        return [point for point in (_stringify_cross_reference_point(item) for item in value) if point]
+
     def normalized_gaps(self) -> list[AnalysisGap]:
         """Return gaps in a consistent object form."""
         normalized: list[AnalysisGap] = []
@@ -134,6 +150,30 @@ class ValidationResult(BaseModel):
     follow_up_queries: list[str] = Field(default_factory=list)
     needs_follow_up: bool = Field(default=False)
     target_source_count: int = Field(default=0, ge=0)
+
+
+def _stringify_cross_reference_point(value: Any) -> str:
+    """Convert structured consensus/disagreement payloads into readable bullets."""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, Mapping):
+        for key in ("claim", "summary", "title", "text", "description", "name"):
+            text = value.get(key)
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+        perspectives = value.get("perspectives")
+        if isinstance(perspectives, list):
+            views = [
+                view.strip()
+                for item in perspectives
+                if isinstance(item, Mapping)
+                for view in [item.get("view")]
+                if isinstance(view, str) and view.strip()
+            ]
+            if views:
+                return " vs. ".join(views[:2])
+    text = str(value).strip()
+    return text
 
 
 class IterationHistoryRecord(BaseModel):

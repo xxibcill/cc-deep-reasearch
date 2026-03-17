@@ -14,12 +14,12 @@ Move CLI-specific config mutation logic into a reusable helper that can be calle
 
 ## Target Files
 
-- `/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/research_runs/options.py`
-- `/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/research.py`
+- `src/cc_deep_research/research_runs/options.py`
+- `src/cc_deep_research/cli/research.py`
 
 ## Dependencies
 
-- [001_shared_research_run_contract.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/001_shared_research_run_contract.md)
+- [001_shared_research_run_contract.md](001_shared_research_run_contract.md)
 
 ## Acceptance Criteria
 
