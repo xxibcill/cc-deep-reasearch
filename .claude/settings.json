@@ -1,9 +1,6 @@
 {
   "permissions": {
     "allow": [
-      "Read(//Users/jjae/.local/bin/**)",
-      "Read(//Users/jjae/.ralph/**)",
-      "Read(//Users/jjae/.config/cc-deep-research/**)",
       "Bash(test -f .ralphrc)",
       "Bash(test -f .ralph/PROMPT.md)",
       "Bash(test -f .ralph/fix_plan.md)",
@@ -104,9 +101,7 @@
       "Bash(lsof -ti:8000)"
     ],
     "additionalDirectories": [
-      "/Users/jjae/.claude/plans",
-      "/tmp",
-      "/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/app/api/sessions"
+      "/tmp"
     ]
   }
 }

@@ -15,14 +15,14 @@ Expose an HTTP endpoint that starts a research run from the browser using the sh
 
 ## Target Files
 
-- `/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/web_server.py`
-- `/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/research_runs/models.py`
-- `/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/research_runs/jobs.py`
+- `src/cc_deep_research/web_server.py`
+- `src/cc_deep_research/research_runs/models.py`
+- `src/cc_deep_research/research_runs/jobs.py`
 
 ## Dependencies
 
-- [004_research_run_service.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/004_research_run_service.md)
-- [006_dashboard_backend_runtime_state.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/006_dashboard_backend_runtime_state.md)
+- [004_research_run_service.md](004_research_run_service.md)
+- [006_dashboard_backend_runtime_state.md](006_dashboard_backend_runtime_state.md)
 
 ## Acceptance Criteria
 

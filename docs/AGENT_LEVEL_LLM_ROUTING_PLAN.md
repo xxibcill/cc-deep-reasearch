@@ -15,8 +15,8 @@ The first implementation should preserve the current heuristic fallback path and
 
 The current codebase has two separate concerns:
 
-- search providers under [`src/cc_deep_research/providers`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/providers)
-- analysis-time Claude CLI usage inside [`src/cc_deep_research/agents/ai_analysis_service.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/ai_analysis_service.py) and [`src/cc_deep_research/agents/llm_analysis_client.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/llm_analysis_client.py)
+- search providers under [`src/cc_deep_research/providers`](../src/cc_deep_research/providers)
+- analysis-time Claude CLI usage inside [`src/cc_deep_research/agents/ai_analysis_service.py`](../src/cc_deep_research/agents/ai_analysis_service.py) and [`src/cc_deep_research/agents/llm_analysis_client.py`](../src/cc_deep_research/agents/llm_analysis_client.py)
 
 That means LLM routing is currently:
 
@@ -27,7 +27,7 @@ That means LLM routing is currently:
 
 There is also one structural constraint that matters for this feature:
 
-- agents are instantiated before strategy planning in [`src/cc_deep_research/orchestration/runtime.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestration/runtime.py)
+- agents are instantiated before strategy planning in [`src/cc_deep_research/orchestration/runtime.py`](../src/cc_deep_research/orchestration/runtime.py)
 
 So the planner cannot safely choose per-agent execution by mutating constructor-time config after the runtime is already built. Routing has to be late-bound.
 
@@ -48,7 +48,7 @@ So the planner cannot safely choose per-agent execution by mutating constructor-
 
 Create a new package:
 
-- [`src/cc_deep_research/llm`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/llm)
+- [`src/cc_deep_research/llm`](../src/cc_deep_research/llm)
 
 Recommended modules:
 
@@ -64,7 +64,7 @@ Do not place these under the search `providers/` package. That namespace is alre
 
 ### 2. Introduce a session-scoped route contract
 
-Add new models in [`src/cc_deep_research/models.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/models.py):
+Add new models in [`src/cc_deep_research/models.py`](../src/cc_deep_research/models.py):
 
 - `LLMTransport`: `claude_cli`, `api`, `heuristic`
 - `LLMProviderType`: `claude_code`, `openrouter`, `cerebras`, `heuristic`
@@ -80,7 +80,7 @@ Extend existing session metadata so persisted runs show:
 
 Primary integration point:
 
-- [`src/cc_deep_research/orchestration/session_state.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestration/session_state.py)
+- [`src/cc_deep_research/orchestration/session_state.py`](../src/cc_deep_research/orchestration/session_state.py)
 
 ### 3. Make route selection late-bound
 
@@ -95,8 +95,8 @@ This registry should support:
 
 Primary runtime integration points:
 
-- [`src/cc_deep_research/orchestration/runtime.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestration/runtime.py)
-- [`src/cc_deep_research/orchestrator.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestrator.py)
+- [`src/cc_deep_research/orchestration/runtime.py`](../src/cc_deep_research/orchestration/runtime.py)
+- [`src/cc_deep_research/orchestrator.py`](../src/cc_deep_research/orchestrator.py)
 
 ## Planner Behavior
 
@@ -111,7 +111,7 @@ For the first iteration, option 1 is the lower-risk path.
 
 ### Planner output
 
-Extend [`src/cc_deep_research/agents/research_lead.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/research_lead.py) and [`src/cc_deep_research/orchestration/planning.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestration/planning.py) so strategy output contains an `llm_plan` for downstream agents.
+Extend [`src/cc_deep_research/agents/research_lead.py`](../src/cc_deep_research/agents/research_lead.py) and [`src/cc_deep_research/orchestration/planning.py`](../src/cc_deep_research/orchestration/planning.py) so strategy output contains an `llm_plan` for downstream agents.
 
 Initial planner responsibility:
 
@@ -145,7 +145,7 @@ If the run is inside Claude Code or Claude CLI is unavailable, the planner shoul
 
 ### Claude Code CLI adapter
 
-Refactor the current CLI subprocess logic out of [`src/cc_deep_research/agents/llm_analysis_client.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/llm_analysis_client.py) into a reusable transport adapter.
+Refactor the current CLI subprocess logic out of [`src/cc_deep_research/agents/llm_analysis_client.py`](../src/cc_deep_research/agents/llm_analysis_client.py) into a reusable transport adapter.
 
 Keep these existing behaviors:
 
@@ -176,7 +176,7 @@ The transport interface should hide provider-specific details from agents.
 
 ## Service Refactor
 
-Refactor [`src/cc_deep_research/agents/ai_analysis_service.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/ai_analysis_service.py) so it no longer owns Claude-specific client initialization.
+Refactor [`src/cc_deep_research/agents/ai_analysis_service.py`](../src/cc_deep_research/agents/ai_analysis_service.py) so it no longer owns Claude-specific client initialization.
 
 Target state:
 
@@ -187,13 +187,13 @@ Target state:
 
 Recommended first migration targets:
 
-- [`src/cc_deep_research/agents/analyzer.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/analyzer.py)
-- [`src/cc_deep_research/agents/deep_analyzer.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/deep_analyzer.py)
-- [`src/cc_deep_research/agents/report_quality_evaluator.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/report_quality_evaluator.py)
+- [`src/cc_deep_research/agents/analyzer.py`](../src/cc_deep_research/agents/analyzer.py)
+- [`src/cc_deep_research/agents/deep_analyzer.py`](../src/cc_deep_research/agents/deep_analyzer.py)
+- [`src/cc_deep_research/agents/report_quality_evaluator.py`](../src/cc_deep_research/agents/report_quality_evaluator.py)
 
 ## Config Changes
 
-Extend [`src/cc_deep_research/config.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/config.py) with a new `LLMConfig` tree instead of reusing `research.ai_integration_method` as the only switch.
+Extend [`src/cc_deep_research/config.py`](../src/cc_deep_research/config.py) with a new `LLMConfig` tree instead of reusing `research.ai_integration_method` as the only switch.
 
 Recommended shape:
 
@@ -214,7 +214,7 @@ Keep `research.ai_integration_method` during migration as a compatibility layer,
 
 ## Telemetry And Session Visibility
 
-Extend [`src/cc_deep_research/monitoring.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/monitoring.py) so LLM telemetry is provider-neutral.
+Extend [`src/cc_deep_research/monitoring.py`](../src/cc_deep_research/monitoring.py) so LLM telemetry is provider-neutral.
 
 New event families:
 
@@ -270,21 +270,21 @@ Claude CLI subprocess events should remain, but hang under the generic request e
 
 ## Target Files
 
-- [`src/cc_deep_research/config.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/config.py)
-- [`src/cc_deep_research/models.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/models.py)
-- [`src/cc_deep_research/orchestrator.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestrator.py)
-- [`src/cc_deep_research/orchestration/runtime.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestration/runtime.py)
-- [`src/cc_deep_research/orchestration/planning.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestration/planning.py)
-- [`src/cc_deep_research/orchestration/session_state.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestration/session_state.py)
-- [`src/cc_deep_research/agents/research_lead.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/research_lead.py)
-- [`src/cc_deep_research/agents/ai_analysis_service.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/ai_analysis_service.py)
-- [`src/cc_deep_research/agents/llm_analysis_client.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/llm_analysis_client.py)
-- [`src/cc_deep_research/agents/analyzer.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/analyzer.py)
-- [`src/cc_deep_research/agents/deep_analyzer.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/deep_analyzer.py)
-- [`src/cc_deep_research/agents/report_quality_evaluator.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/agents/report_quality_evaluator.py)
-- [`src/cc_deep_research/monitoring.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/monitoring.py)
-- [`tests/test_config.py`](/Users/jjae/Documents/guthib/cc-deep-research/tests/test_config.py)
-- [`tests/test_llm_analysis_client.py`](/Users/jjae/Documents/guthib/cc-deep-research/tests/test_llm_analysis_client.py)
+- [`src/cc_deep_research/config.py`](../src/cc_deep_research/config.py)
+- [`src/cc_deep_research/models.py`](../src/cc_deep_research/models.py)
+- [`src/cc_deep_research/orchestrator.py`](../src/cc_deep_research/orchestrator.py)
+- [`src/cc_deep_research/orchestration/runtime.py`](../src/cc_deep_research/orchestration/runtime.py)
+- [`src/cc_deep_research/orchestration/planning.py`](../src/cc_deep_research/orchestration/planning.py)
+- [`src/cc_deep_research/orchestration/session_state.py`](../src/cc_deep_research/orchestration/session_state.py)
+- [`src/cc_deep_research/agents/research_lead.py`](../src/cc_deep_research/agents/research_lead.py)
+- [`src/cc_deep_research/agents/ai_analysis_service.py`](../src/cc_deep_research/agents/ai_analysis_service.py)
+- [`src/cc_deep_research/agents/llm_analysis_client.py`](../src/cc_deep_research/agents/llm_analysis_client.py)
+- [`src/cc_deep_research/agents/analyzer.py`](../src/cc_deep_research/agents/analyzer.py)
+- [`src/cc_deep_research/agents/deep_analyzer.py`](../src/cc_deep_research/agents/deep_analyzer.py)
+- [`src/cc_deep_research/agents/report_quality_evaluator.py`](../src/cc_deep_research/agents/report_quality_evaluator.py)
+- [`src/cc_deep_research/monitoring.py`](../src/cc_deep_research/monitoring.py)
+- [`tests/test_config.py`](../tests/test_config.py)
+- [`tests/test_llm_analysis_client.py`](../tests/test_llm_analysis_client.py)
 - new tests for routing, API adapters, and session metadata
 
 ## Acceptance Criteria

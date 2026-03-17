@@ -7,7 +7,7 @@ This document summarizes the browser-based monitoring stack that sits alongside 
 The fastest way to get started is to use the combined launcher:
 
 ```bash
-cd /Users/jjae/Documents/guthib/cc-deep-research/dashboard
+cd dashboard
 npm install
 npm run dev
 ```
@@ -25,13 +25,13 @@ Then open http://localhost:3000 in your browser to:
 
 The real-time stack is split into:
 
-- event fan-out: [`src/cc_deep_research/event_router.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/event_router.py)
-- telemetry emission: [`src/cc_deep_research/monitoring.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/monitoring.py)
-- FastAPI server and WebSocket routes: [`src/cc_deep_research/web_server.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/web_server.py)
-- CLI command to launch the backend: [`src/cc_deep_research/cli/dashboard.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/dashboard.py)
-- dashboard runtime config helpers: [`dashboard/src/lib/runtime-config.ts`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/lib/runtime-config.ts)
-- dashboard API and WebSocket clients: [`dashboard/src/lib/api.ts`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/lib/api.ts) and [`dashboard/src/lib/websocket.ts`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/lib/websocket.ts)
-- dashboard state and pages: [`dashboard/src/hooks/useDashboard.ts`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/hooks/useDashboard.ts), [`dashboard/src/app/page.tsx`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/app/page.tsx), and [`dashboard/src/app/session/[id]/page.tsx`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/app/session/[id]/page.tsx)
+- event fan-out: [`src/cc_deep_research/event_router.py`](../src/cc_deep_research/event_router.py)
+- telemetry emission: [`src/cc_deep_research/monitoring.py`](../src/cc_deep_research/monitoring.py)
+- FastAPI server and WebSocket routes: [`src/cc_deep_research/web_server.py`](../src/cc_deep_research/web_server.py)
+- CLI command to launch the backend: [`src/cc_deep_research/cli/dashboard.py`](../src/cc_deep_research/cli/dashboard.py)
+- dashboard runtime config helpers: [`dashboard/src/lib/runtime-config.ts`](../dashboard/src/lib/runtime-config.ts)
+- dashboard API and WebSocket clients: [`dashboard/src/lib/api.ts`](../dashboard/src/lib/api.ts) and [`dashboard/src/lib/websocket.ts`](../dashboard/src/lib/websocket.ts)
+- dashboard state and pages: [`dashboard/src/hooks/useDashboard.ts`](../dashboard/src/hooks/useDashboard.ts), [`dashboard/src/app/page.tsx`](../dashboard/src/app/page.tsx), and [`dashboard/src/app/session/[id]/page.tsx`](../dashboard/src/app/session/[id]/page.tsx)
 
 ```mermaid
 flowchart LR
@@ -45,7 +45,7 @@ flowchart LR
 
 ### Event router
 
-[`src/cc_deep_research/event_router.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/event_router.py) provides in-memory pub/sub for live event delivery.
+[`src/cc_deep_research/event_router.py`](../src/cc_deep_research/event_router.py) provides in-memory pub/sub for live event delivery.
 
 It handles:
 
@@ -55,11 +55,11 @@ It handles:
 
 ### Monitor integration
 
-[`src/cc_deep_research/monitoring.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/monitoring.py) persists telemetry and can also publish the same events to an `EventRouter` when real-time mode is enabled.
+[`src/cc_deep_research/monitoring.py`](../src/cc_deep_research/monitoring.py) persists telemetry and can also publish the same events to an `EventRouter` when real-time mode is enabled.
 
 ### FastAPI server
 
-[`src/cc_deep_research/web_server.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/web_server.py) exposes:
+[`src/cc_deep_research/web_server.py`](../src/cc_deep_research/web_server.py) exposes:
 
 - `GET /api/sessions`
 - `GET /api/sessions/{session_id}`
@@ -79,21 +79,21 @@ Launch the backend with:
 cc-deep-research dashboard --host localhost --port 8000
 ```
 
-Current CLI implementation lives in [`src/cc_deep_research/cli/dashboard.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/dashboard.py).
+Current CLI implementation lives in [`src/cc_deep_research/cli/dashboard.py`](../src/cc_deep_research/cli/dashboard.py).
 
 ## Frontend Responsibilities
 
-The frontend is a Next.js app in [`dashboard/`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard).
+The frontend is a Next.js app in [`dashboard/`](../dashboard).
 
 Important pieces:
 
-- home page session list: [`dashboard/src/components/session-list.tsx`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/components/session-list.tsx)
-- research start form: [`dashboard/src/components/start-research-form.tsx`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/components/start-research-form.tsx)
-- session detail screen: [`dashboard/src/components/session-details.tsx`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/components/session-details.tsx)
-- local dashboard store: [`dashboard/src/hooks/useDashboard.ts`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/hooks/useDashboard.ts)
-- API client: [`dashboard/src/lib/api.ts`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/lib/api.ts)
-- WebSocket client: [`dashboard/src/lib/websocket.ts`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/lib/websocket.ts)
-- runtime host configuration: [`dashboard/src/lib/runtime-config.ts`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/lib/runtime-config.ts)
+- home page session list: [`dashboard/src/components/session-list.tsx`](../dashboard/src/components/session-list.tsx)
+- research start form: [`dashboard/src/components/start-research-form.tsx`](../dashboard/src/components/start-research-form.tsx)
+- session detail screen: [`dashboard/src/components/session-details.tsx`](../dashboard/src/components/session-details.tsx)
+- local dashboard store: [`dashboard/src/hooks/useDashboard.ts`](../dashboard/src/hooks/useDashboard.ts)
+- API client: [`dashboard/src/lib/api.ts`](../dashboard/src/lib/api.ts)
+- WebSocket client: [`dashboard/src/lib/websocket.ts`](../dashboard/src/lib/websocket.ts)
+- runtime host configuration: [`dashboard/src/lib/runtime-config.ts`](../dashboard/src/lib/runtime-config.ts)
 
 Current UX surface:
 
@@ -115,7 +115,7 @@ Current UX surface:
 Start both backend and frontend together:
 
 ```bash
-cd /Users/jjae/Documents/guthib/cc-deep-research/dashboard
+cd dashboard
 npm run dev
 ```
 
@@ -130,7 +130,7 @@ Press Ctrl+C to stop both processes.
 For frontend debugging without the backend:
 
 ```bash
-cd /Users/jjae/Documents/guthib/cc-deep-research/dashboard
+cd dashboard
 npm run dev:frontend
 ```
 
@@ -161,8 +161,8 @@ export NEXT_PUBLIC_CC_WS_BASE_URL=ws://localhost:8000/ws
 
 ## Notes
 
-- `cc-deep-research dashboard` starts the FastAPI backend only. The Next.js frontend is run separately from [`dashboard/`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard).
+- `cc-deep-research dashboard` starts the FastAPI backend only. The Next.js frontend is run separately from [`dashboard/`](../dashboard).
 - `cc-deep-research telemetry dashboard` is a different command that launches the Streamlit analytics UI.
-- Dashboard-related environment variables currently live in [`src/cc_deep_research/config/schema.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/config/schema.py) as settings support, but the dashboard CLI currently takes host and port directly from command flags.
-- The dashboard UI now uses local `shadcn/ui`-style primitives declared in [`dashboard/components.json`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/components.json) and implemented in [`dashboard/src/components/ui/`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/components/ui).
+- Dashboard-related environment variables currently live in [`src/cc_deep_research/config/schema.py`](../src/cc_deep_research/config/schema.py) as settings support, but the dashboard CLI currently takes host and port directly from command flags.
+- The dashboard UI now uses local `shadcn/ui`-style primitives declared in [`dashboard/components.json`](../dashboard/components.json) and implemented in [`dashboard/src/components/ui/`](../dashboard/src/components/ui).
 - Live-session performance depends on buffered WebSocket updates, lazy-loaded heavy panels, and a virtualized event table. If a session is especially noisy, those are the first guardrails to preserve before adding more visualization work.

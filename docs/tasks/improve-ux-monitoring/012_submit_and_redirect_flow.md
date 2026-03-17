@@ -15,13 +15,13 @@ Wire the launch form to the new backend API and move the user directly into the 
 
 ## Target Files
 
-- `/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/app/page.tsx`
-- `/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/components/start-research-form.tsx`
-- `/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/hooks/useDashboard.ts`
+- `dashboard/src/app/page.tsx`
+- `dashboard/src/components/start-research-form.tsx`
+- `dashboard/src/hooks/useDashboard.ts`
 
 ## Dependencies
 
-- [011_home_page_research_form.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/011_home_page_research_form.md)
+- [011_home_page_research_form.md](011_home_page_research_form.md)
 
 ## Acceptance Criteria
 
@@ -31,5 +31,5 @@ Wire the launch form to the new backend API and move the user directly into the 
 
 ## Suggested Verification
 
-- run `npm run build` in `/Users/jjae/Documents/guthib/cc-deep-research/dashboard`
+- run `npm run build` in `dashboard`
 

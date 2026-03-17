@@ -14,14 +14,14 @@ Turn the session page into the primary workspace by showing the completed report
 
 ## Target Files
 
-- `/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/app/session/[id]/page.tsx`
-- `/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/components/session-details.tsx`
-- `/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src/components/session-report.tsx`
+- `dashboard/src/app/session/[id]/page.tsx`
+- `dashboard/src/components/session-details.tsx`
+- `dashboard/src/components/session-report.tsx`
 
 ## Dependencies
 
-- [009_session_report_api.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/009_session_report_api.md)
-- [013_session_run_status_summary.md](/Users/jjae/Documents/guthib/cc-deep-research/docs/tasks/improve-ux-monitoring/013_session_run_status_summary.md)
+- [009_session_report_api.md](009_session_report_api.md)
+- [013_session_run_status_summary.md](013_session_run_status_summary.md)
 
 ## Acceptance Criteria
 
@@ -31,5 +31,5 @@ Turn the session page into the primary workspace by showing the completed report
 
 ## Suggested Verification
 
-- run `npm run build` in `/Users/jjae/Documents/guthib/cc-deep-research/dashboard`
+- run `npm run build` in `dashboard`
 

@@ -2,21 +2,22 @@
 
 Use these docs as the current contributor entry points:
 
-- [`USAGE.md`](/Users/jjae/Documents/guthib/cc-deep-research/docs/USAGE.md): CLI commands, configuration, and operator workflows
-- [`RESEARCH_WORKFLOW.md`](/Users/jjae/Documents/guthib/cc-deep-research/docs/RESEARCH_WORKFLOW.md): pipeline phases, orchestrator ownership, and package boundaries
-- [`TELEMETRY.md`](/Users/jjae/Documents/guthib/cc-deep-research/docs/TELEMETRY.md): persisted telemetry model and monitoring workflow
-- [`REALTIME_MONITORING.md`](/Users/jjae/Documents/guthib/cc-deep-research/docs/REALTIME_MONITORING.md): FastAPI + Next.js operator console for live monitoring
+- [`USAGE.md`](USAGE.md): CLI commands, configuration, and operator workflows
+- [`DASHBOARD_GUIDE.md`](DASHBOARD_GUIDE.md): comprehensive dashboard guide covering architecture, usage, APIs, telemetry flow, and caveats
+- [`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md): pipeline phases, orchestrator ownership, and package boundaries
+- [`TELEMETRY.md`](TELEMETRY.md): persisted telemetry model and monitoring workflow
+- [`REALTIME_MONITORING.md`](REALTIME_MONITORING.md): FastAPI + Next.js operator console for live monitoring
 
 Current code layout:
 
-- CLI bootstrap and command registration: [`src/cc_deep_research/cli/main.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli/main.py)
-- CLI subcommands: [`src/cc_deep_research/cli/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/cli)
-- config package: [`src/cc_deep_research/config/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/config)
-- models package: [`src/cc_deep_research/models/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/models)
-- orchestration internals: [`src/cc_deep_research/orchestration/`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/orchestration)
-- telemetry live readers: [`src/cc_deep_research/telemetry/live.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/live.py)
-- telemetry DuckDB analytics: [`src/cc_deep_research/telemetry/ingest.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/ingest.py) and [`src/cc_deep_research/telemetry/query.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/query.py)
-- telemetry compatibility exports: [`src/cc_deep_research/telemetry/__init__.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/telemetry/__init__.py)
-- real-time monitoring backend: [`src/cc_deep_research/web_server.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/web_server.py) and [`src/cc_deep_research/event_router.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/event_router.py)
-- Next.js dashboard frontend: [`dashboard/src/`](/Users/jjae/Documents/guthib/cc-deep-research/dashboard/src)
-- stable root API: [`src/cc_deep_research/__init__.py`](/Users/jjae/Documents/guthib/cc-deep-research/src/cc_deep_research/__init__.py)
+- CLI bootstrap and command registration: [`src/cc_deep_research/cli/main.py`](../src/cc_deep_research/cli/main.py)
+- CLI subcommands: [`src/cc_deep_research/cli/`](../src/cc_deep_research/cli)
+- config package: [`src/cc_deep_research/config/`](../src/cc_deep_research/config)
+- models package: [`src/cc_deep_research/models/`](../src/cc_deep_research/models)
+- orchestration internals: [`src/cc_deep_research/orchestration/`](../src/cc_deep_research/orchestration)
+- telemetry live readers: [`src/cc_deep_research/telemetry/live.py`](../src/cc_deep_research/telemetry/live.py)
+- telemetry DuckDB analytics: [`src/cc_deep_research/telemetry/ingest.py`](../src/cc_deep_research/telemetry/ingest.py) and [`src/cc_deep_research/telemetry/query.py`](../src/cc_deep_research/telemetry/query.py)
+- telemetry compatibility exports: [`src/cc_deep_research/telemetry/__init__.py`](../src/cc_deep_research/telemetry/__init__.py)
+- real-time monitoring backend: [`src/cc_deep_research/web_server.py`](../src/cc_deep_research/web_server.py) and [`src/cc_deep_research/event_router.py`](../src/cc_deep_research/event_router.py)
+- Next.js dashboard frontend: [`dashboard/src/`](../dashboard/src)
+- stable root API: [`src/cc_deep_research/__init__.py`](../src/cc_deep_research/__init__.py)
