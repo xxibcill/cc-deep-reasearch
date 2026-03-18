@@ -3,6 +3,7 @@
 Use these docs as the current contributor entry points:
 
 - [`USAGE.md`](USAGE.md): CLI commands, configuration, and operator workflows
+- [`PREFLIGHT.md`](PREFLIGHT.md): Low-cost preflight validation before running live research
 - [`DASHBOARD_GUIDE.md`](DASHBOARD_GUIDE.md): comprehensive dashboard guide covering architecture, usage, APIs, telemetry flow, and caveats
 - [`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md): pipeline phases, orchestrator ownership, and package boundaries
 - [`TELEMETRY.md`](TELEMETRY.md): persisted telemetry model and monitoring workflow
