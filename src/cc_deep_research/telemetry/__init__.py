@@ -1,6 +1,10 @@
 """Telemetry compatibility exports for live and analytics helpers."""
 
-from .ingest import get_default_dashboard_db_path, ingest_telemetry_to_duckdb
+from .ingest import (
+    delete_session_from_duckdb,
+    get_default_dashboard_db_path,
+    ingest_telemetry_to_duckdb,
+)
 from .live import (
     get_default_telemetry_dir,
     query_live_agent_timeline,
@@ -22,6 +26,7 @@ from .query import (
 
 
 __all__ = [
+    "delete_session_from_duckdb",
     "get_default_dashboard_db_path",
     "get_default_telemetry_dir",
     "ingest_telemetry_to_duckdb",

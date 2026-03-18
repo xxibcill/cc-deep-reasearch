@@ -1,6 +1,6 @@
 # Task 002: Define The Session Delete Contract
 
-Status: Planned
+Status: Done
 
 ## Objective
 
