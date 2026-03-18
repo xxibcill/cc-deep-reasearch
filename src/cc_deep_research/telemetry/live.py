@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,29 @@ _LIVE_SESSION_CACHE: dict[Path, _LiveSessionSnapshot] = {}
 def get_default_telemetry_dir() -> Path:
     """Return default telemetry directory."""
     return get_default_config_path().parent / "telemetry"
+
+
+def delete_telemetry_session(
+    session_id: str,
+    base_dir: Path | None = None,
+) -> dict[str, bool]:
+    """Delete a session's telemetry directory and files.
+
+    Args:
+        session_id: The session ID to delete.
+        base_dir: Optional base telemetry directory.
+
+    Returns:
+        Dict with 'deleted' (bool) and 'missing' (bool) indicating results.
+    """
+    telemetry_dir = base_dir or get_default_telemetry_dir()
+    session_dir = telemetry_dir / session_id
+
+    if not session_dir.exists():
+        return {"deleted": False, "missing": True}
+
+    shutil.rmtree(session_dir)
+    return {"deleted": True, "missing": False}
 
 
 def _file_cache_key(path: Path) -> tuple[int, int] | None:
@@ -289,6 +313,7 @@ def query_live_llm_route_analytics(
 
 
 __all__ = [
+    "delete_telemetry_session",
     "get_default_telemetry_dir",
     "query_live_agent_timeline",
     "query_live_event_tail",

@@ -4,7 +4,10 @@ This module provides functionality to persist, retrieve, and manage
 research sessions on disk.
 """
 
+from __future__ import annotations
+
 import json
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -25,6 +28,30 @@ def get_default_session_dir() -> Path:
     """
     config_dir = get_default_config_path().parent
     return config_dir / "sessions"
+
+
+@dataclass
+class SessionDeletionResult:
+    """Result of a session deletion operation.
+
+    Attributes:
+        deleted: True if the session file was successfully deleted.
+        missing: True if the session file did not exist.
+        error: Error message if deletion failed, None otherwise.
+    """
+
+    deleted: bool = False
+    missing: bool = False
+    error: str | None = None
+
+    def __bool__(self) -> bool:
+        """Return True for backward compatibility with boolean checks."""
+        return self.deleted
+
+    @property
+    def success(self) -> bool:
+        """Return True if deletion was successful or file was already missing."""
+        return self.deleted or self.missing
 
 
 class SessionStore:
@@ -138,15 +165,17 @@ class SessionStore:
                 with open(path, encoding="utf-8") as f:
                     data = json.load(f)
 
-                sessions.append({
-                    "session_id": data.get("session_id", path.stem),
-                    "query": data.get("query", "Unknown"),
-                    "depth": data.get("depth", "deep"),
-                    "started_at": data.get("started_at"),
-                    "completed_at": data.get("completed_at"),
-                    "total_sources": len(data.get("sources", [])),
-                    "path": str(path),
-                })
+                sessions.append(
+                    {
+                        "session_id": data.get("session_id", path.stem),
+                        "query": data.get("query", "Unknown"),
+                        "depth": data.get("depth", "deep"),
+                        "started_at": data.get("started_at"),
+                        "completed_at": data.get("completed_at"),
+                        "total_sources": len(data.get("sources", [])),
+                        "path": str(path),
+                    }
+                )
             except (json.JSONDecodeError, KeyError):
                 continue
 
@@ -158,22 +187,25 @@ class SessionStore:
 
         return sessions
 
-    def delete_session(self, session_id: str) -> bool:
+    def delete_session(self, session_id: str) -> SessionDeletionResult:
         """Delete a research session from disk.
 
         Args:
             session_id: Session identifier.
 
         Returns:
-            True if session was deleted, False if not found.
+            SessionDeletionResult with deleted, missing, and error fields.
         """
         path = self._session_path(session_id)
 
-        if path.exists():
-            path.unlink()
-            return True
+        if not path.exists():
+            return SessionDeletionResult(deleted=False, missing=True)
 
-        return False
+        try:
+            path.unlink()
+            return SessionDeletionResult(deleted=True, missing=False)
+        except OSError as e:
+            return SessionDeletionResult(deleted=False, missing=False, error=str(e))
 
     def session_exists(self, session_id: str) -> bool:
         """Check if a session exists.
@@ -213,9 +245,7 @@ def _serialize_session(session: ResearchSession) -> dict[str, Any]:
         "query": session.query,
         "depth": session.depth.value,
         "started_at": session.started_at.isoformat() if session.started_at else None,
-        "completed_at": (
-            session.completed_at.isoformat() if session.completed_at else None
-        ),
+        "completed_at": (session.completed_at.isoformat() if session.completed_at else None),
         "searches": [_serialize_search_result(s) for s in session.searches],
         "sources": [_serialize_source(s) for s in session.sources],
         "metadata": metadata,
@@ -243,9 +273,7 @@ def _serialize_source(source: SearchResultItem) -> dict[str, Any]:
         "content": source.content,
         "score": source.score,
         "source_metadata": source.source_metadata,
-        "query_provenance": [
-            entry.model_dump(mode="python") for entry in source.query_provenance
-        ],
+        "query_provenance": [entry.model_dump(mode="python") for entry in source.query_provenance],
     }
 
 
@@ -274,9 +302,7 @@ def _deserialize_session(data: dict[str, Any]) -> ResearchSession:
             else datetime.utcnow()
         ),
         completed_at=(
-            datetime.fromisoformat(data["completed_at"])
-            if data.get("completed_at")
-            else None
+            datetime.fromisoformat(data["completed_at"]) if data.get("completed_at") else None
         ),
         searches=[_deserialize_search_result(s) for s in data.get("searches", [])],
         sources=[_deserialize_source(s) for s in data.get("sources", [])],
@@ -291,11 +317,7 @@ def _deserialize_search_result(data: dict[str, Any]) -> SearchResult:
         results=[_deserialize_source(s) for s in data.get("results", [])],
         provider=data["provider"],
         metadata=data.get("metadata", {}),
-        timestamp=(
-            datetime.fromisoformat(data["timestamp"])
-            if data.get("timestamp")
-            else None
-        ),
+        timestamp=(datetime.fromisoformat(data["timestamp"]) if data.get("timestamp") else None),
         execution_time_ms=data.get("execution_time_ms", 0),
     )
 
@@ -330,6 +352,7 @@ def _json_serializer(obj: Any) -> Any:
 
 
 __all__ = [
+    "SessionDeletionResult",
     "SessionStore",
     "get_default_session_dir",
 ]

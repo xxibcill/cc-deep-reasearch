@@ -10,6 +10,7 @@ import {
   StartResearchRunResponse,
   ResearchRunStatusResponse,
   SessionReportResponse,
+  SessionDeleteResponse,
 } from '@/types/telemetry';
 
 const apiClient = axios.create({
@@ -98,4 +99,46 @@ export async function getSessionReport(
     { params: { format } }
   );
   return response.data;
+}
+
+export interface DeleteSessionResult {
+  success: boolean;
+  error?: string;
+  activeConflict?: boolean;
+}
+
+export async function deleteSession(sessionId: string): Promise<DeleteSessionResult> {
+  try {
+    const response = await apiClient.delete<SessionDeleteResponse>(`/sessions/${sessionId}`);
+    if (response.data.success) {
+      return { success: true };
+    }
+    return {
+      success: false,
+      error: response.data.deleted_layers
+        .filter((l) => l.error)
+        .map((l) => l.error)
+        .filter(Boolean)
+        .join('; ') || 'Delete operation failed',
+      activeConflict: response.data.active_conflict,
+    };
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response?.status === 409) {
+        return {
+          success: false,
+          error: 'Cannot delete: session is currently active',
+          activeConflict: true,
+        };
+      }
+      if (error.response?.status === 404) {
+        return { success: false, error: 'Session not found' };
+      }
+      const serverError = error.response?.data?.error;
+      if (typeof serverError === 'string' && serverError.length > 0) {
+        return { success: false, error: serverError };
+      }
+    }
+    return { success: false, error: getApiErrorMessage(error, 'Failed to delete session') };
+  }
 }
