@@ -1,6 +1,6 @@
 # Task 007: Add Orchestrator Fixture End-To-End Smoke Test
 
-Status: Planned
+Status: Done
 
 ## Objective
 
@@ -34,4 +34,23 @@ Run the orchestrator across planning, collection, analysis, validation, and sess
 ## Suggested Verification
 
 - run `uv run pytest tests/test_orchestrator.py tests/test_orchestration.py`
+
+## Implementation Summary
+
+Added `TestOrchestratorFixtureEndToEnd` class to `tests/test_orchestrator.py` with 3 tests:
+
+- `test_standard_depth_end_to_end_smoke`: Tests STANDARD depth mode with fixture-backed components, verifying:
+  - Complete session metadata contract (strategy, analysis, validation, iteration_history, providers, execution, deep_analysis, llm_routes)
+  - Provider status is ready
+  - Deep analysis status is "not_requested"
+  - Query family provenance is preserved
+  - Sources contain proper provenance metadata
+
+- `test_deep_analysis_end_to_end_smoke`: Tests DEEP analysis mode with fixture-backed components, verifying:
+  - Complete session metadata contract
+  - Deep analysis status is "completed"
+  - Cross-referencing is enabled in strategy
+  - Multiple query families are used
+
+- `test_session_schema_contract_across_phases`: Verifies late-stage schema mismatches between phases are caught by checking all expected metadata keys and nested fields are present and properly typed.
 

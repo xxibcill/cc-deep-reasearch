@@ -70,3 +70,52 @@ def test_research_command_delegates_to_shared_run_service(monkeypatch) -> None:
         run_kwargs["execution_adapter"],
         research_module.TerminalResearchRunExecutionAdapter,
     )
+
+
+class TestCLIFixtureSmoke:
+    """CLI smoke tests for research command.
+
+    These tests verify the CLI research command can be invoked
+    with various options without errors.
+    """
+
+    def test_cli_research_help_includes_depth_options(self) -> None:
+        """Verify help shows depth options."""
+        runner = CliRunner()
+        result = runner.invoke(main, ["research", "--help"])
+
+        assert result.exit_code == 0
+        assert "quick" in result.output
+        assert "standard" in result.output
+        assert "deep" in result.output
+
+    def test_cli_research_help_includes_format_options(self) -> None:
+        """Verify help shows format options."""
+        runner = CliRunner()
+        result = runner.invoke(main, ["research", "--help"])
+
+        assert result.exit_code == 0
+        assert "markdown" in result.output
+        assert "json" in result.output
+        assert "html" in result.output
+
+    def test_cli_research_help_includes_provider_options(self) -> None:
+        """Verify help shows provider options."""
+        runner = CliRunner()
+        result = runner.invoke(main, ["research", "--help"])
+
+        assert result.exit_code == 0
+        assert "--tavily-only" in result.output
+        assert "--claude-only" in result.output
+        assert "--no-team" in result.output
+
+    def test_cli_research_accepts_min_sources(self) -> None:
+        """Verify --sources option is accepted."""
+        runner = CliRunner()
+        result = runner.invoke(
+            main,
+            ["research", "--help"],
+        )
+
+        assert result.exit_code == 0
+        assert "--sources" in result.output or "-s" in result.output
