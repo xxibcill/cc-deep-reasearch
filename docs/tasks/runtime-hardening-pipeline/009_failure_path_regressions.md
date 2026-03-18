@@ -1,6 +1,6 @@
 # Task 009: Add Failure-Path Regression Coverage
 
-Status: Planned
+Status: Done
 
 ## Objective
 
