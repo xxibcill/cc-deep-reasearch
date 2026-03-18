@@ -289,3 +289,46 @@ def test_session_detail_and_history_fall_back_to_historical_duckdb(
         ],
         "count": 1,
     }
+
+
+def test_session_list_marks_old_no_summary_sessions_interrupted(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Abandoned telemetry directories should not remain running forever."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    session_dir = tmp_path / "xdg" / "cc-deep-research" / "telemetry" / "stale-session"
+    session_dir.mkdir(parents=True)
+    (session_dir / "events.jsonl").write_text(
+        json.dumps(
+            {
+                "event_id": "event-1",
+                "sequence_number": 1,
+                "timestamp": "2026-03-17T00:00:00Z",
+                "session_id": "stale-session",
+                "event_type": "session.started",
+                "category": "session",
+                "name": "research-session",
+                "status": "started",
+                "metadata": {},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    client = TestClient(create_app())
+
+    response = client.get("/api/sessions")
+    assert response.status_code == 200
+    assert response.json()["sessions"] == [
+        {
+            "session_id": "stale-session",
+            "created_at": "2026-03-17T00:00:00Z",
+            "total_time_ms": None,
+            "total_sources": 0,
+            "status": "interrupted",
+            "active": False,
+            "event_count": 1,
+            "last_event_at": "2026-03-17T00:00:00Z",
+        }
+    ]

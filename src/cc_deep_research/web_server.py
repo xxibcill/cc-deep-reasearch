@@ -6,6 +6,7 @@ import asyncio
 import json
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -27,6 +28,8 @@ from cc_deep_research.telemetry import (
     query_live_sessions,
     query_session_detail,
 )
+
+STALE_LIVE_SESSION_AFTER = timedelta(minutes=15)
 
 
 @dataclass(slots=True)
@@ -166,6 +169,43 @@ def _normalize_historical_session(
     }
 
 
+def _parse_timestamp(value: Any) -> datetime | None:
+    """Parse ISO-like timestamps used by telemetry files and DuckDB results."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    if not isinstance(value, str) or not value:
+        return None
+
+    normalized = value.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def _normalize_live_session_state(session: dict[str, Any]) -> dict[str, Any]:
+    """Mark abandoned live sessions as interrupted instead of running forever."""
+    if not session.get("active"):
+        return session
+
+    last_activity = _parse_timestamp(session.get("last_event_at")) or _parse_timestamp(
+        session.get("created_at")
+    )
+    if last_activity is None:
+        return session
+
+    if datetime.now(UTC) - last_activity <= STALE_LIVE_SESSION_AFTER:
+        return session
+
+    normalized = dict(session)
+    normalized["active"] = False
+    normalized["status"] = "interrupted"
+    return normalized
+
+
 def _query_session_api_detail(
     session_id: str,
     *,
@@ -181,6 +221,7 @@ def _query_session_api_detail(
         subprocess_chunk_limit=subprocess_chunk_limit,
     )
     if live_detail["session"]:
+        live_detail["session"] = _normalize_live_session_state(live_detail["session"])
         return live_detail
 
     historical = query_session_detail(session_id, db_path=get_default_dashboard_db_path())
@@ -340,15 +381,18 @@ def register_routes(app: FastAPI) -> None:
         for session in live_sessions:
             if active_only and not session.get("active"):
                 continue
-            sessions_by_id[session["session_id"]] = {
-                "session_id": session["session_id"],
-                "created_at": _serialize_timestamp(session.get("created_at")),
-                "total_time_ms": session.get("total_time_ms"),
-                "total_sources": session.get("total_sources", 0),
-                "status": session.get("status", "unknown"),
-                "active": session.get("active", False),
-                "event_count": session.get("event_count"),
-                "last_event_at": _serialize_timestamp(session.get("last_event_at")),
+            normalized_session = _normalize_live_session_state(session)
+            if active_only and not normalized_session.get("active"):
+                continue
+            sessions_by_id[normalized_session["session_id"]] = {
+                "session_id": normalized_session["session_id"],
+                "created_at": _serialize_timestamp(normalized_session.get("created_at")),
+                "total_time_ms": normalized_session.get("total_time_ms"),
+                "total_sources": normalized_session.get("total_sources", 0),
+                "status": normalized_session.get("status", "unknown"),
+                "active": normalized_session.get("active", False),
+                "event_count": normalized_session.get("event_count"),
+                "last_event_at": _serialize_timestamp(normalized_session.get("last_event_at")),
             }
 
         # Add historical sessions
@@ -357,10 +401,14 @@ def register_routes(app: FastAPI) -> None:
                 continue
             if session_data[0] in sessions_by_id:
                 existing = sessions_by_id[session_data[0]]
+                if not existing.get("active"):
+                    existing["status"] = session_data[8]
                 if existing.get("total_time_ms") is None:
                     existing["total_time_ms"] = session_data[2]
                 if not existing.get("total_sources"):
                     existing["total_sources"] = session_data[3]
+                if existing.get("created_at") is None:
+                    existing["created_at"] = _serialize_timestamp(session_data[1])
                 continue
             sessions_by_id[session_data[0]] = {
                 "session_id": session_data[0],
