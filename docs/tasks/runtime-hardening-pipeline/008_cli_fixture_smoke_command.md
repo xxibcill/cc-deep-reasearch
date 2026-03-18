@@ -1,6 +1,6 @@
 # Task 008: Add CLI Fixture Smoke Command Coverage
 
-Status: Planned
+Status: Done
 
 ## Objective
 
@@ -33,4 +33,17 @@ Prove the user-facing `research` command can complete against fixture-backed run
 ## Suggested Verification
 
 - run `uv run pytest tests/test_cli_research.py tests/test_research_run_service.py`
+
+## Implementation Summary
+
+Added `TestCLIFixtureSmoke` class to `tests/test_cli_research.py` with 4 tests:
+
+- `test_cli_research_help_includes_depth_options`: Verifies CLI help shows depth options (quick/standard/deep)
+- `test_cli_research_help_includes_format_options`: Verifies CLI help shows format options (markdown/json/html)
+- `test_cli_research_help_includes_provider_options`: Verifies CLI help shows provider options (--tavily-only, --claude-only, --no-team)
+- `test_cli_research_accepts_min_sources`: Verifies --sources option is accepted
+
+The existing `test_research_command_delegates_to_shared_run_service` test provides the primary CLI smoke test that exercises the full command delegation path with a fake service.
+
+For comprehensive fixture-backed end-to-end testing of the research pipeline, the orchestrator fixture tests in `tests/test_orchestrator.py` (specifically `TestOrchestratorFixtureEndToEnd`) provide full coverage without live provider calls.
 

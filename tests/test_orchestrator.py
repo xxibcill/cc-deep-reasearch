@@ -1234,3 +1234,298 @@ class TestSourceCollectionOrchestratorIntegration:
         )
 
         assert len(session.sources) <= 5
+
+
+class TestOrchestratorFixtureEndToEnd:
+    """End-to-end smoke tests using fixture-backed components.
+
+    These tests exercise the complete orchestrator flow with fixture-backed
+    provider and analysis components. They verify that the final ResearchSession
+    contains stable metadata, sources, analysis, validation, and report-relevant
+    fields across both standard and deep analysis modes.
+    """
+
+    @pytest.mark.asyncio
+    async def test_standard_depth_end_to_end_smoke(self) -> None:
+        """Smoke test for STANDARD depth with fixture-backed components."""
+        config = Config()
+        config.search.providers = ["tavily"]
+        config.search_team.parallel_execution = False
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        collector = FakeCollectorAgent(
+            available=["tavily"],
+            warnings=[],
+            results_by_query={
+                "climate policy": [
+                    SearchResultItem(
+                        url="https://example.com/climate-1",
+                        title="Climate Policy 1",
+                        score=0.9,
+                    ),
+                    SearchResultItem(
+                        url="https://example.com/climate-2",
+                        title="Climate Policy 2",
+                        score=0.8,
+                    ),
+                ],
+                "climate policy official guidance": [
+                    SearchResultItem(
+                        url="https://example.com/official-1",
+                        title="Official Guidance 1",
+                        score=0.85,
+                    ),
+                ],
+                "climate policy expert analysis": [
+                    SearchResultItem(
+                        url="https://example.com/expert-1",
+                        title="Expert Analysis 1",
+                        score=0.75,
+                    ),
+                ],
+            },
+        )
+        _install_fake_team(orchestrator, collector=collector)
+
+        session = await orchestrator.execute_research(
+            query="climate policy",
+            depth=ResearchDepth.STANDARD,
+            min_sources=2,
+        )
+
+        assert session.query == "climate policy"
+        assert session.depth == ResearchDepth.STANDARD
+        assert session.completed_at is not None
+        assert session.started_at is not None
+
+        assert "strategy" in session.metadata
+        assert "analysis" in session.metadata
+        assert "validation" in session.metadata
+        assert "iteration_history" in session.metadata
+        assert "providers" in session.metadata
+        assert "execution" in session.metadata
+        assert "deep_analysis" in session.metadata
+        assert "llm_routes" in session.metadata
+
+        assert session.metadata["providers"]["status"] == "ready"
+        assert session.metadata["providers"]["available"] == ["tavily"]
+
+        assert session.metadata["execution"]["degraded"] is False
+
+        assert session.metadata["deep_analysis"]["status"] == "not_requested"
+
+        strategy = session.metadata["strategy"]
+        assert strategy["profile"]["intent"] == "informational"
+        assert "query_families" in strategy["strategy"]
+        families = strategy["strategy"]["query_families"]
+        assert len(families) >= 1
+
+        analysis = session.metadata["analysis"]
+        assert "key_findings" in analysis
+        assert "themes" in analysis
+        assert "source_provenance" in analysis
+
+        validation = session.metadata["validation"]
+        assert "quality_score" in validation
+        assert "is_valid" in validation
+
+        assert len(session.sources) >= 2
+        for source in session.sources:
+            assert source.url
+            assert source.title
+            assert len(source.query_provenance) > 0
+
+        assert collector.initialized is True
+
+    @pytest.mark.asyncio
+    async def test_deep_analysis_end_to_end_smoke(self) -> None:
+        """Smoke test for DEEP analysis mode with fixture-backed components."""
+        config = Config()
+        config.search.providers = ["tavily"]
+        config.search_team.parallel_execution = False
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        collector = FakeCollectorAgent(
+            available=["tavily"],
+            warnings=[],
+            results_by_query={
+                "ai regulation": [
+                    SearchResultItem(
+                        url="https://example.com/ai-reg-1",
+                        title="AI Regulation 1",
+                        score=0.95,
+                    ),
+                    SearchResultItem(
+                        url="https://example.com/ai-reg-2",
+                        title="AI Regulation 2",
+                        score=0.9,
+                    ),
+                    SearchResultItem(
+                        url="https://example.com/ai-reg-3",
+                        title="AI Regulation 3",
+                        score=0.85,
+                    ),
+                ],
+                "ai regulation official guidance": [
+                    SearchResultItem(
+                        url="https://example.com/ai-official-1",
+                        title="Official AI Guidance",
+                        score=0.92,
+                    ),
+                    SearchResultItem(
+                        url="https://example.com/ai-official-2",
+                        title="Official AI Guidance 2",
+                        score=0.88,
+                    ),
+                ],
+                "ai regulation expert analysis": [
+                    SearchResultItem(
+                        url="https://example.com/ai-expert-1",
+                        title="Expert AI Analysis",
+                        score=0.8,
+                    ),
+                ],
+                "ai regulation risks criticism": [
+                    SearchResultItem(
+                        url="https://example.com/ai-risks-1",
+                        title="AI Risks",
+                        score=0.75,
+                    ),
+                ],
+            },
+        )
+        _install_fake_team(orchestrator, collector=collector)
+
+        session = await orchestrator.execute_research(
+            query="ai regulation",
+            depth=ResearchDepth.DEEP,
+            min_sources=3,
+        )
+
+        assert session.query == "ai regulation"
+        assert session.depth == ResearchDepth.DEEP
+        assert session.completed_at is not None
+        assert session.started_at is not None
+
+        assert "strategy" in session.metadata
+        assert "analysis" in session.metadata
+        assert "validation" in session.metadata
+        assert "iteration_history" in session.metadata
+        assert "providers" in session.metadata
+        assert "execution" in session.metadata
+        assert "deep_analysis" in session.metadata
+        assert "llm_routes" in session.metadata
+
+        assert session.metadata["providers"]["status"] == "ready"
+        assert session.metadata["providers"]["available"] == ["tavily"]
+
+        assert session.metadata["execution"]["degraded"] is False
+
+        assert session.metadata["deep_analysis"]["status"] == "completed"
+
+        strategy = session.metadata["strategy"]
+        assert strategy["profile"]["intent"] == "informational"
+        assert strategy["strategy"]["enable_cross_ref"] is True
+
+        families = strategy["strategy"]["query_families"]
+        assert len(families) >= 3
+
+        analysis = session.metadata["analysis"]
+        assert "key_findings" in analysis
+        assert "themes" in analysis
+
+        validation = session.metadata["validation"]
+        assert "quality_score" in validation
+        assert "is_valid" in validation
+
+        assert len(session.sources) >= 4
+
+        for source in session.sources:
+            assert source.url
+            assert source.title
+
+        assert collector.initialized is True
+
+    @pytest.mark.asyncio
+    async def test_session_schema_contract_across_phases(self) -> None:
+        """Verify late-stage schema mismatches between phases are caught."""
+        config = Config()
+        config.search.providers = ["tavily"]
+        config.search_team.parallel_execution = False
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        collector = FakeCollectorAgent(
+            available=["tavily"],
+            warnings=[],
+            results_by_query={
+                "test query": [
+                    SearchResultItem(
+                        url="https://example.com/test-1",
+                        title="Test 1",
+                        score=0.9,
+                    ),
+                    SearchResultItem(
+                        url="https://example.com/test-2",
+                        title="Test 2",
+                        score=0.8,
+                    ),
+                ],
+            },
+        )
+        _install_fake_team(orchestrator, collector=collector)
+
+        session = await orchestrator.execute_research(
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            min_sources=1,
+        )
+
+        metadata_keys = set(session.metadata.keys())
+        expected_keys = {
+            "strategy",
+            "analysis",
+            "validation",
+            "iteration_history",
+            "providers",
+            "execution",
+            "deep_analysis",
+            "llm_routes",
+        }
+        assert metadata_keys == expected_keys, (
+            f"Metadata keys mismatch. Expected: {expected_keys}, Got: {metadata_keys}"
+        )
+
+        providers = session.metadata["providers"]
+        assert "configured" in providers
+        assert "available" in providers
+        assert "status" in providers
+        assert "warnings" in providers
+
+        execution = session.metadata["execution"]
+        assert "parallel_requested" in execution
+        assert "parallel_used" in execution
+        assert "degraded" in execution
+        assert "degraded_reasons" in execution
+
+        deep_analysis = session.metadata["deep_analysis"]
+        assert "requested" in deep_analysis
+        assert "completed" in deep_analysis
+        assert "status" in deep_analysis
+
+        strategy = session.metadata["strategy"]
+        assert "profile" in strategy
+        assert "strategy" in strategy
+
+        analysis = session.metadata["analysis"]
+        assert "key_findings" in analysis
+        assert "themes" in analysis
+        assert "source_provenance" in analysis
+
+        validation = session.metadata["validation"]
+        assert "quality_score" in validation
+        assert "is_valid" in validation
+        assert "issues" in validation
+        assert "recommendations" in validation
+
+        assert isinstance(session.metadata["iteration_history"], list)
+        assert isinstance(session.metadata["llm_routes"], dict)
