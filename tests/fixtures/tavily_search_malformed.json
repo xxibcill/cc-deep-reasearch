@@ -1,0 +1,24 @@
+{
+  "results": [
+    {
+      "url": "https://example.com/incomplete-result",
+      "title": "Incomplete Result Without Score",
+      "content": "This result is missing the score field"
+    },
+    {
+      "url": "https://example.com/missing-content",
+      "title": "Missing Content Field",
+      "score": 0.9
+    },
+    {
+      "url": "https://example.com/null-url",
+      "title": "Valid but has null fields",
+      "content": "Some content here",
+      "score": null,
+      "raw_content": null,
+      "published_date": null
+    }
+  ],
+  "response_id": null,
+  "images": []
+}
