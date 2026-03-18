@@ -63,9 +63,19 @@ class SessionStore:
         Returns:
             Path to the session file.
         """
-        # Sanitize session_id to prevent path traversal
         safe_id = session_id.replace("/", "_").replace("\\", "_")
         return self._session_dir / f"{safe_id}.json"
+
+    def get_session_path(self, session_id: str) -> Path:
+        """Get the file path for a session (public accessor).
+
+        Args:
+            session_id: Session identifier.
+
+        Returns:
+            Path to the session file.
+        """
+        return self._session_path(session_id)
 
     def save_session(self, session: ResearchSession) -> Path:
         """Save a research session to disk.
