@@ -1,0 +1,198 @@
+{
+  "key_findings": [
+    {
+      "title": "Climate change accelerates global temperature rise",
+      "summary": "Multiple independent studies confirm accelerating global temperature increases linked to human activities.",
+      "description": "Research published across scientific journals consistently shows temperature increases of approximately 1.1°C above pre-industrial levels, with accelerating trends in recent decades.",
+      "detail_points": [
+        "2023 was the hottest year on record",
+        "Arctic warming is occurring at twice the global average rate",
+        "Ocean heat content has increased significantly"
+      ],
+      "source": "https://www.ipcc.ch/",
+      "evidence": [
+        "https://www.ipcc.ch/report/ar6/wg1/",
+        "https://climate.nasa.gov/vital-signs/global-temperature/"
+      ],
+      "confidence": "high"
+    },
+    {
+      "title": "Renewable energy adoption is accelerating globally",
+      "summary": "Global renewable energy capacity has grown exponentially, driven by falling costs and policy support.",
+      "description": "Solar and wind capacity additions have broken records annually, with renewable energy now representing the majority of new power capacity installed globally.",
+      "detail_points": [
+        "Solar costs have decreased by 89% in the last decade",
+        "Global renewable capacity reached 1,200 GW in 2023",
+        "Over 150 countries have renewable energy targets"
+      ],
+      "source": "https://www.iea.org/reports/renewables-2023",
+      "evidence": [
+        "https://www.iea.org/reports/renewables-2023",
+        "https://www.irena.org/publications/2024/Jan/Renewable-Capacity-Statistics-2024"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "themes": [
+    "Climate change evidence and impacts",
+    "Energy transition progress",
+    "Policy and economic factors in decarbonization"
+  ],
+  "themes_detailed": [
+    {
+      "theme": "Scientific consensus on climate change",
+      "description": "Multiple independent measurement systems confirm global warming trend",
+      "supporting_sources": 5
+    },
+    {
+      "theme": "Energy transition momentum",
+      "description": "Renewable energy adoption accelerating faster than predicted",
+      "supporting_sources": 4
+    }
+  ],
+  "consensus_points": [
+    "Global temperatures are rising at an accelerating rate",
+    "Human activities are the primary driver of current warming",
+    "Renewable energy costs have fallen dramatically",
+    "Energy transition is underway but needs acceleration"
+  ],
+  "contention_points": [
+    "Optimal policy approaches vary by economic context",
+    "Timeline for specific emission reduction targets debated"
+  ],
+  "cross_reference_claims": [
+    {
+      "claim": "Global temperatures have increased approximately 1.1°C above pre-industrial levels",
+      "supporting_sources": [
+        {
+          "url": "https://www.ipcc.ch/report/ar6/wg1/",
+          "title": "IPCC Sixth Assessment Report",
+          "snippet": "Human activities have caused approximately 1.1°C of global warming",
+          "published_date": "2021-08-09",
+          "query_provenance": [
+            {
+              "query": "climate change temperature increase",
+              "family": "baseline",
+              "intent_tags": ["scientific_consensus"]
+            }
+          ],
+          "source_metadata": {"query_intent_tags": ["scientific_consensus"]}
+        },
+        {
+          "url": "https://climate.nasa.gov/vital-signs/global-temperature/",
+          "title": "NASA Global Climate Change",
+          "snippet": "Global temperature increase of 1.1°C since late 19th century",
+          "published_date": "2024-01-15",
+          "query_provenance": [
+            {
+              "query": "global warming statistics",
+              "family": "factual",
+              "intent_tags": ["data"]
+            }
+          ],
+          "source_metadata": {"query_intent_tags": ["data"]}
+        },
+        {
+          "url": "https://www.noaa.gov/sites/default/files/2021-12/state-of-climate-2020.pdf",
+          "title": "NOAA State of Climate Report",
+          "snippet": "Global surface temperature has risen 1.0°C",
+          "published_date": "2021-12-01",
+          "query_provenance": [
+            {
+              "query": "global temperature rise data",
+              "family": "factual",
+              "intent_tags": ["data", "statistics"]
+            }
+          ],
+          "source_metadata": {"query_intent_tags": ["data", "statistics"]}
+        }
+      ],
+      "contradicting_sources": [],
+      "confidence": "high",
+      "freshness": "recent",
+      "evidence_type": "research",
+      "consensus_level": 1.0
+    },
+    {
+      "claim": "Renewable energy costs have fallen by over 80% for solar in the past decade",
+      "supporting_sources": [
+        {
+          "url": "https://www.iea.org/reports/renewables-2023",
+          "title": "IEA Renewables 2023",
+          "snippet": "Solar PV costs have fallen by 89% since 2010",
+          "published_date": "2023-11-15",
+          "query_provenance": [
+            {
+              "query": "solar energy cost reduction",
+              "family": "factual",
+              "intent_tags": ["cost_data"]
+            }
+          ],
+          "source_metadata": {"query_intent_tags": ["cost_data"]}
+        },
+        {
+          "url": "https://www.irena.org/publications/2024/Jan/Renewable-Capacity-Statistics-2024",
+          "title": "IRENA Renewable Capacity Statistics",
+          "snippet": "Solar costs decreased 55% between 2015-2022",
+          "published_date": "2024-01-31",
+          "query_provenance": [
+            {
+              "query": "renewable energy cost trends",
+              "family": "factual",
+              "intent_tags": ["cost_data"]
+            }
+          ],
+          "source_metadata": {"query_intent_tags": ["cost_data"]}
+        }
+      ],
+      "contradicting_sources": [],
+      "confidence": "high",
+      "freshness": "current",
+      "evidence_type": "research",
+      "consensus_level": 1.0
+    },
+    {
+      "claim": "Climate change is primarily driven by human activities",
+      "supporting_sources": [
+        {
+          "url": "https://www.ipcc.ch/report/ar6/wg1/",
+          "title": "IPCC AR6",
+          "snippet": "It is unequivocal that human influence has warmed the atmosphere"
+        },
+        {
+          "url": "https://www.science.org/doi/10.1126/science.abk2733",
+          "title": "Science journal consensus study",
+          "snippet": "Over 97% of climate scientists agree on human-caused warming"
+        }
+      ],
+      "contradicting_sources": [],
+      "confidence": "high",
+      "freshness": "recent",
+      "evidence_type": "research",
+      "consensus_level": 0.97
+    }
+  ],
+  "gaps": [
+    {
+      "gap_description": "Economic impact projections vary significantly across models",
+      "suggested_queries": ["climate change economic impact projections 2030"],
+      "importance": "high"
+    }
+  ],
+  "source_count": 7,
+  "analysis_method": "llm_analysis",
+  "deep_analysis_complete": true,
+  "analysis_passes": 3,
+  "patterns": [
+    "Multiple independent sources confirm key claims",
+    "Research consensus is strong on core climate science",
+    "Energy transition data is consistent across authoritative sources"
+  ],
+  "disagreement_points": [],
+  "implications": [
+    "Urgent action needed to accelerate energy transition",
+    "Climate adaptation investments increasing",
+    "Policy uncertainty remains a key risk factor"
+  ],
+  "comprehensive_synthesis": "Climate change and the energy transition represent two interconnected transformative forces shaping the 21st century. The scientific consensus on human-caused climate change is overwhelming, with multiple independent measurement systems confirming approximately 1.1°C of global warming above pre-industrial levels. Simultaneously, the renewable energy revolution is accelerating faster than many predictions, with solar costs falling by nearly 90% in a decade. These trends have significant implications for policy, economics, and technology investment decisions."
+}
