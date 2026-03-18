@@ -5,8 +5,17 @@ import httpx
 import pytest
 
 from cc_deep_research.models import ResearchDepth, SearchOptions
-from cc_deep_research.providers import AuthenticationError, NetworkError, RateLimitError
+from cc_deep_research.providers import (
+    AuthenticationError,
+    NetworkError,
+    RateLimitError,
+    SearchProviderError,
+)
 from cc_deep_research.providers.tavily import TavilySearchProvider
+from tests.helpers.fixture_loader import (
+    load_tavily_search_healthy,
+    load_tavily_search_malformed,
+)
 
 
 class TestTavilySearchProvider:
@@ -310,5 +319,356 @@ class TestTavilySearchProvider:
         result = await provider.search("test")
 
         assert result.execution_time_ms >= 0
+
+        await provider.close()
+
+
+class TestTavilySearchProviderReplayTests:
+    """Replay tests using fixture-backed responses."""
+
+    @pytest.fixture
+    def provider(self) -> TavilySearchProvider:
+        """Create a TavilySearchProvider instance."""
+        return TavilySearchProvider(api_key="test-api-key")
+
+    @pytest.mark.asyncio
+    async def test_replay_healthy_fixture_full_result_parsing(
+        self,
+        provider: TavilySearchProvider,
+    ) -> None:
+        """Replay healthy fixture - verify full result parsing with all metadata."""
+        fixture = load_tavily_search_healthy()
+
+        mock_transport = httpx.MockTransport(
+            lambda _: httpx.Response(200, json=fixture)
+        )
+        provider._client = httpx.AsyncClient(transport=mock_transport)
+
+        result = await provider.search("quantum computing")
+
+        assert result.query == "quantum computing"
+        assert result.provider == "tavily"
+        assert len(result.results) == 5
+
+        first = result.results[0]
+        assert first.url == "https://www.nature.com/articles/d41586-023-01444-9"
+        assert first.title == "What is quantum computing? - Nature"
+        assert first.score == 0.95
+        assert first.content is not None
+        assert "quantum" in first.content.lower()
+        assert first.source_metadata.get("published_date") == "2023-05-15"
+
+        assert result.metadata["response_id"] == "test-response-001"
+        assert result.metadata["images"] == ["https://example.com/quantum-diagram.jpg"]
+
+        await provider.close()
+
+    @pytest.mark.asyncio
+    async def test_replay_healthy_fixture_raw_content_extraction(
+        self,
+        provider: TavilySearchProvider,
+    ) -> None:
+        """Replay healthy fixture - verify raw_content extraction."""
+        fixture = load_tavily_search_healthy()
+
+        mock_transport = httpx.MockTransport(
+            lambda _: httpx.Response(200, json=fixture)
+        )
+        provider._client = httpx.AsyncClient(transport=mock_transport)
+
+        result = await provider.search("quantum computing")
+
+        results_with_raw_content = [r for r in result.results if r.content is not None]
+        assert len(results_with_raw_content) >= 2
+
+        first_with_content = results_with_raw_content[0]
+        assert first_with_content.content is not None
+        assert len(first_with_content.content) > 100
+
+        await provider.close()
+
+    @pytest.mark.asyncio
+    async def test_replay_healthy_fixture_scores_preserved(
+        self,
+        provider: TavilySearchProvider,
+    ) -> None:
+        """Replay healthy fixture - verify score normalization."""
+        fixture = load_tavily_search_healthy()
+
+        mock_transport = httpx.MockTransport(
+            lambda _: httpx.Response(200, json=fixture)
+        )
+        provider._client = httpx.AsyncClient(transport=mock_transport)
+
+        result = await provider.search("quantum computing")
+
+        scores = [r.score for r in result.results]
+        assert scores == [0.95, 0.92, 0.89, 0.85, 0.82]
+        assert scores == sorted(scores, reverse=True)
+
+        await provider.close()
+
+    @pytest.mark.asyncio
+    async def test_replay_malformed_fixture_partial_metadata(
+        self,
+        provider: TavilySearchProvider,
+    ) -> None:
+        """Replay malformed fixture - verify graceful handling of partial metadata."""
+        fixture = load_tavily_search_malformed()
+
+        mock_transport = httpx.MockTransport(
+            lambda _: httpx.Response(200, json=fixture)
+        )
+        provider._client = httpx.AsyncClient(transport=mock_transport)
+
+        result = await provider.search("test query")
+
+        assert len(result.results) == 3
+
+        first = result.results[0]
+        assert first.url == "https://example.com/incomplete-result"
+        assert first.title == "Incomplete Result Without Score"
+        assert first.score == 0.0
+
+        second = result.results[1]
+        assert second.url == "https://example.com/missing-content"
+        assert second.snippet == ""
+
+        third = result.results[2]
+        assert third.score == 0.0
+
+        await provider.close()
+
+    @pytest.mark.asyncio
+    async def test_replay_malformed_fixture_null_fields(
+        self,
+        provider: TavilySearchProvider,
+    ) -> None:
+        """Replay malformed fixture - verify null field handling."""
+        fixture = load_tavily_search_malformed()
+
+        mock_transport = httpx.MockTransport(
+            lambda _: httpx.Response(200, json=fixture)
+        )
+        provider._client = httpx.AsyncClient(transport=mock_transport)
+
+        result = await provider.search("test")
+
+        third = result.results[2]
+        assert third.score == 0.0
+        assert third.content is None or third.snippet is not None
+
+        await provider.close()
+
+    @pytest.mark.asyncio
+    async def test_replay_empty_results_fixture(
+        self,
+        provider: TavilySearchProvider,
+    ) -> None:
+        """Replay empty results - verify graceful handling."""
+        empty_fixture = {"results": [], "response_id": "empty-response"}
+
+        mock_transport = httpx.MockTransport(
+            lambda _: httpx.Response(200, json=empty_fixture)
+        )
+        provider._client = httpx.AsyncClient(transport=mock_transport)
+
+        result = await provider.search("no results query")
+
+        assert len(result.results) == 0
+        assert result.metadata["response_id"] == "empty-response"
+
+        await provider.close()
+
+    @pytest.mark.asyncio
+    async def test_replay_degraded_results_only_required_fields(
+        self,
+        provider: TavilySearchProvider,
+    ) -> None:
+        """Replay degraded fixture - verify only URL and title are required."""
+        degraded_fixture = {
+            "results": [
+                {"url": "https://example.com/minimal", "title": "Minimal Result"}
+            ]
+        }
+
+        mock_transport = httpx.MockTransport(
+            lambda _: httpx.Response(200, json=degraded_fixture)
+        )
+        provider._client = httpx.AsyncClient(transport=mock_transport)
+
+        result = await provider.search("test")
+
+        assert len(result.results) == 1
+        assert result.results[0].url == "https://example.com/minimal"
+        assert result.results[0].title == "Minimal Result"
+        assert result.results[0].snippet == ""
+        assert result.results[0].score == 0.0
+
+        await provider.close()
+
+
+class TestTavilySearchProviderErrorPayloadReplay:
+    """Replay tests for provider-side error payloads."""
+
+    @pytest.fixture
+    def provider(self) -> TavilySearchProvider:
+        """Create a TavilySearchProvider instance."""
+        return TavilySearchProvider(api_key="test-api-key")
+
+    @pytest.mark.asyncio
+    async def test_error_401_invalid_api_key(self, provider: TavilySearchProvider) -> None:
+        """Replay 401 error - verify AuthenticationError."""
+        mock_transport = httpx.MockTransport(
+            lambda _: httpx.Response(
+                401,
+                json={"message": "Invalid API key provided"},
+            )
+        )
+        provider._client = httpx.AsyncClient(transport=mock_transport)
+
+        with pytest.raises(AuthenticationError) as exc_info:
+            await provider.search("test")
+
+        assert "Invalid API key provided" in str(exc_info.value)
+        assert exc_info.value.provider == "tavily"
+
+        await provider.close()
+
+    @pytest.mark.asyncio
+    async def test_error_429_rate_limit(self, provider: TavilySearchProvider) -> None:
+        """Replay 429 error - verify RateLimitError with retry-after."""
+        mock_transport = httpx.MockTransport(
+            lambda _: httpx.Response(
+                429,
+                json={"message": "Too many requests"},
+                headers={"Retry-After": "30"},
+            )
+        )
+        provider._client = httpx.AsyncClient(transport=mock_transport)
+
+        with pytest.raises(RateLimitError) as exc_info:
+            await provider.search("test")
+
+        assert exc_info.value.retry_after == 30
+        assert exc_info.value.provider == "tavily"
+
+        await provider.close()
+
+    @pytest.mark.asyncio
+    async def test_error_429_rate_limit_no_retry_after(
+        self,
+        provider: TavilySearchProvider,
+    ) -> None:
+        """Replay 429 error without Retry-After header."""
+        mock_transport = httpx.MockTransport(
+            lambda _: httpx.Response(
+                429,
+                json={"message": "Rate limited"},
+            )
+        )
+        provider._client = httpx.AsyncClient(transport=mock_transport)
+
+        with pytest.raises(RateLimitError) as exc_info:
+            await provider.search("test")
+
+        assert exc_info.value.retry_after is None
+
+        await provider.close()
+
+    @pytest.mark.asyncio
+    async def test_error_500_internal_server(
+        self,
+        provider: TavilySearchProvider,
+    ) -> None:
+        """Replay 500 error - verify SearchProviderError."""
+        mock_transport = httpx.MockTransport(
+            lambda _: httpx.Response(
+                500,
+                json={"message": "Internal server error"},
+            )
+        )
+        provider._client = httpx.AsyncClient(transport=mock_transport)
+
+        with pytest.raises(SearchProviderError) as exc_info:
+            await provider.search("test")
+
+        assert "500" in str(exc_info.value)
+        assert exc_info.value.provider == "tavily"
+
+        await provider.close()
+
+    @pytest.mark.asyncio
+    async def test_error_503_service_unavailable(
+        self,
+        provider: TavilySearchProvider,
+    ) -> None:
+        """Replay 503 error - verify SearchProviderError."""
+        mock_transport = httpx.MockTransport(
+            lambda _: httpx.Response(
+                503,
+                json={"message": "Service temporarily unavailable"},
+            )
+        )
+        provider._client = httpx.AsyncClient(transport=mock_transport)
+
+        with pytest.raises(SearchProviderError) as exc_info:
+            await provider.search("test")
+
+        assert "503" in str(exc_info.value)
+
+        await provider.close()
+
+    @pytest.mark.asyncio
+    async def test_error_403_forbidden(self, provider: TavilySearchProvider) -> None:
+        """Replay 403 error - verify SearchProviderError."""
+        mock_transport = httpx.MockTransport(
+            lambda _: httpx.Response(
+                403,
+                json={"message": "Access forbidden"},
+            )
+        )
+        provider._client = httpx.AsyncClient(transport=mock_transport)
+
+        with pytest.raises(SearchProviderError) as exc_info:
+            await provider.search("test")
+
+        assert "403" in str(exc_info.value)
+
+        await provider.close()
+
+    @pytest.mark.asyncio
+    async def test_error_404_not_found(self, provider: TavilySearchProvider) -> None:
+        """Replay 404 error - verify SearchProviderError."""
+        mock_transport = httpx.MockTransport(
+            lambda _: httpx.Response(
+                404,
+                json={"message": "Endpoint not found"},
+            )
+        )
+        provider._client = httpx.AsyncClient(transport=mock_transport)
+
+        with pytest.raises(SearchProviderError) as exc_info:
+            await provider.search("test")
+
+        assert "404" in str(exc_info.value)
+
+        await provider.close()
+
+    @pytest.mark.asyncio
+    async def test_error_non_json_response(
+        self,
+        provider: TavilySearchProvider,
+    ) -> None:
+        """Replay non-JSON error response - verify error handling."""
+        mock_transport = httpx.MockTransport(
+            lambda _: httpx.Response(500, text="Internal Server Error")
+        )
+        provider._client = httpx.AsyncClient(transport=mock_transport)
+
+        with pytest.raises(SearchProviderError) as exc_info:
+            await provider.search("test")
+
+        assert "500" in str(exc_info.value)
 
         await provider.close()

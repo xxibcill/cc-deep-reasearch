@@ -1,6 +1,6 @@
 # Task 005: Add Source Collection Fixture Integration Tests
 
-Status: Planned
+Status: Done
 
 ## Objective
 
@@ -34,4 +34,30 @@ Exercise the real source-collection layer with fixture-backed providers so failu
 ## Suggested Verification
 
 - run targeted `uv run pytest` coverage for source collection and orchestrator collection paths
+
+## Implementation Summary
+
+Added the following test classes:
+
+### test_providers.py
+
+- `TestSourceCollectionFixtureIntegration`: 6 tests covering:
+  - Source aggregation with replayed provider payloads
+  - Parallel aggregation with fixture-backed providers
+  - Source limit preserving provenance metadata
+  - Degraded provider availability with stable session metadata
+  - Invalid SearchResultItem validation
+  - Empty source list handling
+
+- `TestSourceCollectionWithResultAggregator`: 2 tests covering:
+  - Aggregator tracking query families across results
+  - Deduplication preserving all provenance
+
+### test_orchestrator.py
+
+- `TestSourceCollectionOrchestratorIntegration`: 4 tests covering:
+  - Orchestrator collecting sources with provenance across families
+  - Deduplication merging provenance in orchestrator
+  - Empty collection with degraded provider recording metadata
+  - Source limit respecting depth requirements
 

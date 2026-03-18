@@ -203,12 +203,16 @@ class TavilySearchProvider(SearchProvider):
         """
         results = []
         for item in data.get("results", []):
+            score = item.get("score")
+            if score is None:
+                score = 0.0
+
             result = SearchResultItem(
                 url=item.get("url", ""),
                 title=item.get("title", ""),
                 snippet=item.get("content", ""),
                 content=item.get("raw_content"),
-                score=item.get("score", 0.0),
+                score=score,
                 source_metadata={
                     "published_date": item.get("published_date"),
                 },
