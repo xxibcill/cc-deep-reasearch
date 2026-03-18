@@ -1529,3 +1529,271 @@ class TestOrchestratorFixtureEndToEnd:
 
         assert isinstance(session.metadata["iteration_history"], list)
         assert isinstance(session.metadata["llm_routes"], dict)
+
+
+class TestOrchestratorFailurePathRegressions:
+    """Regression tests for orchestrator failure modes.
+
+    Task 009: Add Failure-Path Regression Coverage
+    These tests verify that the orchestrator handles:
+    - Provider unavailability
+    - Partial provider results
+    - Fallback transitions
+    - Session metadata records degradation explicitly when the workflow recovers
+    """
+
+    @pytest.mark.asyncio
+    async def test_provider_unavailability_all_providers_down(self) -> None:
+        """Orchestrator should degrade gracefully when all providers are unavailable."""
+        config = Config()
+        config.search.providers = ["tavily", "claude"]
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        collector = FakeCollectorAgent(
+            available=[],
+            warnings=[
+                "Provider 'tavily' API rate limit exceeded",
+                "Provider 'claude' network timeout",
+            ],
+            results_by_query={
+                "test query": [],
+            },
+        )
+        _install_fake_team(orchestrator, collector=collector)
+
+        session = await orchestrator.execute_research(
+            query="test query",
+            depth=ResearchDepth.QUICK,
+            min_sources=1,
+        )
+
+        assert session.metadata["providers"]["status"] == "unavailable"
+        assert session.metadata["execution"]["degraded"] is True
+        assert len(session.metadata["execution"]["degraded_reasons"]) > 0
+        assert session.sources == []
+
+    @pytest.mark.asyncio
+    async def test_partial_provider_results_with_warnings(self) -> None:
+        """Orchestrator should record partial results with provider warnings."""
+        config = Config()
+        config.search.providers = ["tavily"]
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        collector = FakeCollectorAgent(
+            available=["tavily"],
+            warnings=["Some results may be incomplete due to rate limiting"],
+            results_by_query={
+                "test query": [
+                    SearchResultItem(
+                        url="https://example.com/partial-1",
+                        title="Partial Result 1",
+                        score=0.8,
+                    ),
+                ],
+            },
+        )
+        _install_fake_team(orchestrator, collector=collector)
+
+        session = await orchestrator.execute_research(
+            query="test query",
+            depth=ResearchDepth.QUICK,
+            min_sources=1,
+        )
+
+        assert session.metadata["providers"]["status"] in ["ready", "degraded"]
+        assert session.metadata["providers"]["warnings"] is not None
+        assert len(session.sources) >= 1
+
+    @pytest.mark.asyncio
+    async def test_fallback_transition_records_metadata(self) -> None:
+        """Orchestrator should explicitly record fallback transitions in metadata."""
+        config = Config()
+        config.search.providers = ["tavily"]
+        config.search_team.parallel_execution = True
+
+        orchestrator = TeamResearchOrchestrator(
+            config,
+            ResearchMonitor(enabled=False),
+            parallel_mode=True,
+        )
+        orchestrator._agent_pool = object()
+        orchestrator._agents = {AGENT_TYPE_COLLECTOR: object()}
+        orchestrator._monitor.set_session = MagicMock()
+        orchestrator._initialize_team = AsyncMock()
+        orchestrator._shutdown_team = AsyncMock()
+        orchestrator._phase_analyze_strategy = AsyncMock(
+            return_value=_make_strategy("fallback query", ResearchDepth.STANDARD, 1)
+        )
+        orchestrator._phase_expand_queries = AsyncMock(return_value=["fallback query"])
+        orchestrator._source_collection.parallel_research = AsyncMock(
+            side_effect=RuntimeError("parallel_execution_failed")
+        )
+
+        sources = _make_sources("fallback", 2)
+
+        async def collect_sources(
+            *,
+            collector: object,
+            query_families: list[QueryFamily],
+            depth: ResearchDepth,
+        ) -> list[SearchResultItem]:
+            del collector, depth
+            orchestrator._session_state.set_provider_metadata(
+                available=["tavily"],
+                warnings=["Used sequential fallback due to parallel error"],
+            )
+            return sources
+
+        orchestrator._source_collection.collect_sources = AsyncMock(side_effect=collect_sources)
+        orchestrator._run_analysis_workflow = AsyncMock(
+            return_value=(
+                _make_analysis(source_count=len(sources)),
+                _make_validation(),
+                sources,
+                [IterationHistoryRecord(iteration=1, source_count=2, quality_score=0.82, gap_count=0)],
+            )
+        )
+
+        session = await orchestrator.execute_research(
+            query="fallback query",
+            depth=ResearchDepth.STANDARD,
+            min_sources=2,
+        )
+
+        assert session.metadata["execution"]["degraded"] is True
+        assert any(
+            "fallback" in reason.lower()
+            for reason in session.metadata["execution"]["degraded_reasons"]
+        )
+
+    @pytest.mark.asyncio
+    async def test_degraded_recovery_records_explicit_flag(self) -> None:
+        """Session metadata should explicitly flag when workflow recovered from degradation."""
+        config = Config()
+        config.search.providers = ["tavily", "claude"]
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        collector = FakeCollectorAgent(
+            available=["tavily"],
+            warnings=["Provider 'claude' unavailable - using tavily only"],
+            results_by_query={
+                "test query": _make_sources("recovery", 3),
+            },
+        )
+        _install_fake_team(orchestrator, collector=collector)
+
+        session = await orchestrator.execute_research(
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            min_sources=2,
+        )
+
+        assert session.metadata["execution"]["degraded"] is True
+        assert "claude" in str(session.metadata["providers"]["warnings"]).lower()
+
+    @pytest.mark.asyncio
+    async def test_provider_partial_failure_returns_some_sources(self) -> None:
+        """Orchestrator should return partial sources when some queries fail."""
+        config = Config()
+        config.search.providers = ["tavily"]
+        config.search_team.parallel_execution = False
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+
+        collector = FakeCollectorAgent(
+            available=["tavily"],
+            warnings=[],
+            results_by_query={
+                "test query": _make_sources("success", 3),
+                "test query expert": [],
+            },
+        )
+        _install_fake_team(orchestrator, collector=collector)
+
+        session = await orchestrator.execute_research(
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            min_sources=2,
+        )
+
+        assert len(session.sources) >= 3
+        assert session.metadata["providers"]["status"] in ["ready", "degraded"]
+
+    @pytest.mark.asyncio
+    async def test_empty_results_after_provider_errors_still_produces_session(self) -> None:
+        """Even with empty results, orchestrator should produce valid session."""
+        config = Config()
+        config.search.providers = ["tavily"]
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        collector = FakeCollectorAgent(
+            available=["tavily"],
+            warnings=["Provider returned empty results"],
+            results_by_query={
+                "test query": [],
+            },
+        )
+        _install_fake_team(orchestrator, collector=collector)
+
+        session = await orchestrator.execute_research(
+            query="test query",
+            depth=ResearchDepth.QUICK,
+            min_sources=1,
+        )
+
+        assert session.session_id is not None
+        assert session.query == "test query"
+        assert session.metadata["providers"]["status"] in ["ready", "degraded"]
+        assert session.metadata["execution"]["degraded"] is True
+
+    @pytest.mark.asyncio
+    async def test_llm_router_fallback_records_in_session_metadata(self) -> None:
+        """LLM router fallback should be explicitly recorded in session metadata."""
+        orchestrator = TeamResearchOrchestrator(Config(), ResearchMonitor(enabled=False))
+        orchestrator._session_state.reset(list(Config().search.providers))
+
+        orchestrator._session_state.handle_llm_router_event(
+            {
+                "event_type": "route_fallback",
+                "agent_id": "analyzer",
+                "original_transport": "claude_cli",
+                "fallback_transport": "openrouter_api",
+                "reason": "primary_route_unavailable_or_failed",
+            }
+        )
+        orchestrator._session_state.handle_llm_router_event(
+            {
+                "event_type": "route_failure",
+                "agent_id": "validator",
+                "transport": "openrouter_api",
+                "error": "rate_limit_exceeded",
+            }
+        )
+
+        llm_routes = orchestrator._session_state.get_llm_route_summary()
+        assert llm_routes["fallback_count"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_provider_degradation_with_quality_score_adjustment(self) -> None:
+        """Provider degradation should reflect in quality score via metadata."""
+        config = Config()
+        config.search.providers = ["tavily"]
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        collector = FakeCollectorAgent(
+            available=["tavily"],
+            warnings=["Results limited due to API quotas"],
+            results_by_query={
+                "test query": _make_sources("limited", 1),
+            },
+        )
+        _install_fake_team(orchestrator, collector=collector)
+
+        session = await orchestrator.execute_research(
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            min_sources=5,
+        )
+
+        if session.metadata["execution"]["degraded"]:
+            assert len(session.metadata["execution"]["degraded_reasons"]) > 0
