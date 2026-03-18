@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from cc_deep_research.config import get_default_config_path, load_config
+from cc_deep_research.config import load_config
 from cc_deep_research.event_router import EventRouter, WebSocketConnection
 from cc_deep_research.reporting import ReportGenerator
 from cc_deep_research.research_runs.jobs import ResearchRunJob, ResearchRunJobRegistry
@@ -19,10 +20,12 @@ from cc_deep_research.research_runs.models import ResearchOutputFormat, Research
 from cc_deep_research.research_runs.service import ResearchRunService
 from cc_deep_research.session_store import SessionStore
 from cc_deep_research.telemetry import (
+    get_default_dashboard_db_path,
     get_default_telemetry_dir,
     query_dashboard_data,
     query_live_session_detail,
     query_live_sessions,
+    query_session_detail,
 )
 
 
@@ -115,6 +118,88 @@ def get_event_router(app: FastAPI) -> EventRouter:
 def get_job_registry(app: FastAPI) -> ResearchRunJobRegistry:
     """Return the shared job registry from app runtime state."""
     return get_backend_runtime(app).jobs
+
+
+def _serialize_timestamp(value: Any) -> str | None:
+    """Return a JSON-safe timestamp string."""
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def _normalize_historical_event(row: tuple[Any, ...], *, session_id: str) -> dict[str, Any]:
+    """Convert a persisted telemetry row into the public API event shape."""
+    metadata = json.loads(row[10]) if row[10] else {}
+    return {
+        "event_id": row[0],
+        "parent_event_id": row[1],
+        "sequence_number": row[2],
+        "timestamp": _serialize_timestamp(row[3]),
+        "session_id": session_id,
+        "event_type": row[4],
+        "category": row[5],
+        "name": row[6],
+        "status": row[7],
+        "duration_ms": row[8],
+        "agent_id": row[9],
+        "metadata": metadata if isinstance(metadata, dict) else {},
+    }
+
+
+def _normalize_historical_session(
+    row: tuple[Any, ...],
+    *,
+    events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Convert a persisted session row into the public API session shape."""
+    return {
+        "session_id": row[0],
+        "created_at": _serialize_timestamp(row[1]),
+        "status": row[2],
+        "total_time_ms": row[3],
+        "total_sources": row[4],
+        "active": False,
+        "event_count": len(events),
+        "last_event_at": events[-1]["timestamp"] if events else None,
+    }
+
+
+def _query_session_api_detail(
+    session_id: str,
+    *,
+    tail_limit: int,
+    subprocess_chunk_limit: int,
+) -> dict[str, Any]:
+    """Return session detail from live telemetry, or DuckDB when only historical data exists."""
+    telemetry_dir = get_default_telemetry_dir()
+    live_detail = query_live_session_detail(
+        session_id,
+        base_dir=telemetry_dir,
+        tail_limit=tail_limit,
+        subprocess_chunk_limit=subprocess_chunk_limit,
+    )
+    if live_detail["session"]:
+        return live_detail
+
+    historical = query_session_detail(session_id, db_path=get_default_dashboard_db_path())
+    session_row = historical["session"]
+    if session_row is None:
+        return live_detail
+
+    events = [_normalize_historical_event(row, session_id=session_id) for row in historical["events"]]
+    return {
+        "session": _normalize_historical_session(session_row, events=events),
+        "summary": None,
+        "events": events,
+        "event_tail": events[-tail_limit:],
+        "agent_timeline": [event for event in events if event.get("category") == "agent"],
+        "event_tree": {"root_events": [], "total_events": len(events), "session_id": session_id},
+        "subprocess_streams": [],
+        "llm_route_analytics": {},
+        "active_phase": None,
+    }
 
 
 def register_routes(app: FastAPI) -> None:
@@ -247,44 +332,48 @@ def register_routes(app: FastAPI) -> None:
         """
         telemetry_dir = get_default_telemetry_dir()
         live_sessions = query_live_sessions(base_dir=telemetry_dir)
-        historical = query_dashboard_data(get_default_config_path().parent / "dashboard.db")
+        historical = query_dashboard_data(get_default_dashboard_db_path())
 
-        # Merge live and historical sessions
-        sessions = []
+        sessions_by_id: dict[str, dict[str, Any]] = {}
 
         # Add live sessions
         for session in live_sessions:
             if active_only and not session.get("active"):
                 continue
-            sessions.append(
-                {
-                    "session_id": session["session_id"],
-                    "created_at": session.get("created_at"),
-                    "total_time_ms": session.get("total_time_ms"),
-                    "total_sources": session.get("total_sources", 0),
-                    "status": session.get("status", "unknown"),
-                    "active": session.get("active", False),
-                    "event_count": session.get("event_count"),
-                    "last_event_at": session.get("last_event_at"),
-                }
-            )
+            sessions_by_id[session["session_id"]] = {
+                "session_id": session["session_id"],
+                "created_at": _serialize_timestamp(session.get("created_at")),
+                "total_time_ms": session.get("total_time_ms"),
+                "total_sources": session.get("total_sources", 0),
+                "status": session.get("status", "unknown"),
+                "active": session.get("active", False),
+                "event_count": session.get("event_count"),
+                "last_event_at": _serialize_timestamp(session.get("last_event_at")),
+            }
 
         # Add historical sessions
         for session_data in historical["sessions"]:
             if active_only:
                 continue
-            sessions.append(
-                {
-                    "session_id": session_data[0],
-                    "created_at": session_data[1],
-                    "total_time_ms": session_data[2],
-                    "total_sources": session_data[3],
-                    "status": session_data[8],
-                    "active": False,
-                    "event_count": None,
-                    "last_event_at": None,
-                }
-            )
+            if session_data[0] in sessions_by_id:
+                existing = sessions_by_id[session_data[0]]
+                if existing.get("total_time_ms") is None:
+                    existing["total_time_ms"] = session_data[2]
+                if not existing.get("total_sources"):
+                    existing["total_sources"] = session_data[3]
+                continue
+            sessions_by_id[session_data[0]] = {
+                "session_id": session_data[0],
+                "created_at": _serialize_timestamp(session_data[1]),
+                "total_time_ms": session_data[2],
+                "total_sources": session_data[3],
+                "status": session_data[8],
+                "active": False,
+                "event_count": None,
+                "last_event_at": None,
+            }
+
+        sessions = list(sessions_by_id.values())
 
         # Sort: active first, then by last event time
         sessions.sort(
@@ -309,10 +398,8 @@ def register_routes(app: FastAPI) -> None:
         Returns:
             JSON response with session details.
         """
-        telemetry_dir = get_default_telemetry_dir()
-        detail = query_live_session_detail(
+        detail = _query_session_api_detail(
             session_id,
-            base_dir=telemetry_dir,
             tail_limit=1000,
             subprocess_chunk_limit=100,
         )
@@ -340,10 +427,8 @@ def register_routes(app: FastAPI) -> None:
         Returns:
             JSON response with event list.
         """
-        telemetry_dir = get_default_telemetry_dir()
-        detail = query_live_session_detail(
+        detail = _query_session_api_detail(
             session_id,
-            base_dir=telemetry_dir,
             tail_limit=limit,
             subprocess_chunk_limit=0,
         )
@@ -399,9 +484,6 @@ def register_routes(app: FastAPI) -> None:
             )
 
         # Generate report in requested format
-        from cc_deep_research.config import load_config
-        from cc_deep_research.reporting import ReportGenerator
-
         config = load_config()
         reporter = ReportGenerator(config)
 
@@ -443,10 +525,8 @@ def register_routes(app: FastAPI) -> None:
         await event_router.subscribe(session_id, connection)
 
         # Send history on connect
-        telemetry_dir = get_default_telemetry_dir()
-        detail = query_live_session_detail(
+        detail = _query_session_api_detail(
             session_id,
-            base_dir=telemetry_dir,
             tail_limit=100,
             subprocess_chunk_limit=0,
         )
@@ -469,9 +549,8 @@ def register_routes(app: FastAPI) -> None:
                 elif message_type == "get_history":
                     # Send more history
                     limit = data.get("limit", 1000)
-                    new_detail = query_live_session_detail(
+                    new_detail = _query_session_api_detail(
                         session_id,
-                        base_dir=telemetry_dir,
                         tail_limit=limit,
                         subprocess_chunk_limit=0,
                     )

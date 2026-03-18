@@ -11,7 +11,7 @@ import type { ResearchOutputFormat, SessionReportResponse } from '@/types/teleme
 
 interface SessionReportProps {
   sessionId: string;
-  runStatus: 'queued' | 'running' | 'completed' | 'failed';
+  runStatus: 'queued' | 'running' | 'completed' | 'failed' | null;
 }
 
 function formatReportContent(content: string, format: ResearchOutputFormat): React.ReactNode {
@@ -53,8 +53,7 @@ export function SessionReport({ sessionId, runStatus }: SessionReportProps) {
   const [selectedFormat, setSelectedFormat] = useState<ResearchOutputFormat>('markdown');
 
   useEffect(() => {
-    // Only fetch report when run is completed
-    if (runStatus !== 'completed') {
+    if (runStatus === 'queued' || runStatus === 'running' || runStatus === 'failed') {
       return;
     }
 
