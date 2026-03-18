@@ -116,6 +116,9 @@ function startFrontend(frontendPort, backendPort) {
     env: {
       ...process.env,
       PORT: String(frontendPort),
+      NEXT_PUBLIC_CC_BACKEND_ORIGIN: `http://localhost:${backendPort}`,
+      NEXT_PUBLIC_CC_API_BASE_URL: `http://localhost:${backendPort}/api`,
+      NEXT_PUBLIC_CC_WS_BASE_URL: `ws://localhost:${backendPort}/ws`,
       NEXT_PUBLIC_API_BASE_URL: `http://localhost:${backendPort}`,
     },
   });
