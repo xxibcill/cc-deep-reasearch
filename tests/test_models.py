@@ -801,3 +801,189 @@ class TestStrategyResultWithLLMPlan:
         data = result.model_dump()
         assert "llm_plan" in data
         assert "agent_routes" in data["llm_plan"]
+
+
+class TestAnalysisResultContractTests:
+    """Contract tests for AnalysisResult model validation and normalization."""
+
+    def test_analysis_result_accepts_string_findings(self) -> None:
+        """AnalysisResult should accept string items in key_findings for backward compatibility."""
+        result = AnalysisResult(
+            key_findings=["Finding 1", "Finding 2"],
+            themes=["Theme 1"],
+            source_count=2,
+        )
+        assert result.key_findings == ["Finding 1", "Finding 2"]
+
+    def test_analysis_result_accepts_dict_findings(self) -> None:
+        """AnalysisResult should accept dict items in key_findings."""
+        result = AnalysisResult(
+            key_findings=[
+                {"title": "Finding 1", "description": "Description", "evidence": [], "confidence": "high"}
+            ],
+            themes=["Theme 1"],
+            source_count=1,
+        )
+        assert len(result.key_findings) == 1
+
+    def test_analysis_result_accepts_analysis_finding_objects(self) -> None:
+        """AnalysisResult should accept AnalysisFinding objects."""
+        from cc_deep_research.models.analysis import AnalysisFinding
+
+        finding = AnalysisFinding(
+            title="Test Finding",
+            description="Test description",
+            evidence=["https://example.com"],
+            confidence="high",
+        )
+        result = AnalysisResult(
+            key_findings=[finding],
+            source_count=1,
+        )
+        assert isinstance(result.key_findings[0], AnalysisFinding)
+
+    def test_analysis_result_stringify_claim_object_consensus(self) -> None:
+        """AnalysisResult should coerce claim objects in consensus_points to strings."""
+        result = AnalysisResult.model_validate(
+            {
+                "consensus_points": [
+                    {
+                        "claim": "Treatment is effective",
+                        "supporting_sources": ["https://a.com"],
+                        "strength": "strong",
+                    }
+                ],
+                "contention_points": [],
+                "disagreement_points": [],
+            }
+        )
+        assert result.consensus_points == ["Treatment is effective"]
+
+    def test_analysis_result_stringify_claim_with_perspectives(self) -> None:
+        """AnalysisResult should stringify claim with perspectives field."""
+        result = AnalysisResult.model_validate(
+            {
+                "consensus_points": [],
+                "contention_points": [
+                    {
+                        "claim": "Dosage debate",
+                        "perspectives": [
+                            {"view": "Low dose works", "sources": ["https://a.com"]},
+                            {"view": "High dose needed", "sources": ["https://b.com"]},
+                        ],
+                    }
+                ],
+                "disagreement_points": [],
+            }
+        )
+        assert result.contention_points == ["Dosage debate"]
+
+    def test_analysis_result_stringify_disagreement_with_views(self) -> None:
+        """AnalysisResult should stringify disagreement_points with multiple perspectives."""
+        result = AnalysisResult.model_validate(
+            {
+                "consensus_points": [],
+                "contention_points": [],
+                "disagreement_points": [
+                    {
+                        "perspectives": [
+                            {"view": "Neutral-atom is best"},
+                            {"view": "Superconducting leads"},
+                        ]
+                    }
+                ],
+            }
+        )
+        assert result.disagreement_points == ["Neutral-atom is best vs. Superconducting leads"]
+
+    def test_analysis_result_handles_mixed_consensus_types(self) -> None:
+        """AnalysisResult should handle mixed string and object types in consensus_points."""
+        result = AnalysisResult.model_validate(
+            {
+                "consensus_points": [
+                    "Simple string claim",
+                    {"claim": "Object claim", "supporting_sources": ["https://a.com"]},
+                    {"title": "Title claim"},
+                ],
+                "contention_points": [],
+                "disagreement_points": [],
+            }
+        )
+        assert "Simple string claim" in result.consensus_points
+        assert "Object claim" in result.consensus_points
+        assert "Title claim" in result.consensus_points
+
+    def test_analysis_result_gaps_accepts_strings(self) -> None:
+        """AnalysisResult gaps should accept string items."""
+        result = AnalysisResult(
+            gaps=["Gap 1", "Gap 2"],
+        )
+        assert result.gaps == ["Gap 1", "Gap 2"]
+
+    def test_analysis_result_gaps_accepts_dicts(self) -> None:
+        """AnalysisResult gaps should accept dict items."""
+        result = AnalysisResult(
+            gaps=[
+                {"gap_description": "Missing data", "importance": "high"},
+            ],
+        )
+        assert len(result.gaps) == 1
+
+    def test_analysis_result_normalized_gaps_returns_objects(self) -> None:
+        """normalized_gaps() should return AnalysisGap objects."""
+        from cc_deep_research.models.analysis import AnalysisGap
+
+        result = AnalysisResult(
+            gaps=[
+                "String gap",
+                {"gap_description": "Dict gap", "importance": "high"},
+            ]
+        )
+        normalized = result.normalized_gaps()
+        assert len(normalized) == 2
+        assert isinstance(normalized[0], AnalysisGap)
+        assert normalized[0].gap_description == "String gap"
+        assert isinstance(normalized[1], AnalysisGap)
+        assert normalized[1].gap_description == "Dict gap"
+
+    def test_analysis_result_finding_sources_extracts_urls(self) -> None:
+        """finding_sources() should extract source URLs from findings."""
+        result = AnalysisResult(
+            key_findings=[
+                {
+                    "title": "Finding 1",
+                    "source": "https://source1.com",
+                    "evidence": ["https://source2.com", "https://source3.com"],
+                },
+                {
+                    "title": "Finding 2",
+                    "evidence": ["https://source4.com"],
+                },
+            ]
+        )
+        sources = result.finding_sources()
+        assert "https://source1.com" in sources
+        assert "https://source2.com" in sources
+        assert "https://source3.com" in sources
+        assert "https://source4.com" in sources
+
+    def test_analysis_result_validates_consensus_points_type(self) -> None:
+        """Consensus points should be coerced to list if not already."""
+        result = AnalysisResult(consensus_points="single item")
+        assert result.consensus_points == ["single item"]
+
+    def test_analysis_result_handles_none_consensus_points(self) -> None:
+        """None consensus_points should become empty list."""
+        result = AnalysisResult(consensus_points=None)
+        assert result.consensus_points == []
+
+    def test_analysis_result_extra_fields_allowed(self) -> None:
+        """AnalysisResult should allow extra fields due to extra='allow'."""
+        result = AnalysisResult.model_validate(
+            {
+                "key_findings": [],
+                "unknown_field": "should be allowed",
+                "another_unknown": 123,
+            }
+        )
+        assert result.model_dump().get("unknown_field") == "should be allowed"
