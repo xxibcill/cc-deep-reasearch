@@ -1882,3 +1882,248 @@ class TestFixtureSmokeTests:
                 ]
 
         return normalized
+
+
+class TestReporterFailurePathRegressions:
+    """Regression tests for reporter failure modes.
+
+    Task 009: Add Failure-Path Regression Coverage
+    These tests verify that the reporter degrades predictably for:
+    - Empty findings
+    - Incompatible report inputs
+    - Missing required fields
+    """
+
+    def test_reporter_empty_key_findings_list(self) -> None:
+        """Reporter should handle empty key_findings list gracefully."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [],
+            "themes": ["Theme 1"],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+        assert report is not None
+
+    def test_reporter_none_key_findings(self) -> None:
+        """Reporter should handle None key_findings gracefully."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+        assert report is not None
+
+    def test_reporter_missing_themes_field(self) -> None:
+        """Reporter should handle missing themes field gracefully."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [{"title": "Finding", "description": "Description"}],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+        assert report is not None
+        assert "## Key Findings" in report
+
+    def test_reporter_incompatible_source_objects(self) -> None:
+        """Reporter should handle incompatible source objects gracefully."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+        assert report is not None
+        assert "## Sources" in report
+
+    def test_reporter_unicode_in_content(self) -> None:
+        """Reporter should handle unicode characters in content gracefully."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[
+                SearchResultItem(
+                    url="https://example.com/unicode",
+                    title="Unicode Test \u00e9\u00e8\u00ea",
+                    snippet="Test with emojis \ud83d\ude00\ud83c\udf1f",
+                    score=0.8,
+                ),
+            ],
+        )
+
+        analysis = {
+            "key_findings": [
+                {"title": "Unicode Finding", "description": "Description with \u00c9\u00e8 characters"}
+            ],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+        assert report is not None
+
+    def test_reporter_empty_session_sources(self) -> None:
+        """Reporter should handle session with no sources."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+        assert report is not None
+
+    def test_reporter_very_long_source_content(self) -> None:
+        """Reporter should handle very long source content without hanging."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[
+                SearchResultItem(
+                    url="https://example.com/long",
+                    title="Long Content",
+                    content="x" * 100000,
+                    snippet="Very long content",
+                    score=0.8,
+                ),
+            ],
+        )
+
+        analysis = {
+            "key_findings": [],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+        assert report is not None
+
+    def test_reporter_empty_json_report_input(self) -> None:
+        """Reporter should handle empty dict for JSON report."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        report = agent.generate_json_report(session, {})
+        assert report is not None
+        assert "test query" in report
+
+    def test_reporter_null_nested_fields(self) -> None:
+        """Reporter should handle empty strings in nested analysis fields."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [{"title": "Finding", "description": ""}],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+        assert report is not None

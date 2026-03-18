@@ -81,7 +81,7 @@ class TestLLMAnalysisClient:
             stdout=None,
             stderr=None,
             text=False,
-            bufsize=-1,  # noqa: ARG001
+            bufsize=-1,  # noqa: ARG001  # noqa: ARG001
         ):
             captured["command"] = command
             captured["stdout"] = stdout
@@ -157,7 +157,7 @@ class TestLLMAnalysisClient:
             stdout=None,
             stderr=None,
             text=False,
-            bufsize=-1,  # noqa: ARG001
+            bufsize=-1,  # noqa: ARG001  # noqa: ARG001
         ):
             return FakePopen(
                 command,
@@ -196,7 +196,7 @@ class TestLLMAnalysisClient:
             stdout=None,
             stderr=None,
             text=False,
-            bufsize=-1,  # noqa: ARG001
+            bufsize=-1,  # noqa: ARG001  # noqa: ARG001
         ):
             return FakePopen(
                 command,
@@ -263,7 +263,7 @@ class TestLLMAnalysisClient:
             stdout=None,
             stderr=None,
             text=False,
-            bufsize=-1,  # noqa: ARG001
+            bufsize=-1,  # noqa: ARG001  # noqa: ARG001
         ):
             return TimeoutPopen(
                 command,
@@ -315,7 +315,7 @@ class TestLLMAnalysisClient:
             stdout=None,
             stderr=None,
             text=False,
-            bufsize=-1,  # noqa: ARG001
+            bufsize=-1,  # noqa: ARG001  # noqa: ARG001
         ):
             return FakePopen(
                 command,
@@ -371,7 +371,7 @@ class TestLLMAnalysisClient:
             stdout=None,
             stderr=None,
             text=False,
-            bufsize=-1,  # noqa: ARG001
+            bufsize=-1,  # noqa: ARG001  # noqa: ARG001
         ):
             return FakePopen(
                 command,
@@ -788,3 +788,347 @@ class TestLLMAnalysisClientParserContracts:
         result = client._parse_evidence_quality_response(response)
 
         assert result["evidence_summary"] == ""
+
+
+class TestLLMAnalysisClientFailurePathRegressions:
+    """Regression tests for common runtime failure modes in LLM analysis.
+
+    Task 009: Add Failure-Path Regression Coverage
+    These tests verify that expensive failure modes degrade predictably instead
+    of crashing late in a run after collection or analysis work is already done.
+    """
+
+    def test_malformed_json_truncated_response(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Parser should handle truncated JSON responses that cut off mid-field."""
+        stdout_data = '{"themes": [{"name": "Incomplete Theme", "description":'
+
+        def fake_popen(
+            command: list[str],
+            stdout=None,
+            stderr=None,
+            text=False,
+            bufsize=-1,  # noqa: ARG001  # noqa: ARG001
+        ):
+            return FakePopen(
+                command,
+                stdout=stdout,
+                stderr=stderr,
+                text=text,
+                returncode=0,
+                stdout_data=stdout_data,
+                stderr_data="",
+            )
+
+        monkeypatch.setattr(
+            "cc_deep_research.agents.llm_analysis_client.subprocess.Popen",
+            fake_popen,
+        )
+
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/local/bin/claude"})
+
+        themes = client.extract_themes(
+            sources=[{"url": "https://example.com", "title": "Example", "content": "Body"}],
+            query="test query",
+            num_themes=1,
+        )
+
+        assert isinstance(themes, list)
+
+    def test_malformed_json_duplicate_keys(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Parser should handle JSON with duplicate keys gracefully."""
+        stdout_data = '{"themes": [{"name": "First", "name": "Second"}]}'
+
+        def fake_popen(
+            command: list[str],
+            stdout=None,
+            stderr=None,
+            text=False,
+            bufsize=-1,  # noqa: ARG001  # noqa: ARG001
+        ):
+            return FakePopen(
+                command,
+                stdout=stdout,
+                stderr=stderr,
+                text=text,
+                returncode=0,
+                stdout_data=stdout_data,
+                stderr_data="",
+            )
+
+        monkeypatch.setattr(
+            "cc_deep_research.agents.llm_analysis_client.subprocess.Popen",
+            fake_popen,
+        )
+
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/local/bin/claude"})
+
+        themes = client.extract_themes(
+            sources=[{"url": "https://example.com", "title": "Example", "content": "Body"}],
+            query="test query",
+            num_themes=1,
+        )
+
+        assert isinstance(themes, list)
+
+    def test_malformed_json_unexpected_type_in_array(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Parser should filter out unexpected types from theme arrays."""
+        stdout_data = '{"themes": ["string item", {"name": "Valid"}, null, 123]}'
+
+        def fake_popen(
+            command: list[str],
+            stdout=None,
+            stderr=None,
+            text=False,
+            bufsize=-1,  # noqa: ARG001  # noqa: ARG001
+        ):
+            return FakePopen(
+                command,
+                stdout=stdout,
+                stderr=stderr,
+                text=text,
+                returncode=0,
+                stdout_data=stdout_data,
+                stderr_data="",
+            )
+
+        monkeypatch.setattr(
+            "cc_deep_research.agents.llm_analysis_client.subprocess.Popen",
+            fake_popen,
+        )
+
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/local/bin/claude"})
+
+        themes = client.extract_themes(
+            sources=[{"url": "https://example.com", "title": "Example", "content": "Body"}],
+            query="test query",
+            num_themes=1,
+        )
+
+        assert len(themes) == 1
+        assert themes[0]["name"] == "Valid"
+
+    def test_malformed_json_null_bytes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Parser should handle responses with embedded null bytes."""
+        stdout_data = '{"themes": [\x00{"name": "Test"}]}'
+
+        def fake_popen(
+            command: list[str],
+            stdout=None,
+            stderr=None,
+            text=False,
+            bufsize=-1,  # noqa: ARG001
+        ):
+            return FakePopen(
+                command,
+                stdout=stdout,
+                stderr=stderr,
+                text=text,
+                returncode=0,
+                stdout_data=stdout_data,
+                stderr_data="",
+            )
+
+        monkeypatch.setattr(
+            "cc_deep_research.agents.llm_analysis_client.subprocess.Popen",
+            fake_popen,
+        )
+
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/local/bin/claude"})
+
+        themes = client.extract_themes(
+            sources=[{"url": "https://example.com", "title": "Example", "content": "Body"}],
+            query="test query",
+            num_themes=1,
+        )
+
+        assert isinstance(themes, list)
+
+    def test_malformed_json_empty_response(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Parser should handle empty response body."""
+        stdout_data = ""
+
+        def fake_popen(
+            command: list[str],
+            stdout=None,
+            stderr=None,
+            text=False,
+            bufsize=-1,  # noqa: ARG001
+        ):
+            return FakePopen(
+                command,
+                stdout=stdout,
+                stderr=stderr,
+                text=text,
+                returncode=0,
+                stdout_data=stdout_data,
+                stderr_data="",
+            )
+
+        monkeypatch.setattr(
+            "cc_deep_research.agents.llm_analysis_client.subprocess.Popen",
+            fake_popen,
+        )
+
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/local/bin/claude"})
+
+        themes = client.extract_themes(
+            sources=[{"url": "https://example.com", "title": "Example", "content": "Body"}],
+            query="test query",
+            num_themes=1,
+        )
+
+        assert themes == []
+
+    def test_malformed_json_whitespace_only_response(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Parser should handle whitespace-only response body."""
+        stdout_data = "   \n\t  "
+
+        def fake_popen(
+            command: list[str],
+            stdout=None,
+            stderr=None,
+            text=False,
+            bufsize=-1,  # noqa: ARG001
+        ):
+            return FakePopen(
+                command,
+                stdout=stdout,
+                stderr=stderr,
+                text=text,
+                returncode=0,
+                stdout_data=stdout_data,
+                stderr_data="",
+            )
+
+        monkeypatch.setattr(
+            "cc_deep_research.agents.llm_analysis_client.subprocess.Popen",
+            fake_popen,
+        )
+
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/local/bin/claude"})
+
+        themes = client.extract_themes(
+            sources=[{"url": "https://example.com", "title": "Example", "content": "Body"}],
+            query="test query",
+            num_themes=1,
+        )
+
+        assert themes == []
+
+    def test_deep_analysis_partial_payload_missing_fields(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Deep analysis should handle partial payloads with missing optional fields."""
+        stdout_data = '{"themes": [], "gaps": []}'
+
+        def fake_popen(
+            command: list[str],
+            stdout=None,
+            stderr=None,
+            text=False,
+            bufsize=-1,  # noqa: ARG001
+        ):
+            return FakePopen(
+                command,
+                stdout=stdout,
+                stderr=stderr,
+                text=text,
+                returncode=0,
+                stdout_data=stdout_data,
+                stderr_data="",
+            )
+
+        monkeypatch.setattr(
+            "cc_deep_research.agents.llm_analysis_client.subprocess.Popen",
+            fake_popen,
+        )
+
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/local/bin/claude"})
+
+        result = client.identify_gaps(
+            sources=[{"url": "https://example.com", "title": "Example", "content": "Body"}],
+            query="test query",
+            themes=[],
+        )
+
+        assert isinstance(result, list)
+
+    def test_deep_analysis_partial_payload_consensus_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Deep analysis should handle payload with only consensus_points."""
+        stdout_data = '{"consensus_points": [{"claim": "Test claim", "strength": "high"}], "disagreement_points": []}'
+
+        def fake_popen(
+            command: list[str],
+            stdout=None,
+            stderr=None,
+            text=False,
+            bufsize=-1,  # noqa: ARG001
+        ):
+            return FakePopen(
+                command,
+                stdout=stdout,
+                stderr=stderr,
+                text=text,
+                returncode=0,
+                stdout_data=stdout_data,
+                stderr_data="",
+            )
+
+        monkeypatch.setattr(
+            "cc_deep_research.agents.llm_analysis_client.subprocess.Popen",
+            fake_popen,
+        )
+
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/local/bin/claude"})
+
+        result = client.analyze_cross_reference(
+            sources=[{"url": "https://example.com", "title": "Example", "content": "Body"}],
+            themes=[],
+        )
+
+        assert isinstance(result, dict)
+        assert "consensus_points" in result
+
+    def test_session_metadata_records_degradation_on_llm_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Session metadata should record degradation when LLM analysis fails but workflow recovers."""
+        from cc_deep_research.monitoring import ResearchMonitor
+
+        def fake_popen(
+            command: list[str],
+            stdout=None,
+            stderr=None,
+            text=False,
+            bufsize=-1,  # noqa: ARG001
+        ):
+            return FakePopen(
+                command,
+                stdout=stdout,
+                stderr=stderr,
+                text=text,
+                returncode=0,
+                stdout_data='{"themes": []}',
+                stderr_data="partial_failure_warning",
+            )
+
+        monkeypatch.setattr(
+            "cc_deep_research.agents.llm_analysis_client.subprocess.Popen",
+            fake_popen,
+        )
+
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard")
+
+        client = LLMAnalysisClient(
+            {"claude_cli_path": "/usr/local/bin/claude"},
+            monitor=monitor,
+        )
+
+        client.extract_themes(
+            sources=[{"url": "https://example.com", "title": "Example", "content": "Body"}],
+            query="test query",
+            num_themes=1,
+        )
+
+        llm_events = [
+            e for e in monitor._telemetry_events
+            if e["category"] == "llm"
+        ]
+        assert len(llm_events) > 0

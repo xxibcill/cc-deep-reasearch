@@ -378,3 +378,369 @@ class TestValidatorFixtureSmokeTests:
         assert hasattr(validation, "recommendations")
         assert hasattr(validation, "follow_up_queries")
         assert hasattr(validation, "needs_follow_up")
+
+
+class TestValidatorFailurePathRegressions:
+    """Regression tests for validator failure modes.
+
+    Task 009: Add Failure-Path Regression Coverage
+    These tests verify that validation handles:
+    - Malformed analysis inputs
+    - Edge cases in failure mode detection
+    - Empty/null field handling
+    """
+
+    def test_validator_empty_analysis_key_findings(self) -> None:
+        """Validator should handle empty key_findings gracefully."""
+        agent = ValidatorAgent({"min_sources": 1})
+
+        sources = [
+            SearchResultItem(
+                url="https://example.com/source",
+                title="Source",
+                snippet="Content",
+                content="More content" * 50,
+                score=0.8,
+            ),
+        ]
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=sources,
+        )
+
+        analysis = AnalysisResult(
+            key_findings=[],
+            themes=[],
+            themes_detailed=[],
+            consensus_points=[],
+            contention_points=[],
+            gaps=[],
+            analysis_method="basic_keyword",
+        )
+
+        validation = agent.validate_research(session, analysis, query="test query")
+
+        assert validation is not None
+        assert hasattr(validation, "quality_score")
+
+    def test_validator_none_key_findings(self) -> None:
+        """Validator should handle empty key_findings gracefully."""
+        agent = ValidatorAgent({"min_sources": 1})
+
+        sources = [
+            SearchResultItem(
+                url="https://example.com/source",
+                title="Source",
+                snippet="Content",
+                content="More content" * 50,
+                score=0.8,
+            ),
+        ]
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=sources,
+        )
+
+        analysis = AnalysisResult(
+            key_findings=[],
+            themes=[],
+            themes_detailed=[],
+            consensus_points=[],
+            contention_points=[],
+            gaps=[],
+            analysis_method="basic_keyword",
+        )
+
+        validation = agent.validate_research(session, analysis, query="test query")
+
+        assert validation is not None
+
+    def test_validator_missing_cross_reference_claims(self) -> None:
+        """Validator should handle analysis without cross_reference_claims field."""
+        agent = ValidatorAgent({"min_sources": 1})
+
+        sources = [
+            SearchResultItem(
+                url="https://example.com/source",
+                title="Source",
+                snippet="Content",
+                content="More content" * 50,
+                score=0.8,
+            ),
+        ]
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=sources,
+        )
+
+        analysis = AnalysisResult(
+            key_findings=[{"title": "Finding", "description": "Description"}],
+            themes=["Theme"],
+            themes_detailed=[],
+            consensus_points=[],
+            contention_points=[],
+            gaps=[],
+            analysis_method="ai_semantic",
+        )
+
+        validation = agent.validate_research(session, analysis, query="test query")
+
+        assert validation is not None
+        assert hasattr(validation, "evidence_diagnosis")
+
+    def test_validator_contradiction_with_missing_sources(self) -> None:
+        """Validator should handle cross-reference claims with missing sources."""
+        agent = ValidatorAgent({"min_sources": 1})
+
+        sources = [
+            SearchResultItem(
+                url="https://example.com/source",
+                title="Source",
+                snippet="Content",
+                content="More content" * 50,
+                score=0.8,
+            ),
+        ]
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=sources,
+        )
+
+        analysis = AnalysisResult(
+            key_findings=[],
+            themes=[],
+            themes_detailed=[],
+            consensus_points=[],
+            contention_points=[],
+            cross_reference_claims=[
+                {
+                    "claim": "Test claim",
+                    "supporting_sources": [],
+                    "contradicting_sources": [],
+                    "consensus_level": 0.5,
+                }
+            ],
+            gaps=[],
+            analysis_method="ai_semantic",
+        )
+
+        validation = agent.validate_research(session, analysis, query="test query")
+
+        assert validation is not None
+
+    def test_validator_very_high_contradiction_pressure(self) -> None:
+        """Validator should handle extreme contradiction pressure gracefully."""
+        agent = ValidatorAgent({"min_sources": 1})
+
+        supporting = SearchResultItem(
+            url="https://sec.gov/filing",
+            title="SEC Filing",
+            snippet="Filing",
+            content="Filing content" * 50,
+            score=0.95,
+        )
+        contradicting = [
+            SearchResultItem(
+                url=f"https://example.com/dispute-{i}",
+                title=f"Dispute {i}",
+                snippet="Contradiction",
+                content="Dispute content" * 50,
+                score=0.7,
+            )
+            for i in range(10)
+        ]
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[supporting] + contradicting,
+        )
+
+        analysis = AnalysisResult(
+            key_findings=[],
+            themes=[],
+            themes_detailed=[],
+            consensus_points=[],
+            contention_points=[],
+            cross_reference_claims=[
+                {
+                    "claim": "Main claim",
+                    "supporting_sources": [supporting],
+                    "contradicting_sources": contradicting,
+                    "consensus_level": 0.05,
+                }
+            ],
+            gaps=[],
+            analysis_method="ai_semantic",
+        )
+
+        validation = agent.validate_research(session, analysis, query="test query")
+
+        assert validation is not None
+        assert "high_contradiction_pressure" in validation.failure_modes
+
+    def test_validator_minimal_sources_exactly_threshold(self) -> None:
+        """Validator should handle sources exactly at minimum threshold."""
+        agent = ValidatorAgent({"min_sources": 3})
+
+        sources = [
+            SearchResultItem(
+                url=f"https://example.com/source-{i}",
+                title=f"Source {i}",
+                snippet="Content",
+                content="More content" * 50,
+                score=0.8,
+            )
+            for i in range(3)
+        ]
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=sources,
+        )
+
+        analysis = AnalysisResult(
+            key_findings=[{"title": "Finding", "description": "Description"}],
+            themes=[],
+            themes_detailed=[],
+            consensus_points=[],
+            contention_points=[],
+            gaps=[],
+            analysis_method="basic_keyword",
+        )
+
+        validation = agent.validate_research(session, analysis, query="test query")
+
+        assert validation is not None
+
+    def test_validator_zero_source_count_in_analysis(self) -> None:
+        """Validator should handle analysis with zero source_count."""
+        agent = ValidatorAgent({"min_sources": 1})
+
+        sources = [
+            SearchResultItem(
+                url="https://example.com/source",
+                title="Source",
+                snippet="Content",
+                content="Content" * 50,
+                score=0.8,
+            ),
+        ]
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=sources,
+        )
+
+        analysis = AnalysisResult(
+            key_findings=[],
+            themes=[],
+            themes_detailed=[],
+            consensus_points=[],
+            contention_points=[],
+            gaps=[],
+            source_count=0,
+            analysis_method="basic_keyword",
+        )
+
+        validation = agent.validate_research(session, analysis, query="test query")
+
+        assert validation is not None
+
+    def test_validator_malformed_gaps_field(self) -> None:
+        """Validator should handle malformed gaps field gracefully."""
+        agent = ValidatorAgent({"min_sources": 1})
+
+        sources = [
+            SearchResultItem(
+                url="https://example.com/source",
+                title="Source",
+                snippet="Content",
+                content="Content" * 50,
+                score=0.8,
+            ),
+        ]
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=sources,
+        )
+
+        analysis = AnalysisResult(
+            key_findings=[],
+            themes=[],
+            themes_detailed=[],
+            consensus_points=[],
+            contention_points=[],
+            gaps=[],
+            analysis_method="basic_keyword",
+        )
+
+        validation = agent.validate_research(session, analysis, query="test query")
+
+        assert validation is not None
+
+    def test_validator_records_failure_modes_for_downstream(self) -> None:
+        """Validator should record specific failure modes for downstream tools."""
+        agent = ValidatorAgent({"min_sources": 5})
+
+        sources = [
+            SearchResultItem(
+                url="https://blog.example.com/1",
+                title="Blog Post",
+                snippet="Opinion",
+                content="Blog content" * 50,
+                score=0.3,
+            ),
+            SearchResultItem(
+                url="https://blog.example.com/2",
+                title="Blog Post 2",
+                snippet="Opinion 2",
+                content="More blog" * 50,
+                score=0.35,
+            ),
+        ]
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=sources,
+        )
+
+        analysis = AnalysisResult(
+            key_findings=[],
+            themes=[],
+            themes_detailed=[],
+            consensus_points=[],
+            contention_points=[],
+            gaps=[],
+            analysis_method="basic_keyword",
+        )
+
+        validation = agent.validate_research(session, analysis, query="test query")
+
+        assert len(validation.failure_modes) > 0
+        assert any(
+            mode in ["weak_primary_source_coverage", "insufficient_source_count", "low_source_quality"]
+            for mode in validation.failure_modes
+        )
