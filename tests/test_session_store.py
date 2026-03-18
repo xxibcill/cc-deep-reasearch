@@ -1,18 +1,20 @@
 """Tests for session storage functionality."""
 
+from __future__ import annotations
+
 import json
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
+from cc_deep_research.config import Config
 from cc_deep_research.models import (
     ResearchDepth,
     ResearchSession,
     SearchResult,
     SearchResultItem,
 )
-from cc_deep_research.config import Config
 from cc_deep_research.research_runs import (
     ResearchArtifactKind,
     ResearchOutputFormat,
@@ -114,7 +116,9 @@ class TestSessionStore:
         SessionStore(session_dir=new_dir)
         assert new_dir.exists()
 
-    def test_save_session(self, session_store: SessionStore, sample_session: ResearchSession) -> None:
+    def test_save_session(
+        self, session_store: SessionStore, sample_session: ResearchSession
+    ) -> None:
         """Test saving a session to disk."""
         path = session_store.save_session(sample_session)
 
@@ -128,7 +132,9 @@ class TestSessionStore:
         assert data["session_id"] == sample_session.session_id
         assert data["query"] == sample_session.query
 
-    def test_load_session(self, session_store: SessionStore, sample_session: ResearchSession) -> None:
+    def test_load_session(
+        self, session_store: SessionStore, sample_session: ResearchSession
+    ) -> None:
         """Test loading a session from disk."""
         # Save first
         session_store.save_session(sample_session)
@@ -152,7 +158,9 @@ class TestSessionStore:
         sessions = session_store.list_sessions()
         assert sessions == []
 
-    def test_list_sessions(self, session_store: SessionStore, sample_session: ResearchSession) -> None:
+    def test_list_sessions(
+        self, session_store: SessionStore, sample_session: ResearchSession
+    ) -> None:
         """Test listing sessions."""
         # Save multiple sessions
         session_store.save_session(sample_session)
@@ -198,21 +206,33 @@ class TestSessionStore:
         sessions = session_store.list_sessions(offset=2)
         assert len(sessions) == 3
 
-    def test_delete_session(self, session_store: SessionStore, sample_session: ResearchSession) -> None:
+    def test_delete_session(
+        self, session_store: SessionStore, sample_session: ResearchSession
+    ) -> None:
         """Test deleting a session."""
         session_store.save_session(sample_session)
         assert session_store.session_exists(sample_session.session_id)
 
         result = session_store.delete_session(sample_session.session_id)
-        assert result is True
+        assert result.deleted is True
+        assert result.missing is False
+        assert result.error is None
+        assert result.success is True
+        assert bool(result) is True
         assert not session_store.session_exists(sample_session.session_id)
 
     def test_delete_session_not_found(self, session_store: SessionStore) -> None:
         """Test deleting a non-existent session."""
         result = session_store.delete_session("nonexistent")
-        assert result is False
+        assert result.deleted is False
+        assert result.missing is True
+        assert result.error is None
+        assert result.success is True
+        assert bool(result) is False
 
-    def test_session_exists(self, session_store: SessionStore, sample_session: ResearchSession) -> None:
+    def test_session_exists(
+        self, session_store: SessionStore, sample_session: ResearchSession
+    ) -> None:
         """Test checking if a session exists."""
         assert not session_store.session_exists(sample_session.session_id)
 
@@ -454,3 +474,21 @@ class TestSessionStoreEdgeCases:
         assert store.get_session_count() == 0
         assert store.list_sessions() == []
         assert store.load_session("any") is None
+
+    def test_session_deletion_result_truthiness(self, session_store: SessionStore) -> None:
+        """Test SessionDeletionResult truthiness for backward compatibility."""
+        result = session_store.delete_session("nonexistent")
+        assert bool(result) is False
+        assert result.success is True
+
+        session_store.save_session(
+            ResearchSession(
+                session_id="test-delete-result",
+                query="Test query",
+            )
+        )
+        result = session_store.delete_session("test-delete-result")
+        assert bool(result) is True
+        assert result.success is True
+        assert result.deleted is True
+        assert result.missing is False

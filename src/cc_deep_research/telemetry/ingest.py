@@ -46,7 +46,9 @@ def delete_session_from_duckdb(
     try:
         import duckdb
     except ImportError as exc:
-        raise RuntimeError(_missing_dashboard_dependency_message("Delete session from DuckDB")) from exc
+        raise RuntimeError(
+            _missing_dashboard_dependency_message("Delete session from DuckDB")
+        ) from exc
 
     try:
         conn = duckdb.connect(str(database_path))
