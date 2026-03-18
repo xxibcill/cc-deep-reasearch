@@ -14,7 +14,27 @@ import {
 
 const apiClient = axios.create({
   baseURL: dashboardRuntimeConfig.apiBaseUrl,
+  timeout: 10000,
 });
+
+export function getApiErrorMessage(error: unknown, fallback: string): string {
+  if (axios.isAxiosError(error)) {
+    const responseError = error.response?.data?.error;
+    if (typeof responseError === 'string' && responseError.length > 0) {
+      return responseError;
+    }
+    if (error.code === 'ECONNABORTED') {
+      return 'Request timed out while waiting for the dashboard backend.';
+    }
+    if (error.message) {
+      return error.message;
+    }
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallback;
+}
 
 interface SessionsResponse {
   sessions: ApiSession[];

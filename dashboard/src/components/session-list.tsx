@@ -1,10 +1,13 @@
 import Link from 'next/link';
-import { Activity, Cpu, Network, Play } from 'lucide-react';
+import { Activity, AlertCircle, Cpu, Network, Play } from 'lucide-react';
 
 import { Session } from '@/types/telemetry';
+import { Button } from '@/components/ui/button';
 
 interface SessionListProps {
+  error?: string | null;
   loading: boolean;
+  onRetry?: () => void;
   sessions: Session[];
 }
 
@@ -61,8 +64,29 @@ function SessionCard({ session }: { session: Session }) {
 
 function LoadingState() {
   return (
-    <div className="flex items-center justify-center min-h-screen">
+    <div className="flex min-h-48 items-center justify-center">
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+    </div>
+  );
+}
+
+function ErrorState({ error, onRetry }: { error: string; onRetry?: () => void }) {
+  return (
+    <div className="rounded-lg border border-red-200 bg-red-50 p-6">
+      <div className="flex items-start gap-3">
+        <AlertCircle className="mt-0.5 h-5 w-5 text-red-600" />
+        <div className="space-y-3">
+          <div>
+            <p className="font-medium text-red-800">Failed to load recent sessions</p>
+            <p className="text-sm text-red-700">{error}</p>
+          </div>
+          {onRetry ? (
+            <Button onClick={onRetry} type="button" variant="outline">
+              Retry
+            </Button>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }
@@ -77,9 +101,13 @@ function EmptyState() {
   );
 }
 
-export function SessionList({ loading, sessions }: SessionListProps) {
+export function SessionList({ error, loading, onRetry, sessions }: SessionListProps) {
   if (loading) {
     return <LoadingState />;
+  }
+
+  if (error) {
+    return <ErrorState error={error} onRetry={onRetry} />;
   }
 
   if (sessions.length === 0) {
