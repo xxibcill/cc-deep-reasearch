@@ -54,9 +54,7 @@ def build_event_tree(events: list[dict[str, Any]], *, max_depth: int = 10) -> di
     if session_root is not None:
         session_children = children_by_parent.setdefault(session_root["event_id"], [])
         session_children.extend(
-            event
-            for event in children_by_parent.get(None, [])
-            if is_terminal_session_event(event)
+            event for event in children_by_parent.get(None, []) if is_terminal_session_event(event)
         )
     root_events.sort(
         key=lambda event: (
@@ -221,7 +219,9 @@ def build_subprocess_streams(
 
 def build_llm_route_streams(events: list[dict[str, Any]]) -> dict[str, Any]:
     """Build LLM route analytics from normalized telemetry events."""
-    route_selections = [event for event in events if event.get("event_type") == "llm.route_selected"]
+    route_selections = [
+        event for event in events if event.get("event_type") == "llm.route_selected"
+    ]
     route_fallbacks = [event for event in events if event.get("event_type") == "llm.route_fallback"]
     route_completions = [
         event for event in events if event.get("event_type") == "llm.route_completion"

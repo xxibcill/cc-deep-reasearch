@@ -6,6 +6,7 @@ from .ingest import (
     ingest_telemetry_to_duckdb,
 )
 from .live import (
+    delete_telemetry_session,
     get_default_telemetry_dir,
     query_live_agent_timeline,
     query_live_event_tail,
@@ -24,9 +25,9 @@ from .query import (
     query_session_detail,
 )
 
-
 __all__ = [
     "delete_session_from_duckdb",
+    "delete_telemetry_session",
     "get_default_dashboard_db_path",
     "get_default_telemetry_dir",
     "ingest_telemetry_to_duckdb",
