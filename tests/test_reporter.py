@@ -1298,3 +1298,587 @@ No safety issues identified.
             "model": "anthropic/claude-sonnet-4",
             "source": "actual",
         }
+
+
+class TestReporterSchemaContractTests:
+    """Contract tests for ReporterAgent schema handling."""
+
+    def test_reporter_handles_string_key_findings(self) -> None:
+        """Reporter should handle string items in key_findings."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": ["Finding 1", "Finding 2"],
+            "themes": ["Theme 1"],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+        assert "## Key Findings" in report
+        assert "Finding 1" in report
+
+    def test_reporter_handles_dict_key_findings(self) -> None:
+        """Reporter should handle dict items in key_findings."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [
+                {"title": "Finding Title", "description": "Finding description", "evidence": [], "confidence": "high"}
+            ],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+        assert "## Key Findings" in report
+
+    def test_reporter_handles_string_gaps(self) -> None:
+        """Reporter should handle string items in gaps."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": ["Gap 1", "Gap 2"],
+            "analysis_method": "basic_keyword",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+        assert "## Research Gaps and Limitations" in report
+        assert "Gap 1" in report
+
+    def test_reporter_handles_dict_gaps(self) -> None:
+        """Reporter should handle dict items in gaps."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [
+                {"gap_description": "Missing data", "importance": "high", "suggested_queries": []},
+                {"gap_description": "Need more research", "importance": "medium", "suggested_queries": []},
+            ],
+            "analysis_method": "basic_keyword",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+        assert "## Research Gaps and Limitations" in report
+        assert "Missing data" in report
+
+    def test_reporter_handles_stringified_consensus_points(self) -> None:
+        """Reporter should handle pre-stringified consensus points."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": ["Treatment is effective"],
+            "contention_points": [],
+            "disagreement_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+        assert "Treatment is effective" in report
+
+    def test_reporter_handles_string_themes(self) -> None:
+        """Reporter should handle string items in themes field."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [],
+            "themes": ["Theme 1", "Theme 2"],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+        assert "Key themes identified: Theme 1, Theme 2" in report
+
+    def test_reporter_handles_missing_analysis_fields(self) -> None:
+        """Reporter should handle missing optional analysis fields gracefully."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [],
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+        assert report is not None
+        assert len(report) > 0
+
+    def test_reporter_handles_empty_themes(self) -> None:
+        """Reporter should handle empty themes list."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+        assert report is not None
+
+    def test_reporter_handles_themes_detailed_with_sources(self) -> None:
+        """Reporter should handle themes_detailed and show supporting sources."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        sources = [
+            SearchResultItem(url="https://example.com/1", title="Source 1", content="Content 1", score=0.9)
+        ]
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=sources,
+        )
+
+        analysis = {
+            "key_findings": [],
+            "themes": ["Theme 1"],
+            "themes_detailed": [
+                {
+                    "name": "Theme 1",
+                    "description": "Theme description",
+                    "key_points": ["Point 1", "Point 2"],
+                    "supporting_sources": ["https://example.com/1"],
+                }
+            ],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+        assert "Thematic Analysis" in report
+        assert "Supporting Sources:" in report
+
+    def test_json_report_handles_string_findings_in_analysis(self) -> None:
+        """JSON report should have key_findings nested under analysis."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": ["Finding 1", "Finding 2"],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        report = agent.generate_json_report(session, analysis)
+        report_dict = json.loads(report)
+        assert "analysis" in report_dict
+        assert "key_findings" in report_dict["analysis"]
+
+    def test_json_report_handles_dict_gaps_with_importance(self) -> None:
+        """JSON report should properly serialize gap importance levels."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        analysis = {
+            "key_findings": [],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [
+                {"gap_description": "High priority gap", "importance": "High", "suggested_queries": []},
+                {"gap_description": "Medium priority gap", "importance": "Medium", "suggested_queries": []},
+            ],
+            "analysis_method": "basic_keyword",
+        }
+
+        report = agent.generate_json_report(session, analysis)
+        report_dict = json.loads(report)
+        assert "analysis" in report_dict
+        assert "gaps" in report_dict["analysis"]
+
+
+class TestFixtureSmokeTests:
+    """Smoke tests for fixture data flowing through analysis and reporting pipeline.
+
+    Task 006: Run realistic fixture data through analyzer, deep analyzer,
+    validator, and reporter paths to catch late-stage schema or formatting
+    failures before full orchestration.
+    """
+
+    def test_reporter_with_healthy_analysis_fixture(self) -> None:
+        """Reporter should handle healthy analysis fixture without errors."""
+        from tests.helpers.fixture_loader import load_analysis_healthy
+
+        fixture = load_analysis_healthy()
+
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        sources = [
+            SearchResultItem(
+                url="https://www.nature.com/articles/d41586-023-01444-9",
+                title="What is quantum computing?",
+                snippet="potentially solving certain problems exponentially faster",
+                content="Full content about quantum computing",
+                score=0.95,
+            ),
+            SearchResultItem(
+                url="https://quantumcomputingreport.com/what-is-quantum-computing/",
+                title="What is Quantum Computing?",
+                snippet="solving certain problems exponentially faster",
+                content="More content about quantum computing",
+                score=0.90,
+            ),
+            SearchResultItem(
+                url="https://en.wikipedia.org/wiki/Quantum_computing",
+                title="Quantum computing",
+                snippet="solve certain problems exponentially faster",
+                content="Wikipedia content about quantum computing",
+                score=0.85,
+            ),
+            SearchResultItem(
+                url="https://www.ibm.com/quantum-computing/learn/what-is-quantum-computing",
+                title="What is quantum computing?",
+                snippet="error correction for practical applications",
+                content="IBM quantum computing guide",
+                score=0.92,
+            ),
+            SearchResultItem(
+                url="https://news.mit.edu/2023/quantum-computing-explained-0323",
+                title="Quantum computing explained",
+                snippet="quantum computing explained",
+                content="MIT news about quantum computing",
+                score=0.88,
+            ),
+        ]
+
+        session = ResearchSession(
+            session_id="test-fixture-session",
+            query="What is quantum computing and how does it work?",
+            depth=ResearchDepth.DEEP,
+            sources=sources,
+        )
+
+        normalized_fixture = self._normalize_fixture_schema(fixture)
+        report = agent.generate_markdown_report(session, normalized_fixture)
+
+        assert report is not None
+        assert len(report) > 0
+        assert "## Executive Summary" in report
+        assert "## Key Findings" in report
+        assert "## Sources" in report
+
+    def test_reporter_with_malformed_analysis_fixture(self) -> None:
+        """Reporter should handle malformed analysis fixture gracefully."""
+        from tests.helpers.fixture_loader import load_analysis_malformed
+
+        fixture = load_analysis_malformed()
+
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test-malformed-session",
+            query="test query",
+            depth=ResearchDepth.QUICK,
+            sources=[],
+        )
+
+        analysis = fixture
+
+        report = agent.generate_markdown_report(session, analysis)
+
+        assert report is not None
+        assert len(report) > 0
+        assert "## Executive Summary" in report
+
+    def test_reporter_with_cross_reference_fixture(self) -> None:
+        """Reporter should handle analysis with cross-reference claims."""
+        from tests.helpers.fixture_loader import load_analysis_cross_reference
+
+        fixture = load_analysis_cross_reference()
+
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test-cross-ref-session",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        normalized_fixture = self._normalize_fixture_schema(fixture)
+        report = agent.generate_markdown_report(session, normalized_fixture)
+
+        assert report is not None
+        assert "## Key Findings" in report
+
+    def test_json_report_with_healthy_fixture(self) -> None:
+        """JSON report should handle healthy analysis fixture correctly."""
+        from tests.helpers.fixture_loader import load_analysis_healthy
+
+        fixture = load_analysis_healthy()
+
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        session = ResearchSession(
+            session_id="test-json-session",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+
+        normalized_fixture = self._normalize_fixture_schema(fixture)
+        report = agent.generate_json_report(session, normalized_fixture)
+        report_dict = json.loads(report)
+
+        assert "analysis" in report_dict
+        assert "key_findings" in report_dict["analysis"]
+        assert "themes" in report_dict["analysis"]
+        assert "gaps" in report_dict["analysis"]
+
+    def test_reporter_evidence_quality_with_fixture_sources(self) -> None:
+        """Reporter should produce evidence quality section with fixture sources."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        sources = [
+            SearchResultItem(
+                url="https://pubmed.gov/clinical-trial",
+                title="Randomized Controlled Trial",
+                content="This double-blind placebo-controlled clinical trial "
+                        "with 500 human subjects demonstrated significant effects.",
+                score=0.95,
+            ),
+            SearchResultItem(
+                url="https://nature.com/animal-study",
+                title="Animal Model Study",
+                content="This study used mice to investigate the effects. "
+                        "In vivo results showed promising outcomes in rodents.",
+                score=0.80,
+            ),
+            SearchResultItem(
+                url="https://blog.example.com/opinion",
+                title="Opinion Piece",
+                content="Some personal opinions about the topic.",
+                score=0.35,
+            ),
+        ]
+
+        session = ResearchSession(
+            session_id="test-evidence-session",
+            query="treatment effectiveness",
+            depth=ResearchDepth.DEEP,
+            sources=sources,
+        )
+
+        analysis = {
+            "key_findings": [
+                {
+                    "title": "Treatment shows positive results",
+                    "description": "The treatment demonstrated effectiveness in clinical trials.",
+                    "evidence": ["https://pubmed.gov/clinical-trial"],
+                    "confidence": "high",
+                }
+            ],
+            "themes": ["Clinical Effectiveness", "Safety Profile"],
+            "themes_detailed": [
+                {
+                    "name": "Clinical Effectiveness",
+                    "description": "Results from clinical trials",
+                    "key_points": ["Significant improvement observed"],
+                    "supporting_sources": ["https://pubmed.gov/clinical-trial"],
+                }
+            ],
+            "consensus_points": ["Treatment is effective based on clinical evidence"],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "ai_semantic",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+
+        assert "## Evidence Quality Analysis" in report
+        assert "### Study Types" in report
+        assert "Randomized Controlled Trial" in report
+        assert "Animal Model Study" in report
+
+    def test_reporter_safety_section_with_fixture_sources(self) -> None:
+        """Reporter should include safety section with health-related sources."""
+        config = {"model": "claude-sonnet-4-6"}
+        agent = ReporterAgent(config)
+
+        sources = [
+            SearchResultItem(
+                url="https://health.example.com/drug-guide",
+                title="Drug Safety Guide",
+                content="Common side effects include headache, nausea, and dizziness. "
+                        "Contraindicated for pregnant women. "
+                        "May interact with blood thinners like warfarin. "
+                        "Consult your healthcare provider before use. "
+                        "Warning: may cause allergic reactions in some patients.",
+                score=0.85,
+            ),
+        ]
+
+        session = ResearchSession(
+            session_id="test-safety-session",
+            query="drug safety profile",
+            depth=ResearchDepth.STANDARD,
+            sources=sources,
+        )
+
+        analysis = {
+            "key_findings": [
+                {
+                    "title": "Drug has known side effects",
+                    "description": "The drug has documented side effects.",
+                    "evidence": ["https://health.example.com/drug-guide"],
+                    "confidence": "high",
+                }
+            ],
+            "themes": ["Safety", "Side Effects"],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        report = agent.generate_markdown_report(session, analysis)
+
+        assert "## Safety and Contraindications" in report
+        assert "side effects" in report.lower()
+        assert "contraindications" in report.lower()
+
+    def _normalize_fixture_schema(self, fixture: dict) -> dict:
+        """Normalize fixture schema to match reporter expectations.
+
+        The fixtures use different field names than what the reporter expects.
+        This helper transforms the fixture data to the expected format.
+        """
+        normalized = dict(fixture)
+
+        if "themes_detailed" in normalized:
+            themes = normalized["themes_detailed"]
+            if themes and isinstance(themes[0], dict):
+                normalized["themes_detailed"] = [
+                    {
+                        "name": t.get("theme") or t.get("name", "Unnamed Theme"),
+                        "description": t.get("description", ""),
+                        "key_points": t.get("detail_points", []) or t.get("key_points", []),
+                        "supporting_sources": (
+                            [t["supporting_sources"]] if isinstance(t.get("supporting_sources"), int) else t.get("supporting_sources", [])
+                        ),
+                    }
+                    for t in themes
+                ]
+
+        return normalized

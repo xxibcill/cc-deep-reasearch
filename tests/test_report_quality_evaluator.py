@@ -710,4 +710,224 @@ Safe."""
         assert agent.last_transport_used == "cerebras_api"
 
 
+class TestReportQualityEvaluatorFixtureSmokeTests:
+    """Smoke tests for report quality evaluation with fixture data.
+
+    Task 006: Verify AnalysisResult survives quality evaluation.
+    """
+
+    def test_evaluator_with_healthy_analysis_fixture(self) -> None:
+        """Report quality evaluator should handle healthy analysis fixture."""
+        from tests.helpers.fixture_loader import load_analysis_healthy
+
+        fixture = load_analysis_healthy()
+
+        agent = ReportQualityEvaluatorAgent({})
+
+        session = ResearchSession(
+            session_id="evaluator-fixture-test",
+            query="What is quantum computing?",
+            sources=[],
+        )
+
+        analysis = AnalysisResult.model_validate(fixture)
+
+        markdown = """## Executive Summary
+
+Quantum computers use qubits that can exist in superposition states.
+
+## Key Findings
+
+### Finding 1: Quantum computers use qubits
+Unlike classical computers that use binary bits, quantum computers use qubits
+which can represent both 0 and 1 simultaneously through quantum superposition.
+
+### Finding 2: Current quantum computers face technical challenges
+Present-day quantum computers are noisy and error-prone, requiring advances in
+error correction for practical applications.
+
+## Themes
+
+- Superposition and entanglement as quantum advantages
+- Error correction as the key bottleneck
+
+## Consensus Points
+
+- Quantum computers use qubits that can exist in superposition
+- Entanglement is a key quantum phenomenon utilized
+
+## Sources
+
+[1] https://www.nature.com/articles/d41586-023-01444-9
+
+## Safety
+
+No safety concerns identified.
+"""
+
+        result = agent.evaluate_report_quality_sync(markdown, session, analysis)
+
+        assert result is not None
+        assert hasattr(result, "overall_quality_score")
+        assert hasattr(result, "is_acceptable")
+        assert hasattr(result, "writing_quality_score")
+        assert hasattr(result, "structure_flow_score")
+        assert 0.0 <= result.overall_quality_score <= 1.0
+
+    def test_evaluator_with_malformed_analysis_fixture(self) -> None:
+        """Report quality evaluator should handle malformed fixture gracefully."""
+        from tests.helpers.fixture_loader import load_analysis_malformed
+
+        fixture = load_analysis_malformed()
+
+        agent = ReportQualityEvaluatorAgent({})
+
+        session = ResearchSession(
+            session_id="evaluator-malformed-test",
+            query="test query",
+            sources=[],
+        )
+
+        analysis = AnalysisResult.model_validate(fixture)
+
+        markdown = """## Executive Summary
+
+Simple summary.
+
+## Key Findings
+
+Finding one.
+
+## Sources
+
+[1] https://example.com
+
+## Safety
+
+Safe.
+"""
+
+        result = agent.evaluate_report_quality_sync(markdown, session, analysis)
+
+        assert result is not None
+        assert hasattr(result, "overall_quality_score")
+
+    def test_evaluator_with_cross_reference_fixture(self) -> None:
+        """Report quality evaluator should handle cross-reference analysis fixture."""
+        from tests.helpers.fixture_loader import load_analysis_cross_reference
+
+        fixture = load_analysis_cross_reference()
+
+        agent = ReportQualityEvaluatorAgent({})
+
+        session = ResearchSession(
+            session_id="evaluator-crossref-test",
+            query="test query",
+            sources=[],
+        )
+
+        analysis = AnalysisResult.model_validate(fixture)
+
+        markdown = """## Executive Summary
+
+Analysis with cross-references.
+
+## Key Findings
+
+### Claim: Quantum computers can solve certain problems exponentially faster
+Supporting sources:
+- Nature article
+- Quantum computing report
+
+## Sources
+
+[1] https://www.nature.com/articles/d41586-023-01444-9
+[2] https://quantumcomputingreport.com/what-is-quantum-computing/
+
+## Safety
+
+No concerns.
+"""
+
+        result = agent.evaluate_report_quality_sync(markdown, session, analysis)
+
+        assert result is not None
+
+    def test_evaluator_produces_complete_evaluation_structure(self) -> None:
+        """Evaluation result should have complete structure for reporting."""
+        agent = ReportQualityEvaluatorAgent({})
+
+        session = ResearchSession(
+            session_id="evaluator-structure-test",
+            query="clinical treatment effectiveness",
+            sources=[],
+        )
+
+        analysis = AnalysisResult(
+            key_findings=[
+                {
+                    "title": "Treatment is effective",
+                    "description": "Clinical trials show positive results",
+                    "evidence": ["https://pubmed.gov/article"],
+                    "confidence": "high",
+                }
+            ],
+            themes=["Clinical Evidence", "Treatment"],
+            themes_detailed=[
+                {
+                    "name": "Clinical Evidence",
+                    "description": "Evidence from clinical trials",
+                    "key_points": ["Positive results"],
+                    "supporting_sources": ["https://pubmed.gov/article"],
+                }
+            ],
+            consensus_points=["Treatment shows effectiveness"],
+            contention_points=[],
+            gaps=[],
+            analysis_method="ai_semantic",
+        )
+
+        markdown = """## Executive Summary
+
+Analysis identified that treatment is effective based on clinical evidence.
+
+## Key Findings
+
+### Treatment is effective
+Clinical trials show positive results with high confidence.
+
+## Themes
+
+- Clinical Evidence
+- Treatment
+
+## Consensus Points
+
+- Treatment shows effectiveness
+
+## Sources
+
+[1] https://pubmed.gov/article
+
+## Safety
+
+No safety concerns identified.
+"""
+
+        result = agent.evaluate_report_quality_sync(markdown, session, analysis)
+
+        assert hasattr(result, "overall_quality_score")
+        assert hasattr(result, "is_acceptable")
+        assert hasattr(result, "writing_quality_score")
+        assert hasattr(result, "structure_flow_score")
+        assert hasattr(result, "technical_accuracy_score")
+        assert hasattr(result, "user_experience_score")
+        assert hasattr(result, "consistency_score")
+        assert hasattr(result, "dimension_assessments")
+        assert hasattr(result, "critical_issues")
+        assert hasattr(result, "warnings")
+        assert hasattr(result, "recommendations")
+        assert hasattr(result, "evaluation_method")
+
+
 import json

@@ -562,7 +562,7 @@ class TestLLMAnalysisClientParserContracts:
     def test_parse_theme_response_malformed_missing_json(self) -> None:
         """Theme parser should fall back to text parsing when JSON invalid."""
         client = LLMAnalysisClient({"claude_cli_path": "/usr/bin/claude"})
-        response = "Theme 1: Antioxidant Properties\nDescription here\n- Key point one\n- Key point two"
+        response = "Theme: Antioxidant Properties\nDescription here\n- Key point one\n- Key point two"
 
         themes = client._parse_theme_response(response, [])
 

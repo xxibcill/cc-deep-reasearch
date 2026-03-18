@@ -5,9 +5,16 @@ from typing import Any
 import pytest
 
 from cc_deep_research.agents.source_collector import SourceCollectorAgent
-from cc_deep_research.aggregation import deduplicate_by_url
+from cc_deep_research.aggregation import ResultAggregator, deduplicate_by_url
 from cc_deep_research.config import Config
 from cc_deep_research.models import SearchMode, SearchOptions, SearchResult, SearchResultItem
+from cc_deep_research.models.search import QueryFamily, ResearchDepth
+from cc_deep_research.monitoring import ResearchMonitor
+from cc_deep_research.orchestration.session_state import OrchestratorSessionState
+from cc_deep_research.orchestration.source_collection import (
+    SourceAggregationService,
+    SourceCollectionService,
+)
 from cc_deep_research.providers import (
     AuthenticationError,
     NetworkError,
@@ -430,3 +437,333 @@ class TestSourceProvenanceAggregation:
             "primary-source",
             "baseline",
         ]
+
+
+class TestSourceCollectionFixtureIntegration:
+    """Integration tests for source collection with fixture-backed providers.
+
+    These tests exercise the real source collection layer with replayed provider
+    payloads, verifying provenance propagation, deduplication, and degraded
+    provider availability handling.
+    """
+
+    @pytest.mark.asyncio
+    async def test_source_aggregation_with_replayed_provider_payloads(self) -> None:
+        """Real aggregation path with fixture-backed provider results."""
+        monitor = ResearchMonitor(enabled=False)
+        aggregation = SourceAggregationService(monitor=monitor)
+
+        baseline_sources = [
+            SearchResultItem(
+                url="https://example.com/article1",
+                title="Article 1",
+                snippet="Baseline snippet",
+                score=0.8,
+            ),
+            SearchResultItem(
+                url="https://example.com/article2",
+                title="Article 2",
+                snippet="Another baseline",
+                score=0.7,
+            ),
+        ]
+        for source in baseline_sources:
+            source.add_query_provenance(
+                query="quantum computing basics",
+                family="baseline",
+                intent_tags=["baseline", "informational"],
+            )
+
+        primary_sources = [
+            SearchResultItem(
+                url="https://example.com/article1",
+                title="Article 1 Primary",
+                snippet="Primary source version",
+                score=0.95,
+            ),
+            SearchResultItem(
+                url="https://example.com/article3",
+                title="Article 3",
+                snippet="Primary only",
+                score=0.85,
+            ),
+        ]
+        for source in primary_sources:
+            source.add_query_provenance(
+                query="quantum computing official guidance",
+                family="primary-source",
+                intent_tags=["primary-source", "evidence"],
+            )
+
+        merged = aggregation.merge_sources(
+            existing_sources=baseline_sources,
+            new_sources=primary_sources,
+        )
+
+        assert len(merged) == 3
+        article1 = next(s for s in merged if "article1" in s.url)
+        assert article1.score == 0.95
+        families = {entry.family for entry in article1.query_provenance}
+        assert families == {"baseline", "primary-source"}
+
+    @pytest.mark.asyncio
+    async def test_parallel_aggregation_with_replayed_payloads(self) -> None:
+        """Parallel source aggregation with fixture-backed provider payloads."""
+        monitor = ResearchMonitor(enabled=False)
+        aggregation = SourceAggregationService(monitor=monitor)
+
+        sources = [
+            SearchResultItem(
+                url=f"https://example.com/source{i}",
+                title=f"Source {i}",
+                snippet=f"Content {i}",
+                score=0.9 - (i * 0.1),
+            )
+            for i in range(5)
+        ]
+        for i, source in enumerate(sources):
+            source.add_query_provenance(
+                query=f"query variation {i}",
+                family=f"family-{i}",
+                intent_tags=[f"tag-{i}"],
+            )
+
+        aggregated = aggregation.aggregate_parallel_sources(sources)
+
+        assert len(aggregated) == 5
+        assert aggregated[0].score == 0.9
+        assert all(s.query_provenance for s in aggregated)
+
+    @pytest.mark.asyncio
+    async def test_source_limit_preserves_provenance_metadata(self) -> None:
+        """Source limiting preserves query provenance through the cut."""
+        monitor = ResearchMonitor(enabled=False)
+        aggregation = SourceAggregationService(monitor=monitor)
+
+        sources = [
+            SearchResultItem(
+                url=f"https://example.com/page{i}",
+                title=f"Page {i}",
+                snippet=f"Info {i}",
+                score=max(0.0, 1.0 - (i * 0.1)),
+            )
+            for i in range(20)
+        ]
+        for i, source in enumerate(sources):
+            source.add_query_provenance(
+                query=f"topic {i}",
+                family="mixed-families",
+                intent_tags=["test"],
+            )
+
+        limited, was_limited = aggregation.apply_source_limit(
+            sources=sources,
+            limit=10,
+            query="test query",
+        )
+
+        assert len(limited) == 10
+        assert was_limited is True
+        assert all(s.query_provenance for s in limited)
+        for source in limited:
+            assert len(source.query_provenance) > 0
+            assert source.query_provenance[0].query.startswith("topic")
+
+    @pytest.mark.asyncio
+    async def test_degraded_provider_availability_with_stable_session_metadata(self) -> None:
+        """Degraded provider paths produce stable session metadata."""
+        config = Config()
+        config.search.providers = ["tavily"]
+
+        monitor = ResearchMonitor(enabled=False)
+        session_state = OrchestratorSessionState(
+            configured_providers=["tavily"],
+        )
+
+        collection = SourceCollectionService(
+            config=config,
+            monitor=monitor,
+            session_state=session_state,
+            num_researchers=2,
+        )
+
+        query_families = [
+            QueryFamily(query="test query", family="baseline", intent_tags=["baseline"]),
+        ]
+
+        class DegradedCollector:
+            def __init__(self) -> None:
+                self._providers: list[SearchProvider] = []
+                self._warnings: list[str] = []
+
+            async def initialize_providers(self) -> None:
+                pass
+
+            def get_provider_warnings(self) -> list[str]:
+                return ["Provider degraded - using fallback mode"]
+
+            def get_available_providers(self) -> list[str]:
+                return ["fallback"]
+
+            async def collect_sources(
+                self,
+                query: str,
+                options: SearchOptions,
+                query_family: QueryFamily | None = None,
+            ) -> list[SearchResultItem]:
+                return []
+
+            async def collect_multiple_queries(
+                self,
+                queries: list[str],
+                options: SearchOptions,
+                query_families: list[QueryFamily] | None = None,
+            ) -> list[SearchResultItem]:
+                return []
+
+            async def close_providers(self) -> None:
+                pass
+
+        collector = DegradedCollector()
+        await collection.collect_sources(
+            collector=collector,
+            query_families=query_families,
+            depth=ResearchDepth.STANDARD,
+        )
+
+        provider_meta = session_state.provider_metadata
+        assert provider_meta["available"] == ["fallback"]
+        assert len(provider_meta["warnings"]) > 0
+
+    @pytest.mark.asyncio
+    async def test_invalid_search_result_item_data_fails_validation(self) -> None:
+        """Test that structurally invalid SearchResultItem data is caught."""
+        from pydantic_core import ValidationError
+
+        with pytest.raises(ValidationError):
+            SearchResultItem(
+                url="",
+                title="Invalid",
+                snippet="Missing URL",
+                score=0.5,
+            )
+
+    @pytest.mark.asyncio
+    async def test_empty_source_list_produces_valid_empty_result(self) -> None:
+        """Empty source list from collection produces stable metadata."""
+        monitor = ResearchMonitor(enabled=False)
+        aggregation = SourceAggregationService(monitor=monitor)
+
+        result = aggregation.merge_sources(
+            existing_sources=[],
+            new_sources=[],
+        )
+
+        assert result == []
+        limited, was_limited = aggregation.apply_source_limit(
+            sources=[],
+            limit=10,
+            query="empty test",
+        )
+
+        assert limited == []
+        assert was_limited is False
+
+
+class TestSourceCollectionWithResultAggregator:
+    """Tests for ResultAggregator with query family metadata."""
+
+    @pytest.mark.asyncio
+    async def test_aggregator_tracks_query_families_across_results(self) -> None:
+        """ResultAggregator preserves query family provenance across multiple results."""
+        aggregator = ResultAggregator(deduplicate=True, sort_by_score=True, monitor=False)
+
+        families = [
+            QueryFamily(query="climate policy", family="baseline", intent_tags=["informational"]),
+            QueryFamily(
+                query="climate policy official",
+                family="primary-source",
+                intent_tags=["evidence"],
+            ),
+            QueryFamily(
+                query="climate policy analysis",
+                family="expert-analysis",
+                intent_tags=["analysis"],
+            ),
+        ]
+
+        for family in families:
+            item = SearchResultItem(
+                url=f"https://example.com/{family.family}",
+                title=f"Result from {family.family}",
+                snippet=f"Snippet for {family.family}",
+                score=0.8,
+            )
+            item.add_query_provenance(
+                query=family.query,
+                family=family.family,
+                intent_tags=list(family.intent_tags),
+            )
+            result = SearchResult(
+                query=family.query,
+                results=[item],
+                provider="test",
+            )
+            aggregator.add_result(result)
+
+        aggregated = aggregator.get_aggregated()
+
+        assert len(aggregated) == 3
+        for item in aggregated:
+            assert len(item.query_provenance) > 0
+
+    @pytest.mark.asyncio
+    async def test_aggregator_deduplication_preserves_all_provenance(self) -> None:
+        """Deduplication merges provenance while preserving all contributing families."""
+        aggregator = ResultAggregator(deduplicate=True, sort_by_score=True, monitor=False)
+
+        item1 = SearchResultItem(
+            url="https://example.com/duplicate",
+            title="First version",
+            snippet="First",
+            score=0.7,
+        )
+        item1.add_query_provenance(
+            query="baseline query",
+            family="baseline",
+            intent_tags=["informational"],
+        )
+        result1 = SearchResult(
+            query="baseline query",
+            results=[item1],
+            provider="provider1",
+        )
+
+        item2 = SearchResultItem(
+            url="https://example.com/duplicate/",
+            title="Better version",
+            snippet="Better content here",
+            score=0.9,
+        )
+        item2.add_query_provenance(
+            query="primary query",
+            family="primary-source",
+            intent_tags=["evidence"],
+        )
+        result2 = SearchResult(
+            query="primary query",
+            results=[item2],
+            provider="provider2",
+        )
+
+        aggregator.add_result(result1)
+        aggregator.add_result(result2)
+
+        aggregated = aggregator.get_aggregated()
+
+        assert len(aggregated) == 1
+        merged = aggregated[0]
+        assert merged.score == 0.9
+        families = [entry.family for entry in merged.query_provenance]
+        assert "baseline" in families
+        assert "primary-source" in families

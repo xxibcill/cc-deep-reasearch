@@ -1,6 +1,6 @@
 # Task 006: Add Analysis And Reporting Fixture Smoke Tests
 
-Status: Planned
+Status: Done
 
 ## Objective
 
