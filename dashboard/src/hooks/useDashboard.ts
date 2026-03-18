@@ -8,6 +8,13 @@ interface DashboardState {
   sessionsLoading: boolean;
   setSessions: (sessions: Session[]) => void;
   setSessionsLoading: (loading: boolean) => void;
+  removeSession: (sessionId: string) => void;
+
+  deleteError: string | null;
+  deleteSuccess: boolean;
+  setDeleteError: (error: string | null) => void;
+  setDeleteSuccess: (success: boolean) => void;
+  clearDeleteStatus: () => void;
 
   events: TelemetryEvent[];
   connected: boolean;
@@ -61,6 +68,17 @@ const useDashboardStore = create<DashboardState>((set) => ({
   sessionsLoading: true,
   setSessions: (sessions) => set({ sessions }),
   setSessionsLoading: (sessionsLoading) => set({ sessionsLoading }),
+  removeSession: (sessionId) =>
+    set((state) => ({
+      sessions: state.sessions.filter((s) => s.sessionId !== sessionId),
+    })),
+
+  deleteError: null,
+  deleteSuccess: false,
+  setDeleteError: (deleteError) => set({ deleteError }),
+  setDeleteSuccess: (deleteSuccess) => set({ deleteSuccess }),
+  clearDeleteStatus: () => set({ deleteError: null, deleteSuccess: false }),
+
   events: [],
   connected: false,
   selectedEvent: null,

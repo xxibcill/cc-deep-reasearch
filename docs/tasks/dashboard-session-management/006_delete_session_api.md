@@ -1,6 +1,6 @@
 # Task 006: Add Delete Session API
 
-Status: Planned
+Status: Done
 
 ## Objective
 

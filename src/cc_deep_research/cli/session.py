@@ -115,10 +115,14 @@ def register_session_commands(cli: click.Group) -> None:
             click.echo("Aborted.")
             return
 
-        if store.delete_session(session_id):
+        result = store.delete_session(session_id)
+        if result.deleted:
             click.echo(f"Session '{session_id}' deleted.")
+        elif result.missing:
+            click.echo(f"Error: Session '{session_id}' not found.", err=True)
+            raise click.Abort()
         else:
-            click.echo(f"Error: Failed to delete session '{session_id}'.", err=True)
+            click.echo(f"Error: Failed to delete session '{session_id}': {result.error}", err=True)
             raise click.Abort()
 
 

@@ -1,6 +1,6 @@
 # Task 004: Add Telemetry And DuckDB Deletion Helpers
 
-Status: Planned
+Status: Done
 
 ## Objective
 
