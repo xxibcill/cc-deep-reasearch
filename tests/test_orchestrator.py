@@ -1087,3 +1087,150 @@ class TestOrchestratorError:
         error = exc_info.value
         assert str(error) == "Test error"
         assert error.query == "test query"
+
+
+class TestSourceCollectionOrchestratorIntegration:
+    """Integration tests for source collection in orchestrator context.
+
+    These tests verify the real source collection path with replayed provider
+    payloads at the orchestrator level.
+    """
+
+    @pytest.mark.asyncio
+    async def test_orchestrator_collects_sources_with_provenance_across_families(self) -> None:
+        """Orchestrator preserves query family provenance through collection."""
+        config = Config()
+        config.search.providers = ["tavily"]
+        config.search_team.parallel_execution = False
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        collector = FakeCollectorAgent(
+            available=["tavily"],
+            warnings=[],
+            results_by_query={
+                "climate basics": [
+                    SearchResultItem(
+                        url="https://example.com/climate-basics",
+                        title="Climate Basics",
+                        score=0.9,
+                    )
+                ],
+                "climate policy": [
+                    SearchResultItem(
+                        url="https://example.com/climate-policy",
+                        title="Climate Policy",
+                        score=0.8,
+                    )
+                ],
+                "climate impacts": [
+                    SearchResultItem(
+                        url="https://example.com/climate-impacts",
+                        title="Climate Impacts",
+                        score=0.7,
+                    )
+                ],
+            },
+        )
+        _install_fake_team(orchestrator, collector=collector)
+
+        session = await orchestrator.execute_research(
+            query="climate change",
+            depth=ResearchDepth.STANDARD,
+            min_sources=2,
+        )
+
+        assert len(session.sources) >= 2
+        for source in session.sources:
+            assert len(source.query_provenance) > 0, f"Source {source.url} has no provenance"
+            families = [p.family for p in source.query_provenance]
+            assert any(f in ["baseline", "primary-source", "expert-analysis"] for f in families)
+
+    @pytest.mark.asyncio
+    async def test_orchestrator_deduplication_merges_provenance(self) -> None:
+        """Duplicate URLs from different queries merge provenance in orchestrator."""
+        config = Config()
+        config.search.providers = ["tavily"]
+        config.search_team.parallel_execution = False
+
+        shared_source = SearchResultItem(
+            url="https://example.com/shared-article",
+            title="Shared Article",
+            score=0.85,
+        )
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        collector = FakeCollectorAgent(
+            available=["tavily"],
+            warnings=[],
+            results_by_query={
+                "research topic": [shared_source],
+                "research topic official": [
+                    SearchResultItem(
+                        url="https://example.com/shared-article",
+                        title="Shared Article Official",
+                        score=0.95,
+                    )
+                ],
+            },
+        )
+        _install_fake_team(orchestrator, collector=collector)
+
+        session = await orchestrator.execute_research(
+            query="research topic",
+            depth=ResearchDepth.STANDARD,
+            min_sources=1,
+        )
+
+        shared = next((s for s in session.sources if "shared-article" in s.url), None)
+        assert shared is not None
+        provenance_families = [p.family for p in shared.query_provenance]
+        assert "baseline" in provenance_families or "primary-source" in provenance_families
+
+    @pytest.mark.asyncio
+    async def test_orchestrator_empty_collection_with_degraded_provider_still_records_metadata(self) -> None:
+        """Empty source collection still produces stable session metadata."""
+        config = Config()
+        config.search.providers = ["tavily"]
+        config.search_team.parallel_execution = False
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        collector = FakeCollectorAgent(
+            available=["tavily"],
+            warnings=["Provider degraded"],
+            results_by_query={},
+        )
+        _install_fake_team(orchestrator, collector=collector)
+
+        session = await orchestrator.execute_research(
+            query="empty query",
+            depth=ResearchDepth.QUICK,
+            min_sources=1,
+        )
+
+        assert session.metadata["providers"]["status"] in ["ready", "unavailable", "degraded"]
+        assert "execution" in session.metadata
+
+    @pytest.mark.asyncio
+    async def test_orchestrator_source_limit_respects_depth_requirements(self) -> None:
+        """Source limiting respects depth-specific requirements."""
+        config = Config()
+        config.search.providers = ["tavily"]
+        config.search_team.parallel_execution = False
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+
+        sources_10 = _make_sources("limit-test", 10)
+        collector = FakeCollectorAgent(
+            available=["tavily"],
+            warnings=[],
+            results_by_query={"test query": sources_10},
+        )
+        _install_fake_team(orchestrator, collector=collector)
+
+        session = await orchestrator.execute_research(
+            query="test query",
+            depth=ResearchDepth.QUICK,
+            min_sources=3,
+        )
+
+        assert len(session.sources) <= 5
