@@ -91,3 +91,58 @@ class ResearchRunResult(BaseModel):
         """Return the completed session identifier."""
         return self.session.session_id
 
+
+class SessionDeleteRequest(BaseModel):
+    """Contract for a single-session hard delete request."""
+
+    session_id: str = Field(..., min_length=1, description="The session to delete")
+    force: bool = Field(
+        default=False,
+        description="If true, delete even if session is currently active",
+    )
+
+
+class DeletedLayer(BaseModel):
+    """Result of deleting a single storage layer."""
+
+    layer: str = Field(..., description="Layer identifier (session, telemetry, duckdb)")
+    deleted: bool = Field(..., description="Whether deletion occurred")
+    missing: bool = Field(default=False, description="True if layer did not exist")
+    error: str | None = Field(default=None, description="Error message if deletion failed")
+
+
+class SessionDeleteResponse(BaseModel):
+    """Contract for session delete operation response."""
+
+    session_id: str = Field(..., description="The requested session_id")
+    success: bool = Field(..., description="True if at least one layer was deleted")
+    deleted_layers: list[DeletedLayer] = Field(
+        default_factory=list,
+        description="Results per storage layer",
+    )
+    active_conflict: bool = Field(
+        default=False,
+        description="True if session is active and force=false",
+    )
+
+    @property
+    def all_deleted(self) -> bool:
+        """Return True if all present layers were successfully deleted."""
+        return all(
+            (layer.deleted or layer.missing) for layer in self.deleted_layers
+        )
+
+    @property
+    def not_found(self) -> bool:
+        """Return True if session was not found in any layer."""
+        return all(layer.missing for layer in self.deleted_layers)
+
+
+class SessionDeleteError(BaseModel):
+    """Typed error response for session deletion."""
+
+    error: str = Field(..., description="Error type")
+    message: str = Field(..., description="Human-readable error message")
+    session_id: str = Field(..., description="The session_id that caused the error")
+    active_conflict: bool = Field(default=False)
+

@@ -266,3 +266,26 @@ export interface SessionReportResponse {
   media_type: string;
   content: string;
 }
+
+// Session Delete API types
+
+export interface DeletedLayer {
+  layer: 'session' | 'telemetry' | 'duckdb';
+  deleted: boolean;
+  missing?: boolean;
+  error?: string;
+}
+
+export interface SessionDeleteResponse {
+  session_id: string;
+  success: boolean;
+  deleted_layers: DeletedLayer[];
+  active_conflict: boolean;
+}
+
+export interface SessionDeleteError {
+  error: string;
+  message: string;
+  session_id: string;
+  active_conflict?: boolean;
+}
