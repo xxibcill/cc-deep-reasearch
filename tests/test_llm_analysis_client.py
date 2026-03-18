@@ -505,3 +505,286 @@ class TestAIAnalysisService:
         assert isinstance(service._llm_client, FakeClient)
         assert captured["agent_id"] == "deep_analyzer"
         assert callable(captured["config"]["request_executor"])
+
+
+class TestLLMAnalysisClientParserContracts:
+    """Contract tests for LLMAnalysisClient parser methods."""
+
+    def test_parse_theme_response_happy_path_json(self) -> None:
+        """Theme parser should extract themes from valid JSON response."""
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/bin/claude"})
+        response = '''{
+          "themes": [
+            {
+              "name": "Antioxidant Properties",
+              "description": "Green tea contains antioxidants that may reduce cellular damage.",
+              "key_points": ["High ORAC value", "Polyphenol content", "Free radical scavenging"],
+              "supporting_sources": ["https://pubmed.gov/1", "https://example.com/2"]
+            },
+            {
+              "name": "Cardiovascular Benefits",
+              "description": "Regular consumption may support heart health.",
+              "key_points": ["LDL cholesterol reduction", "Blood pressure moderation"],
+              "supporting_sources": ["https://pubmed.gov/3"]
+            }
+          ]
+        }'''
+        sources = [{"url": "https://pubmed.gov/1", "title": "Study 1"}]
+
+        themes = client._parse_theme_response(response, sources)
+
+        assert len(themes) == 2
+        assert themes[0]["name"] == "Antioxidant Properties"
+        assert themes[0]["description"] == "Green tea contains antioxidants that may reduce cellular damage."
+        assert themes[0]["key_points"] == ["High ORAC value", "Polyphenol content", "Free radical scavenging"]
+        assert themes[0]["supporting_sources"] == ["https://pubmed.gov/1", "https://example.com/2"]
+        assert themes[1]["name"] == "Cardiovascular Benefits"
+
+    def test_parse_theme_response_malformed_json_non_list_themes(self) -> None:
+        """Theme parser should return empty list when themes is not a list."""
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/bin/claude"})
+        response = '{"themes": "not a list"}'
+
+        themes = client._parse_theme_response(response, [])
+
+        assert themes == []
+
+    def test_parse_theme_response_malformed_json_invalid_structure(self) -> None:
+        """Theme parser should filter out non-dict items from themes array."""
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/bin/claude"})
+        response = '{"themes": [{"name": "Valid"}, "string item", 123, null]}'
+
+        themes = client._parse_theme_response(response, [])
+
+        assert len(themes) == 1
+        assert themes[0]["name"] == "Valid"
+
+    def test_parse_theme_response_malformed_missing_json(self) -> None:
+        """Theme parser should fall back to text parsing when JSON invalid."""
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/bin/claude"})
+        response = "Theme 1: Antioxidant Properties\nDescription here\n- Key point one\n- Key point two"
+
+        themes = client._parse_theme_response(response, [])
+
+        assert len(themes) >= 1
+        assert themes[0]["name"] == "Antioxidant Properties"
+
+    def test_parse_cross_reference_response_happy_path_json(self) -> None:
+        """Cross-reference parser should extract consensus and disagreement points."""
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/bin/claude"})
+        response = '''{
+          "consensus_points": [
+            {
+              "claim": "Treatment shows efficacy",
+              "strength": "strong",
+              "supporting_sources": ["https://pubmed.gov/1", "https://example.com/2"]
+            }
+          ],
+          "disagreement_points": [
+            {
+              "claim": "Dosage optimality",
+              "perspectives": [
+                {"view": "Current dose is optimal", "sources": ["https://a.com"]},
+                {"view": "Higher dose needed", "sources": ["https://b.com"]}
+              ]
+            }
+          ]
+        }'''
+
+        result = client._parse_cross_reference_response(response)
+
+        assert len(result["consensus_points"]) == 1
+        assert result["consensus_points"][0]["claim"] == "Treatment shows efficacy"
+        assert result["consensus_points"][0]["strength"] == "strong"
+        assert len(result["disagreement_points"]) == 1
+
+    def test_parse_cross_reference_response_malformed_consensus_points(self) -> None:
+        """Cross-reference parser should handle non-list consensus_points gracefully."""
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/bin/claude"})
+        response = '{"consensus_points": "not a list", "disagreement_points": []}'
+
+        result = client._parse_cross_reference_response(response)
+
+        assert result["consensus_points"] == []
+        assert result["disagreement_points"] == []
+
+    def test_parse_cross_reference_response_malformed_disagreement_points(self) -> None:
+        """Cross-reference parser should handle non-list disagreement_points gracefully."""
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/bin/claude"})
+        response = '{"consensus_points": [], "disagreement_points": 123}'
+
+        result = client._parse_cross_reference_response(response)
+
+        assert result["disagreement_points"] == []
+
+    def test_parse_cross_reference_response_malformed_missing_keys(self) -> None:
+        """Cross-reference parser should return empty lists for missing keys."""
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/bin/claude"})
+        response = '{}'
+
+        result = client._parse_cross_reference_response(response)
+
+        assert result["consensus_points"] == []
+        assert result["disagreement_points"] == []
+        assert result["cross_reference_claims"] == []
+
+    def test_parse_gap_response_happy_path_json(self) -> None:
+        """Gap parser should extract gaps from valid JSON response."""
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/bin/claude"})
+        response = '''{
+          "gaps": [
+            {
+              "gap_description": "Long-term safety data missing",
+              "importance": "High",
+              "suggested_queries": ["long term safety study", "5 year follow up"]
+            },
+            {
+              "gap_description": "Pediatric dosage unclear",
+              "importance": "Medium",
+              "suggested_queries": ["children dosage"]
+            }
+          ]
+        }'''
+
+        gaps = client._parse_gap_response(response)
+
+        assert len(gaps) == 2
+        assert gaps[0]["gap_description"] == "Long-term safety data missing"
+        assert gaps[0]["importance"] == "High"
+        assert gaps[0]["suggested_queries"] == ["long term safety study", "5 year follow up"]
+        assert gaps[1]["gap_description"] == "Pediatric dosage unclear"
+
+    def test_parse_gap_response_malformed_non_list_gaps(self) -> None:
+        """Gap parser should return empty list when gaps is not a list."""
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/bin/claude"})
+        response = '{"gaps": "not a list"}'
+
+        gaps = client._parse_gap_response(response)
+
+        assert gaps == []
+
+    def test_parse_gap_response_malformed_fallback_parsing(self) -> None:
+        """Gap parser should fall back to text parsing for non-JSON."""
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/bin/claude"})
+        response = "- Missing long-term safety data\n- Unknown pediatric dosage"
+
+        gaps = client._parse_gap_response(response)
+
+        assert len(gaps) >= 1
+
+    def test_parse_synthesis_response_happy_path_json(self) -> None:
+        """Synthesis parser should extract findings from valid JSON response."""
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/bin/claude"})
+        response = '''{
+          "findings": [
+            {
+              "title": "Significant Treatment Effect",
+              "summary": "Treatment shows statistically significant improvement.",
+              "description": "Based on multiple clinical trials, the treatment demonstrates efficacy.",
+              "detail_points": ["30% improvement rate", "p < 0.05"],
+              "evidence": ["https://pubmed.gov/1", "https://example.com/2"],
+              "confidence": "High"
+            },
+            {
+              "title": "Mild Side Effects",
+              "description": "Side effects were generally mild.",
+              "evidence": ["https://pubmed.gov/3"]
+            }
+          ]
+        }'''
+
+        findings = client._parse_synthesis_response(response)
+
+        assert len(findings) == 2
+        assert findings[0]["title"] == "Significant Treatment Effect"
+        assert findings[0]["summary"] == "Treatment shows statistically significant improvement."
+        assert findings[0]["description"] == "Based on multiple clinical trials, the treatment demonstrates efficacy."
+        assert findings[0]["detail_points"] == ["30% improvement rate", "p < 0.05"]
+        assert findings[0]["evidence"] == ["https://pubmed.gov/1", "https://example.com/2"]
+        assert findings[0]["confidence"] == "High"
+
+    def test_parse_synthesis_response_missing_summary_field(self) -> None:
+        """Synthesis parser should use description as fallback for missing summary."""
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/bin/claude"})
+        response = '''{
+          "findings": [
+            {
+              "title": "Finding Title",
+              "description": "This is the description field.",
+              "evidence": []
+            }
+          ]
+        }'''
+
+        findings = client._parse_synthesis_response(response)
+
+        assert findings[0]["summary"] == "This is the description field."
+
+    def test_parse_synthesis_response_malformed_non_list_findings(self) -> None:
+        """Synthesis parser should return empty list when findings is not a list."""
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/bin/claude"})
+        response = '{"findings": "not a list"}'
+
+        findings = client._parse_synthesis_response(response)
+
+        assert findings == []
+
+    def test_parse_evidence_quality_response_happy_path_json(self) -> None:
+        """Evidence quality parser should extract study types and conflicts."""
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/bin/claude"})
+        response = '''{
+          "study_types": {
+            "human_studies": 5,
+            "animal_studies": 3,
+            "in_vitro_studies": 2,
+            "other": 1
+          },
+          "evidence_conflicts": [
+            {
+              "theme": "Efficacy",
+              "conflict": "Conflicting results on dosage",
+              "explanation": "Different studies used different dosages"
+            }
+          ],
+          "confidence_levels": {
+            "Efficacy": "High",
+            "Safety": "Medium"
+          },
+          "evidence_summary": "Overall evidence is moderate quality."
+        }'''
+
+        result = client._parse_evidence_quality_response(response)
+
+        assert result["study_types"]["human_studies"] == 5
+        assert result["study_types"]["animal_studies"] == 3
+        assert result["study_types"]["in_vitro_studies"] == 2
+        assert len(result["evidence_conflicts"]) == 1
+        assert result["confidence_levels"]["Efficacy"] == "High"
+        assert result["evidence_summary"] == "Overall evidence is moderate quality."
+
+    def test_parse_evidence_quality_response_malformed_study_types(self) -> None:
+        """Evidence quality parser should handle non-dict study_types gracefully."""
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/bin/claude"})
+        response = '{"study_types": "not a dict", "evidence_conflicts": [], "confidence_levels": {}, "evidence_summary": ""}'
+
+        result = client._parse_evidence_quality_response(response)
+
+        assert result["study_types"] == {}
+
+    def test_parse_evidence_quality_response_malformed_confidence_levels(self) -> None:
+        """Evidence quality parser should handle non-dict confidence_levels gracefully."""
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/bin/claude"})
+        response = '{"study_types": {}, "evidence_conflicts": [], "confidence_levels": "not a dict", "evidence_summary": ""}'
+
+        result = client._parse_evidence_quality_response(response)
+
+        assert result["confidence_levels"] == {}
+
+    def test_parse_evidence_quality_response_malformed_summary(self) -> None:
+        """Evidence quality parser should handle non-string evidence_summary gracefully."""
+        client = LLMAnalysisClient({"claude_cli_path": "/usr/bin/claude"})
+        response = '{"study_types": {}, "evidence_conflicts": [], "confidence_levels": {}, "evidence_summary": 123}'
+
+        result = client._parse_evidence_quality_response(response)
+
+        assert result["evidence_summary"] == ""
