@@ -1,0 +1,34 @@
+{
+  "key_findings": [
+    "This is a simple string finding without structured fields",
+    "Another string finding"
+  ],
+  "themes": ["incomplete theme"],
+  "themes_detailed": [],
+  "consensus_points": [
+    "Only partial consensus"
+  ],
+  "contention_points": [],
+  "cross_reference_claims": [
+    {
+      "claim": "Partial claim with missing metadata",
+      "supporting_sources": [
+        {
+          "url": "https://example.com/source1"
+        }
+      ],
+      "contradicting_sources": []
+    }
+  ],
+  "gaps": [
+    "Simple string gap without structured fields"
+  ],
+  "source_count": 0,
+  "analysis_method": "basic_keyword",
+  "deep_analysis_complete": false,
+  "analysis_passes": 1,
+  "patterns": [],
+  "disagreement_points": null,
+  "implications": [],
+  "comprehensive_synthesis": ""
+}

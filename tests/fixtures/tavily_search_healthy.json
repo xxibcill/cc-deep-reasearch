@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "url": "https://www.nature.com/articles/d41586-023-01444-9",
+      "title": "What is quantum computing? - Nature",
+      "content": "Quantum computing is a type of computation whose operations can exploit phenomena of quantum mechanics such as superposition, interference, and entanglement. Unlike classical computers that use bits (0 or 1), quantum computers use quantum bits or 'qubits' that can exist in superposition states.",
+      "score": 0.95,
+      "raw_content": "Quantum computing is a type of computation whose operations can exploit phenomena of quantum mechanics such as superposition, interference, and entanglement. Unlike classical computers that use bits (0 or 1), quantum computers use quantum bits or 'qubits' that can exist in superposition states, representing both 0 and 1 simultaneously. This allows quantum computers to process many possible states at once, potentially solving certain problems exponentially faster than classical computers. Current quantum computers are noisy and error-prone, but significant progress is being made in developing error-corrected qubits and scalable quantum systems.",
+      "published_date": "2023-05-15"
+    },
+    {
+      "url": "https://quantumcomputingreport.com/what-is-quantum-computing/",
+      "title": "What is Quantum Computing? - Quantum Computing Report",
+      "content": "A quantum computer uses quantum mechanical phenomena to perform computation. These phenomena include superposition, where a quantum system can exist in multiple states simultaneously, and entanglement, where qubits can be correlated in ways impossible classically.",
+      "score": 0.92,
+      "raw_content": "A quantum computer uses quantum mechanical phenomena to perform computation. These phenomena include superposition, where a quantum system can exist in multiple states simultaneously, and entanglement, where qubits can be correlated in ways impossible classically. Quantum computers use gates to manipulate qubits, similar to classical logic gates but with the ability to create superposition and entanglement states.",
+      "published_date": "2024-01-10"
+    },
+    {
+      "url": "https://www.ibm.com/quantum-computing/learn/what-is-quantum-computing",
+      "title": "What is Quantum Computing? - IBM Quantum",
+      "content": "Quantum computing is a multidisciplinary field comprising aspects of computer science, physics, and mathematics that utilizes quantum mechanics to solve complex problems faster than on classical computers. The quantum computer uses quantum bits, or qubits, as its fundamental building blocks.",
+      "score": 0.89,
+      "published_date": "2024-02-20"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Quantum_computing",
+      "title": "Quantum computing - Wikipedia",
+      "content": "Quantum computing is a type of computation whose operations can exploit phenomena of quantum mechanics. The field is an emerging technology that has the potential to revolutionize computing by solving certain problems exponentially faster than classical computers.",
+      "score": 0.85,
+      "published_date": "2024-03-01"
+    },
+    {
+      "url": "https://news.mit.edu/2023/quantum-computing-explained-0323",
+      "title": "Explained: Quantum Computing - MIT News",
+      "content": "Quantum computing harnesses quantum mechanical effects to perform computation. A quantum computer exploits the strange physics of the subatomic world to perform computations in a fundamentally different way than classical computers.",
+      "score": 0.82,
+      "published_date": "2023-03-23"
+    }
+  ],
+  "response_id": "test-response-001",
+  "images": ["https://example.com/quantum-diagram.jpg"],
+  "related_queries": ["quantum computing applications", "quantum computer vs classical computer"]
+}
