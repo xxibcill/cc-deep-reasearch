@@ -17,8 +17,13 @@ from cc_deep_research.config import load_config
 from cc_deep_research.event_router import EventRouter, WebSocketConnection
 from cc_deep_research.reporting import ReportGenerator
 from cc_deep_research.research_runs.jobs import ResearchRunJob, ResearchRunJobRegistry
-from cc_deep_research.research_runs.models import ResearchOutputFormat, ResearchRunRequest
+from cc_deep_research.research_runs.models import (
+    ResearchOutputFormat,
+    ResearchRunRequest,
+    SessionDeleteRequest,
+)
 from cc_deep_research.research_runs.service import ResearchRunService
+from cc_deep_research.research_runs.session_purge import SessionPurgeService
 from cc_deep_research.session_store import SessionStore
 from cc_deep_research.telemetry import (
     get_default_dashboard_db_path,
@@ -458,6 +463,30 @@ def register_routes(app: FastAPI) -> None:
             )
 
         return JSONResponse(content={"session": detail["session"]})
+
+    @app.delete("/api/sessions/{session_id}")
+    async def delete_session(
+        session_id: str,
+        force: bool = False,
+    ) -> JSONResponse:
+        """Delete a research session from all storage layers.
+
+        Args:
+            session_id: The session ID to delete.
+            force: If true, delete even if session is active.
+
+        Returns:
+            JSON response with deletion results per layer.
+        """
+        request = SessionDeleteRequest(session_id=session_id, force=force)
+        service = SessionPurgeService()
+        response = service.delete_session(request)
+
+        status_code = 409 if response.active_conflict else 200
+        return JSONResponse(
+            content=response.model_dump(mode="json"),
+            status_code=status_code,
+        )
 
     @app.get("/api/sessions/{session_id}/events")
     async def get_session_events(

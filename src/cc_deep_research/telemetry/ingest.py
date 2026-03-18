@@ -25,6 +25,47 @@ def _missing_dashboard_dependency_message(feature: str) -> str:
     )
 
 
+def delete_session_from_duckdb(
+    session_id: str,
+    db_path: Path | None = None,
+) -> dict[str, bool]:
+    """Delete a session's telemetry data from DuckDB.
+
+    Args:
+        session_id: The session ID to delete.
+        db_path: Optional path to DuckDB database.
+
+    Returns:
+        Dict with 'deleted' (bool) and 'missing' (bool) indicating results.
+    """
+    database_path = db_path or get_default_dashboard_db_path()
+
+    if not database_path.exists():
+        return {"deleted": False, "missing": True}
+
+    try:
+        import duckdb
+    except ImportError as exc:
+        raise RuntimeError(_missing_dashboard_dependency_message("Delete session from DuckDB")) from exc
+
+    try:
+        conn = duckdb.connect(str(database_path))
+        try:
+            conn.execute(
+                "DELETE FROM telemetry_events WHERE session_id = ?",
+                [session_id],
+            )
+            conn.execute(
+                "DELETE FROM telemetry_sessions WHERE session_id = ?",
+                [session_id],
+            )
+            return {"deleted": True, "missing": False}
+        finally:
+            conn.close()
+    except Exception:
+        return {"deleted": False, "missing": False}
+
+
 def ingest_telemetry_to_duckdb(
     base_dir: Path | None = None,
     db_path: Path | None = None,
@@ -149,6 +190,7 @@ def ingest_telemetry_to_duckdb(
 
 
 __all__ = [
+    "delete_session_from_duckdb",
     "get_default_dashboard_db_path",
     "ingest_telemetry_to_duckdb",
 ]
