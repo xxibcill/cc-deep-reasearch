@@ -8,7 +8,12 @@ from typing import Any
 
 from .ingest import _missing_dashboard_dependency_message, get_default_dashboard_db_path
 from .live import get_default_telemetry_dir, query_live_llm_route_analytics
-from .tree import build_event_tree_from_rows, build_llm_route_streams, is_terminal_session_event
+from .tree import (
+    build_derived_summary,
+    build_event_tree_from_rows,
+    build_llm_route_streams,
+    is_terminal_session_event,
+)
 
 
 def _load_dashboard_connection(database_path: Path):
@@ -82,7 +87,7 @@ def _normalize_event_row(row: tuple[Any, ...]) -> dict[str, Any]:
         "event_id": event_id,
         "parent_event_id": parent_event_id,
         "sequence_number": sequence_number,
-        "timestamp": timestamp,
+        "timestamp": _serialize_timestamp(timestamp),
         # Trace contract
         "trace_version": "0",  # Pre-contract events from DuckDB
         "run_id": None,
@@ -221,18 +226,42 @@ def query_dashboard_data(db_path: Path | None = None) -> dict[str, Any]:
 def query_session_detail(
     session_id: str,
     db_path: Path | None = None,
+    *,
+    cursor: int | None = None,
+    before_cursor: int | None = None,
+    limit: int = 1000,
+    include_derived: bool = True,
 ) -> dict[str, Any]:
-    """Return detailed telemetry datasets for a single session."""
+    """Return detailed telemetry datasets for a single session.
+
+    Args:
+        session_id: The session ID to query.
+        db_path: Optional DuckDB database path.
+        cursor: Sequence number to start after (forward pagination).
+        before_cursor: Sequence number to end before (backward pagination).
+        limit: Maximum events to return in paged slice.
+        include_derived: Whether to include derived outputs.
+
+    Returns:
+        Dict with session info, events, and derived outputs.
+    """
     database_path = db_path or get_default_dashboard_db_path()
     if not database_path.exists():
         return {
             "session": None,
             "events": [],
+            "events_page": {"events": [], "total": 0, "has_more": False, "next_cursor": None, "prev_cursor": None},
             "phase_durations": [],
             "agent_events": [],
             "reasoning_events": [],
             "tool_calls": [],
             "llm_usage": [],
+            "narrative": [],
+            "critical_path": {},
+            "state_changes": [],
+            "decisions": [],
+            "degradations": [],
+            "failures": [],
         }
 
     conn = _load_dashboard_connection(database_path)
@@ -366,14 +395,152 @@ def query_session_detail(
     ).fetchall()
     conn.close()
 
+    # Normalize events to match live telemetry shape
+    normalized_events = [_normalize_event_row(row) for row in events]
+
+    # Build cursor-paginated events page
+    events_page = _build_events_page(
+        normalized_events,
+        cursor=cursor,
+        before_cursor=before_cursor,
+        limit=limit,
+    )
+
+    # Build derived outputs using same builders as live
+    derived = {}
+    if include_derived:
+        derived = build_derived_summary(normalized_events)
+
+    # Normalize session row to be JSON-serializable
+    normalized_session = None
+    if session_row is not None:
+        normalized_session = {
+            "session_id": session_row[0],
+            "created_at": _serialize_timestamp(session_row[1]),
+            "status": session_row[2],
+            "total_time_ms": session_row[3],
+            "total_sources": session_row[4],
+            "instances_spawned": session_row[5],
+            "search_queries": session_row[6],
+            "tool_calls": session_row[7],
+            "llm_prompt_tokens": session_row[8],
+            "llm_completion_tokens": session_row[9],
+            "llm_total_tokens": session_row[10],
+            "providers_json": session_row[11],
+        }
+
     return {
-        "session": session_row,
-        "events": events,
+        "session": normalized_session,
+        "events": normalized_events,
+        "events_page": events_page,
         "phase_durations": phase_durations,
-        "agent_events": agent_events,
+        "agent_events": [_normalize_event_row(row) for row in agent_events],
         "reasoning_events": reasoning_events,
         "tool_calls": tool_calls,
         "llm_usage": llm_usage,
+        # Derived outputs
+        "narrative": derived.get("narrative", []),
+        "critical_path": derived.get("critical_path", {}),
+        "state_changes": derived.get("state_changes", []),
+        "decisions": derived.get("decisions", []),
+        "degradations": derived.get("degradations", []),
+        "failures": derived.get("failures", []),
+    }
+
+
+def _serialize_timestamp(value: Any) -> str | None:
+    """Serialize a timestamp value to ISO format string."""
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def _build_events_page(
+    events: list[dict[str, Any]],
+    *,
+    cursor: int | None = None,
+    before_cursor: int | None = None,
+    limit: int = 1000,
+) -> dict[str, Any]:
+    """Build a cursor-paginated slice of events.
+
+    Args:
+        events: All normalized events for the session.
+        cursor: Sequence number to start after (forward pagination).
+        before_cursor: Sequence number to end before (backward pagination).
+        limit: Maximum events to return.
+
+    Returns:
+        Dict with events slice and pagination metadata.
+    """
+    total = len(events)
+
+    if not events:
+        return {
+            "events": [],
+            "total": 0,
+            "has_more": False,
+            "next_cursor": None,
+            "prev_cursor": None,
+        }
+
+    # Get sequence numbers for cursor calculations
+    first_seq = events[0].get("sequence_number", 0)
+    last_seq = events[-1].get("sequence_number", total - 1)
+
+    # Forward pagination: events after cursor
+    if cursor is not None:
+        start_idx = 0
+        for i, event in enumerate(events):
+            seq = event.get("sequence_number", i)
+            if seq > cursor:
+                start_idx = i
+                break
+        else:
+            start_idx = len(events)
+
+        sliced = events[start_idx:start_idx + limit]
+    # Backward pagination: events before cursor
+    elif before_cursor is not None:
+        end_idx = len(events)
+        for i in range(len(events) - 1, -1, -1):
+            seq = events[i].get("sequence_number", i)
+            if seq < before_cursor:
+                end_idx = i + 1
+                break
+        else:
+            end_idx = 0
+
+        start_idx = max(0, end_idx - limit)
+        sliced = events[start_idx:end_idx]
+    # No cursor: return first page
+    else:
+        sliced = events[:limit]
+
+    if not sliced:
+        return {
+            "events": [],
+            "total": total,
+            "has_more": False,
+            "next_cursor": None,
+            "prev_cursor": None,
+        }
+
+    # Calculate cursors for next/prev pages
+    first_returned_seq = sliced[0].get("sequence_number", events.index(sliced[0]) if sliced[0] in events else 0)
+    last_returned_seq = sliced[-1].get("sequence_number", events.index(sliced[-1]) if sliced[-1] in events else total - 1)
+
+    has_more = last_returned_seq < last_seq
+    has_prev = first_returned_seq > first_seq
+
+    return {
+        "events": sliced,
+        "total": total,
+        "has_more": has_more,
+        "next_cursor": last_returned_seq if has_more else None,
+        "prev_cursor": first_returned_seq - 1 if has_prev else None,
     }
 
 
@@ -446,12 +613,17 @@ def query_event_tree(
     max_depth: int = 10,
 ) -> dict[str, Any]:
     """Return a hierarchical event tree for a session."""
+    from .tree import build_event_tree
+
     database_path = db_path or get_default_dashboard_db_path()
     if not database_path.exists():
         return {"root_events": [], "total_events": 0}
 
     detail = query_session_detail(session_id, database_path)
-    return build_event_tree_from_rows(detail["events"], session_id=session_id, max_depth=max_depth)
+    # Events are now normalized dicts, so use build_event_tree instead of build_event_tree_from_rows
+    tree = build_event_tree(detail["events"], max_depth=max_depth)
+    tree["session_id"] = session_id
+    return tree
 
 
 def query_llm_route_analytics(

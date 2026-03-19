@@ -1,6 +1,6 @@
 # Task 002: Add Derived Trace APIs And Full History Access
 
-Status: Todo
+Status: Done
 
 ## Objective
 

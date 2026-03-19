@@ -400,37 +400,82 @@ def _query_session_api_detail(
     *,
     tail_limit: int,
     subprocess_chunk_limit: int,
+    cursor: int | None = None,
+    before_cursor: int | None = None,
+    limit: int | None = None,
+    include_derived: bool = True,
 ) -> dict[str, Any]:
-    """Return session detail from live telemetry, or DuckDB when only historical data exists."""
+    """Return session detail from live telemetry, or DuckDB when only historical data exists.
+
+    Args:
+        session_id: The session ID to query.
+        tail_limit: Maximum events to return in event_tail (for backward compat).
+        subprocess_chunk_limit: Maximum chunks per subprocess stream.
+        cursor: Sequence number to start after (forward pagination).
+        before_cursor: Sequence number to end before (backward pagination).
+        limit: Maximum events to return in paged slice.
+        include_derived: Whether to include derived outputs.
+
+    Returns:
+        Dict with session info, events, and derived outputs.
+    """
     telemetry_dir = get_default_telemetry_dir()
     live_detail = query_live_session_detail(
         session_id,
         base_dir=telemetry_dir,
         tail_limit=tail_limit,
         subprocess_chunk_limit=subprocess_chunk_limit,
+        cursor=cursor,
+        before_cursor=before_cursor,
+        limit=limit,
+        include_derived=include_derived,
     )
     if live_detail["session"]:
         live_detail["session"] = _normalize_live_session_state(live_detail["session"])
         return live_detail
 
-    historical = query_session_detail(session_id, db_path=get_default_dashboard_db_path())
-    session_row = historical["session"]
-    if session_row is None:
+    historical = query_session_detail(
+        session_id,
+        db_path=get_default_dashboard_db_path(),
+        cursor=cursor,
+        before_cursor=before_cursor,
+        limit=limit or tail_limit,
+        include_derived=include_derived,
+    )
+    session_data = historical.get("session")
+    if session_data is None:
         return live_detail
 
-    events = [
-        _normalize_historical_event(row, session_id=session_id) for row in historical["events"]
-    ]
+    events = historical.get("events", [])
+    # Build session object from normalized dict
+    session = {
+        "session_id": session_data.get("session_id"),
+        "created_at": session_data.get("created_at"),
+        "status": session_data.get("status"),
+        "total_time_ms": session_data.get("total_time_ms"),
+        "total_sources": session_data.get("total_sources", 0),
+        "active": False,
+        "event_count": len(events),
+        "last_event_at": events[-1].get("timestamp") if events else None,
+    }
     return {
-        "session": _normalize_historical_session(session_row, events=events),
+        "session": session,
         "summary": None,
         "events": events,
         "event_tail": events[-tail_limit:],
+        "events_page": historical.get("events_page", {"events": [], "total": 0, "has_more": False, "next_cursor": None, "prev_cursor": None}),
         "agent_timeline": [event for event in events if event.get("category") == "agent"],
         "event_tree": {"root_events": [], "total_events": len(events), "session_id": session_id},
         "subprocess_streams": [],
         "llm_route_analytics": {},
-        "active_phase": None,
+        "active_phase": historical.get("active_phase"),
+        # Derived outputs
+        "narrative": historical.get("narrative", []),
+        "critical_path": historical.get("critical_path", {}),
+        "state_changes": historical.get("state_changes", []),
+        "decisions": historical.get("decisions", []),
+        "degradations": historical.get("degradations", []),
+        "failures": historical.get("failures", []),
     }
 
 
@@ -768,25 +813,61 @@ def register_routes(app: FastAPI) -> None:
         )
 
     @app.get("/api/sessions/{session_id}")
-    async def get_session(session_id: str) -> JSONResponse:
+    async def get_session(
+        session_id: str,
+        cursor: int | None = Query(default=None, description="Sequence number to start after"),
+        before_cursor: int | None = Query(default=None, description="Sequence number to end before"),
+        limit: int = Query(default=1000, ge=1, le=5000, description="Maximum events to return"),
+        include_derived: bool = Query(default=True, description="Include derived outputs"),
+    ) -> JSONResponse:
         """Get details for a specific session.
 
         Args:
             session_id: The session ID.
+            cursor: Sequence number to start after (forward pagination).
+            before_cursor: Sequence number to end before (backward pagination).
+            limit: Maximum events to return.
+            include_derived: Whether to include derived outputs.
 
         Returns:
-            JSON response with session details.
+            JSON response with session details including derived outputs and
+            cursor-based pagination metadata.
         """
         detail = _query_session_api_detail(
             session_id,
             tail_limit=1000,
             subprocess_chunk_limit=100,
+            cursor=cursor,
+            before_cursor=before_cursor,
+            limit=limit,
+            include_derived=include_derived,
         )
 
         if not detail["session"]:
             return JSONResponse(content={"error": "Session not found"}, status_code=404)
 
-        return JSONResponse(content={"session": detail["session"]})
+        # Return full detail with derived outputs
+        return JSONResponse(content={
+            "session": detail["session"],
+            "summary": detail.get("summary"),
+            "events_page": detail.get("events_page", {
+                "events": detail.get("events", [])[:limit],
+                "total": len(detail.get("events", [])),
+                "has_more": False,
+                "next_cursor": None,
+                "prev_cursor": None,
+            }),
+            "event_tail": detail.get("event_tail", []),
+            "agent_timeline": detail.get("agent_timeline", []),
+            "active_phase": detail.get("active_phase"),
+            # Derived outputs
+            "narrative": detail.get("narrative", []),
+            "critical_path": detail.get("critical_path", {}),
+            "state_changes": detail.get("state_changes", []),
+            "decisions": detail.get("decisions", []),
+            "degradations": detail.get("degradations", []),
+            "failures": detail.get("failures", []),
+        })
 
     @app.delete("/api/sessions/{session_id}")
     async def delete_session(
@@ -882,31 +963,61 @@ def register_routes(app: FastAPI) -> None:
     @app.get("/api/sessions/{session_id}/events")
     async def get_session_events(
         session_id: str,
-        limit: int = 1000,
-        offset: int = 0,
+        limit: int = Query(default=1000, ge=1, le=5000, description="Maximum events to return"),
+        cursor: int | None = Query(default=None, description="Sequence number to start after"),
+        before_cursor: int | None = Query(default=None, description="Sequence number to end before"),
+        offset: int = Query(default=0, ge=0, description="Number of events to skip (deprecated, use cursor)"),
     ) -> JSONResponse:
-        """Get events for a specific session.
+        """Get events for a specific session with cursor-based pagination.
 
         Args:
             session_id: The session ID.
             limit: Maximum number of events to return.
-            offset: Number of events to skip.
+            cursor: Sequence number to start after (forward pagination).
+            before_cursor: Sequence number to end before (backward pagination).
+            offset: Number of events to skip (deprecated, prefer cursor).
 
         Returns:
-            JSON response with event list.
+            JSON response with paginated events and cursor metadata.
         """
         detail = _query_session_api_detail(
             session_id,
-            tail_limit=limit,
+            tail_limit=limit * 2,  # Get more for backward compat
             subprocess_chunk_limit=0,
+            cursor=cursor,
+            before_cursor=before_cursor,
+            limit=limit,
+            include_derived=False,
         )
 
-        events = detail["event_tail"] or []
+        # Use the paginated events page if available
+        events_page = detail.get("events_page", {})
 
-        # Apply offset
-        events = events[offset : offset + limit] if offset > 0 else events[:limit]
+        if not events_page.get("events"):
+            # Fall back to event_tail for backward compatibility
+            events = detail.get("event_tail") or detail.get("events") or []
+            if offset > 0:
+                events = events[offset : offset + limit]
+            else:
+                events = events[:limit]
 
-        return JSONResponse(content={"events": events, "count": len(events)})
+            return JSONResponse(content={
+                "events": events,
+                "count": len(events),
+                "total": len(detail.get("events", [])),
+                "has_more": False,
+                "next_cursor": None,
+                "prev_cursor": None,
+            })
+
+        return JSONResponse(content={
+            "events": events_page["events"],
+            "count": len(events_page["events"]),
+            "total": events_page["total"],
+            "has_more": events_page["has_more"],
+            "next_cursor": events_page["next_cursor"],
+            "prev_cursor": events_page["prev_cursor"],
+        })
 
     @app.get("/api/sessions/{session_id}/report")
     async def get_session_report(
@@ -1011,19 +1122,39 @@ def register_routes(app: FastAPI) -> None:
                     # Respond to ping with pong
                     await connection.send_json({"type": "pong"})
                 elif message_type == "get_history":
-                    # Send more history
+                    # Send history with cursor-based pagination
+                    cursor = data.get("cursor")
+                    before_cursor = data.get("before_cursor")
                     limit = data.get("limit", 1000)
                     new_detail = _query_session_api_detail(
                         session_id,
-                        tail_limit=limit,
+                        tail_limit=limit * 2,  # Get extra for backward compat
                         subprocess_chunk_limit=0,
+                        cursor=cursor,
+                        before_cursor=before_cursor,
+                        limit=limit,
                     )
-                    await connection.send_json(
-                        {
-                            "type": "history",
-                            "events": new_detail["event_tail"] or [],
-                        }
-                    )
+                    # Use paginated events page if cursor-based request
+                    if cursor is not None or before_cursor is not None:
+                        events_page = new_detail.get("events_page", {})
+                        await connection.send_json(
+                            {
+                                "type": "history_page",
+                                "events": events_page.get("events", []),
+                                "total": events_page.get("total", 0),
+                                "has_more": events_page.get("has_more", False),
+                                "next_cursor": events_page.get("next_cursor"),
+                                "prev_cursor": events_page.get("prev_cursor"),
+                            }
+                        )
+                    else:
+                        # Backward compat: simple tail-based history
+                        await connection.send_json(
+                            {
+                                "type": "history",
+                                "events": new_detail["event_tail"] or [],
+                            }
+                        )
                 elif message_type == "subscribe":
                     # Subscribe to session (redundant but explicit)
                     await event_router.subscribe(session_id, connection)

@@ -355,3 +355,171 @@ export interface BulkSessionDeleteResponse {
   results: SessionDeleteResponse[];
   summary: BulkSessionDeleteSummary;
 }
+
+// =============================================================================
+// Derived Output Types (Task 002)
+// =============================================================================
+
+export interface CriticalPathStep {
+  type: 'phase' | 'agent' | 'tool';
+  name: string | null;
+  agent_id?: string | null;
+  duration_ms: number | null;
+  start_event_id: string | null;
+  end_event_id: string | null;
+}
+
+export interface BottleneckEvent {
+  event_id: string | null;
+  event_type: string | null;
+  name: string | null;
+  duration_ms: number;
+}
+
+export interface PhaseDuration {
+  phase: string | null;
+  duration_ms: number | null;
+}
+
+export interface CriticalPath {
+  path: CriticalPathStep[];
+  total_duration_ms: number;
+  bottleneck_event: BottleneckEvent | null;
+  phase_durations: PhaseDuration[];
+}
+
+export interface StateChange {
+  event_id: string | null;
+  sequence_number: number | null;
+  timestamp: string | null;
+  state_scope: string | null;
+  state_key: string | null;
+  before: unknown;
+  after: unknown;
+  change_type: string | null;
+  caused_by_event_id: string | null;
+}
+
+export interface Decision {
+  event_id: string | null;
+  sequence_number: number | null;
+  timestamp: string | null;
+  decision_type: string | null;
+  reason_code: string | null;
+  chosen_option: string | null;
+  inputs: Record<string, unknown> | null;
+  rejected_options: string[] | null;
+  confidence: number | null;
+  cause_event_ids: string[] | null;
+  actor_id: string | null;
+}
+
+export interface Degradation {
+  event_id: string | null;
+  sequence_number: number | null;
+  timestamp: string | null;
+  reason_code: string | null;
+  severity: string | null;
+  scope: string | null;
+  recoverable: boolean | null;
+  mitigation: string | null;
+  caused_by_event_id: string | null;
+  impact: string | null;
+  inferred?: boolean;
+}
+
+export interface Failure {
+  event_id: string | null;
+  sequence_number: number | null;
+  timestamp: string | null;
+  event_type: string | null;
+  category: string | null;
+  name: string | null;
+  status: string | null;
+  severity: string | null;
+  reason_code: string | null;
+  error_message: string | null;
+  phase: string | null;
+  actor_id: string | null;
+  duration_ms: number | null;
+  recoverable: boolean | null;
+  stack_trace: string | null;
+}
+
+export interface DerivedOutputs {
+  narrative: ApiTelemetryEvent[];
+  critical_path: CriticalPath;
+  state_changes: StateChange[];
+  decisions: Decision[];
+  degradations: Degradation[];
+  failures: Failure[];
+}
+
+// =============================================================================
+// Cursor-Based Pagination Types
+// =============================================================================
+
+export interface EventsPage {
+  events: ApiTelemetryEvent[];
+  total: number;
+  has_more: boolean;
+  next_cursor: number | null;
+  prev_cursor: number | null;
+}
+
+export interface SessionDetailResponse {
+  session: ApiSession;
+  summary: Record<string, unknown> | null;
+  events_page: EventsPage;
+  event_tail: ApiTelemetryEvent[];
+  agent_timeline: ApiTelemetryEvent[];
+  active_phase: string | null;
+  narrative: ApiTelemetryEvent[];
+  critical_path: CriticalPath;
+  state_changes: StateChange[];
+  decisions: Decision[];
+  degradations: Degradation[];
+  failures: Failure[];
+}
+
+export interface PaginatedEventsResponse {
+  events: ApiTelemetryEvent[];
+  count: number;
+  total: number;
+  has_more: boolean;
+  next_cursor: number | null;
+  prev_cursor: number | null;
+}
+
+// =============================================================================
+// WebSocket Message Types for Cursor Pagination
+// =============================================================================
+
+export interface WSHistoryPageMessage {
+  type: 'history_page';
+  events: ApiTelemetryEvent[];
+  total: number;
+  has_more: boolean;
+  next_cursor: number | null;
+  prev_cursor: number | null;
+}
+
+export interface WSClientGetHistoryMessage {
+  type: 'get_history';
+  limit?: number;
+  cursor?: number;
+  before_cursor?: number;
+}
+
+export type WebSocketServerMessage =
+  | { type: 'event'; event: ApiTelemetryEvent }
+  | { type: 'history'; events: ApiTelemetryEvent[] }
+  | WSHistoryPageMessage
+  | { type: 'error'; error: string }
+  | { type: 'pong' };
+
+export type WebSocketClientMessage =
+  | { type: 'subscribe'; sessionId: string }
+  | { type: 'unsubscribe'; sessionId: string }
+  | WSClientGetHistoryMessage
+  | { type: 'ping' };
