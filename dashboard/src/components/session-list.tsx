@@ -13,12 +13,16 @@ import {
   Trash2,
 } from 'lucide-react';
 
-import { Session } from '@/types/telemetry';
+import { Session, SessionListQueryState } from '@/types/telemetry';
 import { AlertDialog } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import useDashboardStore from '@/hooks/useDashboard';
-import { deleteSession } from '@/lib/api';
+import {
+  bulkDeleteSessions,
+  deleteSession,
+  getApiErrorMessage,
+} from '@/lib/api';
 
 const sessionStatusOptions = ['completed', 'failed', 'interrupted', 'running', 'unknown'];
 
@@ -30,18 +34,22 @@ interface SessionListProps {
   nextCursor: string | null;
   onLoadMore?: () => void;
   onRetry?: () => void;
+  onRefresh?: () => void;
   sessions: Session[];
   total: number;
 }
 
 interface DeleteDialogState {
-  session: Session | null;
+  mode: 'single' | 'bulk' | null;
+  sessions: Session[];
   deleting: boolean;
 }
 
 interface SessionCardProps {
   session: Session;
+  selected: boolean;
   onDelete: (session: Session) => void;
+  onToggleSelection: (sessionId: string) => void;
 }
 
 function formatTimestamp(value: string | null): string {
@@ -60,7 +68,52 @@ function formatDepth(value: string | null): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-function SessionCard({ session, onDelete }: SessionCardProps) {
+function pluralize(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+function buildFilterSummary(query: SessionListQueryState): string {
+  const parts: string[] = [];
+
+  if (query.search.trim()) {
+    parts.push(`search "${query.search.trim()}"`);
+  }
+  if (query.status) {
+    parts.push(`status ${query.status}`);
+  }
+  if (query.activeOnly) {
+    parts.push('active-only view');
+  }
+
+  return parts.length > 0 ? parts.join(' • ') : 'all visible sessions';
+}
+
+function buildBulkFailureSummary(
+  failedCount: number,
+  activeConflictCount: number,
+  partialFailureCount: number
+): string {
+  const parts: string[] = [];
+
+  if (activeConflictCount > 0) {
+    parts.push(pluralize(activeConflictCount, 'active conflict'));
+  }
+  if (partialFailureCount > 0) {
+    parts.push(pluralize(partialFailureCount, 'partial failure'));
+  }
+  if (failedCount > 0) {
+    parts.push(pluralize(failedCount, 'failed delete'));
+  }
+
+  return parts.join(', ');
+}
+
+function SessionCard({
+  session,
+  selected,
+  onDelete,
+  onToggleSelection,
+}: SessionCardProps) {
   const timeLabel = session.completedAt ? 'Completed' : 'Last event';
   const timeValue = session.completedAt ?? session.lastEventAt;
   const showsQuery = session.query && session.query !== session.label;
@@ -68,15 +121,34 @@ function SessionCard({ session, onDelete }: SessionCardProps) {
   return (
     <article className="flex h-full flex-col rounded-lg border p-5">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <Link href={`/session/${session.sessionId}`} className="block">
-            <h3 className="text-lg font-semibold leading-snug hover:text-blue-700">
-              {session.label}
-            </h3>
-          </Link>
-          <p className="mt-1 truncate text-xs font-mono text-muted-foreground">
-            {session.sessionId}
-          </p>
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <label
+            className="mt-1 flex items-center"
+            title={
+              session.active
+                ? 'Stop the active run before selecting this session for deletion.'
+                : 'Select session'
+            }
+          >
+            <input
+              type="checkbox"
+              checked={selected}
+              disabled={session.active}
+              onChange={() => onToggleSelection(session.sessionId)}
+              className="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-500"
+              aria-label={`Select session ${session.label}`}
+            />
+          </label>
+          <div className="min-w-0 flex-1">
+            <Link href={`/session/${session.sessionId}`} className="block">
+              <h3 className="text-lg font-semibold leading-snug hover:text-blue-700">
+                {session.label}
+              </h3>
+            </Link>
+            <p className="mt-1 truncate text-xs font-mono text-muted-foreground">
+              {session.sessionId}
+            </p>
+          </div>
         </div>
         {session.active ? (
           <span className="rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-800">
@@ -133,7 +205,11 @@ function SessionCard({ session, onDelete }: SessionCardProps) {
           variant="outline"
           onClick={() => onDelete(session)}
           disabled={session.active}
-          title={session.active ? 'Stop the active run before deleting this session.' : 'Delete session'}
+          title={
+            session.active
+              ? 'Stop the active run before deleting this session.'
+              : 'Delete session'
+          }
         >
           <Trash2 className="mr-2 h-4 w-4" />
           Delete
@@ -246,7 +322,9 @@ function EmptyState({
         {filtered ? 'No sessions match the current filters' : 'No sessions available'}
       </p>
       <p className="text-muted-foreground">
-        {filtered ? 'Try broadening the search or filters.' : 'Start a research session to begin monitoring.'}
+        {filtered
+          ? 'Try broadening the search or filters.'
+          : 'Start a research session to begin monitoring.'}
       </p>
       {filtered ? (
         <Button className="mt-4" type="button" variant="outline" onClick={onClearFilters}>
@@ -265,51 +343,196 @@ export function SessionList({
   nextCursor,
   onLoadMore,
   onRetry,
+  onRefresh,
   sessions,
   total,
 }: SessionListProps) {
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>({
-    session: null,
+    mode: null,
+    sessions: [],
     deleting: false,
   });
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const query = useDashboardStore((state) => state.sessionListQuery);
+  const selectedSessionIds = useDashboardStore((state) => state.selectedSessionIds);
+  const toggleSessionSelection = useDashboardStore((state) => state.toggleSessionSelection);
+  const setSelectedSessionIds = useDashboardStore((state) => state.setSelectedSessionIds);
+  const clearSessionSelection = useDashboardStore((state) => state.clearSessionSelection);
   const removeSession = useDashboardStore((state) => state.removeSession);
+  const removeSessions = useDashboardStore((state) => state.removeSessions);
   const setSessionListQuery = useDashboardStore((state) => state.setSessionListQuery);
   const filtered =
     query.search.trim().length > 0 || query.status.length > 0 || query.activeOnly;
 
+  const selectedSessionIdSet = new Set(selectedSessionIds);
+  const selectableSessions = sessions.filter((session) => !session.active);
+  const selectedSessions = selectableSessions.filter((session) =>
+    selectedSessionIdSet.has(session.sessionId)
+  );
+  const allSelectableSelected =
+    selectableSessions.length > 0 && selectedSessions.length === selectableSessions.length;
+
   const handleDeleteClick = (session: Session) => {
-    setDeleteDialog({ session, deleting: false });
+    setDeleteDialog({ mode: 'single', sessions: [session], deleting: false });
     setDeleteError(null);
   };
 
+  const handleBulkDeleteClick = () => {
+    if (selectedSessions.length === 0) {
+      return;
+    }
+    setDeleteDialog({ mode: 'bulk', sessions: selectedSessions, deleting: false });
+    setDeleteError(null);
+  };
+
+  const refreshSessions = () => {
+    onRefresh?.();
+  };
+
   const handleDeleteConfirm = async () => {
-    if (!deleteDialog.session) {
+    if (deleteDialog.sessions.length === 0 || deleteDialog.mode === null) {
       return;
     }
 
     setDeleteDialog((previous) => ({ ...previous, deleting: true }));
     setDeleteError(null);
 
-    const result = await deleteSession(deleteDialog.session.sessionId);
+    if (deleteDialog.mode === 'single') {
+      const session = deleteDialog.sessions[0];
+      const result = await deleteSession(session.sessionId);
 
-    if (result.success) {
-      removeSession(deleteDialog.session.sessionId);
-      setDeleteDialog({ session: null, deleting: false });
+      if (result.success) {
+        removeSession(session.sessionId);
+        setDeleteDialog({ mode: null, sessions: [], deleting: false });
+        refreshSessions();
+        return;
+      }
+
+      setDeleteError(result.error || 'Failed to delete session');
+      setDeleteDialog((previous) => ({ ...previous, deleting: false }));
       return;
     }
 
-    setDeleteError(result.error || 'Failed to delete session');
-    setDeleteDialog((previous) => ({ ...previous, deleting: false }));
+    try {
+      const response = await bulkDeleteSessions(
+        deleteDialog.sessions.map((session) => session.sessionId)
+      );
+      const removableIds = response.results
+        .filter((result) => result.outcome === 'deleted' || result.outcome === 'not_found')
+        .map((result) => result.session_id);
+      const retainedIds = new Set(
+        response.results
+          .filter((result) => result.outcome !== 'deleted' && result.outcome !== 'not_found')
+          .map((result) => result.session_id)
+      );
+
+      if (removableIds.length > 0) {
+        removeSessions(removableIds);
+        refreshSessions();
+      }
+
+      if (retainedIds.size === 0) {
+        setDeleteDialog({ mode: null, sessions: [], deleting: false });
+        return;
+      }
+
+      const remainingSessions = deleteDialog.sessions.filter((session) =>
+        retainedIds.has(session.sessionId)
+      );
+      setSelectedSessionIds(remainingSessions.map((session) => session.sessionId));
+      setDeleteDialog({
+        mode: 'bulk',
+        sessions: remainingSessions,
+        deleting: false,
+      });
+
+      const failureSummary = buildBulkFailureSummary(
+        response.summary.failed_count,
+        response.summary.active_conflict_count,
+        response.summary.partial_failure_count
+      );
+      const deletedSummary =
+        removableIds.length > 0 ? `Deleted ${pluralize(removableIds.length, 'session')}. ` : '';
+      setDeleteError(
+        `${deletedSummary}${pluralize(remainingSessions.length, 'session')} still require attention: ${failureSummary}.`
+      );
+    } catch (requestError) {
+      setDeleteError(
+        getApiErrorMessage(requestError, 'Failed to delete the selected sessions')
+      );
+      setDeleteDialog((previous) => ({ ...previous, deleting: false }));
+    }
   };
 
   const handleDialogClose = (open: boolean) => {
     if (open) {
       return;
     }
-    setDeleteDialog({ session: null, deleting: false });
+    setDeleteDialog({ mode: null, sessions: [], deleting: false });
     setDeleteError(null);
+  };
+
+  const handleSelectVisible = () => {
+    if (allSelectableSelected) {
+      clearSessionSelection();
+      return;
+    }
+    setSelectedSessionIds(selectableSessions.map((session) => session.sessionId));
+  };
+
+  const renderDeleteDescription = () => {
+    const sessionCount = deleteDialog.sessions.length;
+    const previewSessions = deleteDialog.sessions.slice(0, 5);
+    const remainingCount = sessionCount - previewSessions.length;
+
+    if (deleteDialog.mode === 'single') {
+      const session = deleteDialog.sessions[0];
+      return (
+        <div className="space-y-3">
+          <p>
+            This will permanently delete <span className="font-medium">{session.label}</span> and
+            all associated telemetry, report, and analytics history.
+          </p>
+          <p className="font-mono text-xs text-slate-500">{session.sessionId}</p>
+          {deleteError ? (
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700">
+              {deleteError}
+            </p>
+          ) : (
+            <p>This action cannot be undone.</p>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-3">
+        <p>
+          This will permanently delete {pluralize(sessionCount, 'selected session')} from{' '}
+          <span className="font-medium">{buildFilterSummary(query)}</span>.
+        </p>
+        <ul className="space-y-2 rounded-md border bg-slate-50 px-3 py-3 text-slate-700">
+          {previewSessions.map((session) => (
+            <li key={session.sessionId} className="flex flex-col gap-1">
+              <span className="font-medium">{session.label}</span>
+              <span className="font-mono text-xs text-slate-500">{session.sessionId}</span>
+            </li>
+          ))}
+          {remainingCount > 0 ? (
+            <li className="text-xs uppercase tracking-wide text-slate-500">
+              And {pluralize(remainingCount, 'more session')}
+            </li>
+          ) : null}
+        </ul>
+        {deleteError ? (
+          <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700">
+            {deleteError}
+          </p>
+        ) : (
+          <p>This action cannot be undone.</p>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -322,9 +545,36 @@ export function SessionList({
               Showing {sessions.length} of {total} matching sessions
             </p>
           </div>
+          {selectableSessions.length > 0 ? (
+            <Button type="button" variant="outline" onClick={handleSelectVisible}>
+              {allSelectableSelected ? 'Clear Selection' : 'Select Visible'}
+            </Button>
+          ) : null}
         </div>
 
         <SessionFilters />
+
+        {selectedSessions.length > 0 ? (
+          <div className="flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50/70 p-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="font-medium text-red-900">
+                {pluralize(selectedSessions.length, 'session')} selected for deletion
+              </p>
+              <p className="text-sm text-red-800">
+                Scope: {buildFilterSummary(query)}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" onClick={clearSessionSelection}>
+                Clear Selection
+              </Button>
+              <Button type="button" variant="destructive" onClick={handleBulkDeleteClick}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete Selected
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         {loading ? (
           <LoadingState />
@@ -344,7 +594,9 @@ export function SessionList({
                 <SessionCard
                   key={session.sessionId}
                   session={session}
+                  selected={selectedSessionIdSet.has(session.sessionId)}
                   onDelete={handleDeleteClick}
+                  onToggleSelection={toggleSessionSelection}
                 />
               ))}
             </div>
@@ -367,17 +619,15 @@ export function SessionList({
       </div>
 
       <AlertDialog
-        open={deleteDialog.session !== null}
+        open={deleteDialog.mode !== null}
         onOpenChange={handleDialogClose}
-        title="Delete Session"
-        description={
-          deleteError ||
-          'This will permanently delete this session and all associated telemetry, report, and analytics history. This action cannot be undone.'
-        }
-        confirmLabel="Delete"
+        title={deleteDialog.mode === 'bulk' ? 'Delete Selected Sessions' : 'Delete Session'}
+        description={renderDeleteDescription()}
+        confirmLabel={deleteDialog.mode === 'bulk' ? 'Delete Sessions' : 'Delete Session'}
         destructive
         onConfirm={handleDeleteConfirm}
         loading={deleteDialog.deleting}
+        loadingLabel={deleteDialog.mode === 'bulk' ? 'Deleting Sessions...' : 'Deleting Session...'}
       />
     </>
   );
