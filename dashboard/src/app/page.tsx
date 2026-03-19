@@ -23,11 +23,11 @@ export default function HomePage() {
       }
 
       try {
-        const data = await getSessions(false, 50);
+        const data = await getSessions({ limit: 50 });
         if (!mounted) {
           return;
         }
-        useDashboardStore.getState().setSessions(data);
+        useDashboardStore.getState().setSessions(data.sessions);
       } catch (error) {
         console.error('Failed to load sessions:', error);
         if (mounted) {

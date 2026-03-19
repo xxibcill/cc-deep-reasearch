@@ -11,6 +11,8 @@ import {
   ResearchRunStatusResponse,
   SessionReportResponse,
   SessionDeleteResponse,
+  SessionListParams,
+  PaginatedSessionsResponse,
 } from '@/types/telemetry';
 
 const apiClient = axios.create({
@@ -39,6 +41,8 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
 
 interface SessionsResponse {
   sessions: ApiSession[];
+  total: number;
+  next_cursor: string | null;
 }
 
 interface SessionResponse {
@@ -50,11 +54,29 @@ interface SessionEventsResponse {
   count: number;
 }
 
-export async function getSessions(activeOnly = false, limit = 100): Promise<Session[]> {
-  const response = await apiClient.get<SessionsResponse>('/sessions', {
-    params: { active_only: activeOnly, limit },
+export interface SessionListResult {
+  sessions: Session[];
+  total: number;
+  nextCursor: string | null;
+}
+
+export async function getSessions(params: SessionListParams = {}): Promise<SessionListResult> {
+  const response = await apiClient.get<PaginatedSessionsResponse>('/sessions', {
+    params: {
+      active_only: params.active_only ?? false,
+      limit: params.limit ?? 100,
+      cursor: params.cursor,
+      search: params.search,
+      status: params.status,
+      sort_by: params.sort_by ?? 'last_event_at',
+      sort_order: params.sort_order ?? 'desc',
+    },
   });
-  return response.data.sessions.map(normalizeSession);
+  return {
+    sessions: response.data.sessions.map(normalizeSession),
+    total: response.data.total,
+    nextCursor: response.data.next_cursor,
+  };
 }
 
 export async function getSession(sessionId: string): Promise<{ session: Session }> {

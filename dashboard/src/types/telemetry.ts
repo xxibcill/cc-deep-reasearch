@@ -47,6 +47,7 @@ export type TelemetryStatus =
 
 export interface ApiSession {
   session_id: string;
+  label?: string | null;
   created_at: string | null;
   total_time_ms: number | null;
   total_sources: number | null;
@@ -54,10 +55,35 @@ export interface ApiSession {
   active: boolean;
   event_count: number | null;
   last_event_at: string | null;
+  query: string | null;
+  depth: string | null;
+  completed_at: string | null;
+  has_session_payload: boolean;
+  has_report: boolean;
+}
+
+export type SessionSortBy = 'created_at' | 'last_event_at' | 'total_time_ms';
+export type SortOrder = 'asc' | 'desc';
+
+export interface SessionListParams {
+  active_only?: boolean;
+  limit?: number;
+  cursor?: string | null;
+  search?: string | null;
+  status?: string | null;
+  sort_by?: SessionSortBy;
+  sort_order?: SortOrder;
+}
+
+export interface PaginatedSessionsResponse {
+  sessions: ApiSession[];
+  total: number;
+  next_cursor: string | null;
 }
 
 export interface Session {
   sessionId: string;
+  label: string;
   createdAt: string | null;
   totalTimeMs: number | null;
   totalSources: number;
@@ -65,6 +91,11 @@ export interface Session {
   active: boolean;
   eventCount: number | null;
   lastEventAt: string | null;
+  query: string | null;
+  depth: string | null;
+  completedAt: string | null;
+  hasSessionPayload: boolean;
+  hasReport: boolean;
 }
 
 export interface ApiServerMessage {
