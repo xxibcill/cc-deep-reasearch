@@ -111,6 +111,8 @@ class TeamResearchOrchestrator:
         depth: ResearchDepth,
         min_sources: int | None = None,
         phase_hook: Callable[[str, str], None] | None = None,
+        cancellation_check: Callable[[], None] | None = None,
+        on_session_started: Callable[[str], None] | None = None,
     ) -> ResearchSession:
         """Execute a research query using the local specialist pipeline.
 
@@ -131,6 +133,8 @@ class TeamResearchOrchestrator:
             depth=depth,
             min_sources=min_sources,
             phase_hook=phase_hook,
+            cancellation_check=cancellation_check,
+            on_session_started=on_session_started,
             hooks=self._build_execution_hooks(),
         )
 
@@ -351,6 +355,7 @@ class TeamResearchOrchestrator:
         sources: list[SearchResultItem],
         min_sources: int | None,
         phase_hook: Callable[[str, str], None] | None,
+        cancellation_check: Callable[[], None] | None = None,
     ) -> tuple[
         AnalysisResult,
         ValidationResult | None,
@@ -365,6 +370,7 @@ class TeamResearchOrchestrator:
             sources=sources,
             min_sources=min_sources,
             phase_hook=phase_hook,
+            cancellation_check=cancellation_check,
             run_single_pass=self._run_single_analysis_pass,
             collect_follow_up_sources=self._run_follow_up_collection,
         )
@@ -376,6 +382,7 @@ class TeamResearchOrchestrator:
         strategy: StrategyResult,
         sources: list[SearchResultItem],
         phase_hook: Callable[[str, str], None] | None,
+        cancellation_check: Callable[[], None] | None = None,
     ) -> tuple[AnalysisResult, ValidationResult | None]:
         """Run one analysis pass over the current source set."""
         return await self._phase_runner.run_analysis_pass(
@@ -384,6 +391,7 @@ class TeamResearchOrchestrator:
             depth=depth,
             strategy=strategy,
             sources=sources,
+            cancellation_check=cancellation_check,
             analyze_findings=self._phase_analyze_findings,
             deep_analyze=self._phase_deep_analysis,
             validate_research=self._phase_validate_research,

@@ -13,6 +13,7 @@ from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.research_runs import (
     AsyncioResearchRunExecutionAdapter,
     ResearchOutputFormat,
+    ResearchRunCancelled,
     ResearchRunReport,
     ResearchRunRequest,
     ResearchRunResult,
@@ -68,6 +69,7 @@ def test_run_executes_shared_workflow_and_materializes_result() -> None:
             depth: ResearchDepth,
             min_sources: int | None = None,
             phase_hook=None,
+            **_kwargs,
         ) -> ResearchSession:
             captured["execute_args"] = {
                 "query": query,
@@ -161,5 +163,47 @@ def test_run_finalizes_failed_monitor_when_execution_raises() -> None:
 
     assert any(
         event["event_type"] == "session.finished" and event["status"] == "failed"
+        for event in monitor._telemetry_events
+    )
+
+
+def test_run_finalizes_interrupted_monitor_when_cancelled() -> None:
+    """Operator cancellation should produce an interrupted terminal session event."""
+    monitor = ResearchMonitor(enabled=False, persist=False)
+    started_sessions: list[str] = []
+
+    class CancellableOrchestrator:
+        def __init__(self, *, monitor: ResearchMonitor, **_kwargs) -> None:
+            self._monitor = monitor
+
+        async def execute_research(
+            self,
+            *,
+            query: str,
+            depth: ResearchDepth,
+            on_session_started=None,
+            **_kwargs,
+        ) -> ResearchSession:
+            session_id = "session-cancelled"
+            self._monitor.set_session(session_id, query, depth.value)
+            if on_session_started is not None:
+                on_session_started(session_id)
+            raise ResearchRunCancelled("cancelled")
+
+    service = ResearchRunService(
+        config_loader=lambda: Config(),
+        orchestrator_factory=CancellableOrchestrator,
+    )
+
+    with pytest.raises(ResearchRunCancelled):
+        service.run(
+            ResearchRunRequest(query="test query", depth=ResearchDepth.DEEP),
+            monitor=monitor,
+            on_session_started=started_sessions.append,
+        )
+
+    assert started_sessions == ["session-cancelled"]
+    assert any(
+        event["event_type"] == "session.finished" and event["status"] == "interrupted"
         for event in monitor._telemetry_events
     )

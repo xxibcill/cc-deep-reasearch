@@ -1,6 +1,6 @@
 # Task 014: Add Active Run Stop Contract And Backend Flow
 
-Status: Planned
+Status: Done
 
 ## Objective
 

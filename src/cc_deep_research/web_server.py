@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any, cast
+from uuid import uuid4
 
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,7 +21,9 @@ from cc_deep_research.reporting import ReportGenerator
 from cc_deep_research.research_runs.jobs import ResearchRunJob, ResearchRunJobRegistry
 from cc_deep_research.research_runs.models import (
     ResearchOutputFormat,
+    ResearchRunCancelled,
     ResearchRunRequest,
+    ResearchRunStatus,
     SessionDeleteRequest,
 )
 from cc_deep_research.research_runs.service import ResearchRunService
@@ -36,6 +39,7 @@ from cc_deep_research.telemetry import (
 )
 
 STALE_LIVE_SESSION_AFTER = timedelta(minutes=15)
+RUN_CANCELLED_MESSAGE = "Research run was cancelled by the operator."
 
 
 class SortOrder(StrEnum):
@@ -227,6 +231,89 @@ def _normalize_live_session_state(session: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _build_interrupted_session_summary(
+    *,
+    session_id: str,
+    detail: dict[str, Any],
+    interrupted_at: datetime,
+) -> dict[str, Any]:
+    """Build a summary payload for an operator-stopped live session."""
+    events = detail.get("events", [])
+    created_at = detail.get("session", {}).get("created_at")
+    created_at_dt = _parse_timestamp(created_at)
+    total_time_ms = None
+    if created_at_dt is not None:
+        total_time_ms = max(int((interrupted_at - created_at_dt).total_seconds() * 1000), 0)
+
+    return {
+        "session_id": session_id,
+        "status": "interrupted",
+        "stop_reason": "cancelled",
+        "total_sources": detail.get("session", {}).get("total_sources", 0),
+        "providers": [],
+        "total_time_ms": total_time_ms,
+        "instances_spawned": sum(
+            1 for event in events if event.get("event_type") == "agent.spawned"
+        ),
+        "search_queries": sum(1 for event in events if event.get("event_type") == "search.query"),
+        "tool_calls": sum(1 for event in events if event.get("event_type") == "tool.call"),
+        "llm_prompt_tokens": 0,
+        "llm_completion_tokens": 0,
+        "llm_total_tokens": 0,
+        "llm_route": {},
+        "event_count": len(events) + 1,
+        "created_at": created_at or interrupted_at.isoformat(),
+    }
+
+
+def _interrupt_live_session(session_id: str) -> None:
+    """Persist interrupted state for a live session so it leaves the active list."""
+    telemetry_dir = get_default_telemetry_dir()
+    detail = query_live_session_detail(session_id, base_dir=telemetry_dir)
+    session = detail.get("session")
+    if session is None or not session.get("active"):
+        return
+
+    session_dir = telemetry_dir / session_id
+    interrupted_at = datetime.now(UTC)
+    summary = _build_interrupted_session_summary(
+        session_id=session_id,
+        detail=detail,
+        interrupted_at=interrupted_at,
+    )
+
+    events = detail.get("events", [])
+    sequence_number = (events[-1].get("sequence_number") if events else 0) or 0
+    event = {
+        "event_id": f"{session_id}-cancelled-{uuid4().hex[:8]}",
+        "parent_event_id": None,
+        "sequence_number": sequence_number + 1,
+        "timestamp": interrupted_at.isoformat(),
+        "session_id": session_id,
+        "event_type": "session.finished",
+        "category": "session",
+        "name": "research-session",
+        "status": "interrupted",
+        "duration_ms": summary["total_time_ms"],
+        "agent_id": None,
+        "metadata": summary,
+    }
+
+    events_path = session_dir / "events.jsonl"
+    with open(events_path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(event) + "\n")
+
+    summary_path = session_dir / "summary.json"
+    with open(summary_path, "w", encoding="utf-8") as handle:
+        json.dump(summary, handle, indent=2)
+
+
+def _raise_if_run_cancelled(job: ResearchRunJob) -> None:
+    """Raise the shared cancellation error when a run stop has been requested."""
+    if job.stop_requested:
+        raise ResearchRunCancelled(RUN_CANCELLED_MESSAGE)
+
+
 def _normalize_optional_string(value: Any) -> str | None:
     """Return a trimmed string or explicit null."""
     if not isinstance(value, str):
@@ -380,14 +467,30 @@ def register_routes(app: FastAPI) -> None:
             """Execute the research run and update job status in a thread."""
             service = ResearchRunService()
             try:
+                if job.stop_requested:
+                    job_registry.mark_cancelled(job.run_id, error=RUN_CANCELLED_MESSAGE)
+                    return
                 job_registry.mark_running(job.run_id)
                 # Run the synchronous service in a thread to avoid blocking
                 result = await asyncio.to_thread(
                     service.run,
                     job.request,
                     event_router=event_router,
+                    cancellation_check=lambda: _raise_if_run_cancelled(job),
+                    on_session_started=lambda session_id: job_registry.set_session_id(
+                        job.run_id,
+                        session_id=session_id,
+                    ),
                 )
                 job_registry.mark_completed(job.run_id, result=result)
+            except ResearchRunCancelled:
+                if job.session_id:
+                    _interrupt_live_session(job.session_id)
+                job_registry.mark_cancelled(job.run_id, error=RUN_CANCELLED_MESSAGE)
+            except asyncio.CancelledError:
+                if job.session_id:
+                    _interrupt_live_session(job.session_id)
+                job_registry.mark_cancelled(job.run_id, error=RUN_CANCELLED_MESSAGE)
             except Exception as e:
                 job_registry.mark_failed(job.run_id, error=str(e))
 
@@ -427,6 +530,7 @@ def register_routes(app: FastAPI) -> None:
             "run_id": job.run_id,
             "status": job.status.value,
             "created_at": job.created_at.isoformat(),
+            "stop_requested": job.stop_requested,
         }
 
         if job.session_id:
@@ -457,6 +561,41 @@ def register_routes(app: FastAPI) -> None:
             }
 
         return JSONResponse(content=response)
+
+    @app.post("/api/research-runs/{run_id}/stop")
+    async def stop_research_run(run_id: str) -> JSONResponse:
+        """Request cancellation of an in-process browser-started run."""
+        job_registry = get_job_registry(app)
+        job = job_registry.get_job(run_id)
+
+        if job is None:
+            return JSONResponse(
+                content={"error": f"Research run not found: {run_id}"},
+                status_code=404,
+            )
+
+        if not job.is_active:
+            return JSONResponse(
+                content={"error": f"Research run is not active: {run_id}"},
+                status_code=409,
+            )
+
+        job_registry.request_cancel(run_id)
+
+        if job.status == ResearchRunStatus.QUEUED:
+            if job.task is not None and not job.task.done():
+                job.task.cancel()
+            job = job_registry.mark_cancelled(run_id, error=RUN_CANCELLED_MESSAGE)
+
+        return JSONResponse(
+            content={
+                "run_id": job.run_id,
+                "status": job.status.value,
+                "stop_requested": job.stop_requested,
+                "session_id": job.session_id,
+            },
+            status_code=202,
+        )
 
     @app.get("/api/sessions")
     async def list_sessions(
@@ -590,6 +729,8 @@ def register_routes(app: FastAPI) -> None:
         sessions.sort(key=sort_key, reverse=reverse)
         sessions.sort(key=lambda session: 0 if session.get("active") else 1)
 
+        total = len(sessions)
+
         if cursor:
             cursor_index = None
             for i, s in enumerate(sessions):
@@ -599,11 +740,11 @@ def register_routes(app: FastAPI) -> None:
             if cursor_index is not None:
                 sessions = sessions[cursor_index:]
 
-        total = len(sessions)
+        remaining_sessions = len(sessions)
         sessions = sessions[:limit]
 
         next_cursor = None
-        if len(sessions) == limit and total > limit:
+        if len(sessions) == limit and remaining_sessions > limit:
             next_cursor = sessions[-1]["session_id"]
 
         return JSONResponse(
