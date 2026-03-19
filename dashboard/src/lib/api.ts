@@ -9,6 +9,7 @@ import {
   ResearchRunRequest,
   StartResearchRunResponse,
   ResearchRunStatusResponse,
+  StopResearchRunResponse,
   SessionReportResponse,
   SessionDeleteResponse,
   SessionListParams,
@@ -109,6 +110,11 @@ export async function startResearchRun(
 
 export async function getResearchRunStatus(runId: string): Promise<ResearchRunStatusResponse> {
   const response = await apiClient.get<ResearchRunStatusResponse>(`/research-runs/${runId}`);
+  return response.data;
+}
+
+export async function stopResearchRun(runId: string): Promise<StopResearchRunResponse> {
+  const response = await apiClient.post<StopResearchRunResponse>(`/research-runs/${runId}/stop`);
   return response.data;
 }
 

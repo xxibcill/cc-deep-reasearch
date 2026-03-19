@@ -1,14 +1,37 @@
 import { create } from 'zustand';
-import { TelemetryEvent, Session, EventFilter, ViewMode } from '@/types/telemetry';
+import {
+  TelemetryEvent,
+  Session,
+  EventFilter,
+  ViewMode,
+  SessionListQueryState,
+} from '@/types/telemetry';
+
+const defaultSessionListQuery: SessionListQueryState = {
+  search: '',
+  status: '',
+  activeOnly: false,
+};
 
 interface DashboardState {
   sessionId: string | null;
   setSessionId: (id: string | null) => void;
   sessions: Session[];
   sessionsLoading: boolean;
-  setSessions: (sessions: Session[]) => void;
+  sessionsLoadingMore: boolean;
+  sessionsTotal: number;
+  sessionsNextCursor: string | null;
+  sessionListQuery: SessionListQueryState;
+  setSessions: (sessions: Session[], options?: {
+    total?: number;
+    nextCursor?: string | null;
+    append?: boolean;
+  }) => void;
   setSessionsLoading: (loading: boolean) => void;
+  setSessionsLoadingMore: (loading: boolean) => void;
+  setSessionListQuery: (query: Partial<SessionListQueryState>) => void;
   removeSession: (sessionId: string) => void;
+  reconcileSession: (sessionId: string, changes: Partial<Session>) => void;
 
   deleteError: string | null;
   deleteSuccess: boolean;
@@ -51,6 +74,24 @@ function mergeEvents(existing: TelemetryEvent[], incoming: TelemetryEvent[]): Te
   return sortEvents(Array.from(byId.values())).slice(-4000);
 }
 
+function mergeSessions(existing: Session[], incoming: Session[]): Session[] {
+  const byId = new Map(existing.map((session) => [session.sessionId, session]));
+  for (const session of incoming) {
+    byId.set(session.sessionId, session);
+  }
+  return Array.from(byId.values());
+}
+
+function matchesSessionListQuery(session: Session, query: SessionListQueryState): boolean {
+  if (query.activeOnly && !session.active) {
+    return false;
+  }
+  if (query.status && session.status !== query.status) {
+    return false;
+  }
+  return true;
+}
+
 const useDashboardStore = create<DashboardState>((set) => ({
   sessionId: null,
   setSessionId: (id) =>
@@ -63,15 +104,56 @@ const useDashboardStore = create<DashboardState>((set) => ({
             connected: false,
             selectedEvent: null,
           }
-    ),
+  ),
   sessions: [],
   sessionsLoading: true,
-  setSessions: (sessions) => set({ sessions }),
+  sessionsLoadingMore: false,
+  sessionsTotal: 0,
+  sessionsNextCursor: null,
+  sessionListQuery: defaultSessionListQuery,
+  setSessions: (sessions, options) =>
+    set((state) => ({
+      sessions: options?.append ? mergeSessions(state.sessions, sessions) : sessions,
+      sessionsTotal: options?.total ?? state.sessionsTotal,
+      sessionsNextCursor:
+        options && Object.prototype.hasOwnProperty.call(options, 'nextCursor')
+          ? options.nextCursor ?? null
+          : state.sessionsNextCursor,
+    })),
   setSessionsLoading: (sessionsLoading) => set({ sessionsLoading }),
+  setSessionsLoadingMore: (sessionsLoadingMore) => set({ sessionsLoadingMore }),
+  setSessionListQuery: (query) =>
+    set((state) => ({
+      sessionListQuery: { ...state.sessionListQuery, ...query },
+    })),
   removeSession: (sessionId) =>
     set((state) => ({
       sessions: state.sessions.filter((s) => s.sessionId !== sessionId),
+      sessionsTotal: Math.max(state.sessionsTotal - 1, 0),
+      sessionsNextCursor:
+        state.sessionsNextCursor === sessionId ? null : state.sessionsNextCursor,
     })),
+  reconcileSession: (sessionId, changes) =>
+    set((state) => {
+      const current = state.sessions.find((session) => session.sessionId === sessionId);
+      if (!current) {
+        return {};
+      }
+
+      const nextSession = { ...current, ...changes };
+      if (!matchesSessionListQuery(nextSession, state.sessionListQuery)) {
+        return {
+          sessions: state.sessions.filter((session) => session.sessionId !== sessionId),
+          sessionsTotal: Math.max(state.sessionsTotal - 1, 0),
+        };
+      }
+
+      return {
+        sessions: state.sessions.map((session) =>
+          session.sessionId === sessionId ? nextSession : session
+        ),
+      };
+    }),
 
   deleteError: null,
   deleteSuccess: false,

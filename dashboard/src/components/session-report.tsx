@@ -7,11 +7,15 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs } from '@/components/ui/tabs';
 import { getSessionReport } from '@/lib/api';
-import type { ResearchOutputFormat, SessionReportResponse } from '@/types/telemetry';
+import type {
+  ResearchOutputFormat,
+  ResearchRunStatus,
+  SessionReportResponse,
+} from '@/types/telemetry';
 
 interface SessionReportProps {
   sessionId: string;
-  runStatus: 'queued' | 'running' | 'completed' | 'failed' | null;
+  runStatus: ResearchRunStatus | null;
 }
 
 function formatReportContent(content: string, format: ResearchOutputFormat): React.ReactNode {
@@ -53,7 +57,12 @@ export function SessionReport({ sessionId, runStatus }: SessionReportProps) {
   const [selectedFormat, setSelectedFormat] = useState<ResearchOutputFormat>('markdown');
 
   useEffect(() => {
-    if (runStatus === 'queued' || runStatus === 'running' || runStatus === 'failed') {
+    if (
+      runStatus === 'queued' ||
+      runStatus === 'running' ||
+      runStatus === 'failed' ||
+      runStatus === 'cancelled'
+    ) {
       return;
     }
 
@@ -108,6 +117,20 @@ export function SessionReport({ sessionId, runStatus }: SessionReportProps) {
           <p className="text-lg font-medium text-destructive">Research run failed</p>
           <p className="text-sm text-muted-foreground mt-2">
             No report is available for failed runs.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (runStatus === 'cancelled') {
+    return (
+      <Card className="border-amber-200 bg-amber-50">
+        <CardContent className="flex flex-col items-center justify-center py-12">
+          <AlertCircle className="mb-4 h-8 w-8 text-amber-600" />
+          <p className="text-lg font-medium text-amber-800">Research run was cancelled</p>
+          <p className="mt-2 text-sm text-amber-700">
+            No new report was produced after the run was stopped.
           </p>
         </CardContent>
       </Card>
