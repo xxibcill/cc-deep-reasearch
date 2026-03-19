@@ -523,3 +523,17 @@ export type WebSocketClientMessage =
   | { type: 'unsubscribe'; sessionId: string }
   | WSClientGetHistoryMessage
   | { type: 'ping' };
+
+// =============================================================================
+// Trace Bundle Types (Task 003)
+// =============================================================================
+
+export interface TraceBundle {
+  schema_version: string;
+  exported_at: string;
+  session_summary: ApiSession;
+  events: ApiTelemetryEvent[];
+  config_snapshot: Record<string, unknown> | null;
+  artifacts: ResearchRunArtifact[];
+  derived_outputs: DerivedOutputs;
+}

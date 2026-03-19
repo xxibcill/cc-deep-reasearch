@@ -7,8 +7,18 @@ import { SessionDetails } from '@/components/session-details';
 import { SessionReport } from '@/components/session-report';
 import { Card, CardContent } from '@/components/ui/card';
 import useDashboardStore from '@/hooks/useDashboard';
+import { getSessionDetail, type SessionDetailResult } from '@/lib/api';
 import { useWebSocket } from '@/lib/websocket';
-import type { ResearchRunStatus, ResearchRunStatusResponse } from '@/types/telemetry';
+import type {
+  ResearchRunStatus,
+  ResearchRunStatusResponse,
+  CriticalPath,
+  StateChange,
+  Decision,
+  Degradation,
+  Failure,
+  ApiTelemetryEvent,
+} from '@/types/telemetry';
 
 export default function SessionPage({ params }: { params: { id: string } }) {
   const routeId = params.id;
@@ -19,6 +29,14 @@ export default function SessionPage({ params }: { params: { id: string } }) {
   const [runStatus, setRunStatus] = useState<ResearchRunStatus | null>(
     isRunRoute ? 'queued' : null
   );
+  const [derivedOutputs, setDerivedOutputs] = useState<{
+    narrative: ApiTelemetryEvent[];
+    criticalPath: CriticalPath;
+    stateChanges: StateChange[];
+    decisions: Decision[];
+    degradations: Degradation[];
+    failures: Failure[];
+  } | null>(null);
   const setSelectedEvent = useDashboardStore((state) => state.setSelectedEvent);
   const selectedEvent = useDashboardStore((state) => state.selectedEvent);
   const viewMode = useDashboardStore((state) => state.viewMode);
@@ -26,6 +44,23 @@ export default function SessionPage({ params }: { params: { id: string } }) {
   const reconcileSession = useDashboardStore((state) => state.reconcileSession);
   const telemetrySessionId = isRunRoute ? resolvedSessionId : routeId;
   const { connected, events } = useWebSocket(telemetrySessionId);
+
+  // Fetch derived outputs for historical sessions
+  useEffect(() => {
+    if (!telemetrySessionId || isRunRoute) {
+      setDerivedOutputs(null);
+      return;
+    }
+
+    getSessionDetail(telemetrySessionId)
+      .then((result: SessionDetailResult) => {
+        setDerivedOutputs(result.derivedOutputs);
+      })
+      .catch((error) => {
+        console.error('Failed to fetch derived outputs:', error);
+        setDerivedOutputs(null);
+      });
+  }, [telemetrySessionId, isRunRoute]);
 
   useEffect(() => {
     setResolvedSessionId(isRunRoute ? null : routeId);
@@ -88,6 +123,7 @@ export default function SessionPage({ params }: { params: { id: string } }) {
             viewMode={viewMode}
             onSelectEvent={setSelectedEvent}
             onViewModeChange={setViewMode}
+            derivedOutputs={derivedOutputs ?? undefined}
           />
         </div>
       )}

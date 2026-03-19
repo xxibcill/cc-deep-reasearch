@@ -18,6 +18,10 @@ from cc_deep_research.models.session import (
     ResearchSession,
     normalize_session_metadata,
 )
+from cc_deep_research.telemetry import (
+    get_default_dashboard_db_path,
+    query_session_detail,
+)
 
 SESSION_SUMMARY_DIRNAME = ".summaries"
 SESSION_LABEL_MAX_LENGTH = 120
@@ -401,6 +405,107 @@ class SessionStore:
             return bool(data.get("archived"))
         except (json.JSONDecodeError, OSError):
             return False
+
+    def export_trace_bundle(
+        self,
+        session_id: str,
+        *,
+        include_payload: bool = False,
+        include_report: bool = False,
+    ) -> dict[str, Any] | None:
+        """Export a session as a portable trace bundle.
+
+        Args:
+            session_id: Session identifier.
+            include_payload: Include full session payload in the bundle.
+            include_report: Include report content in the bundle.
+
+        Returns:
+            Trace bundle dict, or None if session not found.
+        """
+        from cc_deep_research.telemetry.bundle import build_trace_bundle
+
+        # Load saved session summary
+        session_path = self._session_path(session_id)
+        if not session_path.exists():
+            return None
+
+        saved_summary = self._load_saved_session_summary(session_path)
+        if saved_summary is None:
+            return None
+
+        # Query telemetry for events and derived outputs
+        db_path = get_default_dashboard_db_path()
+        telemetry_data = query_session_detail(
+            session_id,
+            db_path=db_path,
+            include_derived=True,
+        )
+
+        session_data = telemetry_data.get("session", {})
+        events = telemetry_data.get("events", [])
+
+        # Build session summary from saved + telemetry
+        session_summary = {
+            "session_id": session_id,
+            "query": saved_summary.get("query"),
+            "depth": saved_summary.get("depth"),
+            "started_at": saved_summary.get("started_at"),
+            "completed_at": saved_summary.get("completed_at"),
+            "total_sources": saved_summary.get("total_sources", 0),
+            "status": session_data.get("status") if isinstance(session_data, dict) else None,
+            "total_time_ms": session_data.get("total_time_ms") if isinstance(session_data, dict) else None,
+        }
+
+        # Build derived outputs
+        derived_outputs = {
+            "narrative": telemetry_data.get("narrative", []),
+            "critical_path": telemetry_data.get("critical_path", {}),
+            "state_changes": telemetry_data.get("state_changes", []),
+            "decisions": telemetry_data.get("decisions", []),
+            "degradations": telemetry_data.get("degradations", []),
+            "failures": telemetry_data.get("failures", []),
+        }
+
+        # Build artifacts list
+        artifacts: list[dict[str, Any]] = []
+        if saved_summary.get("has_session_payload"):
+            artifacts.append({
+                "kind": "session",
+                "path": str(session_path),
+                "included": include_payload,
+            })
+        if saved_summary.get("has_report") and include_report:
+            artifacts.append({
+                "kind": "report",
+                "path": None,
+                "included": True,
+            })
+
+        # Include payload content if requested
+        config_snapshot: dict[str, Any] | None = None
+        if include_payload:
+            try:
+                with open(session_path, encoding="utf-8") as f:
+                    payload = json.load(f)
+                # Extract config snapshot (redact sensitive values)
+                metadata = payload.get("metadata", {})
+                config_snapshot = {
+                    "depth": payload.get("depth"),
+                    "search_mode": metadata.get("search_mode"),
+                    "providers_used": metadata.get("providers_used", []),
+                }
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        return build_trace_bundle(
+            session_id=session_id,
+            session_summary=session_summary,
+            events=events,
+            config_snapshot=config_snapshot,
+            derived_outputs=derived_outputs,
+            artifacts=artifacts,
+        )
 
 
 def _serialize_session(session: ResearchSession) -> dict[str, Any]:

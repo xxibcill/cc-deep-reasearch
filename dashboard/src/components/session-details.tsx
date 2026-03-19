@@ -9,9 +9,21 @@ import { Dialog } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select } from '@/components/ui/select';
 import { Tabs } from '@/components/ui/tabs';
+import { DerivedOutputsPanel } from '@/components/derived-outputs-panel';
 import useDashboardStore from '@/hooks/useDashboard';
 import { filterEvents, deriveTelemetryState } from '@/lib/telemetry-transformers';
-import { LLMReasoning, TelemetryEvent, ToolExecution, ViewMode } from '@/types/telemetry';
+import {
+  LLMReasoning,
+  TelemetryEvent,
+  ToolExecution,
+  ViewMode,
+  CriticalPath,
+  StateChange,
+  Decision,
+  Degradation,
+  Failure,
+  ApiTelemetryEvent,
+} from '@/types/telemetry';
 
 const WorkflowGraph = dynamic(
   () => import('@/components/workflow-graph').then((module) => module.WorkflowGraph),
@@ -38,6 +50,15 @@ interface SessionDetailsProps {
   viewMode: ViewMode;
   onSelectEvent: (event: TelemetryEvent | null) => void;
   onViewModeChange: (mode: ViewMode) => void;
+  // Derived outputs from API
+  derivedOutputs?: {
+    narrative: ApiTelemetryEvent[];
+    criticalPath: CriticalPath;
+    stateChanges: StateChange[];
+    decisions: Decision[];
+    degradations: Degradation[];
+    failures: Failure[];
+  };
 }
 
 function formatEventTime(timestamp: string): string {
@@ -298,8 +319,9 @@ export function SessionDetails({
   viewMode,
   onSelectEvent,
   onViewModeChange,
+  derivedOutputs,
 }: SessionDetailsProps) {
-  const [detailTab, setDetailTab] = useState<'inspect' | 'tools' | 'llm'>('inspect');
+  const [detailTab, setDetailTab] = useState<'inspect' | 'tools' | 'llm' | 'derived'>('inspect');
   const filters = useDashboardStore((state) => state.filters);
   const setFilters = useDashboardStore((state) => state.setFilters);
   const deferredEvents = useDeferredValue(events);
@@ -440,9 +462,10 @@ export function SessionDetails({
                 { value: 'inspect', label: 'Inspect' },
                 { value: 'tools', label: 'Tools' },
                 { value: 'llm', label: 'LLM' },
+                { value: 'derived', label: 'Derived' },
               ]}
               value={detailTab}
-              onValueChange={(value) => setDetailTab(value as 'inspect' | 'tools' | 'llm')}
+              onValueChange={(value) => setDetailTab(value as 'inspect' | 'tools' | 'llm' | 'derived')}
             />
             {detailTab === 'inspect' && (
               <DetailInspector event={selectedEvent} reasoning={selectedReasoning} toolExecution={selectedTool} />
@@ -467,6 +490,30 @@ export function SessionDetails({
                 }}
                 selectedReasoningId={selectedReasoningId}
               />
+            )}
+            {detailTab === 'derived' && derivedOutputs && (
+              <DerivedOutputsPanel
+                narrative={derivedOutputs.narrative}
+                criticalPath={derivedOutputs.criticalPath}
+                stateChanges={derivedOutputs.stateChanges}
+                decisions={derivedOutputs.decisions}
+                degradations={derivedOutputs.degradations}
+                failures={derivedOutputs.failures}
+                onSelectEvent={(eventId) => {
+                  const event = eventIndex.get(eventId);
+                  if (event) {
+                    onSelectEvent(event);
+                    setDetailTab('inspect');
+                  }
+                }}
+              />
+            )}
+            {detailTab === 'derived' && !derivedOutputs && (
+              <Card className="h-full">
+                <CardContent className="flex items-center justify-center py-10 text-sm text-muted-foreground">
+                  Derived outputs not available. This data is loaded from historical sessions.
+                </CardContent>
+              </Card>
             )}
           </div>
         </div>

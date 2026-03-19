@@ -1084,6 +1084,45 @@ def register_routes(app: FastAPI) -> None:
             }
         )
 
+    @app.get("/api/sessions/{session_id}/bundle")
+    async def get_session_bundle(
+        session_id: str,
+        include_payload: bool = Query(default=False, description="Include full session payload"),
+        include_report: bool = Query(default=False, description="Include report content"),
+    ) -> JSONResponse:
+        """Get a portable trace bundle for a session.
+
+        Args:
+            session_id: The session ID.
+            include_payload: Include full session payload in the bundle.
+            include_report: Include report content in the bundle.
+
+        Returns:
+            JSON response with trace bundle containing events, derived outputs,
+            and optional artifacts.
+        """
+        store = SessionStore()
+
+        if not store.session_exists(session_id):
+            return JSONResponse(
+                content={"error": f"Session not found: {session_id}"},
+                status_code=404,
+            )
+
+        bundle = store.export_trace_bundle(
+            session_id,
+            include_payload=include_payload,
+            include_report=include_report,
+        )
+
+        if bundle is None:
+            return JSONResponse(
+                content={"error": f"Failed to export bundle for session: {session_id}"},
+                status_code=500,
+            )
+
+        return JSONResponse(content=bundle)
+
     @app.websocket("/ws/session/{session_id}")
     async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
         """WebSocket endpoint for real-time event streaming.
