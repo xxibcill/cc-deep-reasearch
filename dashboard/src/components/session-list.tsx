@@ -47,6 +47,7 @@ interface DeleteDialogState {
   mode: 'single' | 'bulk' | null;
   sessions: Session[];
   deleting: boolean;
+  forceDelete: boolean;
 }
 
 interface SessionCardProps {
@@ -384,6 +385,7 @@ export function SessionList({
     mode: null,
     sessions: [],
     deleting: false,
+    forceDelete: false,
   });
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const query = useDashboardStore((state) => state.sessionListQuery);
@@ -406,7 +408,7 @@ export function SessionList({
     selectableSessions.length > 0 && selectedSessions.length === selectableSessions.length;
 
   const handleDeleteClick = (session: Session) => {
-    setDeleteDialog({ mode: 'single', sessions: [session], deleting: false });
+    setDeleteDialog({ mode: 'single', sessions: [session], deleting: false, forceDelete: false });
     setDeleteError(null);
   };
 
@@ -414,7 +416,7 @@ export function SessionList({
     if (selectedSessions.length === 0) {
       return;
     }
-    setDeleteDialog({ mode: 'bulk', sessions: selectedSessions, deleting: false });
+    setDeleteDialog({ mode: 'bulk', sessions: selectedSessions, deleting: false, forceDelete: false });
     setDeleteError(null);
   };
 
@@ -446,12 +448,23 @@ export function SessionList({
 
     if (deleteDialog.mode === 'single') {
       const session = deleteDialog.sessions[0];
-      const result = await deleteSession(session.sessionId);
+      const result = await deleteSession(session.sessionId, deleteDialog.forceDelete);
 
       if (result.success) {
         removeSession(session.sessionId);
-        setDeleteDialog({ mode: null, sessions: [], deleting: false });
+        setDeleteDialog({ mode: null, sessions: [], deleting: false, forceDelete: false });
         refreshSessions();
+        return;
+      }
+
+      if (result.activeConflict) {
+        if (deleteDialog.forceDelete) {
+          setDeleteError('Failed to force delete: session is still active');
+          setDeleteDialog((previous) => ({ ...previous, deleting: false }));
+          return;
+        }
+        setDeleteError(null);
+        setDeleteDialog((previous) => ({ ...previous, deleting: false, forceDelete: true }));
         return;
       }
 
@@ -479,7 +492,7 @@ export function SessionList({
       }
 
       if (retainedIds.size === 0) {
-        setDeleteDialog({ mode: null, sessions: [], deleting: false });
+        setDeleteDialog({ mode: null, sessions: [], deleting: false, forceDelete: false });
         return;
       }
 
@@ -491,6 +504,7 @@ export function SessionList({
         mode: 'bulk',
         sessions: remainingSessions,
         deleting: false,
+        forceDelete: false,
       });
 
       const failureSummary = buildBulkFailureSummary(
@@ -515,7 +529,7 @@ export function SessionList({
     if (open) {
       return;
     }
-    setDeleteDialog({ mode: null, sessions: [], deleting: false });
+    setDeleteDialog({ mode: null, sessions: [], deleting: false, forceDelete: false });
     setDeleteError(null);
   };
 
@@ -536,17 +550,32 @@ export function SessionList({
       const session = deleteDialog.sessions[0];
       return (
         <div className="space-y-3">
-          <p>
-            This will permanently delete <span className="font-medium">{session.label}</span> and
-            all associated telemetry, report, and analytics history.
-          </p>
-          <p className="font-mono text-xs text-slate-500">{session.sessionId}</p>
-          {deleteError ? (
-            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700">
-              {deleteError}
-            </p>
+          {deleteDialog.forceDelete ? (
+            <>
+              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-700">
+                This session is currently active. Force deleting will stop the running process.
+              </p>
+              <p>
+                This will permanently delete <span className="font-medium">{session.label}</span> and
+                all associated telemetry, report, and analytics history.
+              </p>
+              <p className="font-mono text-xs text-slate-500">{session.sessionId}</p>
+            </>
           ) : (
-            <p>This action cannot be undone.</p>
+            <>
+              <p>
+                This will permanently delete <span className="font-medium">{session.label}</span> and
+                all associated telemetry, report, and analytics history.
+              </p>
+              <p className="font-mono text-xs text-slate-500">{session.sessionId}</p>
+              {deleteError ? (
+                <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700">
+                  {deleteError}
+                </p>
+              ) : (
+                <p>This action cannot be undone.</p>
+              )}
+            </>
           )}
         </div>
       );
@@ -672,7 +701,13 @@ export function SessionList({
         onOpenChange={handleDialogClose}
         title={deleteDialog.mode === 'bulk' ? 'Delete Selected Sessions' : 'Delete Session'}
         description={renderDeleteDescription()}
-        confirmLabel={deleteDialog.mode === 'bulk' ? 'Delete Sessions' : 'Delete Session'}
+        confirmLabel={
+          deleteDialog.forceDelete
+            ? 'Force Delete'
+            : deleteDialog.mode === 'bulk'
+              ? 'Delete Sessions'
+              : 'Delete Session'
+        }
         destructive
         onConfirm={handleDeleteConfirm}
         loading={deleteDialog.deleting}
