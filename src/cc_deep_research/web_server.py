@@ -348,6 +348,7 @@ def _normalize_saved_session_summary(saved: dict[str, Any] | None) -> dict[str, 
         "has_session_payload": bool(saved.get("has_session_payload")),
         "has_report": bool(saved.get("has_report")),
         "label": _normalize_optional_string(saved.get("label")),
+        "archived": bool(saved.get("archived")),
     }
 
 
@@ -390,6 +391,7 @@ def _build_session_list_row(
         "completed_at": completed_at_value,
         "has_session_payload": saved_summary["has_session_payload"],
         "has_report": saved_summary["has_report"],
+        "archived": saved_summary["archived"],
     }
 
 
@@ -601,6 +603,7 @@ def register_routes(app: FastAPI) -> None:
     @app.get("/api/sessions")
     async def list_sessions(
         active_only: bool = False,
+        archived_only: bool = False,
         limit: int = Query(default=100, ge=1, le=500),
         cursor: str | None = Query(
             default=None, description="Session ID to start after for stable pagination"
@@ -616,6 +619,7 @@ def register_routes(app: FastAPI) -> None:
 
         Args:
             active_only: If True, only return active sessions.
+            archived_only: If True, only return archived sessions.
             limit: Maximum number of sessions to return (1-500).
             cursor: Session ID to start after for stable pagination.
             search: Search text to filter by session query.
@@ -632,7 +636,9 @@ def register_routes(app: FastAPI) -> None:
         live_sessions = query_live_sessions(base_dir=telemetry_dir)
         historical = query_dashboard_data(get_default_dashboard_db_path())
 
-        saved_sessions = SessionStore().list_sessions()
+        session_store = SessionStore()
+        saved_sessions = session_store.list_sessions()
+        archived_session_ids = session_store.get_archived_session_ids() if archived_only else set()
         saved_by_id = {s["session_id"]: s for s in saved_sessions}
 
         sessions_by_id: dict[str, dict[str, Any]] = {}
@@ -693,6 +699,9 @@ def register_routes(app: FastAPI) -> None:
                 continue
             if active_only:
                 continue
+            is_archived = session_id in archived_session_ids or saved.get("archived", False)
+            if is_archived and not archived_only:
+                continue
             sessions_by_id[session_id] = _build_session_list_row(
                 session_id=session_id,
                 created_at=saved.get("started_at"),
@@ -719,6 +728,8 @@ def register_routes(app: FastAPI) -> None:
 
         if status:
             sessions = [s for s in sessions if s.get("status") == status]
+
+        sessions = [s for s in sessions if archived_only == (s.get("archived") or session_store.is_session_archived(s.get("session_id", "")))]
 
         def sort_key(s: dict[str, Any]) -> Any:
             sort_field_value = s.get(sort_by.value)
@@ -807,6 +818,66 @@ def register_routes(app: FastAPI) -> None:
         service = SessionPurgeService()
         response = service.delete_sessions(request)
         return JSONResponse(content=response.model_dump(mode="json"))
+
+    @app.post("/api/sessions/{session_id}/archive")
+    async def archive_session(session_id: str) -> JSONResponse:
+        """Archive a session, hiding it from the default session list.
+
+        Args:
+            session_id: The session ID to archive.
+
+        Returns:
+            JSON response indicating success or failure.
+        """
+        store = SessionStore()
+        if not store.session_exists(session_id):
+            return JSONResponse(
+                content={"error": f"Session not found: {session_id}"},
+                status_code=404,
+            )
+
+        success = store.archive_session(session_id)
+        if success:
+            return JSONResponse(
+                content={
+                    "session_id": session_id,
+                    "archived": True,
+                }
+            )
+        return JSONResponse(
+            content={"error": f"Failed to archive session: {session_id}"},
+            status_code=500,
+        )
+
+    @app.post("/api/sessions/{session_id}/restore")
+    async def restore_session(session_id: str) -> JSONResponse:
+        """Restore an archived session to the active list.
+
+        Args:
+            session_id: The session ID to restore.
+
+        Returns:
+            JSON response indicating success or failure.
+        """
+        store = SessionStore()
+        if not store.session_exists(session_id):
+            return JSONResponse(
+                content={"error": f"Session not found: {session_id}"},
+                status_code=404,
+            )
+
+        success = store.restore_session(session_id)
+        if success:
+            return JSONResponse(
+                content={
+                    "session_id": session_id,
+                    "archived": False,
+                }
+            )
+        return JSONResponse(
+            content={"error": f"Failed to restore session: {session_id}"},
+            status_code=500,
+        )
 
     @app.get("/api/sessions/{session_id}/events")
     async def get_session_events(
