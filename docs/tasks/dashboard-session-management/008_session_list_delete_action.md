@@ -1,6 +1,6 @@
 # Task 008: Add Session Delete Action To The Dashboard List
 
-Status: Planned
+Status: Done
 
 ## Objective
 
