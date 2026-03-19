@@ -1,6 +1,6 @@
 # Task 018: Add Bulk Delete Selection And Review UX
 
-Status: Planned
+Status: Done
 
 ## Objective
 
