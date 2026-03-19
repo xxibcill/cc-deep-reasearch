@@ -735,6 +735,40 @@ cc-deep-research session show research-abc123
 cc-deep-research session export research-abc123 --format json --output ./session.json
 ```
 
+#### Session Delete
+
+Delete a saved research session:
+
+```bash
+cc-deep-research session delete SESSION_ID
+```
+
+**What gets deleted:**
+
+When you delete a session, the following data is permanently removed:
+
+- Session file (`~/.config/cc-deep-research/sessions/{session_id}.json`)
+- Telemetry directory (`~/.config/cc-deep-research/telemetry/{session_id}/`)
+- Historical analytics records in DuckDB
+
+**Active session protection:**
+
+If the session is currently running (active), the delete command will fail by default. Use the `--force` flag to override:
+
+```bash
+cc-deep-research session delete research-abc123 --force
+```
+
+**Dashboard deletion:**
+
+You can also delete sessions from the browser dashboard:
+- From the session list: click the delete button on a session card
+- From the session page: use the delete action in the session details
+
+The dashboard delete API (`DELETE /api/sessions/{session_id}`) removes the same data and supports the same `force` query parameter.
+
+**Limitation:** No bulk delete is available - sessions must be deleted one at a time.
+
 ---
 
 ## Research Modes
