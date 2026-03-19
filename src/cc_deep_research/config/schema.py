@@ -241,6 +241,28 @@ class LLMCerebrasConfig(BaseModel):
         return _normalize_api_key_list(self.api_key, self.api_keys)
 
 
+class LLMAnthropicConfig(BaseModel):
+    """Anthropic API transport configuration."""
+
+    enabled: bool = Field(default=False)
+    api_key: str | None = Field(default=None)
+    api_keys: list[str] = Field(default_factory=list)
+    base_url: str = Field(default="https://api.anthropic.com")
+    timeout_seconds: int = Field(default=120, ge=10, le=600)
+    model: str = Field(default="claude-sonnet-4-6")
+    max_tokens: int = Field(default=512, ge=1, le=128000)
+
+    @field_validator("api_keys")
+    @classmethod
+    def normalize_api_keys(cls, values: list[str]) -> list[str]:
+        """Normalize configured Anthropic API keys."""
+        return _normalize_api_key_list(values)
+
+    def get_api_keys(self) -> list[str]:
+        """Return the configured Anthropic keys in priority order."""
+        return _normalize_api_key_list(self.api_key, self.api_keys)
+
+
 class LLMRouteDefaults(BaseModel):
     """Default route assignments for agents."""
 
@@ -257,9 +279,10 @@ class LLMConfig(BaseModel):
     claude_cli: LLMClaudeCLIConfig = Field(default_factory=LLMClaudeCLIConfig)
     openrouter: LLMOpenRouterConfig = Field(default_factory=LLMOpenRouterConfig)
     cerebras: LLMCerebrasConfig = Field(default_factory=LLMCerebrasConfig)
+    anthropic: LLMAnthropicConfig = Field(default_factory=LLMAnthropicConfig)
     route_defaults: LLMRouteDefaults = Field(default_factory=LLMRouteDefaults)
     fallback_order: list[str] = Field(
-        default_factory=lambda: ["claude_cli", "openrouter", "cerebras", "heuristic"]
+        default_factory=lambda: ["claude_cli", "openrouter", "cerebras", "anthropic", "heuristic"]
     )
 
     def get_enabled_transports(self) -> list[str]:
@@ -277,6 +300,11 @@ class LLMConfig(BaseModel):
                     name == "cerebras"
                     and self.cerebras.enabled
                     and self.cerebras.get_api_keys()
+                )
+                or (
+                    name == "anthropic"
+                    and self.anthropic.enabled
+                    and self.anthropic.get_api_keys()
                 )
                 or name == "heuristic"
             )
@@ -344,6 +372,7 @@ __all__ = [
     "Config",
     "DashboardConfig",
     "DisplayConfig",
+    "LLMAnthropicConfig",
     "LLMCerebrasConfig",
     "LLMClaudeCLIConfig",
     "LLMConfig",
