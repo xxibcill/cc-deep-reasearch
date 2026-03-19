@@ -57,10 +57,7 @@ class SessionPurgeService:
             True if session is active, False otherwise.
         """
         live_sessions = query_live_sessions(base_dir=self._telemetry_dir)
-        return any(
-            s.get("session_id") == session_id and s.get("active")
-            for s in live_sessions
-        )
+        return any(s.get("session_id") == session_id and s.get("active") for s in live_sessions)
 
     def _get_telemetry_session_dir(self, session_id: str) -> Path:
         """Get the telemetry directory path for a session.
@@ -98,25 +95,27 @@ class SessionPurgeService:
         active_conflict = is_active and not force
 
         if active_conflict:
-            deleted_layers.extend([
-                DeletedLayer(
-                    layer="session",
-                    deleted=False,
-                    missing=not session_file_path.exists(),
-                    error="Session is active and force=false",
-                ),
-                DeletedLayer(
-                    layer="telemetry",
-                    deleted=False,
-                    missing=not telemetry_session_dir.exists(),
-                    error="Session is active and force=false",
-                ),
-                DeletedLayer(
-                    layer="duckdb",
-                    deleted=False,
-                    missing=not self._db_path.exists(),
-                ),
-            ])
+            deleted_layers.extend(
+                [
+                    DeletedLayer(
+                        layer="session",
+                        deleted=False,
+                        missing=not session_file_path.exists(),
+                        error="Session is active and force=false",
+                    ),
+                    DeletedLayer(
+                        layer="telemetry",
+                        deleted=False,
+                        missing=not telemetry_session_dir.exists(),
+                        error="Session is active and force=false",
+                    ),
+                    DeletedLayer(
+                        layer="duckdb",
+                        deleted=False,
+                        missing=not self._db_path.exists(),
+                    ),
+                ]
+            )
 
             return SessionDeleteResponse(
                 session_id=session_id,
@@ -156,19 +155,20 @@ class SessionPurgeService:
         Returns:
             DeletedLayer with deletion result.
         """
+        session_id = session_file_path.stem
         layer = DeletedLayer(
             layer="session",
             deleted=False,
             missing=not session_file_path.exists(),
         )
 
-        if session_file_path.exists():
-            try:
-                session_file_path.unlink()
-                layer.deleted = True
-                layer.missing = False
-            except Exception as e:
-                layer.error = str(e)
+        try:
+            result = self._session_store.delete_session(session_id)
+            layer.deleted = result.deleted
+            layer.missing = result.missing
+            layer.error = result.error
+        except Exception as e:
+            layer.error = str(e)
 
         return layer
 
