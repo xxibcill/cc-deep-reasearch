@@ -542,8 +542,11 @@ export function deriveTelemetryState(events: TelemetryEvent[]): TelemetryDerived
 }
 
 export function normalizeSession(session: ApiSession): Session {
+  const sessionId = asString(session.session_id);
+  const query = asNullableString(session.query);
   return {
-    sessionId: asString(session.session_id),
+    sessionId,
+    label: asString(session.label, query ?? `Session ${sessionId.slice(0, 8)}`),
     createdAt: asNullableString(session.created_at),
     totalTimeMs: asNumberOrNull(session.total_time_ms),
     totalSources: asNumberOrNull(session.total_sources) ?? 0,
@@ -551,6 +554,11 @@ export function normalizeSession(session: ApiSession): Session {
     active: asBoolean(session.active),
     eventCount: asNumberOrNull(session.event_count),
     lastEventAt: asNullableString(session.last_event_at),
+    query,
+    depth: asNullableString(session.depth),
+    completedAt: asNullableString(session.completed_at),
+    hasSessionPayload: asBoolean(session.has_session_payload),
+    hasReport: asBoolean(session.has_report),
   };
 }
 
