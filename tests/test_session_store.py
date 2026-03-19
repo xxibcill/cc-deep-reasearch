@@ -208,6 +208,8 @@ class TestSessionStore:
                 "path": str(session_path),
                 "has_session_payload": True,
                 "has_report": True,
+                "archived": False,
+                "archived_at": None,
             }
         ]
 

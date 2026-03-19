@@ -433,6 +433,7 @@ def test_session_list_enriches_saved_and_telemetry_only_sessions(
         "completed_at": "2026-03-18T08:04:00",
         "has_session_payload": True,
         "has_report": True,
+        "archived": False,
     }
 
     telemetry_only = sessions["telemetry-only-session"]
@@ -615,6 +616,7 @@ def test_session_list_marks_old_no_summary_sessions_interrupted(
             "completed_at": None,
             "has_session_payload": False,
             "has_report": False,
+            "archived": False,
         }
     ]
 
