@@ -14,11 +14,37 @@ from cc_deep_research.telemetry import (
     query_live_agent_timeline,
     query_live_event_tail,
     query_live_event_tree,
+    query_live_llm_route_analytics,
     query_live_session_detail,
     query_live_sessions,
     query_live_subprocess_streams,
     query_session_detail,
 )
+
+
+def query_live_session_detail(
+    session_id: str,
+    *,
+    base_dir=None,
+    tail_limit: int = 200,
+    subprocess_chunk_limit: int = 200,
+    cursor: int | None = None,
+    before_cursor: int | None = None,
+    limit: int | None = None,
+    include_derived: bool = True,
+) -> dict:
+    """Helper wrapper for query_live_session_detail with derived outputs support."""
+    from cc_deep_research.telemetry.live import query_live_session_detail as _query
+    return _query(
+        session_id,
+        base_dir=base_dir,
+        tail_limit=tail_limit,
+        subprocess_chunk_limit=subprocess_chunk_limit,
+        cursor=cursor,
+        before_cursor=before_cursor,
+        limit=limit,
+        include_derived=include_derived,
+    )
 
 
 def test_monitor_persists_session_logs(tmp_path):
@@ -187,7 +213,8 @@ def test_event_ordering_by_sequence(tmp_path):
 
     # Events should be ordered by sequence_number
     events = detail["events"]
-    sequences = [e[2] for e in events if e[2] is not None]  # index 2 is sequence_number
+    # Events are now normalized dicts, not raw tuples
+    sequences = [e.get("sequence_number") for e in events if e.get("sequence_number") is not None]
 
     assert sequences == sorted(sequences)
 
@@ -574,3 +601,262 @@ def test_query_live_session_detail_includes_llm_route_analytics(tmp_path):
     assert "llm_route_analytics" in detail
     assert detail["llm_route_analytics"]["total_requests"] == 1
     assert detail["llm_route_analytics"]["transport_summary"]["openrouter_api"]["requests"] == 1
+
+
+# =============================================================================
+# Task 002: Derived Outputs Tests
+# =============================================================================
+
+
+def test_query_live_session_detail_includes_derived_outputs(tmp_path):
+    """Live session detail should include derived operator-facing summaries."""
+    monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+    monitor.set_session("derived-session", query="test query", depth="standard")
+
+    # Emit events that should appear in narrative
+    monitor.emit_event(event_type="phase.started", category="phase", name="analysis", status="started")
+    monitor.emit_event(
+        event_type="agent.spawned",
+        category="agent",
+        name="spawned",
+        status="started",
+        agent_id="analyzer-1",
+    )
+
+    # Emit a decision event
+    monitor.emit_event(
+        event_type="decision.made",
+        category="planning",
+        name="route_decision",
+        metadata={
+            "decision_type": "routing",
+            "chosen_option": "openrouter_api",
+            "inputs": {"query": "test"},
+        },
+    )
+
+    # Emit a state change event
+    monitor.emit_event(
+        event_type="state.changed",
+        category="session",
+        name="state_change",
+        metadata={
+            "state_scope": "session",
+            "state_key": "phase",
+            "before": "planning",
+            "after": "analysis",
+            "change_type": "phase_transition",
+        },
+    )
+
+    # Emit a degradation event
+    monitor.emit_event(
+        event_type="degradation.detected",
+        category="execution",
+        name="slow_response",
+        status="degraded",
+        severity="warning",
+        metadata={
+            "reason_code": "high_latency",
+            "scope": "llm",
+            "recoverable": True,
+        },
+    )
+
+    # Emit a failure event
+    monitor.emit_event(
+        event_type="tool.failed",
+        category="tool",
+        name="search_failed",
+        status="failed",
+        severity="error",
+        metadata={"error": "Rate limit exceeded"},
+    )
+
+    monitor.finalize_session(total_sources=5, providers=["tavily"], total_time_ms=1000)
+
+    detail = query_live_session_detail("derived-session", base_dir=tmp_path, include_derived=True)
+
+    # Check derived outputs are present
+    assert "narrative" in detail
+    assert "critical_path" in detail
+    assert "state_changes" in detail
+    assert "decisions" in detail
+    assert "degradations" in detail
+    assert "failures" in detail
+
+    # Check narrative includes key events
+    narrative = detail["narrative"]
+    narrative_types = {e.get("event_type") for e in narrative}
+    assert "phase.started" in narrative_types
+
+    # Check decisions are captured
+    decisions = detail["decisions"]
+    assert len(decisions) >= 1
+    assert any(d.get("decision_type") == "routing" for d in decisions)
+
+    # Check state changes are captured
+    state_changes = detail["state_changes"]
+    assert len(state_changes) >= 1
+
+    # Check degradations are captured
+    degradations = detail["degradations"]
+    assert len(degradations) >= 1
+    assert any(d.get("reason_code") == "high_latency" for d in degradations)
+
+    # Check failures are captured
+    failures = detail["failures"]
+    assert len(failures) >= 1
+    assert any(f.get("severity") == "error" for f in failures)
+
+
+def test_query_live_session_detail_can_disable_derived(tmp_path):
+    """Live session detail should support disabling derived outputs for performance."""
+    monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+    monitor.set_session("no-derived", query="test", depth="quick")
+    monitor.finalize_session(total_sources=0, providers=[], total_time_ms=100)
+
+    detail = query_live_session_detail("no-derived", base_dir=tmp_path, include_derived=False)
+
+    # Derived outputs should be empty when disabled
+    assert detail.get("narrative") == []
+    assert detail.get("critical_path") == {}
+    assert detail.get("decisions") == []
+
+
+def test_query_live_session_detail_cursor_pagination(tmp_path):
+    """Live session detail should support cursor-based pagination for events."""
+    monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+    monitor.set_session("paged-session", query="test", depth="standard")
+
+    # Emit many events with explicit sequence numbers
+    for i in range(10):
+        monitor.emit_event(
+            event_type=f"event.{i}",
+            category="test",
+            name=f"event{i}",
+        )
+
+    monitor.finalize_session(total_sources=0, providers=[], total_time_ms=100)
+
+    # Get first page
+    detail = query_live_session_detail(
+        "paged-session",
+        base_dir=tmp_path,
+        limit=5,
+        cursor=None,
+        include_derived=False,
+    )
+
+    events_page = detail.get("events_page", {})
+    assert "events" in events_page
+    assert len(events_page["events"]) == 5
+    assert events_page["total"] >= 10
+    assert events_page["has_more"] is True
+    assert events_page["next_cursor"] is not None
+
+    # Get next page using cursor
+    next_cursor = events_page["next_cursor"]
+    detail2 = query_live_session_detail(
+        "paged-session",
+        base_dir=tmp_path,
+        limit=5,
+        cursor=next_cursor,
+        include_derived=False,
+    )
+
+    events_page2 = detail2.get("events_page", {})
+    assert len(events_page2["events"]) >= 1
+    # Verify events are different from first page
+    first_page_ids = {e.get("event_id") for e in events_page["events"]}
+    second_page_ids = {e.get("event_id") for e in events_page2["events"]}
+    assert first_page_ids.isdisjoint(second_page_ids)
+
+
+def test_query_session_detail_historical_includes_derived(tmp_path):
+    """Historical session detail from DuckDB should include derived outputs."""
+    pytest.importorskip("duckdb")
+
+    monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+    monitor.set_session("historical-derived", query="test query", depth="standard")
+
+    monitor.emit_event(event_type="phase.started", category="phase", name="analysis", status="started")
+    monitor.emit_event(
+        event_type="decision.made",
+        category="planning",
+        name="decision",
+        metadata={"decision_type": "strategy", "chosen_option": "deep"},
+    )
+    monitor.emit_event(
+        event_type="degradation.detected",
+        category="execution",
+        name="degraded",
+        status="degraded",
+        severity="warning",
+        metadata={"reason_code": "partial_failure", "scope": "search"},
+    )
+
+    monitor.finalize_session(total_sources=5, providers=["tavily"], total_time_ms=1000)
+
+    # Ingest to DuckDB
+    db_path = tmp_path / "telemetry.duckdb"
+    ingest_telemetry_to_duckdb(base_dir=tmp_path, db_path=db_path)
+
+    # Remove live files to force historical query
+    import shutil
+    shutil.rmtree(tmp_path / "historical-derived")
+
+    # Query historical detail
+    from cc_deep_research.telemetry import query_session_detail
+
+    detail = query_session_detail(
+        "historical-derived",
+        db_path=db_path,
+        include_derived=True,
+    )
+
+    # Check derived outputs
+    assert "narrative" in detail
+    assert "decisions" in detail
+    assert "degradations" in detail
+    assert len(detail["decisions"]) >= 1
+    assert len(detail["degradations"]) >= 1
+
+
+def test_query_session_detail_cursor_pagination_historical(tmp_path):
+    """Historical session detail should support cursor-based pagination."""
+    pytest.importorskip("duckdb")
+
+    monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+    monitor.set_session("historical-paged", query="test", depth="standard")
+
+    for i in range(15):
+        monitor.emit_event(
+            event_type=f"event.{i}",
+            category="test",
+            name=f"event{i}",
+        )
+
+    monitor.finalize_session(total_sources=0, providers=[], total_time_ms=100)
+
+    # Ingest to DuckDB
+    db_path = tmp_path / "telemetry.duckdb"
+    ingest_telemetry_to_duckdb(base_dir=tmp_path, db_path=db_path)
+
+    # Remove live files
+    import shutil
+    shutil.rmtree(tmp_path / "historical-paged")
+
+    from cc_deep_research.telemetry import query_session_detail
+
+    # Query with limit
+    detail = query_session_detail(
+        "historical-paged",
+        db_path=db_path,
+        limit=5,
+        include_derived=False,
+    )
+
+    events_page = detail.get("events_page", {})
+    assert len(events_page.get("events", [])) <= 5
+    assert events_page.get("has_more") is True

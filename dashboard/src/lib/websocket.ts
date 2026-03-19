@@ -3,7 +3,12 @@ import { useCallback, useEffect, useRef } from 'react';
 import useDashboardStore from '@/hooks/useDashboard';
 import { dashboardRuntimeConfig } from '@/lib/runtime-config';
 import { normalizeServerMessage } from '@/lib/telemetry-transformers';
-import { ClientMessage, TelemetryEvent } from '@/types/telemetry';
+import {
+  ClientMessage,
+  TelemetryEvent
+  WSHistoryPageMessage
+  WSClientGetHistoryMessage
+} from '@/types/telemetry';
 
 export function useWebSocket(sessionId: string | null) {
   const connected = useDashboardStore((state) => state.connected);
@@ -57,9 +62,8 @@ export function useWebSocket(sessionId: string | null) {
       ws.send(JSON.stringify(subscribeMessage));
 
       // Request history
-      const historyMessage: ClientMessage = {
+      const historyMessage: WSClientGetHistoryMessage = {
         type: 'get_history',
-        sessionId,
         limit: 1000,
       };
       ws.send(JSON.stringify(historyMessage));
@@ -77,6 +81,10 @@ export function useWebSocket(sessionId: string | null) {
           scheduleFlush();
         } else if (message.type === 'history' && message.events) {
           useDashboardStore.getState().replaceEvents(message.events);
+        } else if (message.type === 'history_page') {
+          // Handle cursor-paginated history response
+          const pageMessage = message as WSHistoryPageMessage;
+          useDashboardStore.getState().replaceEvents(pageMessage.events);
         } else if (message.type === 'error') {
           console.error('WebSocket error:', message.error);
         }
@@ -125,6 +133,37 @@ export function useWebSocket(sessionId: string | null) {
     useDashboardStore.getState().setConnected(false);
   }, [clearReconnectTimeout, flushBufferedEvents]);
 
+  /**
+   * Fetch more events using cursor-based pagination
+   */
+  const fetchMoreEvents = useCallback((cursor: number | null, beforeCursor: number | null = null, limit: number = 1000) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const message: WSClientGetHistoryMessage = {
+      type: 'get_history',
+      cursor: cursor ?? undefined,
+      before_cursor: beforeCursor ?? undefined,
+      limit,
+    };
+    wsRef.current.send(JSON.stringify(message));
+  }, []);
+
+  /**
+   * Fetch next page of events
+   */
+  const fetchNextPage = useCallback((nextCursor: number) => {
+    fetchMoreEvents(nextCursor, null, 1000);
+  }, [fetchMoreEvents]);
+
+  /**
+   * Fetch previous page of events
+   */
+  const fetchPrevPage = useCallback((prevCursor: number) => {
+    fetchMoreEvents(null, prevCursor, 1000);
+  }, [fetchMoreEvents]);
+
   useEffect(() => {
     useDashboardStore.getState().setSessionId(sessionId);
 
@@ -141,5 +180,11 @@ export function useWebSocket(sessionId: string | null) {
     };
   }, [connect, disconnect, sessionId]);
 
-  return { connected, events };
+  return {
+    connected,
+    events,
+    fetchMoreEvents,
+    fetchNextPage,
+    fetchPrevPage,
+  };
 }
