@@ -67,29 +67,134 @@ def _file_cache_key(path: Path) -> tuple[int, int] | None:
     return (stat.st_mtime_ns, stat.st_size)
 
 
+def _infer_phase_from_event(event: dict[str, Any]) -> str | None:
+    """Infer execution phase from event type or category."""
+    event_type = event.get("event_type", "")
+    category = event.get("category", "")
+
+    # Map event_type prefixes to phases
+    if "session." in event_type:
+        return "session"
+    if "planning." in event_type or event_type == "query.variations":
+        return "planning"
+    if "search." in event_type or event_type == "source.provenance":
+        return "collection"
+    if "analysis." in event_type or "analyzer" in str(event.get("agent_id", "")).lower():
+        return "analysis"
+    if "validation." in event_type or "validator" in str(event.get("agent_id", "")).lower():
+        return "validation"
+    if "iteration." in event_type:
+        return "iteration"
+    if "llm." in event_type:
+        return "llm"
+    if "tool." in event_type:
+        return "tool"
+    if category == "phase":
+        return event.get("name")
+
+    return None
+
+
+def _infer_severity(status: str, event_type: str) -> str:
+    """Infer severity from status and event type."""
+    if status in ("failed", "error", "critical"):
+        return "error"
+    if status in ("fallback", "degraded", "warning"):
+        return "warning"
+    if "fallback" in event_type or "degraded" in event_type:
+        return "warning"
+    if "error" in event_type or "failed" in event_type:
+        return "error"
+    return "info"
+
+
+def _infer_reason_code(event: dict[str, Any]) -> str | None:
+    """Infer reason code from event data."""
+    # Check explicit reason_code
+    if event.get("reason_code"):
+        return event["reason_code"]
+
+    # Check metadata for reason
+    metadata = event.get("metadata", {})
+    if isinstance(metadata, dict):
+        if "reason" in metadata:
+            return metadata["reason"]
+        if "stop_reason" in metadata:
+            return metadata["stop_reason"]
+
+    # Infer from event_type patterns
+    event_type = event.get("event_type", "")
+    if "fallback" in event_type:
+        return "fallback"
+    if "timeout" in event_type:
+        return "timeout"
+    if "degraded" in event_type:
+        return "degraded"
+
+    status = event.get("status", "")
+    if status == "failed":
+        return "error"
+    if status == "completed":
+        return "success"
+
+    return None
+
+
 def _normalize_live_event(
     event: dict[str, Any],
     *,
     session_id: str,
     fallback_sequence: int,
 ) -> dict[str, Any]:
-    """Fill required event fields for live file reads."""
+    """Fill required event fields for live file reads, including trace contract fields."""
     metadata = event.get("metadata", {})
     if not isinstance(metadata, dict):
         metadata = {}
 
+    # Get or derive actor information
+    actor_id = event.get("agent_id") or event.get("actor_id")
+    event_type = event.get("event_type", "unknown")
+    status = event.get("status", "unknown")
+
+    # Determine if degraded
+    degraded = event.get("degraded", False)
+    if not degraded:
+        degraded = (
+            status in ("failed", "fallback", "degraded")
+            or "fallback" in event_type
+            or "degraded" in event_type
+        )
+
     return {
+        # Core identity
         "event_id": event.get("event_id") or f"{session_id}-event-{fallback_sequence}",
         "parent_event_id": event.get("parent_event_id"),
         "sequence_number": int(event.get("sequence_number") or fallback_sequence),
         "timestamp": event.get("timestamp"),
         "session_id": event.get("session_id") or session_id,
-        "event_type": event.get("event_type", "unknown"),
+        # Trace contract fields
+        "trace_version": event.get("trace_version", "0"),
+        "run_id": event.get("run_id"),
+        "cause_event_id": event.get("cause_event_id"),
+        # Event classification
+        "event_type": event_type,
         "category": event.get("category", "unknown"),
         "name": event.get("name", "unknown"),
-        "status": event.get("status", "unknown"),
+        "status": status,
+        "severity": event.get("severity") or _infer_severity(status, event_type),
+        "reason_code": event.get("reason_code") or _infer_reason_code(event),
+        # Execution context
+        "phase": event.get("phase") or _infer_phase_from_event(event),
+        "operation": event.get("operation") or event.get("name"),
+        "attempt": event.get("attempt", 1),
+        # Actor
+        "actor_type": "agent" if actor_id else "system",
+        "actor_id": actor_id,
+        "agent_id": actor_id,  # Keep for backward compatibility
+        # Metrics
         "duration_ms": event.get("duration_ms"),
-        "agent_id": event.get("agent_id"),
+        "degraded": degraded,
+        # Payload
         "metadata": metadata,
     }
 
