@@ -1,6 +1,6 @@
 # Task 017: Add Bulk Delete Service And API
 
-Status: Planned
+Status: Done
 
 ## Objective
 

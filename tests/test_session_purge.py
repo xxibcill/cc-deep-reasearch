@@ -7,7 +7,10 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from cc_deep_research.research_runs.models import SessionDeleteRequest
+from cc_deep_research.research_runs.models import (
+    BulkSessionDeleteRequest,
+    SessionDeleteRequest,
+)
 from cc_deep_research.research_runs.session_purge import SessionPurgeService
 from cc_deep_research.session_store import SessionStore
 from cc_deep_research.web_server import create_app
@@ -204,6 +207,100 @@ class TestSessionPurgeService:
         assert not session_file.exists()
         assert not live_dir.exists()
 
+    def test_bulk_delete_isolates_outcomes_per_session(self, temp_config_dir) -> None:
+        """Bulk delete should preserve per-session results when one item conflicts."""
+        deleted_session_id = "bulk-service-deleted"
+        active_session_id = "bulk-service-active"
+        missing_session_id = "bulk-service-missing"
+
+        sessions_dir = temp_config_dir / "sessions"
+        sessions_dir.mkdir(parents=True)
+        (sessions_dir / f"{deleted_session_id}.json").write_text(
+            json.dumps({"session_id": deleted_session_id, "query": "test"}),
+            encoding="utf-8",
+        )
+
+        active_dir = temp_config_dir / "telemetry" / active_session_id
+        active_dir.mkdir(parents=True)
+        (active_dir / "events.jsonl").write_text(
+            json.dumps(
+                {
+                    "event_id": "event-1",
+                    "sequence_number": 1,
+                    "timestamp": "2026-03-18T10:00:00Z",
+                    "session_id": active_session_id,
+                    "event_type": "session.started",
+                    "category": "session",
+                    "name": "session",
+                    "status": "running",
+                    "metadata": {},
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        service = SessionPurgeService(
+            session_store=SessionStore(),
+            telemetry_dir=temp_config_dir / "telemetry",
+            db_path=temp_config_dir / "telemetry.duckdb",
+        )
+        response = service.delete_sessions(
+            BulkSessionDeleteRequest(
+                session_ids=[deleted_session_id, missing_session_id, active_session_id],
+            )
+        )
+
+        assert response.success is False
+        assert response.partial_success is True
+        assert response.summary.requested_count == 3
+        assert response.summary.deleted_count == 1
+        assert response.summary.not_found_count == 1
+        assert response.summary.active_conflict_count == 1
+        assert [result.outcome.value for result in response.results] == [
+            "deleted",
+            "not_found",
+            "active_conflict",
+        ]
+
+    def test_bulk_delete_marks_unexpected_session_failure_failed(
+        self, temp_config_dir
+    ) -> None:
+        """Unexpected per-session exceptions should stay isolated and surface as failed."""
+
+        class BrokenSessionPurgeService(SessionPurgeService):
+            def delete_session(self, request: SessionDeleteRequest):
+                if request.session_id == "bulk-service-exploded":
+                    raise RuntimeError("boom")
+                return super().delete_session(request)
+
+        sessions_dir = temp_config_dir / "sessions"
+        sessions_dir.mkdir(parents=True)
+        (sessions_dir / "bulk-service-safe.json").write_text(
+            json.dumps({"session_id": "bulk-service-safe", "query": "test"}),
+            encoding="utf-8",
+        )
+
+        service = BrokenSessionPurgeService(
+            session_store=SessionStore(),
+            telemetry_dir=temp_config_dir / "telemetry",
+            db_path=temp_config_dir / "telemetry.duckdb",
+        )
+        response = service.delete_sessions(
+            BulkSessionDeleteRequest(
+                session_ids=["bulk-service-exploded", "bulk-service-safe"],
+            )
+        )
+
+        assert response.success is False
+        assert response.partial_success is True
+        assert response.summary.failed_count == 1
+        assert response.summary.deleted_count == 1
+        assert [result.outcome.value for result in response.results] == [
+            "failed",
+            "deleted",
+        ]
+
 
 class TestDeleteSessionAPI:
     """Tests for the DELETE /api/sessions/{session_id} endpoint."""
@@ -334,3 +431,15 @@ class TestDeleteSessionAPI:
         response = client.delete("/api/sessions/nonexistent-id-12345")
 
         assert response.status_code == 200
+
+    def test_bulk_delete_sessions_rejects_invalid_batch(
+        self, temp_config_dir
+    ) -> None:
+        """Oversized bulk delete requests should fail validation before any delete runs."""
+        client = TestClient(create_app())
+        response = client.post(
+            "/api/sessions/bulk-delete",
+            json={"session_ids": [f"session-{index}" for index in range(26)]},
+        )
+
+        assert response.status_code == 422
