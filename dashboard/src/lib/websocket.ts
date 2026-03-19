@@ -2,12 +2,13 @@ import { useCallback, useEffect, useRef } from 'react';
 
 import useDashboardStore from '@/hooks/useDashboard';
 import { dashboardRuntimeConfig } from '@/lib/runtime-config';
-import { normalizeServerMessage } from '@/lib/telemetry-transformers';
+import { normalizeEvent, normalizeServerMessage } from '@/lib/telemetry-transformers';
 import {
   ClientMessage,
-  TelemetryEvent
-  WSHistoryPageMessage
-  WSClientGetHistoryMessage
+  TelemetryEvent,
+  WSHistoryPageMessage,
+  WSClientGetHistoryMessage,
+  WebSocketServerMessage,
 } from '@/types/telemetry';
 
 export function useWebSocket(sessionId: string | null) {
@@ -71,20 +72,21 @@ export function useWebSocket(sessionId: string | null) {
 
     ws.onmessage = (event) => {
       try {
-        const message = normalizeServerMessage(JSON.parse(event.data));
+        const parsed = JSON.parse(event.data);
+        const message = normalizeServerMessage(parsed) as WebSocketServerMessage | null;
         if (!message) {
           return;
         }
 
         if (message.type === 'event' && message.event) {
-          eventBufferRef.current.push(message.event);
+          eventBufferRef.current.push(normalizeEvent(message.event));
           scheduleFlush();
         } else if (message.type === 'history' && message.events) {
-          useDashboardStore.getState().replaceEvents(message.events);
+          useDashboardStore.getState().replaceEvents(message.events.map(normalizeEvent));
         } else if (message.type === 'history_page') {
           // Handle cursor-paginated history response
           const pageMessage = message as WSHistoryPageMessage;
-          useDashboardStore.getState().replaceEvents(pageMessage.events);
+          useDashboardStore.getState().replaceEvents(pageMessage.events.map(normalizeEvent));
         } else if (message.type === 'error') {
           console.error('WebSocket error:', message.error);
         }

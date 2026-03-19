@@ -7,6 +7,7 @@ import {
   AlertCircle,
   Archive,
   ArchiveRestore,
+  GitCompare,
   Cpu,
   Filter,
   Network,
@@ -53,8 +54,11 @@ interface DeleteDialogState {
 interface SessionCardProps {
   session: Session;
   selected: boolean;
+  compareMode: boolean;
+  compareSelected: boolean;
   onDelete: (session: Session) => void;
   onToggleSelection: (sessionId: string) => void;
+  onToggleCompare: (sessionId: string) => void;
   onArchive?: (session: Session) => void;
   onRestore?: (session: Session) => void;
 }
@@ -118,8 +122,11 @@ function buildBulkFailureSummary(
 function SessionCard({
   session,
   selected,
+  compareMode,
+  compareSelected,
   onDelete,
   onToggleSelection,
+  onToggleCompare,
   onArchive,
   onRestore,
 }: SessionCardProps) {
@@ -132,23 +139,37 @@ function SessionCard({
     <article className="flex h-full flex-col rounded-lg border p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-start gap-3">
-          <label
-            className="mt-1 flex items-center"
-            title={
-              session.active
-                ? 'Stop the active run before selecting this session for deletion.'
-                : 'Select session'
-            }
-          >
-            <input
-              type="checkbox"
-              checked={selected}
-              disabled={session.active}
-              onChange={() => onToggleSelection(session.sessionId)}
-              className="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-500"
-              aria-label={`Select session ${session.label}`}
-            />
-          </label>
+          <div className="mt-1 flex gap-2">
+            {!compareMode ? (
+              <label
+                className="flex items-center"
+                title={
+                  session.active
+                    ? 'Stop the active run before selecting this session for deletion.'
+                    : 'Select session'
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={selected}
+                  disabled={session.active}
+                  onChange={() => onToggleSelection(session.sessionId)}
+                  className="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-500"
+                  aria-label={`Select session ${session.label}`}
+                />
+              </label>
+            ) : (
+              <label className="flex items-center" title="Select for comparison">
+                <input
+                  type="checkbox"
+                  checked={compareSelected}
+                  onChange={() => onToggleCompare(session.sessionId)}
+                  className="h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
+                  aria-label={`Compare session ${session.label}`}
+                />
+              </label>
+            )}
+          </div>
           <div className="min-w-0 flex-1">
             <Link href={`/session/${session.sessionId}`} className="block">
               <h3 className="text-lg font-semibold leading-snug hover:text-blue-700">
@@ -396,8 +417,18 @@ export function SessionList({
   const removeSession = useDashboardStore((state) => state.removeSession);
   const removeSessions = useDashboardStore((state) => state.removeSessions);
   const setSessionListQuery = useDashboardStore((state) => state.setSessionListQuery);
+  const compareMode = useDashboardStore((state) => state.compareMode);
+  const setCompareMode = useDashboardStore((state) => state.setCompareMode);
+  const compareSessionIds = useDashboardStore((state) => state.compareSessionIds);
+  const toggleCompareSessionId = useDashboardStore((state) => state.toggleCompareSessionId);
+  const clearCompareSessionIds = useDashboardStore((state) => state.clearCompareSessionIds);
   const filtered =
     query.search.trim().length > 0 || query.status.length > 0 || query.activeOnly;
+
+  // Compare mode state
+  const compareSessionIdSet = new Set(compareSessionIds.filter(Boolean) as string[]);
+  const canViewComparison = compareSessionIdSet.size === 2;
+  const [sessionA, sessionB] = compareSessionIds;
 
   const selectedSessionIdSet = new Set(selectedSessionIds);
   const selectableSessions = sessions.filter((session) => !session.active);
@@ -616,19 +647,61 @@ export function SessionList({
       <div className="space-y-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h2 className="text-2xl font-semibold">Research Sessions</h2>
+            <h2 className="text-2xl font-semibold">
+              {compareMode ? 'Select Sessions to Compare' : 'Research Sessions'}
+            </h2>
             <p className="text-sm text-muted-foreground">
-              Showing {sessions.length} of {total} matching sessions
+              {compareMode
+                ? `Select up to 2 sessions (${compareSessionIdSet.size}/2 selected)`
+                : `Showing ${sessions.length} of ${total} matching sessions`}
             </p>
           </div>
-          {selectableSessions.length > 0 ? (
-            <Button type="button" variant="outline" onClick={handleSelectVisible}>
-              {allSelectableSelected ? 'Clear Selection' : 'Select Visible'}
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant={compareMode ? 'default' : 'outline'}
+              onClick={() => setCompareMode(!compareMode)}
+            >
+              <GitCompare className="mr-2 h-4 w-4" />
+              Compare
             </Button>
-          ) : null}
+            {!compareMode && selectableSessions.length > 0 ? (
+              <Button type="button" variant="outline" onClick={handleSelectVisible}>
+                {allSelectableSelected ? 'Clear Selection' : 'Select Visible'}
+              </Button>
+            ) : null}
+            {compareMode && compareSessionIdSet.size > 0 ? (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={clearCompareSessionIds}
+              >
+                Clear Selection
+              </Button>
+            ) : null}
+          </div>
         </div>
 
         <SessionFilters />
+
+        {compareMode && canViewComparison ? (
+          <div className="flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50/70 p-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="font-medium text-blue-900">
+                2 sessions selected for comparison
+              </p>
+              <p className="text-sm text-blue-800">
+                Ready to compare {sessions.find((s) => s.sessionId === sessionA)?.label || 'Session A'} vs {sessions.find((s) => s.sessionId === sessionB)?.label || 'Session B'}
+              </p>
+            </div>
+            <Link href={`/compare?a=${sessionA}&b=${sessionB}`} className="inline-flex">
+              <Button type="button" variant="default">
+                <GitCompare className="mr-2 h-4 w-4" />
+                View Comparison
+              </Button>
+            </Link>
+          </div>
+        ) : null}
 
         {selectedSessions.length > 0 ? (
           <div className="flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50/70 p-4 lg:flex-row lg:items-center lg:justify-between">
@@ -671,8 +744,11 @@ export function SessionList({
                   key={session.sessionId}
                   session={session}
                   selected={selectedSessionIdSet.has(session.sessionId)}
+                  compareMode={compareMode}
+                  compareSelected={compareSessionIdSet.has(session.sessionId)}
                   onDelete={handleDeleteClick}
                   onToggleSelection={toggleSessionSelection}
+                  onToggleCompare={toggleCompareSessionId}
                   onArchive={handleArchive}
                   onRestore={handleRestore}
                 />

@@ -60,6 +60,13 @@ interface DashboardState {
   setViewMode: (mode: ViewMode) => void;
   autoScroll: boolean;
   toggleAutoScroll: () => void;
+
+  compareMode: boolean;
+  setCompareMode: (enabled: boolean) => void;
+  compareSessionIds: [string | null, string | null];
+  setCompareSessionIds: (ids: [string | null, string | null]) => void;
+  toggleCompareSessionId: (sessionId: string) => void;
+  clearCompareSessionIds: () => void;
 }
 
 function sortEvents(events: TelemetryEvent[]): TelemetryEvent[] {
@@ -238,9 +245,32 @@ const useDashboardStore = create<DashboardState>((set) => ({
   viewMode: 'graph',
   setViewMode: (mode) => set({ viewMode: mode }),
   autoScroll: true,
-  toggleAutoScroll: () => set((state) => ({ 
-    autoScroll: !state.autoScroll 
+  toggleAutoScroll: () => set((state) => ({
+    autoScroll: !state.autoScroll
   })),
+
+  compareMode: false,
+  setCompareMode: (enabled) => set({ compareMode: enabled, compareSessionIds: [null, null] }),
+  compareSessionIds: [null, null],
+  setCompareSessionIds: (ids) => set({ compareSessionIds: ids }),
+  toggleCompareSessionId: (sessionId) =>
+    set((state) => {
+      const [a, b] = state.compareSessionIds;
+      if (a === sessionId) {
+        return { compareSessionIds: [null, b] };
+      }
+      if (b === sessionId) {
+        return { compareSessionIds: [a, null] };
+      }
+      if (!a) {
+        return { compareSessionIds: [sessionId, null] };
+      }
+      if (!b) {
+        return { compareSessionIds: [a, sessionId] };
+      }
+      return {};
+    }),
+  clearCompareSessionIds: () => set({ compareSessionIds: [null, null] }),
 }));
 
 export default useDashboardStore;
