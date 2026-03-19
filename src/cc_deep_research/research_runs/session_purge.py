@@ -58,6 +58,8 @@ class SessionPurgeService:
         Returns:
             True if session is active, False otherwise.
         """
+        if self._session_store.is_session_archived(session_id):
+            return False
         live_sessions = query_live_sessions(base_dir=self._telemetry_dir)
         return any(s.get("session_id") == session_id and s.get("active") for s in live_sessions)
 
