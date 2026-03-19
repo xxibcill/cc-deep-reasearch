@@ -7,18 +7,12 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from enum import StrEnum
 
-from cc_deep_research.research_runs.models import ResearchRunRequest, ResearchRunResult
-
-
-class ResearchRunJobStatus(StrEnum):
-    """Lifecycle states for a server-owned research job."""
-
-    QUEUED = "queued"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
+from cc_deep_research.research_runs.models import (
+    ResearchRunRequest,
+    ResearchRunResult,
+    ResearchRunStatus,
+)
 
 
 @dataclass(slots=True)
@@ -27,7 +21,7 @@ class ResearchRunJob:
 
     run_id: str
     request: ResearchRunRequest
-    status: ResearchRunJobStatus = ResearchRunJobStatus.QUEUED
+    status: ResearchRunStatus = ResearchRunStatus.QUEUED
     session_id: str | None = None
     task: asyncio.Task[object] | None = None
     result: ResearchRunResult | None = None
@@ -35,14 +29,17 @@ class ResearchRunJob:
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     started_at: datetime | None = None
     completed_at: datetime | None = None
+    cancel_requested: threading.Event = field(default_factory=threading.Event, repr=False)
 
     @property
     def is_active(self) -> bool:
         """Return whether the job is still running in-process."""
-        return self.status in {
-            ResearchRunJobStatus.QUEUED,
-            ResearchRunJobStatus.RUNNING,
-        }
+        return self.status in {ResearchRunStatus.QUEUED, ResearchRunStatus.RUNNING}
+
+    @property
+    def stop_requested(self) -> bool:
+        """Return whether an operator has asked to stop the job."""
+        return self.cancel_requested.is_set()
 
 
 class ResearchRunJobRegistry:
@@ -69,11 +66,13 @@ class ResearchRunJobRegistry:
 
     def get_job(self, run_id: str) -> ResearchRunJob | None:
         """Return a stored job by id."""
-        return self._jobs.get(run_id)
+        with self._lock:
+            return self._jobs.get(run_id)
 
     def list_jobs(self) -> list[ResearchRunJob]:
         """Return all jobs in creation order."""
-        return list(self._jobs.values())
+        with self._lock:
+            return list(self._jobs.values())
 
     def active_jobs(self) -> list[ResearchRunJob]:
         """Return queued and running jobs."""
@@ -94,6 +93,18 @@ class ResearchRunJobRegistry:
             job.task = task
         return job
 
+    def set_session_id(
+        self,
+        run_id: str,
+        *,
+        session_id: str,
+    ) -> ResearchRunJob:
+        """Record the session identifier once the run allocates one."""
+        job = self._require_job(run_id)
+        with self._lock:
+            job.session_id = session_id
+        return job
+
     def mark_running(
         self,
         run_id: str,
@@ -103,7 +114,9 @@ class ResearchRunJobRegistry:
         """Transition a job into the running state."""
         job = self._require_job(run_id)
         with self._lock:
-            job.status = ResearchRunJobStatus.RUNNING
+            if job.status == ResearchRunStatus.CANCELLED:
+                return job
+            job.status = ResearchRunStatus.RUNNING
             job.started_at = datetime.now(UTC)
             if session_id is not None:
                 job.session_id = session_id
@@ -118,7 +131,9 @@ class ResearchRunJobRegistry:
         """Store the final result for a completed run."""
         job = self._require_job(run_id)
         with self._lock:
-            job.status = ResearchRunJobStatus.COMPLETED
+            if job.status == ResearchRunStatus.CANCELLED:
+                return job
+            job.status = ResearchRunStatus.COMPLETED
             job.result = result
             job.session_id = result.session_id
             job.error = None
@@ -134,7 +149,31 @@ class ResearchRunJobRegistry:
         """Record a failed run with a safe error message."""
         job = self._require_job(run_id)
         with self._lock:
-            job.status = ResearchRunJobStatus.FAILED
+            if job.status == ResearchRunStatus.CANCELLED:
+                return job
+            job.status = ResearchRunStatus.FAILED
+            job.result = None
+            job.error = error
+            job.completed_at = datetime.now(UTC)
+        return job
+
+    def request_cancel(self, run_id: str) -> ResearchRunJob:
+        """Record an operator stop request for a run."""
+        job = self._require_job(run_id)
+        job.cancel_requested.set()
+        return job
+
+    def mark_cancelled(
+        self,
+        run_id: str,
+        *,
+        error: str = "Research run was cancelled by the operator.",
+    ) -> ResearchRunJob:
+        """Store a terminal cancelled state for a run."""
+        job = self._require_job(run_id)
+        with self._lock:
+            job.cancel_requested.set()
+            job.status = ResearchRunStatus.CANCELLED
             job.result = None
             job.error = error
             job.completed_at = datetime.now(UTC)
@@ -147,6 +186,8 @@ class ResearchRunJobRegistry:
             for job in self.active_jobs()
             if job.task is not None and not job.task.done()
         ]
+        for job in self.active_jobs():
+            self.request_cancel(job.run_id)
         for task in tasks:
             task.cancel()
         if tasks:
@@ -162,6 +203,9 @@ class ResearchRunJobRegistry:
     def _generate_run_id(self) -> str:
         """Create a stable local run identifier."""
         return f"run-{uuid.uuid4().hex[:12]}"
+
+
+ResearchRunJobStatus = ResearchRunStatus
 
 
 __all__ = [
