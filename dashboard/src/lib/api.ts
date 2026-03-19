@@ -66,6 +66,7 @@ export async function getSessions(params: SessionListParams = {}): Promise<Sessi
   const response = await apiClient.get<PaginatedSessionsResponse>('/sessions', {
     params: {
       active_only: params.active_only ?? false,
+      archived_only: params.archived_only ?? false,
       limit: params.limit ?? 100,
       cursor: params.cursor,
       search: params.search,
@@ -201,4 +202,44 @@ export async function bulkDeleteSessions(
     session_ids: sessionIds,
   });
   return response.data;
+}
+
+export interface ArchiveSessionResult {
+  success: boolean;
+  sessionId: string;
+  error?: string;
+}
+
+export async function archiveSession(sessionId: string): Promise<ArchiveSessionResult> {
+  try {
+    const response = await apiClient.post<{ session_id: string; archived: boolean }>(
+      `/sessions/${sessionId}/archive`
+    );
+    return { success: true, sessionId: response.data.session_id };
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const serverError = error.response?.data?.error;
+      if (typeof serverError === 'string' && serverError.length > 0) {
+        return { success: false, sessionId, error: serverError };
+      }
+    }
+    return { success: false, sessionId, error: getApiErrorMessage(error, 'Failed to archive session') };
+  }
+}
+
+export async function restoreSession(sessionId: string): Promise<ArchiveSessionResult> {
+  try {
+    const response = await apiClient.post<{ session_id: string; archived: boolean }>(
+      `/sessions/${sessionId}/restore`
+    );
+    return { success: true, sessionId: response.data.session_id };
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const serverError = error.response?.data?.error;
+      if (typeof serverError === 'string' && serverError.length > 0) {
+        return { success: false, sessionId, error: serverError };
+      }
+    }
+    return { success: false, sessionId, error: getApiErrorMessage(error, 'Failed to restore session') };
+  }
 }
