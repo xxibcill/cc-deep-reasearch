@@ -1,10 +1,11 @@
 """LLM routing layer for CC Deep Research.
 
 This package provides a unified interface for LLM operations across multiple
-transport providers (Claude CLI, OpenRouter, Cerebras) with session-scoped
+transport providers (Claude CLI, OpenRouter, Cerebras, Anthropic) with session-scoped
 route management and telemetry.
 """
 
+from cc_deep_research.llm.anthropic import AnthropicAPITransport
 from cc_deep_research.llm.base import (
     LLMTransportType,
     LLMProviderType,
@@ -43,4 +44,5 @@ __all__ = [
     "ClaudeCLITransport",
     "OpenRouterTransport",
     "CerebrasTransport",
+    "AnthropicAPITransport",
 ]

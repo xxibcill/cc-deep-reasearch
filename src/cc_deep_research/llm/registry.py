@@ -68,6 +68,7 @@ class LLMRouteRegistry:
             "claude_cli": LLMTransportType.CLAUDE_CLI,
             "openrouter": LLMTransportType.OPENROUTER_API,
             "cerebras": LLMTransportType.CEREBRAS_API,
+            "anthropic": LLMTransportType.ANTHROPIC_API,
             "heuristic": LLMTransportType.HEURISTIC,
         }
         order = []
@@ -118,6 +119,22 @@ class LLMRouteRegistry:
                     "base_url": self._config.cerebras.base_url,
                 },
             )
+        elif transport == LLMTransportType.ANTHROPIC_API:
+            api_keys = self._config.anthropic.get_api_keys()
+            return LLMRoute(
+                transport=LLMTransportType.ANTHROPIC_API,
+                provider=LLMProviderType.ANTHROPIC,
+                model=self._config.anthropic.model,
+                timeout_seconds=self._config.anthropic.timeout_seconds,
+                enabled=self._config.anthropic.enabled
+                and bool(api_keys),
+                extra={
+                    "api_key": api_keys[0] if api_keys else None,
+                    "api_keys": api_keys,
+                    "base_url": self._config.anthropic.base_url,
+                    "max_tokens": self._config.anthropic.max_tokens,
+                },
+            )
         else:
             return LLMRoute(
                 transport=LLMTransportType.HEURISTIC,
@@ -133,6 +150,7 @@ class LLMRouteRegistry:
             "claude_cli": LLMTransportType.CLAUDE_CLI,
             "openrouter": LLMTransportType.OPENROUTER_API,
             "cerebras": LLMTransportType.CEREBRAS_API,
+            "anthropic": LLMTransportType.ANTHROPIC_API,
             "heuristic": LLMTransportType.HEURISTIC,
         }
         transport = transport_map.get(transport_name, LLMTransportType.CLAUDE_CLI)
@@ -321,5 +339,6 @@ class LLMRouteRegistry:
                 "claude_cli_enabled": self._config.claude_cli.enabled,
                 "openrouter_enabled": self._config.openrouter.enabled,
                 "cerebras_enabled": self._config.cerebras.enabled,
+                "anthropic_enabled": self._config.anthropic.enabled,
             },
         }

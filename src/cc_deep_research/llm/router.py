@@ -14,6 +14,7 @@ from cc_deep_research.llm.base import (
     LLMRoute,
     LLMTransportType,
 )
+from cc_deep_research.llm.anthropic import AnthropicAPITransport
 from cc_deep_research.llm.cerebras import CerebrasTransport
 from cc_deep_research.llm.claude_cli import ClaudeCLITransport
 from cc_deep_research.llm.openrouter import OpenRouterTransport
@@ -21,6 +22,10 @@ from cc_deep_research.llm.openrouter import OpenRouterTransport
 if TYPE_CHECKING:
     from cc_deep_research.llm.registry import LLMRouteRegistry
     from cc_deep_research.monitoring import ResearchMonitor
+
+# Reason codes and severity levels (use string literals to avoid circular import)
+REASON_FALLBACK = "fallback"
+SEVERITY_WARNING = "warning"
 
 
 class LLMRouter:
@@ -83,6 +88,11 @@ class LLMRouter:
             return OpenRouterTransport(route, telemetry_callback=self._telemetry_callback)
         if route.transport == LLMTransportType.CEREBRAS_API:
             return CerebrasTransport(route, telemetry_callback=self._telemetry_callback)
+        if route.transport == LLMTransportType.ANTHROPIC_API:
+            return AnthropicAPITransport(
+                route,
+                telemetry_callback=self._telemetry_callback,
+            )
         return None
 
     async def execute(
@@ -266,6 +276,16 @@ class LLMRouter:
                 original_transport=original_route.transport.value,
                 fallback_transport=fallback_route.transport.value,
                 reason=reason,
+            )
+            # Emit degradation event for trace contract
+            self._monitor.emit_degradation_detected(
+                reason_code=REASON_FALLBACK,
+                severity=SEVERITY_WARNING,
+                scope="transport",
+                recoverable=True,
+                mitigation=f"Using {fallback_route.transport.value} instead of {original_route.transport.value}",
+                impact=f"LLM transport degraded from {original_route.transport.value} to {fallback_route.transport.value}",
+                actor_id=agent_id,
             )
         self._emit_event(
             "route_fallback",
