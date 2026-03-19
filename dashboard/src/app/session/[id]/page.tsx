@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { SessionDetails } from '@/components/session-details';
+import { useCallback, useEffect, useState } from 'react';
+
 import { RunStatusSummary } from '@/components/run-status-summary';
+import { SessionDetails } from '@/components/session-details';
 import { SessionReport } from '@/components/session-report';
+import { Card, CardContent } from '@/components/ui/card';
 import useDashboardStore from '@/hooks/useDashboard';
 import { useWebSocket } from '@/lib/websocket';
-import type { ResearchRunStatus } from '@/types/telemetry';
+import type { ResearchRunStatus, ResearchRunStatusResponse } from '@/types/telemetry';
 
 export default function SessionPage({ params }: { params: { id: string } }) {
   const routeId = params.id;
@@ -17,38 +19,78 @@ export default function SessionPage({ params }: { params: { id: string } }) {
   const [runStatus, setRunStatus] = useState<ResearchRunStatus | null>(
     isRunRoute ? 'queued' : null
   );
-  const telemetrySessionId = isRunRoute ? resolvedSessionId : routeId;
-  const displaySessionId = resolvedSessionId ?? routeId;
-  const { connected, events } = useWebSocket(telemetrySessionId);
-  const viewMode = useDashboardStore((state) => state.viewMode);
+  const setSelectedEvent = useDashboardStore((state) => state.setSelectedEvent);
   const selectedEvent = useDashboardStore((state) => state.selectedEvent);
+  const viewMode = useDashboardStore((state) => state.viewMode);
+  const setViewMode = useDashboardStore((state) => state.setViewMode);
+  const reconcileSession = useDashboardStore((state) => state.reconcileSession);
+  const telemetrySessionId = isRunRoute ? resolvedSessionId : routeId;
+  const { connected, events } = useWebSocket(telemetrySessionId);
 
   useEffect(() => {
     setResolvedSessionId(isRunRoute ? null : routeId);
     setRunStatus(isRunRoute ? 'queued' : null);
   }, [isRunRoute, routeId]);
 
+  const handleRunStatusLoaded = useCallback(
+    (status: ResearchRunStatusResponse) => {
+      if (!status.session_id) {
+        return;
+      }
+
+      if (status.status === 'running') {
+        reconcileSession(status.session_id, { active: true, status: 'running' });
+        return;
+      }
+
+      if (status.status === 'completed') {
+        reconcileSession(status.session_id, { active: false, status: 'completed' });
+        return;
+      }
+
+      if (status.status === 'failed') {
+        reconcileSession(status.session_id, { active: false, status: 'failed' });
+        return;
+      }
+
+      if (status.status === 'cancelled') {
+        reconcileSession(status.session_id, { active: false, status: 'interrupted' });
+      }
+    },
+    [reconcileSession]
+  );
+
   return (
     <div className="space-y-6">
       {isRunRoute ? (
         <RunStatusSummary
           runId={routeId}
-          onSessionIdResolved={(sessionId) => setResolvedSessionId(sessionId)}
-          onStatusChange={(status) => setRunStatus(status)}
+          onSessionIdResolved={setResolvedSessionId}
+          onStatusChange={setRunStatus}
+          onStatusLoaded={handleRunStatusLoaded}
         />
       ) : null}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <SessionReport sessionId={displaySessionId} runStatus={runStatus} />
-        <SessionDetails
-          sessionId={displaySessionId}
-          connected={connected}
-          events={events}
-          selectedEvent={selectedEvent}
-          viewMode={viewMode}
-          onSelectEvent={(event) => useDashboardStore.getState().setSelectedEvent(event)}
-          onViewModeChange={(mode) => useDashboardStore.getState().setViewMode(mode)}
-        />
-      </div>
+
+      {!telemetrySessionId ? (
+        <Card className="border-dashed">
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            Waiting for the backend to allocate a session ID before live telemetry can load.
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <SessionReport sessionId={telemetrySessionId} runStatus={runStatus} />
+          <SessionDetails
+            sessionId={telemetrySessionId}
+            connected={connected}
+            events={events}
+            selectedEvent={selectedEvent}
+            viewMode={viewMode}
+            onSelectEvent={setSelectedEvent}
+            onViewModeChange={setViewMode}
+          />
+        </div>
+      )}
     </div>
   );
 }
