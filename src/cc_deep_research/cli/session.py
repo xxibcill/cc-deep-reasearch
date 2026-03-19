@@ -264,5 +264,66 @@ def register_session_commands(cli: click.Group) -> None:
                 click.echo(f"  {details}")
             click.echo()
 
+    @session.command("bundle")
+    @click.argument("session_id", required=True)
+    @click.option(
+        "-o",
+        "--output",
+        type=click.Path(dir_okay=False, writable=True),
+        required=True,
+        help="Output file path for the bundle",
+    )
+    @click.option(
+        "--include-payload",
+        is_flag=True,
+        help="Include full session payload in the bundle",
+    )
+    @click.option(
+        "--include-report",
+        is_flag=True,
+        help="Include report content in the bundle",
+    )
+    def session_bundle(
+        session_id: str,
+        output: str,
+        include_payload: bool,
+        include_report: bool,
+    ) -> None:
+        """Export a session as a portable trace bundle.
+
+        The bundle contains events, derived outputs, and optional artifacts
+        in a self-contained JSON format suitable for replay and analysis.
+        """
+        import json as json_module
+
+        store = SessionStore()
+
+        if not store.session_exists(session_id):
+            click.echo(f"Error: Session '{session_id}' not found.", err=True)
+            raise click.Abort()
+
+        bundle = store.export_trace_bundle(
+            session_id,
+            include_payload=include_payload,
+            include_report=include_report,
+        )
+
+        if bundle is None:
+            click.echo(f"Error: Failed to export bundle for session '{session_id}'.", err=True)
+            raise click.Abort()
+
+        output_path = Path(output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(
+            json_module.dumps(bundle, indent=2, default=str),
+            encoding="utf-8",
+        )
+
+        event_count = len(bundle.get("events", []))
+        click.echo(f"Exported trace bundle for session '{session_id}':")
+        click.echo(f"  Schema version: {bundle.get('schema_version')}")
+        click.echo(f"  Events: {event_count}")
+        click.echo(f"  Output: {output_path}")
+
 
 __all__ = ["register_session_commands"]

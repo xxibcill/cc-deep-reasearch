@@ -15,6 +15,13 @@ import {
   SessionDeleteResponse,
   SessionListParams,
   PaginatedSessionsResponse,
+  TraceBundle,
+  SessionDetailResponse,
+  CriticalPath,
+  StateChange,
+  Decision,
+  Degradation,
+  Failure,
 } from '@/types/telemetry';
 
 const apiClient = axios.create({
@@ -85,6 +92,37 @@ export async function getSessions(params: SessionListParams = {}): Promise<Sessi
 export async function getSession(sessionId: string): Promise<{ session: Session }> {
   const response = await apiClient.get<SessionResponse>(`/sessions/${sessionId}`);
   return { session: normalizeSession(response.data.session) };
+}
+
+export interface SessionDetailResult {
+  session: Session;
+  events: TelemetryEvent[];
+  derivedOutputs: {
+    narrative: ApiTelemetryEvent[];
+    criticalPath: CriticalPath;
+    stateChanges: StateChange[];
+    decisions: Decision[];
+    degradations: Degradation[];
+    failures: Failure[];
+  };
+}
+
+export async function getSessionDetail(sessionId: string): Promise<SessionDetailResult> {
+  const response = await apiClient.get<SessionDetailResponse>(`/sessions/${sessionId}`, {
+    params: { include_derived: true },
+  });
+  return {
+    session: normalizeSession(response.data.session),
+    events: response.data.events_page.events.map(normalizeEvent),
+    derivedOutputs: {
+      narrative: response.data.narrative,
+      criticalPath: response.data.critical_path,
+      stateChanges: response.data.state_changes,
+      decisions: response.data.decisions,
+      degradations: response.data.degradations,
+      failures: response.data.failures,
+    },
+  };
 }
 
 export async function getSessionEvents(
@@ -243,4 +281,9 @@ export async function restoreSession(sessionId: string): Promise<ArchiveSessionR
     }
     return { success: false, sessionId, error: getApiErrorMessage(error, 'Failed to restore session') };
   }
+}
+
+export async function getSessionBundle(sessionId: string): Promise<{ bundle: TraceBundle }> {
+  const response = await apiClient.get<TraceBundle>(`/sessions/${sessionId}/bundle`);
+  return { bundle: response.data };
 }
