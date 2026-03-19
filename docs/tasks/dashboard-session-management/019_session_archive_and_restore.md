@@ -1,6 +1,6 @@
 # Task 019: Add Archive And Restore Session Lifecycle
 
-Status: Planned
+Status: Done
 
 ## Objective
 
