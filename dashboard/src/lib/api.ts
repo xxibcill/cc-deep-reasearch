@@ -162,9 +162,10 @@ function getSessionDeleteError(response: SessionDeleteResponse): string {
   return 'Delete operation failed';
 }
 
-export async function deleteSession(sessionId: string): Promise<DeleteSessionResult> {
+export async function deleteSession(sessionId: string, force: boolean = false): Promise<DeleteSessionResult> {
   try {
-    const response = await apiClient.delete<SessionDeleteResponse>(`/sessions/${sessionId}`);
+    const url = force ? `/sessions/${sessionId}?force=true` : `/sessions/${sessionId}`;
+    const response = await apiClient.delete<SessionDeleteResponse>(url);
     if (response.data.outcome === 'deleted' || response.data.outcome === 'not_found') {
       return { success: true, response: response.data };
     }

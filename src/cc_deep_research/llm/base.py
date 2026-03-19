@@ -21,6 +21,7 @@ class LLMTransportType(StrEnum):
     CLAUDE_CLI = "claude_cli"
     OPENROUTER_API = "openrouter_api"
     CEREBRAS_API = "cerebras_api"
+    ANTHROPIC_API = "anthropic_api"
     HEURISTIC = "heuristic"
 
 
@@ -30,6 +31,7 @@ class LLMProviderType(StrEnum):
     CLAUDE = "claude"
     OPENROUTER = "openrouter"
     CEREBRAS = "cerebras"
+    ANTHROPIC = "anthropic"
     HEURISTIC = "heuristic"
 
 
