@@ -4,6 +4,7 @@ import { normalizeEvent, normalizeSession } from '@/lib/telemetry-transformers';
 import {
   ApiSession,
   ApiTelemetryEvent,
+  BulkSessionDeleteResponse,
   Session,
   TelemetryEvent,
   ResearchRunRequest,
@@ -131,23 +132,45 @@ export async function getSessionReport(
 
 export interface DeleteSessionResult {
   success: boolean;
+  response?: SessionDeleteResponse;
   error?: string;
   activeConflict?: boolean;
+}
+
+function getSessionDeleteError(response: SessionDeleteResponse): string {
+  if (response.error) {
+    return response.error;
+  }
+
+  const layerErrors = response.deleted_layers
+    .map((layer) => layer.error)
+    .filter((error): error is string => Boolean(error));
+
+  if (layerErrors.length > 0) {
+    return layerErrors.join('; ');
+  }
+
+  if (response.outcome === 'active_conflict') {
+    return 'Cannot delete: session is currently active';
+  }
+
+  if (response.outcome === 'not_found') {
+    return 'Session not found';
+  }
+
+  return 'Delete operation failed';
 }
 
 export async function deleteSession(sessionId: string): Promise<DeleteSessionResult> {
   try {
     const response = await apiClient.delete<SessionDeleteResponse>(`/sessions/${sessionId}`);
-    if (response.data.success) {
-      return { success: true };
+    if (response.data.outcome === 'deleted' || response.data.outcome === 'not_found') {
+      return { success: true, response: response.data };
     }
     return {
       success: false,
-      error: response.data.deleted_layers
-        .filter((l) => l.error)
-        .map((l) => l.error)
-        .filter(Boolean)
-        .join('; ') || 'Delete operation failed',
+      response: response.data,
+      error: getSessionDeleteError(response.data),
       activeConflict: response.data.active_conflict,
     };
   } catch (error) {
@@ -169,4 +192,13 @@ export async function deleteSession(sessionId: string): Promise<DeleteSessionRes
     }
     return { success: false, error: getApiErrorMessage(error, 'Failed to delete session') };
   }
+}
+
+export async function bulkDeleteSessions(
+  sessionIds: string[]
+): Promise<BulkSessionDeleteResponse> {
+  const response = await apiClient.post<BulkSessionDeleteResponse>('/sessions/bulk-delete', {
+    session_ids: sessionIds,
+  });
+  return response.data;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { ReactNode, useEffect, useRef } from 'react';
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -7,12 +7,13 @@ interface AlertDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
-  description: string;
+  description: ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
   onConfirm: () => void;
   loading?: boolean;
+  loadingLabel?: string;
 }
 
 export function AlertDialog({
@@ -25,6 +26,7 @@ export function AlertDialog({
   destructive = false,
   onConfirm,
   loading = false,
+  loadingLabel = 'Loading...',
 }: AlertDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
 
@@ -69,9 +71,9 @@ export function AlertDialog({
           </h2>
         </div>
         <div className="mb-6">
-          <p id="alert-dialog-description" className="text-sm text-muted-foreground">
+          <div id="alert-dialog-description" className="text-sm text-muted-foreground">
             {description}
-          </p>
+          </div>
         </div>
         <div className="flex justify-end gap-3">
           <Button
@@ -87,7 +89,7 @@ export function AlertDialog({
             disabled={loading}
             variant={destructive ? 'destructive' : 'default'}
           >
-            {loading ? 'Deleting...' : confirmLabel}
+            {loading ? loadingLabel : confirmLabel}
           </Button>
         </div>
       </div>
