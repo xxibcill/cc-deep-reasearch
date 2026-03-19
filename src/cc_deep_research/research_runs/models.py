@@ -34,6 +34,14 @@ class ResearchRunStatus(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    ARCHIVED = "archived"
+
+
+class SessionArchiveStatus(StrEnum):
+    """Archive state for saved sessions."""
+
+    ACTIVE = "active"
+    ARCHIVED = "archived"
 
 
 MAX_BULK_DELETE_SESSION_IDS = 25
