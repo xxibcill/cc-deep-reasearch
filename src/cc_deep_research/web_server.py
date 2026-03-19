@@ -20,6 +20,7 @@ from cc_deep_research.event_router import EventRouter, WebSocketConnection
 from cc_deep_research.reporting import ReportGenerator
 from cc_deep_research.research_runs.jobs import ResearchRunJob, ResearchRunJobRegistry
 from cc_deep_research.research_runs.models import (
+    BulkSessionDeleteRequest,
     ResearchOutputFormat,
     ResearchRunCancelled,
     ResearchRunRequest,
@@ -799,6 +800,13 @@ def register_routes(app: FastAPI) -> None:
             content=response.model_dump(mode="json"),
             status_code=status_code,
         )
+
+    @app.post("/api/sessions/bulk-delete")
+    async def bulk_delete_sessions(request: BulkSessionDeleteRequest) -> JSONResponse:
+        """Delete multiple research sessions with explicit per-session outcomes."""
+        service = SessionPurgeService()
+        response = service.delete_sessions(request)
+        return JSONResponse(content=response.model_dump(mode="json"))
 
     @app.get("/api/sessions/{session_id}/events")
     async def get_session_events(

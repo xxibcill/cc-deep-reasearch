@@ -6,6 +6,8 @@ import shutil
 from pathlib import Path
 
 from cc_deep_research.research_runs.models import (
+    BulkSessionDeleteRequest,
+    BulkSessionDeleteResponse,
     DeletedLayer,
     SessionDeleteRequest,
     SessionDeleteResponse,
@@ -145,6 +147,30 @@ class SessionPurgeService:
             deleted_layers=deleted_layers,
             active_conflict=False,
         )
+
+    def delete_sessions(
+        self,
+        request: BulkSessionDeleteRequest,
+    ) -> BulkSessionDeleteResponse:
+        """Delete multiple sessions while isolating per-session failures."""
+        results: list[SessionDeleteResponse] = []
+
+        for session_id in request.session_ids:
+            try:
+                result = self.delete_session(
+                    SessionDeleteRequest(session_id=session_id, force=request.force)
+                )
+            except Exception as exc:  # pragma: no cover - defensive isolation
+                result = SessionDeleteResponse(
+                    session_id=session_id,
+                    success=False,
+                    deleted_layers=[],
+                    active_conflict=False,
+                    error=str(exc),
+                )
+            results.append(result)
+
+        return BulkSessionDeleteResponse.from_results(results)
 
     def _delete_session_file(self, session_file_path: Path) -> DeletedLayer:
         """Delete the session file from disk.

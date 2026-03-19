@@ -19,6 +19,10 @@ from cc_deep_research.research_runs import (
     ResearchRunResult,
     ResearchRunStatus,
 )
+from cc_deep_research.research_runs.models import (
+    BulkSessionDeleteRequest,
+    MAX_BULK_DELETE_SESSION_IDS,
+)
 from cc_deep_research.research_runs.jobs import (
     ResearchRunJobRegistry,
     ResearchRunJobStatus,
@@ -189,6 +193,96 @@ def test_stop_research_run_cancels_active_run_and_interrupts_session(
         assert sessions[0]["session_id"] == session_id
         assert sessions[0]["status"] == "interrupted"
         assert sessions[0]["active"] is False
+
+
+def test_bulk_delete_request_normalizes_duplicate_session_ids() -> None:
+    """The bulk delete request should trim ids and keep first-seen order only once."""
+    request = BulkSessionDeleteRequest(
+        session_ids=["  session-a  ", "session-b", "session-a", "session-b", "session-c"],
+    )
+
+    assert request.session_ids == ["session-a", "session-b", "session-c"]
+
+
+def test_bulk_delete_request_rejects_oversized_batches() -> None:
+    """The bulk delete contract should enforce a conservative batch-size limit."""
+    oversized_ids = [f"session-{index}" for index in range(MAX_BULK_DELETE_SESSION_IDS + 1)]
+
+    with pytest.raises(ValueError, match="bulk delete is limited"):
+        BulkSessionDeleteRequest(session_ids=oversized_ids)
+
+
+def test_bulk_delete_route_returns_per_session_outcomes(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bulk delete endpoint should return explicit mixed outcomes in request order."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir.mkdir(parents=True)
+
+    SessionStore().save_session(
+        ResearchSession(
+            session_id="bulk-delete-saved",
+            query="Delete me",
+            depth=ResearchDepth.STANDARD,
+        )
+    )
+
+    active_session_dir = config_dir / "telemetry" / "bulk-delete-active"
+    active_session_dir.mkdir(parents=True)
+    (active_session_dir / "events.jsonl").write_text(
+        json.dumps(
+            {
+                "event_id": "event-1",
+                "sequence_number": 1,
+                "timestamp": "2026-03-18T10:00:00Z",
+                "session_id": "bulk-delete-active",
+                "event_type": "session.started",
+                "category": "session",
+                "name": "session",
+                "status": "running",
+                "metadata": {},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    client = TestClient(create_app())
+    response = client.post(
+        "/api/sessions/bulk-delete",
+        json={
+            "session_ids": [
+                "bulk-delete-saved",
+                "bulk-delete-missing",
+                "bulk-delete-active",
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["success"] is False
+    assert payload["partial_success"] is True
+    assert payload["summary"] == {
+        "requested_count": 3,
+        "deleted_count": 1,
+        "not_found_count": 1,
+        "active_conflict_count": 1,
+        "partial_failure_count": 0,
+        "failed_count": 0,
+    }
+    assert [result["session_id"] for result in payload["results"]] == [
+        "bulk-delete-saved",
+        "bulk-delete-missing",
+        "bulk-delete-active",
+    ]
+    assert [result["outcome"] for result in payload["results"]] == [
+        "deleted",
+        "not_found",
+        "active_conflict",
+    ]
 
 
 def test_session_list_uses_historical_duckdb_and_deduplicates_live_rows(
