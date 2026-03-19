@@ -1,6 +1,6 @@
 # Task 016: Define Bulk Session Action Contract And Safety Rules
 
-Status: Planned
+Status: Done
 
 ## Objective
 
