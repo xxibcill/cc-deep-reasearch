@@ -60,6 +60,7 @@ export interface ApiSession {
   completed_at: string | null;
   has_session_payload: boolean;
   has_report: boolean;
+  archived?: boolean;
 }
 
 export type SessionSortBy = 'created_at' | 'last_event_at' | 'total_time_ms';
@@ -67,6 +68,7 @@ export type SortOrder = 'asc' | 'desc';
 
 export interface SessionListParams {
   active_only?: boolean;
+  archived_only?: boolean;
   limit?: number;
   cursor?: string | null;
   search?: string | null;
@@ -102,6 +104,7 @@ export interface Session {
   completedAt: string | null;
   hasSessionPayload: boolean;
   hasReport: boolean;
+  archived?: boolean;
 }
 
 export interface ApiServerMessage {
