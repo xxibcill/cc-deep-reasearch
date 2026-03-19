@@ -1,6 +1,6 @@
 # Task 015: Add Dashboard Stop Actions For Active Sessions
 
-Status: Planned
+Status: Done
 
 ## Objective
 
