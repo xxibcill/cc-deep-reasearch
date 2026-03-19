@@ -2,13 +2,14 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
-type ButtonVariant = 'default' | 'outline' | 'ghost';
+type ButtonVariant = 'default' | 'outline' | 'ghost' | 'destructive';
 type ButtonSize = 'default' | 'sm' | 'icon';
 
 const variantClasses: Record<ButtonVariant, string> = {
   default: 'bg-primary text-primary-foreground hover:opacity-90',
   outline: 'border border-border bg-background hover:bg-accent hover:text-accent-foreground',
   ghost: 'hover:bg-accent hover:text-accent-foreground',
+  destructive: 'bg-red-600 text-white hover:bg-red-700',
 };
 
 const sizeClasses: Record<ButtonSize, string> = {

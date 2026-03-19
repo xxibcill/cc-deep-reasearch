@@ -1,6 +1,6 @@
 # Task 010: Add Deletion Safety, Regression Coverage, And Docs
 
-Status: Planned
+Status: Done
 
 ## Objective
 

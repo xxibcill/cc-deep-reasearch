@@ -530,6 +530,46 @@ Formats a completed session as:
 
 The backend regenerates the requested report format from persisted session analysis data instead of returning a static cached copy.
 
+### `DELETE /api/sessions/{session_id}`
+
+Permanently deletes a session and all associated data from all storage layers.
+
+Query params:
+
+- `force` (boolean, optional): If true, delete even if the session is currently active. Defaults to false.
+
+Response (200 OK):
+
+```json
+{
+  "session_id": "research-abc123",
+  "success": true,
+  "deleted_layers": [
+    {"layer": "session", "deleted": true, "missing": false, "error": null},
+    {"layer": "telemetry", "deleted": true, "missing": false, "error": null},
+    {"layer": "duckdb", "deleted": true, "missing": false, "error": null}
+  ],
+  "active_conflict": false
+}
+```
+
+Response (409 Conflict):
+
+Returned when attempting to delete an active session without `force=true`. The response includes `active_conflict: true`.
+
+**Destructive Scope:**
+
+When a session is deleted, the following data is permanently removed:
+
+- Session file (`~/.config/cc-deep-research/sessions/{session_id}.json`)
+- Telemetry directory (`~/.config/cc-deep-research/telemetry/{session_id}/`)
+- Historical analytics records in DuckDB (`telemetry_events` and `telemetry_sessions` tables)
+
+**Limitations:**
+
+- No bulk delete: sessions must be deleted one at a time
+- Active sessions are protected by default; use `force=true` to override
+
 ## Session, Run, And Report Data Model
 
 The dashboard uses two identifiers that matter operationally:
