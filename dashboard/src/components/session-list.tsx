@@ -5,6 +5,8 @@ import Link from 'next/link';
 import {
   Activity,
   AlertCircle,
+  Archive,
+  ArchiveRestore,
   Cpu,
   Filter,
   Network,
@@ -19,9 +21,11 @@ import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import useDashboardStore from '@/hooks/useDashboard';
 import {
+  archiveSession,
   bulkDeleteSessions,
   deleteSession,
   getApiErrorMessage,
+  restoreSession,
 } from '@/lib/api';
 
 const sessionStatusOptions = ['completed', 'failed', 'interrupted', 'running', 'unknown'];
@@ -50,6 +54,8 @@ interface SessionCardProps {
   selected: boolean;
   onDelete: (session: Session) => void;
   onToggleSelection: (sessionId: string) => void;
+  onArchive?: (session: Session) => void;
+  onRestore?: (session: Session) => void;
 }
 
 function formatTimestamp(value: string | null): string {
@@ -113,10 +119,13 @@ function SessionCard({
   selected,
   onDelete,
   onToggleSelection,
+  onArchive,
+  onRestore,
 }: SessionCardProps) {
   const timeLabel = session.completedAt ? 'Completed' : 'Last event';
   const timeValue = session.completedAt ?? session.lastEventAt;
   const showsQuery = session.query && session.query !== session.label;
+  const isArchived = session.archived;
 
   return (
     <article className="flex h-full flex-col rounded-lg border p-5">
@@ -153,6 +162,10 @@ function SessionCard({
         {session.active ? (
           <span className="rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-800">
             Live
+          </span>
+        ) : isArchived ? (
+          <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">
+            Archived
           </span>
         ) : null}
       </div>
@@ -201,6 +214,26 @@ function SessionCard({
           <Play className="mr-2 h-4 w-4" />
           View Details
         </Link>
+        {!session.active && !isArchived && onArchive ? (
+          <Button
+            variant="outline"
+            onClick={() => onArchive(session)}
+            title="Archive session"
+          >
+            <Archive className="mr-2 h-4 w-4" />
+            Archive
+          </Button>
+        ) : null}
+        {!session.active && isArchived && onRestore ? (
+          <Button
+            variant="outline"
+            onClick={() => onRestore(session)}
+            title="Restore archived session"
+          >
+            <ArchiveRestore className="mr-2 h-4 w-4" />
+            Restore
+          </Button>
+        ) : null}
         <Button
           variant="outline"
           onClick={() => onDelete(session)}
@@ -383,6 +416,20 @@ export function SessionList({
     }
     setDeleteDialog({ mode: 'bulk', sessions: selectedSessions, deleting: false });
     setDeleteError(null);
+  };
+
+  const handleArchive = async (session: Session) => {
+    const result = await archiveSession(session.sessionId);
+    if (result.success) {
+      refreshSessions();
+    }
+  };
+
+  const handleRestore = async (session: Session) => {
+    const result = await restoreSession(session.sessionId);
+    if (result.success) {
+      refreshSessions();
+    }
   };
 
   const refreshSessions = () => {
@@ -597,6 +644,8 @@ export function SessionList({
                   selected={selectedSessionIdSet.has(session.sessionId)}
                   onDelete={handleDeleteClick}
                   onToggleSelection={toggleSessionSelection}
+                  onArchive={handleArchive}
+                  onRestore={handleRestore}
                 />
               ))}
             </div>
