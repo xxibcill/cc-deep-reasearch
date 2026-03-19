@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +21,45 @@ from cc_deep_research.models.session import (
 
 SESSION_SUMMARY_DIRNAME = ".summaries"
 SESSION_LABEL_MAX_LENGTH = 120
+
+
+class SessionArchiveStatus:
+    """Archive status constants for saved sessions."""
+
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+def _get_audit_log_path() -> Path:
+    """Get the path to the session audit log."""
+    config_dir = get_default_config_path().parent
+    audit_dir = config_dir / "sessions"
+    audit_dir.mkdir(parents=True, exist_ok=True)
+    return audit_dir / "audit.jsonl"
+
+
+def log_audit_event(action: str, session_id: str, **details: Any) -> None:
+    """Log an audit event for a session operation.
+
+    Args:
+        action: The action performed (e.g., 'archive', 'restore', 'delete').
+        session_id: The session ID the action was performed on.
+        **details: Additional details about the action.
+    """
+    try:
+        audit_path = _get_audit_log_path()
+        import json as json_module
+
+        event = {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "action": action,
+            "session_id": session_id,
+            "details": details,
+        }
+        with open(audit_path, "a", encoding="utf-8") as f:
+            f.write(json_module.dumps(event) + "\n")
+    except Exception:
+        pass
 
 
 def get_default_session_dir() -> Path:
@@ -230,12 +269,17 @@ class SessionStore:
 
         try:
             deleted = False
+            deleted_files = []
             if path.exists():
                 path.unlink()
                 deleted = True
+                deleted_files.append("session")
             if summary_path.exists():
                 summary_path.unlink()
                 deleted = True
+                deleted_files.append("summary")
+
+            log_audit_event("delete", session_id, deleted_files=deleted_files)
             return SessionDeletionResult(deleted=deleted, missing=False)
         except OSError as e:
             return SessionDeletionResult(deleted=False, missing=False, error=str(e))
@@ -258,6 +302,105 @@ class SessionStore:
             Number of sessions in storage.
         """
         return len(list(self._session_dir.glob("*.json")))
+
+    def get_archived_session_ids(self) -> set[str]:
+        """Get the set of archived session IDs.
+
+        Returns:
+            Set of archived session IDs.
+        """
+        archived: set[str] = set()
+        for path in self._summary_dir.glob("*.json"):
+            try:
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+                if data.get("archived"):
+                    archived.add(path.stem)
+            except (json.JSONDecodeError, OSError):
+                continue
+        return archived
+
+    def archive_session(self, session_id: str) -> bool:
+        """Archive a session, hiding it from the default list.
+
+        Args:
+            session_id: Session identifier.
+
+        Returns:
+            True if the session was archived, False if not found.
+        """
+        summary_path = self._session_summary_path(session_id)
+        if not summary_path.exists():
+            return False
+
+        try:
+            with open(summary_path, encoding="utf-8") as f:
+                data = json.load(f)
+
+            data["archived"] = True
+            archived_at = datetime.now(UTC)
+            data["archived_at"] = archived_at.isoformat()
+
+            with open(summary_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, default=_json_serializer)
+
+            log_audit_event("archive", session_id, archived_at=archived_at.isoformat())
+            return True
+        except (json.JSONDecodeError, OSError):
+            return False
+
+    def restore_session(self, session_id: str) -> bool:
+        """Restore an archived session to the active list.
+
+        Args:
+            session_id: Session identifier.
+
+        Returns:
+            True if the session was restored, False if not found.
+        """
+        summary_path = self._session_summary_path(session_id)
+        if not summary_path.exists():
+            return False
+
+        try:
+            with open(summary_path, encoding="utf-8") as f:
+                data = json.load(f)
+
+            if not data.get("archived"):
+                return False
+
+            data["archived"] = False
+            data["archived_at"] = None
+            restored_at = datetime.now(UTC)
+            data["restored_at"] = restored_at.isoformat()
+
+            with open(summary_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, default=_json_serializer)
+
+            log_audit_event("restore", session_id, restored_at=restored_at.isoformat())
+            return True
+        except (json.JSONDecodeError, OSError):
+            return False
+
+    def is_session_archived(self, session_id: str) -> bool:
+        """Check if a session is archived.
+
+        Args:
+            session_id: Session identifier.
+
+        Returns:
+            True if the session is archived, False otherwise.
+        """
+        summary_path = self._session_summary_path(session_id)
+        if not summary_path.exists():
+            return False
+
+        try:
+            with open(summary_path, encoding="utf-8") as f:
+                data = json.load(f)
+            return bool(data.get("archived"))
+        except (json.JSONDecodeError, OSError):
+            return False
 
 
 def _serialize_session(session: ResearchSession) -> dict[str, Any]:
@@ -347,6 +490,8 @@ def _build_saved_session_summary(
         "path": str(session_path),
         "has_session_payload": True,
         "has_report": isinstance(metadata, dict) and bool(metadata.get("analysis")),
+        "archived": False,
+        "archived_at": None,
     }
 
 
@@ -371,6 +516,8 @@ def _normalize_saved_session_summary(
         "path": str(session_path),
         "has_session_payload": session_path.exists(),
         "has_report": bool(data.get("has_report")),
+        "archived": bool(data.get("archived")),
+        "archived_at": _normalize_optional_text(data.get("archived_at")),
     }
 
 
@@ -462,6 +609,7 @@ def _json_serializer(obj: Any) -> Any:
 
 
 __all__ = [
+    "SessionArchiveStatus",
     "SessionDeletionResult",
     "SessionStore",
     "get_default_session_dir",
