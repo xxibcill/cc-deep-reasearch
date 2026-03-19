@@ -8,6 +8,7 @@ Use these docs as the current contributor entry points:
 - [`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md): pipeline phases, orchestrator ownership, and package boundaries
 - [`TELEMETRY.md`](TELEMETRY.md): persisted telemetry model and monitoring workflow
 - [`REALTIME_MONITORING.md`](REALTIME_MONITORING.md): FastAPI + Next.js operator console for live monitoring
+- [`TRACE_SYSTEM_IMPROVEMENT_PLAN.md`](TRACE_SYSTEM_IMPROVEMENT_PLAN.md): capability assessment and roadmap for making traces answer operator questions faster
 
 Current code layout:
 
