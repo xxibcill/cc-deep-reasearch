@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.models.analysis import (
     AnalysisResult,
@@ -12,6 +13,9 @@ from cc_deep_research.models.analysis import (
     ValidationResult,
 )
 from cc_deep_research.models.search import ResearchDepth, SearchResultItem
+
+if TYPE_CHECKING:
+    from cc_deep_research.monitoring import ResearchMonitor
 
 
 @dataclass
@@ -51,6 +55,8 @@ class OrchestratorSessionState:
     llm_actual_routes: dict[str, LLMRouteRecord] = field(default_factory=dict)
     llm_route_usage: dict[str, LLMRouteUsageStats] = field(default_factory=dict)
     llm_fallback_events: list[dict[str, Any]] = field(default_factory=list)
+    # Optional monitor for semantic events
+    monitor: ResearchMonitor | None = field(default=None, repr=False)
 
     def reset(self, configured_providers: list[str]) -> None:
         """Reset state for a new session."""
@@ -73,12 +79,31 @@ class OrchestratorSessionState:
             self.execution_degradations.append(reason)
 
     def set_provider_metadata(self, *, available: list[str], warnings: list[str]) -> None:
-        """Record provider-resolution metadata for the current session."""
+        """Record provider-resolution metadata for the current session.
+
+        Emits state.changed events for provider availability changes.
+        """
+        before = self.provider_metadata.get("available", [])
+        before_set = set(before) if isinstance(before, list) else set()
+        after_set = set(available)
+
         self.provider_metadata = {
             "configured": list(self.configured_providers),
             "available": list(available),
             "warnings": list(warnings),
         }
+
+        # Emit state change for provider availability
+        if self.monitor and before_set != after_set:
+            self.monitor.emit_state_changed(
+                state_scope="session",
+                state_key="available_providers",
+                before=list(before_set),
+                after=list(after_set),
+                change_type="update",
+                phase="initialization",
+            )
+
         for warning in warnings:
             self.note_execution_degradation(warning)
 
@@ -222,16 +247,28 @@ class OrchestratorSessionState:
             reason: Reason for the fallback.
             timestamp: Optional timestamp for the fallback event.
         """
-        self.llm_fallback_events.append(
-            {
-                "agent_id": agent_id,
-                "original_transport": original_transport,
-                "fallback_transport": fallback_transport,
-                "reason": reason,
-                "timestamp": timestamp,
-            }
-        )
-        self.note_execution_degradation(f"LLM fallback: {original_transport} -> {fallback_transport}")
+        fallback_event = {
+            "agent_id": agent_id,
+            "original_transport": original_transport,
+            "fallback_transport": fallback_transport,
+            "reason": reason,
+            "timestamp": timestamp or datetime.now(UTC).isoformat(),
+        }
+        self.llm_fallback_events.append(fallback_event)
+        degradation_reason = f"LLM fallback: {original_transport} -> {fallback_transport}"
+        self.note_execution_degradation(degradation_reason)
+
+        # Emit degradation event if monitor is available
+        if self.monitor:
+            self.monitor.emit_degradation_detected(
+                reason_code="fallback",
+                severity="warning",
+                scope="transport",
+                recoverable=True,
+                mitigation=f"Using {fallback_transport} instead of {original_transport}",
+                impact=f"LLM transport degraded from {original_transport} to {fallback_transport}",
+                actor_id=agent_id,
+            )
 
     def get_llm_route_summary(self) -> dict[str, Any]:
         """Get a summary of LLM route usage for this session.

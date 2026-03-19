@@ -1037,3 +1037,237 @@ class TestLLMRouteTelemetry:
         assert "llm_route" in summary
         assert summary["llm_route"]["total_requests"] == 1
         assert "openrouter_api" in summary["llm_route"]["transports"]
+
+
+class TestSemanticEvents:
+    """Tests for semantic event helper methods."""
+
+    def test_emit_decision_made_routing(self):
+        """Test emitting a routing decision event."""
+        from cc_deep_research.monitoring import REASON_FALLBACK, SEVERITY_INFO
+
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard")
+
+        event_id = monitor.emit_decision_made(
+            decision_type="routing",
+            reason_code=REASON_FALLBACK,
+            chosen_option="openrouter_api",
+            inputs={"original": "claude_cli", "reason": "unavailable"},
+            rejected_options=["cerebras_api"],
+            phase="initialization",
+        )
+
+        assert event_id is not None
+        event = next(e for e in monitor._telemetry_events if e["event_id"] == event_id)
+        assert event["event_type"] == "decision.made"
+        assert event["category"] == "decision"
+        assert event["status"] == "decided"
+        assert event["reason_code"] == REASON_FALLBACK
+        assert event["severity"] == SEVERITY_INFO
+        assert event["phase"] == "initialization"
+        assert event["actor_type"] == "system"  # No agent_id provided
+        assert event["metadata"]["decision_type"] == "routing"
+        assert event["metadata"]["chosen_option"] == "openrouter_api"
+        assert event["metadata"]["rejected_options"] == ["cerebras_api"]
+
+    def test_emit_decision_made_with_agent(self):
+        """Test emitting a decision event with an agent actor."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard")
+
+        cause_event_id = monitor.emit_event(
+            event_type="analysis.completed",
+            category="analysis",
+            name="quality_check",
+            status="completed",
+        )
+
+        event_id = monitor.emit_decision_made(
+            decision_type="follow_up",
+            reason_code="validation_requested_follow_up",
+            chosen_option="continue_iteration",
+            inputs={"quality_score": 0.45, "threshold": 0.7},
+            rejected_options=["stop_iteration"],
+            cause_event_ids=[cause_event_id],
+            confidence=0.65,
+            phase="analysis",
+            actor_id="validator-agent",
+        )
+
+        assert event_id is not None
+        event = next(e for e in monitor._telemetry_events if e["event_id"] == event_id)
+        assert event["actor_type"] == "agent"
+        assert event["actor_id"] == "validator-agent"
+        assert event["cause_event_id"] == cause_event_id
+        assert event["metadata"]["confidence"] == 0.65
+        assert event["metadata"]["cause_event_ids"] == [cause_event_id]
+
+    def test_emit_state_changed_provider(self):
+        """Test emitting a state change event for provider availability."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard")
+
+        event_id = monitor.emit_state_changed(
+            state_scope="session",
+            state_key="available_providers",
+            before=["tavily", "claude_cli"],
+            after=["tavily"],  # claude_cli became unavailable
+            change_type="update",
+            phase="initialization",
+        )
+
+        assert event_id is not None
+        event = next(e for e in monitor._telemetry_events if e["event_id"] == event_id)
+        assert event["event_type"] == "state.changed"
+        assert event["category"] == "state"
+        assert event["name"] == "session.available_providers"
+        assert event["status"] == "changed"
+        assert event["phase"] == "initialization"
+        # Note: degraded flag depends on explicit degraded param, not inferred from state changes
+        assert event["metadata"]["state_scope"] == "session"
+        assert event["metadata"]["state_key"] == "available_providers"
+        assert event["metadata"]["before"] == ["tavily", "claude_cli"]
+        assert event["metadata"]["after"] == ["tavily"]
+
+    def test_emit_state_changed_with_cause(self):
+        """Test emitting a state change event with a cause."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard")
+
+        cause_id = monitor.emit_event(
+            event_type="provider.health_check_failed",
+            category="provider",
+            name="claude_cli",
+            status="failed",
+        )
+
+        event_id = monitor.emit_state_changed(
+            state_scope="provider",
+            state_key="claude_cli_available",
+            before=True,
+            after=False,
+            change_type="update",
+            caused_by_event_id=cause_id,
+            checkpoint="provider-degraded",
+        )
+
+        event = next(e for e in monitor._telemetry_events if e["event_id"] == event_id)
+        assert event["cause_event_id"] == cause_id
+        assert event["metadata"]["checkpoint"] == "provider-degraded"
+
+    def test_emit_degradation_detected_transport(self):
+        """Test emitting a degradation event for transport fallback."""
+        from cc_deep_research.monitoring import REASON_FALLBACK, SEVERITY_WARNING
+
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard")
+
+        cause_id = monitor.emit_event(
+            event_type="llm.route_request",
+            category="llm",
+            name="claude_cli",
+            status="timeout",
+        )
+
+        event_id = monitor.emit_degradation_detected(
+            reason_code=REASON_FALLBACK,
+            severity=SEVERITY_WARNING,
+            scope="transport",
+            recoverable=True,
+            mitigation="Using openrouter_api instead",
+            impact="LLM transport degraded from claude_cli to openrouter_api",
+            caused_by_event_id=cause_id,
+            phase="analysis",
+            actor_id="analyzer",
+        )
+
+        assert event_id is not None
+        event = next(e for e in monitor._telemetry_events if e["event_id"] == event_id)
+        assert event["event_type"] == "degradation.detected"
+        assert event["category"] == "degradation"
+        assert event["name"] == "transport.degraded"
+        assert event["status"] == "degraded"
+        assert event["degraded"] is True
+        assert event["reason_code"] == REASON_FALLBACK
+        assert event["severity"] == SEVERITY_WARNING
+        assert event["actor_type"] == "agent"
+        assert event["actor_id"] == "analyzer"
+        assert event["cause_event_id"] == cause_id
+        assert event["metadata"]["scope"] == "transport"
+        assert event["metadata"]["recoverable"] is True
+        assert event["metadata"]["mitigation"] == "Using openrouter_api instead"
+
+    def test_emit_degradation_detected_unrecoverable(self):
+        """Test emitting an unrecoverable degradation event."""
+        from cc_deep_research.monitoring import SEVERITY_ERROR
+
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard")
+
+        event_id = monitor.emit_degradation_detected(
+            reason_code="all_transports_failed",
+            severity=SEVERITY_ERROR,
+            scope="transport",
+            recoverable=False,
+            impact="No LLM transport available, using heuristic fallback",
+        )
+
+        event = next(e for e in monitor._telemetry_events if e["event_id"] == event_id)
+        assert event["severity"] == SEVERITY_ERROR
+        assert event["metadata"]["recoverable"] is False
+        assert event["degraded"] is True
+
+    def test_trace_contract_fields_present(self):
+        """Test that all trace contract fields are present in emitted events."""
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        monitor.set_session("test-session", "query", "standard", run_id="run-123")
+
+        event_id = monitor.emit_event(
+            event_type="test.event",
+            category="test",
+            name="test_operation",
+            status="completed",
+            agent_id="test-agent",
+            phase="testing",
+            operation="test_op",
+            attempt=2,
+            severity="info",
+            reason_code="test_reason",
+            degraded=False,
+        )
+
+        event = next(e for e in monitor._telemetry_events if e["event_id"] == event_id)
+
+        # Core identity fields
+        assert "event_id" in event
+        assert "parent_event_id" in event
+        assert "sequence_number" in event
+        assert "timestamp" in event
+        assert "session_id" in event
+
+        # Trace contract fields
+        assert event["trace_version"] == "1.0.0"
+        assert event["run_id"] == "run-123"
+        assert event["cause_event_id"] is None
+
+        # Event classification
+        assert event["event_type"] == "test.event"
+        assert event["category"] == "test"
+        assert event["name"] == "test_operation"
+        assert event["status"] == "completed"
+        assert event["severity"] == "info"
+        assert event["reason_code"] == "test_reason"
+
+        # Execution context
+        assert event["phase"] == "testing"
+        assert event["operation"] == "test_op"
+        assert event["attempt"] == 2
+
+        # Actor
+        assert event["actor_type"] == "agent"
+        assert event["actor_id"] == "test-agent"
+        assert event["agent_id"] == "test-agent"  # Backward compatibility
+
+        # Metrics
+        assert event["degraded"] is False

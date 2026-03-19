@@ -16,10 +16,33 @@ import click
 from cc_deep_research.config import get_default_config_path
 from cc_deep_research.models import QueryFamily, SearchResultItem
 
-STOP_REASON_SUCCESS = "success"
-STOP_REASON_LIMIT_REACHED = "limit_reached"
-STOP_REASON_LOW_QUALITY = "low_quality"
-STOP_REASON_DEGRADED_EXECUTION = "degraded_execution"
+# Trace schema version
+TRACE_VERSION = "1.0.0"
+
+# Severity levels for events
+SEVERITY_DEBUG = "debug"
+SEVERITY_INFO = "info"
+SEVERITY_WARNING = "warning"
+SEVERITY_ERROR = "error"
+SEVERITY_CRITICAL = "critical"
+
+# Reason codes (stable, enumerable)
+REASON_SUCCESS = "success"
+REASON_FALLBACK = "fallback"
+REASON_TIMEOUT = "timeout"
+REASON_UNAVAILABLE = "unavailable"
+REASON_LIMIT_REACHED = "limit_reached"
+REASON_LOW_QUALITY = "low_quality"
+REASON_DEGRADED = "degraded"
+REASON_CANCELLED = "cancelled"
+REASON_ERROR = "error"
+
+# Stop reasons (legacy aliases)
+STOP_REASON_SUCCESS = REASON_SUCCESS
+STOP_REASON_LIMIT_REACHED = REASON_LIMIT_REACHED
+STOP_REASON_LOW_QUALITY = REASON_LOW_QUALITY
+STOP_REASON_DEGRADED_EXECUTION = REASON_DEGRADED
+
 KNOWN_STOP_REASONS = {
     STOP_REASON_SUCCESS,
     STOP_REASON_LIMIT_REACHED,
@@ -128,14 +151,24 @@ class ResearchMonitor:
         session_id: str,
         query: str,
         depth: str,
+        *,
+        run_id: str | None = None,
         **metadata: Any,
     ) -> str:
         """Set active session and initialize persistent telemetry files.
+
+        Args:
+            session_id: Unique session identifier.
+            query: The research query.
+            depth: Research depth (quick, standard, deep).
+            run_id: Optional run ID for grouping related sessions.
+            **metadata: Additional session metadata.
 
         Returns:
             The session event ID for correlation purposes.
         """
         self._session_id = session_id
+        self._run_id = run_id
         self._sequence_counter = 0  # Reset sequence for new session
         self._parent_stack = []  # Clear parent stack for new session
 
@@ -191,6 +224,14 @@ class ResearchMonitor:
         metadata: dict[str, Any] | None = None,
         event_id: str | None = None,
         parent_event_id: str | None = None,
+        *,
+        cause_event_id: str | None = None,
+        phase: str | None = None,
+        operation: str | None = None,
+        attempt: int = 1,
+        severity: str = SEVERITY_INFO,
+        reason_code: str | None = None,
+        degraded: bool = False,
     ) -> str:
         """Emit a structured telemetry event and persist it when configured.
 
@@ -205,6 +246,13 @@ class ResearchMonitor:
             event_id: Optional explicit event ID (auto-generated if not provided).
             parent_event_id: Optional parent event ID for correlation.
                 If not provided, uses the current parent from the stack.
+            cause_event_id: Optional ID of the event that caused this event.
+            phase: The current execution phase (e.g., 'planning', 'collection').
+            operation: The specific operation name.
+            attempt: Retry count (default 1).
+            severity: Event severity level (default 'info').
+            reason_code: Standardized reason code for the event.
+            degraded: Whether this event indicates a degraded state.
 
         Returns:
             The event ID for correlation purposes.
@@ -217,19 +265,47 @@ class ResearchMonitor:
         if actual_parent_id is None and self._parent_stack:
             actual_parent_id = self._parent_stack[-1]
 
+        # Derive actor_type from agent_id presence
+        actor_type = "agent" if agent_id else "system"
+
+        # Auto-infer degraded from status patterns
+        inferred_degraded = degraded or (
+            status in ("failed", "fallback", "degraded")
+            or "fallback" in event_type
+            or "degraded" in event_type
+        )
+
         with self._emit_lock:
             payload = {
+                # Core identity
                 "event_id": actual_event_id,
                 "parent_event_id": actual_parent_id,
                 "sequence_number": self._get_next_sequence(),
                 "timestamp": self._get_utc_timestamp(),
                 "session_id": self._session_id,
+                # Trace contract
+                "trace_version": TRACE_VERSION,
+                "run_id": getattr(self, "_run_id", None),
+                "cause_event_id": cause_event_id,
+                # Event classification
                 "event_type": event_type,
                 "category": category,
                 "name": name,
                 "status": status,
+                "severity": severity,
+                "reason_code": reason_code,
+                # Execution context
+                "phase": phase,
+                "operation": operation or name,
+                "attempt": attempt,
+                # Actor
+                "actor_type": actor_type,
+                "actor_id": agent_id,  # Renamed for consistency but keep agent_id for backward compat
+                "agent_id": agent_id,  # Keep for backward compatibility
+                # Metrics
                 "duration_ms": duration_ms,
-                "agent_id": agent_id,
+                "degraded": inferred_degraded,
+                # Payload
                 "metadata": metadata or {},
             }
             self._telemetry_events.append(payload)
@@ -251,6 +327,156 @@ class ResearchMonitor:
                 pass
 
         return actual_event_id
+
+    def emit_decision_made(
+        self,
+        *,
+        decision_type: str,
+        reason_code: str,
+        chosen_option: str,
+        inputs: dict[str, Any],
+        rejected_options: list[str] | None = None,
+        cause_event_ids: list[str] | None = None,
+        confidence: float | None = None,
+        phase: str | None = None,
+        operation: str | None = None,
+        actor_id: str | None = None,
+    ) -> str:
+        """Emit a structured decision event for routing, planning, or control decisions.
+
+        Args:
+            decision_type: Type of decision (routing, planning, follow_up, stop).
+            reason_code: Standardized reason code for the decision.
+            chosen_option: The option that was selected.
+            inputs: The inputs that informed the decision.
+            rejected_options: Options that were considered but not chosen.
+            cause_event_ids: IDs of events that triggered this decision.
+            confidence: Optional confidence score (0.0-1.0).
+            phase: Current execution phase.
+            operation: Specific operation name.
+            actor_id: ID of the agent making the decision (if applicable).
+
+        Returns:
+            The event ID for correlation purposes.
+        """
+        # Use first cause_event_id as primary cause
+        cause_event_id = cause_event_ids[0] if cause_event_ids else None
+
+        return self.emit_event(
+            event_type="decision.made",
+            category="decision",
+            name=decision_type,
+            status="decided",
+            agent_id=actor_id,
+            cause_event_id=cause_event_id,
+            phase=phase,
+            operation=operation or f"decision.{decision_type}",
+            severity=SEVERITY_INFO,
+            reason_code=reason_code,
+            metadata={
+                "decision_type": decision_type,
+                "chosen_option": chosen_option,
+                "rejected_options": rejected_options or [],
+                "inputs": inputs,
+                "cause_event_ids": cause_event_ids or [],
+                "confidence": confidence,
+            },
+        )
+
+    def emit_state_changed(
+        self,
+        *,
+        state_scope: str,
+        state_key: str,
+        before: Any,
+        after: Any,
+        change_type: str = "update",
+        caused_by_event_id: str | None = None,
+        checkpoint: str | None = None,
+        phase: str | None = None,
+    ) -> str:
+        """Emit a state change event for tracking session/provider/route state transitions.
+
+        Args:
+            state_scope: Scope of the state (session, provider, route, collection).
+            state_key: The specific state key that changed.
+            before: The value before the change.
+            after: The value after the change.
+            change_type: Type of change (set, update, delete).
+            caused_by_event_id: ID of the event that caused this state change.
+            checkpoint: Optional checkpoint identifier for recovery.
+            phase: Current execution phase.
+
+        Returns:
+            The event ID for correlation purposes.
+        """
+        return self.emit_event(
+            event_type="state.changed",
+            category="state",
+            name=f"{state_scope}.{state_key}",
+            status="changed",
+            cause_event_id=caused_by_event_id,
+            phase=phase,
+            operation=f"state.{state_scope}.{change_type}",
+            severity=SEVERITY_INFO,
+            metadata={
+                "state_scope": state_scope,
+                "state_key": state_key,
+                "before": before,
+                "after": after,
+                "change_type": change_type,
+                "checkpoint": checkpoint,
+            },
+        )
+
+    def emit_degradation_detected(
+        self,
+        *,
+        reason_code: str,
+        severity: str = SEVERITY_WARNING,
+        scope: str = "execution",
+        recoverable: bool = True,
+        mitigation: str | None = None,
+        caused_by_event_id: str | None = None,
+        impact: str | None = None,
+        phase: str | None = None,
+        actor_id: str | None = None,
+    ) -> str:
+        """Emit a degradation event when execution quality or availability is compromised.
+
+        Args:
+            reason_code: Standardized reason code for the degradation.
+            severity: Severity level (warning, error, critical).
+            scope: Scope of degradation (transport, provider, analysis, collection).
+            recoverable: Whether the degradation can be recovered from.
+            mitigation: Description of mitigation action taken.
+            caused_by_event_id: ID of the event that caused the degradation.
+            impact: Description of the impact on execution.
+            phase: Current execution phase.
+            actor_id: ID of the affected agent (if applicable).
+
+        Returns:
+            The event ID for correlation purposes.
+        """
+        return self.emit_event(
+            event_type="degradation.detected",
+            category="degradation",
+            name=f"{scope}.degraded",
+            status="degraded",
+            agent_id=actor_id,
+            cause_event_id=caused_by_event_id,
+            phase=phase,
+            operation=f"degradation.{scope}",
+            severity=severity,
+            reason_code=reason_code,
+            degraded=True,
+            metadata={
+                "scope": scope,
+                "recoverable": recoverable,
+                "mitigation": mitigation,
+                "impact": impact,
+            },
+        )
 
     def section(self, name: str) -> None:
         """Start a new section with a header."""
@@ -1002,9 +1228,29 @@ class ResearchMonitor:
 
 
 __all__ = [
-    "KNOWN_STOP_REASONS",
+    # Core classes
     "MonitorEvent",
     "ResearchMonitor",
+    # Trace contract
+    "TRACE_VERSION",
+    # Severity levels
+    "SEVERITY_CRITICAL",
+    "SEVERITY_DEBUG",
+    "SEVERITY_ERROR",
+    "SEVERITY_INFO",
+    "SEVERITY_WARNING",
+    # Reason codes
+    "REASON_CANCELLED",
+    "REASON_DEGRADED",
+    "REASON_ERROR",
+    "REASON_FALLBACK",
+    "REASON_LIMIT_REACHED",
+    "REASON_LOW_QUALITY",
+    "REASON_SUCCESS",
+    "REASON_TIMEOUT",
+    "REASON_UNAVAILABLE",
+    # Stop reasons (legacy aliases)
+    "KNOWN_STOP_REASONS",
     "STOP_REASON_DEGRADED_EXECUTION",
     "STOP_REASON_LIMIT_REACHED",
     "STOP_REASON_LOW_QUALITY",
