@@ -158,6 +158,7 @@ class AnalysisWorkflow:
         sources: list[SearchResultItem],
         min_sources: int | None,
         phase_hook: Callable[[str, str], None] | None,
+        cancellation_check: Callable[[], None] | None,
         run_single_pass: Callable[..., Awaitable[tuple[AnalysisResult, ValidationResult | None]]],
         collect_follow_up_sources: Callable[..., Awaitable[list[SearchResultItem]]],
     ) -> tuple[
@@ -183,12 +184,14 @@ class AnalysisWorkflow:
         )
 
         for iteration in range(1, max_iterations + 1):
+            self._check_cancelled(cancellation_check)
             analysis, validation = await run_single_pass(
                 query=query,
                 depth=depth,
                 strategy=strategy,
                 sources=sources,
                 phase_hook=phase_hook,
+                cancellation_check=cancellation_check,
             )
             iteration_history.append(
                 IterationHistoryRecord(
@@ -289,3 +292,8 @@ class AnalysisWorkflow:
             sources = updated_sources
 
         return analysis, validation, sources, iteration_history
+
+    def _check_cancelled(self, cancellation_check: Callable[[], None] | None) -> None:
+        """Raise when the caller has requested the workflow to stop."""
+        if cancellation_check is not None:
+            cancellation_check()

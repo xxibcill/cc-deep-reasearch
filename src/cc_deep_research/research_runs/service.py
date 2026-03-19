@@ -14,12 +14,18 @@ from cc_deep_research.monitoring import STOP_REASON_DEGRADED_EXECUTION, Research
 from cc_deep_research.orchestrator import TeamResearchOrchestrator
 from cc_deep_research.pdf_generator import PDFGenerator
 from cc_deep_research.reporting import ReportGenerator
-from cc_deep_research.research_runs.models import ResearchRunRequest, ResearchRunResult
+from cc_deep_research.research_runs.models import (
+    ResearchRunCancelled,
+    ResearchRunRequest,
+    ResearchRunResult,
+)
 from cc_deep_research.research_runs.options import apply_research_request_config_overrides
 from cc_deep_research.research_runs.output import materialize_research_run_output
 from cc_deep_research.session_store import SessionStore
 
 PhaseHook = Callable[[str, str], None]
+CancellationCheck = Callable[[], None]
+SessionStartedCallback = Callable[[str], None]
 
 
 @dataclass(slots=True)
@@ -95,6 +101,8 @@ class ResearchRunService:
         session_store: SessionStore | None = None,
         reporter: ReportGenerator | None = None,
         pdf_generator: PDFGenerator | None = None,
+        cancellation_check: CancellationCheck | None = None,
+        on_session_started: SessionStartedCallback | None = None,
     ) -> ResearchRunResult:
         """Prepare and execute a research run from a request."""
         prepared = self.prepare(request, config=config)
@@ -106,6 +114,8 @@ class ResearchRunService:
             session_store=session_store,
             reporter=reporter,
             pdf_generator=pdf_generator,
+            cancellation_check=cancellation_check,
+            on_session_started=on_session_started,
         )
 
     def run_prepared(
@@ -118,6 +128,8 @@ class ResearchRunService:
         session_store: SessionStore | None = None,
         reporter: ReportGenerator | None = None,
         pdf_generator: PDFGenerator | None = None,
+        cancellation_check: CancellationCheck | None = None,
+        on_session_started: SessionStartedCallback | None = None,
     ) -> ResearchRunResult:
         """Execute a pre-resolved research run."""
         active_monitor = monitor or ResearchMonitor(enabled=False)
@@ -139,8 +151,13 @@ class ResearchRunService:
                     request=prepared.request,
                     event_router=event_router,
                     phase_hook=phase_hook,
+                    cancellation_check=cancellation_check,
+                    on_session_started=on_session_started,
                 )
             )
+        except ResearchRunCancelled:
+            self._finalize_cancelled_monitor(active_monitor)
+            raise
         except Exception:
             self._finalize_failed_monitor(active_monitor)
             raise
@@ -161,23 +178,46 @@ class ResearchRunService:
         request: ResearchRunRequest,
         event_router: EventRouter | None,
         phase_hook: PhaseHook | None,
+        cancellation_check: CancellationCheck | None,
+        on_session_started: SessionStartedCallback | None,
     ) -> ResearchSession:
         """Run the orchestrator and manage optional realtime startup."""
         router_started = False
+        self._check_cancelled(cancellation_check)
         if request.realtime_enabled and event_router is not None and not event_router.is_active():
             await event_router.start()
             router_started = True
 
         try:
+            self._check_cancelled(cancellation_check)
             return await orchestrator.execute_research(
                 query=request.query,
                 depth=request.depth,
                 min_sources=request.min_sources,
                 phase_hook=phase_hook,
+                cancellation_check=cancellation_check,
+                on_session_started=on_session_started,
             )
         finally:
             if router_started:
                 await event_router.stop()
+
+    def _check_cancelled(self, cancellation_check: CancellationCheck | None) -> None:
+        """Raise when the caller has requested cancellation."""
+        if cancellation_check is not None:
+            cancellation_check()
+
+    def _finalize_cancelled_monitor(self, monitor: ResearchMonitor) -> None:
+        """Emit an interrupted summary when execution is stopped by an operator."""
+        if monitor.session_id is None:
+            return
+        monitor.finalize_session(
+            total_sources=0,
+            providers=[],
+            total_time_ms=0,
+            status="interrupted",
+            stop_reason=STOP_REASON_DEGRADED_EXECUTION,
+        )
 
     def _finalize_failed_monitor(self, monitor: ResearchMonitor) -> None:
         """Emit a failed session summary when execution aborts mid-run."""

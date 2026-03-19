@@ -42,6 +42,7 @@ class PhaseRunner:
         description: str,
         operation: Callable[[], Awaitable[Any]],
         metadata: dict[str, Any] | None = None,
+        cancellation_check: Callable[[], None] | None = None,
     ) -> Any:
         """Run a monitored phase with full lifecycle events.
 
@@ -62,6 +63,7 @@ class PhaseRunner:
         Raises:
             Exception: Re-raises any exception from the operation.
         """
+        self._check_cancelled(cancellation_check)
         self.notify_phase(phase_hook, phase_key=phase_key, description=description)
 
         # Emit phase.started and get event ID for parent-child correlation
@@ -85,6 +87,7 @@ class PhaseRunner:
 
         try:
             result = await operation()
+            self._check_cancelled(cancellation_check)
             self._monitor.end_operation(phase_event, success=True)
             self._monitor.emit_event(
                 event_type="phase.completed",
@@ -128,6 +131,7 @@ class PhaseRunner:
         deep_analyze: Callable[[list[SearchResultItem], str, AnalysisResult], Awaitable[AnalysisResult]],
         validate_research: Callable[[str, ResearchDepth, list[SearchResultItem], AnalysisResult], Awaitable[ValidationResult]],
         log_validation_results: Callable[[ValidationResult], None],
+        cancellation_check: Callable[[], None] | None = None,
     ) -> tuple[AnalysisResult, ValidationResult | None]:
         """Run a single analysis/deep-analysis/validation pass."""
         analysis = await self.run_phase(
@@ -135,6 +139,7 @@ class PhaseRunner:
             phase_key="analysis",
             description="Analyzing findings",
             operation=lambda: analyze_findings(sources, query, strategy),
+            cancellation_check=cancellation_check,
         )
 
         if depth == ResearchDepth.DEEP:
@@ -143,6 +148,7 @@ class PhaseRunner:
                 phase_key="deep_analysis",
                 description="Performing deep multi-pass analysis",
                 operation=lambda: deep_analyze(sources, query, analysis),
+                cancellation_check=cancellation_check,
             )
             # Merge deep analysis results, preserving typed nested models
             merged_data = analysis.model_dump(mode="python")
@@ -158,6 +164,7 @@ class PhaseRunner:
             phase_key="validation",
             description="Validating research quality",
             operation=lambda: validate_research(query, depth, sources, analysis),
+            cancellation_check=cancellation_check,
         )
         log_validation_results(validation)
         return analysis, validation
@@ -175,3 +182,8 @@ class PhaseRunner:
         self._monitor.log(f"Key findings: {finding_count}")
         if validation is not None:
             self._monitor.log(f"Quality score: {validation.quality_score:.2f}")
+
+    def _check_cancelled(self, cancellation_check: Callable[[], None] | None) -> None:
+        """Raise when the caller has requested phase execution to stop."""
+        if cancellation_check is not None:
+            cancellation_check()
