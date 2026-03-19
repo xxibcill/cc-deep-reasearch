@@ -7,8 +7,21 @@ from pathlib import Path
 import click
 
 from cc_deep_research.config import load_config
-from cc_deep_research.session_store import SessionStore
+from cc_deep_research.session_store import (
+    SessionStore,
+    get_default_session_dir,
+)
+from cc_deep_research.telemetry import (
+    get_default_dashboard_db_path,
+    get_default_telemetry_dir,
+    query_dashboard_data,
+)
 from cc_deep_research.tui import TerminalUI
+
+
+def get_default_config_path() -> Path:
+    """Get the default configuration path."""
+    return get_default_session_dir().parent
 
 
 def register_session_commands(cli: click.Group) -> None:
@@ -22,9 +35,17 @@ def register_session_commands(cli: click.Group) -> None:
     @click.option("--limit", type=int, default=20, help="Maximum number of sessions to show")
     @click.option("--offset", type=int, default=0, help="Number of sessions to skip")
     @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-    def session_list(limit: int, offset: int, as_json: bool) -> None:
+    @click.option("--archived", is_flag=True, help="Show archived sessions")
+    def session_list(limit: int, offset: int, as_json: bool, archived: bool) -> None:
         """List all saved research sessions."""
-        sessions = SessionStore().list_sessions(limit=limit, offset=offset)
+        store = SessionStore()
+        if archived:
+            archived_ids = store.get_archived_session_ids()
+            all_sessions = store.list_sessions(limit=None)
+            sessions = [s for s in all_sessions if s.get("session_id") in archived_ids]
+            sessions = sessions[offset:offset + limit] if limit else sessions[offset:]
+        else:
+            sessions = store.list_sessions(limit=limit, offset=offset)
         if not sessions:
             click.echo("No saved sessions found.")
             return
@@ -124,6 +145,124 @@ def register_session_commands(cli: click.Group) -> None:
         else:
             click.echo(f"Error: Failed to delete session '{session_id}': {result.error}", err=True)
             raise click.Abort()
+
+    @session.command("reconcile")
+    @click.option("--dry-run", is_flag=True, help="Show what would be cleaned up without making changes")
+    @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+    def session_reconcile(dry_run: bool, as_json: bool) -> None:
+        """Detect drift between saved sessions, telemetry, and DuckDB."""
+        store = SessionStore()
+        telemetry_dir = get_default_telemetry_dir()
+        db_path = get_default_dashboard_db_path()
+
+        saved_sessions = {s["session_id"] for s in store.list_sessions(limit=None)}
+        saved_sessions.update(store.get_archived_session_ids())
+
+        telemetry_sessions: set[str] = set()
+        if telemetry_dir.exists():
+            for item in telemetry_dir.iterdir():
+                if item.is_dir():
+                    telemetry_sessions.add(item.name)
+
+        duckdb_sessions: set[str] = set()
+        try:
+            historical = query_dashboard_data(db_path)
+            duckdb_sessions = {row[0] for row in historical.get("sessions", [])}
+        except Exception:
+            pass
+
+        drift: dict[str, list[str]] = {
+            "orphan_telemetry": [],
+            "orphan_duckdb": [],
+            "missing_telemetry": [],
+            "missing_duckdb": [],
+        }
+
+        drift["orphan_telemetry"] = sorted(telemetry_sessions - saved_sessions)
+        drift["orphan_duckdb"] = sorted(duckdb_sessions - saved_sessions)
+
+        drift["missing_telemetry"] = sorted(saved_sessions - telemetry_sessions)
+        drift["missing_duckdb"] = sorted(saved_sessions - duckdb_sessions)
+
+        if as_json:
+            import json as json_module
+
+            result = {
+                "saved_count": len(saved_sessions),
+                "telemetry_count": len(telemetry_sessions),
+                "duckdb_count": len(duckdb_sessions),
+                "drift": drift,
+                "dry_run": dry_run,
+            }
+            click.echo(json_module.dumps(result, indent=2))
+            return
+
+        click.echo("=== Session Storage Reconciliation ===\n")
+        click.echo(f"Saved sessions: {len(saved_sessions)}")
+        click.echo(f"Telemetry directories: {len(telemetry_sessions)}")
+        click.echo(f"DuckDB records: {len(duckdb_sessions)}\n")
+
+        has_issues = False
+        for key, value in drift.items():
+            if value:
+                has_issues = True
+                click.echo(f"{key.replace('_', ' ').title()}: {len(value)}")
+                for item in value[:10]:
+                    click.echo(f"  - {item}")
+                if len(value) > 10:
+                    click.echo(f"  ... and {len(value) - 10} more")
+                click.echo()
+
+        if not has_issues:
+            click.echo("No storage drift detected. All storage layers are in sync.")
+
+        if dry_run:
+            click.echo("\n[DRY RUN] No changes were made.")
+        elif has_issues:
+            click.echo("\nRun with --dry-run to preview changes before applying.")
+
+    @session.command("audit")
+    @click.option("--limit", type=int, default=50, help="Maximum number of entries to show")
+    @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+    def session_audit(limit: int, as_json: bool) -> None:
+        """Show audit log of session operations."""
+        config_dir = get_default_config_path().parent
+        audit_path = config_dir / "sessions" / "audit.jsonl"
+
+        if not audit_path.exists():
+            click.echo("No audit log found.")
+            return
+
+        entries = []
+        try:
+            with open(audit_path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        import json as json_module
+                        entries.append(json_module.loads(line))
+        except Exception as e:
+            click.echo(f"Error reading audit log: {e}", err=True)
+            return
+
+        entries = entries[-limit:] if limit else entries
+        entries.reverse()
+
+        if as_json:
+            import json as json_module
+            click.echo(json_module.dumps(entries, indent=2))
+            return
+
+        click.echo("=== Session Audit Log ===\n")
+        for entry in entries:
+            timestamp = entry.get("timestamp", "unknown")
+            action = entry.get("action", "unknown")
+            session_id = entry.get("session_id", "unknown")
+            details = entry.get("details", "")
+            click.echo(f"[{timestamp}] {action}: {session_id}")
+            if details:
+                click.echo(f"  {details}")
+            click.echo()
 
 
 __all__ = ["register_session_commands"]
