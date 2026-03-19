@@ -120,6 +120,7 @@ export default function HomePage() {
               loadingMore={loadingMore}
               loadMoreError={loadMoreError}
               nextCursor={nextCursor}
+              onRefresh={() => setReloadNonce((value) => value + 1)}
               onRetry={() => setReloadNonce((value) => value + 1)}
               onLoadMore={handleLoadMore}
               sessions={sessions}

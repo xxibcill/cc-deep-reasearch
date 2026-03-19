@@ -30,7 +30,12 @@ interface DashboardState {
   setSessionsLoading: (loading: boolean) => void;
   setSessionsLoadingMore: (loading: boolean) => void;
   setSessionListQuery: (query: Partial<SessionListQueryState>) => void;
+  selectedSessionIds: string[];
+  toggleSessionSelection: (sessionId: string) => void;
+  setSelectedSessionIds: (sessionIds: string[]) => void;
+  clearSessionSelection: () => void;
   removeSession: (sessionId: string) => void;
+  removeSessions: (sessionIds: string[]) => void;
   reconcileSession: (sessionId: string, changes: Partial<Session>) => void;
 
   deleteError: string | null;
@@ -82,6 +87,11 @@ function mergeSessions(existing: Session[], incoming: Session[]): Session[] {
   return Array.from(byId.values());
 }
 
+function pruneSelectedSessionIds(sessions: Session[], selectedSessionIds: string[]): string[] {
+  const visibleIds = new Set(sessions.map((session) => session.sessionId));
+  return selectedSessionIds.filter((sessionId) => visibleIds.has(sessionId));
+}
+
 function matchesSessionListQuery(session: Session, query: SessionListQueryState): boolean {
   if (query.activeOnly && !session.active) {
     return false;
@@ -112,27 +122,56 @@ const useDashboardStore = create<DashboardState>((set) => ({
   sessionsNextCursor: null,
   sessionListQuery: defaultSessionListQuery,
   setSessions: (sessions, options) =>
-    set((state) => ({
-      sessions: options?.append ? mergeSessions(state.sessions, sessions) : sessions,
-      sessionsTotal: options?.total ?? state.sessionsTotal,
-      sessionsNextCursor:
-        options && Object.prototype.hasOwnProperty.call(options, 'nextCursor')
-          ? options.nextCursor ?? null
-          : state.sessionsNextCursor,
-    })),
+    set((state) => {
+      const nextSessions = options?.append ? mergeSessions(state.sessions, sessions) : sessions;
+      return {
+        sessions: nextSessions,
+        sessionsTotal: options?.total ?? state.sessionsTotal,
+        sessionsNextCursor:
+          options && Object.prototype.hasOwnProperty.call(options, 'nextCursor')
+            ? options.nextCursor ?? null
+            : state.sessionsNextCursor,
+        selectedSessionIds: pruneSelectedSessionIds(nextSessions, state.selectedSessionIds),
+      };
+    }),
   setSessionsLoading: (sessionsLoading) => set({ sessionsLoading }),
   setSessionsLoadingMore: (sessionsLoadingMore) => set({ sessionsLoadingMore }),
   setSessionListQuery: (query) =>
     set((state) => ({
       sessionListQuery: { ...state.sessionListQuery, ...query },
+      selectedSessionIds: [],
     })),
+  selectedSessionIds: [],
+  toggleSessionSelection: (sessionId) =>
+    set((state) => ({
+      selectedSessionIds: state.selectedSessionIds.includes(sessionId)
+        ? state.selectedSessionIds.filter((id) => id !== sessionId)
+        : [...state.selectedSessionIds, sessionId],
+    })),
+  setSelectedSessionIds: (selectedSessionIds) => set({ selectedSessionIds }),
+  clearSessionSelection: () => set({ selectedSessionIds: [] }),
   removeSession: (sessionId) =>
     set((state) => ({
       sessions: state.sessions.filter((s) => s.sessionId !== sessionId),
       sessionsTotal: Math.max(state.sessionsTotal - 1, 0),
       sessionsNextCursor:
         state.sessionsNextCursor === sessionId ? null : state.sessionsNextCursor,
+      selectedSessionIds: state.selectedSessionIds.filter((id) => id !== sessionId),
     })),
+  removeSessions: (sessionIds) =>
+    set((state) => {
+      const removedIds = new Set(sessionIds);
+      const removedCount = state.sessions.filter((session) => removedIds.has(session.sessionId)).length;
+      return {
+        sessions: state.sessions.filter((session) => !removedIds.has(session.sessionId)),
+        sessionsTotal: Math.max(state.sessionsTotal - removedCount, 0),
+        sessionsNextCursor:
+          state.sessionsNextCursor && removedIds.has(state.sessionsNextCursor)
+            ? null
+            : state.sessionsNextCursor,
+        selectedSessionIds: state.selectedSessionIds.filter((id) => !removedIds.has(id)),
+      };
+    }),
   reconcileSession: (sessionId, changes) =>
     set((state) => {
       const current = state.sessions.find((session) => session.sessionId === sessionId);

@@ -326,6 +326,8 @@ export interface SessionDeleteResponse {
   success: boolean;
   deleted_layers: DeletedLayer[];
   active_conflict: boolean;
+  error?: string | null;
+  outcome: 'deleted' | 'not_found' | 'active_conflict' | 'partial_failure' | 'failed';
 }
 
 export interface SessionDeleteError {
@@ -333,4 +335,20 @@ export interface SessionDeleteError {
   message: string;
   session_id: string;
   active_conflict?: boolean;
+}
+
+export interface BulkSessionDeleteSummary {
+  requested_count: number;
+  deleted_count: number;
+  not_found_count: number;
+  active_conflict_count: number;
+  partial_failure_count: number;
+  failed_count: number;
+}
+
+export interface BulkSessionDeleteResponse {
+  success: boolean;
+  partial_success: boolean;
+  results: SessionDeleteResponse[];
+  summary: BulkSessionDeleteSummary;
 }
