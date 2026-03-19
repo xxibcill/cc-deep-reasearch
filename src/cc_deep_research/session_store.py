@@ -19,6 +19,9 @@ from cc_deep_research.models.session import (
     normalize_session_metadata,
 )
 
+SESSION_SUMMARY_DIRNAME = ".summaries"
+SESSION_LABEL_MAX_LENGTH = 120
+
 
 def get_default_session_dir() -> Path:
     """Get the default directory for session storage.
@@ -75,11 +78,13 @@ class SessionStore:
                         Uses default if not provided.
         """
         self._session_dir = Path(session_dir) if session_dir else get_default_session_dir()
+        self._summary_dir = self._session_dir / SESSION_SUMMARY_DIRNAME
         self._ensure_session_dir()
 
     def _ensure_session_dir(self) -> None:
         """Ensure the session directory exists."""
         self._session_dir.mkdir(parents=True, exist_ok=True)
+        self._summary_dir.mkdir(parents=True, exist_ok=True)
 
     def _session_path(self, session_id: str) -> Path:
         """Get the file path for a session.
@@ -90,8 +95,13 @@ class SessionStore:
         Returns:
             Path to the session file.
         """
-        safe_id = session_id.replace("/", "_").replace("\\", "_")
+        safe_id = _safe_session_id(session_id)
         return self._session_dir / f"{safe_id}.json"
+
+    def _session_summary_path(self, session_id: str) -> Path:
+        """Return the lightweight summary path for a saved session."""
+        safe_id = _safe_session_id(session_id)
+        return self._summary_dir / f"{safe_id}.json"
 
     def get_session_path(self, session_id: str) -> Path:
         """Get the file path for a session (public accessor).
@@ -115,9 +125,14 @@ class SessionStore:
         """
         path = self._session_path(session.session_id)
         data = _serialize_session(session)
+        summary_path = self._session_summary_path(session.session_id)
+        summary = _build_saved_session_summary(data, session_path=path)
 
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, default=_json_serializer)
+
+        with open(summary_path, "w", encoding="utf-8") as f:
+            json.dump(summary, f, indent=2, default=_json_serializer)
 
         return path
 
@@ -152,7 +167,9 @@ class SessionStore:
             offset: Number of sessions to skip.
 
         Returns:
-            List of session metadata dictionaries.
+            List of session metadata dictionaries including saved-session
+            metadata (query, depth, completed_at) and artifact state
+            (has_session_payload, has_report).
         """
         sessions = []
 
@@ -161,23 +178,10 @@ class SessionStore:
             key=lambda p: p.stat().st_mtime,
             reverse=True,
         ):
-            try:
-                with open(path, encoding="utf-8") as f:
-                    data = json.load(f)
-
-                sessions.append(
-                    {
-                        "session_id": data.get("session_id", path.stem),
-                        "query": data.get("query", "Unknown"),
-                        "depth": data.get("depth", "deep"),
-                        "started_at": data.get("started_at"),
-                        "completed_at": data.get("completed_at"),
-                        "total_sources": len(data.get("sources", [])),
-                        "path": str(path),
-                    }
-                )
-            except (json.JSONDecodeError, KeyError):
+            summary = self._load_saved_session_summary(path)
+            if summary is None:
                 continue
+            sessions.append(summary)
 
         if offset:
             sessions = sessions[offset:]
@@ -186,6 +190,28 @@ class SessionStore:
             sessions = sessions[:limit]
 
         return sessions
+
+    def _load_saved_session_summary(self, session_path: Path) -> dict[str, Any] | None:
+        """Return the lightweight session summary for a saved payload."""
+        summary_path = self._session_summary_path(session_path.stem)
+        if summary_path.exists():
+            try:
+                with open(summary_path, encoding="utf-8") as f:
+                    data = json.load(f)
+                return _normalize_saved_session_summary(data, session_path=session_path)
+            except (json.JSONDecodeError, KeyError, TypeError):
+                pass
+
+        try:
+            with open(session_path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, KeyError):
+            return None
+
+        summary = _build_saved_session_summary(data, session_path=session_path)
+        with open(summary_path, "w", encoding="utf-8") as f:
+            json.dump(summary, f, indent=2, default=_json_serializer)
+        return summary
 
     def delete_session(self, session_id: str) -> SessionDeletionResult:
         """Delete a research session from disk.
@@ -197,13 +223,20 @@ class SessionStore:
             SessionDeletionResult with deleted, missing, and error fields.
         """
         path = self._session_path(session_id)
+        summary_path = self._session_summary_path(session_id)
 
-        if not path.exists():
+        if not path.exists() and not summary_path.exists():
             return SessionDeletionResult(deleted=False, missing=True)
 
         try:
-            path.unlink()
-            return SessionDeletionResult(deleted=True, missing=False)
+            deleted = False
+            if path.exists():
+                path.unlink()
+                deleted = True
+            if summary_path.exists():
+                summary_path.unlink()
+                deleted = True
+            return SessionDeletionResult(deleted=deleted, missing=False)
         except OSError as e:
             return SessionDeletionResult(deleted=False, missing=False, error=str(e))
 
@@ -261,6 +294,83 @@ def _serialize_search_result(result: SearchResult) -> dict[str, Any]:
         "metadata": result.metadata,
         "timestamp": result.timestamp.isoformat() if result.timestamp else None,
         "execution_time_ms": result.execution_time_ms,
+    }
+
+
+def _safe_session_id(session_id: str) -> str:
+    """Sanitize a session identifier for filesystem-safe filenames."""
+    return session_id.replace("/", "_").replace("\\", "_")
+
+
+def _normalize_optional_text(value: Any) -> str | None:
+    """Normalize string-like values while keeping missing fields explicit."""
+    if not isinstance(value, str):
+        return None
+    normalized = " ".join(value.split()).strip()
+    return normalized or None
+
+
+def _normalize_depth(value: Any) -> str | None:
+    """Normalize depth values into their serialized string form."""
+    if isinstance(value, ResearchDepth):
+        return value.value
+    return _normalize_optional_text(value)
+
+
+def _build_session_label(query: str | None, *, session_id: str) -> str:
+    """Create a compact operator-facing label for session list rows."""
+    if query:
+        if len(query) <= SESSION_LABEL_MAX_LENGTH:
+            return query
+        return f"{query[: SESSION_LABEL_MAX_LENGTH - 1].rstrip()}…"
+    return f"Session {session_id[:8]}"
+
+
+def _build_saved_session_summary(
+    data: dict[str, Any],
+    *,
+    session_path: Path,
+) -> dict[str, Any]:
+    """Extract list-view metadata from a full saved-session payload."""
+    session_id = _normalize_optional_text(data.get("session_id")) or session_path.stem
+    query = _normalize_optional_text(data.get("query"))
+    metadata = data.get("metadata", {})
+    sources = data.get("sources", [])
+    return {
+        "session_id": session_id,
+        "label": _build_session_label(query, session_id=session_id),
+        "query": query,
+        "depth": _normalize_depth(data.get("depth")),
+        "started_at": _normalize_optional_text(data.get("started_at")),
+        "completed_at": _normalize_optional_text(data.get("completed_at")),
+        "total_sources": len(sources) if isinstance(sources, list) else 0,
+        "path": str(session_path),
+        "has_session_payload": True,
+        "has_report": isinstance(metadata, dict) and bool(metadata.get("analysis")),
+    }
+
+
+def _normalize_saved_session_summary(
+    data: dict[str, Any],
+    *,
+    session_path: Path,
+) -> dict[str, Any]:
+    """Normalize a saved-session sidecar into the public list shape."""
+    session_id = _normalize_optional_text(data.get("session_id")) or session_path.stem
+    query = _normalize_optional_text(data.get("query"))
+    total_sources = data.get("total_sources")
+    return {
+        "session_id": session_id,
+        "label": _normalize_optional_text(data.get("label"))
+        or _build_session_label(query, session_id=session_id),
+        "query": query,
+        "depth": _normalize_depth(data.get("depth")),
+        "started_at": _normalize_optional_text(data.get("started_at")),
+        "completed_at": _normalize_optional_text(data.get("completed_at")),
+        "total_sources": total_sources if isinstance(total_sources, int) else 0,
+        "path": str(session_path),
+        "has_session_payload": session_path.exists(),
+        "has_report": bool(data.get("has_report")),
     }
 
 
