@@ -7,9 +7,10 @@ import json
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 from typing import Any, cast
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -35,6 +36,21 @@ from cc_deep_research.telemetry import (
 )
 
 STALE_LIVE_SESSION_AFTER = timedelta(minutes=15)
+
+
+class SortOrder(StrEnum):
+    """Sort order for session list queries."""
+
+    ASC = "asc"
+    DESC = "desc"
+
+
+class SessionSortBy(StrEnum):
+    """Fields available for sorting session lists."""
+
+    CREATED_AT = "created_at"
+    LAST_EVENT_AT = "last_event_at"
+    TOTAL_TIME_MS = "total_time_ms"
 
 
 @dataclass(slots=True)
@@ -211,6 +227,84 @@ def _normalize_live_session_state(session: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _normalize_optional_string(value: Any) -> str | None:
+    """Return a trimmed string or explicit null."""
+    if not isinstance(value, str):
+        return None
+    normalized = " ".join(value.split()).strip()
+    return normalized or None
+
+
+def _build_session_list_label(
+    *,
+    session_id: str,
+    query: str | None,
+    active: bool,
+) -> str:
+    """Return a human-meaningful session label for list views."""
+    if query:
+        return query
+    prefix = "Active session" if active else "Session"
+    return f"{prefix} {session_id[:8]}"
+
+
+def _normalize_saved_session_summary(saved: dict[str, Any] | None) -> dict[str, Any]:
+    """Normalize saved-session metadata into explicit nullable fields."""
+    saved = saved or {}
+    return {
+        "query": _normalize_optional_string(saved.get("query")),
+        "depth": _normalize_optional_string(saved.get("depth")),
+        "started_at": _serialize_timestamp(saved.get("started_at")),
+        "completed_at": _serialize_timestamp(saved.get("completed_at")),
+        "total_sources": saved.get("total_sources"),
+        "has_session_payload": bool(saved.get("has_session_payload")),
+        "has_report": bool(saved.get("has_report")),
+        "label": _normalize_optional_string(saved.get("label")),
+    }
+
+
+def _build_session_list_row(
+    *,
+    session_id: str,
+    created_at: Any = None,
+    total_time_ms: Any = None,
+    total_sources: Any = None,
+    status: Any = None,
+    active: bool = False,
+    event_count: Any = None,
+    last_event_at: Any = None,
+    saved: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the normalized session-list payload shared across storage layers."""
+    saved_summary = _normalize_saved_session_summary(saved)
+    query = saved_summary["query"]
+    created_at_value = _serialize_timestamp(created_at) or saved_summary["started_at"]
+    completed_at_value = saved_summary["completed_at"]
+    last_event_value = _serialize_timestamp(last_event_at) or completed_at_value or created_at_value
+    total_sources_value = total_sources
+    if total_sources_value is None:
+        total_sources_value = saved_summary["total_sources"]
+
+    return {
+        "session_id": session_id,
+        "label": saved_summary["label"]
+        or _build_session_list_label(session_id=session_id, query=query, active=active),
+        "created_at": created_at_value,
+        "total_time_ms": total_time_ms,
+        "total_sources": total_sources_value,
+        "status": _normalize_optional_string(status)
+        or ("completed" if completed_at_value else "unknown"),
+        "active": active,
+        "event_count": event_count,
+        "last_event_at": last_event_value,
+        "query": query,
+        "depth": saved_summary["depth"],
+        "completed_at": completed_at_value,
+        "has_session_payload": saved_summary["has_session_payload"],
+        "has_report": saved_summary["has_report"],
+    }
+
+
 def _query_session_api_detail(
     session_id: str,
     *,
@@ -234,7 +328,9 @@ def _query_session_api_detail(
     if session_row is None:
         return live_detail
 
-    events = [_normalize_historical_event(row, session_id=session_id) for row in historical["events"]]
+    events = [
+        _normalize_historical_event(row, session_id=session_id) for row in historical["events"]
+    ]
     return {
         "session": _normalize_historical_session(session_row, events=events),
         "summary": None,
@@ -365,81 +461,158 @@ def register_routes(app: FastAPI) -> None:
     @app.get("/api/sessions")
     async def list_sessions(
         active_only: bool = False,
-        limit: int = 100,
+        limit: int = Query(default=100, ge=1, le=500),
+        cursor: str | None = Query(
+            default=None, description="Session ID to start after for stable pagination"
+        ),
+        search: str | None = Query(default=None, description="Search text for session query"),
+        status: str | None = Query(default=None, description="Filter by session status"),
+        sort_by: SessionSortBy = Query(
+            default=SessionSortBy.LAST_EVENT_AT, description="Sort field"
+        ),
+        sort_order: SortOrder = Query(default=SortOrder.DESC, description="Sort order"),
     ) -> JSONResponse:
-        """List all research sessions.
+        """List research sessions with query, filter, sort, and pagination support.
 
         Args:
             active_only: If True, only return active sessions.
-            limit: Maximum number of sessions to return.
+            limit: Maximum number of sessions to return (1-500).
+            cursor: Session ID to start after for stable pagination.
+            search: Search text to filter by session query.
+            status: Filter by session status (completed, interrupted, running, etc.).
+            sort_by: Field to sort by (created_at, last_event_at, total_time_ms).
+            sort_order: Sort direction (asc or desc).
 
         Returns:
-            JSON response with session list.
+            JSON response with paginated session list including merged saved-session
+            metadata (query, depth, completed_at) and artifact state
+            (has_session_payload, has_report).
         """
         telemetry_dir = get_default_telemetry_dir()
         live_sessions = query_live_sessions(base_dir=telemetry_dir)
         historical = query_dashboard_data(get_default_dashboard_db_path())
 
+        saved_sessions = SessionStore().list_sessions()
+        saved_by_id = {s["session_id"]: s for s in saved_sessions}
+
         sessions_by_id: dict[str, dict[str, Any]] = {}
 
-        # Add live sessions
         for session in live_sessions:
             if active_only and not session.get("active"):
                 continue
             normalized_session = _normalize_live_session_state(session)
             if active_only and not normalized_session.get("active"):
                 continue
-            sessions_by_id[normalized_session["session_id"]] = {
-                "session_id": normalized_session["session_id"],
-                "created_at": _serialize_timestamp(normalized_session.get("created_at")),
-                "total_time_ms": normalized_session.get("total_time_ms"),
-                "total_sources": normalized_session.get("total_sources", 0),
-                "status": normalized_session.get("status", "unknown"),
-                "active": normalized_session.get("active", False),
-                "event_count": normalized_session.get("event_count"),
-                "last_event_at": _serialize_timestamp(normalized_session.get("last_event_at")),
-            }
+            session_id = normalized_session["session_id"]
+            sessions_by_id[session_id] = _build_session_list_row(
+                session_id=session_id,
+                created_at=normalized_session.get("created_at"),
+                total_time_ms=normalized_session.get("total_time_ms"),
+                total_sources=normalized_session.get("total_sources", 0),
+                status=normalized_session.get("status", "unknown"),
+                active=bool(normalized_session.get("active", False)),
+                event_count=normalized_session.get("event_count"),
+                last_event_at=normalized_session.get("last_event_at"),
+                saved=saved_by_id.get(session_id),
+            )
 
-        # Add historical sessions
         for session_data in historical["sessions"]:
             if active_only:
                 continue
-            if session_data[0] in sessions_by_id:
-                existing = sessions_by_id[session_data[0]]
+            session_id = session_data[0]
+            if session_id in sessions_by_id:
+                existing = sessions_by_id[session_id]
                 if not existing.get("active"):
                     existing["status"] = session_data[8]
                 if existing.get("total_time_ms") is None:
                     existing["total_time_ms"] = session_data[2]
-                if not existing.get("total_sources"):
+                if existing.get("total_sources") in (None, 0):
                     existing["total_sources"] = session_data[3]
                 if existing.get("created_at") is None:
                     existing["created_at"] = _serialize_timestamp(session_data[1])
+                if existing.get("last_event_at") is None:
+                    existing["last_event_at"] = existing.get("completed_at") or existing.get(
+                        "created_at"
+                    )
                 continue
-            sessions_by_id[session_data[0]] = {
-                "session_id": session_data[0],
-                "created_at": _serialize_timestamp(session_data[1]),
-                "total_time_ms": session_data[2],
-                "total_sources": session_data[3],
-                "status": session_data[8],
-                "active": False,
-                "event_count": None,
-                "last_event_at": None,
-            }
+            sessions_by_id[session_id] = _build_session_list_row(
+                session_id=session_id,
+                created_at=session_data[1],
+                total_time_ms=session_data[2],
+                total_sources=session_data[3],
+                status=session_data[8],
+                active=False,
+                event_count=None,
+                last_event_at=None,
+                saved=saved_by_id.get(session_id),
+            )
+
+        for saved in saved_sessions:
+            session_id = saved["session_id"]
+            if session_id in sessions_by_id:
+                continue
+            if active_only:
+                continue
+            sessions_by_id[session_id] = _build_session_list_row(
+                session_id=session_id,
+                created_at=saved.get("started_at"),
+                total_time_ms=None,
+                total_sources=saved.get("total_sources"),
+                status=None,
+                active=False,
+                event_count=None,
+                last_event_at=saved.get("completed_at") or saved.get("started_at"),
+                saved=saved,
+            )
 
         sessions = list(sessions_by_id.values())
 
-        # Sort: active first, then by last event time
-        sessions.sort(
-            key=lambda s: (
-                0 if s.get("active") else 1,
-                s.get("last_event_at") or s.get("created_at") or "",
-            )
-        )
+        if search:
+            search_lower = search.lower()
+            sessions = [
+                s
+                for s in sessions
+                if search_lower in (s.get("query") or "").lower()
+                or search_lower in (s.get("label") or "").lower()
+                or search_lower in s["session_id"].lower()
+            ]
 
-        # Apply limit
+        if status:
+            sessions = [s for s in sessions if s.get("status") == status]
+
+        def sort_key(s: dict[str, Any]) -> Any:
+            sort_field_value = s.get(sort_by.value)
+            if sort_by == SessionSortBy.TOTAL_TIME_MS:
+                return sort_field_value if isinstance(sort_field_value, (int, float)) else -1
+            return sort_field_value if isinstance(sort_field_value, str) else ""
+
+        reverse = sort_order == SortOrder.DESC
+        sessions.sort(key=sort_key, reverse=reverse)
+        sessions.sort(key=lambda session: 0 if session.get("active") else 1)
+
+        if cursor:
+            cursor_index = None
+            for i, s in enumerate(sessions):
+                if s["session_id"] == cursor:
+                    cursor_index = i + 1
+                    break
+            if cursor_index is not None:
+                sessions = sessions[cursor_index:]
+
+        total = len(sessions)
         sessions = sessions[:limit]
 
-        return JSONResponse(content={"sessions": sessions})
+        next_cursor = None
+        if len(sessions) == limit and total > limit:
+            next_cursor = sessions[-1]["session_id"]
+
+        return JSONResponse(
+            content={
+                "sessions": sessions,
+                "total": total,
+                "next_cursor": next_cursor,
+            }
+        )
 
     @app.get("/api/sessions/{session_id}")
     async def get_session(session_id: str) -> JSONResponse:
@@ -458,9 +631,7 @@ def register_routes(app: FastAPI) -> None:
         )
 
         if not detail["session"]:
-            return JSONResponse(
-                content={"error": "Session not found"}, status_code=404
-            )
+            return JSONResponse(content={"error": "Session not found"}, status_code=404)
 
         return JSONResponse(content={"session": detail["session"]})
 
@@ -536,9 +707,7 @@ def register_routes(app: FastAPI) -> None:
             output_format = ResearchOutputFormat(format.lower())
         except ValueError:
             return JSONResponse(
-                content={
-                    "error": f"Invalid format: {format}. Supported: markdown, json, html"
-                },
+                content={"error": f"Invalid format: {format}. Supported: markdown, json, html"},
                 status_code=400,
             )
 
@@ -609,9 +778,7 @@ def register_routes(app: FastAPI) -> None:
         )
 
         # Send initial history
-        await connection.send_json(
-            {"type": "history", "events": detail["event_tail"] or []}
-        )
+        await connection.send_json({"type": "history", "events": detail["event_tail"] or []})
 
         # Listen for client messages
         try:
@@ -651,9 +818,7 @@ def register_routes(app: FastAPI) -> None:
             # Error occurred
             await event_router.unsubscribe(session_id, connection)
             with suppress(Exception):
-                await connection.send_json(
-                    {"type": "error", "error": str(e)}
-                )
+                await connection.send_json({"type": "error", "error": str(e)})
 
 
 def start_server(
