@@ -22,19 +22,91 @@ def _load_dashboard_connection(database_path: Path):
 
 
 def _normalize_event_row(row: tuple[Any, ...]) -> dict[str, Any]:
-    """Convert a DuckDB event row into the public event payload shape."""
+    """Convert a DuckDB event row into the public event payload shape with trace contract fields."""
+    # Basic fields (original schema)
+    event_id = row[0]
+    parent_event_id = row[1]
+    sequence_number = row[2]
+    timestamp = row[3]
+    event_type = row[4]
+    category = row[5]
+    name = row[6]
+    status = row[7]
+    duration_ms = row[8]
+    agent_id = row[9]
+    metadata = json.loads(row[10]) if row[10] else {}
+
+    # Infer additional trace contract fields
+    actor_type = "agent" if agent_id else "system"
+    degraded = (
+        status in ("failed", "fallback", "degraded")
+        or "fallback" in event_type
+        or "degraded" in event_type
+    )
+
+    # Infer severity
+    if status in ("failed", "error", "critical"):
+        severity = "error"
+    elif status in ("fallback", "degraded", "warning"):
+        severity = "warning"
+    elif "fallback" in event_type or "degraded" in event_type:
+        severity = "warning"
+    else:
+        severity = "info"
+
+    # Infer reason code
+    reason_code = metadata.get("reason") or metadata.get("stop_reason")
+    if not reason_code:
+        if "fallback" in event_type:
+            reason_code = "fallback"
+        elif status == "failed":
+            reason_code = "error"
+        elif status == "completed":
+            reason_code = "success"
+
+    # Infer phase from event type/category
+    phase = None
+    if "session." in event_type:
+        phase = "session"
+    elif "phase." in event_type:
+        phase = name
+    elif category == "phase":
+        phase = name
+    elif "iteration." in event_type:
+        phase = "iteration"
+    elif "llm." in event_type:
+        phase = "llm"
+
     return {
-        "event_id": row[0],
-        "parent_event_id": row[1],
-        "sequence_number": row[2],
-        "timestamp": row[3],
-        "event_type": row[4],
-        "category": row[5],
-        "name": row[6],
-        "status": row[7],
-        "duration_ms": row[8],
-        "agent_id": row[9],
-        "metadata": json.loads(row[10]) if row[10] else {},
+        # Core identity
+        "event_id": event_id,
+        "parent_event_id": parent_event_id,
+        "sequence_number": sequence_number,
+        "timestamp": timestamp,
+        # Trace contract
+        "trace_version": "0",  # Pre-contract events from DuckDB
+        "run_id": None,
+        "cause_event_id": None,
+        # Event classification
+        "event_type": event_type,
+        "category": category,
+        "name": name,
+        "status": status,
+        "severity": severity,
+        "reason_code": reason_code,
+        # Execution context
+        "phase": phase,
+        "operation": name,
+        "attempt": 1,
+        # Actor
+        "actor_type": actor_type,
+        "actor_id": agent_id,
+        "agent_id": agent_id,  # Keep for backward compatibility
+        # Metrics
+        "duration_ms": duration_ms,
+        "degraded": degraded,
+        # Payload
+        "metadata": metadata,
     }
 
 
