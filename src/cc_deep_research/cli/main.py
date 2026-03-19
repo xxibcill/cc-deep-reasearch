@@ -8,8 +8,10 @@ import click
 
 from cc_deep_research.__about__ import __version__
 from cc_deep_research.config import Config
+from cc_deep_research.llm.env import load_env_from_project_root
 from cc_deep_research.telemetry import ingest_telemetry_to_duckdb
 
+from .anthropic import register_anthropic_commands
 from .benchmark import register_benchmark_commands
 from .config import register_config_commands
 from .dashboard import register_dashboard_command
@@ -17,6 +19,9 @@ from .render import register_render_commands
 from .research import register_research_commands
 from .session import register_session_commands
 from .telemetry import register_telemetry_commands
+
+# Load .env at startup (does not override existing env vars)
+load_env_from_project_root()
 
 
 @click.group()
@@ -34,5 +39,6 @@ register_config_commands(main)
 register_telemetry_commands(main)
 register_dashboard_command(main)
 register_session_commands(main)
+register_anthropic_commands(main)
 
 __all__ = ["Config", "ingest_telemetry_to_duckdb", "main", "subprocess"]
