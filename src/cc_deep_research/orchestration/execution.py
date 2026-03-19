@@ -57,12 +57,19 @@ class ResearchExecutionService:
         depth: ResearchDepth,
         min_sources: int | None,
         phase_hook: Callable[[str, str], None] | None,
+        cancellation_check: Callable[[], None] | None,
+        on_session_started: Callable[[str], None] | None,
         hooks: ResearchExecutionHooks,
     ) -> ResearchSession:
         """Execute a full research session using injected callbacks."""
         hooks.reset_session_state()
         start_time = datetime.utcnow()
-        session_id = self._initialize_session(query=query, depth=depth)
+        self._check_cancelled(cancellation_check)
+        session_id = self._initialize_session(
+            query=query,
+            depth=depth,
+            on_session_started=on_session_started,
+        )
 
         try:
             await self._phase_runner.run_phase(
@@ -70,18 +77,21 @@ class ResearchExecutionService:
                 phase_key="team_init",
                 description="Initializing agent team",
                 operation=hooks.initialize_team,
+                cancellation_check=cancellation_check,
             )
             strategy = await self._phase_runner.run_phase(
                 phase_hook=phase_hook,
                 phase_key="strategy",
                 description="Analyzing research strategy",
                 operation=lambda: hooks.analyze_strategy(query, depth),
+                cancellation_check=cancellation_check,
             )
             raw_query_families = await self._phase_runner.run_phase(
                 phase_hook=phase_hook,
                 phase_key="query_expansion",
                 description="Expanding search queries",
                 operation=lambda: hooks.expand_queries(query, strategy, depth),
+                cancellation_check=cancellation_check,
             )
             strategy.strategy.query_families = hooks.normalize_query_families(
                 original_query=query,
@@ -97,6 +107,7 @@ class ResearchExecutionService:
                     depth=depth,
                     min_sources=min_sources,
                 ),
+                cancellation_check=cancellation_check,
             )
             analysis, validation, sources, iteration_history = await hooks.run_analysis_workflow(
                 query=query,
@@ -105,7 +116,9 @@ class ResearchExecutionService:
                 sources=sources,
                 min_sources=min_sources,
                 phase_hook=phase_hook,
+                cancellation_check=cancellation_check,
             )
+            self._check_cancelled(cancellation_check)
             session = self._session_builder.build(
                 session_id=session_id,
                 query=query,
@@ -147,7 +160,13 @@ class ResearchExecutionService:
             )
             await hooks.shutdown_team()
 
-    def _initialize_session(self, *, query: str, depth: ResearchDepth) -> str:
+    def _initialize_session(
+        self,
+        *,
+        query: str,
+        depth: ResearchDepth,
+        on_session_started: Callable[[str], None] | None,
+    ) -> str:
         """Initialize monitor state for a new research session."""
         self._monitor.section("Research Session")
         self._monitor.log(f"Query: {query}")
@@ -167,7 +186,15 @@ class ResearchExecutionService:
             summary="Research session initialized",
             agent_id="orchestrator",
         )
+        if on_session_started is not None:
+            on_session_started(session_id)
         return session_id
+
+    def _check_cancelled(self, cancellation_check: Callable[[], None] | None) -> None:
+        """Raise when a stop request has been issued for this run."""
+        if cancellation_check is None:
+            return
+        cancellation_check()
 
     def _resolve_stop_reason(
         self,

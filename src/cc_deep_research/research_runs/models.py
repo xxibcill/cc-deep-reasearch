@@ -26,6 +26,16 @@ class ResearchArtifactKind(StrEnum):
     PDF = "pdf"
 
 
+class ResearchRunStatus(StrEnum):
+    """Lifecycle states exposed by the research-run API."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
 class ResearchRunRequest(BaseModel):
     """Framework-agnostic request contract for a research run."""
 
@@ -92,6 +102,29 @@ class ResearchRunResult(BaseModel):
         return self.session.session_id
 
 
+class ResearchRunStatusResponse(BaseModel):
+    """Polling payload for one browser-started research run."""
+
+    run_id: str
+    status: ResearchRunStatus
+    created_at: str
+    session_id: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
+    error: str | None = None
+    result: dict[str, object] | None = None
+    stop_requested: bool = False
+
+
+class ResearchRunStopResponse(BaseModel):
+    """Response returned when an operator requests a stop."""
+
+    run_id: str
+    status: ResearchRunStatus
+    stop_requested: bool
+    session_id: str | None = None
+
+
 class SessionDeleteRequest(BaseModel):
     """Contract for a single-session hard delete request."""
 
@@ -146,3 +179,6 @@ class SessionDeleteError(BaseModel):
     session_id: str = Field(..., description="The session_id that caused the error")
     active_conflict: bool = Field(default=False)
 
+
+class ResearchRunCancelled(RuntimeError):
+    """Raised when an operator stops a browser-started research run."""
