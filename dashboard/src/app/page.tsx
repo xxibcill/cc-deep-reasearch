@@ -1,17 +1,25 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useDeferredValue, useEffect, useState } from 'react';
 
 import { SessionList } from '@/components/session-list';
 import { StartResearchForm } from '@/components/start-research-form';
 import { getApiErrorMessage, getSessions } from '@/lib/api';
 import useDashboardStore from '@/hooks/useDashboard';
 
+const SESSION_PAGE_SIZE = 24;
+
 export default function HomePage() {
   const sessions = useDashboardStore((state) => state.sessions);
   const loading = useDashboardStore((state) => state.sessionsLoading);
+  const loadingMore = useDashboardStore((state) => state.sessionsLoadingMore);
+  const nextCursor = useDashboardStore((state) => state.sessionsNextCursor);
+  const total = useDashboardStore((state) => state.sessionsTotal);
+  const query = useDashboardStore((state) => state.sessionListQuery);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
+  const deferredSearch = useDeferredValue(query.search);
 
   useEffect(() => {
     let mounted = true;
@@ -20,14 +28,23 @@ export default function HomePage() {
       useDashboardStore.getState().setSessionsLoading(true);
       if (mounted) {
         setSessionsError(null);
+        setLoadMoreError(null);
       }
 
       try {
-        const data = await getSessions({ limit: 50 });
+        const data = await getSessions({
+          limit: SESSION_PAGE_SIZE,
+          active_only: query.activeOnly,
+          search: deferredSearch || null,
+          status: query.status || null,
+        });
         if (!mounted) {
           return;
         }
-        useDashboardStore.getState().setSessions(data.sessions);
+        useDashboardStore.getState().setSessions(data.sessions, {
+          total: data.total,
+          nextCursor: data.nextCursor,
+        });
       } catch (error) {
         console.error('Failed to load sessions:', error);
         if (mounted) {
@@ -47,7 +64,38 @@ export default function HomePage() {
     return () => {
       mounted = false;
     };
-  }, [reloadNonce]);
+  }, [deferredSearch, query.activeOnly, query.status, reloadNonce]);
+
+  const handleLoadMore = async () => {
+    if (!nextCursor || loadingMore) {
+      return;
+    }
+
+    useDashboardStore.getState().setSessionsLoadingMore(true);
+    setLoadMoreError(null);
+
+    try {
+      const data = await getSessions({
+        limit: SESSION_PAGE_SIZE,
+        cursor: nextCursor,
+        active_only: query.activeOnly,
+        search: deferredSearch || null,
+        status: query.status || null,
+      });
+      useDashboardStore.getState().setSessions(data.sessions, {
+        total: data.total,
+        nextCursor: data.nextCursor,
+        append: true,
+      });
+    } catch (error) {
+      console.error('Failed to load more sessions:', error);
+      setLoadMoreError(
+        getApiErrorMessage(error, 'Failed to load more sessions.')
+      );
+    } finally {
+      useDashboardStore.getState().setSessionsLoadingMore(false);
+    }
+  };
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -66,12 +114,16 @@ export default function HomePage() {
 
         <div className="lg:col-span-2">
           <div className="bg-card border rounded-lg p-6">
-            <h2 className="text-xl font-semibold mb-4">Recent Sessions</h2>
             <SessionList
               error={sessionsError}
               loading={loading}
+              loadingMore={loadingMore}
+              loadMoreError={loadMoreError}
+              nextCursor={nextCursor}
               onRetry={() => setReloadNonce((value) => value + 1)}
+              onLoadMore={handleLoadMore}
               sessions={sessions}
+              total={total}
             />
           </div>
         </div>

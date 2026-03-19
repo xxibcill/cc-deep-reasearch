@@ -81,6 +81,12 @@ export interface PaginatedSessionsResponse {
   next_cursor: string | null;
 }
 
+export interface SessionListQueryState {
+  search: string;
+  status: string;
+  activeOnly: boolean;
+}
+
 export interface Session {
   sessionId: string;
   label: string;
@@ -241,7 +247,7 @@ export type ViewMode = 'graph' | 'timeline' | 'table';
 
 // Research Run API types
 
-export type ResearchRunStatus = 'queued' | 'running' | 'completed' | 'failed';
+export type ResearchRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export type ResearchOutputFormat = 'markdown' | 'json' | 'html';
 
@@ -289,6 +295,14 @@ export interface ResearchRunStatusResponse {
   completed_at?: string;
   error?: string;
   result?: ResearchRunResult;
+  stop_requested?: boolean;
+}
+
+export interface StopResearchRunResponse {
+  run_id: string;
+  status: ResearchRunStatus;
+  stop_requested: boolean;
+  session_id?: string;
 }
 
 export interface SessionReportResponse {
