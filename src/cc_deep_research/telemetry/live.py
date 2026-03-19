@@ -11,8 +11,15 @@ from typing import Any
 from cc_deep_research.config import get_default_config_path
 
 from .tree import (
+    build_critical_path,
+    build_decisions,
+    build_degradations,
+    build_derived_summary,
     build_event_tree,
+    build_failures,
     build_llm_route_streams,
+    build_narrative,
+    build_state_changes,
     build_subprocess_streams,
     current_phase_from_events,
 )
@@ -355,8 +362,26 @@ def query_live_session_detail(
     base_dir: Path | None = None,
     tail_limit: int = 200,
     subprocess_chunk_limit: int = 200,
+    cursor: int | None = None,
+    before_cursor: int | None = None,
+    limit: int | None = None,
+    include_derived: bool = True,
 ) -> dict[str, Any]:
-    """Return detailed live telemetry for a session from JSON files."""
+    """Return detailed live telemetry for a session from JSON files.
+
+    Args:
+        session_id: The session ID to query.
+        base_dir: Optional base telemetry directory.
+        tail_limit: Maximum events to return in event_tail (for backward compat).
+        subprocess_chunk_limit: Maximum chunks per subprocess stream.
+        cursor: Sequence number to start after (forward pagination).
+        before_cursor: Sequence number to end before (backward pagination).
+        limit: Maximum number of events to return in paged slice.
+        include_derived: Whether to include derived outputs (narrative, etc.).
+
+    Returns:
+        Dict with session info, events, and derived outputs.
+    """
     telemetry_dir = base_dir or get_default_telemetry_dir()
     session_dir = telemetry_dir / session_id
     if not session_dir.exists():
@@ -365,11 +390,18 @@ def query_live_session_detail(
             "summary": None,
             "events": [],
             "event_tail": [],
+            "events_page": {"events": [], "total": 0, "has_more": False, "next_cursor": None, "prev_cursor": None},
             "agent_timeline": [],
             "event_tree": {"root_events": [], "total_events": 0, "session_id": session_id},
             "subprocess_streams": [],
             "llm_route_analytics": build_llm_route_streams([]),
             "active_phase": None,
+            "narrative": [],
+            "critical_path": {"path": [], "total_duration_ms": 0, "bottleneck_event": None, "phase_durations": []},
+            "state_changes": [],
+            "decisions": [],
+            "degradations": [],
+            "failures": [],
         }
 
     snapshot = _read_live_session_snapshot(session_dir)
@@ -391,11 +423,25 @@ def query_live_session_detail(
         "total_time_ms": (summary or {}).get("total_time_ms"),
     }
 
+    # Build cursor-paginated events page
+    events_page = _build_events_page(
+        events,
+        cursor=cursor,
+        before_cursor=before_cursor,
+        limit=limit or tail_limit,
+    )
+
+    # Build derived outputs
+    derived = {}
+    if include_derived:
+        derived = build_derived_summary(events)
+
     return {
         "session": session,
         "summary": summary,
         "events": events,
         "event_tail": events[-tail_limit:],
+        "events_page": events_page,
         "agent_timeline": [event for event in events if event.get("category") == "agent"],
         "event_tree": {**build_event_tree(events), "session_id": session_id},
         "subprocess_streams": build_subprocess_streams(
@@ -404,6 +450,100 @@ def query_live_session_detail(
         ),
         "llm_route_analytics": build_llm_route_streams(events),
         "active_phase": current_phase_from_events(events),
+        # Derived outputs
+        "narrative": derived.get("narrative", []),
+        "critical_path": derived.get("critical_path", {}),
+        "state_changes": derived.get("state_changes", []),
+        "decisions": derived.get("decisions", []),
+        "degradations": derived.get("degradations", []),
+        "failures": derived.get("failures", []),
+    }
+
+
+def _build_events_page(
+    events: list[dict[str, Any]],
+    *,
+    cursor: int | None = None,
+    before_cursor: int | None = None,
+    limit: int = 200,
+) -> dict[str, Any]:
+    """Build a cursor-paginated slice of events.
+
+    Args:
+        events: All normalized events for the session.
+        cursor: Sequence number to start after (forward pagination).
+        before_cursor: Sequence number to end before (backward pagination).
+        limit: Maximum events to return.
+
+    Returns:
+        Dict with events slice and pagination metadata.
+    """
+    total = len(events)
+
+    if not events:
+        return {
+            "events": [],
+            "total": 0,
+            "has_more": False,
+            "next_cursor": None,
+            "prev_cursor": None,
+        }
+
+    # Get sequence numbers for cursor calculations
+    first_seq = events[0].get("sequence_number", 0)
+    last_seq = events[-1].get("sequence_number", total - 1)
+
+    # Forward pagination: events after cursor
+    if cursor is not None:
+        start_idx = 0
+        for i, event in enumerate(events):
+            seq = event.get("sequence_number", i)
+            if seq > cursor:
+                start_idx = i
+                break
+        else:
+            start_idx = len(events)
+
+        sliced = events[start_idx:start_idx + limit]
+    # Backward pagination: events before cursor
+    elif before_cursor is not None:
+        end_idx = len(events)
+        for i in range(len(events) - 1, -1, -1):
+            seq = events[i].get("sequence_number", i)
+            if seq < before_cursor:
+                end_idx = i + 1
+                break
+        else:
+            end_idx = 0
+
+        start_idx = max(0, end_idx - limit)
+        sliced = events[start_idx:end_idx]
+    # No cursor: return first page
+    else:
+        sliced = events[:limit]
+
+    if not sliced:
+        return {
+            "events": [],
+            "total": total,
+            "has_more": False,
+            "next_cursor": None,
+            "prev_cursor": None,
+        }
+
+    # Calculate cursors for next/prev pages
+    first_returned_seq = sliced[0].get("sequence_number", events.index(sliced[0]) if sliced[0] in events else 0)
+    last_returned_seq = sliced[-1].get("sequence_number", events.index(sliced[-1]) if sliced[-1] in events else total - 1)
+
+    has_more = last_returned_seq < last_seq
+    has_prev = first_returned_seq > first_seq
+
+    return {
+        "events": sliced,
+        "total": total,
+        "has_more": has_more,
+        "next_cursor": last_returned_seq if has_more else None,
+        "prev_cursor": first_returned_seq - 1 if has_prev else None,
     }
 
 
