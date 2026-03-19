@@ -173,10 +173,43 @@ class TestSessionStore:
         session_store.save_session(session2)
 
         sessions = session_store.list_sessions()
+        saved = next(s for s in sessions if s["session_id"] == sample_session.session_id)
 
         assert len(sessions) == 2
         assert any(s["session_id"] == sample_session.session_id for s in sessions)
         assert any(s["session_id"] == "test-session-456" for s in sessions)
+        assert saved["label"] == sample_session.query
+        assert saved["query"] == sample_session.query
+        assert saved["depth"] == sample_session.depth.value
+        assert saved["completed_at"] == sample_session.completed_at.isoformat()
+        assert saved["has_session_payload"] is True
+        assert saved["has_report"] is True
+
+    def test_list_sessions_uses_saved_summary_sidecar(
+        self, session_store: SessionStore, sample_session: ResearchSession
+    ) -> None:
+        """Listing should rely on the lightweight saved summary when it exists."""
+        session_store.save_session(sample_session)
+
+        session_path = session_store.get_session_path(sample_session.session_id)
+        session_path.write_text("{ invalid json", encoding="utf-8")
+
+        sessions = session_store.list_sessions()
+
+        assert sessions == [
+            {
+                "session_id": sample_session.session_id,
+                "label": sample_session.query,
+                "query": sample_session.query,
+                "depth": sample_session.depth.value,
+                "started_at": sample_session.started_at.isoformat(),
+                "completed_at": sample_session.completed_at.isoformat(),
+                "total_sources": 1,
+                "path": str(session_path),
+                "has_session_payload": True,
+                "has_report": True,
+            }
+        ]
 
     def test_list_sessions_with_limit(self, session_store: SessionStore) -> None:
         """Test listing sessions with limit."""
@@ -212,6 +245,7 @@ class TestSessionStore:
         """Test deleting a session."""
         session_store.save_session(sample_session)
         assert session_store.session_exists(sample_session.session_id)
+        assert session_store._session_summary_path(sample_session.session_id).exists()
 
         result = session_store.delete_session(sample_session.session_id)
         assert result.deleted is True
@@ -220,6 +254,7 @@ class TestSessionStore:
         assert result.success is True
         assert bool(result) is True
         assert not session_store.session_exists(sample_session.session_id)
+        assert not session_store._session_summary_path(sample_session.session_id).exists()
 
     def test_delete_session_not_found(self, session_store: SessionStore) -> None:
         """Test deleting a non-existent session."""
