@@ -1271,3 +1271,274 @@ class TestSemanticEvents:
 
         # Metrics
         assert event["degraded"] is False
+
+
+class TestCheckpointPersistence:
+    """Tests for durable checkpoint persistence."""
+
+    def test_emit_checkpoint_returns_checkpoint_id(self, tmp_path):
+        """Test that emit_checkpoint returns a unique checkpoint_id."""
+        monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+        monitor.set_session("test-session", "query", "standard")
+
+        checkpoint_id = monitor.emit_checkpoint(
+            phase="strategy",
+            operation="execute",
+            input_ref={"query": "test query"},
+        )
+
+        assert checkpoint_id is not None
+        assert checkpoint_id.startswith("cp-")
+
+    def test_emit_checkpoint_persists_to_disk(self, tmp_path):
+        """Test that checkpoints are persisted to disk."""
+        monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+        monitor.set_session("test-session", "query", "standard")
+
+        checkpoint_id = monitor.emit_checkpoint(
+            phase="strategy",
+            operation="execute",
+            input_ref={"query": "test query"},
+        )
+
+        # Verify checkpoint directory exists
+        checkpoints_dir = tmp_path / "test-session" / "checkpoints"
+        assert checkpoints_dir.exists()
+
+        # Verify manifest exists
+        manifest_path = checkpoints_dir / "manifest.json"
+        assert manifest_path.exists()
+
+        # Verify checkpoint is in manifest
+        manifest = monitor.get_checkpoint_manifest()
+        assert len(manifest.get("checkpoints", [])) == 1
+        assert manifest["checkpoints"][0]["checkpoint_id"] == checkpoint_id
+
+    def test_emit_checkpoint_tracks_lineage(self, tmp_path):
+        """Test that checkpoints track parent-child lineage."""
+        monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+        monitor.set_session("test-session", "query", "standard")
+
+        # Create first checkpoint
+        cp1_id = monitor.emit_checkpoint(
+            phase="session_start",
+            operation="initialize",
+            input_ref={"query": "test"},
+        )
+
+        # Create second checkpoint with first as parent
+        cp2_id = monitor.emit_checkpoint(
+            phase="strategy",
+            operation="execute",
+            input_ref={"query": "test"},
+            parent_checkpoint_id=cp1_id,
+        )
+
+        # Verify lineage
+        cp2 = monitor.get_checkpoint_by_id(cp2_id)
+        assert cp2 is not None
+        assert cp2["parent_checkpoint_id"] == cp1_id
+
+    def test_finalize_checkpoint_marks_resume_safe(self, tmp_path):
+        """Test that finalize_checkpoint marks checkpoint as resume_safe."""
+        monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+        monitor.set_session("test-session", "query", "standard")
+
+        checkpoint_id = monitor.emit_checkpoint(
+            phase="strategy",
+            operation="execute",
+            input_ref={"query": "test query"},
+        )
+
+        # Initially not resume_safe
+        cp = monitor.get_checkpoint_by_id(checkpoint_id)
+        assert cp["resume_safe"] is False
+
+        # Finalize with output
+        monitor.finalize_checkpoint(
+            checkpoint_id,
+            output_ref={"strategy": "comprehensive"},
+            replayable=True,
+        )
+
+        # Now should be resume_safe
+        cp = monitor.get_checkpoint_by_id(checkpoint_id)
+        assert cp["resume_safe"] is True
+        assert cp["output_ref"] == {"strategy": "comprehensive"}
+
+    def test_get_latest_resume_safe_checkpoint(self, tmp_path):
+        """Test getting the latest resume-safe checkpoint."""
+        monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+        monitor.set_session("test-session", "query", "standard")
+
+        # Create and finalize first checkpoint
+        cp1_id = monitor.emit_checkpoint(
+            phase="session_start",
+            operation="initialize",
+            input_ref={"query": "test"},
+        )
+        monitor.finalize_checkpoint(cp1_id, output_ref={"status": "started"}, replayable=True)
+
+        # Create and finalize second checkpoint
+        cp2_id = monitor.emit_checkpoint(
+            phase="strategy",
+            operation="execute",
+            input_ref={"query": "test"},
+        )
+        monitor.finalize_checkpoint(cp2_id, output_ref={"strategy": "comprehensive"}, replayable=True)
+
+        # Get latest resume-safe
+        latest = monitor.get_latest_resume_safe_checkpoint()
+        assert latest is not None
+        assert latest["checkpoint_id"] == cp2_id
+
+    def test_get_checkpoints_by_phase(self, tmp_path):
+        """Test filtering checkpoints by phase."""
+        monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+        monitor.set_session("test-session", "query", "standard")
+
+        monitor.emit_checkpoint(phase="strategy", operation="execute", input_ref={})
+        monitor.emit_checkpoint(phase="source_collection", operation="execute", input_ref={})
+        monitor.emit_checkpoint(phase="strategy", operation="iterate", input_ref={})
+
+        strategy_cps = monitor.get_checkpoints_by_phase("strategy")
+        assert len(strategy_cps) == 2
+
+        collection_cps = monitor.get_checkpoints_by_phase("source_collection")
+        assert len(collection_cps) == 1
+
+    def test_checkpoint_not_replayable_on_failure(self, tmp_path):
+        """Test that checkpoints can be marked not replayable."""
+        monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+        monitor.set_session("test-session", "query", "standard")
+
+        checkpoint_id = monitor.emit_checkpoint(
+            phase="strategy",
+            operation="execute",
+            input_ref={"query": "test"},
+        )
+
+        # Finalize as not replayable
+        monitor.finalize_checkpoint(
+            checkpoint_id,
+            output_ref=None,
+            replayable=False,
+            replayable_reason="External API call with non-deterministic result",
+        )
+
+        cp = monitor.get_checkpoint_by_id(checkpoint_id)
+        assert cp["replayable"] is False
+        assert "non-deterministic" in cp["replayable_reason"]
+
+    def test_checkpoint_includes_telemetry_event(self, tmp_path):
+        """Test that checkpoint creation emits telemetry event."""
+        monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+        monitor.set_session("test-session", "query", "standard")
+
+        checkpoint_id = monitor.emit_checkpoint(
+            phase="strategy",
+            operation="execute",
+            input_ref={"query": "test"},
+        )
+
+        # Find checkpoint.created event
+        checkpoint_events = [
+            e for e in monitor._telemetry_events
+            if e["event_type"] == "checkpoint.created"
+        ]
+        assert len(checkpoint_events) == 1
+
+        event = checkpoint_events[0]
+        assert event["metadata"]["checkpoint_id"] == checkpoint_id
+        assert event["metadata"]["phase"] == "strategy"
+        assert event["status"] == "committed"  # Successfully persisted
+
+
+class TestPhaseRunnerCheckpoints:
+    """Tests for PhaseRunner checkpoint integration."""
+
+    @pytest.mark.asyncio
+    async def test_run_phase_creates_checkpoint_with_input_ref(self, tmp_path):
+        """PhaseRunner should create checkpoint with input_ref."""
+        from cc_deep_research.orchestration.phases import PhaseRunner
+
+        monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+        runner = PhaseRunner(monitor=monitor)
+        monitor.set_session("test-session", "query", "standard")
+
+        async def operation():
+            return {"result": "success"}
+
+        await runner.run_phase(
+            phase_hook=None,
+            phase_key="strategy",
+            description="Analyzing strategy",
+            operation=operation,
+            input_ref={"query": "test query", "depth": "deep"},
+            output_transformer=lambda r: {"result_type": type(r).__name__},
+        )
+
+        # Check that checkpoint was created
+        checkpoints = monitor.get_all_checkpoints()
+        assert len(checkpoints) >= 1
+
+        # Find the strategy checkpoint
+        strategy_cp = next((cp for cp in checkpoints if cp["phase"] == "strategy"), None)
+        assert strategy_cp is not None
+        assert strategy_cp["input_ref"] == {"query": "test query", "depth": "deep"}
+        assert strategy_cp["output_ref"] == {"result_type": "dict"}
+        assert strategy_cp["resume_safe"] is True
+
+    @pytest.mark.asyncio
+    async def test_run_phase_finalizes_checkpoint_on_success(self, tmp_path):
+        """PhaseRunner should finalize checkpoint on successful completion."""
+        from cc_deep_research.orchestration.phases import PhaseRunner
+
+        monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+        runner = PhaseRunner(monitor=monitor)
+        monitor.set_session("test-session", "query", "standard")
+
+        async def operation():
+            return {"sources": 10}
+
+        await runner.run_phase(
+            phase_hook=None,
+            phase_key="source_collection",
+            description="Collecting sources",
+            operation=operation,
+            input_ref={"query": "test"},
+            output_transformer=lambda r: {"source_count": r["sources"]},
+        )
+
+        # Check that checkpoint is finalized and resume-safe
+        checkpoints = monitor.get_checkpoints_by_phase("source_collection")
+        assert len(checkpoints) == 1
+        assert checkpoints[0]["resume_safe"] is True
+        assert checkpoints[0]["output_ref"] == {"source_count": 10}
+
+    @pytest.mark.asyncio
+    async def test_run_phase_marks_checkpoint_not_replayable_on_failure(self, tmp_path):
+        """PhaseRunner should mark checkpoint not replayable on failure."""
+        from cc_deep_research.orchestration.phases import PhaseRunner
+
+        monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+        runner = PhaseRunner(monitor=monitor)
+        monitor.set_session("test-session", "query", "standard")
+
+        async def failing_operation():
+            raise ValueError("Test error")
+
+        with pytest.raises(ValueError):
+            await runner.run_phase(
+                phase_hook=None,
+                phase_key="analysis",
+                description="Analyzing",
+                operation=failing_operation,
+                input_ref={"query": "test"},
+            )
+
+        # Check that checkpoint is not replayable
+        checkpoints = monitor.get_checkpoints_by_phase("analysis")
+        assert len(checkpoints) == 1
+        assert checkpoints[0]["replayable"] is False
+        assert "ValueError" in checkpoints[0]["replayable_reason"]
