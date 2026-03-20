@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,23 @@ import yaml
 
 from .defaults import get_default_config_path
 from .schema import Config, Settings, _normalize_api_key_list
+
+
+def resolve_config_path(config_path: Path | None = None) -> Path:
+    """Resolve the config path from an explicit path, env, or the XDG default."""
+    settings = Settings()
+    return config_path or settings.config_path or get_default_config_path()
+
+
+def load_persisted_config_data(config_path: Path | None = None) -> tuple[Path, dict[str, Any], bool]:
+    """Load raw persisted YAML config data without applying env overrides."""
+    resolved_path = resolve_config_path(config_path)
+    if not resolved_path.exists():
+        return resolved_path, {}, False
+
+    with resolved_path.open(encoding="utf-8") as handle:
+        config_data = yaml.safe_load(handle) or {}
+    return resolved_path, config_data, True
 
 
 def _parse_api_keys_from_env() -> list[str]:
@@ -35,12 +53,7 @@ def _parse_provider_api_keys_from_env(
 def load_config(config_path: Path | None = None) -> Config:
     """Load configuration from file and environment variables."""
     settings = Settings()
-    resolved_path = config_path or settings.config_path or get_default_config_path()
-
-    config_data: dict[str, Any] = {}
-    if resolved_path.exists():
-        with resolved_path.open() as handle:
-            config_data = yaml.safe_load(handle) or {}
+    resolved_path, config_data, _ = load_persisted_config_data(config_path)
 
     config = Config(**config_data)
 
@@ -79,21 +92,31 @@ def load_config(config_path: Path | None = None) -> Config:
 
 def save_config(config: Config, config_path: Path | None = None) -> None:
     """Save configuration to file."""
-    resolved_path = config_path or get_default_config_path()
+    resolved_path = resolve_config_path(config_path)
     resolved_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with resolved_path.open("w") as handle:
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=resolved_path.parent,
+        delete=False,
+    ) as handle:
         yaml.dump(
             config.model_dump(mode="json"),
             handle,
             default_flow_style=False,
             sort_keys=False,
         )
+        temp_path = Path(handle.name)
+
+    temp_path.replace(resolved_path)
 
 
 __all__ = [
     "_parse_api_keys_from_env",
     "_parse_provider_api_keys_from_env",
     "load_config",
+    "load_persisted_config_data",
+    "resolve_config_path",
     "save_config",
 ]
