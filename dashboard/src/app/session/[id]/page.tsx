@@ -96,7 +96,7 @@ export default function SessionPage({ params }: { params: { id: string } }) {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {isRunRoute ? (
         <RunStatusSummary
           runId={routeId}
@@ -108,12 +108,12 @@ export default function SessionPage({ params }: { params: { id: string } }) {
 
       {!telemetrySessionId ? (
         <Card className="border-dashed">
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+          <CardContent className="py-8 text-center text-sm text-muted-foreground">
             Waiting for the backend to allocate a session ID before live telemetry can load.
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
           <SessionReport sessionId={telemetrySessionId} runStatus={runStatus} />
           <SessionDetails
             sessionId={telemetrySessionId}
