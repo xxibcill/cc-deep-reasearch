@@ -1,6 +1,6 @@
 import dynamic from 'next/dynamic';
 import { useDeferredValue, useMemo, useState } from 'react';
-import { Activity, List, Network, Zap } from 'lucide-react';
+import { Activity, List, Network, Zap, FileText } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,7 @@ import {
   Degradation,
   Failure,
   ApiTelemetryEvent,
+  SessionPromptMetadata,
 } from '@/types/telemetry';
 
 const WorkflowGraph = dynamic(
@@ -59,6 +60,8 @@ interface SessionDetailsProps {
     degradations: Degradation[];
     failures: Failure[];
   };
+  // Prompt configuration from session metadata
+  promptMetadata?: SessionPromptMetadata;
 }
 
 function formatEventTime(timestamp: string): string {
@@ -311,6 +314,88 @@ function DetailInspector({
   );
 }
 
+function PromptConfigurationPanel({
+  promptMetadata,
+}: {
+  promptMetadata?: SessionPromptMetadata;
+}) {
+  if (!promptMetadata) {
+    return (
+      <Card className="h-full">
+        <CardContent className="flex items-center justify-center py-10 text-sm text-muted-foreground">
+          Prompt configuration not available. This data is loaded from historical sessions.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const agentLabels: Record<string, string> = {
+    analyzer: 'Analyzer',
+    deep_analyzer: 'Deep Analyzer',
+    report_quality_evaluator: 'Report Quality Evaluator',
+  };
+
+  return (
+    <Card className="h-full">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <FileText className="h-5 w-5" />
+          Prompt Configuration
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Badge variant={promptMetadata.overrides_applied ? 'default' : 'secondary'}>
+            {promptMetadata.overrides_applied ? 'Custom Prompts Applied' : 'Default Prompts'}
+          </Badge>
+        </div>
+
+        {promptMetadata.overrides_applied && (
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium">Effective Overrides</h4>
+            {Object.entries(promptMetadata.effective_overrides).map(([agentId, override]) => (
+              <div key={agentId} className="rounded-xl border p-3 space-y-2">
+                <div className="font-medium text-sm">
+                  {agentLabels[agentId] || agentId}
+                </div>
+                {override.prompt_prefix && (
+                  <div className="space-y-1">
+                    <span className="text-xs text-muted-foreground">Prompt Prefix:</span>
+                    <pre className="overflow-auto rounded-lg bg-slate-100 p-2 text-xs text-slate-800 dark:bg-slate-900 dark:text-slate-200 max-h-32">
+                      {override.prompt_prefix}
+                    </pre>
+                  </div>
+                )}
+                {override.system_prompt && (
+                  <div className="space-y-1">
+                    <span className="text-xs text-muted-foreground">System Prompt Override:</span>
+                    <pre className="overflow-auto rounded-lg bg-slate-100 p-2 text-xs text-slate-800 dark:bg-slate-900 dark:text-slate-200 max-h-32">
+                      {override.system_prompt}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {promptMetadata.default_prompts_used.length > 0 && (
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium">Agents Using Default Prompts</h4>
+            <div className="flex flex-wrap gap-2">
+              {promptMetadata.default_prompts_used.map((agentId) => (
+                <Badge key={agentId} variant="outline">
+                  {agentLabels[agentId] || agentId}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function SessionDetails({
   sessionId,
   connected,
@@ -320,8 +405,9 @@ export function SessionDetails({
   onSelectEvent,
   onViewModeChange,
   derivedOutputs,
+  promptMetadata,
 }: SessionDetailsProps) {
-  const [detailTab, setDetailTab] = useState<'inspect' | 'tools' | 'llm' | 'derived'>('inspect');
+  const [detailTab, setDetailTab] = useState<'inspect' | 'tools' | 'llm' | 'derived' | 'prompts'>('inspect');
   const filters = useDashboardStore((state) => state.filters);
   const setFilters = useDashboardStore((state) => state.setFilters);
   const deferredEvents = useDeferredValue(events);
@@ -463,9 +549,10 @@ export function SessionDetails({
                 { value: 'tools', label: 'Tools' },
                 { value: 'llm', label: 'LLM' },
                 { value: 'derived', label: 'Derived' },
+                { value: 'prompts', label: 'Prompts' },
               ]}
               value={detailTab}
-              onValueChange={(value) => setDetailTab(value as 'inspect' | 'tools' | 'llm' | 'derived')}
+              onValueChange={(value) => setDetailTab(value as 'inspect' | 'tools' | 'llm' | 'derived' | 'prompts')}
             />
             {detailTab === 'inspect' && (
               <DetailInspector event={selectedEvent} reasoning={selectedReasoning} toolExecution={selectedTool} />
@@ -514,6 +601,9 @@ export function SessionDetails({
                   Derived outputs not available. This data is loaded from historical sessions.
                 </CardContent>
               </Card>
+            )}
+            {detailTab === 'prompts' && (
+              <PromptConfigurationPanel promptMetadata={promptMetadata} />
             )}
           </div>
         </div>

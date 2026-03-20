@@ -26,6 +26,7 @@ from cc_deep_research.text_normalization import normalize_content
 if TYPE_CHECKING:
     from cc_deep_research.llm.router import LLMRouter
     from cc_deep_research.monitoring import ResearchMonitor
+    from cc_deep_research.prompts import PromptRegistry
 
 
 class AnalyzerAgent:
@@ -43,11 +44,15 @@ class AnalyzerAgent:
         config: dict[str, Any],
         monitor: ResearchMonitor | None = None,
         llm_router: "LLMRouter | None" = None,
+        prompt_registry: "PromptRegistry | None" = None,
     ) -> None:
         """Initialize the analyzer agent.
 
         Args:
             config: Agent configuration dictionary.
+            monitor: Optional research monitor.
+            llm_router: Optional LLM router for shared routing layer.
+            prompt_registry: Optional prompt registry with overrides.
         """
         self._config = config
         self._ai_service = AIAnalysisService(
@@ -55,6 +60,7 @@ class AnalyzerAgent:
             monitor=monitor,
             llm_router=llm_router,
             agent_id="analyzer",
+            prompt_registry=prompt_registry,
         )
 
     def analyze_sources(

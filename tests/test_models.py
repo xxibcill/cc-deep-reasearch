@@ -331,6 +331,7 @@ class TestResearchRunResult:
             "execution",
             "deep_analysis",
             "llm_routes",
+            "prompts",
         }
         assert session.metadata["providers"]["status"] == "unavailable"
         assert session.metadata["deep_analysis"]["status"] == "not_requested"
@@ -412,6 +413,7 @@ class TestResearchRunResult:
             "execution",
             "deep_analysis",
             "llm_routes",
+            "prompts",
         }
 
 

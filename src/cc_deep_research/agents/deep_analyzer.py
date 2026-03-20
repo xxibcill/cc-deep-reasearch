@@ -14,6 +14,7 @@ from cc_deep_research.models import ClaimEvidence, CrossReferenceClaim, SearchRe
 if TYPE_CHECKING:
     from cc_deep_research.llm.router import LLMRouter
     from cc_deep_research.monitoring import ResearchMonitor
+    from cc_deep_research.prompts import PromptRegistry
 
 
 class DeepAnalyzerAgent:
@@ -30,11 +31,15 @@ class DeepAnalyzerAgent:
         config: dict[str, Any],
         monitor: ResearchMonitor | None = None,
         llm_router: "LLMRouter | None" = None,
+        prompt_registry: "PromptRegistry | None" = None,
     ) -> None:
         """Initialize deep analyzer agent.
 
         Args:
             config: Agent configuration dictionary.
+            monitor: Optional research monitor.
+            llm_router: Optional LLM router for shared routing layer.
+            prompt_registry: Optional prompt registry with overrides.
         """
         self._config = config
         self._passes = config.get("deep_analysis_passes", 3)
@@ -43,6 +48,7 @@ class DeepAnalyzerAgent:
             monitor=monitor,
             llm_router=llm_router,
             agent_id="deep_analyzer",
+            prompt_registry=prompt_registry,
         )
 
     def deep_analyze(

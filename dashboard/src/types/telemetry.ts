@@ -256,6 +256,12 @@ export type ResearchOutputFormat = 'markdown' | 'json' | 'html';
 
 export type ResearchArtifactKind = 'session' | 'report' | 'pdf';
 
+// Prompt override types
+export interface AgentPromptOverride {
+  system_prompt?: string | null;
+  prompt_prefix?: string | null;
+}
+
 export interface ResearchRunRequest {
   query: string;
   depth?: 'quick' | 'standard' | 'deep';
@@ -268,6 +274,7 @@ export interface ResearchRunRequest {
   num_researchers?: number | null;
   realtime_enabled?: boolean;
   pdf_enabled?: boolean;
+  agent_prompt_overrides?: Record<string, AgentPromptOverride>;
 }
 
 export interface ResearchRunArtifact {
@@ -453,6 +460,23 @@ export interface DerivedOutputs {
   decisions: Decision[];
   degradations: Degradation[];
   failures: Failure[];
+}
+
+// =============================================================================
+// Prompt Override Types
+// =============================================================================
+
+export interface SessionPromptMetadata {
+  overrides_applied: boolean;
+  effective_overrides: Record<string, AgentPromptOverride>;
+  default_prompts_used: string[];
+}
+
+// Internal type for the prompt configuration panel
+export interface SessionPromptMetadataInternal {
+  overrides_applied: boolean;
+  effective_overrides: Record<string, { prompt_prefix?: string | null; system_prompt?: string | null }>;
+  default_prompts_used: string[];
 }
 
 // =============================================================================
