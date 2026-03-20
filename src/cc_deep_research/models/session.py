@@ -61,6 +61,22 @@ class SessionDeepAnalysisMetadata(BaseModel):
     model_config = {"extra": "allow"}
 
 
+class SessionPromptMetadata(BaseModel):
+    """Stable prompt configuration metadata for a research session.
+
+    Attributes:
+        overrides_applied: Whether any prompt overrides were applied.
+        effective_overrides: Dictionary of agent_id -> {system_prompt, prompt_prefix}.
+        default_prompts_used: List of agents using default prompts.
+    """
+
+    overrides_applied: bool = Field(default=False)
+    effective_overrides: dict[str, dict[str, str | None]] = Field(default_factory=dict)
+    default_prompts_used: list[str] = Field(default_factory=list)
+
+    model_config = {"extra": "allow"}
+
+
 class SessionMetadataContract(BaseModel):
     """Stable top-level shape for ``ResearchSession.metadata``."""
 
@@ -74,6 +90,7 @@ class SessionMetadataContract(BaseModel):
         default_factory=SessionDeepAnalysisMetadata
     )
     llm_routes: dict[str, Any] = Field(default_factory=dict)
+    prompts: SessionPromptMetadata = Field(default_factory=SessionPromptMetadata)
 
     model_config = {"extra": "allow"}
 
@@ -169,6 +186,36 @@ def _build_deep_analysis_metadata(
     )
 
 
+def _build_prompt_metadata(
+    raw_metadata: Mapping[str, Any],
+) -> SessionPromptMetadata:
+    """Normalize prompt metadata from legacy or explicit payloads."""
+    raw_prompts = raw_metadata.get("prompts", {})
+    if isinstance(raw_prompts, SessionPromptMetadata):
+        return raw_prompts
+
+    if not isinstance(raw_prompts, dict):
+        return SessionPromptMetadata()
+
+    effective_overrides: dict[str, dict[str, str | None]] = {}
+    raw_overrides = raw_prompts.get("effective_overrides", {})
+    if isinstance(raw_overrides, dict):
+        for agent_id, override in raw_overrides.items():
+            if isinstance(override, dict):
+                effective_overrides[agent_id] = {
+                    "system_prompt": override.get("system_prompt"),
+                    "prompt_prefix": override.get("prompt_prefix"),
+                }
+
+    default_prompts_used = _list_of_strings(raw_prompts.get("default_prompts_used", []))
+
+    return SessionPromptMetadata(
+        overrides_applied=bool(raw_prompts.get("overrides_applied", False)),
+        effective_overrides=effective_overrides,
+        default_prompts_used=default_prompts_used,
+    )
+
+
 def normalize_session_metadata(
     metadata: Mapping[str, Any] | None,
     *,
@@ -181,6 +228,7 @@ def normalize_session_metadata(
     analysis = _mapping_dict(raw_metadata.get("analysis", {}))
     providers = _build_provider_metadata(raw_metadata, configured)
     deep_analysis = _build_deep_analysis_metadata(raw_metadata, depth, analysis)
+    prompt_metadata = _build_prompt_metadata(raw_metadata)
 
     raw_execution = _mapping_dict(raw_metadata.get("execution", {}))
     degraded_reasons = _list_of_strings(raw_execution.get("degraded_reasons", []))
@@ -208,6 +256,7 @@ def normalize_session_metadata(
         ),
         deep_analysis=deep_analysis,
         llm_routes=_mapping_dict(raw_metadata.get("llm_routes", {})),
+        prompts=prompt_metadata,
     )
     return contract.model_dump(mode="python")
 
@@ -255,6 +304,7 @@ __all__ = [
     "SessionDeepAnalysisMetadata",
     "SessionExecutionMetadata",
     "SessionMetadataContract",
+    "SessionPromptMetadata",
     "SessionProvidersMetadata",
     "normalize_session_metadata",
 ]

@@ -39,6 +39,7 @@ from cc_deep_research.models import (
 
 if TYPE_CHECKING:
     from cc_deep_research.llm.router import LLMRouter
+    from cc_deep_research.prompts import PromptRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -71,18 +72,21 @@ class ReportQualityEvaluatorAgent:
         config: dict[str, Any],
         *,
         llm_router: "LLMRouter | None" = None,
+        prompt_registry: "PromptRegistry | None" = None,
     ) -> None:
         """Initialize the report quality evaluator.
 
         Args:
             config: Agent configuration dictionary.
             llm_router: Optional LLM router for shared routing layer integration.
+            prompt_registry: Optional prompt registry with overrides.
         """
         self._config = config
         self._enabled = config.get("enable_report_quality_evaluation", True)
         self._min_acceptable_score = config.get("min_report_quality_score", 0.6)
         self._integration_method = config.get("ai_integration_method", "heuristic")
         self._llm_router = llm_router
+        self._prompt_registry = prompt_registry
 
         # Initialize AI components (legacy support)
         self._ai_integration = AIAgentIntegration(config)
@@ -172,7 +176,7 @@ class ReportQualityEvaluatorAgent:
         findings_summary = "\n".join(f"- {f}" for f in analysis.key_findings[:5])
         themes_summary = ", ".join(analysis.themes[:5])
 
-        return f"""Evaluate the quality of this research report on a scale of 0.0 to 1.0 for each dimension.
+        base_prompt = f"""Evaluate the quality of this research report on a scale of 0.0 to 1.0 for each dimension.
 
 REPORT CONTENT:
 {truncated_markdown}
@@ -225,9 +229,23 @@ Focus on:
 - Consistency: alignment with analysis findings
 - Executive summary: concise, insight-focused"""
 
+        # Apply prompt prefix from registry if available
+        if self._prompt_registry:
+            config = self._prompt_registry.resolve_prompt(AGENT_ID, "evaluate")
+            if config.prompt_prefix:
+                return f"{config.prompt_prefix}\n\n{base_prompt}"
+        return base_prompt
+
     def _get_system_prompt(self) -> str:
         """Get the system prompt for LLM evaluation."""
-        return """You are an expert research report quality evaluator. Your task is to assess research reports for quality across multiple dimensions. Provide objective, constructive feedback with specific scores and actionable recommendations. Always respond with valid JSON in the exact format requested."""
+        default_system_prompt = """You are an expert research report quality evaluator. Your task is to assess research reports for quality across multiple dimensions. Provide objective, constructive feedback with specific scores and actionable recommendations. Always respond with valid JSON in the exact format requested."""
+
+        # Use override from registry if available
+        if self._prompt_registry:
+            config = self._prompt_registry.resolve_prompt(AGENT_ID, "evaluate")
+            if config.system_prompt:
+                return config.system_prompt
+        return default_system_prompt
 
     def _parse_llm_response(self, content: str) -> dict[str, Any]:
         """Parse the LLM response into structured evaluation data.
