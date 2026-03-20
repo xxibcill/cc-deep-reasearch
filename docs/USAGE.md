@@ -25,7 +25,7 @@
 CC Deep Research is a command-line tool for staged web research. The current runtime is a local Python pipeline with optional parallel source collection. It leverages:
 
 - **Tavily Search API** - Professional web search with advanced filtering
-- **Claude CLI Analysis** - Optional Claude-backed analysis for synthesis phases
+- **Routed LLM Analysis** - Optional provider-backed analysis for synthesis phases
 - **Specialist Components** - Lead, collector, analyzer, validator, and reporter roles coordinated locally
 - **Quality Scoring** - Automated source evaluation and ranking
 - **Cross-Reference Analysis** - Identifies consensus and contradictions
@@ -56,7 +56,7 @@ CC Deep Research is a command-line tool for staged web research. The current run
         │                   │                   │
         ▼                   ▼                   ▼
 ┌───────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│   Tavily API  │  │ Claude CLI (opt)│  │   Config File   │
+│   Tavily API  │  │ Routed LLMs     │  │   Config File   │
 └───────────────┘  └─────────────────┘  └─────────────────┘
         │                   │
         └─────────┬─────────┘
@@ -331,8 +331,9 @@ The active runtime supports agent-level LLM routing for analysis and report-qual
 
 ```yaml
 llm:
-  claude_cli:
-    enabled: true
+  anthropic:
+    enabled: false
+    api_key: '${ANTHROPIC_API_KEY}'
     model: 'claude-sonnet-4-6'
 
   openrouter:
@@ -346,7 +347,7 @@ llm:
     model: 'llama-3.3-70b'
 
   fallback_order:
-    - 'claude_cli'
+    - 'anthropic'
     - 'openrouter'
     - 'cerebras'
     - 'heuristic'
@@ -354,12 +355,12 @@ llm:
   route_defaults:
     analyzer: 'openrouter'
     deep_analyzer: 'cerebras'
-    report_quality_evaluator: 'claude_cli'
-    reporter: 'claude_cli'
-    default: 'claude_cli'
+    report_quality_evaluator: 'anthropic'
+    reporter: 'anthropic'
+    default: 'anthropic'
 ```
 
-Planner-selected routes are applied per session. In one run, `analyzer` can use OpenRouter, `deep_analyzer` can use Cerebras, and `report_quality_evaluator` can still use Claude CLI. If no configured transport is available, the runtime falls back to `heuristic`.
+Planner-selected routes are applied per session. In one run, `analyzer` can use OpenRouter, `deep_analyzer` can use Cerebras, and `report_quality_evaluator` can use Anthropic. If no configured transport is available, the runtime falls back to `heuristic`.
 
 ---
 
@@ -1655,7 +1656,7 @@ Use the dashboard to answer:
 - what phase is running now
 - what happened most recently
 - which agent is active
-- what the Claude CLI subprocess most recently printed to stdout or stderr
+- recent routed LLM telemetry and fallback activity
 
 Useful dashboard command options:
 
@@ -1756,7 +1757,7 @@ Notes:
 - the Streamlit telemetry dashboard reads persisted telemetry from normal `research` runs
 - `--monitor` adds terminal logs but is not required for telemetry persistence
 
-#### Issue: "Claude CLI disabled inside Claude Code"
+#### Issue: "No LLM route available"
 
 **Problem:** Claude-backed analysis falls back to heuristics because the run is already inside a Claude Code session.
 

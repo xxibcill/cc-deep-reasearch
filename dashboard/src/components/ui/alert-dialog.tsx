@@ -1,19 +1,19 @@
-import { ReactNode, useEffect, useRef } from 'react';
+import { ReactNode, useEffect, useRef } from 'react'
 
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 
 interface AlertDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  title: string;
-  description: ReactNode;
-  confirmLabel?: string;
-  cancelLabel?: string;
-  destructive?: boolean;
-  onConfirm: () => void;
-  loading?: boolean;
-  loadingLabel?: string;
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  title: string
+  description: ReactNode
+  confirmLabel?: string
+  cancelLabel?: string
+  destructive?: boolean
+  onConfirm: () => void
+  loading?: boolean
+  loadingLabel?: string
 }
 
 export function AlertDialog({
@@ -28,37 +28,37 @@ export function AlertDialog({
   loading = false,
   loadingLabel = 'Loading...',
 }: AlertDialogProps) {
-  const cancelRef = useRef<HTMLButtonElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (open) {
-      cancelRef.current?.focus();
+      cancelRef.current?.focus()
     }
-  }, [open]);
+  }, [open])
 
   if (!open) {
-    return null;
+    return null
   }
 
   const handleConfirm = () => {
-    onConfirm();
-  };
+    onConfirm()
+  }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
-      onOpenChange(false);
+      onOpenChange(false)
     }
-  };
+  }
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-500/75 p-4"
       onKeyDown={handleKeyDown}
     >
       <div className="absolute inset-0" onClick={() => onOpenChange(false)} />
       <div
         className={cn(
-          'relative z-10 w-full max-w-md rounded-xl border bg-card p-6 shadow-2xl'
+          'relative z-10 w-full max-w-md rounded-xl border bg-neutral-100 p-6 shadow-2xl',
         )}
         role="dialog"
         aria-modal="true"
@@ -94,5 +94,5 @@ export function AlertDialog({
         </div>
       </div>
     </div>
-  );
+  )
 }

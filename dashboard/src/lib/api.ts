@@ -36,6 +36,11 @@ const apiClient = axios.create({
   timeout: 10000,
 });
 
+const SESSION_DETAIL_TIMEOUT_MS = 30000;
+const SESSION_REPORT_TIMEOUT_MS = 120000;
+const SESSION_BUNDLE_TIMEOUT_MS = 120000;
+const BULK_DELETE_TIMEOUT_MS = 120000;
+
 export function getApiErrorMessage(error: unknown, fallback: string): string {
   if (axios.isAxiosError(error)) {
     const responseError = error.response?.data?.error;
@@ -154,6 +159,7 @@ export interface SessionDetailResult {
 export async function getSessionDetail(sessionId: string): Promise<SessionDetailResult> {
   const response = await apiClient.get<SessionDetailResponse>(`/sessions/${sessionId}`, {
     params: { include_derived: true },
+    timeout: SESSION_DETAIL_TIMEOUT_MS,
   });
   return {
     session: normalizeSession(response.data.session),
@@ -208,7 +214,10 @@ export async function getSessionReport(
 ): Promise<SessionReportResponse> {
   const response = await apiClient.get<SessionReportResponse>(
     `/sessions/${sessionId}/report`,
-    { params: { format } }
+    {
+      params: { format },
+      timeout: SESSION_REPORT_TIMEOUT_MS,
+    }
   );
   return response.data;
 }
@@ -282,10 +291,16 @@ export async function bulkDeleteSessions(
   sessionIds: string[],
   force: boolean = false
 ): Promise<BulkSessionDeleteResponse> {
-  const response = await apiClient.post<BulkSessionDeleteResponse>('/sessions/bulk-delete', {
-    session_ids: sessionIds,
-    force,
-  });
+  const response = await apiClient.post<BulkSessionDeleteResponse>(
+    '/sessions/bulk-delete',
+    {
+      session_ids: sessionIds,
+      force,
+    },
+    {
+      timeout: BULK_DELETE_TIMEOUT_MS,
+    }
+  );
   return response.data;
 }
 
@@ -330,6 +345,8 @@ export async function restoreSession(sessionId: string): Promise<ArchiveSessionR
 }
 
 export async function getSessionBundle(sessionId: string): Promise<{ bundle: TraceBundle }> {
-  const response = await apiClient.get<TraceBundle>(`/sessions/${sessionId}/bundle`);
+  const response = await apiClient.get<TraceBundle>(`/sessions/${sessionId}/bundle`, {
+    timeout: SESSION_BUNDLE_TIMEOUT_MS,
+  });
   return { bundle: response.data };
 }

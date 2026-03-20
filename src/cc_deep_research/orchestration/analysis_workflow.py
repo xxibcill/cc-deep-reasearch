@@ -37,13 +37,12 @@ class AnalysisWorkflow:
         self._monitor.section("Analysis")
         # Log analysis method being used
         self._monitor.log(f"Analysis method: {self._config.research.ai_integration_method}")
-        # Check CLI availability safely (may not exist in test fixtures)
-        cli_available = hasattr(analyzer, "_ai_service") and (
+        llm_available = hasattr(analyzer, "_ai_service") and (
             analyzer._ai_service._llm_client is not None
         )
-        self._monitor.log(f"Claude CLI available: {cli_available}")
-        if not cli_available:
-            self._monitor.log("Note: Running in heuristic mode (CLI unavailable or disabled)")
+        self._monitor.log(f"Routed LLM available: {llm_available}")
+        if not llm_available:
+            self._monitor.log("Note: Running in heuristic mode (LLM unavailable or disabled)")
         analysis = analyzer.analyze_sources(sources, query)
         self._monitor.log(f"Key findings: {len(analysis.key_findings)}")
         self._monitor.log(f"Themes identified: {len(analysis.themes)}")

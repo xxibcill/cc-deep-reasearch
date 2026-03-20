@@ -97,8 +97,8 @@ export function StartResearchForm() {
 
       const response = await startResearchRun(request)
 
-      // Redirect to the session view
-      router.push(`/session/${response.run_id}`)
+      // Redirect to the live monitor route while the session is still running.
+      router.push(`/session/${response.run_id}/monitor`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start research run')
       setIsSubmitting(false)
