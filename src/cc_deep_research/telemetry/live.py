@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,9 @@ class _LiveSessionSnapshot:
 
 
 _LIVE_SESSION_CACHE: dict[Path, _LiveSessionSnapshot] = {}
+
+# Sessions with no activity for this duration are considered stale/inactive
+_STALE_SESSION_THRESHOLD = timedelta(minutes=5)
 
 
 def get_default_telemetry_dir() -> Path:
@@ -259,6 +263,80 @@ def _read_live_session_snapshot(session_dir: Path) -> _LiveSessionSnapshot:
     return snapshot
 
 
+def _is_session_truly_active(
+    session_id: str,
+    *,
+    has_summary: bool,
+    session_finished: bool,
+    last_event_at: str | None,
+    telemetry_dir: Path,
+) -> bool:
+    """Determine if a session is truly active, considering multiple factors.
+
+    A session is considered inactive if any of these conditions are true:
+    1. It has a summary.json (session completed normally)
+    2. It has a session.finished event (session terminated properly)
+    3. It exists as a saved session file (persisted to sessions directory)
+    4. It exists in DuckDB with completed status (historical session)
+    5. It has been inactive for too long (stale/abandoned session)
+
+    Args:
+        session_id: The session ID to check.
+        has_summary: Whether the session has a summary.json file.
+        session_finished: Whether the session has a session.finished event.
+        last_event_at: ISO timestamp of the last event, or None.
+        telemetry_dir: Path to the telemetry directory.
+
+    Returns:
+        True if session is truly active, False otherwise.
+    """
+    # If session has summary or finished event, it's not active
+    if has_summary or session_finished:
+        return False
+
+    # Check if session exists in saved sessions directory
+    from cc_deep_research.session_store import get_default_session_dir
+
+    sessions_dir = get_default_session_dir()
+    session_file = sessions_dir / f"{session_id}.json"
+    if session_file.exists():
+        return False
+
+    # Check if session exists in DuckDB (historical session)
+    db_path = get_default_config_path().parent / "telemetry.duckdb"
+    if db_path.exists():
+        try:
+            import duckdb
+
+            conn = duckdb.connect(str(db_path), read_only=True)
+            try:
+                row = conn.execute(
+                    "SELECT session_id FROM telemetry_sessions WHERE session_id = ?",
+                    [session_id],
+                ).fetchone()
+                if row is not None:
+                    return False
+            finally:
+                conn.close()
+        except Exception:
+            pass  # If DuckDB check fails, continue with other checks
+
+    # Check if session is stale (no recent activity)
+    if last_event_at:
+        try:
+            last_event_time = datetime.fromisoformat(last_event_at.replace("Z", "+00:00"))
+            if last_event_time.tzinfo is None:
+                last_event_time = last_event_time.replace(tzinfo=UTC)
+            now = datetime.now(UTC)
+            if now - last_event_time > _STALE_SESSION_THRESHOLD:
+                return False
+        except (ValueError, TypeError):
+            pass  # If timestamp parsing fails, continue
+
+    # Session appears to be truly active
+    return True
+
+
 def query_live_sessions(
     base_dir: Path | None = None,
     *,
@@ -281,14 +359,34 @@ def query_live_sessions(
         first_timestamp = snapshot.events[0]["timestamp"] if snapshot.events else None
         last_timestamp = snapshot.events[-1]["timestamp"] if snapshot.events else None
         summary = snapshot.summary or {}
-        is_active = snapshot.summary is None and not session_finished
+        is_active = _is_session_truly_active(
+            session_dir.name,
+            has_summary=snapshot.summary is not None,
+            session_finished=session_finished,
+            last_event_at=last_timestamp,
+            telemetry_dir=telemetry_dir,
+        )
+
+        # Determine status:
+        # - If summary exists: use summary status
+        # - If session finished: completed
+        # - If active: running
+        # - Otherwise (stale): interrupted
+        if snapshot.summary is not None:
+            status = summary.get("status", "completed")
+        elif session_finished:
+            status = "completed"
+        elif is_active:
+            status = "running"
+        else:
+            status = "interrupted"
 
         sessions.append(
             {
                 "session_id": session_dir.name,
                 "created_at": summary.get("created_at") or first_timestamp,
                 "last_event_at": last_timestamp,
-                "status": summary.get("status", "running" if is_active else "completed"),
+                "status": status,
                 "active": is_active,
                 "event_count": len(snapshot.events),
                 "total_sources": summary.get("total_sources", 0),
@@ -410,13 +508,33 @@ def query_live_session_detail(
     session_finished = any(event.get("event_type") == "session.finished" for event in events)
     created_at = (summary or {}).get("created_at") or (events[0]["timestamp"] if events else None)
     last_event_at = events[-1]["timestamp"] if events else None
-    is_active = summary is None and not session_finished
+    is_active = _is_session_truly_active(
+        session_id,
+        has_summary=summary is not None,
+        session_finished=session_finished,
+        last_event_at=last_event_at,
+        telemetry_dir=telemetry_dir,
+    )
+
+    # Determine status:
+    # - If summary exists: use summary status
+    # - If session finished: completed
+    # - If active: running
+    # - Otherwise (stale): interrupted
+    if summary is not None:
+        status = summary.get("status", "completed")
+    elif session_finished:
+        status = "completed"
+    elif is_active:
+        status = "running"
+    else:
+        status = "interrupted"
 
     session = {
         "session_id": session_id,
         "created_at": created_at,
         "last_event_at": last_event_at,
-        "status": (summary or {}).get("status", "running" if is_active else "completed"),
+        "status": status,
         "active": is_active,
         "event_count": len(events),
         "total_sources": (summary or {}).get("total_sources", 0),
