@@ -10,12 +10,12 @@ export function Tabs({
   tabs: Array<{ value: string; label: string }>;
 }) {
   return (
-    <div className="inline-flex rounded-lg border bg-muted/40 p-1">
+    <div className="inline-flex rounded-lg border bg-muted/40 p-1 gap-0.5">
       {tabs.map((tab) => (
         <button
           key={tab.value}
           className={cn(
-            'rounded-md px-3 py-2 text-sm font-medium transition-colors',
+            'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
             value === tab.value ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'
           )}
           onClick={() => onValueChange(tab.value)}

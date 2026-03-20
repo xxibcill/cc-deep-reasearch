@@ -170,10 +170,10 @@ function SessionCard({
   const isArchived = session.archived;
 
   return (
-    <article className="flex h-full flex-col rounded-lg border p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-1 items-start gap-3">
-          <div className="mt-1 flex gap-2">
+    <article className="flex h-full flex-col rounded-lg border p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-start gap-2.5">
+          <div className="pt-0.5">
             {!compareMode ? (
               <label
                 className="flex items-center"
@@ -206,92 +206,95 @@ function SessionCard({
           </div>
           <div className="min-w-0 flex-1">
             <Link href={`/session/${session.sessionId}`} className="block">
-              <h3 className="text-lg font-semibold leading-snug hover:text-blue-700">
+              <h3 className="text-base font-semibold leading-snug hover:text-blue-700 truncate">
                 {session.label}
               </h3>
             </Link>
-            <p className="mt-1 truncate text-xs font-mono text-muted-foreground">
+            <p className="mt-0.5 truncate text-xs font-mono text-muted-foreground">
               {session.sessionId}
             </p>
           </div>
         </div>
         {session.active ? (
-          <span className="rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-100">
+          <span className="shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-100">
             Live
           </span>
         ) : isArchived ? (
-          <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-100">
+          <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-100">
             Archived
           </span>
         ) : null}
       </div>
 
       {showsQuery ? (
-        <p className="mt-4 text-sm text-muted-foreground">{session.query}</p>
+        <p className="mt-3 text-sm text-muted-foreground line-clamp-2">{session.query}</p>
       ) : null}
 
-      <div className="mt-4 flex flex-wrap gap-2 text-xs">
-        <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+      <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
           {formatDepth(session.depth)}
         </span>
-        <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
           Payload {session.hasSessionPayload ? 'available' : 'missing'}
         </span>
-        <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
           Report {session.hasReport ? 'available' : 'unavailable'}
         </span>
       </div>
 
-      <div className="mt-4 space-y-2 text-sm">
+      <div className="mt-3 space-y-1.5 text-sm">
         <div className="flex items-center gap-2">
-          <Activity className="h-4 w-4" />
-          <span className="text-muted-foreground">Status:</span>
+          <Activity className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <span className="text-muted-foreground min-w-[60px]">Status:</span>
           <span className="font-medium">{session.status}</span>
         </div>
 
         <div className="flex items-center gap-2">
-          <Network className="h-4 w-4" />
-          <span className="text-muted-foreground">Sources:</span>
+          <Network className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <span className="text-muted-foreground min-w-[60px]">Sources:</span>
           <span className="font-medium">{session.totalSources}</span>
         </div>
 
         <div className="flex items-center gap-2">
-          <Cpu className="h-4 w-4" />
-          <span className="text-muted-foreground">{timeLabel}:</span>
-          <span className="font-medium">{formatTimestamp(timeValue)}</span>
+          <Cpu className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <span className="text-muted-foreground min-w-[60px]">{timeLabel}:</span>
+          <span className="font-medium truncate">{formatTimestamp(timeValue)}</span>
         </div>
       </div>
 
-      <div className="mt-5 flex flex-col gap-2 border-t pt-4 sm:flex-row">
+      <div className="mt-auto pt-4 flex flex-wrap gap-2 border-t">
         <Link
           href={`/session/${session.sessionId}`}
-          className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"
+          className="inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:opacity-90"
         >
-          <Play className="mr-2 h-4 w-4" />
+          <Play className="mr-1.5 h-3.5 w-3.5" />
           View Details
         </Link>
         {!session.active && !isArchived && onArchive ? (
           <Button
             variant="outline"
+            size="sm"
             onClick={() => onArchive(session)}
             title="Archive session"
           >
-            <Archive className="mr-2 h-4 w-4" />
+            <Archive className="mr-1.5 h-3.5 w-3.5" />
             Archive
           </Button>
         ) : null}
         {!session.active && isArchived && onRestore ? (
           <Button
             variant="outline"
+            size="sm"
             onClick={() => onRestore(session)}
             title="Restore archived session"
           >
-            <ArchiveRestore className="mr-2 h-4 w-4" />
+            <ArchiveRestore className="mr-1.5 h-3.5 w-3.5" />
             Restore
           </Button>
         ) : null}
         <Button
           variant="outline"
+          size="sm"
           onClick={() => onDelete(session)}
           disabled={session.active}
           title={
@@ -300,7 +303,7 @@ function SessionCard({
               : 'Delete session'
           }
         >
-          <Trash2 className="mr-2 h-4 w-4" />
+          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
           Delete
         </Button>
       </div>
@@ -315,24 +318,24 @@ function SessionFilters() {
     query.search.trim().length > 0 || query.status.length > 0 || query.activeOnly;
 
   return (
-    <div className="space-y-4 rounded-lg border bg-slate-50/60 p-4">
+    <div className="space-y-3 rounded-lg border bg-slate-50/60 p-4">
       <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
         <Filter className="h-4 w-4" />
         Filter Sessions
       </div>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
         <label className="flex-1">
-          <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Search
           </span>
-          <div className="flex h-10 items-center rounded-md border bg-background px-3">
-            <Search className="mr-2 h-4 w-4 text-muted-foreground" />
+          <div className="flex h-9 items-center rounded-md border bg-background px-3">
+            <Search className="mr-2 h-4 w-4 text-muted-foreground shrink-0" />
             <input
               type="search"
               value={query.search}
               onChange={(event) => setSessionListQuery({ search: event.target.value })}
               placeholder="Query, label, or session ID"
-              className="w-full bg-transparent text-sm outline-none"
+              className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             />
           </div>
         </label>
@@ -342,12 +345,13 @@ function SessionFilters() {
           options={sessionStatusOptions}
           onChange={(value) => setSessionListQuery({ status: value })}
         />
-        <div className="flex min-w-[11rem] flex-col gap-2">
+        <div className="flex min-w-[11rem] flex-col gap-1.5">
           <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Activity
           </span>
           <Button
             type="button"
+            size="sm"
             variant={query.activeOnly ? 'default' : 'outline'}
             onClick={() => setSessionListQuery({ activeOnly: !query.activeOnly })}
           >
@@ -357,6 +361,7 @@ function SessionFilters() {
         {hasFilters ? (
           <Button
             type="button"
+            size="sm"
             variant="ghost"
             onClick={() => setSessionListQuery({ search: '', status: '', activeOnly: false })}
           >
@@ -684,9 +689,9 @@ export function SessionList({
   return (
     <>
       <div className="space-y-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-2xl font-semibold">
+            <h2 className="text-xl font-semibold">
               {compareMode ? 'Select Sessions to Compare' : 'Research Sessions'}
             </h2>
             <p className="text-sm text-muted-foreground">
@@ -698,20 +703,22 @@ export function SessionList({
           <div className="flex gap-2">
             <Button
               type="button"
+              size="sm"
               variant={compareMode ? 'default' : 'outline'}
               onClick={() => setCompareMode(!compareMode)}
             >
-              <GitCompare className="mr-2 h-4 w-4" />
+              <GitCompare className="mr-1.5 h-3.5 w-3.5" />
               Compare
             </Button>
             {!compareMode && selectableSessions.length > 0 ? (
-              <Button type="button" variant="outline" onClick={handleSelectVisible}>
+              <Button type="button" size="sm" variant="outline" onClick={handleSelectVisible}>
                 {allSelectableSelected ? 'Clear Selection' : 'Select Visible'}
               </Button>
             ) : null}
             {compareMode && compareSessionIdSet.size > 0 ? (
               <Button
                 type="button"
+                size="sm"
                 variant="ghost"
                 onClick={clearCompareSessionIds}
               >
@@ -777,7 +784,7 @@ export function SessionList({
           />
         ) : (
           <>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               {sessions.map((session) => (
                 <SessionCard
                   key={session.sessionId}

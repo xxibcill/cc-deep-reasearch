@@ -100,31 +100,31 @@ export default function HomePage() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="mb-8">
-        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+      <header className="mb-8">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-4xl font-bold mb-2">CC Deep Research</h1>
-            <p className="text-muted-foreground">AI-powered research with real-time monitoring</p>
+            <h1 className="text-3xl font-bold tracking-tight">CC Deep Research</h1>
+            <p className="text-sm text-muted-foreground mt-1">AI-powered research with real-time monitoring</p>
           </div>
           <Link
-            className="inline-flex h-10 items-center justify-center rounded-md border border-border bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+            className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
             href="/settings"
           >
             Open settings
           </Link>
         </div>
-      </div>
+      </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-1">
-          <div className="bg-card border rounded-lg p-6">
-            <h2 className="text-xl font-semibold mb-4">Start Research</h2>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[340px_1fr]">
+        <aside className="lg:sticky lg:top-8 lg:self-start">
+          <div className="rounded-lg border bg-card p-5">
+            <h2 className="text-lg font-semibold mb-4">Start Research</h2>
             <StartResearchForm />
           </div>
-        </div>
+        </aside>
 
-        <div className="lg:col-span-2">
-          <div className="bg-card border rounded-lg p-6">
+        <section>
+          <div className="rounded-lg border bg-card p-5">
             <SessionList
               error={sessionsError}
               loading={loading}
@@ -138,7 +138,7 @@ export default function HomePage() {
               total={total}
             />
           </div>
-        </div>
+        </section>
       </div>
     </div>
   );

@@ -247,32 +247,32 @@ export function ConfigEditor() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-[2rem] border border-border bg-card/95 p-8 shadow-sm">
-        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div className="space-y-2">
-            <p className="text-sm uppercase tracking-[0.28em] text-muted-foreground">Dashboard Settings</p>
-            <h1 className="text-4xl font-semibold tracking-tight">Config editor</h1>
-            <p className="max-w-3xl text-sm text-muted-foreground">
+    <div className="space-y-5">
+      <header className="rounded-2xl border border-border bg-card/95 p-6 shadow-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="space-y-1">
+            <p className="text-xs uppercase tracking-[0.28em] text-muted-foreground">Dashboard Settings</p>
+            <h1 className="text-2xl font-semibold tracking-tight">Config editor</h1>
+            <p className="max-w-2xl text-sm text-muted-foreground">
               Edit the persisted YAML config used by the CLI and future research runs. Runtime
               environment overrides stay in effect until those env vars change.
             </p>
           </div>
-          <div className="rounded-2xl border border-border bg-background/70 px-4 py-3 text-sm">
+          <div className="rounded-xl border border-border bg-background/70 px-3 py-2 text-sm shrink-0">
             <div>Path: {config.config_path}</div>
             <div>File: {config.file_exists ? 'Present' : 'Missing, defaults active'}</div>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="grid gap-6 lg:grid-cols-[1.4fr_0.9fr]">
-        <div className="space-y-6 rounded-[2rem] border border-border bg-card p-8 shadow-sm">
-          <section className="space-y-4">
-            <h2 className="text-xl font-semibold">Research defaults</h2>
-            <div className="grid gap-5 md:grid-cols-2">
+      <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+        <div className="space-y-5 rounded-2xl border border-border bg-card p-6 shadow-sm">
+          <section className="space-y-3">
+            <h2 className="text-lg font-semibold">Research defaults</h2>
+            <div className="grid gap-4 sm:grid-cols-2">
               <FieldShell definition={FIELD_DEFINITIONS[0]} error={fieldErrors['search.providers']} overridden={overriddenFields.has('search.providers')} effectiveValue={String(readPath(config.effective_config, 'search.providers') ?? '')} persistedValue={String(readPath(config.persisted_config, 'search.providers') ?? '')} overrideSource={overrideSources['search.providers']}>
                 <input
-                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                  className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
                   disabled={saving || overriddenFields.has('search.providers')}
                   value={form.searchProviders}
                   onChange={(event) => updateField('searchProviders', event.target.value)}
@@ -280,7 +280,7 @@ export function ConfigEditor() {
               </FieldShell>
               <FieldShell definition={FIELD_DEFINITIONS[1]} error={fieldErrors['search.depth']} overridden={overriddenFields.has('search.depth')} effectiveValue={String(readPath(config.effective_config, 'search.depth') ?? '')} persistedValue={String(readPath(config.persisted_config, 'search.depth') ?? '')} overrideSource={overrideSources['search.depth']}>
                 <select
-                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                  className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
                   disabled={saving || overriddenFields.has('search.depth')}
                   value={form.searchDepth}
                   onChange={(event) => updateField('searchDepth', event.target.value)}
@@ -293,7 +293,7 @@ export function ConfigEditor() {
                 </select>
               </FieldShell>
               <FieldShell definition={FIELD_DEFINITIONS[2]} error={fieldErrors['research.enable_cross_ref']} overridden={overriddenFields.has('research.enable_cross_ref')} effectiveValue={String(readPath(config.effective_config, 'research.enable_cross_ref') ?? '')} persistedValue={String(readPath(config.persisted_config, 'research.enable_cross_ref') ?? '')} overrideSource={overrideSources['research.enable_cross_ref']}>
-                <label className="flex items-center gap-3 rounded-xl border border-border bg-background px-3 py-3 text-sm">
+                <label className="flex items-center gap-2.5 rounded-lg border border-border bg-background px-3 py-2 text-sm">
                   <input
                     checked={form.enableCrossRef}
                     className="h-4 w-4"
@@ -307,9 +307,9 @@ export function ConfigEditor() {
             </div>
           </section>
 
-          <section className="space-y-4">
-            <h2 className="text-xl font-semibold">Execution and output</h2>
-            <div className="grid gap-5 md:grid-cols-2">
+          <section className="space-y-3">
+            <h2 className="text-lg font-semibold">Execution and output</h2>
+            <div className="grid gap-4 sm:grid-cols-2">
               <FieldShell definition={FIELD_DEFINITIONS[3]} error={fieldErrors['search_team.team_size']} overridden={overriddenFields.has('search_team.team_size')} effectiveValue={String(readPath(config.effective_config, 'search_team.team_size') ?? '')} persistedValue={String(readPath(config.persisted_config, 'search_team.team_size') ?? '')} overrideSource={overrideSources['search_team.team_size']}>
                 <input
                   className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
@@ -322,7 +322,7 @@ export function ConfigEditor() {
                 />
               </FieldShell>
               <FieldShell definition={FIELD_DEFINITIONS[4]} error={fieldErrors['search_team.parallel_execution']} overridden={overriddenFields.has('search_team.parallel_execution')} effectiveValue={String(readPath(config.effective_config, 'search_team.parallel_execution') ?? '')} persistedValue={String(readPath(config.persisted_config, 'search_team.parallel_execution') ?? '')} overrideSource={overrideSources['search_team.parallel_execution']}>
-                <label className="flex items-center gap-3 rounded-xl border border-border bg-background px-3 py-3 text-sm">
+                <label className="flex items-center gap-2.5 rounded-lg border border-border bg-background px-3 py-2 text-sm">
                   <input
                     checked={form.parallelExecution}
                     className="h-4 w-4"
@@ -358,9 +358,9 @@ export function ConfigEditor() {
             </div>
           </section>
 
-          <section className="space-y-4">
-            <h2 className="text-xl font-semibold">LLM routing defaults</h2>
-            <div className="grid gap-5 md:grid-cols-2">
+          <section className="space-y-3">
+            <h2 className="text-lg font-semibold">LLM routing defaults</h2>
+            <div className="grid gap-4 sm:grid-cols-2">
               <RouteField definition={FIELD_DEFINITIONS[7]} field="llm.route_defaults.analyzer" value={form.routeAnalyzer} onChange={(value) => updateField('routeAnalyzer', value)} disabled={saving} error={fieldErrors['llm.route_defaults.analyzer']} overriddenFields={overriddenFields} config={config} overrideSources={overrideSources} />
               <RouteField definition={FIELD_DEFINITIONS[8]} field="llm.route_defaults.deep_analyzer" value={form.routeDeepAnalyzer} onChange={(value) => updateField('routeDeepAnalyzer', value)} disabled={saving} error={fieldErrors['llm.route_defaults.deep_analyzer']} overriddenFields={overriddenFields} config={config} overrideSources={overrideSources} />
               <RouteField definition={FIELD_DEFINITIONS[9]} field="llm.route_defaults.report_quality_evaluator" value={form.routeReportQualityEvaluator} onChange={(value) => updateField('routeReportQualityEvaluator', value)} disabled={saving} error={fieldErrors['llm.route_defaults.report_quality_evaluator']} overriddenFields={overriddenFields} config={config} overrideSources={overrideSources} />
@@ -369,33 +369,34 @@ export function ConfigEditor() {
             </div>
           </section>
 
-          <div className="flex flex-col gap-3 border-t border-border pt-6 md:flex-row md:items-center md:justify-between">
+          <footer className="flex flex-col gap-3 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm text-muted-foreground">
               {saveError ? <span className="text-destructive">{saveError}</span> : saveMessage}
             </div>
-            <div className="flex gap-3">
+            <div className="flex gap-2">
               <Button
                 variant="outline"
+                size="sm"
                 onClick={() => setForm(normalizeFormState(config))}
                 type="button"
               >
                 Reset
               </Button>
-              <Button disabled={saving} onClick={handleSave} type="button">
+              <Button size="sm" disabled={saving} onClick={handleSave} type="button">
                 {saving ? 'Saving…' : 'Save config'}
               </Button>
             </div>
-          </div>
+          </footer>
         </div>
 
-        <aside className="space-y-6">
-          <div className="rounded-[2rem] border border-border bg-card p-8 shadow-sm">
-            <h2 className="text-xl font-semibold">Override status</h2>
-            <p className="mt-2 text-sm text-muted-foreground">
+        <aside className="space-y-5">
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+            <h2 className="text-base font-semibold">Override status</h2>
+            <p className="mt-1.5 text-sm text-muted-foreground">
               Fields with active env overrides are read-only here because runtime still prefers the
               environment.
             </p>
-            <div className="mt-5 space-y-3 text-sm">
+            <div className="mt-4 space-y-2 text-sm">
               {config.overridden_fields.length === 0 ? (
                 <div className="rounded-2xl border border-border bg-background px-4 py-3">
                   No active environment overrides.
@@ -411,9 +412,9 @@ export function ConfigEditor() {
             </div>
           </div>
 
-          <div className="rounded-[2rem] border border-border bg-card p-8 shadow-sm">
-            <h2 className="text-xl font-semibold">Secret fields</h2>
-            <div className="mt-4 space-y-3 text-sm">
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+            <h2 className="text-base font-semibold">Secret fields</h2>
+            <div className="mt-3 space-y-2 text-sm">
               {config.secret_fields.map((field) => (
                 <div key={field.field} className="rounded-2xl border border-border bg-background px-4 py-3">
                   <div className="font-medium">{field.field}</div>
@@ -428,11 +429,11 @@ export function ConfigEditor() {
             </div>
           </div>
 
-          <div className="rounded-[2rem] border border-border bg-card p-8 shadow-sm">
-            <h2 className="text-xl font-semibold">Navigation</h2>
-            <div className="mt-4 flex flex-wrap gap-3">
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+            <h2 className="text-base font-semibold">Navigation</h2>
+            <div className="mt-3">
               <Link
-                className="inline-flex h-10 items-center justify-center rounded-md border border-border bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+                className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
                 href="/"
               >
                 Back to sessions
@@ -477,7 +478,7 @@ function RouteField({
       overrideSource={overrideSources[field]}
     >
       <select
-        className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+        className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
         disabled={disabled || overridden}
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -510,14 +511,14 @@ function FieldShell({
   children: ReactNode;
 }) {
   return (
-    <div className="space-y-2 rounded-2xl border border-border bg-muted/30 p-4">
-      <div className="flex items-start justify-between gap-3">
+    <div className="space-y-2 rounded-xl border border-border bg-muted/30 p-3">
+      <div className="flex items-start justify-between gap-2">
         <div>
-          <div className="font-medium">{definition.label}</div>
+          <div className="text-sm font-medium">{definition.label}</div>
           <div className="text-xs text-muted-foreground">{definition.description}</div>
         </div>
         {overridden ? (
-          <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-amber-900 dark:bg-amber-900 dark:text-amber-100">
+          <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-amber-900 dark:bg-amber-900 dark:text-amber-100">
             Env override
           </span>
         ) : null}
@@ -525,7 +526,7 @@ function FieldShell({
       {children}
       {overridden ? (
         <p className="text-xs text-amber-900">
-          Saved value: <span className="font-medium">{persistedValue}</span>. Runtime value:{' '}
+          Saved: <span className="font-medium">{persistedValue}</span>. Runtime:{' '}
           <span className="font-medium">{effectiveValue}</span>. Source:{' '}
           {(overrideSource ?? []).join(', ')}
         </p>
