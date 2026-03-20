@@ -216,11 +216,11 @@ function SessionCard({
           </div>
         </div>
         {session.active ? (
-          <span className="rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-800">
+          <span className="rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-100">
             Live
           </span>
         ) : isArchived ? (
-          <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">
+          <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-100">
             Archived
           </span>
         ) : null}
@@ -231,13 +231,13 @@ function SessionCard({
       ) : null}
 
       <div className="mt-4 flex flex-wrap gap-2 text-xs">
-        <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-700">
+        <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
           {formatDepth(session.depth)}
         </span>
-        <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-700">
+        <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
           Payload {session.hasSessionPayload ? 'available' : 'missing'}
         </span>
-        <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-700">
+        <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
           Report {session.hasReport ? 'available' : 'unavailable'}
         </span>
       </div>
@@ -623,7 +623,7 @@ export function SessionList({
                 This will permanently delete <span className="font-medium">{session.label}</span> and
                 all associated telemetry, report, and analytics history.
               </p>
-              <p className="font-mono text-xs text-slate-500">{session.sessionId}</p>
+              <p className="font-mono text-xs text-slate-600">{session.sessionId}</p>
             </>
           ) : (
             <>
@@ -631,7 +631,7 @@ export function SessionList({
                 This will permanently delete <span className="font-medium">{session.label}</span> and
                 all associated telemetry, report, and analytics history.
               </p>
-              <p className="font-mono text-xs text-slate-500">{session.sessionId}</p>
+              <p className="font-mono text-xs text-slate-600">{session.sessionId}</p>
               {deleteError ? (
                 <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700">
                   {deleteError}
@@ -661,11 +661,11 @@ export function SessionList({
           {previewSessions.map((session) => (
             <li key={session.sessionId} className="flex flex-col gap-1">
               <span className="font-medium">{session.label}</span>
-              <span className="font-mono text-xs text-slate-500">{session.sessionId}</span>
+              <span className="font-mono text-xs text-slate-600">{session.sessionId}</span>
             </li>
           ))}
           {remainingCount > 0 ? (
-            <li className="text-xs uppercase tracking-wide text-slate-500">
+            <li className="text-xs uppercase tracking-wide text-slate-600">
               And {pluralize(remainingCount, 'more session')}
             </li>
           ) : null}
