@@ -20,6 +20,8 @@ from cc_deep_research.models.session import (
 )
 from cc_deep_research.telemetry import (
     get_default_dashboard_db_path,
+    get_default_telemetry_dir,
+    query_session_checkpoints,
     query_session_detail,
 )
 
@@ -498,6 +500,14 @@ class SessionStore:
             except (json.JSONDecodeError, OSError):
                 pass
 
+        # Include checkpoint manifest
+        checkpoints_data: dict[str, Any] = {}
+        try:
+            telemetry_dir = get_default_telemetry_dir()
+            checkpoints_data = query_session_checkpoints(session_id, base_dir=telemetry_dir)
+        except Exception:
+            pass
+
         return build_trace_bundle(
             session_id=session_id,
             session_summary=session_summary,
@@ -505,6 +515,7 @@ class SessionStore:
             config_snapshot=config_snapshot,
             derived_outputs=derived_outputs,
             artifacts=artifacts,
+            checkpoints=checkpoints_data,
         )
 
 
