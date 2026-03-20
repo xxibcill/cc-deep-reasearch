@@ -1226,6 +1226,278 @@ class ResearchMonitor:
 
         return summary
 
+    # ==================== Checkpoint Methods ====================
+
+    def _get_checkpoints_dir(self) -> Path | None:
+        """Get the checkpoints directory for the current session."""
+        if not self._persist or self._session_dir is None:
+            return None
+        checkpoints_dir = self._session_dir / "checkpoints"
+        checkpoints_dir.mkdir(parents=True, exist_ok=True)
+        return checkpoints_dir
+
+    def _get_manifest_path(self) -> Path | None:
+        """Get the checkpoint manifest file path."""
+        checkpoints_dir = self._get_checkpoints_dir()
+        if checkpoints_dir is None:
+            return None
+        return checkpoints_dir / "manifest.json"
+
+    def _load_checkpoint_manifest(self) -> dict[str, Any]:
+        """Load existing checkpoint manifest or create new one."""
+        manifest_path = self._get_manifest_path()
+        if manifest_path is None:
+            return {"checkpoints": [], "latest_checkpoint_id": None, "latest_resume_safe_checkpoint_id": None}
+        if manifest_path.exists():
+            try:
+                with open(manifest_path, encoding="utf-8") as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, OSError):
+                pass
+        return {"checkpoints": [], "latest_checkpoint_id": None, "latest_resume_safe_checkpoint_id": None}
+
+    def _save_checkpoint_manifest(self, manifest: dict[str, Any]) -> None:
+        """Persist checkpoint manifest to disk."""
+        manifest_path = self._get_manifest_path()
+        if manifest_path is None:
+            return
+        manifest["updated_at"] = self._get_utc_timestamp()
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2, default=str)
+
+    def _save_checkpoint_file(self, checkpoint: dict[str, Any]) -> Path | None:
+        """Save individual checkpoint file."""
+        checkpoints_dir = self._get_checkpoints_dir()
+        if checkpoints_dir is None:
+            return None
+        sequence = checkpoint.get("sequence_number", 0)
+        phase = checkpoint.get("phase", "unknown")
+        filename = f"{sequence:04d}_{phase}.json"
+        checkpoint_path = checkpoints_dir / filename
+        with open(checkpoint_path, "w", encoding="utf-8") as f:
+            json.dump(checkpoint, f, indent=2, default=str)
+        return checkpoint_path
+
+    def emit_checkpoint(
+        self,
+        *,
+        phase: str,
+        operation: str,
+        attempt: int = 1,
+        iteration: int | None = None,
+        input_ref: dict[str, Any] | None = None,
+        output_ref: dict[str, Any] | None = None,
+        state_ref: str | None = None,
+        config_ref: str | None = None,
+        artifact_refs: list[dict[str, Any]] | None = None,
+        provider_fixture_refs: list[dict[str, Any]] | None = None,
+        replayable: bool = True,
+        replayable_reason: str | None = None,
+        parent_checkpoint_id: str | None = None,
+        cause_event_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Emit a durable checkpoint for the current workflow step.
+
+        Creates a checkpoint that captures step inputs, outputs, and context
+        for debugging and resume capabilities.
+
+        Args:
+            phase: Workflow phase (session_start, team_init, strategy, etc.)
+            operation: Operation type (initialize, execute, iterate, finalize)
+            attempt: Attempt number for retries
+            iteration: Iteration number for iterative workflows
+            input_ref: Reference to step inputs
+            output_ref: Reference to step outputs
+            state_ref: Reference to session state snapshot
+            config_ref: Reference to config snapshot
+            artifact_refs: References to persisted artifacts
+            provider_fixture_refs: References to captured provider fixtures
+            replayable: Whether this step can be replayed exactly
+            replayable_reason: Reason if not replayable
+            parent_checkpoint_id: Previous checkpoint in lineage
+            cause_event_id: Event that triggered this checkpoint
+            metadata: Additional checkpoint metadata
+
+        Returns:
+            The checkpoint ID for correlation purposes.
+        """
+        import hashlib
+
+        from cc_deep_research.models.checkpoint import (
+            CHECKPOINT_SCHEMA_VERSION,
+            CheckpointStatus,
+        )
+
+        checkpoint_id = f"cp-{uuid.uuid4().hex[:12]}"
+        sequence_number = self._get_next_sequence()
+
+        # Build resume token from checkpoint ID and sequence
+        resume_token = hashlib.sha256(
+            f"{self._session_id}:{checkpoint_id}:{sequence_number}".encode()
+        ).hexdigest()[:16]
+
+        checkpoint = {
+            "checkpoint_id": checkpoint_id,
+            "session_id": self._session_id,
+            "trace_version": TRACE_VERSION,
+            "checkpoint_version": CHECKPOINT_SCHEMA_VERSION,
+            "sequence_number": sequence_number,
+            "timestamp": self._get_utc_timestamp(),
+            "phase": phase,
+            "operation": operation,
+            "attempt": attempt,
+            "iteration": iteration,
+            "status": CheckpointStatus.PENDING.value,
+            "resume_token": resume_token,
+            "parent_checkpoint_id": parent_checkpoint_id or self._get_latest_checkpoint_id(),
+            "cause_event_id": cause_event_id,
+            "input_ref": input_ref,
+            "output_ref": output_ref,
+            "state_ref": state_ref,
+            "config_ref": config_ref,
+            "artifact_refs": artifact_refs or [],
+            "provider_fixture_refs": provider_fixture_refs or [],
+            "replayable": replayable,
+            "replayable_reason": replayable_reason,
+            "resume_safe": False,  # Will be marked safe after commit verification
+            "resume_prerequisites": [],
+            "metadata": metadata or {},
+        }
+
+        # Persist checkpoint file
+        checkpoint_path = self._save_checkpoint_file(checkpoint)
+
+        # Update manifest
+        manifest = self._load_checkpoint_manifest()
+        manifest["checkpoints"].append(checkpoint)
+        manifest["latest_checkpoint_id"] = checkpoint_id
+
+        # Verify persistence and mark committed
+        if checkpoint_path and checkpoint_path.exists():
+            checkpoint["status"] = CheckpointStatus.COMMITTED.value
+            # Mark resume safe if we have required refs and no replay issues
+            if output_ref is not None and replayable:
+                checkpoint["resume_safe"] = True
+                manifest["latest_resume_safe_checkpoint_id"] = checkpoint_id
+            self._save_checkpoint_manifest(manifest)
+        else:
+            checkpoint["status"] = CheckpointStatus.FAILED.value
+            checkpoint["replayable"] = False
+            checkpoint["replayable_reason"] = "Failed to persist checkpoint file"
+
+        # Emit telemetry event for checkpoint
+        self.emit_event(
+            event_type="checkpoint.created",
+            category="checkpoint",
+            name=phase,
+            status=checkpoint["status"],
+            metadata={
+                "checkpoint_id": checkpoint_id,
+                "phase": phase,
+                "operation": operation,
+                "attempt": attempt,
+                "iteration": iteration,
+                "replayable": checkpoint["replayable"],
+                "resume_safe": checkpoint["resume_safe"],
+                "parent_checkpoint_id": checkpoint["parent_checkpoint_id"],
+            },
+        )
+
+        return checkpoint_id
+
+    def _get_latest_checkpoint_id(self) -> str | None:
+        """Get the latest checkpoint ID from the manifest."""
+        manifest = self._load_checkpoint_manifest()
+        return manifest.get("latest_checkpoint_id")
+
+    def get_latest_resume_safe_checkpoint(self) -> dict[str, Any] | None:
+        """Get the latest checkpoint that is safe to resume from."""
+        manifest = self._load_checkpoint_manifest()
+        checkpoint_id = manifest.get("latest_resume_safe_checkpoint_id")
+        if not checkpoint_id:
+            return None
+        return self.get_checkpoint_by_id(checkpoint_id)
+
+    def get_checkpoint_by_id(self, checkpoint_id: str) -> dict[str, Any] | None:
+        """Get a checkpoint by its ID."""
+        manifest = self._load_checkpoint_manifest()
+        for checkpoint in manifest.get("checkpoints", []):
+            if checkpoint.get("checkpoint_id") == checkpoint_id:
+                return checkpoint
+        return None
+
+    def get_checkpoints_by_phase(self, phase: str) -> list[dict[str, Any]]:
+        """Get all checkpoints for a specific phase."""
+        manifest = self._load_checkpoint_manifest()
+        return [
+            cp for cp in manifest.get("checkpoints", [])
+            if cp.get("phase") == phase
+        ]
+
+    def get_all_checkpoints(self) -> list[dict[str, Any]]:
+        """Get all checkpoints for the current session."""
+        manifest = self._load_checkpoint_manifest()
+        return manifest.get("checkpoints", [])
+
+    def get_checkpoint_manifest(self) -> dict[str, Any]:
+        """Get the full checkpoint manifest for the current session."""
+        return self._load_checkpoint_manifest()
+
+    def finalize_checkpoint(
+        self,
+        checkpoint_id: str,
+        *,
+        output_ref: dict[str, Any] | None = None,
+        replayable: bool = True,
+        replayable_reason: str | None = None,
+    ) -> bool:
+        """Update a checkpoint with final output and mark resume-safe.
+
+        Args:
+            checkpoint_id: The checkpoint to finalize
+            output_ref: Reference to step outputs
+            replayable: Whether the step can be replayed
+            replayable_reason: Reason if not replayable
+
+        Returns:
+            True if finalization succeeded, False otherwise.
+        """
+        from cc_deep_research.models.checkpoint import CheckpointStatus
+
+        manifest = self._load_checkpoint_manifest()
+        checkpoint = None
+        checkpoint_index = None
+
+        for i, cp in enumerate(manifest.get("checkpoints", [])):
+            if cp.get("checkpoint_id") == checkpoint_id:
+                checkpoint = cp
+                checkpoint_index = i
+                break
+
+        if checkpoint is None:
+            return False
+
+        # Update checkpoint
+        if output_ref is not None:
+            checkpoint["output_ref"] = output_ref
+        checkpoint["replayable"] = replayable
+        if replayable_reason:
+            checkpoint["replayable_reason"] = replayable_reason
+
+        # Mark committed and resume-safe if replayable with output
+        if checkpoint.get("status") == CheckpointStatus.COMMITTED.value and output_ref is not None and replayable:
+            checkpoint["resume_safe"] = True
+            manifest["latest_resume_safe_checkpoint_id"] = checkpoint_id
+
+        manifest["checkpoints"][checkpoint_index] = checkpoint
+        self._save_checkpoint_manifest(manifest)
+
+        # Update checkpoint file
+        self._save_checkpoint_file(checkpoint)
+
+        return True
+
 
 __all__ = [
     # Core classes

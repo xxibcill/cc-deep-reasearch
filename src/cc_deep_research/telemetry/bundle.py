@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-BUNDLE_SCHEMA_VERSION = "1.0.0"
+BUNDLE_SCHEMA_VERSION = "1.1.0"
 
 
 def build_trace_bundle(
@@ -20,6 +20,7 @@ def build_trace_bundle(
     config_snapshot: dict[str, Any] | None,
     derived_outputs: dict[str, Any],
     artifacts: list[dict[str, Any]] | None = None,
+    checkpoints: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a portable trace bundle for a research session.
 
@@ -30,6 +31,7 @@ def build_trace_bundle(
         config_snapshot: Configuration used during the session (redacted).
         derived_outputs: Derived analysis outputs (narrative, critical_path, etc.).
         artifacts: Optional list of artifact references.
+        checkpoints: Optional checkpoint manifest and details.
 
     Returns:
         A dict containing the complete trace bundle ready for serialization.
@@ -42,6 +44,7 @@ def build_trace_bundle(
         "events": events,
         "config_snapshot": config_snapshot,
         "artifacts": artifacts or [],
+        "checkpoints": checkpoints or {},
         "derived_outputs": {
             "narrative": derived_outputs.get("narrative", []),
             "critical_path": derived_outputs.get("critical_path", {}),
