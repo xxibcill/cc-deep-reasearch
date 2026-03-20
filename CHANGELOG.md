@@ -10,6 +10,15 @@ History before `0.1.0` is summarized from the repository state captured on 2026-
 
 ### Completed Task Packs
 
+#### Web Search Cache (6 tasks)
+
+- Search cache configuration and identity rules (SearchCacheConfig, cache key normalization)
+- SQLite-backed persistent cache store with serialization/deserialization
+- Cache-aware provider wrapper with in-flight deduplication
+- Cache telemetry metadata (cache_status, cache_key, cache_age_seconds, expires_at)
+- Backend cache-management API routes (list, stats, purge, delete, clear)
+- Dashboard cache settings UI and management panel with stats display
+
 #### Dashboard Session Management (21 tasks)
 
 Phase 1 - Session deletion from dashboard:

@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from cc_deep_research.models import SearchOptions, SearchResult
 from cc_deep_research.providers import SearchProvider
 from cc_deep_research.search_cache import (
     InFlightSearchRegistry,
+    SearchCacheEntry,
     SearchCacheIdentity,
     SearchCacheStore,
     build_search_cache_identity,
 )
+
+
+def _utcnow() -> datetime:
+    """Return current UTC time without timezone info."""
+    return datetime.utcnow()
 
 
 class CachedSearchProvider(SearchProvider):
@@ -42,12 +50,50 @@ class CachedSearchProvider(SearchProvider):
 
         cached_entry = self._store.get(cache_key)
         if cached_entry is not None:
-            return cached_entry.result
+            result = cached_entry.result.model_copy(deep=True)
+            self._attach_cache_metadata(
+                result=result,
+                cache_key=cache_key,
+                cached_entry=cached_entry,
+                status="hit",
+            )
+            return result
 
-        return await self._in_flight_registry.run(
+        result = await self._in_flight_registry.run(
             cache_key,
             lambda: self._load_and_store(query, resolved_options, identity),
         )
+        self._attach_cache_metadata(
+            result=result,
+            cache_key=cache_key,
+            cached_entry=None,
+            status="miss",
+        )
+        return result
+
+    def _attach_cache_metadata(
+        self,
+        *,
+        result: SearchResult,
+        cache_key: str,
+        cached_entry: SearchCacheEntry | None,
+        status: str,
+    ) -> None:
+        """Attach cache telemetry metadata to a search result."""
+        now = _utcnow()
+        metadata = dict(result.metadata)
+        metadata["cache_status"] = status
+        metadata["cache_key"] = cache_key
+
+        if cached_entry is not None:
+            age_seconds = int((now - cached_entry.created_at).total_seconds())
+            metadata["cache_age_seconds"] = age_seconds
+            metadata["expires_at"] = cached_entry.expires_at.isoformat()
+        else:
+            metadata["cache_age_seconds"] = None
+            metadata["expires_at"] = None
+
+        result.metadata = metadata
 
     def get_provider_name(self) -> str:
         """Return the wrapped provider name."""
