@@ -8,7 +8,7 @@ from typing import Any
 
 import click
 
-from cc_deep_research.config import Config, load_config
+from cc_deep_research.config import Config, ConfigPatchError, load_config, resolve_config_target
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.research_runs import ResearchRunRequest
 from cc_deep_research.tui import TerminalUI
@@ -132,23 +132,13 @@ def load_config_from_path(config_path: str | None) -> Config:
     return load_config(Path(config_path))
 
 
-def resolve_config_target(config_obj: Config, key: str) -> tuple[Any, str]:
-    """Resolve object and attribute for a dot-notation configuration key."""
-    key_parts = key.split(".")
-    target: Any = config_obj
-
-    for part in key_parts[:-1]:
-        if not hasattr(target, part):
-            click.echo(f"Error: Invalid configuration key: {key}", err=True)
-            raise click.Abort()
-        target = getattr(target, part)
-
-    final_key = key_parts[-1]
-    if not hasattr(target, final_key):
-        click.echo(f"Error: Invalid configuration key: {key}", err=True)
-        raise click.Abort()
-
-    return target, final_key
+def resolve_cli_config_target(config_obj: Config, key: str) -> tuple[Any, str]:
+    """Resolve a config target for CLI usage with click-friendly errors."""
+    try:
+        return resolve_config_target(config_obj, key)
+    except ConfigPatchError as error:
+        click.echo(f"Error: {error.message}", err=True)
+        raise click.Abort() from error
 
 
 def parse_config_value(current_value: Any, value: str, key: str) -> Any:
@@ -196,6 +186,6 @@ __all__ = [
     "load_config_from_path",
     "log_monitor_session_start",
     "parse_config_value",
-    "resolve_config_target",
+    "resolve_cli_config_target",
     "resolve_parallel_mode_override",
 ]
