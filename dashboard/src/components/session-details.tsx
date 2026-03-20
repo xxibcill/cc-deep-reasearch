@@ -185,10 +185,10 @@ function EventTable({
                       <span
                         className={`rounded px-2 py-1 text-xs ${
                           event.status === 'completed'
-                            ? 'bg-green-100 text-green-800'
+                            ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100'
                             : event.status === 'failed'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-gray-100 text-gray-800'
+                              ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100'
+                              : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'
                         }`}
                       >
                         {event.status}
@@ -296,7 +296,7 @@ function DetailInspector({
             <div className="text-xs text-muted-foreground">
               {event.eventType} • {event.category} • {event.agentId ?? 'system'}
             </div>
-            <pre className="overflow-auto rounded-lg bg-slate-100 p-3 text-xs text-slate-800">
+            <pre className="overflow-auto rounded-lg bg-slate-100 p-3 text-xs text-slate-800 dark:bg-slate-900 dark:text-slate-200">
               {JSON.stringify(event.metadata, null, 2)}
             </pre>
           </div>
