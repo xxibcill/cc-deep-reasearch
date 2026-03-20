@@ -557,9 +557,155 @@ def query_live_llm_route_analytics(
     return build_llm_route_streams(detail["events"])
 
 
+def query_session_checkpoints(
+    session_id: str,
+    *,
+    base_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Return checkpoint manifest for a session.
+
+    Args:
+        session_id: The session ID to query.
+        base_dir: Optional base telemetry directory.
+
+    Returns:
+        Dict with checkpoint manifest including checkpoints list and metadata.
+    """
+    telemetry_dir = base_dir or get_default_telemetry_dir()
+    session_dir = telemetry_dir / session_id
+    manifest_path = session_dir / "checkpoints" / "manifest.json"
+
+    if not manifest_path.exists():
+        return {
+            "session_id": session_id,
+            "checkpoints": [],
+            "latest_checkpoint_id": None,
+            "latest_resume_safe_checkpoint_id": None,
+        }
+
+    try:
+        with open(manifest_path, encoding="utf-8") as f:
+            manifest = json.load(f)
+        manifest["session_id"] = session_id
+        return manifest
+    except (json.JSONDecodeError, OSError):
+        return {
+            "session_id": session_id,
+            "checkpoints": [],
+            "latest_checkpoint_id": None,
+            "latest_resume_safe_checkpoint_id": None,
+        }
+
+
+def query_checkpoint_detail(
+    session_id: str,
+    checkpoint_id: str,
+    *,
+    base_dir: Path | None = None,
+) -> dict[str, Any] | None:
+    """Return detailed checkpoint information.
+
+    Args:
+        session_id: The session ID.
+        checkpoint_id: The checkpoint ID to query.
+        base_dir: Optional base telemetry directory.
+
+    Returns:
+        Checkpoint dict or None if not found.
+    """
+    manifest = query_session_checkpoints(session_id, base_dir=base_dir)
+    for checkpoint in manifest.get("checkpoints", []):
+        if checkpoint.get("checkpoint_id") == checkpoint_id:
+            return checkpoint
+    return None
+
+
+def query_latest_resumable_checkpoint(
+    session_id: str,
+    *,
+    base_dir: Path | None = None,
+) -> dict[str, Any] | None:
+    """Return the latest resume-safe checkpoint for a session.
+
+    Args:
+        session_id: The session ID.
+        base_dir: Optional base telemetry directory.
+
+    Returns:
+        Latest resume-safe checkpoint or None if none available.
+    """
+    manifest = query_session_checkpoints(session_id, base_dir=base_dir)
+    checkpoint_id = manifest.get("latest_resume_safe_checkpoint_id")
+    if not checkpoint_id:
+        return None
+
+    for checkpoint in manifest.get("checkpoints", []):
+        if checkpoint.get("checkpoint_id") == checkpoint_id:
+            return checkpoint
+    return None
+
+
+def query_checkpoints_by_phase(
+    session_id: str,
+    phase: str,
+    *,
+    base_dir: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Return all checkpoints for a specific phase.
+
+    Args:
+        session_id: The session ID.
+        phase: Phase name to filter by.
+        base_dir: Optional base telemetry directory.
+
+    Returns:
+        List of checkpoints for the phase.
+    """
+    manifest = query_session_checkpoints(session_id, base_dir=base_dir)
+    return [
+        cp for cp in manifest.get("checkpoints", [])
+        if cp.get("phase") == phase
+    ]
+
+
+def query_checkpoint_lineage(
+    session_id: str,
+    checkpoint_id: str,
+    *,
+    base_dir: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Return checkpoint lineage from start to specified checkpoint.
+
+    Args:
+        session_id: The session ID.
+        checkpoint_id: The checkpoint ID to trace lineage for.
+        base_dir: Optional base telemetry directory.
+
+    Returns:
+        List of checkpoints from start to specified checkpoint.
+    """
+    manifest = query_session_checkpoints(session_id, base_dir=base_dir)
+    checkpoints_by_id = {
+        cp.get("checkpoint_id"): cp
+        for cp in manifest.get("checkpoints", [])
+    }
+
+    lineage = []
+    current_id = checkpoint_id
+    while current_id and current_id in checkpoints_by_id:
+        lineage.append(checkpoints_by_id[current_id])
+        current_id = checkpoints_by_id[current_id].get("parent_checkpoint_id")
+
+    return list(reversed(lineage))
+
+
 __all__ = [
     "delete_telemetry_session",
     "get_default_telemetry_dir",
+    "query_checkpoint_detail",
+    "query_checkpoint_lineage",
+    "query_checkpoints_by_phase",
+    "query_latest_resumable_checkpoint",
     "query_live_agent_timeline",
     "query_live_event_tail",
     "query_live_event_tree",
@@ -567,4 +713,5 @@ __all__ = [
     "query_live_session_detail",
     "query_live_sessions",
     "query_live_subprocess_streams",
+    "query_session_checkpoints",
 ]

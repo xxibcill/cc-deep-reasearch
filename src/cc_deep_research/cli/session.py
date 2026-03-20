@@ -14,7 +14,11 @@ from cc_deep_research.session_store import (
 from cc_deep_research.telemetry import (
     get_default_dashboard_db_path,
     get_default_telemetry_dir,
+    query_checkpoint_detail,
+    query_checkpoint_lineage,
     query_dashboard_data,
+    query_latest_resumable_checkpoint,
+    query_session_checkpoints,
 )
 from cc_deep_research.tui import TerminalUI
 
@@ -324,6 +328,262 @@ def register_session_commands(cli: click.Group) -> None:
         click.echo(f"  Schema version: {bundle.get('schema_version')}")
         click.echo(f"  Events: {event_count}")
         click.echo(f"  Output: {output_path}")
+
+    @session.group("checkpoints")
+    def checkpoints() -> None:
+        """Manage session checkpoints for resume and replay."""
+
+    @checkpoints.command("list")
+    @click.argument("session_id", required=True)
+    @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+    @click.option("--phase", help="Filter by checkpoint phase")
+    def checkpoints_list(session_id: str, as_json: bool, phase: str | None) -> None:
+        """List all checkpoints for a session."""
+        telemetry_dir = get_default_telemetry_dir()
+        session_dir = telemetry_dir / session_id
+
+        if not session_dir.exists():
+            click.echo(f"Error: Session '{session_id}' not found.", err=True)
+            raise click.Abort()
+
+        manifest = query_session_checkpoints(session_id, base_dir=telemetry_dir)
+        checkpoints_list_data = manifest.get("checkpoints", [])
+
+        if phase:
+            checkpoints_list_data = [
+                cp for cp in checkpoints_list_data
+                if cp.get("phase") == phase
+            ]
+
+        if not checkpoints_list_data:
+            click.echo(f"No checkpoints found for session '{session_id}'.")
+            return
+
+        if as_json:
+            import json as json_module
+            click.echo(json_module.dumps(manifest, indent=2))
+            return
+
+        click.echo(f"=== Checkpoints for {session_id} ===\n")
+        click.echo(f"Total: {len(checkpoints_list_data)}")
+        if manifest.get("latest_checkpoint_id"):
+            click.echo(f"Latest: {manifest['latest_checkpoint_id']}")
+        if manifest.get("latest_resume_safe_checkpoint_id"):
+            click.echo(f"Resume-safe: {manifest['latest_resume_safe_checkpoint_id']}")
+        click.echo()
+
+        for cp in checkpoints_list_data:
+            status_marker = "✓" if cp.get("resume_safe") else "○"
+            replayable_marker = "R" if cp.get("replayable") else "-"
+            click.echo(
+                f"  {status_marker} {replayable_marker} {cp.get('sequence_number', 0):3d} "
+                f"[{cp.get('phase', 'unknown')}] {cp.get('checkpoint_id', 'unknown')[:16]}..."
+            )
+        click.echo()
+        click.echo("Legend: ✓=resume-safe ○=not-safe R=replayable")
+
+    @checkpoints.command("show")
+    @click.argument("session_id", required=True)
+    @click.argument("checkpoint_id", required=True)
+    @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+    @click.option("--lineage", is_flag=True, help="Show checkpoint lineage")
+    def checkpoints_show(
+        session_id: str,
+        checkpoint_id: str,
+        as_json: bool,
+        lineage: bool,
+    ) -> None:
+        """Show details for a specific checkpoint."""
+        telemetry_dir = get_default_telemetry_dir()
+
+        checkpoint = query_checkpoint_detail(session_id, checkpoint_id, base_dir=telemetry_dir)
+        if checkpoint is None:
+            click.echo(f"Error: Checkpoint '{checkpoint_id}' not found.", err=True)
+            raise click.Abort()
+
+        if lineage:
+            lineage_data = query_checkpoint_lineage(session_id, checkpoint_id, base_dir=telemetry_dir)
+            checkpoint["lineage"] = [cp.get("checkpoint_id") for cp in lineage_data]
+
+        if as_json:
+            import json as json_module
+            click.echo(json_module.dumps(checkpoint, indent=2, default=str))
+            return
+
+        click.echo(f"=== Checkpoint {checkpoint_id} ===\n")
+        click.echo(f"Session: {checkpoint.get('session_id')}")
+        click.echo(f"Phase: {checkpoint.get('phase')}")
+        click.echo(f"Operation: {checkpoint.get('operation')}")
+        click.echo(f"Sequence: {checkpoint.get('sequence_number')}")
+        click.echo(f"Status: {checkpoint.get('status')}")
+        click.echo(f"Timestamp: {checkpoint.get('timestamp')}")
+        click.echo(f"Resume-safe: {checkpoint.get('resume_safe')}")
+        click.echo(f"Replayable: {checkpoint.get('replayable')}")
+
+        if checkpoint.get("replayable_reason"):
+            click.echo(f"Replayable reason: {checkpoint['replayable_reason']}")
+
+        if checkpoint.get("parent_checkpoint_id"):
+            click.echo(f"Parent: {checkpoint['parent_checkpoint_id']}")
+
+        input_ref = checkpoint.get("input_ref")
+        if input_ref:
+            click.echo("\nInput refs:")
+            for key, value in input_ref.items():
+                if isinstance(value, dict):
+                    click.echo(f"  {key}: <dict>")
+                elif isinstance(value, list):
+                    click.echo(f"  {key}: [{len(value)} items]")
+                else:
+                    click.echo(f"  {key}: {value}")
+
+        output_ref = checkpoint.get("output_ref")
+        if output_ref:
+            click.echo("\nOutput refs:")
+            for key, value in output_ref.items():
+                if isinstance(value, dict):
+                    click.echo(f"  {key}: <dict>")
+                elif isinstance(value, list):
+                    click.echo(f"  {key}: [{len(value)} items]")
+                else:
+                    click.echo(f"  {key}: {value}")
+
+        if lineage and checkpoint.get("lineage"):
+            click.echo(f"\nLineage ({len(checkpoint['lineage'])} ancestors):")
+            for cp_id in checkpoint["lineage"]:
+                marker = "→" if cp_id == checkpoint_id else " "
+                click.echo(f"  {marker} {cp_id}")
+
+    @checkpoints.command("resume")
+    @click.argument("session_id", required=True)
+    @click.option("--checkpoint-id", help="Specific checkpoint to resume from")
+    @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+    def checkpoints_resume(
+        session_id: str,
+        checkpoint_id: str | None,
+        as_json: bool,
+    ) -> None:
+        """Get resume information for a session from a checkpoint."""
+        telemetry_dir = get_default_telemetry_dir()
+        session_dir = telemetry_dir / session_id
+
+        if not session_dir.exists():
+            click.echo(f"Error: Session '{session_id}' not found.", err=True)
+            raise click.Abort()
+
+        # Get the checkpoint to resume from
+        if checkpoint_id is None:
+            checkpoint = query_latest_resumable_checkpoint(session_id, base_dir=telemetry_dir)
+            if checkpoint is None:
+                click.echo(f"Error: No resumable checkpoint available for session '{session_id}'.", err=True)
+                raise click.Abort()
+            checkpoint_id = checkpoint["checkpoint_id"]
+        else:
+            checkpoint = query_checkpoint_detail(session_id, checkpoint_id, base_dir=telemetry_dir)
+            if checkpoint is None:
+                click.echo(f"Error: Checkpoint '{checkpoint_id}' not found.", err=True)
+                raise click.Abort()
+            if not checkpoint.get("resume_safe"):
+                click.echo(f"Error: Checkpoint '{checkpoint_id}' is not safe to resume from.", err=True)
+                raise click.Abort()
+
+        lineage = query_checkpoint_lineage(session_id, checkpoint_id, base_dir=telemetry_dir)
+        lineage_ids = [cp.get("checkpoint_id") for cp in lineage]
+
+        result = {
+            "session_id": session_id,
+            "resumed_from_checkpoint_id": checkpoint_id,
+            "checkpoint_phase": checkpoint.get("phase"),
+            "checkpoint_operation": checkpoint.get("operation"),
+            "lineage_depth": len(lineage_ids),
+            "input_ref": checkpoint.get("input_ref"),
+        }
+
+        if as_json:
+            import json as json_module
+            click.echo(json_module.dumps(result, indent=2))
+            return
+
+        click.echo(f"=== Resume Information ===\n")
+        click.echo(f"Session: {session_id}")
+        click.echo(f"Resume from: {checkpoint_id}")
+        click.echo(f"Phase: {checkpoint.get('phase')}")
+        click.echo(f"Operation: {checkpoint.get('operation')}")
+        click.echo(f"Lineage depth: {len(lineage_ids)}")
+
+        input_ref = checkpoint.get("input_ref")
+        if input_ref:
+            click.echo("\nInput refs available:")
+            for key in input_ref.keys():
+                click.echo(f"  - {key}")
+
+        click.echo("\nNote: Use the API endpoint POST /api/sessions/{session_id}/resume to execute resume.")
+
+    @checkpoints.command("rerun")
+    @click.argument("session_id", required=True)
+    @click.argument("checkpoint_id", required=True)
+    @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+    def checkpoints_rerun(
+        session_id: str,
+        checkpoint_id: str,
+        as_json: bool,
+    ) -> None:
+        """Get rerun information for a specific checkpoint step."""
+        telemetry_dir = get_default_telemetry_dir()
+
+        checkpoint = query_checkpoint_detail(session_id, checkpoint_id, base_dir=telemetry_dir)
+        if checkpoint is None:
+            click.echo(f"Error: Checkpoint '{checkpoint_id}' not found.", err=True)
+            raise click.Abort()
+
+        if not checkpoint.get("replayable"):
+            reason = checkpoint.get("replayable_reason", "Unknown reason")
+            click.echo(f"Error: Checkpoint is not replayable: {reason}", err=True)
+            raise click.Abort()
+
+        result = {
+            "session_id": session_id,
+            "checkpoint_id": checkpoint_id,
+            "phase": checkpoint.get("phase"),
+            "operation": checkpoint.get("operation"),
+            "input_ref": checkpoint.get("input_ref"),
+            "output_ref": checkpoint.get("output_ref"),
+        }
+
+        if as_json:
+            import json as json_module
+            click.echo(json_module.dumps(result, indent=2))
+            return
+
+        click.echo(f"=== Rerun Information ===\n")
+        click.echo(f"Session: {session_id}")
+        click.echo(f"Checkpoint: {checkpoint_id}")
+        click.echo(f"Phase: {checkpoint.get('phase')}")
+        click.echo(f"Operation: {checkpoint.get('operation')}")
+
+        input_ref = checkpoint.get("input_ref")
+        if input_ref:
+            click.echo("\nInput refs:")
+            for key, value in input_ref.items():
+                if isinstance(value, dict):
+                    click.echo(f"  {key}: <dict>")
+                elif isinstance(value, list):
+                    click.echo(f"  {key}: [{len(value)} items]")
+                else:
+                    click.echo(f"  {key}: {value}")
+
+        output_ref = checkpoint.get("output_ref")
+        if output_ref:
+            click.echo("\nOutput refs (from original run):")
+            for key, value in output_ref.items():
+                if isinstance(value, dict):
+                    click.echo(f"  {key}: <dict>")
+                elif isinstance(value, list):
+                    click.echo(f"  {key}: [{len(value)} items]")
+                else:
+                    click.echo(f"  {key}: {value}")
+
+        click.echo("\nNote: Use the API endpoint POST /api/sessions/{session_id}/rerun-step to execute rerun.")
 
 
 __all__ = ["register_session_commands"]
