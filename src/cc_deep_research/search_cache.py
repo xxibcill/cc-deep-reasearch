@@ -241,7 +241,7 @@ class SearchCacheStore:
                     _serialize_timestamp(current_time),
                 ),
             )
-            self._enforce_max_entries(connection=connection)
+            self._enforce_max_entries(connection=connection, now=current_time)
             connection.commit()
 
             row = connection.execute(
@@ -278,6 +278,81 @@ class SearchCacheStore:
             connection.commit()
         return cursor.rowcount
 
+    def list_entries(
+        self,
+        *,
+        include_expired: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+        now: datetime | None = None,
+    ) -> list[SearchCacheEntry]:
+        """List cache entries with optional pagination."""
+        current_time = _normalize_timestamp(now) if now is not None else _utcnow()
+        with self._connect() as connection:
+            if include_expired:
+                rows = connection.execute(
+                    f"""
+                    SELECT cache_key, provider, normalized_query, request_signature, serialized_result,
+                           created_at, expires_at, last_accessed_at, hit_count
+                    FROM {_CACHE_TABLE_NAME}
+                    ORDER BY last_accessed_at DESC, created_at DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (limit, offset),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    f"""
+                    SELECT cache_key, provider, normalized_query, request_signature, serialized_result,
+                           created_at, expires_at, last_accessed_at, hit_count
+                    FROM {_CACHE_TABLE_NAME}
+                    WHERE expires_at > ?
+                    ORDER BY last_accessed_at DESC, created_at DESC
+                    LIMIT ? OFFSET ?
+                    """,
+                    (_serialize_timestamp(current_time), limit, offset),
+                ).fetchall()
+        return [_entry_from_row(row) for row in rows]
+
+    def get_stats(self, *, now: datetime | None = None) -> dict[str, int]:
+        """Return cache statistics for monitoring."""
+        current_time = _normalize_timestamp(now) if now is not None else _utcnow()
+        with self._connect() as connection:
+            total_row = connection.execute(
+                f"SELECT COUNT(*) AS count FROM {_CACHE_TABLE_NAME}"
+            ).fetchone()
+            active_row = connection.execute(
+                f"SELECT COUNT(*) AS count FROM {_CACHE_TABLE_NAME} WHERE expires_at > ?",
+                (_serialize_timestamp(current_time),),
+            ).fetchone()
+            expired_row = connection.execute(
+                f"SELECT COUNT(*) AS count FROM {_CACHE_TABLE_NAME} WHERE expires_at <= ?",
+                (_serialize_timestamp(current_time),),
+            ).fetchone()
+            hits_row = connection.execute(
+                f"SELECT COALESCE(SUM(hit_count), 0) AS total_hits FROM {_CACHE_TABLE_NAME}"
+            ).fetchone()
+            size_row = connection.execute(
+                f"SELECT COALESCE(SUM(LENGTH(serialized_result)), 0) AS total_size FROM {_CACHE_TABLE_NAME}"
+            ).fetchone()
+
+        return {
+            "total_entries": int(total_row["count"]) if total_row else 0,
+            "active_entries": int(active_row["count"]) if active_row else 0,
+            "expired_entries": int(expired_row["count"]) if expired_row else 0,
+            "total_hits": int(hits_row["total_hits"]) if hits_row else 0,
+            "approximate_size_bytes": int(size_row["total_size"]) if size_row else 0,
+        }
+
+    def clear(self) -> int:
+        """Delete all cache entries and return the count removed."""
+        with self._connect() as connection:
+            row = connection.execute(f"SELECT COUNT(*) AS count FROM {_CACHE_TABLE_NAME}").fetchone()
+            count = int(row["count"]) if row else 0
+            connection.execute(f"DELETE FROM {_CACHE_TABLE_NAME}")
+            connection.commit()
+        return count
+
     def _initialize_schema(self) -> None:
         """Create the backing cache schema when the database is first used."""
         with self._connect() as connection:
@@ -304,12 +379,15 @@ class SearchCacheStore:
             )
             connection.commit()
 
-    def _enforce_max_entries(self, *, connection: sqlite3.Connection) -> None:
+    def _enforce_max_entries(
+        self, *, connection: sqlite3.Connection, now: datetime | None = None
+    ) -> None:
         """Trim least-recently-used entries when a max size is configured."""
         if self._max_entries is None:
             return
 
-        self._purge_expired_with_connection(connection=connection, now=_utcnow())
+        current_time = _normalize_timestamp(now) if now is not None else _utcnow()
+        self._purge_expired_with_connection(connection=connection, now=current_time)
         row = connection.execute(f"SELECT COUNT(*) AS count FROM {_CACHE_TABLE_NAME}").fetchone()
         if row is None:
             return
