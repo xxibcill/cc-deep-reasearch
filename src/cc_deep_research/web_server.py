@@ -15,7 +15,15 @@ from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from cc_deep_research.config import load_config
+from cc_deep_research.config import (
+    ConfigOverrideError,
+    ConfigPatchError,
+    ConfigPatchErrorResponse,
+    ConfigPatchRequest,
+    build_config_response,
+    load_config,
+    update_config,
+)
 from cc_deep_research.event_router import EventRouter, WebSocketConnection
 from cc_deep_research.reporting import ReportGenerator
 from cc_deep_research.research_runs.jobs import ResearchRunJob, ResearchRunJobRegistry
@@ -497,6 +505,41 @@ def register_routes(app: FastAPI) -> None:
             "message": "CC Deep Research Monitoring API",
             "version": "1.0.0",
         }
+
+    @app.get("/api/config")
+    async def get_config() -> JSONResponse:
+        """Return persisted and effective config for the settings page."""
+        response = build_config_response()
+        return JSONResponse(content=response.model_dump(mode="json"))
+
+    @app.patch("/api/config")
+    async def patch_config(request: ConfigPatchRequest) -> JSONResponse:
+        """Apply and persist a partial config update."""
+        try:
+            response = update_config(
+                request.updates,
+                save_overridden_fields=request.save_overridden_fields,
+            )
+        except ConfigOverrideError as error:
+            payload = ConfigPatchErrorResponse(
+                error=error.message,
+                conflicts=error.conflicts,
+            )
+            return JSONResponse(
+                content=payload.model_dump(mode="json"),
+                status_code=409,
+            )
+        except ConfigPatchError as error:
+            payload = ConfigPatchErrorResponse(
+                error=error.message,
+                fields=error.fields,
+            )
+            return JSONResponse(
+                content=payload.model_dump(mode="json"),
+                status_code=400,
+            )
+
+        return JSONResponse(content=response.model_dump(mode="json"))
 
     @app.post("/api/research-runs")
     async def start_research_run(request: ResearchRunRequest) -> JSONResponse:
