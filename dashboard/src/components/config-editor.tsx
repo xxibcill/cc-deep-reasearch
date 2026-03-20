@@ -25,6 +25,10 @@ type FormState = {
   routeReportQualityEvaluator: string;
   routeReporter: string;
   routeDefault: string;
+  // Cache settings
+  cacheEnabled: boolean;
+  cacheTtlSeconds: string;
+  cacheMaxEntries: string;
 };
 
 type FieldDefinition = {
@@ -94,6 +98,21 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
     label: 'Fallback route',
     description: 'Default transport for agents without an explicit mapping.',
   },
+  {
+    path: 'search_cache.enabled',
+    label: 'Enable search cache',
+    description: 'Cache search results to reduce API calls and costs.',
+  },
+  {
+    path: 'search_cache.ttl_seconds',
+    label: 'Cache TTL (seconds)',
+    description: 'Time-to-live for cached search results in seconds.',
+  },
+  {
+    path: 'search_cache.max_entries',
+    label: 'Max cache entries',
+    description: 'Maximum number of entries to keep in the cache.',
+  },
 ];
 
 const DEFAULT_ROUTE_OPTION = 'anthropic';
@@ -137,6 +156,10 @@ function normalizeFormState(config: ConfigResponse): FormState {
     ),
     routeReporter: normalizeRouteOption(readPath(source, 'llm.route_defaults.reporter')),
     routeDefault: normalizeRouteOption(readPath(source, 'llm.route_defaults.default')),
+    // Cache settings
+    cacheEnabled: Boolean(readPath(source, 'search_cache.enabled')),
+    cacheTtlSeconds: String(readPath(source, 'search_cache.ttl_seconds') ?? 3600),
+    cacheMaxEntries: String(readPath(source, 'search_cache.max_entries') ?? 1000),
   };
 }
 
@@ -224,6 +247,10 @@ export function ConfigEditor() {
           'llm.route_defaults.report_quality_evaluator': form.routeReportQualityEvaluator,
           'llm.route_defaults.reporter': form.routeReporter,
           'llm.route_defaults.default': form.routeDefault,
+          // Cache settings
+          'search_cache.enabled': form.cacheEnabled,
+          'search_cache.ttl_seconds': Number(form.cacheTtlSeconds),
+          'search_cache.max_entries': Number(form.cacheMaxEntries),
         },
       });
 
@@ -373,6 +400,47 @@ export function ConfigEditor() {
               <RouteField definition={FIELD_DEFINITIONS[9]} field="llm.route_defaults.report_quality_evaluator" value={form.routeReportQualityEvaluator} onChange={(value) => updateField('routeReportQualityEvaluator', value)} disabled={saving} error={fieldErrors['llm.route_defaults.report_quality_evaluator']} overriddenFields={overriddenFields} config={config} overrideSources={overrideSources} />
               <RouteField definition={FIELD_DEFINITIONS[10]} field="llm.route_defaults.reporter" value={form.routeReporter} onChange={(value) => updateField('routeReporter', value)} disabled={saving} error={fieldErrors['llm.route_defaults.reporter']} overriddenFields={overriddenFields} config={config} overrideSources={overrideSources} />
               <RouteField definition={FIELD_DEFINITIONS[11]} field="llm.route_defaults.default" value={form.routeDefault} onChange={(value) => updateField('routeDefault', value)} disabled={saving} error={fieldErrors['llm.route_defaults.default']} overriddenFields={overriddenFields} config={config} overrideSources={overrideSources} />
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="text-lg font-semibold">Search cache</h2>
+            <p className="text-sm text-muted-foreground">
+              Cache search results to reduce API calls and costs. Cached results are reused for identical queries.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <FieldShell definition={FIELD_DEFINITIONS[12]} error={fieldErrors['search_cache.enabled']} overridden={overriddenFields.has('search_cache.enabled')} effectiveValue={String(readPath(config.effective_config, 'search_cache.enabled') ?? false)} persistedValue={String(readPath(config.persisted_config, 'search_cache.enabled') ?? false)} overrideSource={overrideSources['search_cache.enabled']}>
+                <label className="flex items-center gap-2.5 rounded-lg border border-border bg-background px-3 py-2 text-sm">
+                  <input
+                    checked={form.cacheEnabled}
+                    className="h-4 w-4"
+                    disabled={saving || overriddenFields.has('search_cache.enabled')}
+                    type="checkbox"
+                    onChange={(event) => updateField('cacheEnabled', event.target.checked)}
+                  />
+                  Enable search cache
+                </label>
+              </FieldShell>
+              <FieldShell definition={FIELD_DEFINITIONS[13]} error={fieldErrors['search_cache.ttl_seconds']} overridden={overriddenFields.has('search_cache.ttl_seconds')} effectiveValue={String(readPath(config.effective_config, 'search_cache.ttl_seconds') ?? 3600)} persistedValue={String(readPath(config.persisted_config, 'search_cache.ttl_seconds') ?? 3600)} overrideSource={overrideSources['search_cache.ttl_seconds']}>
+                <input
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                  disabled={saving || overriddenFields.has('search_cache.ttl_seconds')}
+                  min={1}
+                  type="number"
+                  value={form.cacheTtlSeconds}
+                  onChange={(event) => updateField('cacheTtlSeconds', event.target.value)}
+                />
+              </FieldShell>
+              <FieldShell definition={FIELD_DEFINITIONS[14]} error={fieldErrors['search_cache.max_entries']} overridden={overriddenFields.has('search_cache.max_entries')} effectiveValue={String(readPath(config.effective_config, 'search_cache.max_entries') ?? 1000)} persistedValue={String(readPath(config.persisted_config, 'search_cache.max_entries') ?? 1000)} overrideSource={overrideSources['search_cache.max_entries']}>
+                <input
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                  disabled={saving || overriddenFields.has('search_cache.max_entries')}
+                  min={1}
+                  type="number"
+                  value={form.cacheMaxEntries}
+                  onChange={(event) => updateField('cacheMaxEntries', event.target.value)}
+                />
+              </FieldShell>
             </div>
           </section>
 

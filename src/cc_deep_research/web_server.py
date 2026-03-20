@@ -37,6 +37,7 @@ from cc_deep_research.research_runs.models import (
 )
 from cc_deep_research.research_runs.service import ResearchRunService
 from cc_deep_research.research_runs.session_purge import SessionPurgeService
+from cc_deep_research.search_cache import SearchCacheStore
 from cc_deep_research.session_store import SessionStore
 from cc_deep_research.telemetry import (
     get_default_dashboard_db_path,
@@ -1477,6 +1478,210 @@ def register_routes(app: FastAPI) -> None:
             await event_router.unsubscribe(session_id, connection)
             with suppress(Exception):
                 await connection.send_json({"type": "error", "error": str(e)})
+
+    # Search Cache Management Routes
+
+    @app.get("/api/search-cache")
+    async def list_search_cache_entries(
+        include_expired: bool = Query(default=False, description="Include expired entries"),
+        limit: int = Query(default=100, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+    ) -> JSONResponse:
+        """List search cache entries.
+
+        Args:
+            include_expired: Whether to include expired entries.
+            limit: Maximum entries to return.
+            offset: Number of entries to skip.
+
+        Returns:
+            JSON response with cache entries list.
+        """
+        config = load_config()
+        if not config.search_cache.enabled:
+            return JSONResponse(
+                content={"entries": [], "total": 0, "message": "Cache is disabled"},
+            )
+
+        db_path = config.search_cache.resolve_db_path()
+        if not db_path.exists():
+            return JSONResponse(
+                content={"entries": [], "total": 0},
+            )
+
+        store = SearchCacheStore(db_path, max_entries=config.search_cache.max_entries)
+        entries = store.list_entries(
+            include_expired=include_expired,
+            limit=limit,
+            offset=offset,
+        )
+
+        return JSONResponse(
+            content={
+                "entries": [
+                    {
+                        "cache_key": entry.cache_key,
+                        "provider": entry.provider,
+                        "normalized_query": entry.normalized_query,
+                        "created_at": entry.created_at.isoformat(),
+                        "expires_at": entry.expires_at.isoformat(),
+                        "last_accessed_at": entry.last_accessed_at.isoformat(),
+                        "hit_count": entry.hit_count,
+                        "is_expired": entry.is_expired(),
+                    }
+                    for entry in entries
+                ],
+                "total": len(entries),
+            }
+        )
+
+    @app.get("/api/search-cache/stats")
+    async def get_search_cache_stats() -> JSONResponse:
+        """Get search cache statistics.
+
+        Returns:
+            JSON response with cache stats including entry counts and hit totals.
+        """
+        config = load_config()
+        cache_enabled = config.search_cache.enabled
+        db_path = config.search_cache.resolve_db_path()
+
+        response: dict[str, Any] = {
+            "enabled": cache_enabled,
+            "db_path": str(db_path),
+            "ttl_seconds": config.search_cache.ttl_seconds,
+            "max_entries": config.search_cache.max_entries,
+        }
+
+        if not cache_enabled:
+            response.update({
+                "total_entries": 0,
+                "active_entries": 0,
+                "expired_entries": 0,
+                "total_hits": 0,
+                "approximate_size_bytes": 0,
+                "db_exists": False,
+            })
+            return JSONResponse(content=response)
+
+        if not db_path.exists():
+            response.update({
+                "total_entries": 0,
+                "active_entries": 0,
+                "expired_entries": 0,
+                "total_hits": 0,
+                "approximate_size_bytes": 0,
+                "db_exists": False,
+            })
+            return JSONResponse(content=response)
+
+        store = SearchCacheStore(db_path, max_entries=config.search_cache.max_entries)
+        stats = store.get_stats()
+        response.update(stats)
+        response["db_exists"] = True
+
+        return JSONResponse(content=response)
+
+    @app.post("/api/search-cache/purge-expired")
+    async def purge_expired_search_cache_entries() -> JSONResponse:
+        """Purge expired entries from the search cache.
+
+        Returns:
+            JSON response with count of purged entries.
+        """
+        config = load_config()
+        if not config.search_cache.enabled:
+            return JSONResponse(
+                content={"error": "Cache is disabled", "purged": 0},
+                status_code=400,
+            )
+
+        db_path = config.search_cache.resolve_db_path()
+        if not db_path.exists():
+            return JSONResponse(
+                content={"error": "Cache database not found", "purged": 0},
+                status_code=404,
+            )
+
+        store = SearchCacheStore(db_path, max_entries=config.search_cache.max_entries)
+        purged = store.purge_expired()
+
+        return JSONResponse(
+            content={
+                "purged": purged,
+                "message": f"Purged {purged} expired entries",
+            }
+        )
+
+    @app.delete("/api/search-cache/{cache_key}")
+    async def delete_search_cache_entry(cache_key: str) -> JSONResponse:
+        """Delete a specific cache entry.
+
+        Args:
+            cache_key: The cache key to delete.
+
+        Returns:
+            JSON response indicating success or failure.
+        """
+        config = load_config()
+        if not config.search_cache.enabled:
+            return JSONResponse(
+                content={"error": "Cache is disabled", "deleted": False},
+                status_code=400,
+            )
+
+        db_path = config.search_cache.resolve_db_path()
+        if not db_path.exists():
+            return JSONResponse(
+                content={"error": "Cache database not found", "deleted": False},
+                status_code=404,
+            )
+
+        store = SearchCacheStore(db_path, max_entries=config.search_cache.max_entries)
+        deleted = store.delete(cache_key)
+
+        if not deleted:
+            return JSONResponse(
+                content={"error": f"Entry not found: {cache_key}", "deleted": False},
+                status_code=404,
+            )
+
+        return JSONResponse(
+            content={
+                "cache_key": cache_key,
+                "deleted": True,
+            }
+        )
+
+    @app.delete("/api/search-cache")
+    async def clear_search_cache() -> JSONResponse:
+        """Clear all entries from the search cache.
+
+        Returns:
+            JSON response with count of cleared entries.
+        """
+        config = load_config()
+        if not config.search_cache.enabled:
+            return JSONResponse(
+                content={"error": "Cache is disabled", "cleared": 0},
+                status_code=400,
+            )
+
+        db_path = config.search_cache.resolve_db_path()
+        if not db_path.exists():
+            return JSONResponse(
+                content={"cleared": 0, "message": "Cache database does not exist"},
+            )
+
+        store = SearchCacheStore(db_path, max_entries=config.search_cache.max_entries)
+        cleared = store.clear()
+
+        return JSONResponse(
+            content={
+                "cleared": cleared,
+                "message": f"Cleared {cleared} entries from cache",
+            }
+        )
 
 
 def start_server(
