@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import sqlite3
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -348,6 +350,35 @@ class SearchCacheStore:
         return connection
 
 
+class InFlightSearchRegistry:
+    """Collapse concurrent misses onto one shared provider request."""
+
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self._tasks: dict[str, asyncio.Task[SearchResult]] = {}
+
+    async def run(
+        self,
+        cache_key: str,
+        operation: Callable[[], Awaitable[SearchResult]],
+    ) -> SearchResult:
+        """Reuse one active lookup for matching concurrent cache misses."""
+        async with self._lock:
+            task = self._tasks.get(cache_key)
+            if task is None:
+                task = asyncio.create_task(operation())
+                self._tasks[cache_key] = task
+                task.add_done_callback(lambda completed_task: self._discard(cache_key, completed_task))
+
+        return await asyncio.shield(task)
+
+    def _discard(self, cache_key: str, completed_task: asyncio.Task[SearchResult]) -> None:
+        """Clear finished tasks so later misses can start a fresh lookup."""
+        current_task = self._tasks.get(cache_key)
+        if current_task is completed_task:
+            self._tasks.pop(cache_key, None)
+
+
 def build_search_cache_identity(
     *,
     provider_name: str,
@@ -393,6 +424,7 @@ def build_search_cache_key(
 
 
 __all__ = [
+    "InFlightSearchRegistry",
     "SearchCacheEntry",
     "SearchCacheIdentity",
     "SearchCacheStore",

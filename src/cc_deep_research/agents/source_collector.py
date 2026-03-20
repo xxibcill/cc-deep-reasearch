@@ -15,7 +15,7 @@ from cc_deep_research.config import Config
 from cc_deep_research.models import QueryFamily, SearchOptions, SearchResult, SearchResultItem
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.providers import SearchProvider, resolve_provider_specs
-from cc_deep_research.providers.tavily import TavilySearchProvider
+from cc_deep_research.providers.factory import build_search_providers
 
 
 class SourceCollectorAgent:
@@ -50,46 +50,10 @@ class SourceCollectorAgent:
         This method creates provider instances based on the
         configured search providers and API keys.
         """
-        self._providers = []
-        self._provider_warnings = []
-
-        for provider_spec in resolve_provider_specs(self._config):
-            if provider_spec.provider_type == "tavily":
-                self._initialize_tavily_provider(provider_spec.provider_name, provider_spec.strategy)
-                continue
-
-            if provider_spec.provider_type == "claude":
-                self._provider_warnings.append(
-                    "Provider 'claude' is selected but no Claude search provider is implemented yet."
-                )
-                continue
-
-            self._provider_warnings.append(
-                f"Provider '{provider_spec.configured_name}' is not supported."
-            )
-
-    def _initialize_tavily_provider(
-        self,
-        provider_name: str,
-        strategy: str | None,
-    ) -> None:
-        """Initialize the Tavily provider when credentials are available."""
-        if not self._config.tavily.api_keys:
-            self._provider_warnings.append(
-                f"Provider '{provider_name}' is selected but no Tavily API keys are configured."
-            )
-            return
-
-        from cc_deep_research.key_rotation import KeyRotationManager
-
-        key_manager = KeyRotationManager(self._config.tavily.api_keys)
-        provider = TavilySearchProvider(
-            api_key=key_manager.get_available_key(),
-            max_results=self._config.tavily.max_results,
-            provider_name=provider_name,
-            strategy=strategy or "auto",
+        self._providers, self._provider_warnings = build_search_providers(
+            self._config,
+            resolve_provider_specs(self._config),
         )
-        self._providers.append(provider)
 
     async def collect_sources(
         self,
