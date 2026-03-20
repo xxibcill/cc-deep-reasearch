@@ -10,6 +10,8 @@ import yaml
 
 from cc_deep_research.config import (
     Config,
+    ConfigOverrideError,
+    ConfigPatchError,
     DisplayConfig,
     LLMCerebrasConfig,
     LLMClaudeCLIConfig,
@@ -22,10 +24,12 @@ from cc_deep_research.config import (
     Settings,
     TavilyConfig,
     _parse_api_keys_from_env,
+    build_config_response,
     create_default_config_file,
     get_default_config_path,
     load_config,
     save_config,
+    update_config,
 )
 from cc_deep_research.models import ResearchDepth, SearchMode
 from cc_deep_research.research_runs import (
@@ -318,6 +322,102 @@ class TestSaveConfig:
 
             assert config_path.exists()
             assert config_path.parent.is_dir()
+
+
+class TestConfigService:
+    """Tests for the shared config service."""
+
+    def test_build_config_response_for_missing_file(self) -> None:
+        """Missing config files should still yield a valid default payload."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "config.yaml"
+
+            response = build_config_response(config_path)
+
+        assert response.file_exists is False
+        assert response.config_path == str(config_path)
+        assert response.persisted_config["output"]["format"] == "markdown"
+        assert response.effective_config["output"]["format"] == "markdown"
+
+    def test_build_config_response_reports_runtime_overrides(self) -> None:
+        """The service should distinguish persisted values from env-overridden runtime values."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "config.yaml"
+            config_path.write_text("output:\n  format: markdown\n", encoding="utf-8")
+
+            with patch.dict(os.environ, {"CC_DEEP_RESEARCH_FORMAT": "json"}):
+                response = build_config_response(config_path)
+
+        assert response.persisted_config["output"]["format"] == "markdown"
+        assert response.effective_config["output"]["format"] == "json"
+        assert "output.format" in response.overridden_fields
+        assert response.override_sources["output.format"] == ["CC_DEEP_RESEARCH_FORMAT"]
+
+    def test_update_config_persists_partial_changes_without_touching_other_values(self) -> None:
+        """A valid patch should update only the requested fields."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "config.yaml"
+            config = Config()
+            config.search.providers = ["tavily", "claude"]
+            config.output.save_dir = "./reports"
+            save_config(config, config_path)
+
+            response = update_config(
+                {
+                    "output.save_dir": "./custom-reports",
+                    "research.enable_cross_ref": False,
+                },
+                config_path=config_path,
+            )
+            saved = load_config(config_path)
+
+        assert response.persisted_config["output"]["save_dir"] == "./custom-reports"
+        assert saved.output.save_dir == "./custom-reports"
+        assert saved.research.enable_cross_ref is False
+        assert saved.search.providers == ["tavily", "claude"]
+
+    def test_update_config_masks_and_replaces_secret_fields(self) -> None:
+        """Secret updates should persist but never round-trip cleartext via the API payload."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "config.yaml"
+
+            response = update_config(
+                {
+                    "llm.openrouter.api_key": {
+                        "action": "replace",
+                        "value": "sk-secret",
+                    }
+                },
+                config_path=config_path,
+            )
+            saved = load_config(config_path)
+
+        assert response.persisted_config["llm"]["openrouter"]["api_key"] == "********"
+        assert response.secret_fields
+        assert saved.llm.openrouter.api_key == "sk-secret"
+
+    def test_update_config_rejects_invalid_key(self) -> None:
+        """Unknown config fields should raise a structured patch error."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "config.yaml"
+
+            with pytest.raises(ConfigPatchError) as error:
+                update_config({"search.unknown_field": "value"}, config_path=config_path)
+
+        assert error.value.fields[0].field == "search.unknown_field"
+
+    def test_update_config_rejects_active_override_without_opt_in(self) -> None:
+        """Patches should reject env-overridden fields by default."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "config.yaml"
+
+            with (
+                patch.dict(os.environ, {"CC_DEEP_RESEARCH_FORMAT": "json"}),
+                pytest.raises(ConfigOverrideError) as error,
+            ):
+                update_config({"output.format": "html"}, config_path=config_path)
+
+        assert error.value.conflicts[0].field == "output.format"
 
 
 class TestGetDefaultConfigPath:
