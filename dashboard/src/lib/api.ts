@@ -235,10 +235,12 @@ export async function deleteSession(sessionId: string, force: boolean = false): 
 }
 
 export async function bulkDeleteSessions(
-  sessionIds: string[]
+  sessionIds: string[],
+  force: boolean = false
 ): Promise<BulkSessionDeleteResponse> {
   const response = await apiClient.post<BulkSessionDeleteResponse>('/sessions/bulk-delete', {
     session_ids: sessionIds,
+    force,
   });
   return response.data;
 }

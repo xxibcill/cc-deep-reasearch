@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -129,6 +130,8 @@ class TestSessionPurgeService:
         """Deleting an active session without force should return active_conflict=True."""
         session_id = "research-active-conflict"
 
+        # Use a recent timestamp (1 minute ago) to simulate a truly active session
+        recent_timestamp = (datetime.now(UTC) - timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
         live_dir = temp_config_dir / "telemetry" / session_id
         live_dir.mkdir(parents=True)
         (live_dir / "events.jsonl").write_text(
@@ -136,7 +139,7 @@ class TestSessionPurgeService:
                 {
                     "event_id": "event-1",
                     "sequence_number": 1,
-                    "timestamp": "2026-03-18T10:00:00Z",
+                    "timestamp": recent_timestamp,
                     "session_id": session_id,
                     "event_type": "session.started",
                     "category": "session",
@@ -166,6 +169,8 @@ class TestSessionPurgeService:
         """Using force=true should allow deletion of active sessions."""
         session_id = "research-force-delete"
 
+        # Use a recent timestamp (1 minute ago) to simulate a truly active session
+        recent_timestamp = (datetime.now(UTC) - timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
         live_dir = temp_config_dir / "telemetry" / session_id
         live_dir.mkdir(parents=True)
         (live_dir / "events.jsonl").write_text(
@@ -173,7 +178,7 @@ class TestSessionPurgeService:
                 {
                     "event_id": "event-1",
                     "sequence_number": 1,
-                    "timestamp": "2026-03-18T10:00:00Z",
+                    "timestamp": recent_timestamp,
                     "session_id": session_id,
                     "event_type": "session.started",
                     "category": "session",
@@ -220,6 +225,8 @@ class TestSessionPurgeService:
             encoding="utf-8",
         )
 
+        # Use a recent timestamp (1 minute ago) to simulate a truly active session
+        recent_timestamp = (datetime.now(UTC) - timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
         active_dir = temp_config_dir / "telemetry" / active_session_id
         active_dir.mkdir(parents=True)
         (active_dir / "events.jsonl").write_text(
@@ -227,7 +234,7 @@ class TestSessionPurgeService:
                 {
                     "event_id": "event-1",
                     "sequence_number": 1,
-                    "timestamp": "2026-03-18T10:00:00Z",
+                    "timestamp": recent_timestamp,
                     "session_id": active_session_id,
                     "event_type": "session.started",
                     "category": "session",
@@ -337,6 +344,8 @@ class TestDeleteSessionAPI:
         """Deleting an active session without force should return 409."""
         session_id = "api-delete-conflict"
 
+        # Use a recent timestamp (1 minute ago) to simulate a truly active session
+        recent_timestamp = (datetime.now(UTC) - timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
         live_dir = temp_config_dir / "telemetry" / session_id
         live_dir.mkdir(parents=True)
         (live_dir / "events.jsonl").write_text(
@@ -344,7 +353,7 @@ class TestDeleteSessionAPI:
                 {
                     "event_id": "event-1",
                     "sequence_number": 1,
-                    "timestamp": "2026-03-18T10:00:00Z",
+                    "timestamp": recent_timestamp,
                     "session_id": session_id,
                     "event_type": "session.started",
                     "category": "session",
@@ -370,6 +379,8 @@ class TestDeleteSessionAPI:
         """Using force=true query param should bypass active session check."""
         session_id = "api-delete-force"
 
+        # Use a recent timestamp (1 minute ago) to simulate a truly active session
+        recent_timestamp = (datetime.now(UTC) - timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
         live_dir = temp_config_dir / "telemetry" / session_id
         live_dir.mkdir(parents=True)
         (live_dir / "events.jsonl").write_text(
@@ -377,7 +388,7 @@ class TestDeleteSessionAPI:
                 {
                     "event_id": "event-1",
                     "sequence_number": 1,
-                    "timestamp": "2026-03-18T10:00:00Z",
+                    "timestamp": recent_timestamp,
                     "session_id": session_id,
                     "event_type": "session.started",
                     "category": "session",
