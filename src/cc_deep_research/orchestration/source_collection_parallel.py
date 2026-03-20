@@ -6,12 +6,12 @@ from collections.abc import Awaitable, Callable
 
 from cc_deep_research.agents import ResearcherAgent
 from cc_deep_research.config import Config
-from cc_deep_research.key_rotation import KeyRotationManager
 from cc_deep_research.models.search import QueryFamily, ResearchDepth, SearchResultItem
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.orchestration.helpers import decompose_parallel_tasks
 from cc_deep_research.orchestration.session_state import OrchestratorSessionState
-from cc_deep_research.providers.tavily import TavilySearchProvider
+from cc_deep_research.providers import ProviderSpec
+from cc_deep_research.providers.factory import build_search_provider
 
 
 def _emit_agent_lifecycle(
@@ -75,25 +75,24 @@ class ParallelSourceCollectionStrategy:
             min_sources or self._config.research.min_sources.__dict__[depth.value]
         ) // self._num_researchers
 
-        provider_warnings: list[str] = []
-        if not self._config.tavily.api_keys:
-            provider_warnings.append(
-                "Parallel source collection requires Tavily API keys, but none are configured."
-            )
-        if self._config.search.providers != ["tavily"]:
-            provider_warnings.append(
-                "Parallel source collection currently uses Tavily only, regardless of other configured providers."
-            )
+        provider_warnings = self._build_provider_warnings()
         self._session_state.set_provider_metadata(
             available=["tavily"] if self._config.tavily.api_keys else [],
             warnings=provider_warnings,
         )
 
-        key_manager = KeyRotationManager(self._config.tavily.api_keys)
-        provider = TavilySearchProvider(
-            api_key=key_manager.get_available_key(),
-            max_results=max_results_per_researcher,
+        provider = build_search_provider(
+            self._config,
+            ProviderSpec(
+                configured_name="tavily",
+                provider_type="tavily",
+                provider_name="tavily",
+            ),
+            max_results_override=max_results_per_researcher,
         )
+        if provider is None:
+            return []
+
         researcher = ResearcherAgent(self._config, provider, monitor=self._monitor)
         tasks = decompose_parallel_tasks(queries)
 
@@ -208,6 +207,19 @@ class ParallelSourceCollectionStrategy:
             stage="parallel_collection",
         )
         return await self._hydrate_sources(aggregated, depth)
+
+    def _build_provider_warnings(self) -> list[str]:
+        """Return provider warnings for the parallel Tavily-only path."""
+        warnings: list[str] = []
+        if not self._config.tavily.api_keys:
+            warnings.append(
+                "Parallel source collection requires Tavily API keys, but none are configured."
+            )
+        if self._config.search.providers != ["tavily"]:
+            warnings.append(
+                "Parallel source collection currently uses Tavily only, regardless of other configured providers."
+            )
+        return warnings
 
 
 __all__ = ["ParallelSourceCollectionStrategy"]
