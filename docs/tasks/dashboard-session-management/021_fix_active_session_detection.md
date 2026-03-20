@@ -1,6 +1,6 @@
 # Task 021: Fix Session Active State Detection
 
-Status: Planned
+Status: Done
 
 ## Objective
 

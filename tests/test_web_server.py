@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -216,6 +216,8 @@ def test_bulk_delete_route_returns_per_session_outcomes(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The bulk delete endpoint should return explicit mixed outcomes in request order."""
+    from datetime import UTC, datetime
+
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     config_dir = tmp_path / "xdg" / "cc-deep-research"
     config_dir.mkdir(parents=True)
@@ -228,6 +230,8 @@ def test_bulk_delete_route_returns_per_session_outcomes(
         )
     )
 
+    # Use a recent timestamp (1 minute ago) to simulate a truly active session
+    recent_timestamp = (datetime.now(UTC) - timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
     active_session_dir = config_dir / "telemetry" / "bulk-delete-active"
     active_session_dir.mkdir(parents=True)
     (active_session_dir / "events.jsonl").write_text(
@@ -235,7 +239,7 @@ def test_bulk_delete_route_returns_per_session_outcomes(
             {
                 "event_id": "event-1",
                 "sequence_number": 1,
-                "timestamp": "2026-03-18T10:00:00Z",
+                "timestamp": recent_timestamp,
                 "session_id": "bulk-delete-active",
                 "event_type": "session.started",
                 "category": "session",
