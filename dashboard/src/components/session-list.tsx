@@ -16,7 +16,7 @@ import {
   Trash2,
 } from 'lucide-react';
 
-import { Session, SessionListQueryState } from '@/types/telemetry';
+import { BulkSessionDeleteResponse, Session, SessionListQueryState } from '@/types/telemetry';
 import { AlertDialog } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
@@ -117,6 +117,40 @@ function buildBulkFailureSummary(
   }
 
   return parts.join(', ');
+}
+
+function shouldPromptBulkForceDelete(
+  response: BulkSessionDeleteResponse,
+  forceDelete: boolean
+): boolean {
+  return !forceDelete && response.summary.active_conflict_count > 0;
+}
+
+function buildBulkDeleteAttentionMessage(
+  response: BulkSessionDeleteResponse,
+  remainingCount: number,
+  deletedCount: number,
+  forceRetryAvailable: boolean
+): string {
+  const failureSummary = buildBulkFailureSummary(
+    response.summary.failed_count,
+    response.summary.active_conflict_count,
+    response.summary.partial_failure_count
+  );
+  const deletedSummary =
+    deletedCount > 0 ? `Deleted ${pluralize(deletedCount, 'session')}. ` : '';
+  const attentionSummary = `${deletedSummary}${pluralize(remainingCount, 'session')} still require attention: ${failureSummary}.`;
+
+  if (!forceRetryAvailable) {
+    return attentionSummary;
+  }
+
+  const retrySummary =
+    response.summary.active_conflict_count === remainingCount
+      ? 'Review and confirm force delete to stop the running processes.'
+      : 'Review and confirm force delete to stop any still-running sessions.';
+
+  return `${attentionSummary} ${retrySummary}`;
 }
 
 function SessionCard({
@@ -506,7 +540,8 @@ export function SessionList({
 
     try {
       const response = await bulkDeleteSessions(
-        deleteDialog.sessions.map((session) => session.sessionId)
+        deleteDialog.sessions.map((session) => session.sessionId),
+        deleteDialog.forceDelete
       );
       const removableIds = response.results
         .filter((result) => result.outcome === 'deleted' || result.outcome === 'not_found')
@@ -530,23 +565,21 @@ export function SessionList({
       const remainingSessions = deleteDialog.sessions.filter((session) =>
         retainedIds.has(session.sessionId)
       );
+      const forceRetryAvailable = shouldPromptBulkForceDelete(response, deleteDialog.forceDelete);
       setSelectedSessionIds(remainingSessions.map((session) => session.sessionId));
       setDeleteDialog({
         mode: 'bulk',
         sessions: remainingSessions,
         deleting: false,
-        forceDelete: false,
+        forceDelete: forceRetryAvailable,
       });
-
-      const failureSummary = buildBulkFailureSummary(
-        response.summary.failed_count,
-        response.summary.active_conflict_count,
-        response.summary.partial_failure_count
-      );
-      const deletedSummary =
-        removableIds.length > 0 ? `Deleted ${pluralize(removableIds.length, 'session')}. ` : '';
       setDeleteError(
-        `${deletedSummary}${pluralize(remainingSessions.length, 'session')} still require attention: ${failureSummary}.`
+        buildBulkDeleteAttentionMessage(
+          response,
+          remainingSessions.length,
+          removableIds.length,
+          forceRetryAvailable
+        )
       );
     } catch (requestError) {
       setDeleteError(
@@ -614,6 +647,12 @@ export function SessionList({
 
     return (
       <div className="space-y-3">
+        {deleteDialog.forceDelete ? (
+          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-700">
+            Some selected sessions are currently active. Force deleting will stop any running
+            processes before removing their telemetry, report, and analytics history.
+          </p>
+        ) : null}
         <p>
           This will permanently delete {pluralize(sessionCount, 'selected session')} from{' '}
           <span className="font-medium">{buildFilterSummary(query)}</span>.
