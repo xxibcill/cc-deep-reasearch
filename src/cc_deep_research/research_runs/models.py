@@ -8,6 +8,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from cc_deep_research.models import ResearchDepth, ResearchSession
+from cc_deep_research.prompts import SUPPORTED_PROMPT_AGENTS
 
 
 class ResearchOutputFormat(StrEnum):
@@ -62,6 +63,10 @@ class ResearchRunRequest(BaseModel):
     num_researchers: int | None = Field(default=None, ge=1, le=8)
     realtime_enabled: bool = Field(default=False)
     pdf_enabled: bool = Field(default=False)
+    agent_prompt_overrides: dict[str, dict[str, str | None]] | None = Field(
+        default=None,
+        description="Prompt overrides for LLM-backed agents. Keys: agent_id (analyzer, deep_analyzer, report_quality_evaluator). Values: {system_prompt, prompt_prefix}.",
+    )
 
     @field_validator("search_providers")
     @classmethod
@@ -78,6 +83,44 @@ class ResearchRunRequest(BaseModel):
                 continue
             seen.add(provider)
             normalized.append(provider)
+        return normalized or None
+
+    @field_validator("agent_prompt_overrides")
+    @classmethod
+    def normalize_prompt_overrides(
+        cls, value: dict[str, dict[str, str | None]] | None
+    ) -> dict[str, dict[str, str | None]] | None:
+        """Normalize prompt overrides, stripping whitespace-only values and rejecting unknown agents."""
+        if value is None:
+            return None
+
+        # Validate agent IDs
+        unknown = set(value.keys()) - SUPPORTED_PROMPT_AGENTS
+        if unknown:
+            raise ValueError(
+                f"Unknown agent_prompt_overrides keys: {unknown}. "
+                f"Supported: {SUPPORTED_PROMPT_AGENTS}"
+            )
+
+        # Normalize: strip whitespace-only values, remove empty overrides
+        normalized: dict[str, dict[str, str | None]] = {}
+        for agent_id, override in value.items():
+            system_prompt = override.get("system_prompt")
+            prompt_prefix = override.get("prompt_prefix")
+
+            # Strip whitespace-only to None
+            if system_prompt is not None and not system_prompt.strip():
+                system_prompt = None
+            if prompt_prefix is not None and not prompt_prefix.strip():
+                prompt_prefix = None
+
+            # Only include if at least one override is set
+            if system_prompt is not None or prompt_prefix is not None:
+                normalized[agent_id] = {
+                    "system_prompt": system_prompt,
+                    "prompt_prefix": prompt_prefix,
+                }
+
         return normalized or None
 
 

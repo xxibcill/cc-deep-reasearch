@@ -16,6 +16,7 @@ from cc_deep_research.models.search import ResearchDepth, SearchResultItem
 
 if TYPE_CHECKING:
     from cc_deep_research.monitoring import ResearchMonitor
+    from cc_deep_research.prompts import PromptRegistry
 
 
 @dataclass
@@ -43,6 +44,21 @@ class LLMRouteUsageStats:
 
 
 @dataclass
+class SessionPromptMetadata:
+    """Track prompt configuration for a research session.
+
+    Attributes:
+        overrides_applied: Whether any prompt overrides were applied.
+        effective_overrides: Dictionary of agent_id -> {system_prompt, prompt_prefix}.
+        default_prompts_used: List of agents using default prompts.
+    """
+
+    overrides_applied: bool = False
+    effective_overrides: dict[str, dict[str, str | None]] = field(default_factory=dict)
+    default_prompts_used: list[str] = field(default_factory=list)
+
+
+@dataclass
 class OrchestratorSessionState:
     """Track session-scoped provider and degradation metadata."""
 
@@ -55,6 +71,8 @@ class OrchestratorSessionState:
     llm_actual_routes: dict[str, LLMRouteRecord] = field(default_factory=dict)
     llm_route_usage: dict[str, LLMRouteUsageStats] = field(default_factory=dict)
     llm_fallback_events: list[dict[str, Any]] = field(default_factory=list)
+    # Prompt configuration tracking
+    prompt_metadata: SessionPromptMetadata = field(default_factory=SessionPromptMetadata)
     # Optional monitor for semantic events
     monitor: ResearchMonitor | None = field(default=None, repr=False)
 
@@ -72,6 +90,38 @@ class OrchestratorSessionState:
         self.llm_actual_routes = {}
         self.llm_route_usage = {}
         self.llm_fallback_events = []
+        self.prompt_metadata = SessionPromptMetadata()
+
+    def set_prompt_metadata(self, prompt_registry: "PromptRegistry | None") -> None:
+        """Record prompt configuration from the registry.
+
+        Args:
+            prompt_registry: The prompt registry to extract configuration from.
+        """
+        if prompt_registry is None:
+            self.prompt_metadata = SessionPromptMetadata(
+                overrides_applied=False,
+                effective_overrides={},
+                default_prompts_used=[],
+            )
+            return
+
+        effective_overrides = prompt_registry.get_effective_overrides()
+        overrides_applied = prompt_registry.has_overrides()
+
+        # Track which agents used defaults vs overrides
+        from cc_deep_research.prompts import SUPPORTED_PROMPT_AGENTS
+
+        default_prompts_used = []
+        for agent_id in SUPPORTED_PROMPT_AGENTS:
+            if agent_id not in effective_overrides:
+                default_prompts_used.append(agent_id)
+
+        self.prompt_metadata = SessionPromptMetadata(
+            overrides_applied=overrides_applied,
+            effective_overrides=effective_overrides,
+            default_prompts_used=default_prompts_used,
+        )
 
     def note_execution_degradation(self, reason: str) -> None:
         """Record a session-level degradation reason once."""
@@ -362,6 +412,11 @@ class OrchestratorSessionState:
                 "reason": deep_analysis_reason,
             },
             "llm_routes": self.get_llm_route_summary(),
+            "prompts": {
+                "overrides_applied": self.prompt_metadata.overrides_applied,
+                "effective_overrides": self.prompt_metadata.effective_overrides,
+                "default_prompts_used": self.prompt_metadata.default_prompts_used,
+            },
         }
 
 

@@ -10,6 +10,7 @@ Features:
 - Synthesis with proper attribution
 - Evidence quality analysis
 - Streamed subprocess telemetry for live monitoring
+- Prompt override support for customized agent behavior
 
 Uses prompt-based CLI invocations for large-source semantic analysis.
 """
@@ -29,6 +30,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from cc_deep_research.monitoring import ResearchMonitor
+    from cc_deep_research.prompts import PromptRegistry
 
 
 class _StreamReaderThread(threading.Thread):
@@ -72,6 +74,8 @@ class LLMAnalysisClient:
         _model: Model to use for analysis
         _timeout_seconds: Maximum seconds per response
         _monitor: Optional research monitor for telemetry
+        _prompt_registry: Optional prompt registry with overrides
+        _agent_id: Agent identifier for prompt resolution
     """
 
     def __init__(
@@ -86,6 +90,8 @@ class LLMAnalysisClient:
                 - claude_cli_path: Optional Claude CLI path
                 - model: Model to use (default: claude-sonnet-4-6)
                 - timeout_seconds: Max seconds per request
+                - prompt_registry: Optional PromptRegistry with overrides
+                - agent_id: Agent identifier for prompt resolution
             monitor: Optional research monitor for subprocess telemetry.
         """
         self._config = config
@@ -94,6 +100,8 @@ class LLMAnalysisClient:
         self._usage_callback = config.get("usage_callback")
         self._request_executor = config.get("request_executor")
         self._monitor = monitor
+        self._prompt_registry: PromptRegistry | None = config.get("prompt_registry")
+        self._agent_id: str = config.get("agent_id", "analyzer")
         configured_path = config.get("claude_cli_path") or os.environ.get("CLAUDE_CLI_PATH")
         self._claude_cli_path = configured_path or shutil.which("claude")
         if self._request_executor is not None:
@@ -649,7 +657,8 @@ class LLMAnalysisClient:
         Returns:
             Analysis prompt.
         """
-        return f"""Analyze the following research sources about "{query}" and identify {num_themes} major themes.
+        # Get base prompt with optional prefix from registry
+        base_prompt = f"""Analyze the following research sources about "{query}" and identify {num_themes} major themes.
 
 {content}
 
@@ -683,6 +692,12 @@ Respond in JSON format:
   ]
 }}
 """
+        # Apply prompt prefix from registry if available
+        if self._prompt_registry:
+            config = self._prompt_registry.resolve_prompt(self._agent_id, "extract_themes")
+            if config.prompt_prefix:
+                return f"{config.prompt_prefix}\n\n{base_prompt}"
+        return base_prompt
 
     def _build_cross_reference_prompt(self, themes: list[dict[str, Any]], content: str) -> str:
         """Build prompt for cross-reference analysis.
@@ -695,7 +710,7 @@ Respond in JSON format:
             Analysis prompt.
         """
         theme_names = [t.get("name", "") for t in themes]
-        return f"""Analyze the following research sources for consensus and disagreement points.
+        base_prompt = f"""Analyze the following research sources for consensus and disagreement points.
 
 Identified themes: {", ".join(theme_names)}
 
@@ -733,6 +748,12 @@ Respond in JSON format:
   ]
 }}
 """
+        # Apply prompt prefix from registry if available
+        if self._prompt_registry:
+            config = self._prompt_registry.resolve_prompt(self._agent_id, "cross_reference")
+            if config.prompt_prefix:
+                return f"{config.prompt_prefix}\n\n{base_prompt}"
+        return base_prompt
 
     def _build_gap_identification_prompt(
         self, query: str, themes: list[dict[str, Any]], content: str
@@ -748,7 +769,7 @@ Respond in JSON format:
             Analysis prompt.
         """
         theme_names = [t.get("name", "") for t in themes]
-        return f"""Analyze the following research sources about "{query}" to identify information gaps.
+        base_prompt = f"""Analyze the following research sources about "{query}" to identify information gaps.
 
 Current themes: {", ".join(theme_names)}
 
@@ -772,6 +793,12 @@ Respond in JSON format:
   ]
 }}
 """
+        # Apply prompt prefix from registry if available
+        if self._prompt_registry:
+            config = self._prompt_registry.resolve_prompt(self._agent_id, "identify_gaps")
+            if config.prompt_prefix:
+                return f"{config.prompt_prefix}\n\n{base_prompt}"
+        return base_prompt
 
     def _build_synthesis_prompt(
         self,
@@ -805,7 +832,7 @@ Respond in JSON format:
             or "None identified"
         )
 
-        return f"""Synthesize the following research about "{query}" into key findings.
+        base_prompt = f"""Synthesize the following research about "{query}" into key findings.
 
 Main themes: {", ".join(theme_names)}
 
@@ -844,6 +871,12 @@ Respond in JSON format:
   ]
 }}
 """
+        # Apply prompt prefix from registry if available
+        if self._prompt_registry:
+            config = self._prompt_registry.resolve_prompt(self._agent_id, "synthesize")
+            if config.prompt_prefix:
+                return f"{config.prompt_prefix}\n\n{base_prompt}"
+        return base_prompt
 
     def _build_evidence_quality_prompt(self, themes: list[dict[str, Any]], content: str) -> str:
         """Build prompt for evidence quality analysis.
@@ -856,7 +889,7 @@ Respond in JSON format:
             Analysis prompt.
         """
         theme_names = [t.get("name", "") for t in themes]
-        return f"""Analyze the evidence quality in the following research sources.
+        base_prompt = f"""Analyze the evidence quality in the following research sources.
 
 Themes to analyze: {", ".join(theme_names)}
 
@@ -891,6 +924,12 @@ Respond in JSON format:
   "evidence_summary": "Overall assessment of evidence quality"
 }}
 """
+        # Apply prompt prefix from registry if available
+        if self._prompt_registry:
+            config = self._prompt_registry.resolve_prompt(self._agent_id, "analyze_evidence_quality")
+            if config.prompt_prefix:
+                return f"{config.prompt_prefix}\n\n{base_prompt}"
+        return base_prompt
 
     def _parse_theme_response(
         self,

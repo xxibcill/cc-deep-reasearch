@@ -13,13 +13,17 @@ from cc_deep_research.models import ResearchSession
 from cc_deep_research.monitoring import STOP_REASON_DEGRADED_EXECUTION, ResearchMonitor
 from cc_deep_research.orchestrator import TeamResearchOrchestrator
 from cc_deep_research.pdf_generator import PDFGenerator
+from cc_deep_research.prompts import PromptRegistry
 from cc_deep_research.reporting import ReportGenerator
 from cc_deep_research.research_runs.models import (
     ResearchRunCancelled,
     ResearchRunRequest,
     ResearchRunResult,
 )
-from cc_deep_research.research_runs.options import apply_research_request_config_overrides
+from cc_deep_research.research_runs.options import (
+    apply_research_request_config_overrides,
+    create_prompt_registry_with_overrides,
+)
 from cc_deep_research.research_runs.output import materialize_research_run_output
 from cc_deep_research.session_store import SessionStore
 
@@ -34,6 +38,7 @@ class PreparedResearchRun:
 
     request: ResearchRunRequest
     config: Config
+    prompt_registry: PromptRegistry
 
 
 class ResearchRunExecutionAdapter(Protocol):
@@ -88,7 +93,12 @@ class ResearchRunService:
         """Resolve a request into the config that will be used for execution."""
         base_config = config.model_copy(deep=True) if config is not None else self.config_loader()
         resolved_config = self.config_override_applier(base_config, request)
-        return PreparedResearchRun(request=request, config=resolved_config)
+        prompt_registry = create_prompt_registry_with_overrides(request)
+        return PreparedResearchRun(
+            request=request,
+            config=resolved_config,
+            prompt_registry=prompt_registry,
+        )
 
     def run(
         self,
@@ -141,6 +151,7 @@ class ResearchRunService:
             monitor=active_monitor,
             parallel_mode=prepared.request.parallel_mode,
             num_researchers=prepared.request.num_researchers,
+            prompt_registry=prepared.prompt_registry,
         )
         adapter = execution_adapter or AsyncioResearchRunExecutionAdapter()
 

@@ -32,6 +32,7 @@ from cc_deep_research.orchestration import (
     SourceCollectionService,
 )
 from cc_deep_research.orchestration.helpers import build_follow_up_queries, normalize_query_families
+from cc_deep_research.prompts import PromptRegistry
 from cc_deep_research.teams import LocalResearchTeam
 
 
@@ -50,6 +51,7 @@ class TeamResearchOrchestrator:
         monitor: ResearchMonitor | None = None,
         parallel_mode: bool | None = None,
         num_researchers: int | None = None,
+        prompt_registry: PromptRegistry | None = None,
     ) -> None:
         """Initialize the research orchestrator.
 
@@ -60,9 +62,11 @@ class TeamResearchOrchestrator:
                           If None, uses config.search_team.parallel_execution.
             num_researchers: Number of parallel researchers to spawn.
                           If None, uses config.search_team.num_researchers.
+            prompt_registry: Optional prompt registry with overrides applied.
         """
         self._config = config
         self._monitor = monitor or ResearchMonitor(enabled=False)
+        self._prompt_registry = prompt_registry or PromptRegistry()
         self._team: LocalResearchTeam | None = None
         self._agents: dict[str, Any] = {}
         self._runtime_state: OrchestratorRuntimeState | None = None
@@ -95,6 +99,7 @@ class TeamResearchOrchestrator:
             parallel_mode=self._parallel_mode,
             num_researchers=self._num_researchers,
             llm_event_callback=self._session_state.handle_llm_router_event,
+            prompt_registry=self._prompt_registry,
         )
         self._execution = ResearchExecutionService(
             config=config,
@@ -223,6 +228,8 @@ class TeamResearchOrchestrator:
             registry=runtime_state.llm_registry,
             session_state=self._session_state,
         )
+        # Record prompt configuration in session state
+        self._session_state.set_prompt_metadata(runtime_state.prompt_registry)
 
     async def _phase_analyze_strategy(
         self,
