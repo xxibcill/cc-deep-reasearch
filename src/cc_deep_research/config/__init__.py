@@ -35,6 +35,7 @@ from .schema import (
     ResearchConfig,
     ResearchQualitySettings,
     SearchConfig,
+    SearchCacheConfig,
     Settings,
     TavilyConfig,
 )
@@ -70,6 +71,7 @@ __all__ = [
     "ResearchConfig",
     "ResearchQualitySettings",
     "SearchConfig",
+    "SearchCacheConfig",
     "SecretFieldAction",
     "SecretFieldMetadata",
     "SecretFieldPatch",

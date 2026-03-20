@@ -52,6 +52,23 @@ class SearchConfig(BaseModel):
         return normalized or ["tavily"]
 
 
+class SearchCacheConfig(BaseModel):
+    """Persistent web search cache configuration."""
+
+    enabled: bool = Field(default=False)
+    ttl_seconds: int = Field(default=3600, ge=1)
+    max_entries: int = Field(default=1000, ge=1)
+    db_path: str | None = Field(default=None)
+
+    def resolve_db_path(self, config_path: Path | None = None) -> Path:
+        """Return the configured cache database path or a stable default."""
+        if self.db_path:
+            return Path(self.db_path).expanduser()
+        if config_path is not None:
+            return config_path.expanduser().with_name("search-cache.sqlite3")
+        return Path.cwd() / "search-cache.sqlite3"
+
+
 class TavilyConfig(BaseModel):
     """Tavily-specific configuration."""
 
@@ -327,6 +344,7 @@ class Config(BaseModel):
     """Main configuration model."""
 
     search: SearchConfig = Field(default_factory=SearchConfig)
+    search_cache: SearchCacheConfig = Field(default_factory=SearchCacheConfig)
     tavily: TavilyConfig = Field(default_factory=TavilyConfig)
     claude: ClaudeConfig = Field(default_factory=ClaudeConfig)
     research: ResearchConfig = Field(default_factory=ResearchConfig)
@@ -383,6 +401,7 @@ __all__ = [
     "ResearchConfig",
     "ResearchQualitySettings",
     "SearchConfig",
+    "SearchCacheConfig",
     "Settings",
     "TavilyConfig",
     "_normalize_api_key_list",

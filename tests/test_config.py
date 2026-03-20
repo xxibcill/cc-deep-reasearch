@@ -21,6 +21,7 @@ from cc_deep_research.config import (
     OutputConfig,
     ResearchConfig,
     SearchConfig,
+    SearchCacheConfig,
     Settings,
     TavilyConfig,
     _parse_api_keys_from_env,
@@ -166,6 +167,7 @@ class TestConfig:
         """Test default Config values."""
         config = Config()
         assert isinstance(config.search, SearchConfig)
+        assert isinstance(config.search_cache, SearchCacheConfig)
         assert isinstance(config.tavily, TavilyConfig)
         assert isinstance(config.research, ResearchConfig)
         assert isinstance(config.output, OutputConfig)
@@ -177,6 +179,7 @@ class TestConfig:
         data = config.model_dump()
 
         assert "search" in data
+        assert "search_cache" in data
         assert "tavily" in data
         assert "research" in data
         assert "output" in data
@@ -186,6 +189,7 @@ class TestConfig:
         """Test Config can be created from dict."""
         data = {
             "search": {"depth": "quick"},
+            "search_cache": {"enabled": True, "ttl_seconds": 120},
             "tavily": {"api_keys": ["test-key"]},
             "research": {
                 "claude_cli_path": "/usr/local/bin/claude",
@@ -194,9 +198,39 @@ class TestConfig:
         }
         config = Config(**data)
         assert config.search.depth == ResearchDepth.QUICK
+        assert config.search_cache.enabled is True
+        assert config.search_cache.ttl_seconds == 120
         assert config.tavily.api_keys == ["test-key"]
         assert config.research.claude_cli_path == "/usr/local/bin/claude"
         assert config.research.claude_cli_timeout_seconds == 240
+
+
+class TestSearchCacheConfig:
+    """Tests for SearchCacheConfig model."""
+
+    def test_default_search_cache_config(self) -> None:
+        """Search cache defaults should remain safe for existing installs."""
+        config = SearchCacheConfig()
+
+        assert config.enabled is False
+        assert config.ttl_seconds == 3600
+        assert config.max_entries == 1000
+        assert config.db_path is None
+
+    def test_resolve_db_path_uses_config_directory_by_default(self) -> None:
+        """The default cache DB path should be derived from the config file location."""
+        config = SearchCacheConfig()
+        config_path = Path("/tmp/example/config.yaml")
+
+        assert config.resolve_db_path(config_path) == Path("/tmp/example/search-cache.sqlite3")
+
+    def test_resolve_db_path_respects_explicit_override(self) -> None:
+        """An explicit cache DB path should take precedence over derived defaults."""
+        config = SearchCacheConfig(db_path="~/cache/search.sqlite3")
+
+        assert config.resolve_db_path(Path("/tmp/example/config.yaml")) == (
+            Path("~/cache/search.sqlite3").expanduser()
+        )
 
 
 class TestResearchRunConfigOverrides:
@@ -338,6 +372,8 @@ class TestConfigService:
         assert response.config_path == str(config_path)
         assert response.persisted_config["output"]["format"] == "markdown"
         assert response.effective_config["output"]["format"] == "markdown"
+        assert response.persisted_config["search_cache"]["enabled"] is False
+        assert response.effective_config["search_cache"]["enabled"] is False
 
     def test_build_config_response_reports_runtime_overrides(self) -> None:
         """The service should distinguish persisted values from env-overridden runtime values."""
