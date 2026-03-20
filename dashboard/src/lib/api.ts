@@ -23,6 +23,13 @@ import {
   Degradation,
   Failure,
 } from '@/types/telemetry';
+import type {
+  ConfigFieldError,
+  ConfigPatchErrorResponse,
+  ConfigPatchRequest,
+  ConfigResponse,
+  ConfigOverrideConflict,
+} from '@/types/config';
 
 const apiClient = axios.create({
   baseURL: dashboardRuntimeConfig.apiBaseUrl,
@@ -46,6 +53,12 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
     return error.message;
   }
   return fallback;
+}
+
+export interface ConfigUpdateErrorDetails {
+  message: string;
+  fields: ConfigFieldError[];
+  conflicts: ConfigOverrideConflict[];
 }
 
 interface SessionsResponse {
@@ -86,6 +99,37 @@ export async function getSessions(params: SessionListParams = {}): Promise<Sessi
     sessions: response.data.sessions.map(normalizeSession),
     total: response.data.total,
     nextCursor: response.data.next_cursor,
+  };
+}
+
+export async function getConfig(): Promise<ConfigResponse> {
+  const response = await apiClient.get<ConfigResponse>('/config');
+  return response.data;
+}
+
+export async function updateConfig(
+  request: ConfigPatchRequest
+): Promise<ConfigResponse> {
+  const response = await apiClient.patch<ConfigResponse>('/config', request);
+  return response.data;
+}
+
+export function getConfigUpdateErrorDetails(error: unknown): ConfigUpdateErrorDetails {
+  if (axios.isAxiosError(error)) {
+    const payload = error.response?.data as ConfigPatchErrorResponse | undefined;
+    if (payload && typeof payload.error === 'string') {
+      return {
+        message: payload.error,
+        fields: Array.isArray(payload.fields) ? payload.fields : [],
+        conflicts: Array.isArray(payload.conflicts) ? payload.conflicts : [],
+      };
+    }
+  }
+
+  return {
+    message: getApiErrorMessage(error, 'Failed to update configuration.'),
+    fields: [],
+    conflicts: [],
   };
 }
 
