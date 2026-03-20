@@ -461,7 +461,7 @@ class TestTeamResearchOrchestrator:
             {
                 "event_type": "route_fallback",
                 "agent_id": "analyzer",
-                "original_transport": "claude_cli",
+                "original_transport": "anthropic_api",
                 "fallback_transport": "openrouter_api",
                 "reason": "primary_route_unavailable_or_failed",
             }
@@ -1756,7 +1756,7 @@ class TestOrchestratorFailurePathRegressions:
             {
                 "event_type": "route_fallback",
                 "agent_id": "analyzer",
-                "original_transport": "claude_cli",
+                "original_transport": "anthropic_api",
                 "fallback_transport": "openrouter_api",
                 "reason": "primary_route_unavailable_or_failed",
             }

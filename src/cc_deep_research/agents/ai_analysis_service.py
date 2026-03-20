@@ -1,25 +1,21 @@
 """AI-powered analysis service for deep research.
 
-This service provides semantic analysis capabilities using Claude models:
+This service provides semantic analysis capabilities using routed LLM models:
 - Theme extraction with semantic clustering
 - Cross-reference analysis for consensus/disagreement
 - Gap identification with query relevance scoring
 - Synthesis with proper attribution
 
 Supports multiple integration methods:
-- 'api': Uses the Claude Code CLI for deep semantic analysis
+- 'api': Requires the shared routed LLM layer for semantic analysis
 - 'heuristic': Uses pattern matching and heuristics (fast, no API cost)
-- 'hybrid': Tries the Claude Code CLI first, falls back to heuristic
-
-Note: When running inside a Claude Code session (CLAUDECODE env var is set),
-the CLI-based analysis is automatically disabled to avoid nested session errors.
+- 'hybrid': Tries the shared routed LLM layer first, falls back to heuristic
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -39,10 +35,10 @@ logger = logging.getLogger(__name__)
 class AIAnalysisService:
     """Service for AI-powered semantic analysis of research sources.
 
-    This service leverages Claude models through multiple integration methods:
-    - API: Claude Code CLI calls for deep semantic understanding
+    This service leverages routed LLM models through multiple integration methods:
+    - API: Shared routed LLM calls for deep semantic understanding
     - Heuristic: Pattern matching and heuristics for fast analysis
-    - Hybrid: Claude Code CLI with heuristic fallback
+    - Hybrid: Routed LLM with heuristic fallback
     """
 
     def __init__(
@@ -58,7 +54,6 @@ class AIAnalysisService:
         Args:
             config: Agent configuration dictionary with:
                 - ai_integration_method: 'api', 'heuristic', or 'hybrid'
-                - claude_cli_path: Optional Claude CLI path override
                 - model: Model to use
                 - deep_analysis_tokens: Token limit
             monitor: Optional research monitor for telemetry.
@@ -81,45 +76,21 @@ class AIAnalysisService:
         self._ai_integration = AIAgentIntegration(config)
         self._ai_executor = AIExecutor(config)
 
-        # Initialize LLM client if using CLI-backed API or hybrid mode
+        # Initialize routed LLM client when semantic analysis is enabled.
         self._llm_client: LLMAnalysisClient | None = None
         if self._integration_method in ("api", "hybrid"):
             self._initialize_llm_client()
 
     def _initialize_llm_client(self) -> None:
-        """Initialize the LLM client for routed or Claude CLI-backed analysis."""
-        if self._llm_router is not None and self._llm_router.is_available(self._agent_id):
-            try:
-                from cc_deep_research.agents.llm_analysis_client import LLMAnalysisClient
+        """Initialize the routed LLM client when a shared router is available."""
+        if self._llm_router is None:
+            if self._integration_method == "api":
+                raise ValueError("ai_integration_method='api' requires an LLM router.")
+            return
 
-                llm_config = {
-                    **self._config,
-                    "timeout_seconds": self._config.get("claude_cli_timeout_seconds", 180),
-                    "request_executor": self._execute_via_router,
-                    "prompt_registry": self._prompt_registry,
-                    "agent_id": self._agent_id,
-                }
-                self._llm_client = LLMAnalysisClient(llm_config, monitor=self._monitor)
-                logger.info("Shared LLM router initialized for semantic analysis")
-                return
-            except Exception as e:  # pragma: no cover - defensive fallback
-                logger.warning(f"LLM router unavailable. Falling back to heuristic analysis: {e}")
-                if self._integration_method == "api":
-                    raise
-                return
-
-        if os.environ.get("CLAUDECODE"):
-            logger.info(
-                "Running inside Claude Code session (CLAUDECODE=1). "
-                "Skipping CLI-based analysis to avoid nested session errors. "
-                "Using heuristic-based analysis instead."
-            )
-            # User-facing warning
-            print(
-                "\n[INFO] Running inside Claude Code session - CLI-based analysis disabled. "
-                "Using heuristic fallback for analysis.\n"
-                "       Set ai_integration_method='heuristic' in config to avoid this warning.\n"
-            )
+        if not self._llm_router.is_available(self._agent_id):
+            if self._integration_method == "api":
+                raise ValueError(f"No LLM route is available for agent '{self._agent_id}'.")
             return
 
         try:
@@ -127,18 +98,15 @@ class AIAnalysisService:
 
             llm_config = {
                 **self._config,
-                "timeout_seconds": self._config.get("claude_cli_timeout_seconds", 180),
+                "timeout_seconds": self._config.get("llm_timeout_seconds", 180),
+                "request_executor": self._execute_via_router,
                 "prompt_registry": self._prompt_registry,
                 "agent_id": self._agent_id,
             }
             self._llm_client = LLMAnalysisClient(llm_config, monitor=self._monitor)
-            logger.info("Claude CLI client initialized for deep semantic analysis")
-        except ImportError as e:
-            logger.warning(f"Failed to import LLMAnalysisClient: {e}")
-            if self._integration_method == "api":
-                raise
-        except ValueError as e:
-            logger.warning(f"Claude CLI unavailable. Falling back to heuristic analysis: {e}")
+            logger.info("Shared LLM router initialized for semantic analysis")
+        except Exception as e:  # pragma: no cover - defensive fallback
+            logger.warning(f"Routed LLM unavailable. Falling back to heuristic analysis: {e}")
             if self._integration_method == "api":
                 raise
 
@@ -182,7 +150,7 @@ class AIAnalysisService:
     ) -> list[dict[str, Any]]:
         """Extract themes using semantic analysis.
 
-        Uses the Claude CLI when available for deep semantic understanding,
+        Uses the routed LLM when available for deep semantic understanding,
         falls back to heuristic-based extraction.
 
         Args:
@@ -212,20 +180,20 @@ class AIAnalysisService:
             if s.content or s.snippet
         ]
 
-        # Try LLM client first if available (CLI or hybrid mode)
+        # Try routed LLM first if available.
         if self._llm_client and sources_dict:
             try:
-                logger.info("Using Claude CLI for deep semantic theme extraction")
+                logger.info("Using routed LLM for deep semantic theme extraction")
                 themes = self._llm_client.extract_themes(
                     sources=sources_dict,
                     query=query,
                     num_themes=num_themes,
                 )
                 if themes:
-                    logger.info(f"Claude CLI extracted {len(themes)} themes")
+                    logger.info(f"Routed LLM extracted {len(themes)} themes")
                     return themes
             except Exception as e:
-                logger.warning(f"Claude CLI theme extraction failed: {e}")
+                logger.warning(f"Routed LLM theme extraction failed: {e}")
                 if self._integration_method == "api":
                     raise
                 # Fall through to heuristic for hybrid mode
@@ -271,7 +239,7 @@ class AIAnalysisService:
     ) -> dict[str, Any]:
         """Perform cross-reference analysis across sources.
 
-        Uses the Claude CLI when available for deep cross-reference analysis,
+        Uses the routed LLM when available for deep cross-reference analysis,
         falls back to heuristic-based analysis.
 
         Args:
@@ -299,9 +267,9 @@ class AIAnalysisService:
         # Try LLM client first if available
         if self._llm_client and sources_dict and themes:
             try:
-                logger.info("Using Claude CLI for cross-reference analysis")
+                logger.info("Using routed LLM for cross-reference analysis")
                 print(
-                    f"[DEBUG] Using Claude CLI for cross-reference analysis "
+                    f"[DEBUG] Using routed LLM for cross-reference analysis "
                     f"({len(sources_dict)} sources, {len(themes)} themes)"
                 )
                 result = self._llm_client.analyze_cross_reference(
@@ -309,13 +277,13 @@ class AIAnalysisService:
                     themes=themes,
                 )
                 logger.info(
-                    f"Claude CLI found {len(result.get('consensus_points', []))} consensus points, "
+                    f"Routed LLM found {len(result.get('consensus_points', []))} consensus points, "
                     f"{len(result.get('disagreement_points', []))} disagreement points"
                 )
                 return result
             except Exception as e:
-                logger.warning(f"Claude CLI cross-reference analysis failed: {e}")
-                print(f"[DEBUG] Claude CLI failed, falling back to heuristic analysis: {e}")
+                logger.warning(f"Routed LLM cross-reference analysis failed: {e}")
+                print(f"[DEBUG] Routed LLM failed, falling back to heuristic analysis: {e}")
                 if self._integration_method == "api":
                     raise
 
@@ -361,7 +329,7 @@ class AIAnalysisService:
     ) -> list[dict[str, Any]]:
         """Identify information gaps in the research.
 
-        Uses the Claude CLI when available for deep gap identification,
+        Uses the routed LLM when available for deep gap identification,
         falls back to heuristic-based analysis.
 
         Args:
@@ -390,16 +358,16 @@ class AIAnalysisService:
         # Try LLM client first if available
         if self._llm_client and sources_dict and themes:
             try:
-                logger.info("Using Claude CLI for gap identification")
+                logger.info("Using routed LLM for gap identification")
                 gaps = self._llm_client.identify_gaps(
                     sources=sources_dict,
                     query=query,
                     themes=themes,
                 )
-                logger.info(f"Claude CLI identified {len(gaps)} gaps")
+                logger.info(f"Routed LLM identified {len(gaps)} gaps")
                 return gaps
             except Exception as e:
-                logger.warning(f"Claude CLI gap identification failed: {e}")
+                logger.warning(f"Routed LLM gap identification failed: {e}")
                 if self._integration_method == "api":
                     raise
 
@@ -420,7 +388,7 @@ class AIAnalysisService:
     ) -> list[dict[str, Any]]:
         """Synthesize key findings with proper attribution.
 
-        Uses the Claude CLI when available for deep synthesis,
+        Uses the routed LLM when available for deep synthesis,
         falls back to heuristic-based synthesis.
 
         Args:
@@ -450,7 +418,7 @@ class AIAnalysisService:
         # Try LLM client first if available
         if self._llm_client and sources_dict and themes:
             try:
-                logger.info("Using Claude CLI for findings synthesis")
+                logger.info("Using routed LLM for findings synthesis")
                 findings = self._llm_client.synthesize_findings(
                     sources=sources_dict,
                     themes=themes,
@@ -458,10 +426,10 @@ class AIAnalysisService:
                     gaps=gaps,
                     query=query,
                 )
-                logger.info(f"Claude CLI synthesized {len(findings)} findings")
+                logger.info(f"Routed LLM synthesized {len(findings)} findings")
                 return findings
             except Exception as e:
-                logger.warning(f"Claude CLI synthesis failed: {e}")
+                logger.warning(f"Routed LLM synthesis failed: {e}")
                 if self._integration_method == "api":
                     raise
 

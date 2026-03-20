@@ -1,8 +1,8 @@
 """Base models and contracts for the LLM routing layer.
 
 This module defines the core types for agent-level LLM routing:
-- Transport types (CLI vs API)
-- Provider types (Claude, OpenRouter, Cerebras)
+- Transport types
+- Provider types
 - Route configuration and plans
 - Request/response models
 - Exception taxonomy
@@ -18,7 +18,6 @@ from pydantic import BaseModel, Field
 class LLMTransportType(StrEnum):
     """Transport mechanism for LLM operations."""
 
-    CLAUDE_CLI = "claude_cli"
     OPENROUTER_API = "openrouter_api"
     CEREBRAS_API = "cerebras_api"
     ANTHROPIC_API = "anthropic_api"
@@ -28,7 +27,6 @@ class LLMTransportType(StrEnum):
 class LLMProviderType(StrEnum):
     """LLM provider identifier."""
 
-    CLAUDE = "claude"
     OPENROUTER = "openrouter"
     CEREBRAS = "cerebras"
     ANTHROPIC = "anthropic"
@@ -43,11 +41,11 @@ class LLMRoute(BaseModel):
     """
 
     transport: LLMTransportType = Field(
-        default=LLMTransportType.CLAUDE_CLI,
+        default=LLMTransportType.ANTHROPIC_API,
         description="Transport mechanism for this route",
     )
     provider: LLMProviderType = Field(
-        default=LLMProviderType.CLAUDE,
+        default=LLMProviderType.ANTHROPIC,
         description="LLM provider for this route",
     )
     model: str = Field(
@@ -73,20 +71,13 @@ class LLMRoute(BaseModel):
         """Check if this route is available for use.
 
         Args:
-            check_nested_session: If True, check for CLAUDECODE environment
-                variable that would indicate a nested Claude CLI session.
+            check_nested_session: Kept for compatibility with older callers.
 
         Returns:
             True if the route can be used.
         """
-        import os
-
         if not self.enabled:
             return False
-
-        if check_nested_session and self.transport == LLMTransportType.CLAUDE_CLI:
-            if os.environ.get("CLAUDECODE"):
-                return False
 
         return True
 
@@ -104,7 +95,7 @@ class LLMRoutePlan(BaseModel):
     )
     fallback_order: list[LLMTransportType] = Field(
         default_factory=lambda: [
-            LLMTransportType.CLAUDE_CLI,
+            LLMTransportType.ANTHROPIC_API,
             LLMTransportType.OPENROUTER_API,
             LLMTransportType.CEREBRAS_API,
             LLMTransportType.HEURISTIC,
@@ -193,11 +184,11 @@ class LLMResponse(BaseModel):
         description="The model that generated this response",
     )
     provider: LLMProviderType = Field(
-        default=LLMProviderType.CLAUDE,
+        default=LLMProviderType.ANTHROPIC,
         description="The provider that handled this request",
     )
     transport: LLMTransportType = Field(
-        default=LLMTransportType.CLAUDE_CLI,
+        default=LLMTransportType.ANTHROPIC_API,
         description="The transport used for this request",
     )
     usage: dict[str, int] = Field(
@@ -301,7 +292,7 @@ class BaseLLMTransport(ABC):
     """Abstract base class for LLM transport adapters.
 
     Transport adapters implement the low-level communication with
-    specific LLM providers (Claude CLI, OpenRouter, Cerebras).
+    specific LLM providers.
     """
 
     def __init__(

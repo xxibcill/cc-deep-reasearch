@@ -1,7 +1,7 @@
 """LLM-powered analysis client for deep semantic analysis.
 
-This module provides AI-powered analysis using the Claude Code CLI,
-replacing heuristic-based pattern matching with real semantic understanding.
+This module provides AI-powered analysis through an injected request executor,
+replacing heuristic-based pattern matching with routed semantic analysis.
 
 Features:
 - Theme extraction with semantic clustering
@@ -9,71 +9,32 @@ Features:
 - Gap identification with query relevance scoring
 - Synthesis with proper attribution
 - Evidence quality analysis
-- Streamed subprocess telemetry for live monitoring
 - Prompt override support for customized agent behavior
 
-Uses prompt-based CLI invocations for large-source semantic analysis.
+Uses prompt-based routed LLM invocations for large-source semantic analysis.
 """
 
 from __future__ import annotations
 
 import json
-import os
-import queue
 import re
-import shutil
-import subprocess
-import threading
 import time
-from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from cc_deep_research.monitoring import ResearchMonitor
     from cc_deep_research.prompts import PromptRegistry
 
 
-class _StreamReaderThread(threading.Thread):
-    """Read a subprocess stream and forward chunks to a queue."""
-
-    def __init__(
-        self,
-        stream: Any,
-        stream_name: str,
-        chunk_queue: queue.Queue[tuple[str, str]],
-    ) -> None:
-        """Initialize the reader thread."""
-        super().__init__(daemon=True)
-        self._stream = stream
-        self._stream_name = stream_name
-        self._chunk_queue = chunk_queue
-
-    def run(self) -> None:
-        """Read the stream line by line and forward each chunk."""
-        if self._stream is None:
-            return
-        try:
-            for line in self._stream:
-                self._chunk_queue.put((self._stream_name, line))
-        except Exception:
-            pass
-        finally:
-            with suppress(Exception):
-                self._stream.close()
-
-
 class LLMAnalysisClient:
-    """Client for AI-powered semantic analysis using the Claude Code CLI.
+    """Client for AI-powered semantic analysis using a routed LLM executor.
 
     This client provides real semantic analysis that goes beyond
-    keyword matching, making actual Claude CLI calls for
+    keyword matching, making prompt-driven LLM calls for
     deep understanding of research content.
 
     Attributes:
-        _claude_cli_path: Claude CLI executable path
         _model: Model to use for analysis
         _timeout_seconds: Maximum seconds per response
-        _monitor: Optional research monitor for telemetry
         _prompt_registry: Optional prompt registry with overrides
         _agent_id: Agent identifier for prompt resolution
     """
@@ -81,37 +42,28 @@ class LLMAnalysisClient:
     def __init__(
         self,
         config: dict[str, Any],
-        monitor: ResearchMonitor | None = None,
+        monitor: Any | None = None,  # noqa: ARG002
     ) -> None:
         """Initialize LLM analysis client.
 
         Args:
             config: Configuration dictionary with:
-                - claude_cli_path: Optional Claude CLI path
                 - model: Model to use (default: claude-sonnet-4-6)
                 - timeout_seconds: Max seconds per request
+                - request_executor: Required callable for prompt execution
                 - prompt_registry: Optional PromptRegistry with overrides
                 - agent_id: Agent identifier for prompt resolution
-            monitor: Optional research monitor for subprocess telemetry.
+            monitor: Unused compatibility parameter retained for callers.
         """
         self._config = config
         self._model = config.get("model", "claude-sonnet-4-6")
         self._timeout_seconds = int(config.get("timeout_seconds", 180))
         self._usage_callback = config.get("usage_callback")
         self._request_executor = config.get("request_executor")
-        self._monitor = monitor
         self._prompt_registry: PromptRegistry | None = config.get("prompt_registry")
         self._agent_id: str = config.get("agent_id", "analyzer")
-        configured_path = config.get("claude_cli_path") or os.environ.get("CLAUDE_CLI_PATH")
-        self._claude_cli_path = configured_path or shutil.which("claude")
-        if self._request_executor is not None:
-            self._claude_cli_path = self._claude_cli_path or "router"
-            return
-        if not self._claude_cli_path:
-            raise ValueError(
-                "Claude Code CLI not found. Install `claude` or set "
-                "claude_cli_path/CLAUDE_CLI_PATH."
-            )
+        if self._request_executor is None:
+            raise ValueError("LLMAnalysisClient requires a request_executor.")
 
     def extract_themes(
         self,
@@ -121,7 +73,7 @@ class LLMAnalysisClient:
     ) -> list[dict[str, Any]]:
         """Extract themes using semantic analysis.
 
-        Makes actual Claude CLI calls for deep understanding.
+        Makes routed LLM calls for deep understanding.
 
         Args:
             sources: List of sources with url, title, content.
@@ -281,370 +233,24 @@ class LLMAnalysisClient:
 
         return "\n".join(sections)
 
-    def _build_command(self, prompt: str) -> list[str]:
-        """Build a Claude CLI command for a single prompt."""
-        return [
-            self._claude_cli_path,
-            "-p",
-            "--model",
-            self._model,
-            "--output-format",
-            "text",
-            "--no-session-persistence",
-            prompt,
-        ]
-
-    def _emit_subprocess_event(
-        self,
-        event_type: str,
-        status: str,
-        *,
-        parent_event_id: str | None = None,
-        duration_ms: int | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> str | None:
-        """Emit a structured subprocess telemetry event.
-
-        Args:
-            event_type: The event type (e.g., 'subprocess.started').
-            status: Event status (e.g., 'started', 'completed', 'failed').
-            parent_event_id: Optional parent event ID for correlation.
-            duration_ms: Optional duration in milliseconds.
-            metadata: Optional additional metadata.
-
-        Returns:
-            Event ID if monitor is available, None otherwise.
-        """
-        if self._monitor is None:
-            return None
-        return self._monitor.emit_event(
-            event_type=event_type,
-            category="llm",
-            name="claude_cli",
-            status=status,
-            parent_event_id=parent_event_id,
-            duration_ms=duration_ms,
-            metadata=metadata or {},
-        )
-
-    @staticmethod
-    def _sanitize_prompt_preview(prompt: str, max_chars: int = 160) -> str:
-        """Return a single-line prompt preview suitable for telemetry."""
-        compact_prompt = re.sub(r"\s+", " ", prompt).strip()
-        if len(compact_prompt) <= max_chars:
-            return compact_prompt
-        return compact_prompt[:max_chars].rstrip() + "..."
-
-    @staticmethod
-    def _truncate_stream_chunk(chunk: str, max_chars: int = 4000) -> dict[str, Any]:
-        """Return a dashboard-safe chunk payload."""
-        if len(chunk) <= max_chars:
-            return {
-                "content": chunk,
-                "content_length": len(chunk),
-                "content_truncated": False,
-            }
-        return {
-            "content": chunk[:max_chars],
-            "content_length": len(chunk),
-            "content_truncated": True,
-        }
-
-    def _emit_stream_chunk(
-        self,
-        *,
-        stream_name: str,
-        chunk: str,
-        chunk_index: int,
-        parent_event_id: str | None,
-        operation: str,
-    ) -> None:
-        """Emit a single stdout or stderr chunk event."""
-        if self._monitor is None or not chunk:
-            return
-
-        event_type = f"subprocess.{stream_name}_chunk"
-        metadata = {
-            "operation": operation,
-            "stream": stream_name,
-            "chunk_index": chunk_index,
-            **self._truncate_stream_chunk(chunk),
-        }
-        self._monitor.emit_event(
-            event_type=event_type,
-            category="llm",
-            name="claude_cli",
-            status="streaming",
-            parent_event_id=parent_event_id,
-            metadata=metadata,
-        )
-
-    def _drain_stream_queue(
-        self,
-        *,
-        chunk_queue: queue.Queue[tuple[str, str]],
-        stdout_chunks: list[str],
-        stderr_chunks: list[str],
-        chunk_indexes: dict[str, int],
-        parent_event_id: str | None,
-        operation: str,
-    ) -> None:
-        """Drain any available stream chunks and emit telemetry in order."""
-        while True:
-            try:
-                stream_name, chunk = chunk_queue.get_nowait()
-            except queue.Empty:
-                return
-
-            if stream_name == "stdout":
-                stdout_chunks.append(chunk)
-            else:
-                stderr_chunks.append(chunk)
-
-            chunk_index = chunk_indexes[stream_name]
-            chunk_indexes[stream_name] += 1
-            self._emit_stream_chunk(
-                stream_name=stream_name,
-                chunk=chunk,
-                chunk_index=chunk_index,
-                parent_event_id=parent_event_id,
-                operation=operation,
-            )
-
     def _request(self, operation: str, prompt: str) -> str:
-        """Execute a Claude CLI request with streamed subprocess telemetry.
-
-        Uses Popen for streaming capability while maintaining the blocking
-        interface expected by callers. Emits structured events for:
-        - subprocess.scheduled: Before process starts
-        - subprocess.started: When process begins
-        - subprocess.stdout_chunk: For each stdout chunk
-        - subprocess.stderr_chunk: For each stderr chunk
-        - subprocess.completed: On successful completion
-        - subprocess.timeout: On timeout
-        - subprocess.failed_to_start: On FileNotFoundError
-
-        Args:
-            operation: Name of the LLM operation (e.g., 'extract_themes').
-            prompt: The prompt to send to Claude CLI.
-
-        Returns:
-            The stdout response from Claude CLI.
-
-        Raises:
-            RuntimeError: On CLI failure, timeout, or missing executable.
-        """
-        if self._request_executor is not None:
-            try:
-                return str(self._request_executor(operation, prompt))
-            except Exception as exc:
-                raise RuntimeError(str(exc)) from exc
-
+        """Execute a routed LLM request through the injected executor."""
         start_time = time.time()
-        command = self._build_command(prompt)
-        prompt_preview = self._sanitize_prompt_preview(prompt)
-
-        # Get parent event ID from monitor's current context
-        parent_id = self._monitor.current_parent_id if self._monitor else None
-
-        # Emit subprocess.scheduled
-        scheduled_event_id = self._emit_subprocess_event(
-            event_type="subprocess.scheduled",
-            status="scheduled",
-            parent_event_id=parent_id,
-            metadata={
-                "operation": operation,
-                "executable": self._claude_cli_path,
-                "model": self._model,
-                "timeout_seconds": self._timeout_seconds,
-                "prompt_preview": prompt_preview,
-            },
-        )
-
-        stdout_chunks: list[str] = []
-        stderr_chunks: list[str] = []
-        chunk_queue: queue.Queue[tuple[str, str]] = queue.Queue()
-        chunk_indexes = {"stdout": 0, "stderr": 0}
-        process: subprocess.Popen[str] | None = None
-
         try:
-            # Start the process with pipes for streaming
-            process = subprocess.Popen(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-            )
+            response_text = str(self._request_executor(operation, prompt))
+        except Exception as exc:
+            raise RuntimeError(str(exc)) from exc
 
-            # Emit subprocess.started
-            self._emit_subprocess_event(
-                event_type="subprocess.started",
-                status="started",
-                parent_event_id=scheduled_event_id,
-                metadata={
-                    "operation": operation,
-                    "pid": process.pid,
-                    "executable": self._claude_cli_path,
-                },
-            )
-
-            stdout_reader = _StreamReaderThread(process.stdout, "stdout", chunk_queue)
-            stderr_reader = _StreamReaderThread(process.stderr, "stderr", chunk_queue)
-
-            stdout_reader.start()
-            stderr_reader.start()
-
-            timed_out = False
-            while True:
-                self._drain_stream_queue(
-                    chunk_queue=chunk_queue,
-                    stdout_chunks=stdout_chunks,
-                    stderr_chunks=stderr_chunks,
-                    chunk_indexes=chunk_indexes,
-                    parent_event_id=scheduled_event_id,
-                    operation=operation,
-                )
-
-                elapsed = time.time() - start_time
-                if elapsed >= self._timeout_seconds:
-                    timed_out = True
-                    break
-
-                try:
-                    process.wait(timeout=0.05)
-                    break
-                except subprocess.TimeoutExpired:
-                    continue
-
-            if timed_out:
-                process.kill()
-                process.wait()
-
-            stdout_reader.join(timeout=1.0)
-            stderr_reader.join(timeout=1.0)
-            self._drain_stream_queue(
-                chunk_queue=chunk_queue,
-                stdout_chunks=stdout_chunks,
-                stderr_chunks=stderr_chunks,
-                chunk_indexes=chunk_indexes,
-                parent_event_id=scheduled_event_id,
+        if self._usage_callback:
+            self._usage_callback(
                 operation=operation,
+                model=self._model,
+                prompt_tokens=0,
+                completion_tokens=0,
+                duration_ms=int((time.time() - start_time) * 1000),
             )
 
-            duration_ms = int((time.time() - start_time) * 1000)
-            full_stdout = "".join(stdout_chunks)
-            full_stderr = "".join(stderr_chunks)
-
-            if timed_out:
-                self._emit_subprocess_event(
-                    event_type="subprocess.timeout",
-                    status="timeout",
-                    parent_event_id=scheduled_event_id,
-                    duration_ms=duration_ms,
-                    metadata={
-                        "operation": operation,
-                        "timeout_seconds": self._timeout_seconds,
-                        "exit_code": process.returncode,
-                        "stdout_length": len(full_stdout),
-                        "stderr_length": len(full_stderr),
-                    },
-                )
-                raise RuntimeError(
-                    f"Claude CLI request timed out after {self._timeout_seconds} seconds. "
-                    f"Try increasing claude_cli_timeout_seconds in config."
-                )
-
-            if process.returncode != 0:
-                error_output = (
-                    full_stderr.strip() or full_stdout.strip() or "unknown Claude CLI error"
-                )
-
-                # Check for nested session error
-                if (
-                    "nested session" in error_output.lower()
-                    or "inside another Claude Code session" in error_output.lower()
-                ):
-                    self._emit_subprocess_event(
-                        event_type="subprocess.failed",
-                        status="failed",
-                        parent_event_id=scheduled_event_id,
-                        duration_ms=duration_ms,
-                        metadata={
-                            "operation": operation,
-                            "exit_code": process.returncode,
-                            "error_type": "nested_session",
-                        },
-                    )
-                    raise RuntimeError(
-                        "Claude CLI disabled: running inside Claude Code session. "
-                        "Set ai_integration_method='heuristic' to avoid this error."
-                    )
-
-                self._emit_subprocess_event(
-                    event_type="subprocess.failed",
-                    status="failed",
-                    parent_event_id=scheduled_event_id,
-                    duration_ms=duration_ms,
-                    metadata={
-                        "operation": operation,
-                        "exit_code": process.returncode,
-                        "stdout_length": len(full_stdout),
-                        "stderr_length": len(full_stderr),
-                        "error_preview": error_output[:200],
-                    },
-                )
-
-                raise RuntimeError(
-                    f"Claude CLI request failed for {operation}: {error_output}"
-                )
-
-            self._emit_subprocess_event(
-                event_type="subprocess.completed",
-                status="completed",
-                parent_event_id=scheduled_event_id,
-                duration_ms=duration_ms,
-                metadata={
-                    "operation": operation,
-                    "exit_code": 0,
-                    "stdout_length": len(full_stdout),
-                    "stderr_length": len(full_stderr),
-                    "stdout_chunks": chunk_indexes["stdout"],
-                    "stderr_chunks": chunk_indexes["stderr"],
-                },
-            )
-
-            # Emit usage telemetry (note: token counts are not available from CLI output)
-            if self._usage_callback:
-                self._usage_callback(
-                    operation=operation,
-                    model=self._model,
-                    prompt_tokens=0,  # CLI does not provide token counts
-                    completion_tokens=0,  # CLI does not provide token counts
-                    duration_ms=duration_ms,
-                )
-
-            return full_stdout.strip()
-
-        except FileNotFoundError as exc:
-            duration_ms = int((time.time() - start_time) * 1000)
-
-            # Emit subprocess.failed_to_start
-            self._emit_subprocess_event(
-                event_type="subprocess.failed_to_start",
-                status="failed",
-                parent_event_id=scheduled_event_id,
-                duration_ms=duration_ms,
-                metadata={
-                    "operation": operation,
-                    "error_type": "FileNotFoundError",
-                    "executable": self._claude_cli_path,
-                },
-            )
-
-            raise RuntimeError(
-                f"Claude CLI executable not found: {self._claude_cli_path}"
-            ) from exc
+        return response_text
 
     def _build_theme_extraction_prompt(self, query: str, content: str, num_themes: int) -> str:
         """Build prompt for theme extraction.

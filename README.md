@@ -143,14 +143,14 @@ The dashboard now reads active `events.jsonl` sessions directly, so you can insp
 - the current phase of an in-flight run
 - recent event tail entries with filters
 - agent activity
-- Claude CLI stdout and stderr chunks with terminal status
+- routed LLM activity and fallback telemetry
 
 Common failure modes:
 
 - Missing dashboard dependencies: install `cc-deep-research[dashboard]`
 - No telemetry yet: start a research run first, or point `telemetry dashboard` at a populated `--base-dir`
-- Nested Claude session fallback: when running inside Claude Code, Claude CLI analysis is disabled and the workflow falls back to heuristic analysis
-- Claude timeout or subprocess failure: inspect the Claude subprocess pane in the dashboard for `timeout`, `failed`, or `failed_to_start` events
+- No LLM route available: the workflow falls back to heuristic analysis
+- Provider timeout or failure: inspect the LLM route analytics pane in the dashboard for fallback and failure events
 
 ## Session Management
 
@@ -200,7 +200,7 @@ CC Deep Research supports multiple LLM backends for agent-level routing. The sys
 
 | Transport | Description | Best For |
 |-----------|-------------|----------|
-| `claude_cli` | Claude Code CLI subprocess | Full Claude capabilities, nested session detection |
+| `anthropic_api` | Anthropic API | Direct Claude API access without the CLI |
 | `openrouter_api` | OpenRouter API | Multi-model access, cost optimization |
 | `cerebras_api` | Cerebras API | Fast inference, low latency |
 | `heuristic` | Rule-based fallback | No external dependencies |
@@ -211,12 +211,6 @@ Configure LLM routing in `~/.config/cc-deep-research/config.yaml`:
 
 ```yaml
 llm:
-  # Claude CLI configuration
-  claude_cli:
-    enabled: true
-    model: "claude-sonnet-4-6"
-    timeout_seconds: 120
-
   # OpenRouter configuration
   openrouter:
     enabled: false
@@ -233,7 +227,7 @@ llm:
 
   # Fallback order when primary transport fails
   fallback_order:
-    - "claude_cli"
+    - "anthropic"
     - "openrouter"
     - "cerebras"
     - "heuristic"
@@ -242,9 +236,9 @@ llm:
   route_defaults:
     analyzer: "openrouter"      # Use OpenRouter for analysis
     deep_analyzer: "cerebras"   # Use Cerebras for deep analysis
-    report_quality_evaluator: "claude_cli"  # Use Claude CLI for report evaluation
-    reporter: "claude_cli"      # Default route for report-generation helpers
-    default: "claude_cli"
+    report_quality_evaluator: "anthropic"   # Use Anthropic for report evaluation
+    reporter: "anthropic"       # Default route for report-generation helpers
+    default: "anthropic"
 ```
 
 ### Mixed-Route Sessions
@@ -253,13 +247,9 @@ The planner can assign different routes to different agents within the same sess
 
 - **Analyzer agent** → OpenRouter (cost-effective for large context)
 - **Deep analyzer agent** → Cerebras (fast structured synthesis)
-- **Report quality evaluator** → Claude CLI (high-quality final pass)
+- **Report quality evaluator** → Anthropic API (high-quality final pass)
 
-This allows operators to optimize for both cost and quality across one run. The active CLI path now routes analyzer, deep analyzer, and report-quality evaluation through the shared LLM layer, while preserving heuristic fallback when no external transport is available.
-
-### Nested Session Detection
-
-When running inside Claude Code, the system automatically detects the nested session and falls back to alternative transports or heuristic analysis. This prevents recursive Claude CLI calls.
+This allows operators to optimize for both cost and quality across one run while preserving heuristic fallback when no external transport is available.
 
 ### Telemetry and Route Tracking
 

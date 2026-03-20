@@ -153,6 +153,21 @@ class TestSessionStore:
         result = session_store.load_session("nonexistent")
         assert result is None
 
+    def test_save_and_load_report_cache(self, session_store: SessionStore) -> None:
+        """Rendered report variants should round-trip through the session store."""
+        session_store.save_report(
+            "report-session",
+            ResearchOutputFormat.MARKDOWN,
+            "# Cached report",
+        )
+
+        cached = session_store.load_report(
+            "report-session",
+            ResearchOutputFormat.MARKDOWN,
+        )
+
+        assert cached == "# Cached report"
+
     def test_list_sessions_empty(self, session_store: SessionStore) -> None:
         """Test listing sessions when none exist."""
         sessions = session_store.list_sessions()
@@ -246,8 +261,20 @@ class TestSessionStore:
     ) -> None:
         """Test deleting a session."""
         session_store.save_session(sample_session)
+        session_store.save_report(
+            sample_session.session_id,
+            ResearchOutputFormat.MARKDOWN,
+            "# Cached report",
+        )
         assert session_store.session_exists(sample_session.session_id)
         assert session_store._session_summary_path(sample_session.session_id).exists()
+        assert (
+            session_store.load_report(
+                sample_session.session_id,
+                ResearchOutputFormat.MARKDOWN,
+            )
+            == "# Cached report"
+        )
 
         result = session_store.delete_session(sample_session.session_id)
         assert result.deleted is True
@@ -257,6 +284,13 @@ class TestSessionStore:
         assert bool(result) is True
         assert not session_store.session_exists(sample_session.session_id)
         assert not session_store._session_summary_path(sample_session.session_id).exists()
+        assert (
+            session_store.load_report(
+                sample_session.session_id,
+                ResearchOutputFormat.MARKDOWN,
+            )
+            is None
+        )
 
     def test_delete_session_not_found(self, session_store: SessionStore) -> None:
         """Test deleting a non-existent session."""
@@ -385,6 +419,14 @@ class TestResearchRunOutputMaterialization:
         assert result.report.media_type == "text/html"
         assert output_path.read_text(encoding="utf-8") == "<html># Report\n\nMarkdown body.</html>"
         assert session_store.session_exists(sample_session.session_id) is True
+        assert (
+            session_store.load_report(sample_session.session_id, ResearchOutputFormat.HTML)
+            == "<html># Report\n\nMarkdown body.</html>"
+        )
+        assert (
+            session_store.load_report(sample_session.session_id, ResearchOutputFormat.MARKDOWN)
+            == "# Report\n\nMarkdown body."
+        )
         assert result.warnings == []
         assert [artifact.kind for artifact in result.artifacts] == [
             ResearchArtifactKind.SESSION,
@@ -413,6 +455,13 @@ class TestResearchRunOutputMaterialization:
         assert result.report.format == ResearchOutputFormat.JSON
         assert result.report.path is None
         assert result.report.content == '{"report":"json"}'
+        assert (
+            SessionStore(session_dir=temp_session_dir).load_report(
+                sample_session.session_id,
+                ResearchOutputFormat.JSON,
+            )
+            == '{"report":"json"}'
+        )
         assert [artifact.kind for artifact in result.artifacts] == [ResearchArtifactKind.SESSION]
 
     def test_deserialize_legacy_metadata_normalizes_contract(self) -> None:

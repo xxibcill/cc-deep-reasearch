@@ -308,6 +308,39 @@ class TestSessionPurgeService:
             "deleted",
         ]
 
+    def test_bulk_delete_queries_live_sessions_once(self, temp_config_dir, monkeypatch) -> None:
+        """Bulk delete should reuse one active-session snapshot for the full batch."""
+        service = SessionPurgeService(
+            session_store=SessionStore(),
+            telemetry_dir=temp_config_dir / "telemetry",
+            db_path=temp_config_dir / "telemetry.duckdb",
+        )
+
+        call_count = 0
+
+        def fake_query_live_sessions(*, base_dir):
+            nonlocal call_count
+            del base_dir
+            call_count += 1
+            return [{"session_id": "bulk-service-active", "active": True}]
+
+        monkeypatch.setattr(
+            "cc_deep_research.research_runs.session_purge.query_live_sessions",
+            fake_query_live_sessions,
+        )
+
+        response = service.delete_sessions(
+            BulkSessionDeleteRequest(
+                session_ids=["bulk-service-active", "bulk-service-missing"],
+            )
+        )
+
+        assert call_count == 1
+        assert [result.outcome.value for result in response.results] == [
+            "active_conflict",
+            "not_found",
+        ]
+
 
 class TestDeleteSessionAPI:
     """Tests for the DELETE /api/sessions/{session_id} endpoint."""
