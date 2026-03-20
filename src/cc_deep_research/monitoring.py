@@ -835,7 +835,7 @@ class ResearchMonitor:
 
         Args:
             agent_id: The agent identifier.
-            transport: The transport type (claude_cli, openrouter_api, cerebras_api, heuristic).
+            transport: The transport type (anthropic_api, openrouter_api, cerebras_api, heuristic).
             provider: The provider type (claude, openrouter, cerebras, heuristic).
             model: The model identifier.
             source: Where the route came from (planner, config, fallback).

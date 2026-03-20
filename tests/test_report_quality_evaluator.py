@@ -670,8 +670,8 @@ class TestMixedRouteIntegration:
                 return LLMResponse(
                     content="Analysis result",
                     model="claude-sonnet",
-                    provider=LLMProviderType.CLAUDE,
-                    transport=LLMTransportType.CLAUDE_CLI,
+                    provider=LLMProviderType.ANTHROPIC,
+                    transport=LLMTransportType.ANTHROPIC_API,
                     latency_ms=2000,
                     finish_reason="stop",
                 )

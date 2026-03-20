@@ -42,6 +42,8 @@ OVERRIDE_SOURCES = {
     "llm.openrouter.api_keys": ["OPENROUTER_API_KEY", "OPENROUTER_API_KEYS"],
     "llm.cerebras.api_key": ["CEREBRAS_API_KEY", "CEREBRAS_API_KEYS"],
     "llm.cerebras.api_keys": ["CEREBRAS_API_KEY", "CEREBRAS_API_KEYS"],
+    "llm.anthropic.api_key": ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEYS"],
+    "llm.anthropic.api_keys": ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEYS"],
 }
 
 

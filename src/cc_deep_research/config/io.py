@@ -77,6 +77,14 @@ def load_config(config_path: Path | None = None) -> Config:
         config.llm.cerebras.api_keys = cerebras_api_keys
         config.llm.cerebras.api_key = cerebras_api_keys[0]
 
+    anthropic_api_keys = _parse_provider_api_keys_from_env(
+        "ANTHROPIC_API_KEYS",
+        "ANTHROPIC_API_KEY",
+    )
+    if anthropic_api_keys:
+        config.llm.anthropic.api_keys = anthropic_api_keys
+        config.llm.anthropic.api_key = anthropic_api_keys[0]
+
     if settings.depth:
         config.search.depth = settings.depth
         config.research.default_depth = settings.depth

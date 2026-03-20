@@ -212,6 +212,46 @@ def test_bulk_delete_request_rejects_oversized_batches() -> None:
         BulkSessionDeleteRequest(session_ids=oversized_ids)
 
 
+def test_get_session_report_serves_cached_report_without_regeneration(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The report endpoint should return cached artifacts before invoking the generator."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    session = ResearchSession(
+        session_id="cached-report-session",
+        query="What changed?",
+        depth=ResearchDepth.STANDARD,
+        metadata={"analysis": {"key_findings": ["cached"]}},
+    )
+    store = SessionStore()
+    store.save_session(session)
+    store.save_report(
+        session.session_id,
+        ResearchOutputFormat.MARKDOWN,
+        "# Cached report",
+    )
+
+    class FailingReportGenerator:
+        def __init__(self, *_args, **_kwargs) -> None:
+            raise AssertionError("Report generator should not run when cache is warm")
+
+    monkeypatch.setattr(
+        "cc_deep_research.web_server.ReportGenerator",
+        FailingReportGenerator,
+    )
+
+    client = TestClient(create_app())
+    response = client.get(f"/api/sessions/{session.session_id}/report?format=markdown")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["session_id"] == session.session_id
+    assert payload["format"] == "markdown"
+    assert payload["media_type"] == "text/markdown"
+    assert payload["content"] == "# Cached report"
+
+
 def test_get_config_returns_masked_persisted_and_effective_state(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

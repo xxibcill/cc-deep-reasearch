@@ -16,7 +16,6 @@ from cc_deep_research.llm.base import (
 )
 from cc_deep_research.llm.anthropic import AnthropicAPITransport
 from cc_deep_research.llm.cerebras import CerebrasTransport
-from cc_deep_research.llm.claude_cli import ClaudeCLITransport
 from cc_deep_research.llm.openrouter import OpenRouterTransport
 
 if TYPE_CHECKING:
@@ -78,12 +77,6 @@ class LLMRouter:
         return transport
 
     def _create_transport(self, route: LLMRoute) -> BaseLLMTransport | None:
-        if route.transport == LLMTransportType.CLAUDE_CLI:
-            return ClaudeCLITransport(
-                route,
-                monitor=self._monitor,
-                telemetry_callback=self._telemetry_callback,
-            )
         if route.transport == LLMTransportType.OPENROUTER_API:
             return OpenRouterTransport(route, telemetry_callback=self._telemetry_callback)
         if route.transport == LLMTransportType.CEREBRAS_API:

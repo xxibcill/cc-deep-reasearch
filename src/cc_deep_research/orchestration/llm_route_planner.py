@@ -5,9 +5,6 @@ for agents based on transport availability and task requirements.
 """
 
 from __future__ import annotations
-
-import os
-import shutil
 from typing import TYPE_CHECKING
 
 from cc_deep_research.config import Config
@@ -109,44 +106,19 @@ class LLMRoutePlanner:
         """
         availability: dict[LLMTransportType, bool] = {}
 
-        # Check Claude CLI availability
-        availability[LLMTransportType.CLAUDE_CLI] = self._check_claude_cli_available()
-
         # Check OpenRouter availability
         availability[LLMTransportType.OPENROUTER_API] = self._check_openrouter_available()
 
         # Check Cerebras availability
         availability[LLMTransportType.CEREBRAS_API] = self._check_cerebras_available()
 
+        # Check Anthropic availability
+        availability[LLMTransportType.ANTHROPIC_API] = self._check_anthropic_available()
+
         # Heuristic is always available as fallback
         availability[LLMTransportType.HEURISTIC] = True
 
         return availability
-
-    def _check_claude_cli_available(self) -> bool:
-        """Check if Claude CLI transport is available.
-
-        Claude CLI is available when:
-        1. The CLI executable exists
-        2. We're not running inside a nested Claude Code session
-
-        Returns:
-            True if Claude CLI is available.
-        """
-        if not self._llm_config.claude_cli.enabled:
-            return False
-
-        # Check for nested session constraint
-        if os.environ.get("CLAUDECODE"):
-            return False
-
-        # Check for CLI executable
-        cli_path = self._llm_config.claude_cli.path
-        if cli_path:
-            return shutil.which(cli_path) is not None
-
-        # Fall back to checking 'claude' in PATH
-        return shutil.which("claude") is not None
 
     def _check_openrouter_available(self) -> bool:
         """Check if OpenRouter transport is available.
@@ -178,6 +150,13 @@ class LLMRoutePlanner:
 
         return bool(self._llm_config.cerebras.get_api_keys())
 
+    def _check_anthropic_available(self) -> bool:
+        """Check if Anthropic transport is available."""
+        if not self._llm_config.anthropic.enabled:
+            return False
+
+        return bool(self._llm_config.anthropic.get_api_keys())
+
     def _build_fallback_order(
         self,
         availability: dict[LLMTransportType, bool],
@@ -195,9 +174,9 @@ class LLMRoutePlanner:
 
         # Map string names to enum values
         name_to_transport = {
-            "claude_cli": LLMTransportType.CLAUDE_CLI,
             "openrouter": LLMTransportType.OPENROUTER_API,
             "cerebras": LLMTransportType.CEREBRAS_API,
+            "anthropic": LLMTransportType.ANTHROPIC_API,
             "heuristic": LLMTransportType.HEURISTIC,
         }
 
@@ -262,9 +241,9 @@ class LLMRoutePlanner:
         """
         # Map preference name to transport type
         name_to_transport = {
-            "claude_cli": LLMTransportType.CLAUDE_CLI,
             "openrouter": LLMTransportType.OPENROUTER_API,
             "cerebras": LLMTransportType.CEREBRAS_API,
+            "anthropic": LLMTransportType.ANTHROPIC_API,
             "heuristic": LLMTransportType.HEURISTIC,
         }
 
@@ -280,6 +259,7 @@ class LLMRoutePlanner:
             for transport in [
                 LLMTransportType.CEREBRAS_API,
                 LLMTransportType.OPENROUTER_API,
+                LLMTransportType.ANTHROPIC_API,
             ]:
                 if availability.get(transport, False):
                     return self._create_route_model(transport)
@@ -303,14 +283,6 @@ class LLMRoutePlanner:
         Returns:
             Route model with appropriate configuration.
         """
-        if transport == LLMTransportType.CLAUDE_CLI:
-            return LLMRouteModel(
-                transport=LLMTransportType.CLAUDE_CLI,
-                provider=LLMProviderType.CLAUDE,
-                model=self._llm_config.claude_cli.model,
-                enabled=True,
-            )
-
         if transport == LLMTransportType.OPENROUTER_API:
             return LLMRouteModel(
                 transport=LLMTransportType.OPENROUTER_API,
@@ -324,6 +296,14 @@ class LLMRoutePlanner:
                 transport=LLMTransportType.CEREBRAS_API,
                 provider=LLMProviderType.CEREBRAS,
                 model=self._llm_config.cerebras.model,
+                enabled=True,
+            )
+
+        if transport == LLMTransportType.ANTHROPIC_API:
+            return LLMRouteModel(
+                transport=LLMTransportType.ANTHROPIC_API,
+                provider=LLMProviderType.ANTHROPIC,
+                model=self._llm_config.anthropic.model,
                 enabled=True,
             )
 
@@ -400,9 +380,15 @@ class LLMRoutePlanner:
                 "api_keys": api_keys,
                 "base_url": self._llm_config.cerebras.base_url,
             }
-        elif transport == LLMTransportType.CLAUDE_CLI:
-            timeout_seconds = self._llm_config.claude_cli.timeout_seconds
-            extra = {"path": self._llm_config.claude_cli.path}
+        elif transport == LLMTransportType.ANTHROPIC_API:
+            api_keys = self._llm_config.anthropic.get_api_keys()
+            timeout_seconds = self._llm_config.anthropic.timeout_seconds
+            extra = {
+                "api_key": api_keys[0] if api_keys else None,
+                "api_keys": api_keys,
+                "base_url": self._llm_config.anthropic.base_url,
+                "max_tokens": self._llm_config.anthropic.max_tokens,
+            }
 
         return LLMRoute(
             transport=transport,

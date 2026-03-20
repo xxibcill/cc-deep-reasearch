@@ -69,8 +69,22 @@ function formatEventTime(timestamp: string): string {
   return Number.isNaN(date.getTime()) ? timestamp : date.toLocaleTimeString();
 }
 
-function StatusBadge({ connected }: { connected: boolean }) {
-  return <Badge variant={connected ? 'success' : 'destructive'}>{connected ? 'Live' : 'Offline'}</Badge>;
+function StatusBadge({
+  connected,
+  eventCount,
+}: {
+  connected: boolean;
+  eventCount: number;
+}) {
+  if (connected) {
+    return <Badge variant="success">Live</Badge>;
+  }
+
+  if (eventCount > 0) {
+    return <Badge variant="secondary">Snapshot</Badge>;
+  }
+
+  return <Badge variant="destructive">Offline</Badge>;
 }
 
 function ViewModeSelector({
@@ -432,186 +446,224 @@ export function SessionDetails({
   const llmEvents = filteredEvents.filter((event) => event.category === 'llm');
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.12),_transparent_30%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)]">
-      <header className="border-b bg-card/90 backdrop-blur">
-        <div className="mx-auto max-w-[1440px] px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-bold">Session: {sessionId.slice(0, 8)}</h1>
-              <div className="flex items-center gap-2 mt-0.5">
-                <StatusBadge connected={connected} />
-                <span className="text-sm text-muted-foreground">{deferredEvents.length} events</span>
+    <div className="space-y-5">
+      <Card className="overflow-hidden border-slate-200/80 shadow-sm">
+        <CardHeader className="border-b bg-[linear-gradient(135deg,rgba(15,23,42,0.04),rgba(14,165,233,0.10))]">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <CardTitle>Telemetry Explorer</CardTitle>
+                <StatusBadge connected={connected} eventCount={deferredEvents.length} />
               </div>
+              <p className="text-sm text-muted-foreground">
+                Session <span className="font-mono text-xs text-foreground">{sessionId}</span> with{' '}
+                {deferredEvents.length} buffered events ready for inspection.
+              </p>
             </div>
-            <ViewModeSelector currentMode={viewMode} onViewModeChange={onViewModeChange} />
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
+                View
+              </span>
+              <ViewModeSelector currentMode={viewMode} onViewModeChange={onViewModeChange} />
+            </div>
           </div>
-        </div>
-      </header>
-
-      <main className="mx-auto grid max-w-[1440px] gap-5 px-4 py-5 lg:grid-cols-[1fr_360px]">
-        <div className="space-y-5">
-          <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
-            <StatsCard icon={Activity} label="Agents" value={agentEvents.length} accentClass="text-blue-600" />
-            <StatsCard icon={Zap} label="Tool Calls" value={toolEvents.length} accentClass="text-yellow-600" />
-            <StatsCard icon={Network} label="LLM Calls" value={llmEvents.length} accentClass="text-green-600" />
-            <StatsCard icon={List} label="Total Events" value={filteredEvents.length} accentClass="text-purple-600" />
-          </div>
-
-          {viewMode === 'graph' && (
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle>Workflow Graph</CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    D3-powered phase and agent flow with pan, zoom, and click-to-inspect.
-                  </p>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <WorkflowGraph
-                  edges={filteredDerived.graph.edges}
-                  eventIndex={eventIndex}
-                  nodes={filteredDerived.graph.nodes}
-                  onSelectEvent={onSelectEvent}
-                  selectedEventId={selectedEventId}
-                />
-              </CardContent>
-            </Card>
-          )}
-
-          {viewMode === 'timeline' && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Agent Timeline</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <AgentTimeline
-                  eventIndex={eventIndex}
-                  lanes={filteredDerived.timeline}
-                  onSelectEvent={onSelectEvent}
-                />
-              </CardContent>
-            </Card>
-          )}
-
-          {viewMode === 'table' && <EventTable events={filteredEvents} onSelectEvent={onSelectEvent} />}
-        </div>
-
-        <div className="space-y-5">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Filters</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-2">
-                <Select
-                  label="Agent"
-                  value={filters.agent[0] ?? ''}
-                  options={derived.agents}
-                  onChange={(value) => setFilters({ agent: value ? [value] : [] })}
-                />
-                <Select
-                  label="Phase"
-                  value={filters.phase[0] ?? ''}
-                  options={derived.phases}
-                  onChange={(value) => setFilters({ phase: value ? [value] : [] })}
-                />
-                <Select
-                  label="Tool"
-                  value={filters.tool[0] ?? ''}
-                  options={derived.tools}
-                  onChange={(value) => setFilters({ tool: value ? [value] : [] })}
-                />
-                <Select
-                  label="Provider"
-                  value={filters.provider[0] ?? ''}
-                  options={derived.providers}
-                  onChange={(value) => setFilters({ provider: value ? [value] : [] })}
-                />
-                <Select
-                  label="Status"
-                  value={filters.status[0] ?? ''}
-                  options={derived.statuses}
-                  onChange={(value) => setFilters({ status: value ? [value] : [] })}
-                />
-                <Select
-                  label="Event Type"
-                  value={filters.eventTypes[0] ?? ''}
-                  options={derived.eventTypes}
-                  onChange={(value) => setFilters({ eventTypes: value ? [value] : [] })}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="space-y-3">
-            <Tabs
-              tabs={[
-                { value: 'inspect', label: 'Inspect' },
-                { value: 'tools', label: 'Tools' },
-                { value: 'llm', label: 'LLM' },
-                { value: 'derived', label: 'Derived' },
-                { value: 'prompts', label: 'Prompts' },
-              ]}
-              value={detailTab}
-              onValueChange={(value) => setDetailTab(value as 'inspect' | 'tools' | 'llm' | 'derived' | 'prompts')}
+        </CardHeader>
+        <CardContent className="space-y-5 p-5">
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+            <StatsCard
+              icon={Activity}
+              label="Agents"
+              value={agentEvents.length}
+              accentClass="text-sky-600"
             />
-            {detailTab === 'inspect' && (
-              <DetailInspector event={selectedEvent} reasoning={selectedReasoning} toolExecution={selectedTool} />
-            )}
-            {detailTab === 'tools' && (
-              <ToolExecutionPanel
-                executions={filteredDerived.toolExecutions}
-                onSelectExecution={(execution) => {
-                  setSelectedToolId(execution.id);
-                  onSelectEvent(eventIndex.get(execution.eventId) ?? null);
-                }}
-                selectedExecutionId={selectedToolId}
-              />
-            )}
-            {detailTab === 'llm' && (
-              <LLMReasoningPanel
-                items={filteredDerived.llmReasoning}
-                onSelectReasoning={(item) => {
-                  setSelectedReasoningId(item.id);
-                  const eventId = item.completionEventId ?? item.requestEventId ?? item.routeEventId;
-                  onSelectEvent(eventId ? eventIndex.get(eventId) ?? null : null);
-                }}
-                selectedReasoningId={selectedReasoningId}
-              />
-            )}
-            {detailTab === 'derived' && derivedOutputs && (
-              <DerivedOutputsPanel
-                narrative={derivedOutputs.narrative}
-                criticalPath={derivedOutputs.criticalPath}
-                stateChanges={derivedOutputs.stateChanges}
-                decisions={derivedOutputs.decisions}
-                degradations={derivedOutputs.degradations}
-                failures={derivedOutputs.failures}
-                onSelectEvent={(eventId) => {
-                  const event = eventIndex.get(eventId);
-                  if (event) {
-                    onSelectEvent(event);
-                    setDetailTab('inspect');
-                  }
-                }}
-              />
-            )}
-            {detailTab === 'derived' && !derivedOutputs && (
-              <Card className="h-full">
-                <CardContent className="flex items-center justify-center py-10 text-sm text-muted-foreground">
-                  Derived outputs not available. This data is loaded from historical sessions.
+            <StatsCard
+              icon={Zap}
+              label="Tool Calls"
+              value={toolEvents.length}
+              accentClass="text-amber-600"
+            />
+            <StatsCard
+              icon={Network}
+              label="LLM Calls"
+              value={llmEvents.length}
+              accentClass="text-emerald-600"
+            />
+            <StatsCard
+              icon={List}
+              label="Total Events"
+              value={filteredEvents.length}
+              accentClass="text-slate-700"
+            />
+          </div>
+
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="space-y-5">
+              {viewMode === 'graph' && (
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between">
+                    <div>
+                      <CardTitle>Workflow Graph</CardTitle>
+                      <p className="text-sm text-muted-foreground">
+                        D3-powered phase and agent flow with pan, zoom, and click-to-inspect.
+                      </p>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <WorkflowGraph
+                      edges={filteredDerived.graph.edges}
+                      eventIndex={eventIndex}
+                      nodes={filteredDerived.graph.nodes}
+                      onSelectEvent={onSelectEvent}
+                      selectedEventId={selectedEventId}
+                    />
+                  </CardContent>
+                </Card>
+              )}
+
+              {viewMode === 'timeline' && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Agent Timeline</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <AgentTimeline
+                      eventIndex={eventIndex}
+                      lanes={filteredDerived.timeline}
+                      onSelectEvent={onSelectEvent}
+                    />
+                  </CardContent>
+                </Card>
+              )}
+
+              {viewMode === 'table' && (
+                <EventTable events={filteredEvents} onSelectEvent={onSelectEvent} />
+              )}
+            </div>
+
+            <div className="space-y-5">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Filters</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Select
+                      label="Agent"
+                      value={filters.agent[0] ?? ''}
+                      options={derived.agents}
+                      onChange={(value) => setFilters({ agent: value ? [value] : [] })}
+                    />
+                    <Select
+                      label="Phase"
+                      value={filters.phase[0] ?? ''}
+                      options={derived.phases}
+                      onChange={(value) => setFilters({ phase: value ? [value] : [] })}
+                    />
+                    <Select
+                      label="Tool"
+                      value={filters.tool[0] ?? ''}
+                      options={derived.tools}
+                      onChange={(value) => setFilters({ tool: value ? [value] : [] })}
+                    />
+                    <Select
+                      label="Provider"
+                      value={filters.provider[0] ?? ''}
+                      options={derived.providers}
+                      onChange={(value) => setFilters({ provider: value ? [value] : [] })}
+                    />
+                    <Select
+                      label="Status"
+                      value={filters.status[0] ?? ''}
+                      options={derived.statuses}
+                      onChange={(value) => setFilters({ status: value ? [value] : [] })}
+                    />
+                    <Select
+                      label="Event Type"
+                      value={filters.eventTypes[0] ?? ''}
+                      options={derived.eventTypes}
+                      onChange={(value) => setFilters({ eventTypes: value ? [value] : [] })}
+                    />
+                  </div>
                 </CardContent>
               </Card>
-            )}
-            {detailTab === 'prompts' && (
-              <PromptConfigurationPanel promptMetadata={promptMetadata} />
-            )}
-          </div>
-        </div>
 
-        {selectedEvent && <EventDetailsModal event={selectedEvent} onClose={() => onSelectEvent(null)} />}
-      </main>
+              <div className="space-y-3">
+                <Tabs
+                  tabs={[
+                    { value: 'inspect', label: 'Inspect' },
+                    { value: 'tools', label: 'Tools' },
+                    { value: 'llm', label: 'LLM' },
+                    { value: 'derived', label: 'Derived' },
+                    { value: 'prompts', label: 'Prompts' },
+                  ]}
+                  value={detailTab}
+                  onValueChange={(value) =>
+                    setDetailTab(value as 'inspect' | 'tools' | 'llm' | 'derived' | 'prompts')
+                  }
+                />
+                {detailTab === 'inspect' && (
+                  <DetailInspector
+                    event={selectedEvent}
+                    reasoning={selectedReasoning}
+                    toolExecution={selectedTool}
+                  />
+                )}
+                {detailTab === 'tools' && (
+                  <ToolExecutionPanel
+                    executions={filteredDerived.toolExecutions}
+                    onSelectExecution={(execution) => {
+                      setSelectedToolId(execution.id);
+                      onSelectEvent(eventIndex.get(execution.eventId) ?? null);
+                    }}
+                    selectedExecutionId={selectedToolId}
+                  />
+                )}
+                {detailTab === 'llm' && (
+                  <LLMReasoningPanel
+                    items={filteredDerived.llmReasoning}
+                    onSelectReasoning={(item) => {
+                      setSelectedReasoningId(item.id);
+                      const eventId =
+                        item.completionEventId ?? item.requestEventId ?? item.routeEventId;
+                      onSelectEvent(eventId ? eventIndex.get(eventId) ?? null : null);
+                    }}
+                    selectedReasoningId={selectedReasoningId}
+                  />
+                )}
+                {detailTab === 'derived' && derivedOutputs && (
+                  <DerivedOutputsPanel
+                    narrative={derivedOutputs.narrative}
+                    criticalPath={derivedOutputs.criticalPath}
+                    stateChanges={derivedOutputs.stateChanges}
+                    decisions={derivedOutputs.decisions}
+                    degradations={derivedOutputs.degradations}
+                    failures={derivedOutputs.failures}
+                    onSelectEvent={(eventId) => {
+                      const event = eventIndex.get(eventId);
+                      if (event) {
+                        onSelectEvent(event);
+                        setDetailTab('inspect');
+                      }
+                    }}
+                  />
+                )}
+                {detailTab === 'derived' && !derivedOutputs && (
+                  <Card className="h-full">
+                    <CardContent className="flex items-center justify-center py-10 text-sm text-muted-foreground">
+                      Derived outputs not available. This data is loaded from historical sessions.
+                    </CardContent>
+                  </Card>
+                )}
+                {detailTab === 'prompts' && (
+                  <PromptConfigurationPanel promptMetadata={promptMetadata} />
+                )}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {selectedEvent && <EventDetailsModal event={selectedEvent} onClose={() => onSelectEvent(null)} />}
     </div>
   );
 }
