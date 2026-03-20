@@ -8,6 +8,10 @@ from .ingest import (
 from .live import (
     delete_telemetry_session,
     get_default_telemetry_dir,
+    query_checkpoint_detail,
+    query_checkpoint_lineage,
+    query_checkpoints_by_phase,
+    query_latest_resumable_checkpoint,
     query_live_agent_timeline,
     query_live_event_tail,
     query_live_event_tree,
@@ -15,6 +19,7 @@ from .live import (
     query_live_session_detail,
     query_live_sessions,
     query_live_subprocess_streams,
+    query_session_checkpoints,
 )
 from .query import (
     query_dashboard_data,
@@ -31,9 +36,13 @@ __all__ = [
     "get_default_dashboard_db_path",
     "get_default_telemetry_dir",
     "ingest_telemetry_to_duckdb",
+    "query_checkpoint_detail",
+    "query_checkpoint_lineage",
+    "query_checkpoints_by_phase",
     "query_dashboard_data",
     "query_event_tree",
     "query_events_by_parent",
+    "query_latest_resumable_checkpoint",
     "query_live_agent_timeline",
     "query_live_event_tail",
     "query_live_event_tree",
@@ -43,5 +52,6 @@ __all__ = [
     "query_live_subprocess_streams",
     "query_llm_route_analytics",
     "query_llm_route_summary",
+    "query_session_checkpoints",
     "query_session_detail",
 ]

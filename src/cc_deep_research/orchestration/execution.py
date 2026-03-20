@@ -15,6 +15,7 @@ from cc_deep_research.models.analysis import (
     StrategyResult,
     ValidationResult,
 )
+from cc_deep_research.models.checkpoint import CheckpointOperation, CheckpointPhase
 from cc_deep_research.models.search import QueryFamily, ResearchDepth, SearchResultItem
 from cc_deep_research.models.session import ResearchSession
 from cc_deep_research.monitoring import (
@@ -78,6 +79,7 @@ class ResearchExecutionService:
                 description="Initializing agent team",
                 operation=hooks.initialize_team,
                 cancellation_check=cancellation_check,
+                input_ref={"parallel_mode": self._parallel_mode, "num_researchers": self._num_researchers},
             )
             strategy = await self._phase_runner.run_phase(
                 phase_hook=phase_hook,
@@ -85,6 +87,11 @@ class ResearchExecutionService:
                 description="Analyzing research strategy",
                 operation=lambda: hooks.analyze_strategy(query, depth),
                 cancellation_check=cancellation_check,
+                input_ref={"query": query, "depth": depth.value},
+                output_transformer=lambda result: {
+                    "summary": result.summary if hasattr(result, "summary") else None,
+                    "strategy_type": result.strategy.strategy_type if hasattr(result, "strategy") else None,
+                },
             )
             raw_query_families = await self._phase_runner.run_phase(
                 phase_hook=phase_hook,
@@ -92,6 +99,10 @@ class ResearchExecutionService:
                 description="Expanding search queries",
                 operation=lambda: hooks.expand_queries(query, strategy, depth),
                 cancellation_check=cancellation_check,
+                input_ref={"query": query, "depth": depth.value},
+                output_transformer=lambda result: {
+                    "family_count": len(result),
+                },
             )
             strategy.strategy.query_families = hooks.normalize_query_families(
                 original_query=query,
@@ -108,6 +119,14 @@ class ResearchExecutionService:
                     min_sources=min_sources,
                 ),
                 cancellation_check=cancellation_check,
+                input_ref={
+                    "query_family_count": len(strategy.strategy.query_families),
+                    "depth": depth.value,
+                    "min_sources": min_sources,
+                },
+                output_transformer=lambda result: {
+                    "source_count": len(result),
+                },
             )
             analysis, validation, sources, iteration_history = await hooks.run_analysis_workflow(
                 query=query,
@@ -151,7 +170,35 @@ class ResearchExecutionService:
                     iteration_history=iteration_history,
                 ),
             )
+
+            # Emit final session completion checkpoint
+            self._monitor.emit_checkpoint(
+                phase=CheckpointPhase.SESSION_COMPLETE.value,
+                operation=CheckpointOperation.FINALIZE.value,
+                output_ref={
+                    "session_id": session_id,
+                    "source_count": len(sources),
+                    "finding_count": len(analysis.key_findings),
+                    "status": "completed",
+                },
+                replayable=True,
+            )
+
             return session
+        except Exception as exc:
+            # Emit interrupted checkpoint on failure
+            self._monitor.emit_checkpoint(
+                phase=CheckpointPhase.SESSION_INTERRUPTED.value,
+                operation=CheckpointOperation.INTERRUPT.value,
+                output_ref={
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                    "status": "interrupted",
+                },
+                replayable=False,
+                replayable_reason=f"Session interrupted: {type(exc).__name__}",
+            )
+            raise
         finally:
             self._phase_runner.notify_phase(
                 phase_hook,
@@ -181,6 +228,20 @@ class ResearchExecutionService:
             parallel_mode=self._parallel_mode,
             configured_researchers=self._num_researchers,
         )
+
+        # Emit session start checkpoint
+        self._monitor.emit_checkpoint(
+            phase=CheckpointPhase.SESSION_START.value,
+            operation=CheckpointOperation.INITIALIZE.value,
+            input_ref={
+                "query": query,
+                "depth": depth.value,
+                "parallel_mode": self._parallel_mode,
+                "num_researchers": self._num_researchers,
+            },
+            replayable=True,
+        )
+
         self._monitor.record_reasoning_summary(
             stage="session",
             summary="Research session initialized",

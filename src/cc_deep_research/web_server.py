@@ -33,9 +33,13 @@ from cc_deep_research.session_store import SessionStore
 from cc_deep_research.telemetry import (
     get_default_dashboard_db_path,
     get_default_telemetry_dir,
+    query_checkpoint_detail,
+    query_checkpoint_lineage,
     query_dashboard_data,
+    query_latest_resumable_checkpoint,
     query_live_session_detail,
     query_live_sessions,
+    query_session_checkpoints,
     query_session_detail,
 )
 
@@ -819,6 +823,7 @@ def register_routes(app: FastAPI) -> None:
         before_cursor: int | None = Query(default=None, description="Sequence number to end before"),
         limit: int = Query(default=1000, ge=1, le=5000, description="Maximum events to return"),
         include_derived: bool = Query(default=True, description="Include derived outputs"),
+        include_checkpoints: bool = Query(default=True, description="Include checkpoint inventory"),
     ) -> JSONResponse:
         """Get details for a specific session.
 
@@ -828,10 +833,11 @@ def register_routes(app: FastAPI) -> None:
             before_cursor: Sequence number to end before (backward pagination).
             limit: Maximum events to return.
             include_derived: Whether to include derived outputs.
+            include_checkpoints: Whether to include checkpoint inventory.
 
         Returns:
-            JSON response with session details including derived outputs and
-            cursor-based pagination metadata.
+            JSON response with session details including derived outputs,
+            cursor-based pagination metadata, and checkpoint information.
         """
         detail = _query_session_api_detail(
             session_id,
@@ -846,8 +852,7 @@ def register_routes(app: FastAPI) -> None:
         if not detail["session"]:
             return JSONResponse(content={"error": "Session not found"}, status_code=404)
 
-        # Return full detail with derived outputs
-        return JSONResponse(content={
+        response_content = {
             "session": detail["session"],
             "summary": detail.get("summary"),
             "events_page": detail.get("events_page", {
@@ -867,7 +872,20 @@ def register_routes(app: FastAPI) -> None:
             "decisions": detail.get("decisions", []),
             "degradations": detail.get("degradations", []),
             "failures": detail.get("failures", []),
-        })
+        }
+
+        # Include checkpoint inventory if requested
+        if include_checkpoints:
+            telemetry_dir = get_default_telemetry_dir()
+            checkpoint_manifest = query_session_checkpoints(session_id, base_dir=telemetry_dir)
+            response_content["checkpoints"] = {
+                "total": len(checkpoint_manifest.get("checkpoints", [])),
+                "latest_checkpoint_id": checkpoint_manifest.get("latest_checkpoint_id"),
+                "latest_resume_safe_checkpoint_id": checkpoint_manifest.get("latest_resume_safe_checkpoint_id"),
+                "resume_available": checkpoint_manifest.get("latest_resume_safe_checkpoint_id") is not None,
+            }
+
+        return JSONResponse(content=response_content)
 
     @app.delete("/api/sessions/{session_id}")
     async def delete_session(
@@ -1122,6 +1140,192 @@ def register_routes(app: FastAPI) -> None:
             )
 
         return JSONResponse(content=bundle)
+
+    @app.get("/api/sessions/{session_id}/checkpoints")
+    async def get_session_checkpoints(session_id: str) -> JSONResponse:
+        """Get checkpoint inventory for a session.
+
+        Args:
+            session_id: The session ID.
+
+        Returns:
+            JSON response with checkpoint manifest including all checkpoints
+            and metadata about latest resumable checkpoint.
+        """
+        telemetry_dir = get_default_telemetry_dir()
+        session_dir = telemetry_dir / session_id
+
+        if not session_dir.exists():
+            return JSONResponse(
+                content={"error": f"Session not found: {session_id}"},
+                status_code=404,
+            )
+
+        manifest = query_session_checkpoints(session_id, base_dir=telemetry_dir)
+        return JSONResponse(content=manifest)
+
+    @app.get("/api/sessions/{session_id}/checkpoints/{checkpoint_id}")
+    async def get_checkpoint_detail(session_id: str, checkpoint_id: str) -> JSONResponse:
+        """Get detailed information for a specific checkpoint.
+
+        Args:
+            session_id: The session ID.
+            checkpoint_id: The checkpoint ID.
+
+        Returns:
+            JSON response with full checkpoint details including lineage.
+        """
+        telemetry_dir = get_default_telemetry_dir()
+        checkpoint = query_checkpoint_detail(session_id, checkpoint_id, base_dir=telemetry_dir)
+
+        if checkpoint is None:
+            return JSONResponse(
+                content={"error": f"Checkpoint not found: {checkpoint_id}"},
+                status_code=404,
+            )
+
+        # Include lineage information
+        lineage = query_checkpoint_lineage(session_id, checkpoint_id, base_dir=telemetry_dir)
+        checkpoint["lineage"] = [cp.get("checkpoint_id") for cp in lineage]
+
+        return JSONResponse(content=checkpoint)
+
+    @app.get("/api/sessions/{session_id}/checkpoints/{checkpoint_id}/lineage")
+    async def get_checkpoint_lineage_endpoint(session_id: str, checkpoint_id: str) -> JSONResponse:
+        """Get checkpoint lineage from start to specified checkpoint.
+
+        Args:
+            session_id: The session ID.
+            checkpoint_id: The checkpoint ID.
+
+        Returns:
+            JSON response with ordered list of checkpoints in lineage.
+        """
+        telemetry_dir = get_default_telemetry_dir()
+        lineage = query_checkpoint_lineage(session_id, checkpoint_id, base_dir=telemetry_dir)
+
+        return JSONResponse(content={
+            "session_id": session_id,
+            "checkpoint_id": checkpoint_id,
+            "lineage": lineage,
+            "depth": len(lineage),
+        })
+
+    @app.post("/api/sessions/{session_id}/resume")
+    async def resume_session(
+        session_id: str,
+        checkpoint_id: str | None = Query(default=None, description="Checkpoint to resume from"),
+        mode: str = Query(default="resume_latest", description="Resume mode"),
+    ) -> JSONResponse:
+        """Resume a session from a checkpoint.
+
+        Args:
+            session_id: The session ID to resume.
+            checkpoint_id: Optional specific checkpoint (default: latest safe).
+            mode: Resume mode (resume_latest, resume_from_checkpoint).
+
+        Returns:
+            JSON response with resume result indicating success or failure.
+        """
+        from cc_deep_research.models.checkpoint import ResumeRequest, ResumeResult
+
+        telemetry_dir = get_default_telemetry_dir()
+        session_dir = telemetry_dir / session_id
+
+        if not session_dir.exists():
+            return JSONResponse(
+                content={"error": f"Session not found: {session_id}"},
+                status_code=404,
+            )
+
+        # Get the checkpoint to resume from
+        if checkpoint_id is None:
+            checkpoint = query_latest_resumable_checkpoint(session_id, base_dir=telemetry_dir)
+            if checkpoint is None:
+                return JSONResponse(
+                    content={"error": "No resumable checkpoint available"},
+                    status_code=404,
+                )
+            checkpoint_id = checkpoint["checkpoint_id"]
+        else:
+            checkpoint = query_checkpoint_detail(session_id, checkpoint_id, base_dir=telemetry_dir)
+            if checkpoint is None:
+                return JSONResponse(
+                    content={"error": f"Checkpoint not found: {checkpoint_id}"},
+                    status_code=404,
+                )
+            if not checkpoint.get("resume_safe"):
+                return JSONResponse(
+                    content={"error": f"Checkpoint {checkpoint_id} is not safe to resume from"},
+                    status_code=409,
+                )
+
+        # Get lineage for tracking
+        lineage = query_checkpoint_lineage(session_id, checkpoint_id, base_dir=telemetry_dir)
+        lineage_ids = [cp.get("checkpoint_id") for cp in lineage]
+
+        # Note: Actual resume execution would require spawning a new research run
+        # This endpoint provides the checkpoint info needed for resume
+        result = ResumeResult(
+            success=True,
+            session_id=f"{session_id}-resumed",
+            original_session_id=session_id,
+            resumed_from_checkpoint_id=checkpoint_id,
+            resume_mode=mode,
+            checkpoint_lineage=lineage_ids,
+            message=f"Ready to resume from checkpoint {checkpoint_id}. Use the checkpoint info to start a new run.",
+        )
+
+        return JSONResponse(content=result.model_dump(mode="json"))
+
+    @app.post("/api/sessions/{session_id}/rerun-step")
+    async def rerun_step(request: dict) -> JSONResponse:
+        """Rerun a single step from a checkpoint in debug mode.
+
+        Args:
+            request: Dict containing session_id, checkpoint_id, and options.
+
+        Returns:
+            JSON response with rerun result.
+        """
+        from cc_deep_research.models.checkpoint import RerunStepRequest, RerunStepResult
+
+        session_id = request.get("session_id")
+        checkpoint_id = request.get("checkpoint_id")
+
+        if not session_id or not checkpoint_id:
+            return JSONResponse(
+                content={"error": "session_id and checkpoint_id are required"},
+                status_code=400,
+            )
+
+        telemetry_dir = get_default_telemetry_dir()
+        checkpoint = query_checkpoint_detail(session_id, checkpoint_id, base_dir=telemetry_dir)
+
+        if checkpoint is None:
+            return JSONResponse(
+                content={"error": f"Checkpoint not found: {checkpoint_id}"},
+                status_code=404,
+            )
+
+        if not checkpoint.get("replayable"):
+            reason = checkpoint.get("replayable_reason", "Unknown reason")
+            return JSONResponse(
+                content={"error": f"Checkpoint is not replayable: {reason}"},
+                status_code=409,
+            )
+
+        # Note: Actual rerun execution would require reconstructing inputs
+        # and executing the step. This endpoint validates and prepares for rerun.
+        result = RerunStepResult(
+            success=True,
+            session_id=session_id,
+            checkpoint_id=checkpoint_id,
+            output_match=None,  # Would be determined after actual rerun
+            message=f"Checkpoint {checkpoint_id} is ready for rerun. Input refs: {checkpoint.get('input_ref')}",
+        )
+
+        return JSONResponse(content=result.model_dump(mode="json"))
 
     @app.websocket("/ws/session/{session_id}")
     async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:

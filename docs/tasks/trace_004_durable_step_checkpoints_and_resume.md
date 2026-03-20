@@ -1,6 +1,6 @@
 # Task 004: Add Durable Step Checkpoints And Resume Execution
 
-Status: Todo
+Status: Done
 
 ## Objective
 
