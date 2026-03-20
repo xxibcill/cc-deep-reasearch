@@ -920,3 +920,488 @@ def test_session_list_cursor_pagination(tmp_path, monkeypatch: pytest.MonkeyPatc
     assert len(data["sessions"]) == 1
     assert data["sessions"][0]["session_id"] == "session-3"
     assert data["next_cursor"] is None
+
+
+def test_session_includes_checkpoint_inventory(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Session detail should include checkpoint inventory when available."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    telemetry_dir = config_dir / "telemetry"
+    session_dir = telemetry_dir / "checkpoint-session"
+    session_dir.mkdir(parents=True)
+
+    # Create events file
+    (session_dir / "events.jsonl").write_text(
+        json.dumps({
+            "event_id": "event-1",
+            "sequence_number": 1,
+            "timestamp": "2026-03-18T10:00:00Z",
+            "session_id": "checkpoint-session",
+            "event_type": "session.started",
+            "category": "session",
+            "name": "session",
+            "status": "started",
+            "metadata": {},
+        })
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # Create checkpoint manifest
+    checkpoints_dir = session_dir / "checkpoints"
+    checkpoints_dir.mkdir()
+    (checkpoints_dir / "manifest.json").write_text(
+        json.dumps({
+            "checkpoints": [
+                {
+                    "checkpoint_id": "cp-abc123",
+                    "phase": "strategy",
+                    "operation": "execute",
+                    "sequence_number": 1,
+                    "resume_safe": True,
+                    "replayable": True,
+                }
+            ],
+            "latest_checkpoint_id": "cp-abc123",
+            "latest_resume_safe_checkpoint_id": "cp-abc123",
+        }),
+        encoding="utf-8",
+    )
+
+    client = TestClient(create_app())
+    response = client.get("/api/sessions/checkpoint-session?include_checkpoints=true")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "checkpoints" in data
+    assert data["checkpoints"]["total"] == 1
+    assert data["checkpoints"]["latest_checkpoint_id"] == "cp-abc123"
+    assert data["checkpoints"]["resume_available"] is True
+
+
+def test_checkpoint_list_endpoint(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The checkpoints list endpoint should return checkpoint manifest."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    telemetry_dir = config_dir / "telemetry"
+    session_dir = telemetry_dir / "checkpoint-list-session"
+    session_dir.mkdir(parents=True)
+
+    # Create events file to make session "exist"
+    (session_dir / "events.jsonl").write_text(
+        json.dumps({
+            "event_id": "event-1",
+            "sequence_number": 1,
+            "timestamp": "2026-03-18T10:00:00Z",
+            "session_id": "checkpoint-list-session",
+            "event_type": "session.started",
+            "category": "session",
+            "name": "session",
+            "status": "started",
+            "metadata": {},
+        })
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # Create checkpoint manifest
+    checkpoints_dir = session_dir / "checkpoints"
+    checkpoints_dir.mkdir()
+    (checkpoints_dir / "manifest.json").write_text(
+        json.dumps({
+            "checkpoints": [
+                {
+                    "checkpoint_id": "cp-start",
+                    "phase": "session_start",
+                    "operation": "initialize",
+                    "sequence_number": 1,
+                    "resume_safe": False,
+                },
+                {
+                    "checkpoint_id": "cp-strategy",
+                    "phase": "strategy",
+                    "operation": "execute",
+                    "sequence_number": 2,
+                    "resume_safe": True,
+                },
+            ],
+            "latest_checkpoint_id": "cp-strategy",
+            "latest_resume_safe_checkpoint_id": "cp-strategy",
+        }),
+        encoding="utf-8",
+    )
+
+    client = TestClient(create_app())
+    response = client.get("/api/sessions/checkpoint-list-session/checkpoints")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["checkpoints"]) == 2
+    assert data["latest_checkpoint_id"] == "cp-strategy"
+    assert data["latest_resume_safe_checkpoint_id"] == "cp-strategy"
+
+
+def test_checkpoint_detail_endpoint(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The checkpoint detail endpoint should return checkpoint with lineage."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    telemetry_dir = config_dir / "telemetry"
+    session_dir = telemetry_dir / "checkpoint-detail-session"
+    session_dir.mkdir(parents=True)
+
+    # Create events file to make session "exist"
+    (session_dir / "events.jsonl").write_text(
+        json.dumps({
+            "event_id": "event-1",
+            "sequence_number": 1,
+            "timestamp": "2026-03-18T10:00:00Z",
+            "session_id": "checkpoint-detail-session",
+            "event_type": "session.started",
+            "category": "session",
+            "name": "session",
+            "status": "started",
+            "metadata": {},
+        })
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # Create checkpoint manifest with lineage
+    checkpoints_dir = session_dir / "checkpoints"
+    checkpoints_dir.mkdir()
+    (checkpoints_dir / "manifest.json").write_text(
+        json.dumps({
+            "checkpoints": [
+                {
+                    "checkpoint_id": "cp-parent",
+                    "phase": "session_start",
+                    "operation": "initialize",
+                    "sequence_number": 1,
+                    "parent_checkpoint_id": None,
+                    "resume_safe": True,
+                },
+                {
+                    "checkpoint_id": "cp-child",
+                    "phase": "strategy",
+                    "operation": "execute",
+                    "sequence_number": 2,
+                    "parent_checkpoint_id": "cp-parent",
+                    "resume_safe": True,
+                    "input_ref": {"query": "test"},
+                    "output_ref": {"strategy": "comprehensive"},
+                },
+            ],
+            "latest_checkpoint_id": "cp-child",
+            "latest_resume_safe_checkpoint_id": "cp-child",
+        }),
+        encoding="utf-8",
+    )
+
+    client = TestClient(create_app())
+    response = client.get("/api/sessions/checkpoint-detail-session/checkpoints/cp-child")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["checkpoint_id"] == "cp-child"
+    assert data["phase"] == "strategy"
+    assert data["input_ref"] == {"query": "test"}
+    assert data["output_ref"] == {"strategy": "comprehensive"}
+    assert "lineage" in data
+    assert "cp-parent" in data["lineage"]
+
+
+def test_checkpoint_lineage_endpoint(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The checkpoint lineage endpoint should return ordered checkpoint chain."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    telemetry_dir = config_dir / "telemetry"
+    session_dir = telemetry_dir / "checkpoint-lineage-session"
+    session_dir.mkdir(parents=True)
+
+    # Create events file to make session "exist"
+    (session_dir / "events.jsonl").write_text(
+        json.dumps({
+            "event_id": "event-1",
+            "sequence_number": 1,
+            "timestamp": "2026-03-18T10:00:00Z",
+            "session_id": "checkpoint-lineage-session",
+            "event_type": "session.started",
+            "category": "session",
+            "name": "session",
+            "status": "started",
+            "metadata": {},
+        })
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # Create checkpoint manifest with multi-level lineage
+    checkpoints_dir = session_dir / "checkpoints"
+    checkpoints_dir.mkdir()
+    (checkpoints_dir / "manifest.json").write_text(
+        json.dumps({
+            "checkpoints": [
+                {
+                    "checkpoint_id": "cp-1",
+                    "phase": "session_start",
+                    "parent_checkpoint_id": None,
+                },
+                {
+                    "checkpoint_id": "cp-2",
+                    "phase": "strategy",
+                    "parent_checkpoint_id": "cp-1",
+                },
+                {
+                    "checkpoint_id": "cp-3",
+                    "phase": "source_collection",
+                    "parent_checkpoint_id": "cp-2",
+                },
+            ],
+        }),
+        encoding="utf-8",
+    )
+
+    client = TestClient(create_app())
+    response = client.get("/api/sessions/checkpoint-lineage-session/checkpoints/cp-3/lineage")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["depth"] == 3
+    assert len(data["lineage"]) == 3
+    # Lineage should be ordered from start to target
+    assert data["lineage"][0]["checkpoint_id"] == "cp-1"
+    assert data["lineage"][1]["checkpoint_id"] == "cp-2"
+    assert data["lineage"][2]["checkpoint_id"] == "cp-3"
+
+
+def test_resume_endpoint_returns_resume_info(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The resume endpoint should return resume information for valid checkpoint."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    telemetry_dir = config_dir / "telemetry"
+    session_dir = telemetry_dir / "resume-session"
+    session_dir.mkdir(parents=True)
+
+    # Create events file to make session "exist"
+    (session_dir / "events.jsonl").write_text(
+        json.dumps({
+            "event_id": "event-1",
+            "sequence_number": 1,
+            "timestamp": "2026-03-18T10:00:00Z",
+            "session_id": "resume-session",
+            "event_type": "session.started",
+            "category": "session",
+            "name": "session",
+            "status": "started",
+            "metadata": {},
+        })
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # Create checkpoint manifest with resume-safe checkpoint
+    checkpoints_dir = session_dir / "checkpoints"
+    checkpoints_dir.mkdir()
+    (checkpoints_dir / "manifest.json").write_text(
+        json.dumps({
+            "checkpoints": [
+                {
+                    "checkpoint_id": "cp-resumable",
+                    "phase": "source_collection",
+                    "operation": "execute",
+                    "resume_safe": True,
+                    "replayable": True,
+                    "input_ref": {"query": "test query"},
+                },
+            ],
+            "latest_resume_safe_checkpoint_id": "cp-resumable",
+        }),
+        encoding="utf-8",
+    )
+
+    client = TestClient(create_app())
+    response = client.post("/api/sessions/resume-session/resume")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert data["resumed_from_checkpoint_id"] == "cp-resumable"
+    assert data["original_session_id"] == "resume-session"
+    assert "checkpoint_lineage" in data
+
+
+def test_resume_endpoint_rejects_non_resumable_checkpoint(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The resume endpoint should reject non-resume-safe checkpoints."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    telemetry_dir = config_dir / "telemetry"
+    session_dir = telemetry_dir / "non-resumable-session"
+    session_dir.mkdir(parents=True)
+
+    # Create events file to make session "exist"
+    (session_dir / "events.jsonl").write_text(
+        json.dumps({
+            "event_id": "event-1",
+            "sequence_number": 1,
+            "timestamp": "2026-03-18T10:00:00Z",
+            "session_id": "non-resumable-session",
+            "event_type": "session.started",
+            "category": "session",
+            "name": "session",
+            "status": "started",
+            "metadata": {},
+        })
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # Create checkpoint manifest with non-resumable checkpoint
+    checkpoints_dir = session_dir / "checkpoints"
+    checkpoints_dir.mkdir()
+    (checkpoints_dir / "manifest.json").write_text(
+        json.dumps({
+            "checkpoints": [
+                {
+                    "checkpoint_id": "cp-failed",
+                    "phase": "analysis",
+                    "operation": "execute",
+                    "resume_safe": False,
+                    "replayable": False,
+                    "replayable_reason": "Phase failed: ValueError",
+                },
+            ],
+            "latest_resume_safe_checkpoint_id": None,
+        }),
+        encoding="utf-8",
+    )
+
+    client = TestClient(create_app())
+    response = client.post("/api/sessions/non-resumable-session/resume?checkpoint_id=cp-failed")
+
+    assert response.status_code == 409  # Conflict
+    assert "not safe to resume" in response.json()["error"]
+
+
+def test_rerun_step_endpoint_returns_rerun_info(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The rerun-step endpoint should return rerun information for replayable checkpoint."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    telemetry_dir = config_dir / "telemetry"
+    session_dir = telemetry_dir / "rerun-session"
+    session_dir.mkdir(parents=True)
+
+    # Create events file to make session "exist"
+    (session_dir / "events.jsonl").write_text(
+        json.dumps({
+            "event_id": "event-1",
+            "sequence_number": 1,
+            "timestamp": "2026-03-18T10:00:00Z",
+            "session_id": "rerun-session",
+            "event_type": "session.started",
+            "category": "session",
+            "name": "session",
+            "status": "started",
+            "metadata": {},
+        })
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # Create checkpoint manifest with replayable checkpoint
+    checkpoints_dir = session_dir / "checkpoints"
+    checkpoints_dir.mkdir()
+    (checkpoints_dir / "manifest.json").write_text(
+        json.dumps({
+            "checkpoints": [
+                {
+                    "checkpoint_id": "cp-replayable",
+                    "phase": "strategy",
+                    "operation": "execute",
+                    "replayable": True,
+                    "input_ref": {"query": "test query"},
+                    "output_ref": {"strategy": "comprehensive"},
+                },
+            ],
+        }),
+        encoding="utf-8",
+    )
+
+    client = TestClient(create_app())
+    response = client.post(
+        "/api/sessions/rerun-session/rerun-step",
+        json={"session_id": "rerun-session", "checkpoint_id": "cp-replayable"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert data["checkpoint_id"] == "cp-replayable"
+
+
+def test_rerun_step_rejects_non_replayable_checkpoint(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The rerun-step endpoint should reject non-replayable checkpoints."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    telemetry_dir = config_dir / "telemetry"
+    session_dir = telemetry_dir / "non-replayable-session"
+    session_dir.mkdir(parents=True)
+
+    # Create events file to make session "exist"
+    (session_dir / "events.jsonl").write_text(
+        json.dumps({
+            "event_id": "event-1",
+            "sequence_number": 1,
+            "timestamp": "2026-03-18T10:00:00Z",
+            "session_id": "non-replayable-session",
+            "event_type": "session.started",
+            "category": "session",
+            "name": "session",
+            "status": "started",
+            "metadata": {},
+        })
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # Create checkpoint manifest with non-replayable checkpoint
+    checkpoints_dir = session_dir / "checkpoints"
+    checkpoints_dir.mkdir()
+    (checkpoints_dir / "manifest.json").write_text(
+        json.dumps({
+            "checkpoints": [
+                {
+                    "checkpoint_id": "cp-non-replayable",
+                    "phase": "source_collection",
+                    "operation": "execute",
+                    "replayable": False,
+                    "replayable_reason": "External API call with non-deterministic result",
+                },
+            ],
+        }),
+        encoding="utf-8",
+    )
+
+    client = TestClient(create_app())
+    response = client.post(
+        "/api/sessions/non-replayable-session/rerun-step",
+        json={"session_id": "non-replayable-session", "checkpoint_id": "cp-non-replayable"},
+    )
+
+    assert response.status_code == 409  # Conflict
+    assert "not replayable" in response.json()["error"]
