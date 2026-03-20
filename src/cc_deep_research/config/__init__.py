@@ -1,7 +1,23 @@
 """Configuration compatibility exports."""
 
+from .api_models import (
+    ConfigFieldError,
+    ConfigOverrideConflict,
+    ConfigPatchErrorResponse,
+    ConfigPatchRequest,
+    ConfigResponse,
+    SecretFieldAction,
+    SecretFieldMetadata,
+    SecretFieldPatch,
+)
 from .defaults import create_default_config_file, get_default_config, get_default_config_path
-from .io import _parse_api_keys_from_env, load_config, save_config
+from .io import (
+    _parse_api_keys_from_env,
+    load_config,
+    load_persisted_config_data,
+    resolve_config_path,
+    save_config,
+)
 from .schema import (
     AgentConfig,
     AgentTeamConfig,
@@ -22,12 +38,26 @@ from .schema import (
     Settings,
     TavilyConfig,
 )
+from .service import (
+    ConfigOverrideError,
+    ConfigPatchError,
+    build_config_response,
+    resolve_config_target,
+    update_config,
+)
 
 __all__ = [
     "AgentConfig",
     "AgentTeamConfig",
     "ClaudeConfig",
     "Config",
+    "ConfigFieldError",
+    "ConfigOverrideConflict",
+    "ConfigOverrideError",
+    "ConfigPatchError",
+    "ConfigPatchErrorResponse",
+    "ConfigPatchRequest",
+    "ConfigResponse",
     "DashboardConfig",
     "DisplayConfig",
     "LLMCerebrasConfig",
@@ -40,12 +70,20 @@ __all__ = [
     "ResearchConfig",
     "ResearchQualitySettings",
     "SearchConfig",
+    "SecretFieldAction",
+    "SecretFieldMetadata",
+    "SecretFieldPatch",
     "Settings",
     "TavilyConfig",
     "_parse_api_keys_from_env",
+    "build_config_response",
     "create_default_config_file",
     "get_default_config",
     "get_default_config_path",
     "load_config",
+    "load_persisted_config_data",
+    "resolve_config_path",
+    "resolve_config_target",
     "save_config",
+    "update_config",
 ]
