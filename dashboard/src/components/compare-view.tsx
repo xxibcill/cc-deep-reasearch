@@ -118,17 +118,17 @@ function SessionCard({
 
         <div className="flex flex-wrap gap-2 text-xs">
           <span className={`rounded-full px-2 py-1 ${
-            session.active ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-700'
+            session.active ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
           }`}>
             {session.active ? 'Active' : 'Inactive'}
           </span>
           <span className={`rounded-full px-2 py-1 ${
-            session.hasSessionPayload ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-700'
+            session.hasSessionPayload ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
           }`}>
             Payload {session.hasSessionPayload ? 'Available' : 'Missing'}
           </span>
           <span className={`rounded-full px-2 py-1 ${
-            session.hasReport ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-700'
+            session.hasReport ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
           }`}>
             Report {session.hasReport ? 'Available' : 'Unavailable'}
           </span>

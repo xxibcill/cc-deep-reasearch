@@ -12,9 +12,9 @@ export function Badge({
   const variants = {
     default: 'bg-primary text-primary-foreground',
     secondary: 'bg-secondary text-secondary-foreground',
-    success: 'bg-emerald-100 text-emerald-800',
-    warning: 'bg-amber-100 text-amber-800',
-    destructive: 'bg-rose-100 text-rose-800',
+    success: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100',
+    warning: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100',
+    destructive: 'bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-100',
   };
 
   return (

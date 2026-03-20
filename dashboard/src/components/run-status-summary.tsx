@@ -31,7 +31,7 @@ interface RunStatusSummaryProps {
 function statusIcon(status: ResearchRunStatus) {
   switch (status) {
     case 'queued':
-      return <Clock className="h-5 w-5 text-gray-500" />;
+      return <Clock className="h-5 w-5 text-gray-600" />;
     case 'running':
       return <Loader2 className="h-5 w-5 animate-spin text-blue-500" />;
     case 'completed':
@@ -41,7 +41,7 @@ function statusIcon(status: ResearchRunStatus) {
     case 'cancelled':
       return <Ban className="h-5 w-5 text-amber-500" />;
     default:
-      return <AlertCircle className="h-5 w-5 text-gray-500" />;
+      return <AlertCircle className="h-5 w-5 text-gray-600" />;
   }
 }
 
@@ -198,7 +198,7 @@ export function RunStatusSummary({
       <Card>
         <CardContent className="p-4">
           <div className="flex items-center gap-3">
-            <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
+            <Loader2 className="h-5 w-5 animate-spin text-gray-600" />
             <span className="text-muted-foreground">Loading run status...</span>
           </div>
         </CardContent>

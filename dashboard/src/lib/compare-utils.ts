@@ -93,8 +93,8 @@ export function formatCountDelta(count: number | null): string {
 }
 
 export function getDeltaColor(value: number | null): string {
-  if (value === null) return 'text-gray-500';
+  if (value === null) return 'text-gray-600';
   if (value > 0) return 'text-red-600';
   if (value < 0) return 'text-green-600';
-  return 'text-gray-500';
+  return 'text-gray-600';
 }
