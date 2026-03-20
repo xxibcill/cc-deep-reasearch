@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useDeferredValue, useEffect, useState } from 'react';
 
 import { SessionList } from '@/components/session-list';
@@ -100,8 +101,18 @@ export default function HomePage() {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="mb-8">
-        <h1 className="text-4xl font-bold mb-2">CC Deep Research</h1>
-        <p className="text-muted-foreground">AI-powered research with real-time monitoring</p>
+        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h1 className="text-4xl font-bold mb-2">CC Deep Research</h1>
+            <p className="text-muted-foreground">AI-powered research with real-time monitoring</p>
+          </div>
+          <Link
+            className="inline-flex h-10 items-center justify-center rounded-md border border-border bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+            href="/settings"
+          >
+            Open settings
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
