@@ -121,7 +121,7 @@ These are the main event families currently used by the codebase.
 | Planning and retrieval | `query.variations`, `source.provenance` | Query-family generation and source provenance |
 | Iteration | `analysis.mode_selected`, `follow_up.decision`, `iteration.stop` | Follow-up and stop decisions |
 | LLM usage | `llm.usage` | Token and latency summaries where available |
-| Subprocess | `subprocess.*` | Claude CLI stream visibility and failures |
+| Subprocess | `subprocess.*` | Generic external-process visibility and failures |
 | LLM route | `llm.route_selected`, `llm.route_fallback`, `llm.route_request`, `llm.route_completion` | Route-planning and route-usage analytics |
 
 ## Live Query Path
@@ -258,4 +258,4 @@ When adding telemetry:
 - There is no top-level config flag to disable telemetry persistence for normal CLI runs.
 - Historical analytics only cover sessions that have a `summary.json`.
 - `summary.json.created_at` reflects finalization time, not true session start time.
-- Claude CLI-backed routes may still report zero tokens when subprocess output cannot be tokenized precisely.
+- Some routed fallback paths may still report zero tokens when precise token accounting is unavailable.

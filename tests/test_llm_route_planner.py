@@ -1,7 +1,5 @@
 """Tests for LLM route planner."""
-
-import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from cc_deep_research.config import Config
 from cc_deep_research.llm.base import LLMProviderType, LLMTransportType
@@ -21,7 +19,9 @@ from cc_deep_research.orchestration.llm_route_planner import (
 
 def create_test_config(
     *,
-    claude_cli_enabled: bool = True,
+    anthropic_enabled: bool = False,
+    anthropic_api_key: str | None = None,
+    anthropic_api_keys: list[str] | None = None,
     openrouter_enabled: bool = False,
     openrouter_api_key: str | None = None,
     openrouter_api_keys: list[str] | None = None,
@@ -33,7 +33,9 @@ def create_test_config(
     """Create a test config with LLM settings."""
     config = Config()
 
-    config.llm.claude_cli.enabled = claude_cli_enabled
+    config.llm.anthropic.enabled = anthropic_enabled
+    config.llm.anthropic.api_key = anthropic_api_key
+    config.llm.anthropic.api_keys = anthropic_api_keys or []
     config.llm.openrouter.enabled = openrouter_enabled
     config.llm.openrouter.api_key = openrouter_api_key
     config.llm.openrouter.api_keys = openrouter_api_keys or []
@@ -93,7 +95,8 @@ class TestLLMRoutePlanner:
     def test_plan_routes_with_all_transports_available(self) -> None:
         """Test plan with all transports available."""
         config = create_test_config(
-            claude_cli_enabled=True,
+            anthropic_enabled=True,
+            anthropic_api_key="test-key",
             openrouter_enabled=True,
             openrouter_api_key="test-key",
             cerebras_enabled=True,
@@ -102,72 +105,25 @@ class TestLLMRoutePlanner:
         strategy = create_test_strategy()
 
         planner = LLMRoutePlanner(config)
-
-        with patch.object(planner, "_check_claude_cli_available", return_value=True):
-            plan = planner.plan_routes(strategy)
+        plan = planner.plan_routes(strategy)
 
         assert plan.default_route.transport in [
-            LLMTransportType.CLAUDE_CLI,
+            LLMTransportType.ANTHROPIC_API,
             LLMTransportType.OPENROUTER_API,
             LLMTransportType.CEREBRAS_API,
         ]
 
-    def test_plan_routes_without_claude_cli(self) -> None:
-        """Test plan when Claude CLI is unavailable."""
+    def test_plan_routes_without_anthropic(self) -> None:
+        """Test plan when Anthropic is unavailable."""
         config = create_test_config(
-            claude_cli_enabled=True,
             openrouter_enabled=True,
             openrouter_api_key="test-key",
         )
         strategy = create_test_strategy()
 
         planner = LLMRoutePlanner(config)
-
-        with patch.object(planner, "_check_claude_cli_available", return_value=False):
-            plan = planner.plan_routes(strategy)
-
-        # Should fall back to OpenRouter
-        assert plan.default_route.transport != LLMTransportType.CLAUDE_CLI
-
-    def test_plan_routes_nested_session_constraint(self) -> None:
-        """Test that nested session blocks Claude CLI."""
-        config = create_test_config()
-
-        planner = LLMRoutePlanner(config)
-
-        with patch.dict(os.environ, {"CLAUDECODE": "1"}):
-            available = planner._check_claude_cli_available()
-
-        assert available is False
-
-    def test_plan_routes_claude_cli_available(self) -> None:
-        """Test Claude CLI availability check."""
-        config = create_test_config()
-
-        planner = LLMRoutePlanner(config)
-
-        # Clear CLAUDECODE env var
-        with (
-            patch.dict(os.environ, {}, clear=True),
-            patch("shutil.which", return_value="/usr/bin/claude"),
-        ):
-            available = planner._check_claude_cli_available()
-
-        assert available is True
-
-    def test_plan_routes_claude_cli_no_executable(self) -> None:
-        """Test Claude CLI unavailable when no executable."""
-        config = create_test_config()
-
-        planner = LLMRoutePlanner(config)
-
-        with (
-            patch.dict(os.environ, {}, clear=True),
-            patch("shutil.which", return_value=None),
-        ):
-            available = planner._check_claude_cli_available()
-
-        assert available is False
+        plan = planner.plan_routes(strategy)
+        assert plan.default_route.transport == LLMTransportType.OPENROUTER_API
 
     def test_plan_routes_openrouter_available(self) -> None:
         """Test OpenRouter availability check."""
@@ -253,21 +209,58 @@ class TestLLMRoutePlanner:
 
         assert available is False
 
+    def test_plan_routes_anthropic_available(self) -> None:
+        """Test Anthropic availability check."""
+        config = create_test_config(
+            anthropic_enabled=True,
+            anthropic_api_key="test-key",
+        )
+
+        planner = LLMRoutePlanner(config)
+        available = planner._check_anthropic_available()
+
+        assert available is True
+
+    def test_plan_routes_anthropic_available_with_api_key_list(self) -> None:
+        """Test Anthropic availability check with multiple keys."""
+        config = create_test_config(
+            anthropic_enabled=True,
+            anthropic_api_keys=["test-key-1", "test-key-2"],
+        )
+
+        planner = LLMRoutePlanner(config)
+        available = planner._check_anthropic_available()
+
+        assert available is True
+
+    def test_plan_routes_anthropic_no_key(self) -> None:
+        """Test Anthropic unavailable without API key."""
+        config = create_test_config(
+            anthropic_enabled=True,
+            anthropic_api_key=None,
+        )
+
+        planner = LLMRoutePlanner(config)
+        available = planner._check_anthropic_available()
+
+        assert available is False
+
     def test_plan_routes_fallback_order_respects_config(self) -> None:
         """Test that fallback order respects configured order."""
         config = create_test_config(
+            anthropic_enabled=True,
+            anthropic_api_key="test-key",
             openrouter_enabled=True,
             openrouter_api_key="test-key",
             cerebras_enabled=True,
             cerebras_api_key="test-key",
-            fallback_order=["cerebras", "openrouter", "claude_cli", "heuristic"],
+            fallback_order=["cerebras", "openrouter", "anthropic", "heuristic"],
         )
         strategy = create_test_strategy()
 
         planner = LLMRoutePlanner(config)
 
-        with patch.object(planner, "_check_claude_cli_available", return_value=True):
-            plan = planner.plan_routes(strategy)
+        plan = planner.plan_routes(strategy)
 
         # Cerebras should be first in fallback
         assert plan.fallback_order[0] == LLMTransportType.CEREBRAS_API
@@ -281,9 +274,7 @@ class TestLLMRoutePlanner:
         strategy = create_test_strategy()
 
         planner = LLMRoutePlanner(config)
-
-        with patch.object(planner, "_check_claude_cli_available", return_value=True):
-            plan = planner.plan_routes(strategy)
+        plan = planner.plan_routes(strategy)
 
         # Should have routes for known agents
         assert "analyzer" in plan.agent_routes
@@ -292,7 +283,6 @@ class TestLLMRoutePlanner:
     def test_plan_routes_fast_api_preferred_when_only_api_available(self) -> None:
         """Test that API transports are preferred for fast agents when only API is available."""
         config = create_test_config(
-            claude_cli_enabled=False,
             openrouter_enabled=True,
             openrouter_api_key="test-key",
             cerebras_enabled=False,
@@ -319,7 +309,6 @@ class TestLLMRoutePlanner:
     def test_plan_routes_only_available_transports(self) -> None:
         """Test that only available transports are in fallback order."""
         config = create_test_config(
-            claude_cli_enabled=False,
             openrouter_enabled=False,
             cerebras_enabled=False,
         )
@@ -342,8 +331,7 @@ class TestLLMRoutePlanner:
 
         planner = LLMRoutePlanner(config)
 
-        with patch.object(planner, "_check_claude_cli_available", return_value=True):
-            plan = planner.plan_routes(strategy)
+        plan = planner.plan_routes(strategy)
 
         # Create mock registry
         mock_registry = MagicMock()
@@ -399,8 +387,8 @@ class TestLLMRouteModel:
         """Test default values for route model."""
         route = LLMRouteModel()
 
-        assert route.transport == LLMTransportType.CLAUDE_CLI
-        assert route.provider == LLMProviderType.CLAUDE
+        assert route.transport == LLMTransportType.ANTHROPIC_API
+        assert route.provider == LLMProviderType.ANTHROPIC
         assert route.model == "claude-sonnet-4-6"
         assert route.enabled is True
 
@@ -445,5 +433,5 @@ class TestLLMPlanModel:
         """Test default fallback order."""
         plan = LLMPlanModel()
 
-        assert LLMTransportType.CLAUDE_CLI in plan.fallback_order
+        assert LLMTransportType.ANTHROPIC_API in plan.fallback_order
         assert LLMTransportType.HEURISTIC in plan.fallback_order

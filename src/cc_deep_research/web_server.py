@@ -224,6 +224,15 @@ def _parse_timestamp(value: Any) -> datetime | None:
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
+def _media_type_for_report(output_format: ResearchOutputFormat) -> str:
+    """Return the response media type for one report format."""
+    if output_format == ResearchOutputFormat.JSON:
+        return "application/json"
+    if output_format == ResearchOutputFormat.HTML:
+        return "text/html"
+    return "text/markdown"
+
+
 def _normalize_live_session_state(session: dict[str, Any]) -> dict[str, Any]:
     """Mark abandoned live sessions as interrupted instead of running forever."""
     if not session.get("active"):
@@ -1113,6 +1122,17 @@ def register_routes(app: FastAPI) -> None:
                 status_code=404,
             )
 
+        cached_report = store.load_report(session_id, output_format)
+        if cached_report is not None:
+            return JSONResponse(
+                content={
+                    "session_id": session_id,
+                    "format": output_format.value,
+                    "media_type": _media_type_for_report(output_format),
+                    "content": cached_report,
+                }
+            )
+
         # Check if session has analysis data
         analysis = session.metadata.get("analysis", {})
         if not analysis:
@@ -1127,20 +1147,21 @@ def register_routes(app: FastAPI) -> None:
 
         if output_format == ResearchOutputFormat.JSON:
             content = reporter.generate_json_report(session, analysis)
-            media_type = "application/json"
         elif output_format == ResearchOutputFormat.HTML:
-            markdown = reporter.generate_markdown_report(session, analysis)
+            markdown = store.load_report(session_id, ResearchOutputFormat.MARKDOWN)
+            if markdown is None:
+                markdown = reporter.generate_markdown_report(session, analysis)
+                store.save_report(session_id, ResearchOutputFormat.MARKDOWN, markdown)
             content = reporter.render_html_report(markdown)
-            media_type = "text/html"
         else:
             content = reporter.generate_markdown_report(session, analysis)
-            media_type = "text/markdown"
+        store.save_report(session_id, output_format, content)
 
         return JSONResponse(
             content={
                 "session_id": session_id,
                 "format": output_format.value,
-                "media_type": media_type,
+                "media_type": _media_type_for_report(output_format),
                 "content": content,
             }
         )

@@ -421,14 +421,14 @@ def test_query_live_subprocess_streams_groups_chunk_events(tmp_path):
     scheduled_id = monitor.emit_event(
         event_type="subprocess.scheduled",
         category="llm",
-        name="claude_cli",
+        name="anthropic_api",
         status="scheduled",
         metadata={"operation": "extract_themes", "model": "claude-sonnet-4-6"},
     )
     monitor.emit_event(
         event_type="subprocess.stdout_chunk",
         category="llm",
-        name="claude_cli",
+        name="anthropic_api",
         status="streaming",
         parent_event_id=scheduled_id,
         metadata={"chunk_index": 0, "content": "first\n", "content_length": 6},
@@ -436,7 +436,7 @@ def test_query_live_subprocess_streams_groups_chunk_events(tmp_path):
     monitor.emit_event(
         event_type="subprocess.stdout_chunk",
         category="llm",
-        name="claude_cli",
+        name="anthropic_api",
         status="streaming",
         parent_event_id=scheduled_id,
         metadata={"chunk_index": 1, "content": "second\n", "content_length": 7},
@@ -444,7 +444,7 @@ def test_query_live_subprocess_streams_groups_chunk_events(tmp_path):
     monitor.emit_event(
         event_type="subprocess.stderr_chunk",
         category="llm",
-        name="claude_cli",
+        name="anthropic_api",
         status="streaming",
         parent_event_id=scheduled_id,
         metadata={"chunk_index": 0, "content": "warn\n", "content_length": 5},
@@ -452,7 +452,7 @@ def test_query_live_subprocess_streams_groups_chunk_events(tmp_path):
     monitor.emit_event(
         event_type="subprocess.completed",
         category="llm",
-        name="claude_cli",
+        name="anthropic_api",
         status="completed",
         parent_event_id=scheduled_id,
         duration_ms=125,
@@ -476,7 +476,7 @@ def test_query_live_subprocess_streams_enforces_chunk_limit(tmp_path):
     scheduled_id = monitor.emit_event(
         event_type="subprocess.scheduled",
         category="llm",
-        name="claude_cli",
+        name="anthropic_api",
         status="scheduled",
         metadata={"operation": "identify_gaps"},
     )
@@ -484,7 +484,7 @@ def test_query_live_subprocess_streams_enforces_chunk_limit(tmp_path):
         monitor.emit_event(
             event_type="subprocess.stdout_chunk",
             category="llm",
-            name="claude_cli",
+            name="anthropic_api",
             status="streaming",
             parent_event_id=scheduled_id,
             metadata={
@@ -554,7 +554,7 @@ def test_query_live_llm_route_analytics(tmp_path):
     # Record fallback
     monitor.record_llm_route_fallback(
         agent_id="researcher",
-        original_transport="claude_cli",
+        original_transport="anthropic_api",
         fallback_transport="openrouter_api",
         reason="timeout",
     )

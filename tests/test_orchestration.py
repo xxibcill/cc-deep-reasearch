@@ -258,9 +258,9 @@ class TestSessionBuilder:
 
 class TestResearchExecutionService:
     @pytest.mark.asyncio
-    async def test_execute_runs_flow_and_finalizes_session(self) -> None:
+    async def test_execute_runs_flow_and_finalizes_session(self, tmp_path) -> None:
         config = Config()
-        monitor = ResearchMonitor(enabled=False)
+        monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
         phase_runner = PhaseRunner(monitor=monitor)
         service = ResearchExecutionService(
             config=config,
@@ -309,6 +309,11 @@ class TestResearchExecutionService:
         assert session.query == "market structure"
         assert session.metadata["providers"]["configured"] == []
         assert session.metadata["execution"]["parallel_requested"] is False
+        strategy_checkpoint = monitor.get_checkpoints_by_phase("strategy")[0]
+        assert strategy_checkpoint["output_ref"] == {
+            "summary": None,
+            "strategy_type": None,
+        }
         assert hook.call_args_list[-2].args == ("complete", "Research complete")
         assert hook.call_args_list[-1].args == ("cleanup", "Cleaning up team resources")
 

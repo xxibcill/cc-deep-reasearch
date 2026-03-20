@@ -16,7 +16,7 @@ from cc_deep_research.llm.router import LLMRouter
 
 
 def create_route(
-    transport: LLMTransportType = LLMTransportType.CLAUDE_CLI,
+    transport: LLMTransportType = LLMTransportType.ANTHROPIC_API,
     model: str = "claude-sonnet-4-6",
     api_key: str | None = None,
 ) -> LLMRoute:
@@ -27,7 +27,7 @@ def create_route(
 
     return LLMRoute(
         transport=transport,
-        provider=LLMProviderType.CLAUDE,
+        provider=LLMProviderType.ANTHROPIC,
         model=model,
         timeout_seconds=60,
         extra=extra,
@@ -44,7 +44,7 @@ class MockRegistry:
     ) -> None:
         self._route = route
         self._fallback_order = fallback_order or [
-            LLMTransportType.CLAUDE_CLI,
+            LLMTransportType.ANTHROPIC_API,
             LLMTransportType.OPENROUTER_API,
             LLMTransportType.CEREBRAS_API,
             LLMTransportType.HEURISTIC,

@@ -29,6 +29,15 @@ from cc_deep_research.orchestration.phases import PhaseRunner
 from cc_deep_research.orchestration.session_builder import SessionBuilder
 
 
+def _strategy_checkpoint_output(result: StrategyResult) -> dict[str, Any]:
+    """Build strategy checkpoint payloads without assuming legacy fields."""
+    strategy = getattr(result, "strategy", None)
+    return {
+        "summary": getattr(result, "summary", None),
+        "strategy_type": getattr(strategy, "strategy_type", None),
+    }
+
+
 class ResearchExecutionService:
     """Run the top-level research session flow."""
 
@@ -58,8 +67,8 @@ class ResearchExecutionService:
         depth: ResearchDepth,
         min_sources: int | None,
         phase_hook: Callable[[str, str], None] | None,
-        cancellation_check: Callable[[], None] | None,
-        on_session_started: Callable[[str], None] | None,
+        cancellation_check: Callable[[], None] | None = None,
+        on_session_started: Callable[[str], None] | None = None,
         hooks: ResearchExecutionHooks,
     ) -> ResearchSession:
         """Execute a full research session using injected callbacks."""
@@ -88,10 +97,7 @@ class ResearchExecutionService:
                 operation=lambda: hooks.analyze_strategy(query, depth),
                 cancellation_check=cancellation_check,
                 input_ref={"query": query, "depth": depth.value},
-                output_transformer=lambda result: {
-                    "summary": result.summary if hasattr(result, "summary") else None,
-                    "strategy_type": result.strategy.strategy_type if hasattr(result, "strategy") else None,
-                },
+                output_transformer=_strategy_checkpoint_output,
             )
             raw_query_families = await self._phase_runner.run_phase(
                 phase_hook=phase_hook,

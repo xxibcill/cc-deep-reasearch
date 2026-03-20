@@ -96,7 +96,9 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
   },
 ];
 
-const ROUTE_OPTIONS = ['claude_cli', 'openrouter', 'cerebras', 'anthropic', 'heuristic'];
+const DEFAULT_ROUTE_OPTION = 'anthropic';
+const ROUTE_OPTIONS = ['openrouter', 'cerebras', 'anthropic', 'heuristic'] as const;
+const ROUTE_OPTION_SET = new Set<string>(ROUTE_OPTIONS);
 const DEPTH_OPTIONS = ['quick', 'standard', 'deep'];
 const OUTPUT_OPTIONS = ['markdown', 'json', 'html'];
 
@@ -111,6 +113,11 @@ function readPath(source: Record<string, unknown>, path: string): unknown {
   return current;
 }
 
+function normalizeRouteOption(value: unknown): string {
+  const route = typeof value === 'string' ? value : '';
+  return ROUTE_OPTION_SET.has(route) ? route : DEFAULT_ROUTE_OPTION;
+}
+
 function normalizeFormState(config: ConfigResponse): FormState {
   const source = config.persisted_config;
   return {
@@ -123,13 +130,13 @@ function normalizeFormState(config: ConfigResponse): FormState {
     parallelExecution: Boolean(readPath(source, 'search_team.parallel_execution')),
     outputFormat: String(readPath(source, 'output.format') ?? 'markdown'),
     outputSaveDir: String(readPath(source, 'output.save_dir') ?? './reports'),
-    routeAnalyzer: String(readPath(source, 'llm.route_defaults.analyzer') ?? 'claude_cli'),
-    routeDeepAnalyzer: String(readPath(source, 'llm.route_defaults.deep_analyzer') ?? 'claude_cli'),
-    routeReportQualityEvaluator: String(
-      readPath(source, 'llm.route_defaults.report_quality_evaluator') ?? 'claude_cli'
+    routeAnalyzer: normalizeRouteOption(readPath(source, 'llm.route_defaults.analyzer')),
+    routeDeepAnalyzer: normalizeRouteOption(readPath(source, 'llm.route_defaults.deep_analyzer')),
+    routeReportQualityEvaluator: normalizeRouteOption(
+      readPath(source, 'llm.route_defaults.report_quality_evaluator')
     ),
-    routeReporter: String(readPath(source, 'llm.route_defaults.reporter') ?? 'claude_cli'),
-    routeDefault: String(readPath(source, 'llm.route_defaults.default') ?? 'claude_cli'),
+    routeReporter: normalizeRouteOption(readPath(source, 'llm.route_defaults.reporter')),
+    routeDefault: normalizeRouteOption(readPath(source, 'llm.route_defaults.default')),
   };
 }
 

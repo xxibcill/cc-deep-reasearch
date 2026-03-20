@@ -18,6 +18,7 @@ from cc_deep_research.models.session import (
     ResearchSession,
     normalize_session_metadata,
 )
+from cc_deep_research.research_runs.models import ResearchOutputFormat
 from cc_deep_research.telemetry import (
     get_default_dashboard_db_path,
     get_default_telemetry_dir,
@@ -25,8 +26,14 @@ from cc_deep_research.telemetry import (
     query_session_detail,
 )
 
+REPORT_CACHE_DIRNAME = ".reports"
 SESSION_SUMMARY_DIRNAME = ".summaries"
 SESSION_LABEL_MAX_LENGTH = 120
+REPORT_FILE_EXTENSIONS = {
+    ResearchOutputFormat.MARKDOWN: "md",
+    ResearchOutputFormat.JSON: "json",
+    ResearchOutputFormat.HTML: "html",
+}
 
 
 class SessionArchiveStatus:
@@ -123,12 +130,14 @@ class SessionStore:
                         Uses default if not provided.
         """
         self._session_dir = Path(session_dir) if session_dir else get_default_session_dir()
+        self._report_dir = self._session_dir / REPORT_CACHE_DIRNAME
         self._summary_dir = self._session_dir / SESSION_SUMMARY_DIRNAME
         self._ensure_session_dir()
 
     def _ensure_session_dir(self) -> None:
         """Ensure the session directory exists."""
         self._session_dir.mkdir(parents=True, exist_ok=True)
+        self._report_dir.mkdir(parents=True, exist_ok=True)
         self._summary_dir.mkdir(parents=True, exist_ok=True)
 
     def _session_path(self, session_id: str) -> Path:
@@ -148,6 +157,16 @@ class SessionStore:
         safe_id = _safe_session_id(session_id)
         return self._summary_dir / f"{safe_id}.json"
 
+    def _report_path(
+        self,
+        session_id: str,
+        output_format: ResearchOutputFormat,
+    ) -> Path:
+        """Return the cached report path for one session/format pair."""
+        safe_id = _safe_session_id(session_id)
+        extension = REPORT_FILE_EXTENSIONS[output_format]
+        return self._report_dir / f"{safe_id}.{extension}"
+
     def get_session_path(self, session_id: str) -> Path:
         """Get the file path for a session (public accessor).
 
@@ -158,6 +177,31 @@ class SessionStore:
             Path to the session file.
         """
         return self._session_path(session_id)
+
+    def save_report(
+        self,
+        session_id: str,
+        output_format: ResearchOutputFormat,
+        content: str,
+    ) -> Path:
+        """Persist one rendered report variant for a session."""
+        path = self._report_path(session_id, output_format)
+        path.write_text(content, encoding="utf-8")
+        return path
+
+    def load_report(
+        self,
+        session_id: str,
+        output_format: ResearchOutputFormat,
+    ) -> str | None:
+        """Load a cached report variant, if present."""
+        path = self._report_path(session_id, output_format)
+        if not path.exists():
+            return None
+        try:
+            return path.read_text(encoding="utf-8")
+        except OSError:
+            return None
 
     def save_session(self, session: ResearchSession) -> Path:
         """Save a research session to disk.
@@ -269,8 +313,14 @@ class SessionStore:
         """
         path = self._session_path(session_id)
         summary_path = self._session_summary_path(session_id)
+        report_paths = [
+            self._report_path(session_id, output_format)
+            for output_format in REPORT_FILE_EXTENSIONS
+        ]
 
-        if not path.exists() and not summary_path.exists():
+        if not path.exists() and not summary_path.exists() and not any(
+            report_path.exists() for report_path in report_paths
+        ):
             return SessionDeletionResult(deleted=False, missing=True)
 
         try:
@@ -284,6 +334,11 @@ class SessionStore:
                 summary_path.unlink()
                 deleted = True
                 deleted_files.append("summary")
+            for report_path in report_paths:
+                if report_path.exists():
+                    report_path.unlink()
+                    deleted = True
+                    deleted_files.append(f"report:{report_path.suffix.lstrip('.')}")
 
             log_audit_event("delete", session_id, deleted_files=deleted_files)
             return SessionDeletionResult(deleted=deleted, missing=False)

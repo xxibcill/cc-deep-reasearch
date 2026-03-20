@@ -48,6 +48,7 @@ class SessionPurgeService:
         self._session_store = session_store or SessionStore()
         self._telemetry_dir = telemetry_dir or get_default_telemetry_dir()
         self._db_path = db_path or get_default_dashboard_db_path()
+        self._bulk_active_session_ids: set[str] | None = None
 
     def _is_session_active(self, session_id: str) -> bool:
         """Check if a session is currently active.
@@ -60,8 +61,19 @@ class SessionPurgeService:
         """
         if self._session_store.is_session_archived(session_id):
             return False
+        if self._bulk_active_session_ids is not None:
+            return session_id in self._bulk_active_session_ids
         live_sessions = query_live_sessions(base_dir=self._telemetry_dir)
         return any(s.get("session_id") == session_id and s.get("active") for s in live_sessions)
+
+    def _get_active_session_ids(self) -> set[str]:
+        """Return the active session ids from the live telemetry snapshot."""
+        live_sessions = query_live_sessions(base_dir=self._telemetry_dir)
+        return {
+            session["session_id"]
+            for session in live_sessions
+            if session.get("active") and isinstance(session.get("session_id"), str)
+        }
 
     def _get_telemetry_session_dir(self, session_id: str) -> Path:
         """Get the telemetry directory path for a session.
@@ -156,21 +168,24 @@ class SessionPurgeService:
     ) -> BulkSessionDeleteResponse:
         """Delete multiple sessions while isolating per-session failures."""
         results: list[SessionDeleteResponse] = []
-
-        for session_id in request.session_ids:
-            try:
-                result = self.delete_session(
-                    SessionDeleteRequest(session_id=session_id, force=request.force)
-                )
-            except Exception as exc:  # pragma: no cover - defensive isolation
-                result = SessionDeleteResponse(
-                    session_id=session_id,
-                    success=False,
-                    deleted_layers=[],
-                    active_conflict=False,
-                    error=str(exc),
-                )
-            results.append(result)
+        self._bulk_active_session_ids = self._get_active_session_ids()
+        try:
+            for session_id in request.session_ids:
+                try:
+                    result = self.delete_session(
+                        SessionDeleteRequest(session_id=session_id, force=request.force)
+                    )
+                except Exception as exc:  # pragma: no cover - defensive isolation
+                    result = SessionDeleteResponse(
+                        session_id=session_id,
+                        success=False,
+                        deleted_layers=[],
+                        active_conflict=False,
+                        error=str(exc),
+                    )
+                results.append(result)
+        finally:
+            self._bulk_active_session_ids = None
 
         return BulkSessionDeleteResponse.from_results(results)
 

@@ -851,9 +851,9 @@ class TestLLMRouteTelemetry:
 
         monitor.record_llm_route_fallback(
             agent_id="analyzer",
-            original_transport="claude_cli",
+            original_transport="anthropic_api",
             fallback_transport="openrouter_api",
-            reason="nested_session_detected",
+            reason="transport_unavailable",
         )
 
         event = next(
@@ -863,9 +863,9 @@ class TestLLMRouteTelemetry:
 
         assert event["agent_id"] == "analyzer"
         assert event["status"] == "fallback"
-        assert event["metadata"]["original_transport"] == "claude_cli"
+        assert event["metadata"]["original_transport"] == "anthropic_api"
         assert event["metadata"]["fallback_transport"] == "openrouter_api"
-        assert event["metadata"]["reason"] == "nested_session_detected"
+        assert event["metadata"]["reason"] == "transport_unavailable"
 
     def test_record_llm_route_request(self):
         """Test recording LLM route request start."""
@@ -989,7 +989,7 @@ class TestLLMRouteTelemetry:
 
         monitor.record_llm_route_fallback(
             agent_id="researcher",
-            original_transport="claude_cli",
+            original_transport="anthropic_api",
             fallback_transport="openrouter_api",
             reason="timeout",
         )
@@ -1053,7 +1053,7 @@ class TestSemanticEvents:
             decision_type="routing",
             reason_code=REASON_FALLBACK,
             chosen_option="openrouter_api",
-            inputs={"original": "claude_cli", "reason": "unavailable"},
+            inputs={"original": "anthropic_api", "reason": "unavailable"},
             rejected_options=["cerebras_api"],
             phase="initialization",
         )
@@ -1111,8 +1111,8 @@ class TestSemanticEvents:
         event_id = monitor.emit_state_changed(
             state_scope="session",
             state_key="available_providers",
-            before=["tavily", "claude_cli"],
-            after=["tavily"],  # claude_cli became unavailable
+            before=["tavily", "anthropic_api"],
+            after=["tavily"],  # anthropic_api became unavailable
             change_type="update",
             phase="initialization",
         )
@@ -1127,7 +1127,7 @@ class TestSemanticEvents:
         # Note: degraded flag depends on explicit degraded param, not inferred from state changes
         assert event["metadata"]["state_scope"] == "session"
         assert event["metadata"]["state_key"] == "available_providers"
-        assert event["metadata"]["before"] == ["tavily", "claude_cli"]
+        assert event["metadata"]["before"] == ["tavily", "anthropic_api"]
         assert event["metadata"]["after"] == ["tavily"]
 
     def test_emit_state_changed_with_cause(self):
@@ -1138,13 +1138,13 @@ class TestSemanticEvents:
         cause_id = monitor.emit_event(
             event_type="provider.health_check_failed",
             category="provider",
-            name="claude_cli",
+            name="anthropic_api",
             status="failed",
         )
 
         event_id = monitor.emit_state_changed(
             state_scope="provider",
-            state_key="claude_cli_available",
+            state_key="anthropic_api_available",
             before=True,
             after=False,
             change_type="update",
@@ -1166,7 +1166,7 @@ class TestSemanticEvents:
         cause_id = monitor.emit_event(
             event_type="llm.route_request",
             category="llm",
-            name="claude_cli",
+            name="anthropic_api",
             status="timeout",
         )
 
@@ -1176,7 +1176,7 @@ class TestSemanticEvents:
             scope="transport",
             recoverable=True,
             mitigation="Using openrouter_api instead",
-            impact="LLM transport degraded from claude_cli to openrouter_api",
+            impact="LLM transport degraded from anthropic_api to openrouter_api",
             caused_by_event_id=cause_id,
             phase="analysis",
             actor_id="analyzer",

@@ -65,7 +65,6 @@ class LLMRouteRegistry:
     def _build_fallback_order(self) -> list[LLMTransportType]:
         """Build the fallback order from config."""
         transport_map = {
-            "claude_cli": LLMTransportType.CLAUDE_CLI,
             "openrouter": LLMTransportType.OPENROUTER_API,
             "cerebras": LLMTransportType.CEREBRAS_API,
             "anthropic": LLMTransportType.ANTHROPIC_API,
@@ -79,16 +78,7 @@ class LLMRouteRegistry:
 
     def _build_route_from_transport(self, transport: LLMTransportType) -> LLMRoute:
         """Build a route configuration for a transport type."""
-        if transport == LLMTransportType.CLAUDE_CLI:
-            return LLMRoute(
-                transport=LLMTransportType.CLAUDE_CLI,
-                provider=LLMProviderType.CLAUDE,
-                model=self._config.claude_cli.model,
-                timeout_seconds=self._config.claude_cli.timeout_seconds,
-                enabled=self._config.claude_cli.enabled,
-                extra={"path": self._config.claude_cli.path},
-            )
-        elif transport == LLMTransportType.OPENROUTER_API:
+        if transport == LLMTransportType.OPENROUTER_API:
             api_keys = self._config.openrouter.get_api_keys()
             return LLMRoute(
                 transport=LLMTransportType.OPENROUTER_API,
@@ -147,13 +137,12 @@ class LLMRouteRegistry:
         """Get the default route for an agent from config."""
         transport_name = self._config.get_route_for_agent(agent_id)
         transport_map = {
-            "claude_cli": LLMTransportType.CLAUDE_CLI,
             "openrouter": LLMTransportType.OPENROUTER_API,
             "cerebras": LLMTransportType.CEREBRAS_API,
             "anthropic": LLMTransportType.ANTHROPIC_API,
             "heuristic": LLMTransportType.HEURISTIC,
         }
-        transport = transport_map.get(transport_name, LLMTransportType.CLAUDE_CLI)
+        transport = transport_map.get(transport_name, LLMTransportType.ANTHROPIC_API)
         return self._build_route_from_transport(transport)
 
     def get_route(self, agent_id: str) -> LLMRoute:
@@ -336,7 +325,6 @@ class LLMRouteRegistry:
             },
             "fallback_order": [t.value for t in self._fallback_order],
             "config_defaults": {
-                "claude_cli_enabled": self._config.claude_cli.enabled,
                 "openrouter_enabled": self._config.openrouter.enabled,
                 "cerebras_enabled": self._config.cerebras.enabled,
                 "anthropic_enabled": self._config.anthropic.enabled,

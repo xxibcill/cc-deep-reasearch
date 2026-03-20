@@ -642,7 +642,7 @@ class TestLLMTransportType:
 
     def test_transport_type_values(self) -> None:
         """Test LLMTransportType enum values."""
-        assert LLMTransportType.CLAUDE_CLI.value == "claude_cli"
+        assert LLMTransportType.ANTHROPIC_API.value == "anthropic_api"
         assert LLMTransportType.OPENROUTER_API.value == "openrouter_api"
         assert LLMTransportType.CEREBRAS_API.value == "cerebras_api"
         assert LLMTransportType.HEURISTIC.value == "heuristic"
@@ -653,7 +653,7 @@ class TestLLMProviderType:
 
     def test_provider_type_values(self) -> None:
         """Test LLMProviderType enum values."""
-        assert LLMProviderType.CLAUDE.value == "claude"
+        assert LLMProviderType.ANTHROPIC.value == "anthropic"
         assert LLMProviderType.OPENROUTER.value == "openrouter"
         assert LLMProviderType.CEREBRAS.value == "cerebras"
         assert LLMProviderType.HEURISTIC.value == "heuristic"
@@ -665,8 +665,8 @@ class TestLLMRouteModel:
     def test_default_route(self) -> None:
         """Test default LLMRouteModel values."""
         route = LLMRouteModel()
-        assert route.transport == LLMTransportType.CLAUDE_CLI
-        assert route.provider == LLMProviderType.CLAUDE
+        assert route.transport == LLMTransportType.ANTHROPIC_API
+        assert route.provider == LLMProviderType.ANTHROPIC
         assert route.model == "claude-sonnet-4-6"
         assert route.enabled is True
 
@@ -703,15 +703,15 @@ class TestLLMPlanModel:
         """Test default LLMPlanModel values."""
         plan = LLMPlanModel()
         assert plan.agent_routes == {}
-        assert LLMTransportType.CLAUDE_CLI in plan.fallback_order
+        assert LLMTransportType.ANTHROPIC_API in plan.fallback_order
         assert isinstance(plan.default_route, LLMRouteModel)
 
     def test_get_route_for_agent_default(self) -> None:
         """Test get_route_for_agent returns default for unknown agent."""
         plan = LLMPlanModel()
         route = plan.get_route_for_agent("unknown_agent")
-        assert route.transport == LLMTransportType.CLAUDE_CLI
-        assert route.provider == LLMProviderType.CLAUDE
+        assert route.transport == LLMTransportType.ANTHROPIC_API
+        assert route.provider == LLMProviderType.ANTHROPIC
 
     def test_get_route_for_agent_assigned(self) -> None:
         """Test get_route_for_agent returns assigned route."""
@@ -738,7 +738,7 @@ class TestLLMPlanModel:
             ]
         )
         assert plan.fallback_order[0] == LLMTransportType.CEREBRAS_API
-        assert LLMTransportType.CLAUDE_CLI not in plan.fallback_order
+        assert LLMTransportType.ANTHROPIC_API not in plan.fallback_order
 
     def test_plan_serialization(self) -> None:
         """Test LLMPlanModel serialization."""

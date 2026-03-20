@@ -61,7 +61,7 @@ class ReportQualityEvaluatorAgent:
     When an LLMRouter is provided, this agent can use LLM-based evaluation
     for more nuanced quality assessment. The route is resolved through the
     shared routing layer, which supports:
-    - Claude CLI (for Claude-powered evaluation)
+    - Anthropic API
     - OpenRouter API (for API-based evaluation)
     - Cerebras API (for fast inference)
     - Heuristic fallback (when no LLM available)

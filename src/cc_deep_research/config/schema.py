@@ -131,14 +131,9 @@ class ResearchConfig(BaseModel):
     max_sources_per_theme: int = Field(default=5, ge=2, le=10)
     ai_integration_method: str = Field(
         default="hybrid",
-        description="Method for AI integration: 'heuristic', 'agent', 'api', 'hybrid'",
+        description="Method for AI integration: 'heuristic', 'api', or 'hybrid'",
     )
     ai_temperature: float = Field(default=0.3, ge=0.0, le=1.0)
-    claude_cli_path: str | None = Field(
-        default=None,
-        description="Optional path override for the Claude Code CLI executable",
-    )
-    claude_cli_timeout_seconds: int = Field(default=180, ge=30, le=900)
 
 
 class OutputConfig(BaseModel):
@@ -201,18 +196,6 @@ class AgentTeamConfig(BaseModel):
     researcher_timeout: int = Field(default=120, ge=30, le=300)
     enable_reflection: bool = Field(default=True)
     max_reflection_points: int = Field(default=5, ge=1, le=10)
-
-
-class LLMClaudeCLIConfig(BaseModel):
-    """Claude CLI transport configuration."""
-
-    enabled: bool = Field(default=True)
-    path: str | None = Field(
-        default=None,
-        description="Optional path override for the Claude Code CLI executable",
-    )
-    timeout_seconds: int = Field(default=180, ge=30, le=900)
-    model: str = Field(default="claude-sonnet-4-6")
 
 
 class LLMOpenRouterConfig(BaseModel):
@@ -283,23 +266,22 @@ class LLMAnthropicConfig(BaseModel):
 class LLMRouteDefaults(BaseModel):
     """Default route assignments for agents."""
 
-    analyzer: str = Field(default="claude_cli")
-    deep_analyzer: str = Field(default="claude_cli")
-    report_quality_evaluator: str = Field(default="claude_cli")
-    reporter: str = Field(default="claude_cli")
-    default: str = Field(default="claude_cli")
+    analyzer: str = Field(default="anthropic")
+    deep_analyzer: str = Field(default="anthropic")
+    report_quality_evaluator: str = Field(default="anthropic")
+    reporter: str = Field(default="anthropic")
+    default: str = Field(default="anthropic")
 
 
 class LLMConfig(BaseModel):
     """LLM routing configuration."""
 
-    claude_cli: LLMClaudeCLIConfig = Field(default_factory=LLMClaudeCLIConfig)
     openrouter: LLMOpenRouterConfig = Field(default_factory=LLMOpenRouterConfig)
     cerebras: LLMCerebrasConfig = Field(default_factory=LLMCerebrasConfig)
     anthropic: LLMAnthropicConfig = Field(default_factory=LLMAnthropicConfig)
     route_defaults: LLMRouteDefaults = Field(default_factory=LLMRouteDefaults)
     fallback_order: list[str] = Field(
-        default_factory=lambda: ["claude_cli", "openrouter", "cerebras", "anthropic", "heuristic"]
+        default_factory=lambda: ["anthropic", "openrouter", "cerebras", "heuristic"]
     )
 
     def get_enabled_transports(self) -> list[str]:
@@ -307,8 +289,7 @@ class LLMConfig(BaseModel):
         transports: list[str] = []
         for name in self.fallback_order:
             is_enabled = (
-                (name == "claude_cli" and self.claude_cli.enabled)
-                or (
+                (
                     name == "openrouter"
                     and self.openrouter.enabled
                     and self.openrouter.get_api_keys()
@@ -392,7 +373,6 @@ __all__ = [
     "DisplayConfig",
     "LLMAnthropicConfig",
     "LLMCerebrasConfig",
-    "LLMClaudeCLIConfig",
     "LLMConfig",
     "LLMOpenRouterConfig",
     "LLMRouteDefaults",

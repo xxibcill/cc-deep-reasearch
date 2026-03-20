@@ -204,7 +204,7 @@ class OrchestratorSessionState:
 
         Args:
             agent_id: The agent identifier.
-            transport: The transport type (claude_cli, openrouter_api, etc.).
+            transport: The transport type (anthropic_api, openrouter_api, etc.).
             provider: The provider type (claude, openrouter, etc.).
             model: The model identifier.
             source: Where the route came from (planner, config).

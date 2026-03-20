@@ -54,6 +54,10 @@ def materialize_research_run_output(
         else:
             report_content = markdown_report
 
+    store.save_report(session.session_id, request.output_format, report_content)
+    if markdown_report is not None and request.output_format != ResearchOutputFormat.MARKDOWN:
+        store.save_report(session.session_id, ResearchOutputFormat.MARKDOWN, markdown_report)
+
     report_path = request.output_path
     if report_path is not None:
         report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -108,4 +112,3 @@ def _media_type_for_format(output_format: ResearchOutputFormat) -> str:
     if output_format == ResearchOutputFormat.HTML:
         return "text/html"
     return "text/markdown"
-

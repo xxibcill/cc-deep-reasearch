@@ -13,8 +13,8 @@ from cc_deep_research.config import (
     ConfigOverrideError,
     ConfigPatchError,
     DisplayConfig,
+    LLMAnthropicConfig,
     LLMCerebrasConfig,
-    LLMClaudeCLIConfig,
     LLMConfig,
     LLMOpenRouterConfig,
     LLMRouteDefaults,
@@ -112,8 +112,6 @@ class TestResearchConfig:
         assert config.enable_quality_scoring is True
         assert config.deep_analysis_passes == 3
         assert config.deep_analysis_tokens == 150000
-        assert config.claude_cli_path is None
-        assert config.claude_cli_timeout_seconds == 180
 
 
 class TestOutputConfig:
@@ -191,18 +189,12 @@ class TestConfig:
             "search": {"depth": "quick"},
             "search_cache": {"enabled": True, "ttl_seconds": 120},
             "tavily": {"api_keys": ["test-key"]},
-            "research": {
-                "claude_cli_path": "/usr/local/bin/claude",
-                "claude_cli_timeout_seconds": 240,
-            },
         }
         config = Config(**data)
         assert config.search.depth == ResearchDepth.QUICK
         assert config.search_cache.enabled is True
         assert config.search_cache.ttl_seconds == 120
         assert config.tavily.api_keys == ["test-key"]
-        assert config.research.claude_cli_path == "/usr/local/bin/claude"
-        assert config.research.claude_cli_timeout_seconds == 240
 
 
 class TestSearchCacheConfig:
@@ -554,36 +546,36 @@ class TestParseApiKeysFromEnv:
             assert keys == []
 
 
-class TestLLMClaudeCLIConfig:
-    """Tests for LLMClaudeCLIConfig model."""
+class TestLLMAnthropicConfig:
+    """Tests for LLMAnthropicConfig model."""
 
-    def test_default_claude_cli_config(self) -> None:
-        """Test default LLMClaudeCLIConfig values."""
-        config = LLMClaudeCLIConfig()
-        assert config.enabled is True
-        assert config.path is None
-        assert config.timeout_seconds == 180
-        assert config.model == "claude-sonnet-4-6"
-
-    def test_custom_claude_cli_config(self) -> None:
-        """Test custom LLMClaudeCLIConfig values."""
-        config = LLMClaudeCLIConfig(
-            enabled=False,
-            path="/custom/claude",
-            timeout_seconds=300,
-            model="claude-opus-4-6",
-        )
+    def test_default_anthropic_config(self) -> None:
+        """Test default LLMAnthropicConfig values."""
+        config = LLMAnthropicConfig()
         assert config.enabled is False
-        assert config.path == "/custom/claude"
-        assert config.timeout_seconds == 300
-        assert config.model == "claude-opus-4-6"
+        assert config.api_key is None
+        assert config.api_keys == []
+        assert config.base_url == "https://api.anthropic.com"
+        assert config.timeout_seconds == 120
+        assert config.model == "claude-sonnet-4-6"
+        assert config.max_tokens == 512
 
-    def test_timeout_validation(self) -> None:
-        """Test timeout validation."""
-        with pytest.raises(ValueError):
-            LLMClaudeCLIConfig(timeout_seconds=15)
-        with pytest.raises(ValueError):
-            LLMClaudeCLIConfig(timeout_seconds=1000)
+    def test_custom_anthropic_config(self) -> None:
+        """Test custom LLMAnthropicConfig values."""
+        config = LLMAnthropicConfig(
+            enabled=True,
+            api_key="anthropic-key",
+            api_keys=["anthropic-key", "anthropic-key-2"],
+            timeout_seconds=90,
+            model="claude-opus-4-1",
+            max_tokens=1024,
+        )
+        assert config.enabled is True
+        assert config.api_key == "anthropic-key"
+        assert config.get_api_keys() == ["anthropic-key", "anthropic-key-2"]
+        assert config.timeout_seconds == 90
+        assert config.model == "claude-opus-4-1"
+        assert config.max_tokens == 1024
 
 
 class TestLLMOpenRouterConfig:
@@ -651,11 +643,11 @@ class TestLLMRouteDefaults:
     def test_default_route_defaults(self) -> None:
         """Test default LLMRouteDefaults values."""
         defaults = LLMRouteDefaults()
-        assert defaults.analyzer == "claude_cli"
-        assert defaults.deep_analyzer == "claude_cli"
-        assert defaults.report_quality_evaluator == "claude_cli"
-        assert defaults.reporter == "claude_cli"
-        assert defaults.default == "claude_cli"
+        assert defaults.analyzer == "anthropic"
+        assert defaults.deep_analyzer == "anthropic"
+        assert defaults.report_quality_evaluator == "anthropic"
+        assert defaults.reporter == "anthropic"
+        assert defaults.default == "anthropic"
 
     def test_custom_route_defaults(self) -> None:
         """Test custom LLMRouteDefaults values."""
@@ -675,19 +667,19 @@ class TestLLMConfig:
     def test_default_llm_config(self) -> None:
         """Test default LLMConfig values."""
         config = LLMConfig()
-        assert isinstance(config.claude_cli, LLMClaudeCLIConfig)
         assert isinstance(config.openrouter, LLMOpenRouterConfig)
         assert isinstance(config.cerebras, LLMCerebrasConfig)
+        assert isinstance(config.anthropic, LLMAnthropicConfig)
         assert isinstance(config.route_defaults, LLMRouteDefaults)
-        assert config.claude_cli.enabled is True
         assert config.openrouter.enabled is False
         assert config.cerebras.enabled is False
+        assert config.anthropic.enabled is False
 
     def test_get_enabled_transports_default(self) -> None:
         """Test get_enabled_transports with default config."""
         config = LLMConfig()
         transports = config.get_enabled_transports()
-        assert "claude_cli" in transports
+        assert "anthropic" not in transports
         assert "heuristic" in transports
         assert "openrouter" not in transports
         assert "cerebras" not in transports
@@ -699,7 +691,6 @@ class TestLLMConfig:
             cerebras=LLMCerebrasConfig(enabled=True, api_key="cerebras-key"),
         )
         transports = config.get_enabled_transports()
-        assert "claude_cli" in transports
         assert "openrouter" in transports
         assert "cerebras" in transports
         assert "heuristic" in transports
@@ -719,14 +710,14 @@ class TestLLMConfig:
     def test_get_enabled_transports_respects_fallback_order(self) -> None:
         """Test get_enabled_transports respects fallback order."""
         config = LLMConfig(
-            fallback_order=["cerebras", "openrouter", "claude_cli", "heuristic"],
+            fallback_order=["cerebras", "openrouter", "anthropic", "heuristic"],
             openrouter=LLMOpenRouterConfig(enabled=True, api_key="test-key"),
             cerebras=LLMCerebrasConfig(enabled=True, api_key="cerebras-key"),
         )
         transports = config.get_enabled_transports()
         assert transports[0] == "cerebras"
         assert transports[1] == "openrouter"
-        assert transports[2] == "claude_cli"
+        assert transports[2] == "heuristic"
 
     def test_get_route_for_agent(self) -> None:
         """Test get_route_for_agent returns correct route."""
@@ -738,13 +729,13 @@ class TestLLMConfig:
         )
         assert config.get_route_for_agent("analyzer") == "openrouter"
         assert config.get_route_for_agent("deep_analyzer") == "cerebras"
-        assert config.get_route_for_agent("unknown_agent") == "claude_cli"
+        assert config.get_route_for_agent("unknown_agent") == "anthropic"
 
     def test_llm_config_in_main_config(self) -> None:
         """Test LLMConfig is included in main Config."""
         config = Config()
         assert isinstance(config.llm, LLMConfig)
-        assert config.llm.claude_cli.enabled is True
+        assert config.llm.anthropic.enabled is False
 
     def test_llm_config_serialization(self) -> None:
         """Test LLMConfig can be serialized."""
@@ -762,12 +753,12 @@ class TestLLMConfig:
         """Test Config can be created with LLM config from dict."""
         data = {
             "llm": {
-                "claude_cli": {"enabled": False, "timeout_seconds": 300},
+                "anthropic": {"enabled": True, "api_key": "anthropic-key"},
                 "openrouter": {"enabled": True, "api_key": "test-key"},
             }
         }
         config = Config(**data)
-        assert config.llm.claude_cli.enabled is False
-        assert config.llm.claude_cli.timeout_seconds == 300
+        assert config.llm.anthropic.enabled is True
+        assert config.llm.anthropic.api_key == "anthropic-key"
         assert config.llm.openrouter.enabled is True
         assert config.llm.openrouter.api_key == "test-key"
