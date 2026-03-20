@@ -23,6 +23,7 @@ from cc_deep_research.config import Config
 from cc_deep_research.coordination import LocalAgentPool, LocalMessageBus
 from cc_deep_research.llm import LLMRouteRegistry, LLMRouter
 from cc_deep_research.monitoring import ResearchMonitor
+from cc_deep_research.prompts import PromptRegistry
 from cc_deep_research.teams import AgentSpec, LocalResearchTeam, TeamConfig
 
 
@@ -36,6 +37,7 @@ class OrchestratorRuntimeState:
     agent_pool: LocalAgentPool | None
     llm_registry: LLMRouteRegistry | None = None
     llm_router: LLMRouter | None = None
+    prompt_registry: PromptRegistry | None = None
 
 
 class OrchestratorRuntime:
@@ -49,12 +51,14 @@ class OrchestratorRuntime:
         parallel_mode: bool,
         num_researchers: int,
         llm_event_callback: Any = None,
+        prompt_registry: PromptRegistry | None = None,
     ) -> None:
         self._config = config
         self._monitor = monitor
         self._parallel_mode = parallel_mode
         self._num_researchers = num_researchers
         self._llm_event_callback = llm_event_callback
+        self._prompt_registry = prompt_registry or PromptRegistry()
         self._state: OrchestratorRuntimeState | None = None
 
     async def initialize(
@@ -86,6 +90,7 @@ class OrchestratorRuntime:
             agent_pool=agent_pool,
             llm_registry=llm_registry,
             llm_router=llm_router,
+            prompt_registry=self._prompt_registry,
         )
         return self._state
 
@@ -178,11 +183,13 @@ class OrchestratorRuntime:
                 research_settings,
                 monitor=self._monitor,
                 llm_router=llm_router,
+                prompt_registry=self._prompt_registry,
             ),
             AGENT_TYPE_DEEP_ANALYZER: DeepAnalyzerAgent(
                 research_settings,
                 monitor=self._monitor,
                 llm_router=llm_router,
+                prompt_registry=self._prompt_registry,
             ),
             AGENT_TYPE_VALIDATOR: ValidatorAgent(research_settings),
         }

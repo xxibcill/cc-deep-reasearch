@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from cc_deep_research.agents.llm_analysis_client import LLMAnalysisClient
     from cc_deep_research.llm.router import LLMRouter
     from cc_deep_research.monitoring import ResearchMonitor
+    from cc_deep_research.prompts import PromptRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ class AIAnalysisService:
         monitor: ResearchMonitor | None = None,
         llm_router: "LLMRouter | None" = None,
         agent_id: str = "analyzer",
+        prompt_registry: "PromptRegistry | None" = None,
     ) -> None:
         """Initialize AI analysis service.
 
@@ -59,6 +61,10 @@ class AIAnalysisService:
                 - claude_cli_path: Optional Claude CLI path override
                 - model: Model to use
                 - deep_analysis_tokens: Token limit
+            monitor: Optional research monitor for telemetry.
+            llm_router: Optional LLM router for shared routing layer.
+            agent_id: Agent identifier for LLM routing.
+            prompt_registry: Optional prompt registry with overrides.
         """
         self._config = config
         self._model = config.get("model", "claude-sonnet-4-6")
@@ -69,6 +75,7 @@ class AIAnalysisService:
         self._monitor = monitor
         self._llm_router = llm_router
         self._agent_id = agent_id
+        self._prompt_registry = prompt_registry
 
         # Initialize heuristic-based components
         self._ai_integration = AIAgentIntegration(config)
@@ -89,6 +96,8 @@ class AIAnalysisService:
                     **self._config,
                     "timeout_seconds": self._config.get("claude_cli_timeout_seconds", 180),
                     "request_executor": self._execute_via_router,
+                    "prompt_registry": self._prompt_registry,
+                    "agent_id": self._agent_id,
                 }
                 self._llm_client = LLMAnalysisClient(llm_config, monitor=self._monitor)
                 logger.info("Shared LLM router initialized for semantic analysis")
@@ -119,6 +128,8 @@ class AIAnalysisService:
             llm_config = {
                 **self._config,
                 "timeout_seconds": self._config.get("claude_cli_timeout_seconds", 180),
+                "prompt_registry": self._prompt_registry,
+                "agent_id": self._agent_id,
             }
             self._llm_client = LLMAnalysisClient(llm_config, monitor=self._monitor)
             logger.info("Claude CLI client initialized for deep semantic analysis")
