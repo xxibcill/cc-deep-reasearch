@@ -116,12 +116,12 @@ function StatsCard({
 }) {
   return (
     <Card>
-      <CardContent className="p-4">
+      <CardContent className="p-3">
         <div className="flex items-center gap-2">
-          <Icon className={`h-5 w-5 ${accentClass}`} />
-          <span className="text-sm text-muted-foreground">{label}</span>
+          <Icon className={`h-4 w-4 ${accentClass}`} />
+          <span className="text-xs text-muted-foreground">{label}</span>
         </div>
-        <div className="mt-2 text-2xl font-bold">{value}</div>
+        <div className="mt-1 text-xl font-bold">{value}</div>
       </CardContent>
     </Card>
   );
@@ -434,11 +434,11 @@ export function SessionDetails({
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.12),_transparent_30%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)]">
       <header className="border-b bg-card/90 backdrop-blur">
-        <div className="mx-auto max-w-[1440px] px-4 py-4">
+        <div className="mx-auto max-w-[1440px] px-4 py-3">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold">Session: {sessionId.slice(0, 8)}</h1>
-              <div className="flex items-center gap-2 mt-1">
+              <h1 className="text-xl font-bold">Session: {sessionId.slice(0, 8)}</h1>
+              <div className="flex items-center gap-2 mt-0.5">
                 <StatusBadge connected={connected} />
                 <span className="text-sm text-muted-foreground">{deferredEvents.length} events</span>
               </div>
@@ -448,9 +448,9 @@ export function SessionDetails({
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-[1440px] gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1.8fr)_minmax(22rem,0.9fr)]">
-        <div className="space-y-6">
-          <div className="mb-6 grid gap-4 md:grid-cols-4">
+      <main className="mx-auto grid max-w-[1440px] gap-5 px-4 py-5 lg:grid-cols-[1fr_360px]">
+        <div className="space-y-5">
+          <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
             <StatsCard icon={Activity} label="Agents" value={agentEvents.length} accentClass="text-blue-600" />
             <StatsCard icon={Zap} label="Tool Calls" value={toolEvents.length} accentClass="text-yellow-600" />
             <StatsCard icon={Network} label="LLM Calls" value={llmEvents.length} accentClass="text-green-600" />
@@ -497,11 +497,13 @@ export function SessionDetails({
           {viewMode === 'table' && <EventTable events={filteredEvents} onSelectEvent={onSelectEvent} />}
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-5">
           <Card>
-            <CardHeader className="gap-4">
-              <CardTitle>Filters</CardTitle>
-              <div className="flex flex-wrap gap-3">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Filters</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-2">
                 <Select
                   label="Agent"
                   value={filters.agent[0] ?? ''}
@@ -539,10 +541,10 @@ export function SessionDetails({
                   onChange={(value) => setFilters({ eventTypes: value ? [value] : [] })}
                 />
               </div>
-            </CardHeader>
+            </CardContent>
           </Card>
 
-          <div className="space-y-4">
+          <div className="space-y-3">
             <Tabs
               tabs={[
                 { value: 'inspect', label: 'Inspect' },

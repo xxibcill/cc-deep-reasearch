@@ -35,9 +35,9 @@ function MetricValue({ label, value, delta, formatter }: MetricValueProps) {
   const deltaColor = delta == null ? '' : getDeltaColor(delta);
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-0.5">
       <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="text-lg font-semibold">{displayValue}</p>
+      <p className="text-base font-semibold">{displayValue}</p>
       {displayDelta != null ? (
         <p className={`text-sm ${deltaColor}`}>{displayDelta}</p>
       ) : null}
@@ -56,9 +56,9 @@ function SessionCard({
 }) {
   if (!session) {
     return (
-      <div className={`rounded-lg border ${borderColor} border-dashed bg-slate-50 p-6`}>
-        <h3 className="mb-4 text-lg font-semibold">{title}</h3>
-        <div className="flex min-h-64 items-center justify-center text-muted-foreground">
+      <div className={`rounded-lg border ${borderColor} border-dashed bg-slate-50 p-5`}>
+        <h3 className="mb-3 text-base font-semibold">{title}</h3>
+        <div className="flex min-h-48 items-center justify-center text-muted-foreground">
           <div className="text-center">
             <AlertCircle className="mx-auto mb-2 h-8 w-8" />
             <p>No session selected</p>
@@ -69,27 +69,27 @@ function SessionCard({
   }
 
   return (
-    <div className={`rounded-lg border ${borderColor} bg-white p-6`}>
-      <h3 className="mb-4 text-lg font-semibold">{title}</h3>
-      <div className="space-y-4">
+    <div className={`rounded-lg border ${borderColor} bg-white p-5`}>
+      <h3 className="mb-3 text-base font-semibold">{title}</h3>
+      <div className="space-y-3">
         <div>
           <Link
             href={`/session/${session.sessionId}`}
-            className="text-xl font-semibold text-blue-600 hover:underline"
+            className="text-base font-semibold text-blue-600 hover:underline"
           >
             {session.label}
           </Link>
-          <p className="mt-1 text-xs font-mono text-muted-foreground">{session.sessionId}</p>
+          <p className="mt-0.5 text-xs font-mono text-muted-foreground">{session.sessionId}</p>
         </div>
 
         {session.query ? (
           <div>
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Query</p>
-            <p className="mt-1 text-sm">{session.query}</p>
+            <p className="mt-0.5 text-sm line-clamp-2">{session.query}</p>
           </div>
         ) : null}
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           <MetricValue
             label="Status"
             value={session.status}
@@ -116,18 +116,18 @@ function SessionCard({
           />
         </div>
 
-        <div className="flex flex-wrap gap-2 text-xs">
-          <span className={`rounded-full px-2 py-1 ${
+        <div className="flex flex-wrap gap-1.5 text-xs">
+          <span className={`rounded-full px-2 py-0.5 ${
             session.active ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
           }`}>
             {session.active ? 'Active' : 'Inactive'}
           </span>
-          <span className={`rounded-full px-2 py-1 ${
+          <span className={`rounded-full px-2 py-0.5 ${
             session.hasSessionPayload ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
           }`}>
             Payload {session.hasSessionPayload ? 'Available' : 'Missing'}
           </span>
-          <span className={`rounded-full px-2 py-1 ${
+          <span className={`rounded-full px-2 py-0.5 ${
             session.hasReport ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
           }`}>
             Report {session.hasReport ? 'Available' : 'Unavailable'}
@@ -142,11 +142,11 @@ function DeltaColumn({ pair }: { pair: SessionPair }) {
   const deltas = computeCompareDeltas(pair);
 
   return (
-    <div className="flex min-h-[400px] items-center justify-center">
-      <div className="w-full max-w-xs space-y-6 rounded-lg border border-slate-200 bg-slate-50 p-6">
-        <h4 className="text-center font-semibold text-muted-foreground">Deltas (B - A)</h4>
+    <div className="flex min-h-[320px] items-center justify-center">
+      <div className="w-full space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-5">
+        <h4 className="text-center text-sm font-semibold text-muted-foreground">Deltas (B - A)</h4>
 
-        <div className="space-y-4">
+        <div className="space-y-3">
           <MetricValue
             label="Duration"
             value={null}
@@ -172,7 +172,7 @@ function DeltaColumn({ pair }: { pair: SessionPair }) {
           {deltas.degradedReasonDelta && deltas.degradedReasonDelta.length > 0 ? (
             <div>
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Changes</p>
-              <ul className="mt-2 space-y-1 text-sm">
+              <ul className="mt-1.5 space-y-1 text-sm">
                 {deltas.degradedReasonDelta.map((reason, idx) => (
                   <li key={idx} className="text-amber-600">{reason}</li>
                 ))}
@@ -181,7 +181,7 @@ function DeltaColumn({ pair }: { pair: SessionPair }) {
           ) : null}
         </div>
 
-        <div className="pt-4 text-center">
+        <div className="pt-3 text-center border-t">
           <p className="text-xs text-muted-foreground">
             {deltas.durationDelta === null ? 'Complete data needed' : 'Comparison ready'}
           </p>
@@ -247,48 +247,42 @@ export function CompareView({ sessionIdA, sessionIdB }: CompareViewProps) {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4 border-b pb-4">
+    <div className="space-y-5">
+      <header className="flex items-center gap-4 border-b pb-4">
         <Link href="/">
           <Button variant="outline" size="sm">
-            <ArrowLeft className="mr-2 h-4 w-4" />
+            <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
             Back to Sessions
           </Button>
         </Link>
-        <div className="flex-1">
-          <h1 className="text-2xl font-semibold">Session Comparison</h1>
-          <p className="text-sm text-muted-foreground">
+        <div className="flex-1 min-w-0">
+          <h1 className="text-xl font-semibold truncate">Session Comparison</h1>
+          <p className="text-sm text-muted-foreground truncate">
             Comparing {sessionA?.label || 'Unknown'} vs {sessionB?.label || 'Unknown'}
           </p>
         </div>
+      </header>
+
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <SessionCard session={sessionA} title="Session A" borderColor="border-blue-200" />
+        <DeltaColumn pair={pair} />
+        <SessionCard session={sessionB} title="Session B" borderColor="border-purple-200" />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-1">
-          <SessionCard session={sessionA} title="Session A" borderColor="border-blue-200" />
-        </div>
-        <div className="lg:col-span-1">
-          <DeltaColumn pair={pair} />
-        </div>
-        <div className="lg:col-span-1">
-          <SessionCard session={sessionB} title="Session B" borderColor="border-purple-200" />
-        </div>
-      </div>
-
-      <div className="flex justify-center gap-4 border-t pt-6">
+      <footer className="flex justify-center gap-3 border-t pt-4">
         <Link href={`/session/${sessionIdA}`}>
-          <Button variant="outline">
-            <ArrowLeft className="mr-2 h-4 w-4" />
+          <Button variant="outline" size="sm">
+            <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
             View Session A Details
           </Button>
         </Link>
         <Link href={`/session/${sessionIdB}`}>
-          <Button variant="outline">
+          <Button variant="outline" size="sm">
             View Session B Details
-            <ArrowRight className="ml-2 h-4 w-4" />
+            <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
           </Button>
         </Link>
-      </div>
+      </footer>
     </div>
   );
 }
