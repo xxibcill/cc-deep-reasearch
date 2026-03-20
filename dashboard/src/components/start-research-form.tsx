@@ -1,37 +1,37 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { startResearchRun } from '@/lib/api';
-import type { ResearchRunRequest } from '@/types/telemetry';
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { startResearchRun } from '@/lib/api'
+import type { ResearchRunRequest } from '@/types/telemetry'
 
-type ResearchDepth = 'quick' | 'standard' | 'deep';
+type ResearchDepth = 'quick' | 'standard' | 'deep'
 
 interface FormData {
-  query: string;
-  depth: ResearchDepth;
-  minSources: string;
+  query: string
+  depth: ResearchDepth
+  minSources: string
 }
 
 export function StartResearchForm() {
-  const router = useRouter();
+  const router = useRouter()
   const [formData, setFormData] = useState<FormData>({
     query: '',
     depth: 'deep',
     minSources: '',
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  })
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+    e.preventDefault()
     if (!formData.query.trim()) {
-      setError('Please enter a research query');
-      return;
+      setError('Please enter a research query')
+      return
     }
 
-    setIsSubmitting(true);
-    setError(null);
+    setIsSubmitting(true)
+    setError(null)
 
     try {
       const request: ResearchRunRequest = {
@@ -39,17 +39,17 @@ export function StartResearchForm() {
         depth: formData.depth,
         min_sources: formData.minSources ? parseInt(formData.minSources, 10) : null,
         realtime_enabled: true,
-      };
+      }
 
-      const response = await startResearchRun(request);
+      const response = await startResearchRun(request)
 
       // Redirect to the session view
-      router.push(`/session/${response.run_id}`);
+      router.push(`/session/${response.run_id}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start research run');
-      setIsSubmitting(false);
+      setError(err instanceof Error ? err.message : 'Failed to start research run')
+      setIsSubmitting(false)
     }
-  };
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -97,9 +97,7 @@ export function StartResearchForm() {
             min="1"
             max="100"
             value={formData.minSources}
-            onChange={(e) =>
-              setFormData((prev) => ({ ...prev, minSources: e.target.value }))
-            }
+            onChange={(e) => setFormData((prev) => ({ ...prev, minSources: e.target.value }))}
             placeholder="Auto"
             className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
             disabled={isSubmitting}
@@ -116,10 +114,10 @@ export function StartResearchForm() {
       <button
         type="submit"
         disabled={isSubmitting || !formData.query.trim()}
-        className="w-full py-2 px-4 bg-primary text-white rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="w-full py-2 px-4 bg-black text-white rounded-md hover:bg-black/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         {isSubmitting ? 'Starting Research...' : 'Start Research'}
       </button>
     </form>
-  );
+  )
 }
