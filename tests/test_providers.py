@@ -389,7 +389,12 @@ class TestCachedSearchProvider:
         second = await provider.search("openai gpt-5", SearchOptions(max_results=2))
 
         assert len(wrapped.search_calls) == 1
-        assert first == second
+        # Results should be equivalent except for cache metadata
+        assert first.query == second.query
+        assert first.provider == second.provider
+        assert first.results == second.results
+        assert first.metadata["cache_status"] == "miss"
+        assert second.metadata["cache_status"] == "hit"
 
     @pytest.mark.asyncio
     async def test_provider_errors_are_not_cached(self, tmp_path) -> None:
