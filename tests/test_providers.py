@@ -1,5 +1,6 @@
 """Tests and fixtures for search provider integrations."""
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -15,14 +16,20 @@ from cc_deep_research.orchestration.source_collection import (
     SourceAggregationService,
     SourceCollectionService,
 )
+from cc_deep_research.orchestration.source_collection_parallel import (
+    ParallelSourceCollectionStrategy,
+)
 from cc_deep_research.providers import (
     AuthenticationError,
     NetworkError,
+    ProviderSpec,
     RateLimitError,
     SearchProvider,
     SearchProviderError,
     resolve_provider_specs,
 )
+from cc_deep_research.providers.cached import CachedSearchProvider
+from cc_deep_research.search_cache import InFlightSearchRegistry, SearchCacheStore
 
 
 class MockSearchProvider(SearchProvider):
@@ -153,6 +160,33 @@ class FixtureSearchProvider(SearchProvider):
     def is_available(self) -> bool:
         """Return whether the provider is available."""
         return self._is_available
+
+
+class BlockingSearchProvider(SearchProvider):
+    """Provider that blocks until released so concurrent calls overlap."""
+
+    def __init__(self, *, name: str = "blocking") -> None:
+        self._name = name
+        self.search_calls = 0
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def search(self, query: str, options: SearchOptions | None = None) -> SearchResult:
+        """Wait for release and then return one stable result."""
+        del options
+        self.search_calls += 1
+        self.started.set()
+        await self.release.wait()
+        return SearchResult(
+            query=query,
+            provider=self._name,
+            execution_time_ms=5,
+            results=[build_search_result_item(f"{query}-1")],
+        )
+
+    def get_provider_name(self) -> str:
+        """Return provider name."""
+        return self._name
 
 
 class TestSearchProviderInterface:
@@ -334,6 +368,176 @@ class TestProviderResolution:
         specs = resolve_provider_specs(config)
 
         assert [spec.provider_name for spec in specs] == ["tavily_basic"]
+
+
+class TestCachedSearchProvider:
+    """Tests for provider-layer search caching."""
+
+    @pytest.mark.asyncio
+    async def test_repeated_identical_searches_use_cached_results(self, tmp_path) -> None:
+        """A cache hit should skip the wrapped provider."""
+        wrapped = FixtureSearchProvider(name="tavily")
+        provider = CachedSearchProvider(
+            wrapped,
+            store=SearchCacheStore(tmp_path / "search-cache.sqlite3"),
+            ttl_seconds=300,
+            in_flight_registry=InFlightSearchRegistry(),
+            default_options=SearchOptions(search_depth=ResearchDepth.DEEP, max_results=10),
+        )
+
+        first = await provider.search("openai gpt-5", SearchOptions(max_results=2))
+        second = await provider.search("openai gpt-5", SearchOptions(max_results=2))
+
+        assert len(wrapped.search_calls) == 1
+        assert first == second
+
+    @pytest.mark.asyncio
+    async def test_provider_errors_are_not_cached(self, tmp_path) -> None:
+        """Failures should surface and leave the cache empty."""
+        wrapped = FixtureSearchProvider(
+            name="tavily",
+            fail_with=SearchProviderError("boom", "tavily", "openai gpt-5"),
+        )
+        provider = CachedSearchProvider(
+            wrapped,
+            store=SearchCacheStore(tmp_path / "search-cache.sqlite3"),
+            ttl_seconds=300,
+            in_flight_registry=InFlightSearchRegistry(),
+            default_options=SearchOptions(search_depth=ResearchDepth.DEEP, max_results=10),
+        )
+
+        with pytest.raises(SearchProviderError):
+            await provider.search("openai gpt-5", SearchOptions(max_results=2))
+        with pytest.raises(SearchProviderError):
+            await provider.search("openai gpt-5", SearchOptions(max_results=2))
+
+        assert len(wrapped.search_calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_concurrent_identical_misses_share_one_in_flight_request(self, tmp_path) -> None:
+        """Concurrent misses should collapse to a single upstream search."""
+        wrapped = BlockingSearchProvider(name="tavily")
+        provider = CachedSearchProvider(
+            wrapped,
+            store=SearchCacheStore(tmp_path / "search-cache.sqlite3"),
+            ttl_seconds=300,
+            in_flight_registry=InFlightSearchRegistry(),
+            default_options=SearchOptions(search_depth=ResearchDepth.DEEP, max_results=10),
+        )
+        options = SearchOptions(max_results=2, search_depth=ResearchDepth.DEEP)
+
+        first_task = asyncio.create_task(provider.search("openai gpt-5", options))
+        await wrapped.started.wait()
+        second_task = asyncio.create_task(provider.search("openai gpt-5", options))
+        await asyncio.sleep(0)
+        wrapped.release.set()
+
+        first, second = await asyncio.gather(first_task, second_task)
+
+        assert wrapped.search_calls == 1
+        assert first == second
+
+
+class TestProviderFactoryIntegration:
+    """Tests that collection flows use the shared provider factory."""
+
+    @pytest.mark.asyncio
+    async def test_source_collector_initializes_providers_through_factory(self, monkeypatch) -> None:
+        """Sequential collection should delegate provider construction to the factory."""
+        config = Config()
+        config.search.mode = SearchMode.HYBRID_PARALLEL
+        config.search.providers = ["tavily"]
+
+        captured_specs: list[list[str]] = []
+
+        def fake_build_search_providers(
+            current_config: Config,
+            provider_specs: list[ProviderSpec],
+            *,
+            config_path=None,
+        ) -> tuple[list[SearchProvider], list[str]]:
+            assert current_config is config
+            assert config_path is None
+            captured_specs.append([spec.provider_name for spec in provider_specs])
+            return [FixtureSearchProvider(name="tavily"), FixtureSearchProvider(name="tavily_basic")], []
+
+        monkeypatch.setattr(
+            "cc_deep_research.agents.source_collector.build_search_providers",
+            fake_build_search_providers,
+        )
+
+        collector = SourceCollectorAgent(config)
+        await collector.initialize_providers()
+
+        assert captured_specs == [["tavily", "tavily_basic"]]
+        assert collector.get_available_providers() == ["tavily", "tavily_basic"]
+        await collector.close_providers()
+
+    @pytest.mark.asyncio
+    async def test_parallel_strategy_uses_shared_provider_factory(self, monkeypatch) -> None:
+        """Parallel collection should request its Tavily provider through the shared factory."""
+        config = Config()
+        config.tavily.api_keys = ["test-key"]
+        monitor = ResearchMonitor(enabled=False)
+        session_state = OrchestratorSessionState(configured_providers=["tavily"])
+        captured: list[tuple[str, int | None]] = []
+
+        def fake_build_search_provider(
+            current_config: Config,
+            provider_spec: ProviderSpec,
+            *,
+            max_results_override: int | None = None,
+            config_path=None,
+        ) -> SearchProvider | None:
+            assert current_config is config
+            assert config_path is None
+            captured.append((provider_spec.provider_name, max_results_override))
+            return FixtureSearchProvider(name=provider_spec.provider_name)
+
+        async def fake_execute_multiple_tasks(self, tasks, timeout=120.0):
+            del self, timeout
+            return [
+                {
+                    "task_id": task["task_id"],
+                    "query": task["query"],
+                    "status": "success",
+                    "sources": [build_search_result_item(task["task_id"])],
+                    "source_count": 1,
+                    "execution_time_ms": 10,
+                }
+                for task in tasks
+            ]
+
+        monkeypatch.setattr(
+            "cc_deep_research.orchestration.source_collection_parallel.build_search_provider",
+            fake_build_search_provider,
+        )
+        monkeypatch.setattr(
+            "cc_deep_research.agents.researcher.ResearcherAgent.execute_multiple_tasks",
+            fake_execute_multiple_tasks,
+        )
+
+        strategy = ParallelSourceCollectionStrategy(
+            config=config,
+            monitor=monitor,
+            session_state=session_state,
+            num_researchers=2,
+            hydrate_sources=lambda sources, _depth: asyncio.sleep(0, result=sources),
+            aggregate_sources=lambda sources: sources,
+        )
+
+        sources = await strategy.collect(
+            agent_pool=object(),
+            query_families=[
+                QueryFamily(query="query one", family="baseline", intent_tags=["baseline"]),
+                QueryFamily(query="query two", family="baseline", intent_tags=["baseline"]),
+            ],
+            depth=ResearchDepth.DEEP,
+            min_sources=4,
+        )
+
+        assert captured == [("tavily", 2)]
+        assert len(sources) == 2
 
 
 class TestSourceCollectorDegradation:
@@ -611,6 +815,7 @@ class TestSourceCollectionFixtureIntegration:
                 options: SearchOptions,
                 query_family: QueryFamily | None = None,
             ) -> list[SearchResultItem]:
+                del self, query, options, query_family
                 return []
 
             async def collect_multiple_queries(
@@ -619,6 +824,7 @@ class TestSourceCollectionFixtureIntegration:
                 options: SearchOptions,
                 query_families: list[QueryFamily] | None = None,
             ) -> list[SearchResultItem]:
+                del self, queries, options, query_families
                 return []
 
             async def close_providers(self) -> None:
