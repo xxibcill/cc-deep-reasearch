@@ -166,11 +166,12 @@ class ResearchExecutionService:
                 phase_key="complete",
                 description="Research complete",
             )
+            terminal_status = self._resolve_terminal_status(session)
             self._monitor.finalize_session(
                 total_sources=len(sources),
                 providers=self._configured_providers(),
                 total_time_ms=int(session.execution_time_seconds * 1000),
-                status="completed",
+                status=terminal_status,
                 stop_reason=self._resolve_stop_reason(
                     validation=validation,
                     iteration_history=iteration_history,
@@ -185,7 +186,7 @@ class ResearchExecutionService:
                     "session_id": session_id,
                     "source_count": len(sources),
                     "finding_count": len(analysis.key_findings),
-                    "status": "completed",
+                    "status": terminal_status,
                 },
                 replayable=True,
             )
@@ -283,6 +284,27 @@ class ResearchExecutionService:
             return STOP_REASON_LIMIT_REACHED
 
         return STOP_REASON_SUCCESS
+
+    def _resolve_terminal_status(self, session: ResearchSession) -> str:
+        """Decide whether a completed workflow should be reported as completed or failed."""
+        if session.total_sources > 0:
+            return "completed"
+
+        metadata = session.metadata
+        providers = metadata.get("providers", {})
+        execution = metadata.get("execution", {})
+        provider_status = str(providers.get("status", ""))
+        degraded_reasons = [
+            str(reason)
+            for reason in execution.get("degraded_reasons", [])
+            if isinstance(reason, str)
+        ]
+
+        if provider_status == "unavailable":
+            return "failed"
+        if any(reason.startswith("All initialized providers failed") for reason in degraded_reasons):
+            return "failed"
+        return "completed"
 
 
 @dataclass(slots=True)

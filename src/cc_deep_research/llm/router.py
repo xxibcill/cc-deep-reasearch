@@ -158,6 +158,16 @@ class LLMRouter:
                     metadata={"error": str(exc)},
                 )
                 continue
+            except Exception as exc:  # pragma: no cover - defensive boundary
+                self._record_route_completion(
+                    agent_id=agent_id,
+                    route=route,
+                    operation=operation,
+                    success=False,
+                    duration_ms=0,
+                    metadata={"error": f"{type(exc).__name__}: {exc}"},
+                )
+                continue
 
             self._record_route_completion(
                 agent_id=agent_id,

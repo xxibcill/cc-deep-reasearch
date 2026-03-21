@@ -73,6 +73,8 @@ class DeepAnalyzerAgent:
         if not has_content:
             return self._shallow_deep_analysis(sources, query)
 
+        self._ai_service.reset_run_tracking()
+
         # Pass 1: Extract key themes and patterns (expanded for deep mode)
         pass1_results = self._pass1_themes_and_patterns(sources, query)
 
@@ -85,6 +87,9 @@ class DeepAnalyzerAgent:
         # Pass 3: Synthesize comprehensive insights and implications
         pass3_results = self._pass3_synthesis(
             sources, query, pass1_results, pass2_results
+        )
+        analysis_method = (
+            "ai_multi_pass" if self._ai_service.routed_llm_used else "shallow_keyword"
         )
 
         return {
@@ -99,7 +104,7 @@ class DeepAnalyzerAgent:
             "implications": pass3_results["implications"],
             "comprehensive_synthesis": pass3_results["synthesis"],
             "source_count": len(sources),
-            "analysis_method": "ai_multi_pass",
+            "analysis_method": analysis_method,
         }
 
     def _pass1_themes_and_patterns(

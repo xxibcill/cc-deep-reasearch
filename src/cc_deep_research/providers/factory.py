@@ -75,10 +75,10 @@ def _build_tavily_provider(
     key_manager = KeyRotationManager(config.tavily.api_keys)
     max_results = max_results_override or config.tavily.max_results
     provider: SearchProvider = TavilySearchProvider(
-        api_key=key_manager.get_available_key(),
         max_results=max_results,
         provider_name=provider_spec.provider_name,
         strategy=provider_spec.strategy or "auto",
+        key_manager=key_manager,
     )
 
     cache_components = _resolve_cache_components(config, config_path=config_path)

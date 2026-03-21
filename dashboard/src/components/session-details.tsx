@@ -1,6 +1,6 @@
 import dynamic from 'next/dynamic';
 import { useDeferredValue, useMemo, useState } from 'react';
-import { Activity, List, Network, Zap, FileText } from 'lucide-react';
+import { Activity, ChevronDown, FileText, List, Network, SlidersHorizontal, Zap } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,7 @@ import {
   Failure,
   ApiTelemetryEvent,
   SessionPromptMetadata,
+  EventFilter,
 } from '@/types/telemetry';
 
 const WorkflowGraph = dynamic(
@@ -152,10 +153,22 @@ function EventTable({
   const rowHeight = 56;
   const viewportHeight = 520;
   const overscan = 10;
-  const totalHeight = events.length * rowHeight;
+  const sortedEvents = useMemo(() => {
+    return [...events].sort((left, right) => {
+      const timestampOrder = right.timestamp.localeCompare(left.timestamp);
+      if (timestampOrder !== 0) {
+        return timestampOrder;
+      }
+
+      return right.sequenceNumber - left.sequenceNumber;
+    });
+  }, [events]);
+  const totalHeight = sortedEvents.length * rowHeight;
   const startIndex = Math.max(Math.floor(scrollTop / rowHeight) - overscan, 0);
   const visibleCount = Math.ceil(viewportHeight / rowHeight) + overscan * 2;
-  const visibleEvents = events.slice(startIndex, startIndex + visibleCount);
+  const visibleEvents = sortedEvents.slice(startIndex, startIndex + visibleCount);
+  const columnTemplate =
+    'minmax(120px,0.95fr) minmax(160px,1.2fr) minmax(110px,0.8fr) minmax(220px,1.35fr) minmax(120px,0.8fr) minmax(110px,0.7fr)';
 
   return (
     <Card>
@@ -163,42 +176,40 @@ function EventTable({
         <CardTitle>Event Table</CardTitle>
       </CardHeader>
       <CardContent>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b">
-              <th className="text-left p-3">Time</th>
-              <th className="text-left p-3">Type</th>
-              <th className="text-left p-3">Category</th>
-              <th className="text-left p-3">Name</th>
-              <th className="text-left p-3">Status</th>
-              <th className="text-left p-3">Agent</th>
-            </tr>
-          </thead>
-        </table>
         <ScrollArea
-          className="mt-2 h-[520px]"
+          className="h-[520px]"
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         >
-          <div style={{ height: totalHeight, position: 'relative' }}>
-            <table className="w-full text-sm">
-              <tbody
-                style={{
-                  transform: `translateY(${startIndex * rowHeight}px)`,
-                  position: 'absolute',
-                  insetInline: 0,
-                }}
+          <div className="min-w-[920px] text-sm">
+            <div
+              className="sticky top-0 z-10 grid border-b bg-card"
+              style={{ gridTemplateColumns: columnTemplate }}
+            >
+              <div className="p-3 font-medium">Time</div>
+              <div className="p-3 font-medium">Type</div>
+              <div className="p-3 font-medium">Category</div>
+              <div className="p-3 font-medium">Name</div>
+              <div className="p-3 font-medium">Status</div>
+              <div className="p-3 font-medium">Agent</div>
+            </div>
+            <div style={{ height: totalHeight, position: 'relative' }}>
+              <div
+                className="absolute inset-x-0"
+                style={{ transform: `translateY(${startIndex * rowHeight}px)` }}
               >
                 {visibleEvents.map((event) => (
-                  <tr
+                  <button
                     key={event.eventId}
                     onClick={() => onSelectEvent(event)}
-                    className="cursor-pointer border-b hover:bg-accent"
+                    className="grid w-full cursor-pointer border-b text-left hover:bg-accent"
+                    style={{ gridTemplateColumns: columnTemplate, minHeight: rowHeight }}
+                    type="button"
                   >
-                    <td className="p-3">{formatEventTime(event.timestamp)}</td>
-                    <td className="p-3 font-mono text-xs">{event.eventType}</td>
-                    <td className="p-3">{event.category}</td>
-                    <td className="p-3">{event.name}</td>
-                    <td className="p-3">
+                    <div className="p-3">{formatEventTime(event.timestamp)}</div>
+                    <div className="p-3 font-mono text-xs">{event.eventType}</div>
+                    <div className="p-3">{event.category}</div>
+                    <div className="p-3">{event.name}</div>
+                    <div className="p-3">
                       <span
                         className={`rounded px-2 py-1 text-xs ${
                           event.status === 'completed'
@@ -210,12 +221,12 @@ function EventTable({
                       >
                         {event.status}
                       </span>
-                    </td>
-                    <td className="p-3">{event.agentId || '-'}</td>
-                  </tr>
+                    </div>
+                    <div className="p-3">{event.agentId || '-'}</div>
+                  </button>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </div>
           </div>
         </ScrollArea>
       </CardContent>
@@ -254,6 +265,28 @@ function statusAccent(
     return 'warning';
   }
   return 'secondary';
+}
+
+type DetailTab = 'inspect' | 'tools' | 'llm' | 'derived' | 'prompts';
+
+const EMPTY_FILTERS: Partial<EventFilter> = {
+  agent: [],
+  phase: [],
+  tool: [],
+  provider: [],
+  status: [],
+  eventTypes: [],
+};
+
+function getActiveFilters(filters: EventFilter): Array<{ label: string; value: string }> {
+  return [
+    { label: 'Agent', value: filters.agent[0] ?? '' },
+    { label: 'Phase', value: filters.phase[0] ?? '' },
+    { label: 'Tool', value: filters.tool[0] ?? '' },
+    { label: 'Provider', value: filters.provider[0] ?? '' },
+    { label: 'Status', value: filters.status[0] ?? '' },
+    { label: 'Event Type', value: filters.eventTypes[0] ?? '' },
+  ].filter((entry): entry is { label: string; value: string } => Boolean(entry.value));
 }
 
 function DetailInspector({
@@ -421,7 +454,7 @@ export function SessionDetails({
   derivedOutputs,
   promptMetadata,
 }: SessionDetailsProps) {
-  const [detailTab, setDetailTab] = useState<'inspect' | 'tools' | 'llm' | 'derived' | 'prompts'>('inspect');
+  const [detailTab, setDetailTab] = useState<DetailTab>('inspect');
   const filters = useDashboardStore((state) => state.filters);
   const setFilters = useDashboardStore((state) => state.setFilters);
   const deferredEvents = useDeferredValue(events);
@@ -444,6 +477,15 @@ export function SessionDetails({
   const agentEvents = filteredEvents.filter((event) => event.category === 'agent');
   const toolEvents = filteredEvents.filter((event) => event.category === 'tool');
   const llmEvents = filteredEvents.filter((event) => event.category === 'llm');
+  const activeFilters = useMemo(() => getActiveFilters(filters), [filters]);
+  const [filtersOpen, setFiltersOpen] = useState(() => activeFilters.length > 0);
+  const detailTabs = [
+    { value: 'inspect', label: 'Inspect', icon: List, hideLabel: true },
+    { value: 'tools', label: 'Tools', icon: Zap, hideLabel: true },
+    { value: 'llm', label: 'LLM', icon: Network, hideLabel: true },
+    { value: 'derived', label: 'Derived', icon: Activity, hideLabel: true },
+    { value: 'prompts', label: 'Prompts', icon: FileText, hideLabel: true },
+  ];
 
   return (
     <div className="space-y-5">
@@ -541,66 +583,15 @@ export function SessionDetails({
             </div>
 
             <div className="space-y-5">
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Filters</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Select
-                      label="Agent"
-                      value={filters.agent[0] ?? ''}
-                      options={derived.agents}
-                      onChange={(value) => setFilters({ agent: value ? [value] : [] })}
-                    />
-                    <Select
-                      label="Phase"
-                      value={filters.phase[0] ?? ''}
-                      options={derived.phases}
-                      onChange={(value) => setFilters({ phase: value ? [value] : [] })}
-                    />
-                    <Select
-                      label="Tool"
-                      value={filters.tool[0] ?? ''}
-                      options={derived.tools}
-                      onChange={(value) => setFilters({ tool: value ? [value] : [] })}
-                    />
-                    <Select
-                      label="Provider"
-                      value={filters.provider[0] ?? ''}
-                      options={derived.providers}
-                      onChange={(value) => setFilters({ provider: value ? [value] : [] })}
-                    />
-                    <Select
-                      label="Status"
-                      value={filters.status[0] ?? ''}
-                      options={derived.statuses}
-                      onChange={(value) => setFilters({ status: value ? [value] : [] })}
-                    />
-                    <Select
-                      label="Event Type"
-                      value={filters.eventTypes[0] ?? ''}
-                      options={derived.eventTypes}
-                      onChange={(value) => setFilters({ eventTypes: value ? [value] : [] })}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-
               <div className="space-y-3">
                 <Tabs
-                  tabs={[
-                    { value: 'inspect', label: 'Inspect' },
-                    { value: 'tools', label: 'Tools' },
-                    { value: 'llm', label: 'LLM' },
-                    { value: 'derived', label: 'Derived' },
-                    { value: 'prompts', label: 'Prompts' },
-                  ]}
+                  tabs={detailTabs}
                   value={detailTab}
-                  onValueChange={(value) =>
-                    setDetailTab(value as 'inspect' | 'tools' | 'llm' | 'derived' | 'prompts')
-                  }
+                  onValueChange={(value) => setDetailTab(value as DetailTab)}
+                  variant="prominent"
+                  stretch
                 />
+
                 {detailTab === 'inspect' && (
                   <DetailInspector
                     event={selectedEvent}
@@ -658,6 +649,116 @@ export function SessionDetails({
                   <PromptConfigurationPanel promptMetadata={promptMetadata} />
                 )}
               </div>
+
+              <Card className="border-dashed border-slate-200/80 bg-slate-50/70 shadow-none">
+                <CardHeader className="gap-3 pb-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+                        <SlidersHorizontal className="h-3.5 w-3.5" />
+                        Refine Results
+                      </div>
+                      <CardTitle className="text-sm font-semibold">Filters</CardTitle>
+                      <p className="text-xs text-muted-foreground">
+                        {activeFilters.length === 0
+                          ? 'Showing all telemetry data. Open filters only when you need to narrow the view.'
+                          : `${activeFilters.length} active filter${activeFilters.length === 1 ? '' : 's'} narrowing the workspace.`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {activeFilters.length > 0 && (
+                        <Button
+                          className="text-slate-600"
+                          onClick={() => {
+                            setFilters(EMPTY_FILTERS);
+                            setFiltersOpen(false);
+                          }}
+                          size="sm"
+                          type="button"
+                          variant="ghost"
+                        >
+                          Clear
+                        </Button>
+                      )}
+                      <Button
+                        className="gap-2 text-slate-700"
+                        onClick={() => setFiltersOpen((open) => !open)}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        {filtersOpen ? 'Hide' : 'Show'}
+                        <ChevronDown
+                          className={`h-4 w-4 transition-transform ${filtersOpen ? 'rotate-180' : ''}`}
+                        />
+                      </Button>
+                    </div>
+                  </div>
+                  {activeFilters.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {activeFilters.map((filter) => (
+                        <Badge key={filter.label} variant="outline" className="bg-white/80 text-[11px]">
+                          {filter.label}: {filter.value}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </CardHeader>
+                {filtersOpen && (
+                  <CardContent className="pt-0">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Select
+                        label="Agent"
+                        value={filters.agent[0] ?? ''}
+                        options={derived.agents}
+                        onChange={(value) => setFilters({ agent: value ? [value] : [] })}
+                        className="h-9 bg-white/90"
+                        labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
+                      />
+                      <Select
+                        label="Phase"
+                        value={filters.phase[0] ?? ''}
+                        options={derived.phases}
+                        onChange={(value) => setFilters({ phase: value ? [value] : [] })}
+                        className="h-9 bg-white/90"
+                        labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
+                      />
+                      <Select
+                        label="Tool"
+                        value={filters.tool[0] ?? ''}
+                        options={derived.tools}
+                        onChange={(value) => setFilters({ tool: value ? [value] : [] })}
+                        className="h-9 bg-white/90"
+                        labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
+                      />
+                      <Select
+                        label="Provider"
+                        value={filters.provider[0] ?? ''}
+                        options={derived.providers}
+                        onChange={(value) => setFilters({ provider: value ? [value] : [] })}
+                        className="h-9 bg-white/90"
+                        labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
+                      />
+                      <Select
+                        label="Status"
+                        value={filters.status[0] ?? ''}
+                        options={derived.statuses}
+                        onChange={(value) => setFilters({ status: value ? [value] : [] })}
+                        className="h-9 bg-white/90"
+                        labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
+                      />
+                      <Select
+                        label="Event Type"
+                        value={filters.eventTypes[0] ?? ''}
+                        options={derived.eventTypes}
+                        onChange={(value) => setFilters({ eventTypes: value ? [value] : [] })}
+                        className="h-9 bg-white/90"
+                        labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
+                      />
+                    </div>
+                  </CardContent>
+                )}
+              </Card>
             </div>
           </div>
         </CardContent>

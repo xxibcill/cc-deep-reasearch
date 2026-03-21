@@ -95,6 +95,8 @@ class AnalyzerAgent:
             # Fall back to basic analysis without AI
             return self._basic_analysis(cleaned_sources, query)
 
+        self._ai_service.reset_run_tracking()
+
         # Use AI-powered analysis
         themes = self._ai_service.extract_themes_semantically(
             sources=cleaned_sources,
@@ -127,6 +129,9 @@ class AnalyzerAgent:
             fallback_themes=themes,
         )
         typed_findings = self._build_findings(key_findings, typed_claims)
+        analysis_method = (
+            "ai_semantic" if self._ai_service.routed_llm_used else "basic_keyword"
+        )
 
         return AnalysisResult(
             key_findings=typed_findings,
@@ -137,7 +142,7 @@ class AnalyzerAgent:
             cross_reference_claims=typed_claims,
             gaps=gaps,
             source_count=len(cleaned_sources),
-            analysis_method="ai_semantic",
+            analysis_method=analysis_method,
         )
 
     def _clean_sources_content(
