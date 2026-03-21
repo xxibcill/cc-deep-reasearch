@@ -1299,6 +1299,17 @@ No safety issues identified.
             "source": "actual",
         }
 
+    def test_report_generator_uses_monitor_for_llm_router(self) -> None:
+        """Report quality evaluation should share the caller's telemetry monitor."""
+        from cc_deep_research.config import Config
+        from cc_deep_research.monitoring import ResearchMonitor
+        from cc_deep_research.reporting import ReportGenerator
+
+        monitor = ResearchMonitor(enabled=False, persist=False)
+        generator = ReportGenerator(Config(), monitor=monitor)
+
+        assert generator._llm_router._monitor is monitor
+
 
 class TestReporterSchemaContractTests:
     """Contract tests for ReporterAgent schema handling."""

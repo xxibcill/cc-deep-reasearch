@@ -93,3 +93,75 @@ class TestAIAnalysisService:
         )
 
         assert service._llm_client is not None
+
+    def test_routed_theme_extraction_marks_usage(self) -> None:
+        """Successful routed analysis should mark routed LLM usage."""
+        router = MagicMock()
+        router.is_available.return_value = True
+        service = AIAnalysisService(
+            {"ai_integration_method": "hybrid"},
+            llm_router=router,
+        )
+        service._llm_client = MagicMock()
+        service._llm_client.extract_themes.return_value = [
+            {
+                "name": "Theme",
+                "description": "Desc",
+                "key_points": ["Point"],
+                "supporting_sources": ["https://example.com"],
+            }
+        ]
+
+        themes = service.extract_themes_semantically(
+            sources=[
+                MagicMock(
+                    url="https://example.com",
+                    title="Title",
+                    content="Long enough content " * 20,
+                    snippet="",
+                )
+            ],
+            query="test query",
+            num_themes=3,
+        )
+
+        assert len(themes) == 1
+        assert service.routed_llm_used is True
+
+    def test_routed_theme_extraction_failure_emits_degradation(self) -> None:
+        """Hybrid fallback should emit a degradation event when routed analysis fails."""
+        router = MagicMock()
+        router.is_available.return_value = True
+        monitor = MagicMock()
+        service = AIAnalysisService(
+            {"ai_integration_method": "hybrid"},
+            llm_router=router,
+            monitor=monitor,
+        )
+        service._llm_client = MagicMock()
+        service._llm_client.extract_themes.side_effect = RuntimeError("boom")
+        service._ai_executor.extract_themes = MagicMock(return_value=[
+            {
+                "name": "Fallback Theme",
+                "description": "Desc",
+                "key_points": ["Point"],
+                "supporting_sources": ["https://example.com"],
+            }
+        ])
+
+        themes = service.extract_themes_semantically(
+            sources=[
+                MagicMock(
+                    url="https://example.com",
+                    title="Title",
+                    content="Long enough content " * 20,
+                    snippet="",
+                )
+            ],
+            query="test query",
+            num_themes=3,
+        )
+
+        assert len(themes) == 1
+        assert service.routed_llm_used is False
+        monitor.emit_degradation_detected.assert_called_once()

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cc_deep_research.config import Config
+from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.pdf_generator import PDFGenerationError, PDFGenerator
 from cc_deep_research.reporting import ReportGenerator
 from cc_deep_research.research_runs.models import (
@@ -23,13 +24,14 @@ def materialize_research_run_output(
     session,
     config: Config,
     request: ResearchRunRequest,
+    monitor: ResearchMonitor | None = None,
     session_store: SessionStore | None = None,
     reporter: ReportGenerator | None = None,
     pdf_generator: PDFGenerator | None = None,
 ) -> ResearchRunResult:
     """Persist a session and materialize report artifacts for the caller."""
     store = session_store or SessionStore()
-    report_generator = reporter or ReportGenerator(config)
+    report_generator = reporter or ReportGenerator(config, monitor=monitor)
     artifacts: list[ResearchRunArtifact] = []
     warnings: list[str] = []
 

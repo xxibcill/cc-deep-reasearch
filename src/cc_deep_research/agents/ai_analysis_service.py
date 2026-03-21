@@ -71,6 +71,7 @@ class AIAnalysisService:
         self._llm_router = llm_router
         self._agent_id = agent_id
         self._prompt_registry = prompt_registry
+        self._routed_llm_used = False
 
         # Initialize heuristic-based components
         self._ai_integration = AIAgentIntegration(config)
@@ -80,6 +81,34 @@ class AIAnalysisService:
         self._llm_client: LLMAnalysisClient | None = None
         if self._integration_method in ("api", "hybrid"):
             self._initialize_llm_client()
+
+    @property
+    def routed_llm_used(self) -> bool:
+        """Return whether the current analysis run used the routed LLM path."""
+        return self._routed_llm_used
+
+    def reset_run_tracking(self) -> None:
+        """Reset per-run routed LLM usage tracking."""
+        self._routed_llm_used = False
+
+    def _mark_routed_llm_used(self) -> None:
+        """Record that the routed LLM path executed successfully."""
+        self._routed_llm_used = True
+
+    def _record_routed_llm_fallback(self, *, operation: str, error: Exception) -> None:
+        """Emit a degradation event when routed LLM analysis falls back."""
+        if self._monitor is None:
+            return
+
+        self._monitor.emit_degradation_detected(
+            reason_code="llm_analysis_fallback",
+            scope="analysis",
+            recoverable=True,
+            mitigation="Falling back to heuristic analysis",
+            impact=f"Routed LLM operation '{operation}' failed and heuristic analysis was used instead",
+            phase="analysis",
+            actor_id=self._agent_id,
+        )
 
     def _initialize_llm_client(self) -> None:
         """Initialize the routed LLM client when a shared router is available."""
@@ -191,9 +220,11 @@ class AIAnalysisService:
                 )
                 if themes:
                     logger.info(f"Routed LLM extracted {len(themes)} themes")
+                    self._mark_routed_llm_used()
                     return themes
             except Exception as e:
                 logger.warning(f"Routed LLM theme extraction failed: {e}")
+                self._record_routed_llm_fallback(operation="extract_themes", error=e)
                 if self._integration_method == "api":
                     raise
                 # Fall through to heuristic for hybrid mode
@@ -280,10 +311,12 @@ class AIAnalysisService:
                     f"Routed LLM found {len(result.get('consensus_points', []))} consensus points, "
                     f"{len(result.get('disagreement_points', []))} disagreement points"
                 )
+                self._mark_routed_llm_used()
                 return result
             except Exception as e:
                 logger.warning(f"Routed LLM cross-reference analysis failed: {e}")
                 print(f"[DEBUG] Routed LLM failed, falling back to heuristic analysis: {e}")
+                self._record_routed_llm_fallback(operation="analyze_cross_reference", error=e)
                 if self._integration_method == "api":
                     raise
 
@@ -365,9 +398,11 @@ class AIAnalysisService:
                     themes=themes,
                 )
                 logger.info(f"Routed LLM identified {len(gaps)} gaps")
+                self._mark_routed_llm_used()
                 return gaps
             except Exception as e:
                 logger.warning(f"Routed LLM gap identification failed: {e}")
+                self._record_routed_llm_fallback(operation="identify_gaps", error=e)
                 if self._integration_method == "api":
                     raise
 
@@ -427,9 +462,11 @@ class AIAnalysisService:
                     query=query,
                 )
                 logger.info(f"Routed LLM synthesized {len(findings)} findings")
+                self._mark_routed_llm_used()
                 return findings
             except Exception as e:
                 logger.warning(f"Routed LLM synthesis failed: {e}")
+                self._record_routed_llm_fallback(operation="synthesize_findings", error=e)
                 if self._integration_method == "api":
                     raise
 

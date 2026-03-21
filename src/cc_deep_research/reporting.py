@@ -14,6 +14,7 @@ from cc_deep_research.config import Config
 from cc_deep_research.html_report_renderer import HTMLReportRenderer
 from cc_deep_research.llm import LLMRouter, LLMRouteRegistry
 from cc_deep_research.llm.base import LLMProviderType, LLMTransportType
+from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.models.analysis import AnalysisResult, ValidationResult
 from cc_deep_research.models.quality import ReportEvaluationResult
 from cc_deep_research.models.session import ResearchSession
@@ -34,16 +35,22 @@ class ReportGenerator:
     - Report quality evaluation and refinement
     """
 
-    def __init__(self, config: Config) -> None:
+    def __init__(
+        self,
+        config: Config,
+        monitor: ResearchMonitor | None = None,
+    ) -> None:
         """Initialize the report generator.
 
         Args:
             config: Application configuration.
+            monitor: Optional research monitor for LLM telemetry.
         """
         self._config = config
+        self._monitor = monitor
         self._reporter = ReporterAgent({})
         self._llm_registry = LLMRouteRegistry(config.llm)
-        self._llm_router = LLMRouter(self._llm_registry)
+        self._llm_router = LLMRouter(self._llm_registry, monitor=monitor)
         self._report_quality_evaluator = ReportQualityEvaluatorAgent(
             config.model_dump(),
             llm_router=self._llm_router,

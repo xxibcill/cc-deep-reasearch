@@ -326,41 +326,8 @@ function buildLLMReasoning(
   const interactions = new Map<string, LLMReasoning>();
   const pendingByAgent = new Map<string, string[]>();
 
-  const attachRouteSelection = (event: TelemetryEvent) => {
-    if (!event.agentId) {
-      return;
-    }
-    const metadata = event.metadata;
-    const key = `selection:${event.agentId}:${metadata.operation ?? event.sequenceNumber}`;
-    interactions.set(key, {
-      id: key,
-      agentId: event.agentId,
-      operation: String(metadata.operation ?? event.name),
-      model: String(metadata.model ?? 'unknown'),
-      provider: String(metadata.provider ?? 'unknown'),
-      transport: String(metadata.transport ?? 'unknown'),
-      status: toStatus(event.status),
-      phase: phaseLookup.get(event.eventId) ?? null,
-      startTime: asTimestamp(event.timestamp),
-      endTime: null,
-      promptTokens: 0,
-      completionTokens: 0,
-      totalTokens: 0,
-      latency: 0,
-      prompt: typeof metadata.prompt_preview === 'string' ? metadata.prompt_preview : '',
-      response: '',
-      requestEventId: null,
-      completionEventId: null,
-      routeEventId: event.eventId,
-      fallbackEventId: null,
-      finishReason: null,
-      metadata,
-    });
-  };
-
   for (const event of events) {
     if (event.eventType === 'llm.route_selected') {
-      attachRouteSelection(event);
       continue;
     }
 

@@ -4,6 +4,8 @@ Task 006: Run realistic fixture data through analyzer code paths to catch
 late-stage schema or formatting failures before full orchestration.
 """
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from cc_deep_research.agents.analyzer import AnalyzerAgent
@@ -205,6 +207,56 @@ class TestAnalyzerAgentFixtureSmokeTests:
         assert report is not None
         assert len(report) > 0
         assert "## Executive Summary" in report
+
+    def test_analyzer_uses_basic_keyword_label_when_routed_llm_not_used(self) -> None:
+        """Analyzer should not claim semantic mode when routed LLM never executed."""
+        config = {"ai_num_themes": 3}
+        agent = AnalyzerAgent(config)
+
+        agent._ai_service.reset_run_tracking = MagicMock()
+        agent._ai_service.extract_themes_semantically = MagicMock(
+            return_value=[
+                {
+                    "name": "Theme",
+                    "description": "Desc",
+                    "supporting_sources": ["https://example.com/1"],
+                    "key_points": ["Point"],
+                }
+            ]
+        )
+        agent._ai_service.analyze_cross_reference = MagicMock(
+            return_value={
+                "consensus_points": [{"claim": "Consensus"}],
+                "disagreement_points": [],
+                "cross_reference_claims": [],
+            }
+        )
+        agent._ai_service.identify_gaps = MagicMock(return_value=[])
+        agent._ai_service.synthesize_findings = MagicMock(
+            return_value=[
+                {
+                    "title": "Finding",
+                    "description": "Desc",
+                    "evidence": ["https://example.com/1"],
+                    "confidence": "High",
+                }
+            ]
+        )
+        agent._ai_service._routed_llm_used = False
+
+        sources = [
+            SearchResultItem(
+                url="https://example.com/1",
+                title="Test Source",
+                snippet="Content here",
+                content="More detailed content for analysis" * 30,
+                score=0.9,
+            ),
+        ]
+
+        result = agent.analyze_sources(sources, "test query")
+
+        assert result.analysis_method == "basic_keyword"
 
 
 class TestDeepAnalyzerAgentFixtureSmokeTests:
@@ -411,3 +463,49 @@ class TestDeepAnalyzerAgentFixtureSmokeTests:
 
         assert validation is not None
         assert hasattr(validation, "is_valid")
+
+    def test_deep_analyzer_uses_shallow_label_when_routed_llm_not_used(self) -> None:
+        """Deep analyzer should not claim multi-pass LLM mode when routed LLM never executed."""
+        from cc_deep_research.agents.deep_analyzer import DeepAnalyzerAgent
+
+        agent = DeepAnalyzerAgent({"deep_analysis_passes": 3})
+        agent._ai_service.reset_run_tracking = MagicMock()
+        agent._ai_service.extract_themes_semantically = MagicMock(
+            return_value=[
+                {
+                    "name": "Theme",
+                    "description": "Desc",
+                    "supporting_sources": ["https://example.com/1"],
+                    "key_points": ["Point"],
+                }
+            ]
+        )
+        agent._ai_service.analyze_cross_reference = MagicMock(
+            return_value={
+                "consensus_points": ["Consensus"],
+                "disagreement_points": [],
+                "cross_reference_claims": [],
+            }
+        )
+        agent._ai_service._routed_llm_used = False
+
+        sources = [
+            SearchResultItem(
+                url="https://example.com/1",
+                title="Test Source",
+                snippet="Content",
+                content="Detailed content for deep analysis" * 40,
+                score=0.9,
+            ),
+            SearchResultItem(
+                url="https://example.com/2",
+                title="Test Source 2",
+                snippet="Content",
+                content="More detailed content" * 40,
+                score=0.85,
+            ),
+        ]
+
+        result = agent.deep_analyze(sources, "test query")
+
+        assert result["analysis_method"] == "shallow_keyword"
