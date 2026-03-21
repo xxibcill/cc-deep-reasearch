@@ -135,6 +135,7 @@ def test_run_executes_shared_workflow_and_materializes_result() -> None:
     assert isinstance(materialize_kwargs, dict)
     assert materialize_kwargs["session"] is session
     assert materialize_kwargs["request"] == request
+    assert isinstance(materialize_kwargs["monitor"], ResearchMonitor)
     assert materialize_kwargs["config"].search.providers == ["claude"]
 
 

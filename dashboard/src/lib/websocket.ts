@@ -20,6 +20,32 @@ export function useWebSocket(sessionId: string | null) {
   const shouldReconnectRef = useRef(false);
   const eventBufferRef = useRef<TelemetryEvent[]>([]);
   const flushHandleRef = useRef<number | null>(null);
+  const connectProbeInFlightRef = useRef(false);
+
+  const probeBackend = useCallback(async () => {
+    if (!sessionId || connectProbeInFlightRef.current) {
+      return;
+    }
+
+    connectProbeInFlightRef.current = true;
+    const probeUrl = `${dashboardRuntimeConfig.apiBaseUrl}/sessions/${sessionId}`;
+    try {
+      const response = await fetch(probeUrl, {
+        method: 'GET',
+        cache: 'no-store',
+      });
+      console.info(
+        `[dashboard] backend probe sessionId=${sessionId} status=${response.status} ok=${response.ok} probeUrl=${probeUrl}`
+      );
+    } catch (error) {
+      console.error(
+        `[dashboard] backend probe failed sessionId=${sessionId} probeUrl=${probeUrl}`,
+        error
+      );
+    } finally {
+      connectProbeInFlightRef.current = false;
+    }
+  }, [sessionId]);
 
   const flushBufferedEvents = useCallback(() => {
     flushHandleRef.current = null;
@@ -49,10 +75,14 @@ export function useWebSocket(sessionId: string | null) {
     if (!sessionId) return;
 
     const wsUrl = `${dashboardRuntimeConfig.websocketBaseUrl}/session/${sessionId}`;
+    console.info(
+      `[dashboard] opening websocket sessionId=${sessionId} wsUrl=${wsUrl} reconnectAttempt=${reconnectAttemptsRef.current} pageOrigin=${window.location.origin} apiBaseUrl=${dashboardRuntimeConfig.apiBaseUrl}`
+    );
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
+      console.info(`[dashboard] websocket connected sessionId=${sessionId} wsUrl=${wsUrl}`);
       useDashboardStore.getState().setConnected(true);
       reconnectAttemptsRef.current = 0;
 
@@ -96,11 +126,21 @@ export function useWebSocket(sessionId: string | null) {
     };
 
     ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
+      console.error(
+        `[dashboard] websocket error sessionId=${sessionId} wsUrl=${wsUrl} readyState=${ws.readyState}`,
+        error
+      );
+      void probeBackend();
       useDashboardStore.getState().setConnected(false);
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      console.warn(
+        `[dashboard] websocket closed sessionId=${sessionId} wsUrl=${wsUrl} code=${event.code} reason=${event.reason || '-'} wasClean=${event.wasClean} reconnectEnabled=${shouldReconnectRef.current}`
+      );
+      if (event.code === 1006) {
+        void probeBackend();
+      }
       useDashboardStore.getState().setConnected(false);
 
       if (!shouldReconnectRef.current) {
@@ -109,6 +149,9 @@ export function useWebSocket(sessionId: string | null) {
 
       if (reconnectAttemptsRef.current < 5) {
         const delay = Math.pow(2, reconnectAttemptsRef.current) * 1000;
+        console.info(
+          `[dashboard] scheduling websocket reconnect sessionId=${sessionId} wsUrl=${wsUrl} delayMs=${delay} nextAttempt=${reconnectAttemptsRef.current + 1}`
+        );
 
         reconnectTimeoutRef.current = window.setTimeout(() => {
           reconnectAttemptsRef.current += 1;

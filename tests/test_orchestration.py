@@ -356,3 +356,131 @@ class TestResearchExecutionService:
             )
 
         shutdown_team.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_marks_failed_when_providers_unavailable_and_no_sources(self, tmp_path) -> None:
+        config = Config()
+        monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+        phase_runner = PhaseRunner(monitor=monitor)
+        service = ResearchExecutionService(
+            config=config,
+            monitor=monitor,
+            phase_runner=phase_runner,
+            session_builder=SessionBuilder(),
+            configured_providers=lambda: ["tavily"],
+            parallel_mode=False,
+            num_researchers=2,
+        )
+        strategy = _make_strategy("market structure", ResearchDepth.STANDARD, 3)
+        query_families = [
+            QueryFamily(query="market structure", family="baseline", intent_tags=["baseline"])
+        ]
+        analysis = _make_analysis()
+        validation = _make_validation()
+        sources: list[SearchResultItem] = []
+
+        hooks = ResearchExecutionHooks(
+            reset_session_state=MagicMock(),
+            initialize_team=AsyncMock(),
+            analyze_strategy=AsyncMock(return_value=strategy),
+            expand_queries=AsyncMock(return_value=query_families),
+            normalize_query_families=MagicMock(return_value=query_families),
+            collect_sources=AsyncMock(return_value=sources),
+            run_analysis_workflow=AsyncMock(return_value=(analysis, validation, sources, [])),
+            build_metadata=MagicMock(
+                return_value={
+                    "providers": {
+                        "configured": ["tavily"],
+                        "available": [],
+                        "warnings": ["Provider 'tavily' API rate limit exceeded"],
+                    },
+                    "execution": {
+                        "parallel_requested": False,
+                        "degraded": True,
+                        "degraded_reasons": ["Provider 'tavily' API rate limit exceeded"],
+                    },
+                }
+            ),
+            log_session_summary=MagicMock(),
+            shutdown_team=AsyncMock(),
+        )
+
+        await service.execute(
+            query="market structure",
+            depth=ResearchDepth.STANDARD,
+            min_sources=2,
+            phase_hook=None,
+            hooks=hooks,
+        )
+
+        session_finished = [
+            event for event in monitor._telemetry_events if event["event_type"] == "session.finished"
+        ]
+        assert session_finished[-1]["status"] == "failed"
+        session_complete = monitor.get_checkpoints_by_phase("session_complete")[0]
+        assert session_complete["output_ref"]["status"] == "failed"
+
+    @pytest.mark.asyncio
+    async def test_execute_marks_failed_when_all_initialized_providers_fail(self, tmp_path) -> None:
+        config = Config()
+        monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+        phase_runner = PhaseRunner(monitor=monitor)
+        service = ResearchExecutionService(
+            config=config,
+            monitor=monitor,
+            phase_runner=phase_runner,
+            session_builder=SessionBuilder(),
+            configured_providers=lambda: ["tavily"],
+            parallel_mode=False,
+            num_researchers=2,
+        )
+        strategy = _make_strategy("market structure", ResearchDepth.STANDARD, 3)
+        query_families = [
+            QueryFamily(query="market structure", family="baseline", intent_tags=["baseline"])
+        ]
+        analysis = _make_analysis()
+        validation = _make_validation()
+        sources: list[SearchResultItem] = []
+
+        hooks = ResearchExecutionHooks(
+            reset_session_state=MagicMock(),
+            initialize_team=AsyncMock(),
+            analyze_strategy=AsyncMock(return_value=strategy),
+            expand_queries=AsyncMock(return_value=query_families),
+            normalize_query_families=MagicMock(return_value=query_families),
+            collect_sources=AsyncMock(return_value=sources),
+            run_analysis_workflow=AsyncMock(return_value=(analysis, validation, sources, [])),
+            build_metadata=MagicMock(
+                return_value={
+                    "providers": {
+                        "configured": ["tavily"],
+                        "available": ["tavily"],
+                        "warnings": [
+                            "All initialized providers failed for query 'market structure'. Continuing with an empty result set from: tavily."
+                        ],
+                    },
+                    "execution": {
+                        "parallel_requested": False,
+                        "degraded": True,
+                        "degraded_reasons": [
+                            "All initialized providers failed for query 'market structure'. Continuing with an empty result set from: tavily."
+                        ],
+                    },
+                }
+            ),
+            log_session_summary=MagicMock(),
+            shutdown_team=AsyncMock(),
+        )
+
+        await service.execute(
+            query="market structure",
+            depth=ResearchDepth.STANDARD,
+            min_sources=2,
+            phase_hook=None,
+            hooks=hooks,
+        )
+
+        session_finished = [
+            event for event in monitor._telemetry_events if event["event_type"] == "session.finished"
+        ]
+        assert session_finished[-1]["status"] == "failed"

@@ -17,7 +17,11 @@ interface FormData {
 const SUPPORTED_AGENTS = [
   { id: 'analyzer', label: 'Analyzer', description: 'Theme extraction and findings synthesis' },
   { id: 'deep_analyzer', label: 'Deep Analyzer', description: 'Multi-pass deep analysis' },
-  { id: 'report_quality_evaluator', label: 'Report Quality Evaluator', description: 'Report quality assessment' },
+  {
+    id: 'report_quality_evaluator',
+    label: 'Report Quality Evaluator',
+    description: 'Report quality assessment',
+  },
 ] as const
 
 const DEFAULT_PROMPT_PREFIXES: Record<string, string> = {
@@ -121,7 +125,7 @@ export function StartResearchForm() {
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="flex flex-col gap-4">
         <div>
           <label htmlFor="depth" className="block text-sm font-medium mb-2">
             Research Depth
@@ -168,11 +172,7 @@ export function StartResearchForm() {
           disabled={isSubmitting}
         >
           <span>Advanced Settings (Agent Prompts)</span>
-          {showAdvanced ? (
-            <ChevronUp className="h-4 w-4" />
-          ) : (
-            <ChevronDown className="h-4 w-4" />
-          )}
+          {showAdvanced ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </button>
 
         {showAdvanced && (

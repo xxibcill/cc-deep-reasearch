@@ -1,9 +1,12 @@
 """Tests for TavilySearchProvider."""
 
 
+import json
+
 import httpx
 import pytest
 
+from cc_deep_research.key_rotation import KeyRotationManager
 from cc_deep_research.models import ResearchDepth, SearchOptions
 from cc_deep_research.providers import (
     AuthenticationError,
@@ -201,6 +204,77 @@ class TestTavilySearchProvider:
 
         assert exc_info.value.retry_after == 60
         assert exc_info.value.provider == "tavily"
+
+        await provider.close()
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_rotates_to_next_key(self, mock_response: dict) -> None:
+        """A rate-limited key should be disabled and retried with the next key."""
+        key_manager = KeyRotationManager(
+            api_keys=["test-key-1", "test-key-2"],
+            requests_limit=5,
+            disable_duration_minutes=60,
+        )
+        requested_keys: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content.decode())
+            requested_keys.append(payload["api_key"])
+            if len(requested_keys) == 1:
+                return httpx.Response(
+                    429,
+                    json={"message": "Rate limit exceeded"},
+                    headers={"Retry-After": "60"},
+                )
+            return httpx.Response(200, json=mock_response)
+
+        provider = TavilySearchProvider(key_manager=key_manager)
+        provider._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+        result = await provider.search("test")
+
+        assert result.provider == "tavily"
+        assert len(requested_keys) == 2
+        assert requested_keys == ["test-key-1", "test-key-2"]
+        status = key_manager.get_key_status()
+        assert status[0]["disabled"] is True
+
+        await provider.close()
+
+    @pytest.mark.asyncio
+    async def test_plan_limit_rotates_to_next_key(self, mock_response: dict) -> None:
+        """A Tavily usage-limit error should rotate to the next configured key."""
+        key_manager = KeyRotationManager(
+            api_keys=["test-key-1", "test-key-2"],
+            requests_limit=5,
+            disable_duration_minutes=60,
+        )
+        requested_keys: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content.decode())
+            requested_keys.append(payload["api_key"])
+            if len(requested_keys) == 1:
+                return httpx.Response(
+                    432,
+                    json={
+                        "detail": {
+                            "error": "This request exceeds your plan's set usage limit."
+                        }
+                    },
+                )
+            return httpx.Response(200, json=mock_response)
+
+        provider = TavilySearchProvider(key_manager=key_manager)
+        provider._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+        result = await provider.search("test")
+
+        assert result.provider == "tavily"
+        assert len(requested_keys) == 2
+        assert requested_keys == ["test-key-1", "test-key-2"]
+        status = key_manager.get_key_status()
+        assert status[0]["disabled"] is True
 
         await provider.close()
 
