@@ -174,6 +174,36 @@ class TestLLMRouter:
         assert response.model == "heuristic"
 
     @pytest.mark.asyncio
+    async def test_execute_records_completion_for_unexpected_exception(self) -> None:
+        """Unexpected transport errors should still emit failed completion telemetry."""
+        route = create_route(transport=LLMTransportType.OPENROUTER_API, api_key="test-key")
+        registry = MockRegistry(route=route)
+        events: list[dict[str, object]] = []
+        router = LLMRouter(
+            registry,
+            telemetry_callback=lambda event: events.append(event),
+        )
+
+        with patch.object(router, "get_transport") as mock_get_transport:
+            mock_transport = MagicMock()
+            mock_transport.is_available.return_value = True
+            mock_transport.execute = AsyncMock(side_effect=RuntimeError("boom"))
+            mock_get_transport.return_value = mock_transport
+
+            response = await router.execute(
+                agent_id="test_agent",
+                prompt="Test prompt",
+            )
+
+        assert response.transport == LLMTransportType.HEURISTIC
+        assert any(
+            event.get("event_type") == "route_completion"
+            and event.get("success") is False
+            and "RuntimeError: boom" in str(event.get("error", ""))
+            for event in events
+        )
+
+    @pytest.mark.asyncio
     async def test_execute_with_system_prompt(self) -> None:
         """Test execute passes system prompt to transport."""
         route = create_route(transport=LLMTransportType.OPENROUTER_API, api_key="test-key")

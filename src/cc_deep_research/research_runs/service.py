@@ -177,6 +177,7 @@ class ResearchRunService:
             session=session,
             config=prepared.config,
             request=prepared.request,
+            monitor=active_monitor,
             session_store=session_store,
             reporter=reporter,
             pdf_generator=pdf_generator,

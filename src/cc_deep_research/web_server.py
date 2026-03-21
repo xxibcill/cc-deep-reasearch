@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -54,6 +55,7 @@ from cc_deep_research.telemetry import (
 
 STALE_LIVE_SESSION_AFTER = timedelta(minutes=15)
 RUN_CANCELLED_MESSAGE = "Research run was cancelled by the operator."
+logger = logging.getLogger(__name__)
 
 
 class SortOrder(StrEnum):
@@ -86,6 +88,89 @@ class DashboardBackendRuntime:
         """Stop shared infrastructure and cancel in-flight jobs."""
         await self.jobs.cancel_all()
         await self.event_router.stop()
+
+
+def _get_websocket_debug_headers(scope: dict[str, Any]) -> dict[str, str]:
+    """Return a safe subset of websocket handshake headers for debugging."""
+    allowed = {
+        b"host",
+        b"origin",
+        b"user-agent",
+        b"connection",
+        b"upgrade",
+        b"sec-websocket-version",
+        b"sec-websocket-protocol",
+        b"x-forwarded-for",
+        b"x-forwarded-host",
+        b"x-forwarded-proto",
+        b"x-forwarded-port",
+    }
+    headers: dict[str, str] = {}
+    for raw_key, raw_value in scope.get("headers", []):
+        if raw_key not in allowed:
+            continue
+        headers[raw_key.decode("latin-1")] = raw_value.decode("latin-1")
+    return headers
+
+
+class WebSocketDiagnosticsMiddleware:
+    """Log websocket handshake attempts and outcomes."""
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope["type"] != "websocket":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        client = scope.get("client")
+        query_string = scope.get("query_string", b"").decode("latin-1")
+        headers = _get_websocket_debug_headers(scope)
+        handshake_status: int | None = None
+        accepted = False
+        close_code: int | None = None
+
+        logger.info(
+            "WebSocket handshake started path=%s client=%s query=%s headers=%s",
+            path,
+            client,
+            query_string or "-",
+            headers,
+        )
+
+        async def send_wrapper(message: dict[str, Any]) -> None:
+            nonlocal handshake_status, accepted, close_code
+            message_type = message["type"]
+            if message_type == "websocket.accept":
+                accepted = True
+            elif message_type == "websocket.close":
+                close_code = message.get("code")
+            elif message_type == "http.response.start":
+                handshake_status = int(message.get("status", 0))
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        finally:
+            if handshake_status is not None:
+                logger.info(
+                    "WebSocket handshake finished path=%s client=%s status=%s accepted=%s close_code=%s",
+                    path,
+                    client,
+                    handshake_status,
+                    accepted,
+                    close_code,
+                )
+            else:
+                logger.info(
+                    "WebSocket connection finished path=%s client=%s accepted=%s close_code=%s",
+                    path,
+                    client,
+                    accepted,
+                    close_code,
+                )
 
 
 @asynccontextmanager
@@ -130,6 +215,7 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(WebSocketDiagnosticsMiddleware)
 
     register_routes(app)
     return app
@@ -1400,6 +1486,12 @@ def register_routes(app: FastAPI) -> None:
             websocket: The WebSocket connection.
             session_id: The session ID to subscribe to.
         """
+        logger.info(
+            "Accepting session websocket session_id=%s client=%s url=%s",
+            session_id,
+            websocket.client,
+            websocket.url,
+        )
         await websocket.accept()
 
         # Create connection wrapper
@@ -1408,6 +1500,11 @@ def register_routes(app: FastAPI) -> None:
 
         # Subscribe to session events
         await event_router.subscribe(session_id, connection)
+        logger.info(
+            "Subscribed websocket session_id=%s subscribers=%s",
+            session_id,
+            event_router.get_subscriber_count(session_id),
+        )
 
         # Send history on connect
         detail = _query_session_api_detail(
@@ -1418,6 +1515,11 @@ def register_routes(app: FastAPI) -> None:
 
         # Send initial history
         await connection.send_json({"type": "history", "events": detail["event_tail"] or []})
+        logger.info(
+            "Sent websocket history session_id=%s event_count=%s",
+            session_id,
+            len(detail["event_tail"] or []),
+        )
 
         # Listen for client messages
         try:
@@ -1425,6 +1527,12 @@ def register_routes(app: FastAPI) -> None:
                 data = await websocket.receive_json()
 
                 message_type = data.get("type")
+                logger.debug(
+                    "Received websocket message session_id=%s type=%s payload_keys=%s",
+                    session_id,
+                    message_type,
+                    sorted(data.keys()),
+                )
 
                 if message_type == "ping":
                     # Respond to ping with pong
@@ -1455,6 +1563,14 @@ def register_routes(app: FastAPI) -> None:
                                 "prev_cursor": events_page.get("prev_cursor"),
                             }
                         )
+                        logger.info(
+                            "Served paginated websocket history session_id=%s limit=%s cursor=%s before_cursor=%s returned=%s",
+                            session_id,
+                            limit,
+                            cursor,
+                            before_cursor,
+                            len(events_page.get("events", [])),
+                        )
                     else:
                         # Backward compat: simple tail-based history
                         await connection.send_json(
@@ -1463,21 +1579,48 @@ def register_routes(app: FastAPI) -> None:
                                 "events": new_detail["event_tail"] or [],
                             }
                         )
+                        logger.info(
+                            "Served websocket history refresh session_id=%s limit=%s returned=%s",
+                            session_id,
+                            limit,
+                            len(new_detail["event_tail"] or []),
+                        )
                 elif message_type == "subscribe":
                     # Subscribe to session (redundant but explicit)
                     await event_router.subscribe(session_id, connection)
+                    logger.info("Received websocket subscribe session_id=%s", session_id)
                 elif message_type == "unsubscribe":
                     # Unsubscribe from session
                     await event_router.unsubscribe(session_id, connection)
+                    logger.info("Received websocket unsubscribe session_id=%s", session_id)
+                else:
+                    logger.warning(
+                        "Received unsupported websocket message session_id=%s type=%s payload=%s",
+                        session_id,
+                        message_type,
+                        data,
+                    )
 
-        except WebSocketDisconnect:
+        except WebSocketDisconnect as exc:
             # Client disconnected
+            logger.info(
+                "WebSocket disconnected session_id=%s code=%s",
+                session_id,
+                exc.code,
+            )
             await event_router.unsubscribe(session_id, connection)
         except Exception as e:
             # Error occurred
+            logger.exception("WebSocket session handler failed session_id=%s", session_id)
             await event_router.unsubscribe(session_id, connection)
             with suppress(Exception):
                 await connection.send_json({"type": "error", "error": str(e)})
+        finally:
+            logger.info(
+                "WebSocket handler finished session_id=%s subscribers=%s",
+                session_id,
+                event_router.get_subscriber_count(session_id),
+            )
 
     # Search Cache Management Routes
 
@@ -1707,6 +1850,7 @@ def start_server(
         host=host,
         port=port,
         log_level="info",
+        ws="websockets-sansio",
     )
 
 

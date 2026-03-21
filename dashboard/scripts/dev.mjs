@@ -94,6 +94,7 @@ function startBackend(port) {
     'uvicorn',
     'cc_deep_research.web_server:create_app',
     '--factory',
+    '--ws', 'websockets-sansio',
     '--host', '0.0.0.0',
     '--port', String(port),
     '--reload',
