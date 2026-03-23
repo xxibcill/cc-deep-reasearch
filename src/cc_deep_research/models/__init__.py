@@ -60,6 +60,13 @@ from .session import (
     SessionProvidersMetadata,
     normalize_session_metadata,
 )
+from .planning import (
+    PlanSynthesis,
+    PlannerResult,
+    ResearchPlan,
+    ResearchSubtask,
+    TaskExecutionResult,
+)
 from .support import APIKey, SearchMode
 
 __all__ = [
@@ -84,6 +91,8 @@ __all__ = [
     "LLMProviderType",
     "LLMRouteModel",
     "LLMTransportType",
+    "PlanSynthesis",
+    "PlannerResult",
     "ProviderFixtureRef",
     "ProviderStatus",
     "QualityScore",
@@ -95,7 +104,9 @@ __all__ = [
     "ReportEvaluationResult",
     "ResearchDepth",
     "ResearchGapType",
+    "ResearchPlan",
     "ResearchSession",
+    "ResearchSubtask",
     "ResumeRequest",
     "ResumeResult",
     "SearchMode",
@@ -111,6 +122,7 @@ __all__ = [
     "StepOutputRef",
     "StrategyPlan",
     "StrategyResult",
+    "TaskExecutionResult",
     "ValidationResult",
     "normalize_session_metadata",
 ]
