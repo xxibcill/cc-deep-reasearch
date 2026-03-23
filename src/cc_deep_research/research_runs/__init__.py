@@ -9,6 +9,7 @@ from .models import (
     ResearchRunRequest,
     ResearchRunResult,
     ResearchRunStatus,
+    ResearchWorkflow,
 )
 from .options import apply_research_request_config_overrides
 from .output import materialize_research_run_output
@@ -32,6 +33,7 @@ __all__ = [
     "ResearchRunResult",
     "ResearchRunStatus",
     "ResearchRunService",
+    "ResearchWorkflow",
     "apply_research_request_config_overrides",
     "materialize_research_run_output",
 ]
