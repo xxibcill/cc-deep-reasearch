@@ -8,15 +8,18 @@ from cc_deep_research.orchestration.llm_route_planner import (
     create_llm_plan,
 )
 from cc_deep_research.orchestration.phases import PhaseRunner
+from cc_deep_research.orchestration.planner_orchestrator import PlannerResearchOrchestrator
 from cc_deep_research.orchestration.planning import ResearchPlanningService
 from cc_deep_research.orchestration.runtime import OrchestratorRuntime, OrchestratorRuntimeState
 from cc_deep_research.orchestration.session_builder import SessionBuilder
 from cc_deep_research.orchestration.session_state import OrchestratorSessionState
 from cc_deep_research.orchestration.source_collection import SourceCollectionService
+from cc_deep_research.orchestration.task_dispatcher import TaskDispatcher
 
 __all__ = [
     "AgentAccess",
     "AnalysisWorkflow",
+    "PlannerResearchOrchestrator",
     "ResearchExecutionHooks",
     "ResearchExecutionService",
     "PhaseRunner",
@@ -26,6 +29,7 @@ __all__ = [
     "ResearchPlanningService",
     "SessionBuilder",
     "SourceCollectionService",
+    "TaskDispatcher",
     "LLMRoutePlanner",
     "create_llm_plan",
 ]

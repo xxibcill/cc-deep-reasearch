@@ -48,6 +48,13 @@ class SessionArchiveStatus(StrEnum):
 MAX_BULK_DELETE_SESSION_IDS = 25
 
 
+class ResearchWorkflow(StrEnum):
+    """Available research workflow types."""
+
+    STAGED = "staged"
+    PLANNER = "planner"
+
+
 class ResearchRunRequest(BaseModel):
     """Framework-agnostic request contract for a research run."""
 
@@ -63,6 +70,10 @@ class ResearchRunRequest(BaseModel):
     num_researchers: int | None = Field(default=None, ge=1, le=8)
     realtime_enabled: bool = Field(default=False)
     pdf_enabled: bool = Field(default=False)
+    workflow: ResearchWorkflow = Field(
+        default=ResearchWorkflow.STAGED,
+        description="Research workflow to use: 'staged' (default) or 'planner'",
+    )
     agent_prompt_overrides: dict[str, dict[str, str | None]] | None = Field(
         default=None,
         description="Prompt overrides for LLM-backed agents. Keys: agent_id (analyzer, deep_analyzer, report_quality_evaluator). Values: {system_prompt, prompt_prefix}.",

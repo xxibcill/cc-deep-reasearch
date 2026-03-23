@@ -10,7 +10,7 @@ import click
 
 from cc_deep_research.config import Config, ConfigPatchError, load_config, resolve_config_target
 from cc_deep_research.monitoring import ResearchMonitor
-from cc_deep_research.research_runs import ResearchRunRequest
+from cc_deep_research.research_runs import ResearchRunRequest, ResearchWorkflow
 from cc_deep_research.tui import TerminalUI
 
 RESEARCH_PHASE_STEPS = 8
@@ -56,6 +56,7 @@ def build_research_run_request(
     num_researchers: int | None,
     enable_realtime: bool,
     pdf: bool,
+    workflow: str = "staged",
 ) -> ResearchRunRequest:
     """Translate CLI flags into the shared research-run request."""
     return ResearchRunRequest(
@@ -77,6 +78,7 @@ def build_research_run_request(
         num_researchers=num_researchers,
         realtime_enabled=enable_realtime,
         pdf_enabled=pdf,
+        workflow=ResearchWorkflow(workflow.lower()),
     )
 
 
