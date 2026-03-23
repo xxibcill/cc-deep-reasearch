@@ -88,6 +88,13 @@ def register_research_commands(cli: click.Group) -> None:
         default=False,
         help="Enable real-time event streaming to dashboard",
     )
+    @click.option(
+        "--workflow",
+        type=click.Choice(["staged", "planner"], case_sensitive=False),
+        default="staged",
+        help="Research workflow to use: 'staged' (default) or 'planner'. "
+        "Planner workflow uses hierarchical task decomposition for complex queries.",
+    )
     @click.pass_context
     def research(
         ctx: click.Context,
@@ -110,6 +117,7 @@ def register_research_commands(cli: click.Group) -> None:
         show_timeline: bool,
         pdf: bool,
         enable_realtime: bool,
+        workflow: str,
     ) -> None:
         """Execute a research query and generate a report."""
         ctx.obj.update(
@@ -133,6 +141,7 @@ def register_research_commands(cli: click.Group) -> None:
                 "enable_realtime": enable_realtime,
                 "show_timeline": show_timeline,
                 "pdf": pdf,
+                "workflow": workflow,
             }
         )
 
@@ -158,6 +167,7 @@ def register_research_commands(cli: click.Group) -> None:
                 num_researchers=num_researchers,
                 enable_realtime=enable_realtime,
                 pdf=pdf,
+                workflow=workflow,
             )
             service = ResearchRunService()
             prepared_run = service.prepare(request)

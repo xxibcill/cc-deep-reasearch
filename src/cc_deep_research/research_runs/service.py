@@ -12,6 +12,7 @@ from cc_deep_research.event_router import EventRouter
 from cc_deep_research.models import ResearchSession
 from cc_deep_research.monitoring import STOP_REASON_DEGRADED_EXECUTION, ResearchMonitor
 from cc_deep_research.orchestrator import TeamResearchOrchestrator
+from cc_deep_research.orchestration import PlannerResearchOrchestrator
 from cc_deep_research.pdf_generator import PDFGenerator
 from cc_deep_research.prompts import PromptRegistry
 from cc_deep_research.reporting import ReportGenerator
@@ -19,6 +20,7 @@ from cc_deep_research.research_runs.models import (
     ResearchRunCancelled,
     ResearchRunRequest,
     ResearchRunResult,
+    ResearchWorkflow,
 )
 from cc_deep_research.research_runs.options import (
     apply_research_request_config_overrides,
@@ -146,13 +148,20 @@ class ResearchRunService:
         if prepared.request.realtime_enabled:
             active_monitor.set_event_router(event_router)
 
-        orchestrator = self.orchestrator_factory(
-            config=prepared.config,
-            monitor=active_monitor,
-            parallel_mode=prepared.request.parallel_mode,
-            num_researchers=prepared.request.num_researchers,
-            prompt_registry=prepared.prompt_registry,
-        )
+        # Select orchestrator based on workflow type
+        if prepared.request.workflow == ResearchWorkflow.PLANNER:
+            orchestrator = PlannerResearchOrchestrator(
+                config=prepared.config,
+                monitor=active_monitor,
+            )
+        else:
+            orchestrator = self.orchestrator_factory(
+                config=prepared.config,
+                monitor=active_monitor,
+                parallel_mode=prepared.request.parallel_mode,
+                num_researchers=prepared.request.num_researchers,
+                prompt_registry=prepared.prompt_registry,
+            )
         adapter = execution_adapter or AsyncioResearchRunExecutionAdapter()
 
         try:
