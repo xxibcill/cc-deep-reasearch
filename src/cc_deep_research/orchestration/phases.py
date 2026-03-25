@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.models.analysis import AnalysisResult, StrategyResult, ValidationResult
 from cc_deep_research.models.checkpoint import CheckpointOperation, CheckpointPhase
 from cc_deep_research.models.search import ResearchDepth, SearchResultItem
 from cc_deep_research.monitoring import ResearchMonitor
+
+if TYPE_CHECKING:
+    from cc_deep_research.themes import WorkflowConfig
 
 
 class PhaseRunner:
@@ -194,8 +197,27 @@ class PhaseRunner:
         log_validation_results: Callable[[ValidationResult], None],
         cancellation_check: Callable[[], None] | None = None,
         iteration: int | None = None,
+        workflow_config: WorkflowConfig | None = None,
     ) -> tuple[AnalysisResult, ValidationResult | None]:
-        """Run a single analysis/deep-analysis/validation pass."""
+        """Run a single analysis/deep-analysis/validation pass.
+
+        Args:
+            phase_hook: Optional callback for phase progress.
+            query: Research query.
+            depth: Research depth mode.
+            strategy: Strategy result from planning phase.
+            sources: List of sources to analyze.
+            analyze_findings: Callback to run analysis.
+            deep_analyze: Callback to run deep analysis.
+            validate_research: Callback to run validation.
+            log_validation_results: Callback to log validation results.
+            cancellation_check: Optional cancellation check callback.
+            iteration: Optional iteration number.
+            workflow_config: Optional theme workflow configuration.
+
+        Returns:
+            Tuple of (analysis_result, validation_result_or_none).
+        """
         analysis = await self.run_phase(
             phase_hook=phase_hook,
             phase_key="analysis",
@@ -214,7 +236,14 @@ class PhaseRunner:
             iteration=iteration,
         )
 
-        if depth == ResearchDepth.DEEP:
+        # Check if deep analysis should run:
+        # 1. Must be in DEEP mode
+        # 2. Theme must not skip deep analysis (if theme is configured)
+        should_run_deep_analysis = depth == ResearchDepth.DEEP
+        if workflow_config is not None and workflow_config.skip_deep_analysis:
+            should_run_deep_analysis = False
+
+        if should_run_deep_analysis:
             deep_analysis = await self.run_phase(
                 phase_hook=phase_hook,
                 phase_key="deep_analysis",
@@ -238,7 +267,14 @@ class PhaseRunner:
             merged_data.update(deep_data)
             analysis = AnalysisResult.model_validate(merged_data)
 
-        if not strategy.strategy.enable_quality_scoring:
+        # Check if validation should run:
+        # 1. Strategy must enable quality scoring
+        # 2. Theme must not skip validation (if theme is configured)
+        should_run_validation = strategy.strategy.enable_quality_scoring
+        if workflow_config is not None and workflow_config.skip_validation:
+            should_run_validation = False
+
+        if not should_run_validation:
             return analysis, None
 
         validation = await self.run_phase(

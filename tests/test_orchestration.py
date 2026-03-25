@@ -250,6 +250,7 @@ class TestSessionBuilder:
             "execution",
             "deep_analysis",
             "llm_routes",
+            "prompts",
         }
         assert session.metadata["execution"]["parallel_requested"] is False
         assert session.started_at == started_at

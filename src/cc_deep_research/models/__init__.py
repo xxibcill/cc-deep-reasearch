@@ -62,6 +62,7 @@ from .session import (
 )
 from .planning import (
     PlanSynthesis,
+    PlannerIterationDecision,
     PlannerResult,
     ResearchPlan,
     ResearchSubtask,
@@ -92,6 +93,7 @@ __all__ = [
     "LLMRouteModel",
     "LLMTransportType",
     "PlanSynthesis",
+    "PlannerIterationDecision",
     "PlannerResult",
     "ProviderFixtureRef",
     "ProviderStatus",

@@ -1,13 +1,16 @@
 """Research orchestrator for the local staged pipeline."""
 
+from __future__ import annotations
+
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.config import Config
 from cc_deep_research.coordination import LocalAgentPool, LocalMessageBus
-from cc_deep_research.models.analysis import (
+from cc_deep_research.models import (
     AnalysisResult,
     IterationHistoryRecord,
+    PlannerIterationDecision,
     StrategyResult,
     ValidationResult,
 )
@@ -35,6 +38,9 @@ from cc_deep_research.orchestration.helpers import build_follow_up_queries, norm
 from cc_deep_research.prompts import PromptRegistry
 from cc_deep_research.teams import LocalResearchTeam
 
+if TYPE_CHECKING:
+    from cc_deep_research.themes import WorkflowConfig
+
 
 class TeamResearchOrchestrator:
     """Orchestrate the local research pipeline across specialist components.
@@ -52,6 +58,7 @@ class TeamResearchOrchestrator:
         parallel_mode: bool | None = None,
         num_researchers: int | None = None,
         prompt_registry: PromptRegistry | None = None,
+        workflow_config: WorkflowConfig | None = None,
     ) -> None:
         """Initialize the research orchestrator.
 
@@ -63,10 +70,12 @@ class TeamResearchOrchestrator:
             num_researchers: Number of parallel researchers to spawn.
                           If None, uses config.search_team.num_researchers.
             prompt_registry: Optional prompt registry with overrides applied.
+            workflow_config: Optional theme workflow configuration for customizing phases.
         """
         self._config = config
         self._monitor = monitor or ResearchMonitor(enabled=False)
         self._prompt_registry = prompt_registry or PromptRegistry()
+        self._workflow_config = workflow_config
         self._team: LocalResearchTeam | None = None
         self._agents: dict[str, Any] = {}
         self._runtime_state: OrchestratorRuntimeState | None = None
@@ -380,6 +389,7 @@ class TeamResearchOrchestrator:
             cancellation_check=cancellation_check,
             run_single_pass=self._run_single_analysis_pass,
             collect_follow_up_sources=self._run_follow_up_collection,
+            plan_iteration=self._plan_research_iteration,
         )
 
     async def _run_single_analysis_pass(
@@ -403,6 +413,7 @@ class TeamResearchOrchestrator:
             deep_analyze=self._phase_deep_analysis,
             validate_research=self._phase_validate_research,
             log_validation_results=self._log_validation_results,
+            workflow_config=self._workflow_config,
         )
 
     def _get_follow_up_queries(
@@ -416,6 +427,33 @@ class TeamResearchOrchestrator:
             query=query,
             analysis=analysis,
             validation=validation,
+            enable_iterative_search=self._config.research.enable_iterative_search,
+        )
+
+    def _plan_research_iteration(
+        self,
+        *,
+        query: str,
+        strategy: StrategyResult,
+        analysis: AnalysisResult,
+        validation: ValidationResult | None,
+        sources: list[SearchResultItem],
+        iteration: int,
+        max_iterations: int,
+        min_sources: int | None,
+        iteration_history: list[IterationHistoryRecord],
+    ) -> PlannerIterationDecision:
+        """Delegate loop control to the planner agent."""
+        return self._agent_access.planner().decide_research_iteration(
+            query=query,
+            strategy=strategy,
+            analysis=analysis,
+            validation=validation,
+            sources=sources,
+            iteration=iteration,
+            max_iterations=max_iterations,
+            min_sources=min_sources,
+            iteration_history=iteration_history,
             enable_iterative_search=self._config.research.enable_iterative_search,
         )
 

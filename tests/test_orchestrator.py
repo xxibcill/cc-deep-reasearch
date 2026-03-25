@@ -12,6 +12,7 @@ from cc_deep_research.agents import (
     AGENT_TYPE_DEEP_ANALYZER,
     AGENT_TYPE_EXPANDER,
     AGENT_TYPE_LEAD,
+    AGENT_TYPE_PLANNER,
     AGENT_TYPE_VALIDATOR,
 )
 from cc_deep_research.agents.query_expander import QueryExpanderAgent
@@ -25,6 +26,7 @@ from cc_deep_research.models import (
     AnalysisGap,
     AnalysisResult,
     IterationHistoryRecord,
+    PlannerIterationDecision,
     QueryFamily,
     ResearchDepth,
     SearchOptions,
@@ -325,6 +327,31 @@ class FakeValidatorAgent:
         return self._validation.model_copy(deep=True)
 
 
+class FakePlannerAgent:
+    """Planner fixture for loop-control decisions."""
+
+    def __init__(self, decisions: Sequence[PlannerIterationDecision] | None = None) -> None:
+        self._decisions = list(decisions or [])
+        self.calls: list[dict[str, object]] = []
+
+    def decide_research_iteration(self, **kwargs: object) -> PlannerIterationDecision:
+        self.calls.append(dict(kwargs))
+        if self._decisions:
+            return self._decisions.pop(0)
+
+        validation = kwargs.get("validation")
+        needs_follow_up = bool(getattr(validation, "needs_follow_up", False)) if validation else False
+        follow_up_queries = list(getattr(validation, "follow_up_queries", [])) if validation else []
+        return PlannerIterationDecision(
+            should_continue=needs_follow_up and bool(follow_up_queries),
+            reason_code="goal_satisfied" if not needs_follow_up else "planner_requested_more_evidence",
+            stop_reason=None if needs_follow_up and follow_up_queries else "success",
+            rationale="Planner reviewed the current evidence state.",
+            current_hypothesis="Working hypothesis updated from current evidence.",
+            next_queries=follow_up_queries,
+        )
+
+
 def test_local_runtime_types_use_explicit_local_names() -> None:
     """Test that runtime-facing helper types are imported via their local names."""
     runtime_state = OrchestratorRuntimeState(
@@ -348,6 +375,7 @@ def _install_fake_team(
     expander: FakeExpanderAgent | None = None,
     analyzer: FakeAnalyzerAgent | None = None,
     deep_analyzer: FakeDeepAnalyzerAgent | None = None,
+    planner: FakePlannerAgent | None = None,
 ) -> dict[str, object]:
     """Install fake agents while keeping the real orchestrator workflow."""
     lead = lead or FakeLeadAgent()
@@ -355,12 +383,14 @@ def _install_fake_team(
     analyzer = analyzer or FakeAnalyzerAgent()
     deep_analyzer = deep_analyzer or FakeDeepAnalyzerAgent()
     validator = validator or FakeValidatorAgent()
+    planner = planner or FakePlannerAgent()
 
     async def initialize_team() -> None:
         orchestrator._agents = {
             AGENT_TYPE_LEAD: lead,
             AGENT_TYPE_COLLECTOR: collector,
             AGENT_TYPE_EXPANDER: expander,
+            AGENT_TYPE_PLANNER: planner,
             AGENT_TYPE_ANALYZER: analyzer,
             AGENT_TYPE_DEEP_ANALYZER: deep_analyzer,
             AGENT_TYPE_VALIDATOR: validator,
@@ -387,6 +417,7 @@ def _install_fake_team(
         "lead": lead,
         "expander": expander,
         "collector": collector,
+        "planner": planner,
         "analyzer": analyzer,
         "deep_analyzer": deep_analyzer,
         "validator": validator,
@@ -439,6 +470,7 @@ class TestTeamResearchOrchestrator:
             AGENT_TYPE_LEAD,
             AGENT_TYPE_COLLECTOR,
             AGENT_TYPE_EXPANDER,
+            AGENT_TYPE_PLANNER,
             AGENT_TYPE_ANALYZER,
             AGENT_TYPE_DEEP_ANALYZER,
             AGENT_TYPE_VALIDATOR,
@@ -872,6 +904,20 @@ class TestTeamResearchOrchestrator:
         analysis = _make_analysis(source_count=2)
         validation = _make_validation(needs_follow_up=False)
 
+        orchestrator._agents = {
+            AGENT_TYPE_PLANNER: FakePlannerAgent(
+                [
+                    PlannerIterationDecision(
+                        should_continue=False,
+                        reason_code="goal_satisfied",
+                        stop_reason="success",
+                        rationale="Planner considers the goal covered.",
+                        current_hypothesis="Evidence is sufficient for the goal.",
+                        next_queries=[],
+                    )
+                ]
+            )
+        }
         orchestrator._run_single_analysis_pass = AsyncMock(return_value=(analysis, validation))
         orchestrator._run_follow_up_collection = AsyncMock()
 
@@ -888,6 +934,7 @@ class TestTeamResearchOrchestrator:
         assert final_validation == validation
         assert final_sources == sources
         assert len(history) == 1
+        assert history[0].current_hypothesis == "Evidence is sufficient for the goal."
         assert orchestrator._run_follow_up_collection.await_count == 0
         assert orchestrator._run_single_analysis_pass.await_count == 1
 
@@ -905,6 +952,19 @@ class TestTeamResearchOrchestrator:
             follow_up_queries=["supply chain resilience"],
         )
 
+        orchestrator._agents = {
+            AGENT_TYPE_PLANNER: FakePlannerAgent(
+                [
+                    PlannerIterationDecision(
+                        should_continue=True,
+                        reason_code="planner_requested_more_evidence",
+                        rationale="Planner wants another pass for better coverage.",
+                        current_hypothesis="Coverage is incomplete.",
+                        next_queries=["supply chain resilience"],
+                    )
+                ]
+            )
+        }
         orchestrator._run_single_analysis_pass = AsyncMock(return_value=(analysis, validation))
         orchestrator._run_follow_up_collection = AsyncMock(return_value=list(sources))
 
@@ -922,6 +982,7 @@ class TestTeamResearchOrchestrator:
         assert final_sources == sources
         assert len(history) == 1
         assert history[0].follow_up_queries == ["supply chain resilience"]
+        assert history[0].planner_summary == "Planner wants another pass for better coverage."
         assert orchestrator._run_follow_up_collection.await_count == 1
         assert orchestrator._run_single_analysis_pass.await_count == 1
 
@@ -1490,6 +1551,7 @@ class TestOrchestratorFixtureEndToEnd:
             "execution",
             "deep_analysis",
             "llm_routes",
+            "prompts",
         }
         assert metadata_keys == expected_keys, (
             f"Metadata keys mismatch. Expected: {expected_keys}, Got: {metadata_keys}"

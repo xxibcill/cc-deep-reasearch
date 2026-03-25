@@ -179,6 +179,43 @@ class PlannerResult(BaseModel):
     )
 
 
+class PlannerIterationDecision(BaseModel):
+    """Planner-owned decision for whether the research loop should continue."""
+
+    should_continue: bool = Field(
+        description="Whether the workflow should execute another research iteration",
+    )
+    reason_code: str = Field(
+        description="Stable label describing why the planner made this decision",
+    )
+    stop_reason: str | None = Field(
+        default=None,
+        description="Normalized terminal stop reason when the loop should stop",
+    )
+    rationale: str = Field(
+        default="",
+        description="Human-readable explanation of the planner decision",
+    )
+    current_hypothesis: str = Field(
+        default="",
+        description="Planner's current working hypothesis after reviewing the evidence",
+    )
+    missing_information: list[str] = Field(
+        default_factory=list,
+        description="Open evidence gaps the planner still wants to resolve",
+    )
+    next_queries: list[str] = Field(
+        default_factory=list,
+        description="Planner-selected follow-up queries for the next loop iteration",
+    )
+    confidence: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Confidence in the planner's stop/continue decision",
+    )
+
+
 class TaskExecutionResult(BaseModel):
     """Result from executing a single subtask."""
 
@@ -261,6 +298,7 @@ class PlanSynthesis(BaseModel):
 __all__ = [
     "ResearchSubtask",
     "ResearchPlan",
+    "PlannerIterationDecision",
     "PlannerResult",
     "TaskExecutionResult",
     "PlanSynthesis",
