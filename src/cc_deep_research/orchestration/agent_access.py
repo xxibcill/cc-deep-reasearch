@@ -11,11 +11,13 @@ from cc_deep_research.agents import (
     AGENT_TYPE_DEEP_ANALYZER,
     AGENT_TYPE_EXPANDER,
     AGENT_TYPE_LEAD,
+    AGENT_TYPE_PLANNER,
     AGENT_TYPE_REPORT_QUALITY_EVALUATOR,
     AGENT_TYPE_REPORT_REFINER,
     AGENT_TYPE_VALIDATOR,
     AnalyzerAgent,
     DeepAnalyzerAgent,
+    PlannerAgent,
     QueryExpanderAgent,
     ReportRefinerAgent,
     ReportQualityEvaluatorAgent,
@@ -42,6 +44,10 @@ class AgentAccess:
     def collector(self) -> SourceCollectorAgent:
         """Return the source-collector agent."""
         return cast(SourceCollectorAgent, self._mapping_provider()[AGENT_TYPE_COLLECTOR])
+
+    def planner(self) -> PlannerAgent:
+        """Return the planner agent."""
+        return cast(PlannerAgent, self._mapping_provider()[AGENT_TYPE_PLANNER])
 
     def analyzer(self) -> AnalyzerAgent:
         """Return the analyzer agent."""

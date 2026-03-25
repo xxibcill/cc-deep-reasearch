@@ -271,6 +271,9 @@ class ResearchExecutionService:
         iteration_history: list[IterationHistoryRecord],
     ) -> str:
         """Map the completed run to a stable stop reason."""
+        if iteration_history and iteration_history[-1].stop_reason:
+            return self._monitor.normalize_stop_reason(iteration_history[-1].stop_reason)
+
         if validation and validation.needs_follow_up:
             if not validation.follow_up_queries:
                 return STOP_REASON_LOW_QUALITY

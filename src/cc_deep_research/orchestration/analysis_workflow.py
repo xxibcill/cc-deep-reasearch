@@ -9,6 +9,7 @@ from cc_deep_research.config import Config
 from cc_deep_research.models import (
     AnalysisResult,
     IterationHistoryRecord,
+    PlannerIterationDecision,
     ResearchDepth,
     ResearchSession,
     SearchResultItem,
@@ -16,11 +17,10 @@ from cc_deep_research.models import (
     ValidationResult,
 )
 from cc_deep_research.monitoring import ResearchMonitor
-from cc_deep_research.orchestration.helpers import build_follow_up_queries
 
 
 class AnalysisWorkflow:
-    """Coordinate analysis, validation, and iterative follow-up search."""
+    """Coordinate the iterative research loop after initial source collection."""
 
     def __init__(self, *, config: Config, monitor: ResearchMonitor) -> None:
         self._config = config
@@ -160,13 +160,14 @@ class AnalysisWorkflow:
         cancellation_check: Callable[[], None] | None,
         run_single_pass: Callable[..., Awaitable[tuple[AnalysisResult, ValidationResult | None]]],
         collect_follow_up_sources: Callable[..., Awaitable[list[SearchResultItem]]],
+        plan_iteration: Callable[..., PlannerIterationDecision],
     ) -> tuple[
         AnalysisResult,
         ValidationResult | None,
         list[SearchResultItem],
         list[IterationHistoryRecord],
     ]:
-        """Run analysis, validation, and iterative follow-up search."""
+        """Run the Search -> Read -> Hypothesize -> Search-again research loop."""
         analysis = AnalysisResult()
         validation: ValidationResult | None = None
         iteration_history: list[IterationHistoryRecord] = []
@@ -182,7 +183,8 @@ class AnalysisWorkflow:
             deep_analysis_enabled=depth == ResearchDepth.DEEP,
         )
 
-        for iteration in range(1, max_iterations + 1):
+        iteration = 1
+        while True:
             self._check_cancelled(cancellation_check)
             analysis, validation = await run_single_pass(
                 query=query,
@@ -192,63 +194,54 @@ class AnalysisWorkflow:
                 phase_hook=phase_hook,
                 cancellation_check=cancellation_check,
             )
+            decision = plan_iteration(
+                query=query,
+                strategy=strategy,
+                analysis=analysis,
+                validation=validation,
+                sources=sources,
+                iteration=iteration,
+                max_iterations=max_iterations,
+                min_sources=min_sources,
+                iteration_history=iteration_history,
+            )
             iteration_history.append(
                 IterationHistoryRecord(
                     iteration=iteration,
                     source_count=len(sources),
                     quality_score=validation.quality_score if validation else None,
                     gap_count=len(analysis.gaps),
-                    follow_up_queries=validation.follow_up_queries if validation else [],
+                    follow_up_queries=decision.next_queries,
+                    current_hypothesis=decision.current_hypothesis,
+                    planner_summary=decision.rationale,
+                    stop_reason=decision.stop_reason,
                 )
             )
+            self._monitor.record_reasoning_summary(
+                stage="planner_loop",
+                summary=decision.rationale,
+                agent_id="planner",
+                iteration=iteration,
+                current_hypothesis=decision.current_hypothesis,
+                missing_information=decision.missing_information,
+                follow_up_queries=decision.next_queries,
+                confidence=decision.confidence,
+            )
 
-            if iteration >= max_iterations:
-                detail = f"Reached iteration limit ({max_iterations})"
+            if not decision.should_continue:
                 self._monitor.record_follow_up_decision(
                     iteration=iteration,
-                    reason="iteration_limit_reached",
-                    follow_up_queries=[],
+                    reason=decision.reason_code,
+                    follow_up_queries=decision.next_queries,
                     failure_modes=validation.failure_modes if validation else [],
                     quality_score=validation.quality_score if validation else None,
                 )
                 self._monitor.record_iteration_stop(
                     iteration=iteration,
-                    stop_reason="limit_reached",
-                    detail=detail,
+                    stop_reason=decision.stop_reason or "success",
+                    detail=decision.rationale,
                     quality_score=validation.quality_score if validation else None,
-                )
-                break
-
-            follow_up_queries = build_follow_up_queries(
-                query=query,
-                analysis=analysis,
-                validation=validation,
-                enable_iterative_search=self._config.research.enable_iterative_search,
-            )
-            if not follow_up_queries:
-                reason = (
-                    "validation_low_quality_no_queries"
-                    if validation and validation.needs_follow_up
-                    else "quality_sufficient"
-                )
-                stop_reason = "low_quality" if validation and validation.needs_follow_up else "success"
-                detail = (
-                    "Validation requested follow-up but no follow-up queries were generated"
-                    if validation and validation.needs_follow_up
-                    else "No follow-up queries were required"
-                )
-                self._monitor.record_follow_up_decision(
-                    iteration=iteration,
-                    reason=reason,
-                    follow_up_queries=[],
-                    failure_modes=validation.failure_modes if validation else [],
-                    quality_score=validation.quality_score if validation else None,
-                )
-                self._monitor.record_iteration_stop(
-                    iteration=iteration,
-                    stop_reason=stop_reason,
-                    detail=detail,
-                    quality_score=validation.quality_score if validation else None,
+                    follow_up_queries=decision.next_queries,
                 )
                 break
 
@@ -256,20 +249,20 @@ class AnalysisWorkflow:
                 phase_hook("iterative_search", f"Running follow-up research pass {iteration + 1}")
             self._monitor.record_reasoning_summary(
                 stage="iterative_search",
-                summary=f"Running follow-up pass {iteration + 1} with {len(follow_up_queries)} queries",
-                agent_id="orchestrator",
-                follow_up_queries=follow_up_queries,
+                summary=f"Running follow-up pass {iteration + 1} with {len(decision.next_queries)} queries",
+                agent_id="planner",
+                follow_up_queries=decision.next_queries,
             )
             self._monitor.record_follow_up_decision(
                 iteration=iteration,
-                reason="validation_requested_follow_up",
-                follow_up_queries=follow_up_queries,
+                reason=decision.reason_code,
+                follow_up_queries=decision.next_queries,
                 failure_modes=validation.failure_modes if validation else [],
                 quality_score=validation.quality_score if validation else None,
             )
             updated_sources = await collect_follow_up_sources(
                 existing_sources=sources,
-                follow_up_queries=follow_up_queries,
+                follow_up_queries=decision.next_queries,
                 depth=depth,
                 min_sources=min_sources,
             )
@@ -284,11 +277,12 @@ class AnalysisWorkflow:
                     ),
                     detail="Follow-up collection did not add any new sources",
                     quality_score=validation.quality_score if validation else None,
-                    follow_up_queries=follow_up_queries,
+                    follow_up_queries=decision.next_queries,
                 )
                 break
 
             sources = updated_sources
+            iteration += 1
 
         return analysis, validation, sources, iteration_history
 
