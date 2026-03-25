@@ -1,5 +1,7 @@
 # Decision Graph Tests And Rollout Tasks
 
+Status: Done
+
 ## Goal
 
 Ship decision graphs incrementally without breaking the existing telemetry explorer, and add enough tests to keep the feature trustworthy as telemetry coverage grows.
@@ -156,4 +158,3 @@ Operators should know when a graph is sparse because telemetry is missing versus
 - `README.md`
 - `docs/TELEMETRY.md`
 - `docs/DASHBOARD_GUIDE.md`
-

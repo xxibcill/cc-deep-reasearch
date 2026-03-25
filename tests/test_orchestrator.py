@@ -937,6 +937,17 @@ class TestTeamResearchOrchestrator:
         assert history[0].current_hypothesis == "Evidence is sufficient for the goal."
         assert orchestrator._run_follow_up_collection.await_count == 0
         assert orchestrator._run_single_analysis_pass.await_count == 1
+        decision_events = [
+            event
+            for event in orchestrator._monitor._telemetry_events
+            if event["event_type"] == "decision.made"
+        ]
+        assert any(
+            event["metadata"]["decision_type"] == "iteration_control"
+            and event["metadata"]["chosen_option"] == "stop_iteration"
+            and event["reason_code"] == "goal_satisfied"
+            for event in decision_events
+        )
 
     @pytest.mark.asyncio
     async def test_workflow_stops_when_follow_up_finds_no_new_sources(self) -> None:
@@ -985,6 +996,23 @@ class TestTeamResearchOrchestrator:
         assert history[0].planner_summary == "Planner wants another pass for better coverage."
         assert orchestrator._run_follow_up_collection.await_count == 1
         assert orchestrator._run_single_analysis_pass.await_count == 1
+        decision_events = [
+            event
+            for event in orchestrator._monitor._telemetry_events
+            if event["event_type"] == "decision.made"
+        ]
+        assert any(
+            event["metadata"]["decision_type"] == "iteration_control"
+            and event["metadata"]["chosen_option"] == "continue_iteration"
+            and event["reason_code"] == "planner_requested_more_evidence"
+            for event in decision_events
+        )
+        assert any(
+            event["metadata"]["decision_type"] == "iteration_control"
+            and event["metadata"]["chosen_option"] == "stop_iteration"
+            and event["reason_code"] == "follow_up_no_new_sources"
+            for event in decision_events
+        )
 
     def test_follow_up_queries_are_deduplicated_from_validation_results(self) -> None:
         orchestrator = TeamResearchOrchestrator(Config(), ResearchMonitor(enabled=False))

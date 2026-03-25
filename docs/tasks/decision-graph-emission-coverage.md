@@ -1,5 +1,7 @@
 # Decision Graph Emission Coverage Tasks
 
+Status: Done
+
 ## Goal
 
 Increase explicit decision telemetry coverage so the decision graph is useful in real sessions rather than sparse and mostly inferred.
@@ -148,4 +150,3 @@ Coverage work will otherwise drift or silently regress.
 - `tests/test_llm_route_planner.py`
 - `tests/test_orchestrator.py`
 - `tests/test_telemetry.py`
-

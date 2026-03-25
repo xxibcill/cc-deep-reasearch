@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-BUNDLE_SCHEMA_VERSION = "1.1.0"
+BUNDLE_SCHEMA_VERSION = "1.2.0"
 
 
 def build_trace_bundle(
@@ -52,6 +52,19 @@ def build_trace_bundle(
             "decisions": derived_outputs.get("decisions", []),
             "degradations": derived_outputs.get("degradations", []),
             "failures": derived_outputs.get("failures", []),
+            "decision_graph": derived_outputs.get(
+                "decision_graph",
+                {
+                    "nodes": [],
+                    "edges": [],
+                    "summary": {
+                        "node_count": 0,
+                        "edge_count": 0,
+                        "explicit_edge_count": 0,
+                        "inferred_edge_count": 0,
+                    },
+                },
+            ),
         },
     }
 

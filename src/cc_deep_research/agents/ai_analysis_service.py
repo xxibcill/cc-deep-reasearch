@@ -100,6 +100,19 @@ class AIAnalysisService:
         if self._monitor is None:
             return
 
+        self._monitor.emit_decision_made(
+            decision_type="mitigation",
+            reason_code="llm_analysis_fallback",
+            chosen_option="heuristic_analysis",
+            rejected_options=["routed_llm"],
+            inputs={
+                "operation": operation,
+                "error": f"{type(error).__name__}: {error}",
+            },
+            actor_id=self._agent_id,
+            phase="analysis",
+            operation=f"analysis.fallback.{operation}",
+        )
         self._monitor.emit_degradation_detected(
             reason_code="llm_analysis_fallback",
             scope="analysis",

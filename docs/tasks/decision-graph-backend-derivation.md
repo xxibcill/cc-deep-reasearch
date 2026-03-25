@@ -1,5 +1,7 @@
 # Decision Graph Backend Derivation Tasks
 
+Status: Done
+
 ## Goal
 
 Add a first-class backend-derived `decision_graph` output for each session so the project can render decisions, causes, state transitions, degradations, and outcomes as a navigable graph instead of a flat list.
@@ -139,4 +141,3 @@ This logic will be brittle without direct graph-focused tests.
 
 **Likely files**
 - `tests/test_telemetry.py`
-

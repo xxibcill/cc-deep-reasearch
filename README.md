@@ -202,26 +202,26 @@ How it can improve:
 
 ## Decision Graphs
 
-Decision data exists, but a true decision graph does not yet exist as a first-class feature. The telemetry layer can emit `decision.made`, `state.changed`, and `degradation.detected` events, and the derived outputs panel already shows decisions, cause-chain views, critical path, state changes, degradations, and failures. In practice, this means the project supports decision analysis today, but not a dedicated graph visualization of decisions and their dependencies.
+Decision graphs now exist as a first-class derived output in the dashboard, session-detail API, and trace-bundle export. The telemetry layer builds a graph from explicit `decision.made`, `state.changed`, `degradation.detected`, and failure/error events, then adds a small set of deterministic inferred links for operator review.
 
 What works well right now:
 
 - decisions can be recorded with chosen option, rejected options, confidence, inputs, and cause event IDs
-- the derived outputs panel makes decision-related debugging much easier than raw event scanning alone
+- the dashboard has a dedicated decision-graph view separate from the workflow graph
+- the derived outputs panel can jump directly into the graph for deeper inspection
 - critical path and issue extraction help connect decisions to execution bottlenecks and degraded states
 
 How good it is today:
 
-- good as a semantic event model for decisions
-- decent for operator review when sessions already emit the right telemetry
-- not yet strong as an actual decision-graph product because the UI is still workflow-oriented, not decision-oriented
+- good for operator review when sessions emit the relevant telemetry
+- good enough to inspect routing, fallback, provider-state, mitigation, and iteration-control decisions in one place
+- still bounded by telemetry coverage and deliberately conservative inference rules
 
 How it can improve:
 
-- add a dedicated decision graph that renders decisions, causes, state transitions, degradations, and outcomes as linked nodes
-- derive edges from `cause_event_id` and `cause_event_ids` so routing, recovery, and stop decisions become visually inspectable
-- make inferred decisions clearly separate from explicit `decision.made` events
-- add coverage in more orchestration paths so major planner, routing, retry, and stopping choices are always captured explicitly
+- expand explicit decision coverage across more orchestration branches and long-tail recovery paths
+- expose richer graph export and offline review tools
+- add run-to-run comparison once graph density and stability are strong enough
 - support export of decision graphs for incident review, benchmark comparisons, and design analysis
 
 ## Session Management
