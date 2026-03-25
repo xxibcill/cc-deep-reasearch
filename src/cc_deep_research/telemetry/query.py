@@ -12,6 +12,7 @@ from .tree import (
     build_derived_summary,
     build_event_tree_from_rows,
     build_llm_route_streams,
+    empty_decision_graph,
     is_terminal_session_event,
 )
 
@@ -262,6 +263,7 @@ def query_session_detail(
             "decisions": [],
             "degradations": [],
             "failures": [],
+            "decision_graph": empty_decision_graph(),
         }
 
     conn = _load_dashboard_connection(database_path)
@@ -445,6 +447,7 @@ def query_session_detail(
         "decisions": derived.get("decisions", []),
         "degradations": derived.get("degradations", []),
         "failures": derived.get("failures", []),
+        "decision_graph": derived.get("decision_graph", empty_decision_graph()),
     }
 
 

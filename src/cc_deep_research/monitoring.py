@@ -897,7 +897,7 @@ class ResearchMonitor:
         model: str,
         operation: str,
         **metadata: Any,
-    ) -> None:
+    ) -> str:
         """Record the start of an LLM request through a specific route.
 
         Args:
@@ -908,7 +908,7 @@ class ResearchMonitor:
             operation: The operation name.
             **metadata: Additional request metadata.
         """
-        self.emit_event(
+        return self.emit_event(
             event_type="llm.route_request",
             category="llm",
             name=operation,

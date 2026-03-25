@@ -71,12 +71,33 @@ class ResearchPlanningService:
             ),
             agent_id="lead",
         )
+        self._monitor.emit_decision_made(
+            decision_type="planner_strategy",
+            reason_code="strategy_profile_selected",
+            chosen_option=strategy.complexity,
+            rejected_options=[],
+            inputs={
+                "depth": depth.value,
+                "query_variations": strategy.strategy.query_variations,
+                "task_count": len(strategy.tasks_needed),
+                "intent": strategy.strategy.intent,
+            },
+            actor_id="lead",
+            phase="planning",
+            operation="planner.strategy",
+        )
         return strategy
 
     def _record_planned_routes(self, llm_plan: object) -> None:
         """Persist planned routes into telemetry and session metadata."""
         if not hasattr(llm_plan, "agent_routes") or not hasattr(llm_plan, "default_route"):
             return
+
+        fallback_order = [
+            transport.value
+            for transport in getattr(llm_plan, "fallback_order", [])
+            if hasattr(transport, "value")
+        ]
 
         default_route = llm_plan.default_route
         self._monitor.record_llm_route_selected(
@@ -85,6 +106,23 @@ class ResearchPlanningService:
             provider=default_route.provider.value,
             model=default_route.model,
             source="planner",
+        )
+        self._monitor.emit_decision_made(
+            decision_type="routing",
+            reason_code="planner_default_route",
+            chosen_option=default_route.transport.value,
+            rejected_options=[
+                transport for transport in fallback_order if transport != default_route.transport.value
+            ],
+            inputs={
+                "agent_id": "default",
+                "provider": default_route.provider.value,
+                "model": default_route.model,
+                "source": "planner",
+            },
+            actor_id="planner",
+            phase="planning",
+            operation="planner.route.default",
         )
         if self._session_state is not None:
             self._session_state.set_llm_planned_route(
@@ -101,6 +139,23 @@ class ResearchPlanningService:
                 provider=route.provider.value,
                 model=route.model,
                 source="planner",
+            )
+            self._monitor.emit_decision_made(
+                decision_type="routing",
+                reason_code="planner_agent_route",
+                chosen_option=route.transport.value,
+                rejected_options=[
+                    transport for transport in fallback_order if transport != route.transport.value
+                ],
+                inputs={
+                    "agent_id": agent_id,
+                    "provider": route.provider.value,
+                    "model": route.model,
+                    "source": "planner",
+                },
+                actor_id="planner",
+                phase="planning",
+                operation="planner.route.agent",
             )
             if self._session_state is not None:
                 self._session_state.set_llm_planned_route(

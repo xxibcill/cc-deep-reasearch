@@ -23,6 +23,7 @@ from .tree import (
     build_state_changes,
     build_subprocess_streams,
     current_phase_from_events,
+    empty_decision_graph,
 )
 
 
@@ -500,6 +501,7 @@ def query_live_session_detail(
             "decisions": [],
             "degradations": [],
             "failures": [],
+            "decision_graph": empty_decision_graph(),
         }
 
     snapshot = _read_live_session_snapshot(session_dir)
@@ -575,6 +577,7 @@ def query_live_session_detail(
         "decisions": derived.get("decisions", []),
         "degradations": derived.get("degradations", []),
         "failures": derived.get("failures", []),
+        "decision_graph": derived.get("decision_graph", empty_decision_graph()),
     }
 
 

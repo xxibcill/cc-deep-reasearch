@@ -1,6 +1,6 @@
 import dynamic from 'next/dynamic';
 import { useDeferredValue, useMemo, useState } from 'react';
-import { Activity, ChevronDown, FileText, List, Network, SlidersHorizontal, Zap } from 'lucide-react';
+import { Activity, ChevronDown, FileText, GitBranch, List, Network, SlidersHorizontal, Zap } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import {
   ToolExecution,
   ViewMode,
   CriticalPath,
+  DecisionGraph,
   StateChange,
   Decision,
   Degradation,
@@ -29,6 +30,10 @@ import {
 
 const WorkflowGraph = dynamic(
   () => import('@/components/workflow-graph').then((module) => module.WorkflowGraph),
+  { ssr: false }
+);
+const DecisionGraphView = dynamic(
+  () => import('@/components/decision-graph').then((module) => module.DecisionGraph),
   { ssr: false }
 );
 const AgentTimeline = dynamic(
@@ -60,6 +65,7 @@ interface SessionDetailsProps {
     decisions: Decision[];
     degradations: Degradation[];
     failures: Failure[];
+    decisionGraph: DecisionGraph;
   };
   // Prompt configuration from session metadata
   promptMetadata?: SessionPromptMetadata;
@@ -97,6 +103,7 @@ function ViewModeSelector({
 }) {
   const buttons: Array<{ mode: ViewMode; title: string; icon: typeof Network }> = [
     { mode: 'graph', title: 'Workflow Graph', icon: Network },
+    { mode: 'decision_graph', title: 'Decision Graph', icon: GitBranch },
     { mode: 'timeline', title: 'Agent Timeline', icon: Activity },
     { mode: 'table', title: 'Event Table', icon: List },
   ];
@@ -110,6 +117,7 @@ function ViewModeSelector({
           variant={currentMode === mode ? 'default' : 'outline'}
           size="icon"
           title={title}
+          aria-label={title}
         >
           <Icon className="h-5 w-5" />
         </Button>
@@ -268,6 +276,14 @@ function statusAccent(
 }
 
 type DetailTab = 'inspect' | 'tools' | 'llm' | 'derived' | 'prompts';
+type DecisionGraphEdgeMode = 'all' | 'explicit' | 'inferred';
+
+interface DecisionGraphFilters {
+  decisionType: string;
+  actor: string;
+  severity: string;
+  edgeMode: DecisionGraphEdgeMode;
+}
 
 const EMPTY_FILTERS: Partial<EventFilter> = {
   agent: [],
@@ -276,6 +292,24 @@ const EMPTY_FILTERS: Partial<EventFilter> = {
   provider: [],
   status: [],
   eventTypes: [],
+};
+
+const EMPTY_DECISION_GRAPH_FILTERS: DecisionGraphFilters = {
+  decisionType: '',
+  actor: '',
+  severity: '',
+  edgeMode: 'all',
+};
+
+const EMPTY_DECISION_GRAPH: DecisionGraph = {
+  nodes: [],
+  edges: [],
+  summary: {
+    node_count: 0,
+    edge_count: 0,
+    explicit_edge_count: 0,
+    inferred_edge_count: 0,
+  },
 };
 
 function getActiveFilters(filters: EventFilter): Array<{ label: string; value: string }> {
@@ -287,6 +321,101 @@ function getActiveFilters(filters: EventFilter): Array<{ label: string; value: s
     { label: 'Status', value: filters.status[0] ?? '' },
     { label: 'Event Type', value: filters.eventTypes[0] ?? '' },
   ].filter((entry): entry is { label: string; value: string } => Boolean(entry.value));
+}
+
+function buildDecisionGraphOptions(graph?: DecisionGraph) {
+  const decisionTypes = new Set<string>();
+  const actors = new Set<string>();
+  const severities = new Set<string>();
+
+  for (const node of graph?.nodes ?? []) {
+    const decisionType = typeof node.metadata.decision_type === 'string'
+      ? node.metadata.decision_type
+      : null;
+    if (decisionType) {
+      decisionTypes.add(decisionType);
+    }
+    if (node.actor_id) {
+      actors.add(node.actor_id);
+    }
+    if (node.severity) {
+      severities.add(node.severity);
+    }
+  }
+
+  return {
+    decisionTypes: [...decisionTypes].sort(),
+    actors: [...actors].sort(),
+    severities: [...severities].sort(),
+  };
+}
+
+function filterDecisionGraph(
+  graph: DecisionGraph | undefined,
+  filters: DecisionGraphFilters
+): DecisionGraph {
+  if (!graph) {
+    return EMPTY_DECISION_GRAPH;
+  }
+
+  const hasNodeFilters = Boolean(filters.decisionType || filters.actor || filters.severity);
+  const matchesNode = (node: DecisionGraph['nodes'][number]) => {
+    const decisionType =
+      typeof node.metadata.decision_type === 'string' ? node.metadata.decision_type : '';
+    if (filters.decisionType && decisionType !== filters.decisionType) {
+      return false;
+    }
+    if (filters.actor && node.actor_id !== filters.actor) {
+      return false;
+    }
+    if (filters.severity && node.severity !== filters.severity) {
+      return false;
+    }
+    return true;
+  };
+  const matchesEdge = (inferred: boolean) => {
+    if (filters.edgeMode === 'explicit') {
+      return !inferred;
+    }
+    if (filters.edgeMode === 'inferred') {
+      return inferred;
+    }
+    return true;
+  };
+
+  const baseNodeIds = new Set(
+    (hasNodeFilters ? graph.nodes.filter(matchesNode) : graph.nodes).map((node) => node.id)
+  );
+  const eligibleEdges = graph.edges.filter((edge) => matchesEdge(edge.inferred));
+  const expandedNodeIds = new Set(baseNodeIds);
+
+  for (const edge of eligibleEdges) {
+    if (
+      baseNodeIds.size === 0
+      || baseNodeIds.has(edge.source)
+      || baseNodeIds.has(edge.target)
+    ) {
+      expandedNodeIds.add(edge.source);
+      expandedNodeIds.add(edge.target);
+    }
+  }
+
+  const nodes = graph.nodes.filter((node) => expandedNodeIds.has(node.id));
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const edges = eligibleEdges.filter(
+    (edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)
+  );
+
+  return {
+    nodes,
+    edges,
+    summary: {
+      node_count: nodes.length,
+      edge_count: edges.length,
+      explicit_edge_count: edges.filter((edge) => !edge.inferred).length,
+      inferred_edge_count: edges.filter((edge) => edge.inferred).length,
+    },
+  };
 }
 
 function DetailInspector({
@@ -455,6 +584,9 @@ export function SessionDetails({
   promptMetadata,
 }: SessionDetailsProps) {
   const [detailTab, setDetailTab] = useState<DetailTab>('inspect');
+  const [decisionGraphFilters, setDecisionGraphFilters] = useState<DecisionGraphFilters>(
+    EMPTY_DECISION_GRAPH_FILTERS
+  );
   const filters = useDashboardStore((state) => state.filters);
   const setFilters = useDashboardStore((state) => state.setFilters);
   const deferredEvents = useDeferredValue(events);
@@ -474,6 +606,14 @@ export function SessionDetails({
   const selectedReasoning =
     filteredDerived.llmReasoning.find((item) => item.id === selectedReasoningId) ?? null;
   const selectedEventId = selectedEvent?.eventId ?? null;
+  const decisionGraphOptions = useMemo(
+    () => buildDecisionGraphOptions(derivedOutputs?.decisionGraph),
+    [derivedOutputs?.decisionGraph]
+  );
+  const filteredDecisionGraph = useMemo(
+    () => filterDecisionGraph(derivedOutputs?.decisionGraph, decisionGraphFilters),
+    [decisionGraphFilters, derivedOutputs?.decisionGraph]
+  );
   const agentEvents = filteredEvents.filter((event) => event.category === 'agent');
   const toolEvents = filteredEvents.filter((event) => event.category === 'tool');
   const llmEvents = filteredEvents.filter((event) => event.category === 'llm');
@@ -562,6 +702,80 @@ export function SessionDetails({
                 </Card>
               )}
 
+              {viewMode === 'decision_graph' && (
+                <Card>
+                  <CardHeader className="space-y-4">
+                    <div>
+                      <CardTitle>Decision Graph</CardTitle>
+                      <p className="text-sm text-muted-foreground">
+                        Causal decision links derived from explicit telemetry, with inferred edges shown separately.
+                      </p>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      <Select
+                        label="Decision Type"
+                        value={decisionGraphFilters.decisionType}
+                        options={decisionGraphOptions.decisionTypes}
+                        onChange={(value) =>
+                          setDecisionGraphFilters((current) => ({
+                            ...current,
+                            decisionType: value,
+                          }))
+                        }
+                      />
+                      <Select
+                        label="Actor"
+                        value={decisionGraphFilters.actor}
+                        options={decisionGraphOptions.actors}
+                        onChange={(value) =>
+                          setDecisionGraphFilters((current) => ({
+                            ...current,
+                            actor: value,
+                          }))
+                        }
+                      />
+                      <Select
+                        label="Severity"
+                        value={decisionGraphFilters.severity}
+                        options={decisionGraphOptions.severities}
+                        onChange={(value) =>
+                          setDecisionGraphFilters((current) => ({
+                            ...current,
+                            severity: value,
+                          }))
+                        }
+                      />
+                      <Select
+                        label="Links"
+                        value={
+                          decisionGraphFilters.edgeMode === 'all'
+                            ? ''
+                            : decisionGraphFilters.edgeMode
+                        }
+                        options={['explicit', 'inferred']}
+                        onChange={(value) =>
+                          setDecisionGraphFilters((current) => ({
+                            ...current,
+                            edgeMode: value ? (value as DecisionGraphEdgeMode) : 'all',
+                          }))
+                        }
+                      />
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <DecisionGraphView
+                      eventIndex={eventIndex}
+                      graph={filteredDecisionGraph}
+                      onSelectEvent={(event) => {
+                        onSelectEvent(event);
+                        setDetailTab('inspect');
+                      }}
+                      selectedEventId={selectedEventId}
+                    />
+                  </CardContent>
+                </Card>
+              )}
+
               {viewMode === 'timeline' && (
                 <Card>
                   <CardHeader>
@@ -629,6 +843,8 @@ export function SessionDetails({
                     decisions={derivedOutputs.decisions}
                     degradations={derivedOutputs.degradations}
                     failures={derivedOutputs.failures}
+                    hasDecisionGraph={derivedOutputs.decisionGraph.nodes.length > 0}
+                    onOpenDecisionGraph={() => onViewModeChange('decision_graph')}
                     onSelectEvent={(eventId) => {
                       const event = eventIndex.get(eventId);
                       if (event) {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AlertTriangle, ArrowRight, Bug, Clock, GitBranch, Info, Lightbulb, AlertCircle } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type {
@@ -23,6 +24,8 @@ interface DerivedOutputsPanelProps {
   degradations: Degradation[];
   failures: Failure[];
   onSelectEvent: (eventId: string) => void;
+  onOpenDecisionGraph?: () => void;
+  hasDecisionGraph?: boolean;
 }
 
 function formatTimestamp(ts: string | null): string {
@@ -372,6 +375,8 @@ export function DerivedOutputsPanel({
   degradations,
   failures,
   onSelectEvent,
+  onOpenDecisionGraph,
+  hasDecisionGraph = false,
 }: DerivedOutputsPanelProps) {
   const [activeView, setActiveView] = useState<DerivedView>('narrative');
 
@@ -404,10 +409,17 @@ export function DerivedOutputsPanel({
   return (
     <Card className="h-full">
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2">
-          <Info className="h-5 w-5" />
-          Derived Outputs
-        </CardTitle>
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="flex items-center gap-2">
+            <Info className="h-5 w-5" />
+            Derived Outputs
+          </CardTitle>
+          {hasDecisionGraph && onOpenDecisionGraph && (
+            <Button onClick={onOpenDecisionGraph} size="sm" type="button" variant="outline">
+              Open Decision Graph
+            </Button>
+          )}
+        </div>
         <div className="flex flex-wrap gap-2">
           {views.map(({ key, label, icon: Icon, count }) => (
             <button

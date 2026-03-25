@@ -139,6 +139,14 @@ class LLMRouter:
                     fallback_route=route,
                     reason="primary_route_unavailable_or_failed",
                 )
+            else:
+                self._record_route_decision(
+                    agent_id=agent_id,
+                    route=route,
+                    operation=operation,
+                    rejected_routes=routes,
+                    reason_code="route_selected",
+                )
 
             self._record_route_request(
                 agent_id=agent_id,
@@ -206,9 +214,9 @@ class LLMRouter:
         route: LLMRoute,
         operation: str,
         prompt_preview: str | None = None,
-    ) -> None:
+    ) -> str | None:
         if self._monitor is not None:
-            self._monitor.record_llm_route_request(
+            request_event_id = self._monitor.record_llm_route_request(
                 agent_id=agent_id,
                 transport=route.transport.value,
                 provider=route.provider.value,
@@ -216,6 +224,8 @@ class LLMRouter:
                 operation=operation,
                 prompt_preview=prompt_preview,
             )
+        else:
+            request_event_id = None
         self._emit_event(
             "route_request",
             agent_id=agent_id,
@@ -225,6 +235,7 @@ class LLMRouter:
             operation=operation,
             prompt_preview=prompt_preview,
         )
+        return request_event_id
 
     def _record_route_completion(
         self,
@@ -290,12 +301,60 @@ class LLMRouter:
                 impact=f"LLM transport degraded from {original_route.transport.value} to {fallback_route.transport.value}",
                 actor_id=agent_id,
             )
+            self._monitor.emit_decision_made(
+                decision_type="fallback",
+                reason_code=reason,
+                chosen_option=fallback_route.transport.value,
+                rejected_options=[original_route.transport.value],
+                inputs={
+                    "agent_id": agent_id,
+                    "operation": "route_fallback",
+                    "provider": fallback_route.provider.value,
+                    "model": fallback_route.model,
+                },
+                actor_id=agent_id,
+                phase="llm",
+                operation="llm.route_fallback",
+            )
         self._emit_event(
             "route_fallback",
             agent_id=agent_id,
             original_transport=original_route.transport.value,
             fallback_transport=fallback_route.transport.value,
             reason=reason,
+        )
+
+    def _record_route_decision(
+        self,
+        *,
+        agent_id: str,
+        route: LLMRoute,
+        operation: str,
+        rejected_routes: list[LLMRoute | None],
+        reason_code: str,
+    ) -> None:
+        """Emit an explicit routing decision for the selected transport."""
+        if self._monitor is None:
+            return
+
+        self._monitor.emit_decision_made(
+            decision_type="routing",
+            reason_code=reason_code,
+            chosen_option=route.transport.value,
+            rejected_options=[
+                candidate.transport.value
+                for candidate in rejected_routes
+                if candidate is not None and candidate.transport != route.transport
+            ],
+            inputs={
+                "agent_id": agent_id,
+                "operation": operation,
+                "provider": route.provider.value,
+                "model": route.model,
+            },
+            actor_id=agent_id,
+            phase="llm",
+            operation=f"llm.route.{operation}",
         )
 
     def _emit_event(self, event_type: str, **payload: Any) -> None:
