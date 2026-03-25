@@ -152,6 +152,78 @@ Common failure modes:
 - No LLM route available: the workflow falls back to heuristic analysis
 - Provider timeout or failure: inspect the LLM route analytics pane in the dashboard for fallback and failure events
 
+## Execution Traces
+
+CC Deep Research already has a practical execution-trace foundation. Each run writes structured telemetry to `events.jsonl` and `summary.json`, and every event can carry an `event_id`, `parent_event_id`, `sequence_number`, and timestamp. That gives the project enough structure to reconstruct ordered traces, parent/child relationships, event trees, subprocess streams, and timeline-oriented views in the dashboards.
+
+What works well right now:
+
+- traces are persistent by default for normal `research` runs
+- live sessions can be inspected before the run finishes
+- event ordering and parent/child correlation are explicit, not inferred from console text
+- the UI already exposes a workflow graph, event table, critical-path summary, and compact execution-trace terminology via `--show-timeline`
+
+How good it is today:
+
+- good for operator visibility and post-run debugging
+- good for understanding phase flow, agent activity, tool calls, and LLM route behavior
+- not yet a full distributed-tracing style system with span semantics, trace search, or cross-run comparison built into the core UX
+
+How it can improve:
+
+- promote `operation.started` / `operation.finished` into more explicit span-style trace views
+- add first-class trace IDs and trace summaries at the session and subtask level
+- support trace diffing between runs to compare regressions, latency shifts, and fallback patterns
+- expose richer subprocess and tool nesting so long chains are easier to inspect without opening raw events
+
+## Agent-Level Logs
+
+The project does have agent-level logs, but they are primarily implemented as structured telemetry events rather than a separate traditional log subsystem. Parallel researchers emit `agent.spawned`, `agent.started`, `agent.completed`, `agent.failed`, and `agent.timeout` events, and agent context also flows into tool, reasoning, and LLM-route events through `agent_id`.
+
+What works well right now:
+
+- agent lifecycle is visible in both raw events and the agent timeline
+- tool calls and LLM route activity can be tied back to specific agents
+- reasoning summaries can be attached to an agent for human-readable debugging
+- the model-routing layer already captures agent-specific provider, transport, token, and fallback data
+
+How good it is today:
+
+- good for understanding what each agent did and when it did it
+- good for debugging parallel researcher execution and route selection
+- weaker if you want rich per-agent narrative logs, stdout-style transcripts, or a complete "agent journal" in one place
+
+How it can improve:
+
+- add a dedicated per-agent log view that merges lifecycle, reasoning, tools, state changes, and failures into one ordered stream
+- standardize more agent event names and metadata contracts across all orchestration paths
+- capture more structured intermediate outputs from agents, not only completion summaries
+- distinguish system events from agent-authored events more clearly in the UI and exported telemetry
+
+## Decision Graphs
+
+Decision data exists, but a true decision graph does not yet exist as a first-class feature. The telemetry layer can emit `decision.made`, `state.changed`, and `degradation.detected` events, and the derived outputs panel already shows decisions, cause-chain views, critical path, state changes, degradations, and failures. In practice, this means the project supports decision analysis today, but not a dedicated graph visualization of decisions and their dependencies.
+
+What works well right now:
+
+- decisions can be recorded with chosen option, rejected options, confidence, inputs, and cause event IDs
+- the derived outputs panel makes decision-related debugging much easier than raw event scanning alone
+- critical path and issue extraction help connect decisions to execution bottlenecks and degraded states
+
+How good it is today:
+
+- good as a semantic event model for decisions
+- decent for operator review when sessions already emit the right telemetry
+- not yet strong as an actual decision-graph product because the UI is still workflow-oriented, not decision-oriented
+
+How it can improve:
+
+- add a dedicated decision graph that renders decisions, causes, state transitions, degradations, and outcomes as linked nodes
+- derive edges from `cause_event_id` and `cause_event_ids` so routing, recovery, and stop decisions become visually inspectable
+- make inferred decisions clearly separate from explicit `decision.made` events
+- add coverage in more orchestration paths so major planner, routing, retry, and stopping choices are always captured explicitly
+- support export of decision graphs for incident review, benchmark comparisons, and design analysis
+
 ## Session Management
 
 ```bash
