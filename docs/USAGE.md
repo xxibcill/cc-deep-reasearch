@@ -1353,6 +1353,19 @@ export CC_DEEP_RESEARCH_CONFIG=~/research/custom-config.yaml
 cc-deep-research research "Your query"
 ```
 
+### Dashboard Configuration Editing
+
+If you use the browser dashboard, open `/settings` to edit the persisted YAML config used for future runs.
+
+The settings page distinguishes:
+
+- persisted values saved in `config.yaml`
+- effective runtime values after environment-variable overrides
+
+If a field is currently overridden by an environment variable, the dashboard shows the runtime source and treats that field as read-only. Saving config does not change active runs and does not beat an active env override.
+
+Secret fields such as provider API keys are masked in API responses and in the UI. The dashboard only supports explicit replace or clear actions for those fields; it never round-trips the current secret value back to the browser.
+
 ### Multiple API Keys Management
 
 Set up multiple API keys for rotation and load balancing:
