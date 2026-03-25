@@ -28,6 +28,13 @@ from cc_deep_research.research_runs.options import (
 )
 from cc_deep_research.research_runs.output import materialize_research_run_output
 from cc_deep_research.session_store import SessionStore
+from cc_deep_research.themes import (
+    ResearchTheme,
+    ThemeDetector,
+    ThemeWorkflowAdapter,
+    WorkflowConfig,
+    get_workflow_config,
+)
 
 PhaseHook = Callable[[str, str], None]
 CancellationCheck = Callable[[], None]
@@ -41,6 +48,8 @@ class PreparedResearchRun:
     request: ResearchRunRequest
     config: Config
     prompt_registry: PromptRegistry
+    workflow_config: WorkflowConfig | None = None
+    detected_theme: ResearchTheme | None = None
 
 
 class ResearchRunExecutionAdapter(Protocol):
@@ -85,6 +94,8 @@ class ResearchRunService:
     )
     orchestrator_factory: Callable[..., TeamResearchOrchestrator] = TeamResearchOrchestrator
     output_materializer: Callable[..., ResearchRunResult] = materialize_research_run_output
+    theme_detector: ThemeDetector = ThemeDetector()
+    theme_adapter: ThemeWorkflowAdapter = ThemeWorkflowAdapter()
 
     def prepare(
         self,
@@ -94,12 +105,43 @@ class ResearchRunService:
     ) -> PreparedResearchRun:
         """Resolve a request into the config that will be used for execution."""
         base_config = config.model_copy(deep=True) if config is not None else self.config_loader()
+
+        # Detect or use explicit theme
+        detected_theme = request.theme
+        workflow_config = None
+
+        if detected_theme is None:
+            detection_result = self.theme_detector.detect(request.query)
+            detected_theme = detection_result.detected_theme
+
+        # Get workflow configuration for the theme
+        try:
+            workflow_config = get_workflow_config(detected_theme)
+        except KeyError:
+            workflow_config = None
+
+        # Apply theme-specific config overrides
         resolved_config = self.config_override_applier(base_config, request)
+        if workflow_config:
+            resolved_config = self.theme_adapter.apply_to_config(
+                resolved_config, workflow_config
+            )
+
+        # Create prompt registry with overrides
         prompt_registry = create_prompt_registry_with_overrides(request)
+
+        # Apply theme-specific prompt overrides
+        if workflow_config:
+            prompt_registry = self.theme_adapter.apply_to_prompt_registry(
+                prompt_registry, workflow_config
+            )
+
         return PreparedResearchRun(
             request=request,
             config=resolved_config,
             prompt_registry=prompt_registry,
+            workflow_config=workflow_config,
+            detected_theme=detected_theme,
         )
 
     def run(
@@ -161,6 +203,7 @@ class ResearchRunService:
                 parallel_mode=prepared.request.parallel_mode,
                 num_researchers=prepared.request.num_researchers,
                 prompt_registry=prepared.prompt_registry,
+                workflow_config=prepared.workflow_config,
             )
         adapter = execution_adapter or AsyncioResearchRunExecutionAdapter()
 
