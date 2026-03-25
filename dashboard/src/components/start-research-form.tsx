@@ -181,6 +181,9 @@ export function StartResearchForm() {
               Customize prompts for LLM-backed agents. Prompt prefixes are prepended to the default
               prompts, allowing you to extend behavior without replacing defaults.
             </p>
+            <p className="text-xs text-muted-foreground">
+              V1 support is limited to Analyzer, Deep Analyzer, and Report Quality Evaluator.
+            </p>
 
             {SUPPORTED_AGENTS.map((agent) => (
               <div key={agent.id} className="space-y-2">

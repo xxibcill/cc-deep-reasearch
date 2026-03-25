@@ -125,10 +125,10 @@ class ResearchRunRequest(BaseModel):
             prompt_prefix = override.get("prompt_prefix")
 
             # Strip whitespace-only to None
-            if system_prompt is not None and not system_prompt.strip():
-                system_prompt = None
-            if prompt_prefix is not None and not prompt_prefix.strip():
-                prompt_prefix = None
+            if system_prompt is not None:
+                system_prompt = system_prompt.strip() or None
+            if prompt_prefix is not None:
+                prompt_prefix = prompt_prefix.strip() or None
 
             # Only include if at least one override is set
             if system_prompt is not None or prompt_prefix is not None:

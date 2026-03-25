@@ -9,6 +9,7 @@ import { useWebSocket } from '@/lib/websocket';
 import { SessionDetails } from '@/components/session-details';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import type { SessionPromptMetadata } from '@/types/telemetry';
 
 export function SessionTelemetryWorkspace({ sessionId }: { sessionId: string }) {
   const selectedEvent = useDashboardStore((state) => state.selectedEvent);
@@ -20,6 +21,7 @@ export function SessionTelemetryWorkspace({ sessionId }: { sessionId: string }) 
   const [derivedOutputs, setDerivedOutputs] = useState<SessionDetailResult['derivedOutputs'] | null>(
     null
   );
+  const [promptMetadata, setPromptMetadata] = useState<SessionPromptMetadata | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
@@ -30,6 +32,7 @@ export function SessionTelemetryWorkspace({ sessionId }: { sessionId: string }) 
     setLoading(true);
     setError(null);
     setDerivedOutputs(null);
+    setPromptMetadata(null);
 
     getSessionDetail(sessionId)
       .then((result) => {
@@ -38,6 +41,7 @@ export function SessionTelemetryWorkspace({ sessionId }: { sessionId: string }) 
         }
         appendEvents(result.events);
         setDerivedOutputs(result.derivedOutputs);
+        setPromptMetadata(result.promptMetadata ?? null);
       })
       .catch((requestError) => {
         if (!mounted) {
@@ -114,6 +118,7 @@ export function SessionTelemetryWorkspace({ sessionId }: { sessionId: string }) 
         onSelectEvent={setSelectedEvent}
         onViewModeChange={setViewMode}
         derivedOutputs={derivedOutputs ?? undefined}
+        promptMetadata={promptMetadata ?? undefined}
       />
     </div>
   );

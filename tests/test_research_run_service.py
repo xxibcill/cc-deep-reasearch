@@ -208,3 +208,26 @@ def test_run_finalizes_interrupted_monitor_when_cancelled() -> None:
         event["event_type"] == "session.finished" and event["status"] == "interrupted"
         for event in monitor._telemetry_events
     )
+
+
+def test_prepare_builds_prompt_registry_from_request_overrides() -> None:
+    """Prepared runs should carry normalized prompt overrides into execution state."""
+    service = ResearchRunService(config_loader=lambda: Config())
+
+    prepared = service.prepare(
+        ResearchRunRequest(
+            query="test query",
+            agent_prompt_overrides={
+                "analyzer": {
+                    "prompt_prefix": "Prioritize primary sources.",
+                }
+            },
+        )
+    )
+
+    assert prepared.prompt_registry.has_overrides() is True
+    effective_overrides = prepared.prompt_registry.get_effective_overrides()
+    assert effective_overrides["analyzer"] == {
+        "prompt_prefix": "Prioritize primary sources.",
+        "system_prompt": None,
+    }
