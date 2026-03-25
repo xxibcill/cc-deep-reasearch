@@ -7,12 +7,24 @@ import uuid
 from typing import Any
 
 from cc_deep_research.models import (
+    AnalysisResult,
+    IterationHistoryRecord,
+    PlannerIterationDecision,
     PlannerResult,
     QueryProfile,
     ResearchDepth,
     ResearchPlan,
     ResearchSubtask,
+    SearchResultItem,
+    StrategyResult,
+    ValidationResult,
 )
+from cc_deep_research.monitoring import (
+    STOP_REASON_LIMIT_REACHED,
+    STOP_REASON_LOW_QUALITY,
+    STOP_REASON_SUCCESS,
+)
+from cc_deep_research.orchestration.helpers import build_follow_up_queries
 
 
 class PlannerAgent:
@@ -85,6 +97,139 @@ class PlannerAgent:
             complexity_assessment=complexity,
             confidence=self._calculate_confidence(query, subtasks),
             estimated_time_minutes=self._estimate_time(subtasks, depth),
+        )
+
+    def decide_research_iteration(
+        self,
+        *,
+        query: str,
+        strategy: StrategyResult,
+        analysis: AnalysisResult | dict[str, Any],
+        validation: ValidationResult | dict[str, Any] | None,
+        sources: list[SearchResultItem],
+        iteration: int,
+        max_iterations: int,
+        min_sources: int | None,
+        iteration_history: list[IterationHistoryRecord] | None = None,
+        enable_iterative_search: bool = True,
+    ) -> PlannerIterationDecision:
+        """Decide whether the staged workflow should continue the research loop."""
+        del iteration_history  # Reserved for future planner strategies.
+
+        analysis_result = AnalysisResult.model_validate(analysis)
+        validation_result = (
+            ValidationResult.model_validate(validation) if validation is not None else None
+        )
+        missing_information = self._collect_missing_information(
+            analysis=analysis_result,
+            validation=validation_result,
+        )
+        current_hypothesis = self._build_current_hypothesis(
+            query=query,
+            analysis=analysis_result,
+            validation=validation_result,
+            missing_information=missing_information,
+        )
+        next_queries = build_follow_up_queries(
+            query=query,
+            analysis=analysis_result,
+            validation=validation_result,
+            enable_iterative_search=enable_iterative_search,
+        )
+        if not next_queries:
+            next_queries = self._queries_from_gaps(query, analysis_result)
+        next_queries = self._apply_follow_up_bias(
+            query=query,
+            strategy=strategy,
+            queries=next_queries,
+        )
+
+        if not enable_iterative_search:
+            return PlannerIterationDecision(
+                should_continue=False,
+                reason_code="planner_loop_disabled",
+                stop_reason=STOP_REASON_SUCCESS,
+                rationale="Iterative search is disabled, so the planner ends after the current pass.",
+                current_hypothesis=current_hypothesis,
+                missing_information=missing_information,
+                next_queries=[],
+                confidence=0.9,
+            )
+
+        if iteration >= max_iterations:
+            return PlannerIterationDecision(
+                should_continue=False,
+                reason_code="planner_iteration_limit_reached",
+                stop_reason=STOP_REASON_LIMIT_REACHED,
+                rationale=f"Reached the planner safety limit of {max_iterations} iterations.",
+                current_hypothesis=current_hypothesis,
+                missing_information=missing_information,
+                next_queries=[],
+                confidence=0.95,
+            )
+
+        target_source_count = max(
+            min_sources or 0,
+            validation_result.target_source_count if validation_result else 0,
+        )
+        has_findings = bool(
+            analysis_result.key_findings
+            or analysis_result.themes
+            or analysis_result.comprehensive_synthesis.strip()
+        )
+        has_enough_sources = (
+            len(sources) >= target_source_count if target_source_count else len(sources) > 0
+        )
+        validation_requires_follow_up = bool(
+            validation_result is not None and validation_result.needs_follow_up
+        )
+        has_open_gaps = bool(analysis_result.normalized_gaps())
+
+        should_continue = False
+        reason_code = "goal_satisfied"
+        rationale = "The planner believes the current evidence is sufficient for the research goal."
+        stop_reason = STOP_REASON_SUCCESS
+
+        if validation_requires_follow_up and next_queries:
+            should_continue = True
+            reason_code = "planner_requested_more_evidence"
+            rationale = "Validation and planner review indicate the goal still needs more evidence."
+            stop_reason = None
+        elif not has_findings and next_queries:
+            should_continue = True
+            reason_code = "planner_requested_initial_evidence"
+            rationale = "The planner does not yet have enough synthesized findings, so it schedules another search pass."
+            stop_reason = None
+        elif not has_enough_sources and next_queries:
+            should_continue = True
+            reason_code = "planner_requested_source_coverage"
+            rationale = "The planner wants broader source coverage before treating the goal as complete."
+            stop_reason = None
+        elif has_open_gaps and next_queries:
+            should_continue = True
+            reason_code = "planner_requested_gap_closure"
+            rationale = "The planner identified unresolved gaps and generated focused follow-up queries."
+            stop_reason = None
+        elif validation_requires_follow_up or not has_findings:
+            reason_code = "planner_insufficient_without_query"
+            rationale = "The planner sees unresolved quality issues but could not generate a productive next search step."
+            stop_reason = STOP_REASON_LOW_QUALITY
+
+        confidence = self._decision_confidence(
+            should_continue=should_continue,
+            validation=validation_result,
+            has_findings=has_findings,
+            has_enough_sources=has_enough_sources,
+        )
+        return PlannerIterationDecision(
+            should_continue=should_continue,
+            reason_code=reason_code,
+            stop_reason=stop_reason,
+            rationale=rationale,
+            current_hypothesis=current_hypothesis,
+            missing_information=missing_information,
+            next_queries=next_queries if should_continue else [],
+            confidence=confidence,
         )
 
     def _assess_complexity(self, query: str) -> str:
@@ -673,6 +818,136 @@ class PlannerAgent:
             target_source_classes.append("official_docs" if len(words) <= 4 else "news")
 
         return target_source_classes
+
+    def _collect_missing_information(
+        self,
+        *,
+        analysis: AnalysisResult,
+        validation: ValidationResult | None,
+    ) -> list[str]:
+        """Summarize the most important unresolved evidence gaps."""
+        missing_information: list[str] = []
+        for gap in analysis.normalized_gaps():
+            description = gap.gap_description.strip()
+            if description:
+                missing_information.append(description)
+        if validation is not None:
+            missing_information.extend(issue.strip() for issue in validation.issues if issue.strip())
+            if not missing_information:
+                missing_information.extend(
+                    self._describe_failure_mode(mode) for mode in validation.failure_modes
+                )
+        deduplicated: list[str] = []
+        seen: set[str] = set()
+        for item in missing_information:
+            normalized = item.lower()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            deduplicated.append(item)
+        return deduplicated[:4]
+
+    def _build_current_hypothesis(
+        self,
+        *,
+        query: str,
+        analysis: AnalysisResult,
+        validation: ValidationResult | None,
+        missing_information: list[str],
+    ) -> str:
+        """Build a compact working hypothesis from the current evidence."""
+        signals: list[str] = []
+        findings: list[str] = []
+        for finding in analysis.key_findings[:2]:
+            title = finding.title if hasattr(finding, "title") else str(finding)
+            if title:
+                findings.append(title.strip())
+        if findings:
+            signals.append("Current evidence points to " + "; ".join(findings) + ".")
+        elif analysis.themes:
+            signals.append(
+                "Current evidence clusters around " + ", ".join(analysis.themes[:3]) + "."
+            )
+        else:
+            signals.append(f"The current evidence for '{query}' is still thin.")
+        if validation is not None and validation.quality_score > 0:
+            signals.append(f"Observed quality score is {validation.quality_score:.2f}.")
+        if missing_information:
+            signals.append("Open questions remain around " + "; ".join(missing_information[:2]) + ".")
+        return " ".join(signals).strip()
+
+    def _apply_follow_up_bias(
+        self,
+        *,
+        query: str,
+        strategy: StrategyResult,
+        queries: list[str],
+    ) -> list[str]:
+        """Bias follow-up searches toward the strategy's preferred evidence type."""
+        candidates = list(queries)
+        bias = strategy.strategy.follow_up_bias
+        if bias == "recent_updates":
+            candidates.insert(0, f"{query} latest updates current developments")
+        elif bias == "primary_evidence":
+            candidates.insert(0, f"{query} primary sources official documents")
+        elif bias == "comparison_evidence":
+            candidates.insert(0, f"{query} comparison evidence methodology rebuttal")
+        return self._deduplicate_queries(candidates)[:8]
+
+    def _queries_from_gaps(self, query: str, analysis: AnalysisResult) -> list[str]:
+        """Generate follow-up queries directly from analysis gaps."""
+        queries: list[str] = []
+        for gap in analysis.normalized_gaps():
+            queries.extend(gap.suggested_queries)
+            if gap.gap_description.strip():
+                queries.append(f"{query} {gap.gap_description}")
+        return self._deduplicate_queries(queries)[:8]
+
+    def _deduplicate_queries(self, queries: list[str]) -> list[str]:
+        """Return queries in first-seen order with case-insensitive deduplication."""
+        deduplicated: list[str] = []
+        seen: set[str] = set()
+        for candidate in queries:
+            normalized = candidate.strip().lower()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            deduplicated.append(candidate.strip())
+        return deduplicated
+
+    def _describe_failure_mode(self, failure_mode: str) -> str:
+        """Translate validator failure modes into planner-friendly gap labels."""
+        descriptions = {
+            "weak_primary_source_coverage": "primary-source coverage is still weak",
+            "stale_evidence_for_time_sensitive_query": "the evidence is not current enough",
+            "thin_claim_support": "important claims still lack direct support",
+            "high_contradiction_pressure": "conflicting evidence still needs reconciliation",
+            "narrow_source_type_diversity": "source-type diversity is too narrow",
+            "limited_domain_diversity": "domain diversity is too narrow",
+            "limited_content_depth": "source depth is too shallow",
+            "missing_citation_links": "citation coverage is incomplete",
+        }
+        return descriptions.get(failure_mode, failure_mode.replace("_", " "))
+
+    def _decision_confidence(
+        self,
+        *,
+        should_continue: bool,
+        validation: ValidationResult | None,
+        has_findings: bool,
+        has_enough_sources: bool,
+    ) -> float:
+        """Estimate planner confidence in the continue/stop decision."""
+        base = 0.55
+        if validation is not None:
+            base = max(base, min(0.95, validation.quality_score))
+        if has_findings:
+            base += 0.1
+        if has_enough_sources:
+            base += 0.05
+        if should_continue:
+            base -= 0.05
+        return max(0.0, min(1.0, base))
 
 
 __all__ = ["PlannerAgent"]
