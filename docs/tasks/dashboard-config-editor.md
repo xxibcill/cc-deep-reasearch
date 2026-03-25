@@ -1,5 +1,7 @@
 # Dashboard Config Editor Tasks
 
+Status: Done
+
 ## Goal
 
 Allow operators to view and update persistent application configuration from the dashboard, with clear handling for environment-variable overrides and sensitive fields.

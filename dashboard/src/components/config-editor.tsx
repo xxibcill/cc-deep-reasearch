@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { startTransition, useEffect, useState, type ReactNode } from 'react';
 
+import { ConfigSecretsPanel } from '@/components/config-secrets-panel';
 import { Button } from '@/components/ui/button';
 import {
   getApiErrorMessage,
@@ -487,22 +488,7 @@ export function ConfigEditor() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-            <h2 className="text-base font-semibold">Secret fields</h2>
-            <div className="mt-3 space-y-2 text-sm">
-              {config.secret_fields.map((field) => (
-                <div key={field.field} className="rounded-2xl border border-border bg-background px-4 py-3">
-                  <div className="font-medium">{field.field}</div>
-                  <div className="mt-1 text-muted-foreground">
-                    Persisted: {field.persisted_present ? `${field.persisted_count} configured` : 'none'}
-                  </div>
-                  <div className="text-muted-foreground">
-                    Effective: {field.effective_present ? `${field.effective_count} active` : 'none'}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <ConfigSecretsPanel config={config} onConfigChange={setConfig} />
 
           <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
             <h2 className="text-base font-semibold">Navigation</h2>
