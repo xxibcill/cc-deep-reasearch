@@ -1366,6 +1366,18 @@ If a field is currently overridden by an environment variable, the dashboard sho
 
 Secret fields such as provider API keys are masked in API responses and in the UI. The dashboard only supports explicit replace or clear actions for those fields; it never round-trips the current secret value back to the browser.
 
+### Dashboard Prompt Overrides
+
+The dashboard start form includes an advanced prompt section for per-run prompt prefixes.
+
+Current v1 support is intentionally limited to the LLM-backed agents that already consume prompts during execution:
+
+- `analyzer`
+- `deep_analyzer`
+- `report_quality_evaluator`
+
+These overrides apply only to the run you start from the browser. They do not mutate global defaults, and they are saved into session metadata so the monitor can show which prompt configuration was used later.
+
 ### Multiple API Keys Management
 
 Set up multiple API keys for rotation and load balancing:

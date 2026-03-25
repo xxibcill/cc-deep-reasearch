@@ -556,6 +556,8 @@ def _query_session_api_detail(
         return live_detail
 
     events = historical.get("events", [])
+    saved_session = SessionStore().load_session(session_id)
+    summary = saved_session.model_dump(mode="json") if saved_session is not None else None
     # Build session object from normalized dict
     session = {
         "session_id": session_data.get("session_id"),
@@ -569,7 +571,7 @@ def _query_session_api_detail(
     }
     return {
         "session": session,
-        "summary": None,
+        "summary": summary,
         "events": events,
         "event_tail": events[-tail_limit:],
         "events_page": historical.get("events_page", {"events": [], "total": 0, "has_more": False, "next_cursor": None, "prev_cursor": None}),
