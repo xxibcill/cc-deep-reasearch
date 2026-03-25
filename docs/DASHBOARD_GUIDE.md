@@ -195,6 +195,7 @@ The form in [`dashboard/src/components/start-research-form.tsx`](../dashboard/sr
 - `depth`
 - `min_sources`
 - `realtime_enabled=true`
+- optional `agent_prompt_overrides` for supported LLM-backed agents
 
 User workflow:
 
@@ -204,9 +205,20 @@ User workflow:
    - `standard`
    - `deep`
 3. optionally force a minimum source count
-4. click `Start Research`
+4. optionally open `Advanced Settings (Agent Prompts)` and add prompt prefixes for:
+   - `analyzer`
+   - `deep_analyzer`
+   - `report_quality_evaluator`
+5. click `Start Research`
 
 The form sends `POST /api/research-runs` and, on success, navigates to `/session/<run_id>`.
+
+Prompt override behavior:
+
+- v1 only exposes real prompt surfaces for LLM-backed agents
+- overrides are sent per run, not stored as a global prompt library
+- empty prompt fields are omitted from the request
+- prompt prefixes augment the default prompt instead of replacing the whole task prompt
 
 ### Recent Sessions
 
@@ -266,6 +278,21 @@ Available render modes:
 - HTML
 
 Current rendering behavior:
+
+### Prompt Configuration In Session Monitor
+
+The telemetry monitor in [`dashboard/src/app/session/[id]/monitor/page.tsx`](../dashboard/src/app/session/[id]/monitor/page.tsx) includes a dedicated `Prompts` detail tab.
+
+That panel reads normalized prompt metadata from the session detail response and shows:
+
+- whether prompt overrides were applied
+- the effective per-agent overrides used for the run
+- which supported agents stayed on defaults
+
+This panel is intentionally separate from the LLM reasoning panel:
+
+- `Prompts` shows configured run inputs
+- `LLM` shows runtime prompt previews and completions emitted through telemetry
 
 - Markdown is shown as preformatted text, not with a full markdown renderer
 - JSON is pretty-printed
