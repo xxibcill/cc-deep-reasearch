@@ -12,6 +12,7 @@ from cc_deep_research.cli import main
 from cc_deep_research.cli import research as research_module
 from cc_deep_research.config import Config
 from cc_deep_research.models import ResearchDepth, ResearchSession, SearchResultItem
+from cc_deep_research.prompts import PromptRegistry
 from cc_deep_research.research_runs import (
     PreparedResearchRun,
     ResearchOutputFormat,
@@ -113,7 +114,11 @@ def test_research_command_delegates_to_shared_run_service(monkeypatch) -> None:
     class FakeService:
         def prepare(self, request):
             captured["request"] = request
-            return PreparedResearchRun(request=request, config=Config())
+            return PreparedResearchRun(
+                request=request,
+                config=Config(),
+                prompt_registry=PromptRegistry(),
+            )
 
         def run_prepared(self, prepared, **kwargs):
             captured["prepared"] = prepared
