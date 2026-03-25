@@ -23,6 +23,7 @@ from cc_deep_research.orchestration.phases import PhaseRunner
 from cc_deep_research.orchestration.planning import ResearchPlanningService
 from cc_deep_research.orchestration.session_builder import SessionBuilder
 from cc_deep_research.orchestration.session_state import OrchestratorSessionState
+from cc_deep_research.prompts import PromptRegistry
 
 
 def _make_strategy(query: str, depth: ResearchDepth, query_variations: int) -> StrategyResult:
@@ -340,6 +341,30 @@ class TestSessionBuilder:
         assert session.metadata["execution"]["parallel_requested"] is False
         assert session.started_at == started_at
         assert session.completed_at is not None
+
+
+def test_session_state_records_prompt_metadata() -> None:
+    """Session metadata should preserve effective prompt overrides for auditability."""
+    state = OrchestratorSessionState(configured_providers=["tavily"])
+    registry = PromptRegistry()
+    registry.apply_raw_overrides(
+        {
+            "analyzer": {
+                "prompt_prefix": "Focus on primary-source evidence.",
+            }
+        }
+    )
+
+    state.set_prompt_metadata(registry)
+
+    assert state.prompt_metadata.overrides_applied is True
+    assert state.prompt_metadata.effective_overrides == {
+        "analyzer": {
+            "prompt_prefix": "Focus on primary-source evidence.",
+            "system_prompt": None,
+        }
+    }
+    assert "deep_analyzer" in state.prompt_metadata.default_prompts_used
 
 
 class TestResearchExecutionService:

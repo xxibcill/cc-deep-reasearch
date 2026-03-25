@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 type ConfigResponse = {
   config_path: string;
@@ -71,7 +71,7 @@ function makeConfigResponse(overrides: Partial<ConfigResponse> = {}): ConfigResp
   };
 }
 
-async function mockSettingsApis(page: Parameters<typeof test>[0]["page"], config: ConfigResponse) {
+async function mockSettingsApis(page: Page, config: ConfigResponse) {
   await page.route("**/api/search-cache/stats", async (route) => {
     await route.fulfill({
       status: 200,

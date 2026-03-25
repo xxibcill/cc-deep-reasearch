@@ -80,9 +80,18 @@ class ThemeWorkflowAdapter:
         # Get theme-specific prompt overrides
         from .prompts import get_theme_prompt_overrides
 
-        overrides = get_theme_prompt_overrides(workflow_config.theme)
-        if overrides:
-            prompt_registry.apply_raw_overrides(overrides)
+        theme_overrides = get_theme_prompt_overrides(workflow_config.theme)
+        if theme_overrides:
+            combined_overrides = {
+                agent_id: dict(values)
+                for agent_id, values in theme_overrides.items()
+            }
+            existing_overrides = prompt_registry.get_effective_overrides()
+            for agent_id, override in existing_overrides.items():
+                merged = dict(combined_overrides.get(agent_id, {}))
+                merged.update(override)
+                combined_overrides[agent_id] = merged
+            prompt_registry.apply_raw_overrides(combined_overrides)
 
         return prompt_registry
 

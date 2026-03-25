@@ -365,6 +365,125 @@ def test_patch_config_returns_override_conflicts(
     assert payload["conflicts"][0]["field"] == "output.format"
 
 
+def test_session_detail_summary_preserves_prompt_metadata(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Historical session detail should serialize prompt metadata for dashboard inspection."""
+    duckdb = pytest.importorskip("duckdb")
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir.mkdir(parents=True)
+
+    db_path = config_dir / "telemetry.duckdb"
+    conn = duckdb.connect(str(db_path))
+    conn.execute(
+        """
+        CREATE TABLE telemetry_sessions (
+            session_id VARCHAR PRIMARY KEY,
+            created_at TIMESTAMP,
+            status VARCHAR,
+            total_time_ms INTEGER,
+            total_sources INTEGER,
+            instances_spawned INTEGER,
+            search_queries INTEGER,
+            tool_calls INTEGER,
+            llm_prompt_tokens INTEGER,
+            llm_completion_tokens INTEGER,
+            llm_total_tokens INTEGER,
+            providers_json VARCHAR
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE telemetry_events (
+            event_id VARCHAR,
+            parent_event_id VARCHAR,
+            sequence_number INTEGER,
+            session_id VARCHAR,
+            timestamp TIMESTAMP,
+            event_type VARCHAR,
+            category VARCHAR,
+            name VARCHAR,
+            status VARCHAR,
+            duration_ms INTEGER,
+            agent_id VARCHAR,
+            metadata_json VARCHAR
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO telemetry_sessions VALUES
+        (
+            'prompt-session',
+            TIMESTAMP '2026-03-25 00:00:00',
+            'completed',
+            1200,
+            4,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            '[]'
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO telemetry_events VALUES
+        (
+            'event-1',
+            NULL,
+            1,
+            'prompt-session',
+            TIMESTAMP '2026-03-25 00:00:01',
+            'session.started',
+            'session',
+            'session',
+            'started',
+            NULL,
+            NULL,
+            '{}'
+        )
+        """
+    )
+    conn.close()
+
+    session = ResearchSession(
+        session_id="prompt-session",
+        query="What changed?",
+        depth=ResearchDepth.STANDARD,
+        metadata={
+            "prompts": {
+                "overrides_applied": True,
+                "effective_overrides": {
+                    "analyzer": {
+                        "prompt_prefix": "Focus on management guidance.",
+                        "system_prompt": None,
+                    }
+                },
+                "default_prompts_used": ["deep_analyzer", "report_quality_evaluator"],
+            }
+        },
+    )
+    SessionStore().save_session(session)
+
+    client = TestClient(create_app())
+    response = client.get(f"/api/sessions/{session.session_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["metadata"]["prompts"]["overrides_applied"] is True
+    assert payload["summary"]["metadata"]["prompts"]["effective_overrides"]["analyzer"] == {
+        "prompt_prefix": "Focus on management guidance.",
+        "system_prompt": None,
+    }
+
+
 def test_bulk_delete_route_returns_per_session_outcomes(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

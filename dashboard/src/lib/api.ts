@@ -17,6 +17,7 @@ import {
   PaginatedSessionsResponse,
   TraceBundle,
   SessionDetailResponse,
+  SessionPromptMetadata,
   CriticalPath,
   StateChange,
   Decision,
@@ -163,6 +164,50 @@ export interface SessionDetailResult {
     failures: Failure[];
     decisionGraph: DecisionGraph;
   };
+  promptMetadata?: SessionPromptMetadata;
+}
+
+function normalizePromptMetadata(summary: Record<string, unknown> | null | undefined): SessionPromptMetadata | undefined {
+  if (!summary || typeof summary !== 'object') {
+    return undefined;
+  }
+
+  const metadata = summary.metadata;
+  if (!metadata || typeof metadata !== 'object') {
+    return undefined;
+  }
+
+  const prompts = (metadata as Record<string, unknown>).prompts;
+  if (!prompts || typeof prompts !== 'object') {
+    return undefined;
+  }
+
+  const payload = prompts as Record<string, unknown>;
+  const rawOverrides = payload.effective_overrides;
+  const effectiveOverrides: SessionPromptMetadata['effective_overrides'] = {};
+
+  if (rawOverrides && typeof rawOverrides === 'object') {
+    for (const [agentId, value] of Object.entries(rawOverrides as Record<string, unknown>)) {
+      if (!value || typeof value !== 'object') {
+        continue;
+      }
+      const override = value as Record<string, unknown>;
+      effectiveOverrides[agentId] = {
+        prompt_prefix:
+          typeof override.prompt_prefix === 'string' ? override.prompt_prefix : null,
+        system_prompt:
+          typeof override.system_prompt === 'string' ? override.system_prompt : null,
+      };
+    }
+  }
+
+  return {
+    overrides_applied: Boolean(payload.overrides_applied),
+    effective_overrides: effectiveOverrides,
+    default_prompts_used: Array.isArray(payload.default_prompts_used)
+      ? payload.default_prompts_used.map((value) => String(value))
+      : [],
+  };
 }
 
 export async function getSessionDetail(sessionId: string): Promise<SessionDetailResult> {
@@ -182,6 +227,7 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
       failures: response.data.failures,
       decisionGraph: response.data.decision_graph,
     },
+    promptMetadata: normalizePromptMetadata(response.data.summary),
   };
 }
 

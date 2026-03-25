@@ -282,6 +282,41 @@ class TestResearchRunRequest:
         assert request.parallel_mode is None
         assert request.cross_reference_enabled is None
 
+    def test_normalizes_prompt_overrides(self) -> None:
+        """Whitespace-only prompt values should be dropped and empty agents removed."""
+        request = ResearchRunRequest(
+            query="test query",
+            agent_prompt_overrides={
+                "analyzer": {
+                    "prompt_prefix": "  Focus on earnings quality.  ",
+                    "system_prompt": "   ",
+                },
+                "deep_analyzer": {
+                    "prompt_prefix": "\n\t",
+                    "system_prompt": "   ",
+                },
+            },
+        )
+
+        assert request.agent_prompt_overrides == {
+            "analyzer": {
+                "prompt_prefix": "Focus on earnings quality.",
+                "system_prompt": None,
+            }
+        }
+
+    def test_rejects_unknown_prompt_override_agents(self) -> None:
+        """Unsupported prompt override agent ids should fail validation."""
+        with pytest.raises(ValueError, match="Unknown agent_prompt_overrides keys"):
+            ResearchRunRequest(
+                query="test query",
+                agent_prompt_overrides={
+                    "validator": {
+                        "prompt_prefix": "Do more.",
+                    }
+                },
+            )
+
 
 class TestResearchRunResult:
     """Tests for the shared research-run result contract."""

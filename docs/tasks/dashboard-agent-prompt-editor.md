@@ -1,5 +1,7 @@
 # Dashboard Agent Prompt Editor Tasks
 
+Status: Done
+
 ## Goal
 
 Allow operators to edit agent prompts for a research run from the dashboard, with the selected prompt configuration flowing through the backend into execution and session metadata.
