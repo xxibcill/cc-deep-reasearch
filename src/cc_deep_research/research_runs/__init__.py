@@ -1,5 +1,7 @@
 """Reusable contracts and helpers for research runs."""
 
+from cc_deep_research.themes import ResearchTheme
+
 from .models import (
     ResearchArtifactKind,
     ResearchRunCancelled,
@@ -33,6 +35,7 @@ __all__ = [
     "ResearchRunResult",
     "ResearchRunStatus",
     "ResearchRunService",
+    "ResearchTheme",
     "ResearchWorkflow",
     "apply_research_request_config_overrides",
     "materialize_research_run_output",

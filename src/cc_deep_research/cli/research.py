@@ -5,7 +5,7 @@ from __future__ import annotations
 import click
 
 from cc_deep_research.monitoring import ResearchMonitor
-from cc_deep_research.research_runs import ResearchRunService
+from cc_deep_research.research_runs import ResearchRunService, ResearchTheme
 from cc_deep_research.tui import ResearchRunView, TerminalUI
 
 from .shared import (
@@ -95,6 +95,15 @@ def register_research_commands(cli: click.Group) -> None:
         help="Research workflow to use: 'staged' (default) or 'planner'. "
         "Planner workflow uses hierarchical task decomposition for complex queries.",
     )
+    @click.option(
+        "--theme",
+        type=click.Choice(
+            ["general", "resources", "trip_planning", "due_diligence", "market_research", "business_ideas", "content_creation"],
+            case_sensitive=False,
+        ),
+        default=None,
+        help="Research theme for tailored workflow. If not specified, auto-detected from query.",
+    )
     @click.pass_context
     def research(
         ctx: click.Context,
@@ -118,6 +127,7 @@ def register_research_commands(cli: click.Group) -> None:
         pdf: bool,
         enable_realtime: bool,
         workflow: str,
+        theme: str | None,
     ) -> None:
         """Execute a research query and generate a report."""
         ctx.obj.update(
@@ -142,6 +152,7 @@ def register_research_commands(cli: click.Group) -> None:
                 "show_timeline": show_timeline,
                 "pdf": pdf,
                 "workflow": workflow,
+                "theme": theme,
             }
         )
 
@@ -168,6 +179,7 @@ def register_research_commands(cli: click.Group) -> None:
                 enable_realtime=enable_realtime,
                 pdf=pdf,
                 workflow=workflow,
+                theme=ResearchTheme(theme.lower()) if theme else None,
             )
             service = ResearchRunService()
             prepared_run = service.prepare(request)
