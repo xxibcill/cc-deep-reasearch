@@ -301,6 +301,35 @@ def test_patch_config_persists_updates_and_returns_refreshed_payload(
     assert payload["persisted_config"]["research"]["enable_cross_ref"] is False
 
 
+def test_patch_config_clears_secret_fields(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The config patch endpoint should support explicit secret clear actions."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.yaml").write_text(
+        "llm:\n  openrouter:\n    api_key: sk-test\n",
+        encoding="utf-8",
+    )
+
+    client = TestClient(create_app())
+    response = client.patch(
+        "/api/config",
+        json={
+            "updates": {
+                "llm.openrouter.api_key": {
+                    "action": "clear",
+                }
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["persisted_config"]["llm"]["openrouter"]["api_key"] is None
+
+
 def test_patch_config_returns_structured_field_errors(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

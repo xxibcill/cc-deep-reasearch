@@ -7,6 +7,13 @@ export interface SecretFieldMetadata {
   overridden: boolean;
 }
 
+export type SecretFieldAction = 'replace' | 'clear';
+
+export interface SecretFieldPatch {
+  action: SecretFieldAction;
+  value?: string | string[] | null;
+}
+
 export interface ConfigResponse {
   config_path: string;
   file_exists: boolean;
@@ -36,7 +43,6 @@ export interface ConfigPatchErrorResponse {
 }
 
 export interface ConfigPatchRequest {
-  updates: Record<string, unknown>;
+  updates: Record<string, unknown | SecretFieldPatch>;
   save_overridden_fields?: boolean;
 }
-

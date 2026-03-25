@@ -158,6 +158,34 @@ The home page in [`dashboard/src/app/page.tsx`](../dashboard/src/app/page.tsx) d
 
 - renders the start form on the left
 - loads recent sessions on first mount and renders them on the right
+- links to the dedicated settings page at `/settings`
+
+### Settings Page
+
+The settings page in [`dashboard/src/app/settings/page.tsx`](../dashboard/src/app/settings/page.tsx) is the operator surface for editing persisted application config.
+
+It combines:
+
+- the config editor in [`dashboard/src/components/config-editor.tsx`](../dashboard/src/components/config-editor.tsx)
+- masked secret controls in [`dashboard/src/components/config-secrets-panel.tsx`](../dashboard/src/components/config-secrets-panel.tsx)
+- search-cache controls in [`dashboard/src/components/search-cache-panel.tsx`](../dashboard/src/components/search-cache-panel.tsx)
+
+The config API returns both persisted and effective values:
+
+- `persisted_config` is what is saved to YAML
+- `effective_config` is what the backend is currently using after environment-variable overrides
+- `overridden_fields` lists the fields where runtime env vars still win
+
+This matters operationally because saving config does not mutate in-flight runs and does not override active environment variables. The UI makes overridden fields read-only and shows both saved and runtime values side by side.
+
+Secret handling is separate from normal settings:
+
+- secrets are never returned in plain text
+- the UI shows configured/present state instead of echoing values
+- operators can explicitly replace or clear persisted secrets
+- clearing a secret requires confirmation
+
+All settings saves apply to future runs. Active runs keep the config that was resolved when they started.
 
 ### Start Research Form
 

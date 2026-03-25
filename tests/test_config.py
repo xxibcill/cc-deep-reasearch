@@ -424,6 +424,27 @@ class TestConfigService:
         assert response.secret_fields
         assert saved.llm.openrouter.api_key == "sk-secret"
 
+    def test_update_config_clears_secret_fields(self) -> None:
+        """Secret clear operations should remove persisted values without exposing them."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "config.yaml"
+            config = Config()
+            config.llm.openrouter.api_key = "sk-secret"
+            save_config(config, config_path)
+
+            response = update_config(
+                {
+                    "llm.openrouter.api_key": {
+                        "action": "clear",
+                    }
+                },
+                config_path=config_path,
+            )
+            saved = load_config(config_path)
+
+        assert response.persisted_config["llm"]["openrouter"]["api_key"] is None
+        assert saved.llm.openrouter.api_key is None
+
     def test_update_config_rejects_invalid_key(self) -> None:
         """Unknown config fields should raise a structured patch error."""
         with tempfile.TemporaryDirectory() as tmpdir:
