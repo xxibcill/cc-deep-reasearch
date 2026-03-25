@@ -184,6 +184,9 @@ class IterationHistoryRecord(BaseModel):
     quality_score: float | None = Field(default=None, ge=0.0, le=1.0)
     gap_count: int = Field(default=0, ge=0)
     follow_up_queries: list[str] = Field(default_factory=list)
+    current_hypothesis: str = Field(default="")
+    planner_summary: str = Field(default="")
+    stop_reason: str | None = Field(default=None)
 
 
 __all__ = [

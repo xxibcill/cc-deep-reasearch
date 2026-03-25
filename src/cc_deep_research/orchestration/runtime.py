@@ -11,9 +11,11 @@ from cc_deep_research.agents import (
     AGENT_TYPE_DEEP_ANALYZER,
     AGENT_TYPE_EXPANDER,
     AGENT_TYPE_LEAD,
+    AGENT_TYPE_PLANNER,
     AGENT_TYPE_VALIDATOR,
     AnalyzerAgent,
     DeepAnalyzerAgent,
+    PlannerAgent,
     QueryExpanderAgent,
     ResearchLeadAgent,
     SourceCollectorAgent,
@@ -147,6 +149,12 @@ class OrchestratorRuntime:
                     model=self._config.research_agent.model,
                 ),
                 AgentSpec(
+                    name="planner",
+                    description="Controls whether the research loop should continue.",
+                    agent_type=AGENT_TYPE_PLANNER,
+                    model=self._config.research_agent.model,
+                ),
+                AgentSpec(
                     name="analyzer",
                     description="Synthesizes findings from collected sources.",
                     agent_type=AGENT_TYPE_ANALYZER,
@@ -179,6 +187,7 @@ class OrchestratorRuntime:
                 monitor=self._monitor,
             ),
             AGENT_TYPE_EXPANDER: QueryExpanderAgent({}),
+            AGENT_TYPE_PLANNER: PlannerAgent(research_settings),
             AGENT_TYPE_ANALYZER: AnalyzerAgent(
                 research_settings,
                 monitor=self._monitor,
