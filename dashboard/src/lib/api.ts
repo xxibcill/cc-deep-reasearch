@@ -22,6 +22,7 @@ import {
   Decision,
   Degradation,
   Failure,
+  DecisionGraph,
 } from '@/types/telemetry';
 import type {
   ConfigFieldError,
@@ -160,6 +161,7 @@ export interface SessionDetailResult {
     decisions: Decision[];
     degradations: Degradation[];
     failures: Failure[];
+    decisionGraph: DecisionGraph;
   };
 }
 
@@ -178,6 +180,7 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
       decisions: response.data.decisions,
       degradations: response.data.degradations,
       failures: response.data.failures,
+      decisionGraph: response.data.decision_graph,
     },
   };
 }

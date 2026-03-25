@@ -1,5 +1,7 @@
 # Decision Graph Dashboard UI Tasks
 
+Status: Done
+
 ## Goal
 
 Add a dedicated decision-graph visualization to the dashboard so operators can inspect causal chains and decision outcomes without overloading the existing workflow graph.
@@ -139,4 +141,3 @@ The graph UI will otherwise be easy to break while evolving filters or selection
 
 **Likely files**
 - new frontend test files matching the dashboard test setup already in use
-

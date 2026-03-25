@@ -136,6 +136,7 @@ class OrchestratorSessionState:
         before = self.provider_metadata.get("available", [])
         before_set = set(before) if isinstance(before, list) else set()
         after_set = set(available)
+        decision_event_id: str | None = None
 
         self.provider_metadata = {
             "configured": list(self.configured_providers),
@@ -145,12 +146,38 @@ class OrchestratorSessionState:
 
         # Emit state change for provider availability
         if self.monitor and before_set != after_set:
+            if after_set:
+                reason_code = (
+                    "providers_reduced"
+                    if before_set and len(after_set) < len(before_set)
+                    else "providers_available"
+                )
+                chosen_option = ",".join(sorted(after_set))
+            else:
+                reason_code = "no_providers_available"
+                chosen_option = "none"
+
+            decision_event_id = self.monitor.emit_decision_made(
+                decision_type="provider_state",
+                reason_code=reason_code,
+                chosen_option=chosen_option,
+                rejected_options=sorted(before_set - after_set),
+                inputs={
+                    "configured_providers": list(self.configured_providers),
+                    "available_providers": sorted(after_set),
+                    "warnings": list(warnings),
+                },
+                actor_id="system",
+                phase="initialization",
+                operation="providers.resolve",
+            )
             self.monitor.emit_state_changed(
                 state_scope="session",
                 state_key="available_providers",
                 before=list(before_set),
                 after=list(after_set),
                 change_type="update",
+                caused_by_event_id=decision_event_id,
                 phase="initialization",
             )
 

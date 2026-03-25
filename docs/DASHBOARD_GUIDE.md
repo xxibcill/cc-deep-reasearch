@@ -248,6 +248,7 @@ Current rendering behavior:
 The details pane is the main telemetry explorer. It receives normalized events from the WebSocket client and derives three major visualizations:
 
 - workflow graph
+- decision graph
 - agent timeline
 - event table
 
@@ -273,6 +274,21 @@ It derives:
 - synthetic edges connecting consecutive phases
 
 Use it when you want a phase-oriented view of the run.
+
+### Decision Graph
+
+The decision graph is rendered by [`dashboard/src/components/decision-graph.tsx`](../dashboard/src/components/decision-graph.tsx) from the typed `decision_graph` payload returned by `GET /api/sessions/{session_id}`.
+
+It focuses on operator-relevant causal links instead of the session/phase/agent structure used by the workflow graph.
+
+Current behavior:
+
+- explicit and inferred edges are styled differently
+- clicking a node routes back into the shared inspector
+- graph-local filters can narrow by decision type, actor, severity, and explicit-versus-inferred links
+- the derived outputs panel links directly into this view when graph data exists
+
+Use it when you want to inspect why a route changed, why iteration continued or stopped, or how a degraded path led to a failure or mitigation.
 
 ### Agent Timeline
 
@@ -317,6 +333,13 @@ The phase filter is inferred from:
 - explicit phase events
 - `metadata.phase` when present
 - the current phase determined from phase start and completion boundaries
+
+The decision-graph view also adds graph-local filters for:
+
+- decision type
+- actor
+- severity
+- explicit versus inferred links
 
 ## Inspection Tabs
 

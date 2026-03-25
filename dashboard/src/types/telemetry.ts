@@ -246,7 +246,7 @@ export type EventFilter = {
   timeRange: { start: number; end: number } | null;
 };
 
-export type ViewMode = 'graph' | 'timeline' | 'table';
+export type ViewMode = 'graph' | 'decision_graph' | 'timeline' | 'table';
 
 // Research Run API types
 
@@ -453,6 +453,57 @@ export interface Failure {
   stack_trace: string | null;
 }
 
+export type DecisionGraphNodeKind =
+  | 'decision'
+  | 'state_change'
+  | 'degradation'
+  | 'failure'
+  | 'event'
+  | 'outcome';
+
+export type DecisionGraphEdgeKind =
+  | 'caused_by'
+  | 'produced'
+  | 'rejected'
+  | 'mitigated_by'
+  | 'led_to';
+
+export interface DecisionGraphNode {
+  id: string;
+  kind: DecisionGraphNodeKind;
+  label: string;
+  event_id: string | null;
+  sequence_number: number | null;
+  timestamp: string | null;
+  event_type: string | null;
+  actor_id: string | null;
+  status: string | null;
+  severity: string | null;
+  inferred: boolean;
+  metadata: Record<string, unknown>;
+}
+
+export interface DecisionGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  kind: DecisionGraphEdgeKind;
+  inferred: boolean;
+}
+
+export interface DecisionGraphSummary {
+  node_count: number;
+  edge_count: number;
+  explicit_edge_count: number;
+  inferred_edge_count: number;
+}
+
+export interface DecisionGraph {
+  nodes: DecisionGraphNode[];
+  edges: DecisionGraphEdge[];
+  summary: DecisionGraphSummary;
+}
+
 export interface DerivedOutputs {
   narrative: ApiTelemetryEvent[];
   critical_path: CriticalPath;
@@ -460,6 +511,7 @@ export interface DerivedOutputs {
   decisions: Decision[];
   degradations: Degradation[];
   failures: Failure[];
+  decision_graph: DecisionGraph;
 }
 
 // =============================================================================
@@ -504,6 +556,7 @@ export interface SessionDetailResponse {
   decisions: Decision[];
   degradations: Degradation[];
   failures: Failure[];
+  decision_graph: DecisionGraph;
 }
 
 export interface PaginatedEventsResponse {

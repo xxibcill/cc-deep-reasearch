@@ -53,6 +53,33 @@ flowchart LR
 
 Those helpers keep telemetry writes normalized and let dashboards share one event contract.
 
+### Decision Graph Derived Output
+
+Session detail and trace-bundle exports now include a first-class `decision_graph` derived output alongside:
+
+- `narrative`
+- `critical_path`
+- `state_changes`
+- `decisions`
+- `degradations`
+- `failures`
+
+The graph is built from existing telemetry, not a separate storage path. It currently creates node kinds for:
+
+- explicit `decision.made` records
+- explicit `state.changed` records
+- explicit `degradation.detected` records
+- failure/error events
+- referenced cause events
+- chosen and rejected decision outcomes
+
+The graph currently emits:
+
+- explicit `caused_by`, `produced`, and `rejected` edges directly from telemetry payloads
+- inferred `produced` and `led_to` edges only when a narrow deterministic rule exists
+
+The implementation intentionally favors correctness over graph density.
+
 ### Important CLI Behavior
 
 The `research` command constructs the monitor with:
@@ -123,6 +150,7 @@ These are the main event families currently used by the codebase.
 | LLM usage | `llm.usage` | Token and latency summaries where available |
 | Subprocess | `subprocess.*` | Generic external-process visibility and failures |
 | LLM route | `llm.route_selected`, `llm.route_fallback`, `llm.route_request`, `llm.route_completion` | Route-planning and route-usage analytics |
+| Decision graph inputs | `decision.made`, `state.changed`, `degradation.detected`, failure/error events | Explicit operator decisions and causal state transitions |
 
 ## Live Query Path
 
@@ -205,6 +233,19 @@ starts the FastAPI backend that serves:
 - `GET /ws/session/{session_id}`
 
 The Next.js frontend in [`dashboard/`](../dashboard) consumes those endpoints for the browser-based operator console.
+
+The browser detail response and portable trace bundle now also expose `decision_graph`.
+
+## Decision Graph Limits
+
+The decision graph is an observability surface, not authoritative truth beyond the telemetry emitted for a session.
+
+Current limits:
+
+- sparse graphs usually mean telemetry coverage is missing, not necessarily that no important decision happened
+- inferred edges are intentionally conservative and are visually distinct in the dashboard
+- route planning, iteration control, provider-availability changes, runtime fallbacks, and heuristic mitigations are covered explicitly, but not every orchestration branch is modeled yet
+- same-timestamp proximity alone is not used to invent links across unrelated events
 
 ## Relationship to Session Persistence
 
