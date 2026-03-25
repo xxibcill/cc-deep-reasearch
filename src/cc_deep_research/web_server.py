@@ -52,6 +52,7 @@ from cc_deep_research.telemetry import (
     query_session_checkpoints,
     query_session_detail,
 )
+from cc_deep_research.telemetry.tree import empty_decision_graph
 
 STALE_LIVE_SESSION_AFTER = timedelta(minutes=15)
 RUN_CANCELLED_MESSAGE = "Research run was cancelled by the operator."
@@ -584,6 +585,7 @@ def _query_session_api_detail(
         "decisions": historical.get("decisions", []),
         "degradations": historical.get("degradations", []),
         "failures": historical.get("failures", []),
+        "decision_graph": historical.get("decision_graph", empty_decision_graph()),
     }
 
 
@@ -1011,6 +1013,7 @@ def register_routes(app: FastAPI) -> None:
             "decisions": detail.get("decisions", []),
             "degradations": detail.get("degradations", []),
             "failures": detail.get("failures", []),
+            "decision_graph": detail.get("decision_graph", empty_decision_graph()),
         }
 
         # Include checkpoint inventory if requested

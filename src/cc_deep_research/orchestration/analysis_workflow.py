@@ -229,6 +229,21 @@ class AnalysisWorkflow:
             )
 
             if not decision.should_continue:
+                self._monitor.emit_decision_made(
+                    decision_type="iteration_control",
+                    reason_code=decision.reason_code,
+                    chosen_option="stop_iteration",
+                    rejected_options=["continue_iteration"],
+                    inputs={
+                        "iteration": iteration,
+                        "quality_score": validation.quality_score if validation else None,
+                        "follow_up_queries": decision.next_queries,
+                    },
+                    confidence=decision.confidence,
+                    actor_id="planner",
+                    phase="analysis",
+                    operation="planner.iteration_control",
+                )
                 self._monitor.record_follow_up_decision(
                     iteration=iteration,
                     reason=decision.reason_code,
@@ -253,6 +268,21 @@ class AnalysisWorkflow:
                 agent_id="planner",
                 follow_up_queries=decision.next_queries,
             )
+            self._monitor.emit_decision_made(
+                decision_type="iteration_control",
+                reason_code=decision.reason_code,
+                chosen_option="continue_iteration",
+                rejected_options=["stop_iteration"],
+                inputs={
+                    "iteration": iteration,
+                    "quality_score": validation.quality_score if validation else None,
+                    "follow_up_queries": decision.next_queries,
+                },
+                confidence=decision.confidence,
+                actor_id="planner",
+                phase="analysis",
+                operation="planner.iteration_control",
+            )
             self._monitor.record_follow_up_decision(
                 iteration=iteration,
                 reason=decision.reason_code,
@@ -268,6 +298,20 @@ class AnalysisWorkflow:
             )
             if len(updated_sources) <= len(sources):
                 self._monitor.log("Follow-up search produced no new sources; stopping iterations")
+                self._monitor.emit_decision_made(
+                    decision_type="iteration_control",
+                    reason_code="follow_up_no_new_sources",
+                    chosen_option="stop_iteration",
+                    rejected_options=["continue_iteration"],
+                    inputs={
+                        "iteration": iteration,
+                        "quality_score": validation.quality_score if validation else None,
+                        "follow_up_queries": decision.next_queries,
+                    },
+                    actor_id="planner",
+                    phase="analysis",
+                    operation="planner.iteration_control",
+                )
                 self._monitor.record_iteration_stop(
                     iteration=iteration,
                     stop_reason=(

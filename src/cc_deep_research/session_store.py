@@ -522,6 +522,7 @@ class SessionStore:
             "decisions": telemetry_data.get("decisions", []),
             "degradations": telemetry_data.get("degradations", []),
             "failures": telemetry_data.get("failures", []),
+            "decision_graph": telemetry_data.get("decision_graph"),
         }
 
         # Build artifacts list

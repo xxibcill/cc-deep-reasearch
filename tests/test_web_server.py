@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from cc_deep_research.event_router import EventRouter
 from cc_deep_research.models import ResearchDepth, ResearchSession
+from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.research_runs import (
     ResearchOutputFormat,
     ResearchRunReport,
@@ -28,6 +29,7 @@ from cc_deep_research.research_runs.models import (
     MAX_BULK_DELETE_SESSION_IDS,
 )
 from cc_deep_research.session_store import SessionStore
+from cc_deep_research.telemetry import ingest_telemetry_to_duckdb
 from cc_deep_research.web_server import create_app, get_event_router, get_job_registry
 
 
@@ -676,6 +678,7 @@ def test_session_detail_and_history_fall_back_to_historical_duckdb(
     assert "decisions" in session_data
     assert "degradations" in session_data
     assert "failures" in session_data
+    assert "decision_graph" in session_data
     assert "active_phase" in session_data
 
     events_response = client.get("/api/sessions/research-history/events")
@@ -686,6 +689,118 @@ def test_session_detail_and_history_fall_back_to_historical_duckdb(
     # Check pagination metadata is present
     assert "has_more" in events_data or " next_cursor" in events_data
     "prev_cursor" in events_data
+
+
+def test_live_session_detail_returns_decision_graph(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Live session detail should expose the derived decision graph."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    telemetry_dir = tmp_path / "xdg" / "cc-deep-research" / "telemetry"
+    monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=telemetry_dir)
+    monitor.set_session("live-graph-session", query="route choice", depth="standard")
+    monitor.emit_event(
+        event_type="decision.made",
+        category="decision",
+        name="routing",
+        metadata={
+            "decision_type": "routing",
+            "chosen_option": "openrouter_api",
+            "rejected_options": ["anthropic_api"],
+            "inputs": {"operation": "analysis"},
+        },
+    )
+    monitor.finalize_session(total_sources=1, providers=["tavily"], total_time_ms=120)
+
+    client = TestClient(create_app())
+
+    response = client.get("/api/sessions/live-graph-session")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["decision_graph"]["summary"]["node_count"] >= 2
+    assert payload["decision_graph"]["summary"]["explicit_edge_count"] >= 1
+
+
+def test_session_detail_include_derived_false_returns_empty_decision_graph(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Disabling derived outputs should suppress graph derivation."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    telemetry_dir = tmp_path / "xdg" / "cc-deep-research" / "telemetry"
+    monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=telemetry_dir)
+    monitor.set_session("no-derived-graph", query="route choice", depth="standard")
+    monitor.emit_event(
+        event_type="decision.made",
+        category="decision",
+        name="routing",
+        metadata={
+            "decision_type": "routing",
+            "chosen_option": "openrouter_api",
+            "inputs": {"operation": "analysis"},
+        },
+    )
+    monitor.finalize_session(total_sources=1, providers=["tavily"], total_time_ms=120)
+
+    client = TestClient(create_app())
+
+    response = client.get("/api/sessions/no-derived-graph?include_derived=false")
+
+    assert response.status_code == 200
+    assert response.json()["decision_graph"] == {
+        "nodes": [],
+        "edges": [],
+        "summary": {
+            "node_count": 0,
+            "edge_count": 0,
+            "explicit_edge_count": 0,
+            "inferred_edge_count": 0,
+        },
+    }
+
+
+def test_session_bundle_includes_decision_graph(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Trace bundle export should preserve the derived decision graph."""
+    pytest.importorskip("duckdb")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    telemetry_dir = tmp_path / "xdg" / "cc-deep-research" / "telemetry"
+    db_path = tmp_path / "xdg" / "cc-deep-research" / "telemetry.duckdb"
+    monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=telemetry_dir)
+    monitor.set_session("bundle-graph-session", query="bundle route", depth="standard")
+    monitor.emit_event(
+        event_type="decision.made",
+        category="decision",
+        name="routing",
+        metadata={
+            "decision_type": "routing",
+            "chosen_option": "openrouter_api",
+            "rejected_options": ["anthropic_api"],
+            "inputs": {"operation": "analysis"},
+        },
+    )
+    monitor.finalize_session(total_sources=1, providers=["tavily"], total_time_ms=120)
+    ingest_telemetry_to_duckdb(base_dir=telemetry_dir, db_path=db_path)
+
+    SessionStore().save_session(
+        ResearchSession(
+            session_id="bundle-graph-session",
+            query="bundle route",
+            depth=ResearchDepth.STANDARD,
+            metadata={"analysis": {"key_findings": ["route selected"]}},
+        )
+    )
+
+    client = TestClient(create_app())
+
+    response = client.get("/api/sessions/bundle-graph-session/bundle")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["schema_version"] == "1.2.0"
+    assert payload["derived_outputs"]["decision_graph"]["summary"]["node_count"] >= 2
 
 
 def test_session_list_marks_old_no_summary_sessions_interrupted(

@@ -20,6 +20,7 @@ from cc_deep_research.telemetry import (
     query_live_subprocess_streams,
     query_session_detail,
 )
+from cc_deep_research.telemetry.tree import build_decision_graph
 
 
 def query_live_session_detail(
@@ -45,6 +46,119 @@ def query_live_session_detail(
         limit=limit,
         include_derived=include_derived,
     )
+
+
+def _decision_graph_fixture_events() -> list[dict]:
+    """Return a telemetry sample that exercises explicit and inferred graph links."""
+    return [
+        {
+            "event_id": "route-request",
+            "parent_event_id": None,
+            "sequence_number": 1,
+            "timestamp": "2026-03-20T00:00:01Z",
+            "session_id": "fixture-session",
+            "event_type": "llm.route_request",
+            "category": "llm",
+            "name": "route-request",
+            "status": "started",
+            "severity": "info",
+            "reason_code": None,
+            "phase": "analysis",
+            "actor_id": "analyzer",
+            "agent_id": "analyzer",
+            "metadata": {"operation": "analysis"},
+        },
+        {
+            "event_id": "route-decision",
+            "parent_event_id": None,
+            "sequence_number": 2,
+            "timestamp": "2026-03-20T00:00:02Z",
+            "session_id": "fixture-session",
+            "event_type": "decision.made",
+            "category": "decision",
+            "name": "routing",
+            "status": "decided",
+            "severity": "info",
+            "reason_code": "route_selected",
+            "phase": "analysis",
+            "actor_id": "analyzer",
+            "agent_id": "analyzer",
+            "metadata": {
+                "decision_type": "routing",
+                "chosen_option": "openrouter_api",
+                "rejected_options": ["anthropic_api", "cerebras_api"],
+                "inputs": {"operation": "analysis"},
+                "cause_event_ids": ["route-request"],
+                "confidence": 0.81,
+            },
+        },
+        {
+            "event_id": "route-state-change",
+            "parent_event_id": None,
+            "sequence_number": 3,
+            "timestamp": "2026-03-20T00:00:03Z",
+            "session_id": "fixture-session",
+            "event_type": "state.changed",
+            "category": "state",
+            "name": "session.llm_route",
+            "status": "changed",
+            "severity": "info",
+            "reason_code": None,
+            "phase": "analysis",
+            "actor_id": None,
+            "agent_id": None,
+            "metadata": {
+                "state_scope": "session",
+                "state_key": "llm_route",
+                "before": "anthropic_api",
+                "after": "openrouter_api",
+                "change_type": "update",
+                "caused_by_event_id": "route-decision",
+            },
+        },
+        {
+            "event_id": "transport-degradation",
+            "parent_event_id": None,
+            "sequence_number": 4,
+            "timestamp": "2026-03-20T00:00:04Z",
+            "session_id": "fixture-session",
+            "event_type": "degradation.detected",
+            "category": "execution",
+            "name": "transport-fallback",
+            "status": "degraded",
+            "severity": "warning",
+            "reason_code": "fallback",
+            "phase": "analysis",
+            "actor_id": "analyzer",
+            "agent_id": "analyzer",
+            "cause_event_id": "route-request",
+            "metadata": {
+                "reason_code": "fallback",
+                "scope": "transport",
+                "recoverable": True,
+                "mitigation": "Switched routes",
+                "impact": "Lower priority provider selected",
+            },
+        },
+        {
+            "event_id": "transport-failure",
+            "parent_event_id": None,
+            "sequence_number": 5,
+            "timestamp": "2026-03-20T00:00:05Z",
+            "session_id": "fixture-session",
+            "event_type": "llm.route_failed",
+            "category": "llm",
+            "name": "route-failed",
+            "status": "failed",
+            "severity": "error",
+            "reason_code": "transport_error",
+            "phase": "analysis",
+            "actor_id": "analyzer",
+            "agent_id": "analyzer",
+            "cause_event_id": "route-request",
+            "metadata": {"error": "primary provider unavailable", "recoverable": True},
+        },
+    ]
 
 
 def test_monitor_persists_session_logs(tmp_path):
@@ -684,6 +798,7 @@ def test_query_live_session_detail_includes_derived_outputs(tmp_path):
     assert "decisions" in detail
     assert "degradations" in detail
     assert "failures" in detail
+    assert "decision_graph" in detail
 
     # Check narrative includes key events
     narrative = detail["narrative"]
@@ -708,6 +823,7 @@ def test_query_live_session_detail_includes_derived_outputs(tmp_path):
     failures = detail["failures"]
     assert len(failures) >= 1
     assert any(f.get("severity") == "error" for f in failures)
+    assert detail["decision_graph"]["summary"]["node_count"] >= 1
 
 
 def test_query_live_session_detail_can_disable_derived(tmp_path):
@@ -722,6 +838,86 @@ def test_query_live_session_detail_can_disable_derived(tmp_path):
     assert detail.get("narrative") == []
     assert detail.get("critical_path") == {}
     assert detail.get("decisions") == []
+    assert detail.get("decision_graph") == {
+        "nodes": [],
+        "edges": [],
+        "summary": {
+            "node_count": 0,
+            "edge_count": 0,
+            "explicit_edge_count": 0,
+            "inferred_edge_count": 0,
+        },
+    }
+
+
+def test_build_decision_graph_preserves_explicit_and_inferred_links():
+    """Decision graph derivation should keep explicit links separate from inferred domain edges."""
+    graph = build_decision_graph(_decision_graph_fixture_events())
+
+    assert graph["summary"] == {
+        "node_count": 8,
+        "edge_count": 9,
+        "explicit_edge_count": 7,
+        "inferred_edge_count": 2,
+    }
+    assert {node["kind"] for node in graph["nodes"]} == {
+        "decision",
+        "state_change",
+        "degradation",
+        "failure",
+        "event",
+        "outcome",
+    }
+
+    explicit_edges = {
+        (edge["source"], edge["target"], edge["kind"])
+        for edge in graph["edges"]
+        if not edge["inferred"]
+    }
+    inferred_edges = {
+        (edge["source"], edge["target"], edge["kind"])
+        for edge in graph["edges"]
+        if edge["inferred"]
+    }
+    assert (
+        "decision:route-decision",
+        "event:route-request",
+        "caused_by",
+    ) in explicit_edges
+    assert (
+        "decision:route-decision",
+        "outcome:route-decision:chosen",
+        "produced",
+    ) in explicit_edges
+    assert (
+        "decision:route-decision",
+        "outcome:route-decision:rejected:0:anthropic_api",
+        "rejected",
+    ) in explicit_edges
+    assert (
+        "decision:route-decision",
+        "state_change:route-state-change",
+        "produced",
+    ) in inferred_edges
+    assert (
+        "degradation:transport-degradation",
+        "failure:transport-failure",
+        "led_to",
+    ) in inferred_edges
+
+
+def test_build_decision_graph_returns_stable_empty_shape():
+    """Empty sessions should return a JSON-safe graph payload instead of null."""
+    assert build_decision_graph([]) == {
+        "nodes": [],
+        "edges": [],
+        "summary": {
+            "node_count": 0,
+            "edge_count": 0,
+            "explicit_edge_count": 0,
+            "inferred_edge_count": 0,
+        },
+    }
 
 
 def test_query_live_session_detail_cursor_pagination(tmp_path):
@@ -819,8 +1015,10 @@ def test_query_session_detail_historical_includes_derived(tmp_path):
     assert "narrative" in detail
     assert "decisions" in detail
     assert "degradations" in detail
+    assert "decision_graph" in detail
     assert len(detail["decisions"]) >= 1
     assert len(detail["degradations"]) >= 1
+    assert detail["decision_graph"]["summary"]["node_count"] >= 1
 
 
 def test_query_session_detail_cursor_pagination_historical(tmp_path):

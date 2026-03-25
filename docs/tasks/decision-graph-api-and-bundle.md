@@ -1,5 +1,7 @@
 # Decision Graph API And Bundle Tasks
 
+Status: Done
+
 ## Goal
 
 Expose `decision_graph` everywhere operators already consume derived outputs: live session detail, historical session detail, and portable trace bundles.
@@ -124,4 +126,3 @@ Graph derivation can be correct while serialization still regresses.
 - `tests/test_web_server.py`
 - `tests/test_telemetry.py`
 - existing trace-bundle test coverage if present
-

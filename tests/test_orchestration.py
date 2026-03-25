@@ -1,6 +1,7 @@
 """Focused tests for extracted orchestration helpers."""
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -15,11 +16,13 @@ from cc_deep_research.models import (
     StrategyResult,
     ValidationResult,
 )
+from cc_deep_research.models.llm import LLMProviderType, LLMTransportType
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.orchestration.execution import ResearchExecutionHooks, ResearchExecutionService
 from cc_deep_research.orchestration.phases import PhaseRunner
 from cc_deep_research.orchestration.planning import ResearchPlanningService
 from cc_deep_research.orchestration.session_builder import SessionBuilder
+from cc_deep_research.orchestration.session_state import OrchestratorSessionState
 
 
 def _make_strategy(query: str, depth: ResearchDepth, query_variations: int) -> StrategyResult:
@@ -90,6 +93,62 @@ class TestResearchPlanningService:
 
         assert strategy.query == "market structure"
         assert strategy.strategy.query_variations == 3
+
+    @pytest.mark.asyncio
+    async def test_analyze_strategy_emits_planner_and_routing_decisions(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monitor = ResearchMonitor(enabled=False)
+        service = ResearchPlanningService(monitor=monitor, config=Config())
+
+        llm_plan = SimpleNamespace(
+            default_route=SimpleNamespace(
+                transport=LLMTransportType.OPENROUTER_API,
+                provider=LLMProviderType.OPENROUTER,
+                model="openrouter/sonnet",
+            ),
+            agent_routes={
+                "analyzer": SimpleNamespace(
+                    transport=LLMTransportType.CEREBRAS_API,
+                    provider=LLMProviderType.CEREBRAS,
+                    model="cerebras/qwen",
+                )
+            },
+            fallback_order=[
+                LLMTransportType.OPENROUTER_API,
+                LLMTransportType.CEREBRAS_API,
+                LLMTransportType.HEURISTIC,
+            ],
+        )
+        monkeypatch.setattr(
+            "cc_deep_research.orchestration.planning.create_llm_plan",
+            lambda _config, _strategy: llm_plan,
+        )
+
+        await service.analyze_strategy(
+            lead=FakeLeadAgent(),
+            query="market structure",
+            depth=ResearchDepth.STANDARD,
+        )
+
+        decision_events = [
+            event for event in monitor._telemetry_events if event["event_type"] == "decision.made"
+        ]
+        assert any(
+            event["metadata"]["decision_type"] == "planner_strategy"
+            and event["metadata"]["chosen_option"] == "moderate"
+            for event in decision_events
+        )
+        assert any(
+            event["metadata"]["decision_type"] == "routing"
+            and event["metadata"]["chosen_option"] == "openrouter_api"
+            for event in decision_events
+        )
+        assert any(
+            event["metadata"]["decision_type"] == "routing"
+            and event["metadata"]["chosen_option"] == "cerebras_api"
+            for event in decision_events
+        )
 
     @pytest.mark.asyncio
     async def test_expand_queries_short_circuits_for_single_variation(self) -> None:
@@ -167,6 +226,32 @@ class TestPhaseRunner:
 
         assert result == "done"
         hook.assert_called_once_with("strategy", "Analyzing research strategy")
+
+
+def test_provider_metadata_change_emits_decision_and_state_change() -> None:
+    """Provider availability changes should produce both a decision and a linked state change."""
+    monitor = ResearchMonitor(enabled=False)
+    state = OrchestratorSessionState(
+        configured_providers=["tavily", "serpapi"],
+        monitor=monitor,
+    )
+    state.reset(["tavily", "serpapi"])
+
+    state.set_provider_metadata(
+        available=["tavily"],
+        warnings=["serpapi unavailable"],
+    )
+
+    decision_event = next(
+        event for event in monitor._telemetry_events if event["event_type"] == "decision.made"
+    )
+    state_event = next(
+        event for event in monitor._telemetry_events if event["event_type"] == "state.changed"
+    )
+
+    assert decision_event["metadata"]["decision_type"] == "provider_state"
+    assert decision_event["metadata"]["chosen_option"] == "tavily"
+    assert state_event["cause_event_id"] == decision_event["event_id"]
 
     @pytest.mark.asyncio
     async def test_run_analysis_pass_skips_validation_when_disabled(self) -> None:

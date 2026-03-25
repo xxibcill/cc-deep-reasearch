@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 
@@ -735,6 +736,422 @@ def build_failures(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return failures
 
 
+def empty_decision_graph() -> dict[str, Any]:
+    """Return the stable empty graph payload used across APIs and bundles."""
+    return {
+        "nodes": [],
+        "edges": [],
+        "summary": {
+            "node_count": 0,
+            "edge_count": 0,
+            "explicit_edge_count": 0,
+            "inferred_edge_count": 0,
+        },
+    }
+
+
+def _decision_graph_sort_key(event: dict[str, Any]) -> tuple[int, str, str]:
+    """Return a stable ordering key for telemetry records."""
+    return (
+        int(event.get("sequence_number") or 0),
+        str(event.get("timestamp") or ""),
+        str(event.get("event_id") or ""),
+    )
+
+
+def _sanitize_graph_id(value: Any, *, fallback: str) -> str:
+    """Return a stable identifier fragment safe to embed in node IDs."""
+    text = str(value or "").strip().lower()
+    if not text:
+        return fallback
+    normalized = re.sub(r"[^a-z0-9]+", "_", text).strip("_")
+    return normalized or fallback
+
+
+def _is_failure_event(event: dict[str, Any]) -> bool:
+    """Return whether the event should appear as a failure node."""
+    event_type = str(event.get("event_type") or "")
+    status = str(event.get("status") or "")
+    severity = str(event.get("severity") or "")
+    return (
+        event_type.endswith(".failed")
+        or event_type.endswith(".error")
+        or status in {"failed", "error", "critical"}
+        or severity == "error"
+    )
+
+
+def _decision_graph_primary_kind(event: dict[str, Any]) -> str | None:
+    """Return the graph node kind for a first-class telemetry record."""
+    event_type = str(event.get("event_type") or "")
+    if event_type == "decision.made":
+        return "decision"
+    if event_type == "state.changed":
+        return "state_change"
+    if event_type == "degradation.detected":
+        return "degradation"
+    if _is_failure_event(event):
+        return "failure"
+    return None
+
+
+def _decision_graph_label(event: dict[str, Any], *, kind: str) -> str:
+    """Build a concise human-readable node label."""
+    metadata = event.get("metadata", {})
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    if kind == "decision":
+        decision_type = metadata.get("decision_type") or event.get("name") or "decision"
+        chosen_option = metadata.get("chosen_option")
+        if chosen_option:
+            return f"{decision_type}: {chosen_option}"
+        return str(decision_type)
+
+    if kind == "state_change":
+        state_scope = metadata.get("state_scope") or "state"
+        state_key = metadata.get("state_key") or event.get("name") or "change"
+        after = metadata.get("after")
+        if after is not None:
+            return f"{state_scope}.{state_key} -> {after}"
+        return f"{state_scope}.{state_key}"
+
+    if kind == "degradation":
+        scope = metadata.get("scope")
+        reason = event.get("reason_code") or metadata.get("reason_code") or event.get("name")
+        if scope and reason:
+            return f"{scope}: {reason}"
+        return str(reason or "degradation")
+
+    if kind == "failure":
+        return str(event.get("name") or event.get("event_type") or "failure")
+
+    return str(event.get("name") or event.get("event_type") or event.get("event_id") or kind)
+
+
+def _decision_graph_node_payload(
+    *,
+    node_id: str,
+    kind: str,
+    label: str,
+    event: dict[str, Any] | None,
+    inferred: bool = False,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the JSON-first node payload shared across graph kinds."""
+    event_metadata = event.get("metadata", {}) if isinstance(event, dict) else {}
+    merged_metadata = dict(event_metadata) if isinstance(event_metadata, dict) else {}
+    if metadata:
+        merged_metadata.update(metadata)
+
+    return {
+        "id": node_id,
+        "kind": kind,
+        "label": label,
+        "event_id": event.get("event_id") if isinstance(event, dict) else None,
+        "sequence_number": event.get("sequence_number") if isinstance(event, dict) else None,
+        "timestamp": event.get("timestamp") if isinstance(event, dict) else None,
+        "event_type": event.get("event_type") if isinstance(event, dict) else None,
+        "actor_id": (
+            event.get("actor_id") or event.get("agent_id")
+            if isinstance(event, dict)
+            else None
+        ),
+        "status": event.get("status") if isinstance(event, dict) else None,
+        "severity": event.get("severity") if isinstance(event, dict) else None,
+        "inferred": inferred,
+        "metadata": merged_metadata,
+    }
+
+
+def _decision_graph_edge_payload(
+    *,
+    source: str,
+    target: str,
+    kind: str,
+    inferred: bool,
+) -> dict[str, Any]:
+    """Build the portable edge payload."""
+    relation = "inferred" if inferred else "explicit"
+    return {
+        "id": f"{kind}:{source}:{target}:{relation}",
+        "source": source,
+        "target": target,
+        "kind": kind,
+        "inferred": inferred,
+    }
+
+
+def _decision_graph_cause_ids(event: dict[str, Any]) -> list[str]:
+    """Collect explicit cause references from a telemetry event."""
+    metadata = event.get("metadata", {})
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    candidate_values: list[Any] = [
+        event.get("cause_event_id"),
+        event.get("parent_event_id"),
+        metadata.get("caused_by_event_id"),
+    ]
+    cause_event_ids = metadata.get("cause_event_ids")
+    if isinstance(cause_event_ids, list):
+        candidate_values.extend(cause_event_ids)
+
+    causes: list[str] = []
+    seen: set[str] = set()
+    for value in candidate_values:
+        if not isinstance(value, str):
+            continue
+        normalized = value.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        causes.append(normalized)
+    return causes
+
+
+def build_decision_graph(events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build a causal decision graph from existing telemetry events.
+
+    The graph favors correctness over density:
+    - explicit `caused_by` edges come directly from telemetry fields
+    - inferred edges are limited to deterministic domain links derived from
+      those explicit cause references
+    """
+    if not events:
+        return empty_decision_graph()
+
+    sorted_events = sorted(events, key=_decision_graph_sort_key)
+    events_by_id = {
+        str(event.get("event_id")): event
+        for event in sorted_events
+        if isinstance(event.get("event_id"), str)
+    }
+    nodes: dict[str, dict[str, Any]] = {}
+    event_node_ids: dict[str, str] = {}
+    explicit_causes_by_node: dict[str, list[str]] = {}
+    edges: dict[tuple[str, str, str, bool], dict[str, Any]] = {}
+
+    def add_node(node: dict[str, Any]) -> None:
+        nodes[node["id"]] = node
+
+    def add_edge(*, source: str, target: str, kind: str, inferred: bool) -> None:
+        if source == target:
+            return
+        key = (source, target, kind, inferred)
+        if key in edges:
+            return
+        edges[key] = _decision_graph_edge_payload(
+            source=source,
+            target=target,
+            kind=kind,
+            inferred=inferred,
+        )
+
+    def ensure_event_node(event_id: str) -> str:
+        primary_node_id = event_node_ids.get(event_id)
+        if primary_node_id is not None:
+            return primary_node_id
+
+        cause_event = events_by_id.get(event_id)
+        node_id = f"event:{event_id}"
+        if node_id in nodes:
+            event_node_ids[event_id] = node_id
+            return node_id
+
+        label = (
+            _decision_graph_label(cause_event, kind="event")
+            if cause_event is not None
+            else event_id
+        )
+        add_node(
+            _decision_graph_node_payload(
+                node_id=node_id,
+                kind="event",
+                label=label,
+                event=cause_event,
+                metadata={"placeholder": cause_event is None},
+            )
+        )
+        event_node_ids[event_id] = node_id
+        return node_id
+
+    for event in sorted_events:
+        event_id = event.get("event_id")
+        if not isinstance(event_id, str) or not event_id:
+            continue
+
+        kind = _decision_graph_primary_kind(event)
+        if kind is None:
+            continue
+
+        node_id = f"{kind}:{event_id}"
+        add_node(
+            _decision_graph_node_payload(
+                node_id=node_id,
+                kind=kind,
+                label=_decision_graph_label(event, kind=kind),
+                event=event,
+            )
+        )
+        event_node_ids[event_id] = node_id
+
+        explicit_causes = _decision_graph_cause_ids(event)
+        explicit_causes_by_node[node_id] = explicit_causes
+        for cause_event_id in explicit_causes:
+            add_edge(
+                source=node_id,
+                target=ensure_event_node(cause_event_id),
+                kind="caused_by",
+                inferred=False,
+            )
+
+        if kind != "decision":
+            continue
+
+        metadata = event.get("metadata", {})
+        if not isinstance(metadata, dict):
+            metadata = {}
+
+        chosen_option = metadata.get("chosen_option")
+        if isinstance(chosen_option, str) and chosen_option.strip():
+            chosen_node_id = f"outcome:{event_id}:chosen"
+            add_node(
+                _decision_graph_node_payload(
+                    node_id=chosen_node_id,
+                    kind="outcome",
+                    label=chosen_option.strip(),
+                    event=event,
+                    metadata={"decision_event_id": event_id, "outcome": "chosen"},
+                )
+            )
+            add_edge(
+                source=node_id,
+                target=chosen_node_id,
+                kind="produced",
+                inferred=False,
+            )
+
+        rejected_options = metadata.get("rejected_options")
+        if isinstance(rejected_options, list):
+            for index, option in enumerate(rejected_options):
+                if not isinstance(option, str) or not option.strip():
+                    continue
+                normalized_option = option.strip()
+                rejected_node_id = (
+                    f"outcome:{event_id}:rejected:{index}:"
+                    f"{_sanitize_graph_id(normalized_option, fallback=str(index))}"
+                )
+                add_node(
+                    _decision_graph_node_payload(
+                        node_id=rejected_node_id,
+                        kind="outcome",
+                        label=normalized_option,
+                        event=event,
+                        metadata={
+                            "decision_event_id": event_id,
+                            "outcome": "rejected",
+                        },
+                    )
+                )
+                add_edge(
+                    source=node_id,
+                    target=rejected_node_id,
+                    kind="rejected",
+                    inferred=False,
+                )
+
+    degradation_candidates: list[dict[str, Any]] = []
+    for node in nodes.values():
+        if node["kind"] == "degradation":
+            degradation_candidates.append(node)
+
+    degradation_candidates.sort(
+        key=lambda node: (
+            int(node.get("sequence_number") or 0),
+            str(node.get("timestamp") or ""),
+            str(node.get("id") or ""),
+        )
+    )
+
+    for node_id, cause_ids in explicit_causes_by_node.items():
+        node = nodes.get(node_id)
+        if node is None:
+            continue
+
+        if node["kind"] == "state_change":
+            for cause_event_id in cause_ids:
+                cause_node_id = event_node_ids.get(cause_event_id)
+                cause_node = nodes.get(cause_node_id) if cause_node_id else None
+                if cause_node is None or cause_node["kind"] != "decision":
+                    continue
+                add_edge(
+                    source=cause_node["id"],
+                    target=node_id,
+                    kind="produced",
+                    inferred=True,
+                )
+
+        if node["kind"] != "failure":
+            continue
+
+        linked_degradation_ids = [
+            event_node_ids[cause_event_id]
+            for cause_event_id in cause_ids
+            if event_node_ids.get(cause_event_id) in nodes
+            and nodes[event_node_ids[cause_event_id]]["kind"] == "degradation"
+        ]
+        if linked_degradation_ids:
+            for degradation_node_id in linked_degradation_ids:
+                add_edge(
+                    source=degradation_node_id,
+                    target=node_id,
+                    kind="led_to",
+                    inferred=True,
+                )
+            continue
+
+        shared_degradation = next(
+            (
+                candidate
+                for candidate in reversed(degradation_candidates)
+                if int(candidate.get("sequence_number") or -1)
+                < int(node.get("sequence_number") or -1)
+                and set(explicit_causes_by_node.get(candidate["id"], [])) & set(cause_ids)
+            ),
+            None,
+        )
+        if shared_degradation is not None:
+            add_edge(
+                source=shared_degradation["id"],
+                target=node_id,
+                kind="led_to",
+                inferred=True,
+            )
+
+    graph = {
+        "nodes": sorted(
+            nodes.values(),
+            key=lambda node: (
+                int(node.get("sequence_number") or 0),
+                str(node.get("timestamp") or ""),
+                str(node.get("id") or ""),
+            ),
+        ),
+        "edges": sorted(
+            edges.values(),
+            key=lambda edge: (edge["source"], edge["target"], edge["kind"], edge["inferred"]),
+        ),
+    }
+    graph["summary"] = {
+        "node_count": len(graph["nodes"]),
+        "edge_count": len(graph["edges"]),
+        "explicit_edge_count": sum(1 for edge in graph["edges"] if not edge["inferred"]),
+        "inferred_edge_count": sum(1 for edge in graph["edges"] if edge["inferred"]),
+    }
+    return graph
+
+
 def build_derived_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
     """Build all derived outputs for a session.
 
@@ -752,6 +1169,7 @@ def build_derived_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
         - decisions
         - degradations
         - failures
+        - decision_graph
         - active_phase
     """
     return {
@@ -761,6 +1179,7 @@ def build_derived_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
         "decisions": build_decisions(events),
         "degradations": build_degradations(events),
         "failures": build_failures(events),
+        "decision_graph": build_decision_graph(events),
         "active_phase": current_phase_from_events(events),
     }
 
@@ -769,6 +1188,7 @@ __all__ = [
     "build_critical_path",
     "build_decisions",
     "build_degradations",
+    "build_decision_graph",
     "build_derived_summary",
     "build_event_tree",
     "build_event_tree_from_rows",
@@ -778,5 +1198,6 @@ __all__ = [
     "build_state_changes",
     "build_subprocess_streams",
     "current_phase_from_events",
+    "empty_decision_graph",
     "is_terminal_session_event",
 ]
