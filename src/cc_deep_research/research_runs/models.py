@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from cc_deep_research.models import ResearchDepth, ResearchSession
 from cc_deep_research.prompts import SUPPORTED_PROMPT_AGENTS
+from cc_deep_research.themes import ResearchTheme
 
 
 class ResearchOutputFormat(StrEnum):
@@ -73,6 +74,10 @@ class ResearchRunRequest(BaseModel):
     workflow: ResearchWorkflow = Field(
         default=ResearchWorkflow.STAGED,
         description="Research workflow to use: 'staged' (default) or 'planner'",
+    )
+    theme: ResearchTheme | None = Field(
+        default=None,
+        description="Research theme for tailored workflow. If not specified, auto-detected from query.",
     )
     agent_prompt_overrides: dict[str, dict[str, str | None]] | None = Field(
         default=None,
