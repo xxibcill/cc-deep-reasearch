@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const playwrightPort = Number(process.env.PLAYWRIGHT_PORT ?? "3000");
+const playwrightPort = Number(process.env.PLAYWRIGHT_PORT ?? "3107");
 const playwrightBaseUrl = `http://localhost:${playwrightPort}`;
 
 export default defineConfig({
@@ -31,6 +31,6 @@ export default defineConfig({
   webServer: {
     command: `PORT=${playwrightPort} npm run dev:frontend`,
     url: playwrightBaseUrl,
-    reuseExistingServer: process.env.PLAYWRIGHT_PORT ? false : !process.env.CI,
+    reuseExistingServer: process.env.PLAYWRIGHT_REUSE_EXISTING === "true",
   },
 });
