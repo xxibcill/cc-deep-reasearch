@@ -96,7 +96,9 @@ def _classify_claim_freshness(value: Any) -> ClaimFreshness:
         return ClaimFreshness.UNKNOWN
 
     age_days = max(0, (datetime.utcnow() - published_at).days)
-    if age_days <= 30:
+    # Treat the last ~6 weeks as "current" so recent filings and updates do not
+    # immediately fall into the weaker bucket around month boundaries.
+    if age_days <= 45:
         return ClaimFreshness.CURRENT
     if age_days <= 365:
         return ClaimFreshness.RECENT

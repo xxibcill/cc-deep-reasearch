@@ -46,6 +46,29 @@ Phase 2 - Extended lifecycle management:
 - Added operator panels, run compare, and trace bundle export
 - Added durable step checkpoints and resume execution support
 
+#### Dashboard Config Editor (14 tasks)
+
+- Added a shared backend config mutation service with atomic YAML patching and validation
+- Added dashboard config read/write APIs exposing persisted vs effective config, override metadata, and masked secret fields
+- Added a dashboard settings editor for core v1 fields, env override state, secret replace/clear flows, and post-save runtime guidance
+- Added backend/frontend coverage and operator docs for config precedence, editable fields, and secret handling
+
+#### Dashboard Agent Prompt Editor (10 tasks)
+
+- Added a typed per-run `agent_prompt_overrides` contract and threaded it through research run preparation and runtime setup
+- Added a centralized prompt registry/resolver with safe merge rules, size validation, and empty-override handling
+- Added dashboard prompt editing for supported LLM-backed agents in the start research flow
+- Persisted prompt overrides and effective prompt configuration in session metadata and exposed configured prompts in session detail UI
+- Added backend/frontend test coverage and documented the v1 boundary for heuristic-only agents
+
+#### Decision Graph Observability (30 tasks)
+
+- Added a first-class backend-derived `decision_graph` contract with stable nodes, edges, and explicit-versus-inferred relationship markers
+- Added decision-graph derivation to derived telemetry summaries and expanded explicit `decision.made` coverage across routing, planning, iteration, and degraded execution paths
+- Added `decision_graph` delivery in live session detail, historical session detail, session API responses, and portable trace bundle exports
+- Added a dedicated dashboard decision-graph view with node inspection, filters, zoom/pan, and explicit-versus-inferred styling
+- Added fixtures, backend/API/export/UI tests, rollout phases, and operator-facing documentation for graph limits and telemetry coverage
+
 ## [0.1.0] - 2026-03-11
 
 ### Added
