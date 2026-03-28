@@ -98,7 +98,10 @@
       "Bash(dashboard/README.md:*)",
       "Bash(README.md:*)",
       "Bash(npm install:*)",
-      "Bash(lsof -ti:8000)"
+      "Bash(lsof -ti:8000)",
+      "Bash(git add:*)",
+      "Bash(git restore:*)",
+      "Bash(git push:*)"
     ],
     "additionalDirectories": [
       "/tmp"
