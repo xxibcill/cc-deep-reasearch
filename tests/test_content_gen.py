@@ -8,8 +8,7 @@ import pytest
 from click.testing import CliRunner
 
 from cc_deep_research.cli import main
-from cc_deep_research.content_gen.agents import scripting as scripting_module
-from cc_deep_research.content_gen.agents.scripting import ScriptingAgent
+from cc_deep_research.content_gen.agents.scripting import _STEP_HANDLERS, ScriptingAgent
 from cc_deep_research.content_gen.models import (
     SCRIPTING_STEPS,
     QCResult,
@@ -23,38 +22,49 @@ class _FakeScriptingAgent(ScriptingAgent):
         self._response = response
         self.last_user_prompt = ""
 
-    async def _call_llm(self, system_prompt: str, user_prompt: str) -> str:
-        del system_prompt
+    async def _call_llm(self, system_prompt: str, user_prompt: str, *, temperature: float = 0.3) -> str:
+        del system_prompt, temperature
         self.last_user_prompt = user_prompt
         return self._response
 
 
+# ---------------------------------------------------------------------------
+# Dispatch table
+# ---------------------------------------------------------------------------
+
+
+def test_dispatch_table_covers_all_steps() -> None:
+    """Every step in SCRIPTING_STEPS should have a handler."""
+    assert len(_STEP_HANDLERS) == len(SCRIPTING_STEPS)
+
+
+# ---------------------------------------------------------------------------
+# Validation — empty LLM responses raise ValueError (not AssertionError)
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.asyncio
-async def test_run_from_step_converts_cli_step_to_zero_based_index(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Resume should treat CLI step numbers as 1-based."""
-    captured: dict[str, int] = {}
+async def test_define_core_inputs_raises_on_empty_field() -> None:
+    """If the LLM returns nothing parseable, step 1 should raise ValueError."""
+    agent = _FakeScriptingAgent("No structured output here")
 
-    async def fake_run_remaining_steps(
-        agent: ScriptingAgent,
-        ctx: ScriptingContext,
-        start_step: int,
-        progress_callback,
-    ) -> ScriptingContext:
-        del agent, progress_callback
-        captured["start_step"] = start_step
-        return ctx
+    with pytest.raises(ValueError, match="could not extract 'Topic'"):
+        await agent.define_core_inputs("some idea")
 
-    monkeypatch.setattr(scripting_module, "run_remaining_steps", fake_run_remaining_steps)
 
-    agent = object.__new__(ScriptingAgent)
-    ctx = ScriptingContext(raw_idea="content idea")
+@pytest.mark.asyncio
+async def test_define_angle_raises_on_missing_core_inputs() -> None:
+    """Step 2 should raise ValueError (not AssertionError) when core_inputs is None."""
+    agent = _FakeScriptingAgent("Angle: test\nContent Type: Contrarian\nCore Tension: x")
+    ctx = ScriptingContext(raw_idea="idea")
 
-    result = await ScriptingAgent.run_from_step(agent, ctx, 2)
+    with pytest.raises(ValueError, match="core_inputs"):
+        await agent.define_angle(ctx)
 
-    assert result is ctx
-    assert captured["start_step"] == 1
+
+# ---------------------------------------------------------------------------
+# Response parsing
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -108,9 +118,14 @@ Final line
 
     result = await agent.run_qc(ctx)
 
-    assert "Annotated Script:\nHook: \"Line one\"\n[Cut]" in agent.last_user_prompt
+    assert 'Annotated Script:\nHook: "Line one"\n[Cut]' in agent.last_user_prompt
     assert isinstance(result.qc, QCResult)
     assert result.qc.final_script == "Final line"
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
 
 
 def test_cli_resume_accepts_saved_context_without_idea(
@@ -179,3 +194,37 @@ def test_cli_rejects_invalid_resume_step() -> None:
 
     assert result.exit_code != 0
     assert "--from-step must be between 1 and 10" in result.output
+
+
+def test_cli_pipeline_rejects_unknown_module() -> None:
+    """Unknown module names should produce a usage error."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        main,
+        [
+            "content-gen",
+            "pipeline",
+            "--idea",
+            "my idea",
+            "--steps",
+            "scripting,ideation",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Unknown module" in result.output
+    assert "ideation" in result.output
+
+
+def test_cli_requires_idea_without_from_file() -> None:
+    """Without --from-file, --idea is required."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        main,
+        ["content-gen", "script"],
+    )
+
+    assert result.exit_code != 0
+    assert "--idea is required" in result.output

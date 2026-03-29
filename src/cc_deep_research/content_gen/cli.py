@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
 from cc_deep_research.config import Config
+
+if TYPE_CHECKING:
+    from cc_deep_research.content_gen.models import ScriptingContext
+
+KNOWN_MODULES = frozenset({"scripting"})
 
 
 def register_content_gen_commands(cli: click.Group) -> None:
@@ -18,7 +24,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
         """Content generation workflow for short-form video."""
 
     @content_gen.command()
-    @click.option("--idea", required=False, help="Raw video idea")
+    @click.option("--idea", default=None, help="Raw video idea (required unless --from-file is given)")
     @click.option(
         "--from-file",
         type=click.Path(exists=True),
@@ -39,7 +45,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
     )
     @click.option("--quiet", is_flag=True, help="Only show final result")
     def script(
-        idea: str,
+        idea: str | None,
         from_file: str | None,
         from_step: int | None,
         output: str | None,
@@ -51,6 +57,9 @@ def register_content_gen_commands(cli: click.Group) -> None:
 
         from cc_deep_research.content_gen.models import SCRIPTING_STEPS, ScriptingContext
 
+        ctx: ScriptingContext | None = None
+        step: int | None = None
+
         if from_file:
             ctx = ScriptingContext.model_validate_json(Path(from_file).read_text())
             step = from_step or 1
@@ -59,11 +68,10 @@ def register_content_gen_commands(cli: click.Group) -> None:
                 raise click.UsageError(msg)
             idea = idea or ctx.raw_idea
         else:
-            ctx = None
-            step = from_step
             if not idea:
                 msg = "--idea is required unless --from-file is provided"
                 raise click.UsageError(msg)
+            step = from_step
 
         total = len(SCRIPTING_STEPS)
 
@@ -86,11 +94,16 @@ def register_content_gen_commands(cli: click.Group) -> None:
                 return await orch.run_scripting_from_step(ctx, step, progress_callback=progress)
             else:
                 if not quiet:
-                    click.echo(f"Scripting: \"{idea}\"")
+                    click.echo(f'Scripting: "{idea}"')
                     click.echo(f"Running {total}-step pipeline...\n")
-                return await orch.run_scripting(idea, progress_callback=progress)
+                return await orch.run_scripting(idea, progress_callback=progress)  # type: ignore[arg-type]
 
-        result = asyncio.run(_run())
+        try:
+            result = asyncio.run(_run())
+        except Exception:
+            # Auto-save context on failure if a path is available.
+            _auto_save_failed_context(ctx, output, quiet)
+            raise
 
         # Output
         final = result.qc.final_script if result.qc else ""
@@ -125,7 +138,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
 
     @content_gen.command()
     @click.option("--idea", required=True, help="Raw video idea")
-    @click.option("--steps", default=None, help="Comma-separated modules (default: all)")
+    @click.option("--steps", default=None, help="Comma-separated modules (default: scripting)")
     @click.option("-o", "--output", type=click.Path(), default=None)
     def pipeline(idea: str, steps: str | None, output: str | None) -> None:
         """Run multiple content gen modules in sequence."""
@@ -133,13 +146,18 @@ def register_content_gen_commands(cli: click.Group) -> None:
 
         modules = [s.strip() for s in steps.split(",")] if steps else ["scripting"]
 
+        unknown = [m for m in modules if m not in KNOWN_MODULES]
+        if unknown:
+            msg = f"Unknown module(s): {', '.join(unknown)}. Known modules: {', '.join(sorted(KNOWN_MODULES))}"
+            raise click.UsageError(msg)
+
         async def _run() -> None:
             from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
 
             orch = ContentGenOrchestrator(config)
 
             if "scripting" in modules:
-                click.echo(f"Running scripting module for: \"{idea}\"")
+                click.echo(f'Running scripting module for: "{idea}"')
                 result = await orch.run_scripting(idea)
                 final = result.qc.final_script if result.qc else ""
                 if not final and result.tightened:
@@ -154,6 +172,23 @@ def register_content_gen_commands(cli: click.Group) -> None:
                     click.echo(f"Saved to: {output}")
 
         asyncio.run(_run())
+
+
+def _auto_save_failed_context(
+    ctx: ScriptingContext | None,
+    output: str | None,
+    quiet: bool,
+) -> None:
+    """Best-effort save of context when the pipeline crashes."""
+    if ctx is None:
+        return
+    try:
+        fallback_path = output + ".context.json" if output else "scripting_context_failed.json"
+        Path(fallback_path).write_text(ctx.model_dump_json(indent=2))
+        if not quiet:
+            click.echo(f"\nPipeline failed. Partial context saved to: {fallback_path}", err=True)
+    except Exception:
+        pass  # best-effort; don't mask the original error
 
 
 __all__ = ["register_content_gen_commands"]
