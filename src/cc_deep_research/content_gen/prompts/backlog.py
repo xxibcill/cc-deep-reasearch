@@ -1,0 +1,147 @@
+"""Prompt templates for the backlog builder and idea scorer."""
+
+from __future__ import annotations
+
+from cc_deep_research.content_gen.models import (
+    BacklogItem,
+    StrategyMemory,
+)
+
+GLOBAL_RULES = """\
+You are generating short-form video content ideas inside a modular workflow.
+
+Important:
+- Only do the task for this step
+- Be precise and ruthless about weak ideas
+- If an idea is vague, unprovable, or too broad, reject it
+- Every idea must have a clear audience, clear payoff, and at least one evidence source
+- Do not invent facts, examples, or proof
+- When evidence is weak, say so"""
+
+
+# ---------------------------------------------------------------------------
+# Build backlog
+# ---------------------------------------------------------------------------
+
+BUILD_BACKLOG_SYSTEM = f"""\
+{GLOBAL_RULES}
+
+You are building a backlog of short-form video ideas.
+
+Task:
+Generate content ideas across three categories: trend-responsive, evergreen, and authority-building.
+
+Requirements:
+- Each idea must target a specific audience with a specific problem
+- Each idea must have a clear why_now reason
+- Each idea must include a potential hook
+- Reject ideas that are vague, unprovable, or too broad
+- Keep only ideas with a clear audience + clear payoff + at least one evidence source
+
+Output format — repeat this block for each idea:
+
+---
+idea_id: (leave blank)
+category: trend-responsive | evergreen | authority-building
+idea: (one sentence)
+audience: (specific audience)
+problem: (specific problem)
+source: (where this idea came from)
+why_now: (why this is timely)
+potential_hook: (opening line idea)
+content_type: (format type)
+evidence: (what supports this)
+risk_level: low | medium | high
+---
+
+End with:
+Total ideas:
+Rejected ideas:
+Rejection reasons:"""
+
+
+def build_backlog_user(
+    theme: str,
+    strategy: StrategyMemory,
+    *,
+    count: int = 20,
+) -> str:
+    parts = [f"Theme: {theme}", f"Target count: {count} ideas"]
+    if strategy.niche:
+        parts.append(f"Niche: {strategy.niche}")
+    if strategy.content_pillars:
+        parts.append(f"Content pillars: {', '.join(strategy.content_pillars)}")
+    if strategy.audience_segments:
+        segs = "; ".join(f"{s.name}: {s.description}" for s in strategy.audience_segments)
+        parts.append(f"Audience segments: {segs}")
+    if strategy.forbidden_claims:
+        parts.append(f"Forbidden claims: {', '.join(strategy.forbidden_claims)}")
+    if strategy.past_winners:
+        winners = "; ".join(w.title for w in strategy.past_winners[:5])
+        parts.append(f"Past winners: {winners}")
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Score ideas
+# ---------------------------------------------------------------------------
+
+SCORE_IDEAS_SYSTEM = f"""\
+{GLOBAL_RULES}
+
+You are scoring short-form video ideas.
+
+Task:
+Score each idea from 1-5 on these dimensions:
+- relevance: How relevant is this to the target audience?
+- novelty: Is this fresh or has it been done to death?
+- authority_fit: Does this match the creator's expertise?
+- production_ease: Can this be produced quickly?
+- evidence_strength: How strong is the supporting evidence?
+- hook_strength: How compelling is the potential hook?
+- repurposing: Can this be repurposed across platforms?
+
+Hard rules:
+- Kill anything with weak evidence AND weak hook
+- Produce_now only if total score passes the threshold
+- Be honest about weak ideas — do not inflate scores
+
+Output format — repeat for each idea:
+
+---
+idea_id: (from input)
+relevance: (1-5)
+novelty: (1-5)
+authority_fit: (1-5)
+production_ease: (1-5)
+evidence_strength: (1-5)
+hook_strength: (1-5)
+repurposing: (1-5)
+total_score: (sum)
+recommendation: produce_now | hold | kill
+reason: (one sentence)
+---"""
+
+
+def score_ideas_user(
+    items: list[BacklogItem],
+    strategy: StrategyMemory,
+    *,
+    threshold: int = 25,
+) -> str:
+    parts = [f"Scoring threshold for produce_now: {threshold}/35"]
+    if strategy.niche:
+        parts.append(f"Niche: {strategy.niche}")
+    if strategy.proof_standards:
+        parts.append(f"Proof standards: {', '.join(strategy.proof_standards)}")
+    parts.append("")
+    for item in items:
+        parts.append(f"idea_id: {item.idea_id}")
+        parts.append(f"category: {item.category}")
+        parts.append(f"idea: {item.idea}")
+        parts.append(f"audience: {item.audience}")
+        parts.append(f"problem: {item.problem}")
+        parts.append(f"potential_hook: {item.potential_hook}")
+        parts.append(f"evidence: {item.evidence}")
+        parts.append("---")
+    return "\n".join(parts)

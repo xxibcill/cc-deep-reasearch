@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from cc_deep_research.content_gen.agents.scripting import ScriptingAgent
-from cc_deep_research.content_gen.models import ScriptingContext
+from cc_deep_research.content_gen.models import (
+    PIPELINE_STAGE_LABELS,
+    PIPELINE_STAGES,
+    PipelineContext,
+    ScriptingContext,
+    ScriptVersion,
+    StrategyMemory,
+)
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
@@ -15,18 +22,159 @@ if TYPE_CHECKING:
 class ContentGenOrchestrator:
     """Coordinate content generation modules.
 
-    Each module (scripting, ideation, etc.) can run standalone or as
+    Each module (scripting, backlog, angle, etc.) can run standalone or as
     part of a full pipeline.
     """
 
     def __init__(self, config: Config) -> None:
         self._config = config
-        self._scripting_agent: ScriptingAgent | None = None
+        self._agents: dict[str, Any] = {}
 
-    def _get_scripting_agent(self) -> ScriptingAgent:
-        if self._scripting_agent is None:
-            self._scripting_agent = ScriptingAgent(self._config)
-        return self._scripting_agent
+    def _get_agent(self, name: str) -> Any:
+        if name not in self._agents:
+            self._agents[name] = self._create_agent(name)
+        return self._agents[name]
+
+    def _create_agent(self, name: str) -> Any:
+        from cc_deep_research.content_gen.agents.angle import AngleAgent
+        from cc_deep_research.content_gen.agents.backlog import BacklogAgent
+        from cc_deep_research.content_gen.agents.packaging import PackagingAgent
+        from cc_deep_research.content_gen.agents.performance import PerformanceAgent
+        from cc_deep_research.content_gen.agents.production import ProductionAgent
+        from cc_deep_research.content_gen.agents.publish import PublishAgent
+        from cc_deep_research.content_gen.agents.qc import QCAgent
+        from cc_deep_research.content_gen.agents.research_pack import ResearchPackAgent
+        from cc_deep_research.content_gen.agents.scripting import ScriptingAgent
+        from cc_deep_research.content_gen.agents.visual import VisualAgent
+
+        factories: dict[str, Callable[[], Any]] = {
+            "scripting": lambda: ScriptingAgent(self._config),
+            "backlog": lambda: BacklogAgent(self._config),
+            "angle": lambda: AngleAgent(self._config),
+            "research": lambda: ResearchPackAgent(self._config),
+            "visual": lambda: VisualAgent(self._config),
+            "production": lambda: ProductionAgent(self._config),
+            "packaging": lambda: PackagingAgent(self._config),
+            "qc": lambda: QCAgent(self._config),
+            "publish": lambda: PublishAgent(self._config),
+            "performance": lambda: PerformanceAgent(self._config),
+        }
+        factory = factories.get(name)
+        if factory is None:
+            msg = f"Unknown agent: {name}"
+            raise ValueError(msg)
+        return factory()
+
+    # ------------------------------------------------------------------
+    # Full pipeline
+    # ------------------------------------------------------------------
+
+    async def run_full_pipeline(
+        self,
+        theme: str,
+        *,
+        from_stage: int = 0,
+        to_stage: int | None = None,
+        progress_callback: Callable[[int, str], None] | None = None,
+    ) -> PipelineContext:
+        """Run the full 12-stage content pipeline."""
+        ctx = PipelineContext(
+            theme=theme,
+            created_at=datetime.now(tz=UTC).isoformat(),
+        )
+        end = to_stage if to_stage is not None else len(PIPELINE_STAGES) - 1
+
+        for idx in range(from_stage, end + 1):
+            stage_name = PIPELINE_STAGES[idx]
+            label = PIPELINE_STAGE_LABELS.get(stage_name, stage_name)
+            if progress_callback:
+                progress_callback(idx, label)
+            ctx.current_stage = idx
+            ctx = await _PIPELINE_HANDLERS[idx](self, ctx)
+
+        return ctx
+
+    # ------------------------------------------------------------------
+    # Individual stage runners
+    # ------------------------------------------------------------------
+
+    async def run_backlog(self, theme: str, *, count: int = 20) -> Any:
+        from cc_deep_research.content_gen.storage import StrategyStore
+
+        store = StrategyStore()
+        strategy = store.load()
+        agent = self._get_agent("backlog")
+        return await agent.build_backlog(theme, strategy, count=count)
+
+    async def run_scoring(self, items: list) -> Any:
+        from cc_deep_research.content_gen.storage import StrategyStore
+
+        store = StrategyStore()
+        strategy = store.load()
+        agent = self._get_agent("backlog")
+        return await agent.score_ideas(items, strategy)
+
+    async def run_angle(self, item: Any) -> Any:
+        from cc_deep_research.content_gen.storage import StrategyStore
+
+        store = StrategyStore()
+        strategy = store.load()
+        agent = self._get_agent("angle")
+        return await agent.generate(item, strategy)
+
+    async def run_research(self, item: Any, angle: Any) -> Any:
+        agent = self._get_agent("research")
+        return await agent.build(item, angle)
+
+    async def run_visual(
+        self, scripting_ctx: ScriptingContext, *, idea_id: str = "", angle_id: str = ""
+    ) -> Any:
+        agent = self._get_agent("visual")
+        source = scripting_ctx.tightened or scripting_ctx.annotated_script or scripting_ctx.draft
+        structure = scripting_ctx.structure
+        if source is None or structure is None:
+            msg = "Visual translation requires a completed script with structure."
+            raise ValueError(msg)
+        return await agent.translate(source, structure, idea_id=idea_id, angle_id=angle_id)
+
+    async def run_production(self, visual_plan: Any) -> Any:
+        agent = self._get_agent("production")
+        return await agent.brief(visual_plan)
+
+    async def run_packaging(
+        self, script: Any, angle: Any, *, platforms: list[str] | None = None, idea_id: str = ""
+    ) -> Any:
+        from cc_deep_research.content_gen.storage import StrategyStore
+
+        store = StrategyStore()
+        strategy = store.load()
+        agent = self._get_agent("packaging")
+        p = platforms or self._config.content_gen.default_platforms
+        return await agent.generate(script, angle, p, strategy=strategy, idea_id=idea_id)
+
+    async def run_qc(
+        self, *, script: str, visual_summary: str = "", packaging_summary: str = ""
+    ) -> Any:
+        agent = self._get_agent("qc")
+        return await agent.review(
+            script=script, visual_summary=visual_summary, packaging_summary=packaging_summary
+        )
+
+    async def run_publish(self, packaging: Any, *, idea_id: str = "") -> Any:
+        agent = self._get_agent("publish")
+        return await agent.schedule(packaging, idea_id=idea_id)
+
+    async def run_performance(
+        self, *, video_id: str, metrics: dict, script: str = "", hook: str = "", caption: str = ""
+    ) -> Any:
+        agent = self._get_agent("performance")
+        return await agent.analyze(
+            video_id=video_id, metrics=metrics, script=script, hook=hook, caption=caption
+        )
+
+    # ------------------------------------------------------------------
+    # Legacy scripting methods (preserved exactly)
+    # ------------------------------------------------------------------
 
     async def run_scripting(
         self,
@@ -34,7 +182,7 @@ class ContentGenOrchestrator:
         progress_callback: Callable[[int, str], None] | None = None,
     ) -> ScriptingContext:
         """Run the full 10-step scripting pipeline."""
-        agent = self._get_scripting_agent()
+        agent = self._get_agent("scripting")
         return await agent.run_pipeline(raw_idea, progress_callback=progress_callback)
 
     async def run_scripting_from_step(
@@ -44,7 +192,7 @@ class ContentGenOrchestrator:
         progress_callback: Callable[[int, str], None] | None = None,
     ) -> ScriptingContext:
         """Resume the scripting pipeline from a specific step."""
-        agent = self._get_scripting_agent()
+        agent = self._get_agent("scripting")
         return await agent.run_from_step(ctx, step, progress_callback=progress_callback)
 
     async def run_module(
@@ -65,10 +213,224 @@ class ContentGenOrchestrator:
             from_step = input_data.get("from_step")
 
             if ctx_data and from_step is not None:
-                ctx = ScriptingContext.model_validate(ctx_data) if isinstance(ctx_data, dict) else ctx_data
+                ctx = (
+                    ScriptingContext.model_validate(ctx_data)
+                    if isinstance(ctx_data, dict)
+                    else ctx_data
+                )
                 return await self.run_scripting_from_step(ctx, from_step, progress_callback)
 
             return await self.run_scripting(input_data["raw_idea"], progress_callback)
 
         msg = f"Unknown module: {module}"
         raise ValueError(msg)
+
+
+# ---------------------------------------------------------------------------
+# Pipeline stage handlers
+# ---------------------------------------------------------------------------
+
+
+async def _stage_load_strategy(
+    _orch: ContentGenOrchestrator, ctx: PipelineContext
+) -> PipelineContext:
+    from cc_deep_research.content_gen.storage import StrategyStore
+
+    store = StrategyStore()
+    ctx.strategy = store.load()
+    return ctx
+
+
+async def _stage_build_backlog(
+    orch: ContentGenOrchestrator, ctx: PipelineContext
+) -> PipelineContext:
+    agent = orch._get_agent("backlog")
+    ctx.backlog = await agent.build_backlog(ctx.theme, ctx.strategy or StrategyMemory())
+    return ctx
+
+
+async def _stage_score_ideas(orch: ContentGenOrchestrator, ctx: PipelineContext) -> PipelineContext:
+    if ctx.backlog is None:
+        return ctx
+    agent = orch._get_agent("backlog")
+    strategy = ctx.strategy or StrategyMemory()
+    threshold = orch._config.content_gen.scoring_threshold_produce
+    ctx.scoring = await agent.score_ideas(ctx.backlog.items, strategy, threshold=threshold)
+    return ctx
+
+
+async def _stage_generate_angles(
+    orch: ContentGenOrchestrator, ctx: PipelineContext
+) -> PipelineContext:
+    if ctx.scoring is None or not ctx.scoring.produce_now:
+        return ctx
+    if ctx.backlog is None:
+        return ctx
+    # Select the first "produce_now" idea
+    idea_id = ctx.scoring.produce_now[0]
+    item = next((i for i in ctx.backlog.items if i.idea_id == idea_id), None)
+    if item is None:
+        return ctx
+    strategy = ctx.strategy or StrategyMemory()
+    agent = orch._get_agent("angle")
+    ctx.angles = await agent.generate(item, strategy)
+    return ctx
+
+
+async def _stage_build_research_pack(
+    orch: ContentGenOrchestrator, ctx: PipelineContext
+) -> PipelineContext:
+    if ctx.backlog is None or ctx.angles is None:
+        return ctx
+    idea_id = ctx.scoring.produce_now[0] if ctx.scoring and ctx.scoring.produce_now else ""
+    item = next((i for i in ctx.backlog.items if i.idea_id == idea_id), None)
+    angle = None
+    if ctx.angles.selected_angle_id:
+        angle = next(
+            (a for a in ctx.angles.angle_options if a.angle_id == ctx.angles.selected_angle_id),
+            None,
+        )
+    if angle is None and ctx.angles.angle_options:
+        angle = ctx.angles.angle_options[0]
+    if item is None or angle is None:
+        return ctx
+    agent = orch._get_agent("research")
+    ctx.research_pack = await agent.build(item, angle)
+    return ctx
+
+
+async def _stage_run_scripting(
+    orch: ContentGenOrchestrator, ctx: PipelineContext
+) -> PipelineContext:
+    if ctx.backlog is None or ctx.angles is None:
+        return ctx
+    idea_id = ctx.scoring.produce_now[0] if ctx.scoring and ctx.scoring.produce_now else ""
+    item = next((i for i in ctx.backlog.items if i.idea_id == idea_id), None)
+    angle = None
+    if ctx.angles.selected_angle_id:
+        angle = next(
+            (a for a in ctx.angles.angle_options if a.angle_id == ctx.angles.selected_angle_id),
+            None,
+        )
+    if angle is None and ctx.angles.angle_options:
+        angle = ctx.angles.angle_options[0]
+    raw_idea = item.idea if item else ctx.theme
+    agent = orch._get_agent("scripting")
+    ctx.scripting = await agent.run_pipeline(raw_idea)
+    return ctx
+
+
+async def _stage_visual_translation(
+    orch: ContentGenOrchestrator, ctx: PipelineContext
+) -> PipelineContext:
+    if ctx.scripting is None:
+        return ctx
+    source = ctx.scripting.tightened or ctx.scripting.annotated_script or ctx.scripting.draft
+    structure = ctx.scripting.structure
+    if source is None or structure is None:
+        return ctx
+    agent = orch._get_agent("visual")
+    ctx.visual_plan = await agent.translate(source, structure)
+    return ctx
+
+
+async def _stage_production_brief(
+    orch: ContentGenOrchestrator, ctx: PipelineContext
+) -> PipelineContext:
+    if ctx.visual_plan is None:
+        return ctx
+    agent = orch._get_agent("production")
+    ctx.production_brief = await agent.brief(ctx.visual_plan)
+    return ctx
+
+
+async def _stage_packaging(orch: ContentGenOrchestrator, ctx: PipelineContext) -> PipelineContext:
+    if ctx.scripting is None or ctx.angles is None:
+        return ctx
+    source = ctx.scripting.qc.final_script if ctx.scripting.qc else ""
+    if not source:
+        source = ctx.scripting.tightened.content if ctx.scripting.tightened else ""
+    if not source:
+        source = ctx.scripting.draft.content if ctx.scripting.draft else ""
+    if not source:
+        return ctx
+
+    script = ScriptVersion(content=source, word_count=len(source.split()))
+    angle = None
+    if ctx.angles.selected_angle_id:
+        angle = next(
+            (a for a in ctx.angles.angle_options if a.angle_id == ctx.angles.selected_angle_id),
+            None,
+        )
+    if angle is None and ctx.angles.angle_options:
+        angle = ctx.angles.angle_options[0]
+    if angle is None:
+        return ctx
+    agent = orch._get_agent("packaging")
+    platforms = orch._config.content_gen.default_platforms
+    strategy = ctx.strategy or StrategyMemory()
+    ctx.packaging = await agent.generate(script, angle, platforms, strategy=strategy)
+    return ctx
+
+
+async def _stage_human_qc(orch: ContentGenOrchestrator, ctx: PipelineContext) -> PipelineContext:
+    if ctx.scripting is None:
+        return ctx
+    script = ctx.scripting.qc.final_script if ctx.scripting.qc else ""
+    if not script:
+        script = ctx.scripting.tightened.content if ctx.scripting.tightened else ""
+    if not script:
+        script = ctx.scripting.draft.content if ctx.scripting.draft else ""
+    if not script:
+        return ctx
+    visual_summary = ""
+    if ctx.visual_plan:
+        visual_summary = "; ".join(
+            f"{bv.beat}: {bv.visual}" for bv in ctx.visual_plan.visual_plan[:5]
+        )
+    packaging_summary = ""
+    if ctx.packaging:
+        parts = [f"{p.platform}: {p.primary_hook}" for p in ctx.packaging.platform_packages]
+        packaging_summary = "; ".join(parts)
+    agent = orch._get_agent("qc")
+    ctx.qc_gate = await agent.review(
+        script=script, visual_summary=visual_summary, packaging_summary=packaging_summary
+    )
+    return ctx
+
+
+async def _stage_publish_queue(
+    orch: ContentGenOrchestrator, ctx: PipelineContext
+) -> PipelineContext:
+    if ctx.packaging is None:
+        return ctx
+    idea_id = ctx.scoring.produce_now[0] if ctx.scoring and ctx.scoring.produce_now else ""
+    agent = orch._get_agent("publish")
+    items = await agent.schedule(ctx.packaging, idea_id=idea_id)
+    # Store first publish item in context
+    if items:
+        ctx.publish_item = items[0]
+    return ctx
+
+
+async def _stage_performance(
+    _orch: ContentGenOrchestrator, ctx: PipelineContext
+) -> PipelineContext:
+    # Performance analysis requires metrics from the human — skip in auto pipeline
+    return ctx
+
+
+_PIPELINE_HANDLERS = [
+    _stage_load_strategy,
+    _stage_build_backlog,
+    _stage_score_ideas,
+    _stage_generate_angles,
+    _stage_build_research_pack,
+    _stage_run_scripting,
+    _stage_visual_translation,
+    _stage_production_brief,
+    _stage_packaging,
+    _stage_human_qc,
+    _stage_publish_queue,
+    _stage_performance,
+]

@@ -93,11 +93,7 @@ Why this angle works:"""
 
 
 def step2_user(inputs: CoreInputs) -> str:
-    return (
-        f"Topic:\n{inputs.topic}\n\n"
-        f"Outcome:\n{inputs.outcome}\n\n"
-        f"Audience:\n{inputs.audience}"
-    )
+    return f"Topic:\n{inputs.topic}\n\nOutcome:\n{inputs.outcome}\n\nAudience:\n{inputs.audience}"
 
 
 # ---------------------------------------------------------------------------
@@ -328,9 +324,7 @@ def step6_user(
     beat_intents: BeatIntentMap,
     best_hook: str,
 ) -> str:
-    beat_lines = "\n".join(
-        f"- {b.beat_name}: {b.intent}" for b in beat_intents.beats
-    )
+    beat_lines = "\n".join(f"- {b.beat_name}: {b.intent}" for b in beat_intents.beats)
     return (
         f"Topic:\n{inputs.topic}\n"
         f"Outcome:\n{inputs.outcome}\n"
