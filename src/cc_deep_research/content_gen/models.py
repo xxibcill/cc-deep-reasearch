@@ -92,6 +92,7 @@ class ScriptingContext(BaseModel):
     """
 
     raw_idea: str = ""
+    research_context: str = ""
     core_inputs: CoreInputs | None = None
     angle: AngleDefinition | None = None
     structure: ScriptStructure | None = None
@@ -103,6 +104,17 @@ class ScriptingContext(BaseModel):
     annotated_script: ScriptVersion | None = None
     visual_notes: list[VisualNote] | None = None
     qc: QCResult | None = None
+
+
+class SavedScriptRun(BaseModel):
+    """Metadata for a persisted scripting run."""
+
+    run_id: str
+    saved_at: str
+    raw_idea: str = ""
+    word_count: int = 0
+    script_path: str
+    context_path: str
 
 
 SCRIPTING_STEPS: list[str] = [

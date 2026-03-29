@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING
 
 import click
 
-from cc_deep_research.config import Config
+from cc_deep_research.config import load_config
+from cc_deep_research.content_gen.storage import ScriptingStore
 
 if TYPE_CHECKING:
     from cc_deep_research.content_gen.models import PipelineContext, ScriptingContext
@@ -114,7 +115,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
     @click.option("-o", "--output", type=click.Path(), default=None, help="Save to file")
     def backlog_build(theme: str, count: int, output: str | None) -> None:
         """Generate backlog ideas for a theme."""
-        config = Config()
+        config = load_config()
 
         async def _run() -> None:
             from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
@@ -139,7 +140,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
     @click.option("-o", "--output", type=click.Path(), default=None, help="Save to file")
     def backlog_score(from_file: str | None, select_top: int, output: str | None) -> None:
         """Score backlog ideas and pick the best ones."""
-        config = Config()
+        config = load_config()
 
         async def _run() -> None:
             from cc_deep_research.content_gen.models import BacklogOutput
@@ -195,7 +196,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
     @click.option("-o", "--output", type=click.Path(), default=None)
     def angle_generate(idea: str, audience: str, problem: str, output: str | None) -> None:
         """Generate 3-5 editorial angles for an idea."""
-        config = Config()
+        config = load_config()
 
         async def _run() -> None:
             from cc_deep_research.content_gen.models import BacklogItem
@@ -233,7 +234,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
     @click.option("-o", "--output", type=click.Path(), default=None)
     def research(idea: str, angle: str, output: str | None) -> None:
         """Build a research pack for an idea and angle."""
-        config = Config()
+        config = load_config()
 
         async def _run() -> None:
             from cc_deep_research.content_gen.models import AngleOption, BacklogItem
@@ -269,7 +270,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
     @click.option("-o", "--output", type=click.Path(), default=None)
     def visual(from_file: str, output: str | None) -> None:
         """Translate a script into a visual plan."""
-        config = Config()
+        config = load_config()
 
         async def _run() -> None:
             from cc_deep_research.content_gen.models import ScriptingContext
@@ -301,7 +302,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
     @click.option("-o", "--output", type=click.Path(), default=None)
     def production_brief(from_file: str, output: str | None) -> None:
         """Generate a production brief from a visual plan."""
-        config = Config()
+        config = load_config()
 
         async def _run() -> None:
             from cc_deep_research.content_gen.models import VisualPlanOutput
@@ -337,21 +338,19 @@ def register_content_gen_commands(cli: click.Group) -> None:
     @click.option("-o", "--output", type=click.Path(), default=None)
     def package(from_file: str, platforms: str | None, output: str | None) -> None:
         """Generate platform packaging variants."""
-        config = Config()
+        config = load_config()
 
         async def _run() -> None:
-            from cc_deep_research.content_gen.models import ScriptVersion
             from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
 
             orch = ContentGenOrchestrator(config)
             platforms_list = [p.strip() for p in platforms.split(",")] if platforms else None
 
-            # Read script from file
             text = Path(from_file).read_text()
-            script = ScriptVersion(content=text, word_count=len(text.split()))
+            script, angle = _load_packaging_inputs(text)
 
             click.echo("Generating packaging...")
-            result = await orch.run_packaging(script, None, platforms=platforms_list)
+            result = await orch.run_packaging(script, angle, platforms=platforms_list)
 
             for pkg in result.platform_packages:
                 click.echo(f"\n--- {pkg.platform} ---")
@@ -377,7 +376,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
     @click.option("--from-file", type=click.Path(exists=True), help="Pipeline context JSON")
     def qc_review(from_file: str) -> None:
         """Run AI-assisted QC review on a pipeline output."""
-        config = Config()
+        config = load_config()
 
         async def _run() -> None:
             from cc_deep_research.content_gen.models import PipelineContext
@@ -456,7 +455,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
     @click.option("-o", "--output", type=click.Path(), default=None)
     def publish_schedule(from_file: str | None, idea_id: str, output: str | None) -> None:  # noqa: ARG001
         """Create publish queue entries."""
-        config = Config()
+        config = load_config()
 
         async def _run() -> None:
             from cc_deep_research.content_gen.models import PackagingOutput
@@ -516,7 +515,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
         """Analyze video performance and generate follow-up ideas."""
         import json
 
-        config = Config()
+        config = load_config()
         metrics: dict = {}
         if metrics_file:
             metrics = json.loads(Path(metrics_file).read_text())
@@ -583,7 +582,8 @@ def register_content_gen_commands(cli: click.Group) -> None:
         quiet: bool,
     ) -> None:
         """Run the 10-step scripting pipeline for a short-form video."""
-        config = Config()
+        config = load_config()
+        store = ScriptingStore()
 
         from cc_deep_research.content_gen.models import SCRIPTING_STEPS, ScriptingContext
 
@@ -635,6 +635,8 @@ def register_content_gen_commands(cli: click.Group) -> None:
             _auto_save_failed_context(ctx, output, quiet)
             raise
 
+        saved_run = store.save(result)
+
         # Output
         final = result.qc.final_script if result.qc else ""
         if not final:
@@ -660,11 +662,61 @@ def register_content_gen_commands(cli: click.Group) -> None:
             if not quiet:
                 click.echo(f"\nSaved to: {output}")
 
+        if not quiet:
+            click.echo(f"Autosaved run: {saved_run.run_id}")
+            click.echo(f"Latest script: {store.path / 'latest.txt'}")
+            click.echo(f"Latest context: {store.path / 'latest.context.json'}")
+
         if save_context:
             ctx_path = output + ".context.json" if output else "scripting_context.json"
             Path(ctx_path).write_text(result.model_dump_json(indent=2))
             if not quiet:
                 click.echo(f"Context saved to: {ctx_path}")
+
+    @content_gen.group()
+    def scripts() -> None:
+        """Browse autosaved scripting runs."""
+
+    @scripts.command("list")
+    @click.option("--limit", type=int, default=10, help="Number of runs to show")
+    def scripts_list(limit: int) -> None:
+        """List recent autosaved scripting runs."""
+        store = ScriptingStore()
+        runs = store.list_runs(limit=limit)
+        if not runs:
+            click.echo(f"No saved scripting runs found in {store.path}")
+            return
+
+        click.echo(f"Saved scripting runs in {store.path}:")
+        for run in runs:
+            click.echo(
+                f"  {run.run_id} | {run.saved_at} | {run.word_count} words | {run.raw_idea}"
+            )
+
+    @scripts.command("show")
+    @click.option("--run-id", default=None, help="Saved run id")
+    @click.option("--latest", "use_latest", is_flag=True, help="Show the latest saved run")
+    @click.option(
+        "--context",
+        "show_context",
+        is_flag=True,
+        help="Show saved context JSON instead of the final script",
+    )
+    def scripts_show(run_id: str | None, use_latest: bool, show_context: bool) -> None:
+        """Show a saved scripting run or its context."""
+        store = ScriptingStore()
+        if use_latest or not run_id:
+            run = store.latest()
+        else:
+            run = store.get(run_id)
+
+        if run is None:
+            target = run_id or "latest"
+            click.echo(f"No saved scripting run found for: {target}")
+            raise click.Abort()
+
+        path = Path(run.context_path if show_context else run.script_path)
+        click.echo(path.read_text())
 
     # ------------------------------------------------------------------
     # Pipeline command (expanded)
@@ -695,7 +747,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
         quiet: bool,
     ) -> None:
         """Run the full content generation pipeline."""
-        config = Config()
+        config = load_config()
 
         from cc_deep_research.content_gen.models import PIPELINE_STAGES
 
@@ -780,6 +832,81 @@ def _auto_save_failed_context(
             click.echo(f"\nPipeline failed. Partial context saved to: {fallback_path}", err=True)
     except Exception:
         pass  # best-effort; don't mask the original error
+
+
+def _load_packaging_inputs(text: str) -> tuple[ScriptVersion, AngleOption]:
+    """Extract packaging inputs from workflow context JSON."""
+    from cc_deep_research.content_gen.models import (
+        AngleOption,
+        PipelineContext,
+        ScriptVersion,
+        ScriptingContext,
+    )
+
+    try:
+        pipeline_ctx = PipelineContext.model_validate_json(text)
+    except Exception:
+        pipeline_ctx = None
+
+    if pipeline_ctx is not None:
+        script = _extract_script_from_pipeline_context(pipeline_ctx)
+        angle = _extract_angle_from_pipeline_context(pipeline_ctx)
+        if script is not None and angle is not None:
+            return script, angle
+
+    scripting_ctx = ScriptingContext.model_validate_json(text)
+    script = _extract_script_from_scripting_context(scripting_ctx)
+    if script is None or scripting_ctx.angle is None:
+        msg = "Packaging requires a saved scripting or pipeline context with a final script and angle."
+        raise click.UsageError(msg)
+
+    return (
+        script,
+        AngleOption(
+            target_audience=scripting_ctx.core_inputs.audience if scripting_ctx.core_inputs else "",
+            viewer_problem=scripting_ctx.angle.core_tension,
+            core_promise=scripting_ctx.angle.angle,
+            primary_takeaway=scripting_ctx.core_inputs.outcome if scripting_ctx.core_inputs else "",
+            lens=scripting_ctx.angle.content_type,
+            tone="",
+        ),
+    )
+
+
+def _extract_script_from_pipeline_context(ctx: PipelineContext) -> ScriptVersion | None:
+    from cc_deep_research.content_gen.models import ScriptVersion
+
+    if ctx.scripting is None:
+        return None
+    return _extract_script_from_scripting_context(ctx.scripting)
+
+
+def _extract_script_from_scripting_context(ctx: ScriptingContext) -> ScriptVersion | None:
+    from cc_deep_research.content_gen.models import ScriptVersion
+
+    if ctx.qc and ctx.qc.final_script:
+        content = ctx.qc.final_script
+    elif ctx.tightened and ctx.tightened.content:
+        content = ctx.tightened.content
+    elif ctx.draft and ctx.draft.content:
+        content = ctx.draft.content
+    else:
+        return None
+    return ScriptVersion(content=content, word_count=len(content.split()))
+
+
+def _extract_angle_from_pipeline_context(ctx: PipelineContext) -> AngleOption | None:
+    from cc_deep_research.content_gen.models import AngleOption
+
+    if ctx.angles is None:
+        return None
+    if ctx.angles.selected_angle_id:
+        for option in ctx.angles.angle_options:
+            if option.angle_id == ctx.angles.selected_angle_id:
+                return option
+    if ctx.angles.angle_options:
+        return ctx.angles.angle_options[0]
+    return None
 
 
 __all__ = ["register_content_gen_commands"]

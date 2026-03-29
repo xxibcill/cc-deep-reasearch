@@ -75,6 +75,13 @@ class ScriptingAgent:
         *,
         temperature: float = 0.3,
     ) -> str:
+        if not self._router.is_available(AGENT_ID):
+            msg = (
+                "No LLM route is available for the scripting workflow. "
+                "Enable Anthropic, OpenRouter, or Cerebras with API keys before running "
+                "'content-gen script'."
+            )
+            raise RuntimeError(msg)
         response = await self._router.execute(
             AGENT_ID,
             user_prompt,
@@ -186,7 +193,12 @@ class ScriptingAgent:
             raise ValueError(msg)
 
         system = prompts.STEP4_SYSTEM
-        user = prompts.step4_user(ctx.core_inputs, ctx.angle, ctx.structure)
+        user = prompts.step4_user(
+            ctx.core_inputs,
+            ctx.angle,
+            ctx.structure,
+            research_context=ctx.research_context,
+        )
         text = await self._call_llm(
             system, user, temperature=_STEP_TEMPERATURES["define_beat_intents"]
         )
@@ -210,9 +222,17 @@ class ScriptingAgent:
         if ctx.angle is None:
             msg = "Step 'generate_hooks' requires 'angle', but it was not provided."
             raise ValueError(msg)
+        if ctx.beat_intents is None:
+            msg = "Step 'generate_hooks' requires 'beat_intents', but it was not provided."
+            raise ValueError(msg)
 
         system = prompts.STEP5_SYSTEM
-        user = prompts.step5_user(ctx.core_inputs, ctx.angle)
+        user = prompts.step5_user(
+            ctx.core_inputs,
+            ctx.angle,
+            ctx.beat_intents,
+            research_context=ctx.research_context,
+        )
         text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["generate_hooks"])
 
         hooks = _extract_numbered_list(text)
@@ -252,6 +272,7 @@ class ScriptingAgent:
             ctx.structure,
             ctx.beat_intents,
             ctx.hooks.best_hook,
+            research_context=ctx.research_context,
         )
         text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["draft_script"])
 
@@ -382,17 +403,16 @@ class ScriptingAgent:
         raw_idea: str,
         progress_callback: Callable[[int, str], None] | None = None,
     ) -> ScriptingContext:
-        ctx = ScriptingContext()
+        ctx = ScriptingContext(raw_idea=raw_idea)
         for step_idx in range(len(SCRIPTING_STEPS)):
             label = SCRIPTING_STEP_LABELS[SCRIPTING_STEPS[step_idx]]
             if progress_callback:
                 progress_callback(step_idx, label)
             try:
-                ctx = await _STEP_HANDLERS[step_idx](self, ctx if step_idx > 0 else raw_idea)  # type: ignore[arg-type]
+                ctx = await _STEP_HANDLERS[step_idx](self, ctx)
             except Exception:
                 logger.exception("Pipeline failed at step %d (%s)", step_idx + 1, label)
                 raise
-        ctx.raw_idea = raw_idea
         return ctx
 
     async def run_from_step(
