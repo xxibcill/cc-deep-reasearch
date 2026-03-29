@@ -10,6 +10,12 @@ from cc_deep_research.content_gen.models import (
     ScriptVersion,
 )
 
+
+def _render_research_context(research_context: str) -> str:
+    if not research_context.strip():
+        return ""
+    return f"\nResearch Context:\n{research_context.strip()}"
+
 GLOBAL_RULES = """\
 You are generating short-form video scripting outputs inside a modular workflow.
 
@@ -202,6 +208,7 @@ def step4_user(
     inputs: CoreInputs,
     angle: AngleDefinition,
     structure: ScriptStructure,
+    research_context: str = "",
 ) -> str:
     beats = "\n".join(f"- {b}" for b in structure.beat_list)
     return (
@@ -209,9 +216,11 @@ def step4_user(
         f"Outcome:\n{inputs.outcome}\n"
         f"Audience:\n{inputs.audience}\n"
         f"Angle:\n{angle.angle}\n"
+        f"Content Type:\n{angle.content_type}\n"
         f"Core Tension:\n{angle.core_tension}\n"
         f"Chosen Structure:\n{structure.chosen_structure}\n"
         f"Beat List:\n{beats}"
+        f"{_render_research_context(research_context)}"
     )
 
 
@@ -264,13 +273,18 @@ Why it is strongest:"""
 def step5_user(
     inputs: CoreInputs,
     angle: AngleDefinition,
+    beat_intents: BeatIntentMap,
+    research_context: str = "",
 ) -> str:
+    beat_lines = "\n".join(f"- {b.beat_name}: {b.intent}" for b in beat_intents.beats)
     return (
         f"Topic:\n{inputs.topic}\n"
         f"Outcome:\n{inputs.outcome}\n"
         f"Audience:\n{inputs.audience}\n"
         f"Angle:\n{angle.angle}\n"
-        f"Core Tension:\n{angle.core_tension}"
+        f"Core Tension:\n{angle.core_tension}\n"
+        f"Beat Intent Map:\n{beat_lines}"
+        f"{_render_research_context(research_context)}"
     )
 
 
@@ -323,6 +337,7 @@ def step6_user(
     structure: ScriptStructure,
     beat_intents: BeatIntentMap,
     best_hook: str,
+    research_context: str = "",
 ) -> str:
     beat_lines = "\n".join(f"- {b.beat_name}: {b.intent}" for b in beat_intents.beats)
     return (
@@ -334,6 +349,7 @@ def step6_user(
         f"Chosen Structure:\n{structure.chosen_structure}\n"
         f"Beat Intent Map:\n{beat_lines}\n"
         f"Best Hook:\n{best_hook}"
+        f"{_render_research_context(research_context)}"
     )
 
 

@@ -7,9 +7,12 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.content_gen.models import (
+    AngleDefinition,
+    CoreInputs,
     PIPELINE_STAGE_LABELS,
     PIPELINE_STAGES,
     PipelineContext,
+    ResearchPack,
     ScriptingContext,
     ScriptVersion,
     StrategyMemory,
@@ -316,7 +319,27 @@ async def _stage_run_scripting(
         angle = ctx.angles.angle_options[0]
     raw_idea = item.idea if item else ctx.theme
     agent = orch._get_agent("scripting")
-    ctx.scripting = await agent.run_pipeline(raw_idea)
+    seeded_ctx = ScriptingContext(
+        raw_idea=raw_idea,
+        research_context=_format_research_context(ctx.research_pack),
+        core_inputs=CoreInputs(
+            topic=item.idea if item else raw_idea,
+            outcome=(angle.core_promise if angle else "") or (item.problem if item else raw_idea),
+            audience=(angle.target_audience if angle else "") or (item.audience if item else ""),
+        ),
+        angle=AngleDefinition(
+            angle=(angle.core_promise if angle else "") or raw_idea,
+            content_type=(angle.lens if angle else "") or "Insight",
+            core_tension=(
+                (angle.viewer_problem if angle else "")
+                or (angle.why_this_version_should_exist if angle else "")
+                or (item.problem if item else "")
+                or raw_idea
+            ),
+            why_it_works=(angle.why_this_version_should_exist if angle else ""),
+        ),
+    )
+    ctx.scripting = await agent.run_from_step(seeded_ctx, 3)
     return ctx
 
 
@@ -402,7 +425,7 @@ async def _stage_human_qc(orch: ContentGenOrchestrator, ctx: PipelineContext) ->
 async def _stage_publish_queue(
     orch: ContentGenOrchestrator, ctx: PipelineContext
 ) -> PipelineContext:
-    if ctx.packaging is None:
+    if ctx.packaging is None or ctx.qc_gate is None or not ctx.qc_gate.approved_for_publish:
         return ctx
     idea_id = ctx.scoring.produce_now[0] if ctx.scoring and ctx.scoring.produce_now else ""
     agent = orch._get_agent("publish")
@@ -434,3 +457,28 @@ _PIPELINE_HANDLERS = [
     _stage_publish_queue,
     _stage_performance,
 ]
+
+
+def _format_research_context(research_pack: ResearchPack | None) -> str:
+    if research_pack is None:
+        return ""
+
+    sections: list[str] = []
+    if research_pack.key_facts:
+        sections.append("Key facts:\n- " + "\n- ".join(research_pack.key_facts[:3]))
+    if research_pack.proof_points:
+        sections.append("Proof points:\n- " + "\n- ".join(research_pack.proof_points[:5]))
+    if research_pack.gaps_to_exploit:
+        sections.append("Competitor gaps:\n- " + "\n- ".join(research_pack.gaps_to_exploit[:2]))
+    if research_pack.claims_requiring_verification:
+        sections.append(
+            "Claims requiring verification:\n- "
+            + "\n- ".join(research_pack.claims_requiring_verification[:3])
+        )
+    if research_pack.unsafe_or_uncertain_claims:
+        sections.append(
+            "Unsafe or uncertain claims:\n- "
+            + "\n- ".join(research_pack.unsafe_or_uncertain_claims[:3])
+        )
+
+    return "\n\n".join(sections)
