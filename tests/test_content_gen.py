@@ -378,6 +378,42 @@ def test_format_research_context_is_compact_and_selective() -> None:
     assert "Risk 1" in formatted
 
 
+def test_format_research_context_includes_audience_insights_and_examples() -> None:
+    """Research handoff should include audience insights, examples, and case studies."""
+    research = ResearchPack(
+        audience_insights=["Insight 1", "Insight 2"],
+        examples=["Example 1", "Example 2"],
+        case_studies=["Case 1"],
+    )
+
+    formatted = _format_research_context(research)
+
+    assert "Audience insights:" in formatted
+    assert "Insight 1" in formatted
+    assert "Examples:" in formatted
+    assert "Example 1" in formatted
+    assert "Case studies:" in formatted
+    assert "Case 1" in formatted
+
+
+def test_scripting_context_tone_and_cta_default_empty() -> None:
+    """ScriptingContext tone and cta should default to empty strings."""
+    ctx = ScriptingContext(raw_idea="idea")
+    assert ctx.tone == ""
+    assert ctx.cta == ""
+
+    # Round-trip through JSON
+    restored = ScriptingContext.model_validate_json(ctx.model_dump_json())
+    assert restored.tone == ""
+    assert restored.cta == ""
+
+    # With values
+    ctx2 = ScriptingContext(raw_idea="idea", tone="confident", cta="subscribe")
+    restored2 = ScriptingContext.model_validate_json(ctx2.model_dump_json())
+    assert restored2.tone == "confident"
+    assert restored2.cta == "subscribe"
+
+
 @pytest.mark.asyncio
 async def test_publish_stage_requires_human_approval() -> None:
     """The full pipeline should not create publish entries before human approval."""

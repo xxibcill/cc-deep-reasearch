@@ -195,6 +195,7 @@ Requirements:
 - Each beat must move the viewer forward
 - Avoid vague intent like "explain more" or "add detail"
 - If a beat has no strong purpose, revise or remove it
+- If research context is provided, use it to inform beat purposes — cite specific facts, proof points, or examples where they strengthen a beat's intent
 
 Output format:
 
@@ -250,6 +251,10 @@ Use a mix of:
 - Curiosity gap
 - Warning
 - Sharp claim
+- Credibility hook (reference a specific fact or proof point from research)
+
+Additional rule:
+- If research context includes proof points or key facts, at least 2 hooks should reference them directly
 
 Output format:
 
@@ -338,19 +343,27 @@ def step6_user(
     beat_intents: BeatIntentMap,
     best_hook: str,
     research_context: str = "",
+    *,
+    tone: str = "",
+    cta: str = "",
 ) -> str:
     beat_lines = "\n".join(f"- {b.beat_name}: {b.intent}" for b in beat_intents.beats)
-    return (
-        f"Topic:\n{inputs.topic}\n"
-        f"Outcome:\n{inputs.outcome}\n"
-        f"Audience:\n{inputs.audience}\n"
-        f"Angle:\n{angle.angle}\n"
-        f"Core Tension:\n{angle.core_tension}\n"
-        f"Chosen Structure:\n{structure.chosen_structure}\n"
-        f"Beat Intent Map:\n{beat_lines}\n"
-        f"Best Hook:\n{best_hook}"
-        f"{_render_research_context(research_context)}"
-    )
+    parts = [
+        f"Topic:\n{inputs.topic}",
+        f"Outcome:\n{inputs.outcome}",
+        f"Audience:\n{inputs.audience}",
+        f"Angle:\n{angle.angle}",
+        f"Core Tension:\n{angle.core_tension}",
+        f"Chosen Structure:\n{structure.chosen_structure}",
+        f"Beat Intent Map:\n{beat_lines}",
+        f"Best Hook:\n{best_hook}",
+    ]
+    if tone:
+        parts.append(f"Tone:\n{tone}")
+    if cta:
+        parts.append(f"CTA goal:\n{cta}")
+    parts.append(_render_research_context(research_context))
+    return "\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -391,8 +404,18 @@ Retention changes made:
 - ..."""
 
 
-def step7_user(draft: ScriptVersion) -> str:
-    return f"Draft Script:\n{draft.content}"
+def step7_user(
+    draft: ScriptVersion,
+    *,
+    beat_intents: BeatIntentMap | None = None,
+    research_context: str = "",
+) -> str:
+    parts = [f"Draft Script:\n{draft.content}"]
+    if beat_intents:
+        beat_lines = "\n".join(f"- {b.beat_name}: {b.intent}" for b in beat_intents.beats)
+        parts.append(f"\nOriginal Beat Intents:\n{beat_lines}")
+    parts.append(_render_research_context(research_context))
+    return "\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -431,8 +454,17 @@ Cuts / improvements made:
 - ..."""
 
 
-def step8_user(revised: ScriptVersion) -> str:
-    return f"Revised Script:\n{revised.content}"
+def step8_user(
+    revised: ScriptVersion,
+    *,
+    core_tension: str = "",
+    research_context: str = "",
+) -> str:
+    parts = [f"Revised Script:\n{revised.content}"]
+    if core_tension:
+        parts.append(f"\nCore Tension (must be preserved):\n{core_tension}")
+    parts.append(_render_research_context(research_context))
+    return "\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -494,6 +526,9 @@ Checklist:
 - No unnecessary length
 - Payoff is clear
 - CTA does not feel disconnected
+- Script delivers on the stated outcome for the target audience
+- Core tension from the angle is preserved throughout
+- Each beat fulfills its stated intent
 
 Instructions:
 - First, give a strict pass/fail for each checklist item
@@ -518,5 +553,27 @@ Final Script:
 ..."""
 
 
-def step10_user(script: ScriptVersion, *, label: str = "Script") -> str:
-    return f"{label}:\n{script.content}"
+def step10_user(
+    script: ScriptVersion,
+    *,
+    label: str = "Script",
+    core_inputs: CoreInputs | None = None,
+    angle: AngleDefinition | None = None,
+    beat_intents: BeatIntentMap | None = None,
+    research_context: str = "",
+) -> str:
+    parts = [f"{label}:\n{script.content}"]
+    if core_inputs:
+        parts.append(
+            f"\nOriginal intent:\n"
+            f"Topic: {core_inputs.topic}\n"
+            f"Outcome: {core_inputs.outcome}\n"
+            f"Audience: {core_inputs.audience}"
+        )
+    if angle:
+        parts.append(f"\nAngle: {angle.angle}\nCore Tension: {angle.core_tension}")
+    if beat_intents:
+        beat_lines = "\n".join(f"- {b.beat_name}: {b.intent}" for b in beat_intents.beats)
+        parts.append(f"\nBeat Intents:\n{beat_lines}")
+    parts.append(_render_research_context(research_context))
+    return "\n".join(parts)
