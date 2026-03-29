@@ -1,0 +1,455 @@
+"""Scripting agent for the 10-step short-form video script pipeline."""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Callable
+from typing import TYPE_CHECKING
+
+from cc_deep_research.content_gen.models import (
+    SCRIPTING_STEP_LABELS,
+    SCRIPTING_STEPS,
+    AngleDefinition,
+    BeatIntent,
+    BeatIntentMap,
+    CoreInputs,
+    HookSet,
+    QCCheck,
+    QCResult,
+    ScriptingContext,
+    ScriptStructure,
+    ScriptVersion,
+    VisualNote,
+)
+from cc_deep_research.content_gen.prompts import scripting as prompts
+from cc_deep_research.llm import LLMRouter
+
+if TYPE_CHECKING:
+    from cc_deep_research.config import Config
+
+AGENT_ID = "content_gen_scripting"
+
+
+class ScriptingAgent:
+    """Execute the 10-step scripting pipeline for short-form video scripts."""
+
+    def __init__(self, config: Config) -> None:
+        from cc_deep_research.llm.registry import LLMRouteRegistry
+
+        self._config = config
+        registry = LLMRouteRegistry(config.llm)
+        self._router = LLMRouter(registry)
+
+    async def _call_llm(self, system_prompt: str, user_prompt: str) -> str:
+        response = await self._router.execute(
+            AGENT_ID,
+            user_prompt,
+            system_prompt=system_prompt,
+            temperature=0.3,
+        )
+        return response.content
+
+    # ------------------------------------------------------------------
+    # Step 1: Define Core Inputs
+    # ------------------------------------------------------------------
+
+    async def define_core_inputs(self, raw_idea: str) -> ScriptingContext:
+        system = prompts.STEP1_SYSTEM
+        user = prompts.step1_user(raw_idea)
+        text = await self._call_llm(system, user)
+
+        topic = _extract_field(text, "Topic")
+        outcome = _extract_field(text, "Outcome")
+        audience = _extract_field(text, "Audience")
+
+        ctx = ScriptingContext(
+            raw_idea=raw_idea,
+            core_inputs=CoreInputs(topic=topic, outcome=outcome, audience=audience),
+        )
+        return ctx
+
+    # ------------------------------------------------------------------
+    # Step 2: Define Angle
+    # ------------------------------------------------------------------
+
+    async def define_angle(self, ctx: ScriptingContext) -> ScriptingContext:
+        assert ctx.core_inputs is not None, "Core inputs required"
+
+        system = prompts.STEP2_SYSTEM
+        user = prompts.step2_user(ctx.core_inputs)
+        text = await self._call_llm(system, user)
+
+        ctx.angle = AngleDefinition(
+            angle=_extract_field(text, "Angle"),
+            content_type=_extract_field(text, "Content Type"),
+            core_tension=_extract_field(text, "Core Tension"),
+            why_it_works=_extract_field(text, "Why this angle works"),
+        )
+        return ctx
+
+    # ------------------------------------------------------------------
+    # Step 3: Choose Structure
+    # ------------------------------------------------------------------
+
+    async def choose_structure(self, ctx: ScriptingContext) -> ScriptingContext:
+        assert ctx.core_inputs is not None, "Core inputs required"
+        assert ctx.angle is not None, "Angle required"
+
+        system = prompts.STEP3_SYSTEM
+        user = prompts.step3_user(ctx.core_inputs, ctx.angle)
+        text = await self._call_llm(system, user)
+
+        chosen = _extract_field(text, "Chosen Structure")
+        why = _extract_field(text, "Why this structure fits")
+        beats = _extract_beat_list(text)
+
+        ctx.structure = ScriptStructure(
+            chosen_structure=chosen,
+            why_it_fits=why,
+            beat_list=beats,
+        )
+        return ctx
+
+    # ------------------------------------------------------------------
+    # Step 4: Define Beat Intents
+    # ------------------------------------------------------------------
+
+    async def define_beat_intents(self, ctx: ScriptingContext) -> ScriptingContext:
+        assert ctx.core_inputs is not None
+        assert ctx.angle is not None
+        assert ctx.structure is not None
+
+        system = prompts.STEP4_SYSTEM
+        user = prompts.step4_user(ctx.core_inputs, ctx.angle, ctx.structure)
+        text = await self._call_llm(system, user)
+
+        beat_intents = _extract_beat_intents(text)
+        ctx.beat_intents = BeatIntentMap(beats=beat_intents)
+        return ctx
+
+    # ------------------------------------------------------------------
+    # Step 5: Generate Hooks
+    # ------------------------------------------------------------------
+
+    async def generate_hooks(self, ctx: ScriptingContext) -> ScriptingContext:
+        assert ctx.core_inputs is not None
+        assert ctx.angle is not None
+
+        system = prompts.STEP5_SYSTEM
+        user = prompts.step5_user(ctx.core_inputs, ctx.angle)
+        text = await self._call_llm(system, user)
+
+        hooks = _extract_numbered_list(text)
+        best = _extract_field(text, "Best Hook")
+        reason = _extract_field(text, "Why it is strongest")
+
+        ctx.hooks = HookSet(hooks=hooks, best_hook=best, best_hook_reason=reason)
+        return ctx
+
+    # ------------------------------------------------------------------
+    # Step 6: Draft Full Script
+    # ------------------------------------------------------------------
+
+    async def draft_script(self, ctx: ScriptingContext) -> ScriptingContext:
+        assert ctx.core_inputs is not None
+        assert ctx.angle is not None
+        assert ctx.structure is not None
+        assert ctx.beat_intents is not None
+        assert ctx.hooks is not None
+
+        system = prompts.STEP6_SYSTEM
+        user = prompts.step6_user(
+            ctx.core_inputs,
+            ctx.angle,
+            ctx.structure,
+            ctx.beat_intents,
+            ctx.hooks.best_hook,
+        )
+        text = await self._call_llm(system, user)
+
+        ctx.draft = ScriptVersion(
+            content=text.strip(),
+            word_count=len(text.split()),
+        )
+        return ctx
+
+    # ------------------------------------------------------------------
+    # Step 7: Add Retention Mechanics
+    # ------------------------------------------------------------------
+
+    async def add_retention_mechanics(self, ctx: ScriptingContext) -> ScriptingContext:
+        assert ctx.draft is not None
+
+        system = prompts.STEP7_SYSTEM
+        user = prompts.step7_user(ctx.draft)
+        text = await self._call_llm(system, user)
+
+        script_text = _extract_section(
+            text,
+            start_marker="Revised Script:",
+            end_markers=("Then add:", "Retention changes made:"),
+        ) or text
+        ctx.retention_revised = ScriptVersion(
+            content=script_text.strip(),
+            word_count=len(script_text.split()),
+        )
+        return ctx
+
+    # ------------------------------------------------------------------
+    # Step 8: Tightening Pass
+    # ------------------------------------------------------------------
+
+    async def tighten(self, ctx: ScriptingContext) -> ScriptingContext:
+        source = ctx.retention_revised or ctx.draft
+        assert source is not None
+
+        system = prompts.STEP8_SYSTEM
+        user = prompts.step8_user(source)
+        text = await self._call_llm(system, user)
+
+        script_text = _extract_section(
+            text,
+            start_marker="Tightened Script:",
+            end_markers=("Then add:", "Cuts / improvements made:"),
+        ) or text
+        ctx.tightened = ScriptVersion(
+            content=script_text.strip(),
+            word_count=len(script_text.split()),
+        )
+        return ctx
+
+    # ------------------------------------------------------------------
+    # Step 9: Add Visual Notes
+    # ------------------------------------------------------------------
+
+    async def add_visual_notes(self, ctx: ScriptingContext) -> ScriptingContext:
+        source = ctx.tightened or ctx.retention_revised or ctx.draft
+        assert source is not None
+
+        system = prompts.STEP9_SYSTEM
+        user = prompts.step9_user(source)
+        text = await self._call_llm(system, user)
+
+        ctx.annotated_script = ScriptVersion(
+            content=text.strip(),
+            word_count=len(text.split()),
+        )
+        ctx.visual_notes = _extract_visual_notes(text)
+        return ctx
+
+    # ------------------------------------------------------------------
+    # Step 10: Final QC
+    # ------------------------------------------------------------------
+
+    async def run_qc(self, ctx: ScriptingContext) -> ScriptingContext:
+        source = ctx.annotated_script or ctx.tightened or ctx.retention_revised or ctx.draft
+        assert source is not None
+
+        system = prompts.STEP10_SYSTEM
+        user = prompts.step10_user(
+            source,
+            label="Annotated Script" if ctx.annotated_script is not None else "Script",
+        )
+        text = await self._call_llm(system, user)
+
+        checks = _extract_qc_checks(text)
+        weakest = _extract_weakest_parts(text)
+        final = _extract_section(text, start_marker="Final Script:") or source.content
+
+        ctx.qc = QCResult(
+            checks=checks,
+            weakest_parts=weakest,
+            final_script=final.strip(),
+        )
+        return ctx
+
+    # ------------------------------------------------------------------
+    # Pipeline runners
+    # ------------------------------------------------------------------
+
+    async def run_pipeline(
+        self,
+        raw_idea: str,
+        progress_callback: Callable[[int, str], None] | None = None,
+    ) -> ScriptingContext:
+        ctx = await define_core_inputs_with_progress(self, raw_idea, progress_callback, 0)
+        ctx = await run_remaining_steps(self, ctx, start_step=1, progress_callback=progress_callback)
+        return ctx
+
+    async def run_from_step(
+        self,
+        ctx: ScriptingContext,
+        step: int,
+        progress_callback: Callable[[int, str], None] | None = None,
+    ) -> ScriptingContext:
+        return await run_remaining_steps(self, ctx, start_step=step - 1, progress_callback=progress_callback)
+
+
+async def define_core_inputs_with_progress(
+    agent: ScriptingAgent,
+    raw_idea: str,
+    progress_callback: Callable[[int, str], None] | None,
+    step_index: int,
+) -> ScriptingContext:
+    if progress_callback:
+        progress_callback(step_index, "Defining core inputs")
+    return await agent.define_core_inputs(raw_idea)
+
+
+async def run_remaining_steps(
+    agent: ScriptingAgent,
+    ctx: ScriptingContext,
+    start_step: int,
+    progress_callback: Callable[[int, str], None] | None,
+) -> ScriptingContext:
+    for step_idx in range(start_step, len(SCRIPTING_STEPS)):
+        label = SCRIPTING_STEP_LABELS[SCRIPTING_STEPS[step_idx]]
+        if progress_callback:
+            progress_callback(step_idx, label)
+        ctx = await _run_step(agent, ctx, step_idx)
+
+    return ctx
+
+
+async def _run_step(agent: ScriptingAgent, ctx: ScriptingContext, step_idx: int) -> ScriptingContext:
+    if step_idx == 0:
+        return await agent.define_core_inputs(ctx.raw_idea)
+    if step_idx == 1:
+        return await agent.define_angle(ctx)
+    if step_idx == 2:
+        return await agent.choose_structure(ctx)
+    if step_idx == 3:
+        return await agent.define_beat_intents(ctx)
+    if step_idx == 4:
+        return await agent.generate_hooks(ctx)
+    if step_idx == 5:
+        return await agent.draft_script(ctx)
+    if step_idx == 6:
+        return await agent.add_retention_mechanics(ctx)
+    if step_idx == 7:
+        return await agent.tighten(ctx)
+    if step_idx == 8:
+        return await agent.add_visual_notes(ctx)
+    if step_idx == 9:
+        return await agent.run_qc(ctx)
+
+    msg = f"Unsupported scripting step index: {step_idx}"
+    raise ValueError(msg)
+
+
+# ---------------------------------------------------------------------------
+# Response parsing helpers
+# ---------------------------------------------------------------------------
+
+
+def _extract_field(text: str, field_name: str) -> str:
+    pattern = rf"{re.escape(field_name)}:\s*(.+?)(?:\n|$)"
+    match = re.search(pattern, text, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return ""
+
+
+def _extract_beat_list(text: str) -> list[str]:
+    section = _extract_section(text, start_marker="Beat List:") or text
+    beats: list[str] = []
+    for line in section.split("\n"):
+        line = line.strip()
+        match = re.match(r"\d+\.\s*(.+)", line)
+        if match:
+            beats.append(match.group(1).strip())
+        elif line.startswith("- "):
+            beats.append(line[2:].strip())
+    return beats
+
+
+def _extract_beat_intents(text: str) -> list[BeatIntent]:
+    intents: list[BeatIntent] = []
+    for line in text.split("\n"):
+        match = re.match(r"[-•]?\s*\[?(.+?)\]?\s*:\s*(.+)", line.strip())
+        if match:
+            intents.append(BeatIntent(beat_name=match.group(1).strip(), intent=match.group(2).strip()))
+    return intents
+
+
+def _extract_numbered_list(text: str) -> list[str]:
+    section = _extract_section(text, start_marker=None, end_markers=("Best Hook:",)) or text
+    items: list[str] = []
+    for line in section.split("\n"):
+        match = re.match(r"(\d+)\.\s*(.+)", line.strip())
+        if match:
+            items.append(match.group(2).strip())
+    return items
+
+
+def _extract_section(
+    text: str,
+    *,
+    start_marker: str | None,
+    end_markers: tuple[str, ...] = (),
+) -> str | None:
+    section = text
+    if start_marker is not None:
+        start_idx = text.find(start_marker)
+        if start_idx == -1:
+            return None
+        section = text[start_idx + len(start_marker) :]
+
+    end_positions = [section.find(marker) for marker in end_markers]
+    valid_positions = [position for position in end_positions if position != -1]
+    if valid_positions:
+        section = section[: min(valid_positions)]
+
+    return section.strip() or None
+
+
+def _extract_visual_notes(text: str) -> list[VisualNote]:
+    notes: list[VisualNote] = []
+    current_beat = ""
+    current_line = ""
+    for raw_line in text.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+        bracket_match = re.match(r"\[(.+?)\]", line)
+        beat_match = re.match(r"[-•]?\s*\[?(.+?)\]?\s*:\s*\"(.+?)\"", line)
+        if beat_match:
+            if current_beat:
+                notes.append(VisualNote(beat_name=current_beat, line=current_line, note=None))
+            current_beat = beat_match.group(1).strip()
+            current_line = beat_match.group(2).strip()
+        elif bracket_match and current_beat:
+            notes.append(
+                VisualNote(beat_name=current_beat, line=current_line, note=f"[{bracket_match.group(1)}]")
+            )
+            current_beat = ""
+            current_line = ""
+    if current_beat:
+        notes.append(VisualNote(beat_name=current_beat, line=current_line, note=None))
+    return notes
+
+
+def _extract_qc_checks(text: str) -> list[QCCheck]:
+    checks: list[QCCheck] = []
+    for line in text.split("\n"):
+        match = re.match(r"[-•]\s*(.+?):\s*(Pass|Fail)", line.strip(), re.IGNORECASE)
+        if match:
+            checks.append(QCCheck(item=match.group(1).strip(), passed=match.group(2).lower() == "pass"))
+    return checks
+
+
+def _extract_weakest_parts(text: str) -> list[str]:
+    parts: list[str] = []
+    in_section = False
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if "Weakest parts" in stripped:
+            in_section = True
+            continue
+        if in_section:
+            match = re.match(r"\d+\.\s*(.+)", stripped)
+            if match:
+                parts.append(match.group(1).strip())
+            elif stripped and not stripped.startswith("-") and not stripped.startswith("Final"):
+                break
+    return parts
