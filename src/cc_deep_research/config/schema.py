@@ -321,6 +321,17 @@ class LLMConfig(BaseModel):
         return route_map.get(agent_id, self.route_defaults.default)
 
 
+class ContentGenConfig(BaseModel):
+    """Content generation workflow configuration."""
+
+    strategy_path: str | None = None
+    backlog_path: str | None = None
+    publish_queue_path: str | None = None
+    default_platforms: list[str] = Field(default_factory=lambda: ["tiktok", "reels", "shorts"])
+    research_max_queries: int = 6
+    scoring_threshold_produce: int = 25  # out of 35 max
+
+
 class Config(BaseModel):
     """Main configuration model."""
 
@@ -334,6 +345,7 @@ class Config(BaseModel):
     output: OutputConfig = Field(default_factory=OutputConfig)
     display: DisplayConfig = Field(default_factory=DisplayConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    content_gen: ContentGenConfig = Field(default_factory=ContentGenConfig)
 
 
 class DashboardConfig(BaseModel):

@@ -90,7 +90,9 @@ class ScriptingAgent:
     async def define_core_inputs(self, raw_idea: str) -> ScriptingContext:
         system = prompts.STEP1_SYSTEM
         user = prompts.step1_user(raw_idea)
-        text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["define_core_inputs"])
+        text = await self._call_llm(
+            system, user, temperature=_STEP_TEMPERATURES["define_core_inputs"]
+        )
 
         topic = _extract_field(text, "Topic")
         outcome = _extract_field(text, "Outcome")
@@ -149,7 +151,9 @@ class ScriptingAgent:
 
         system = prompts.STEP3_SYSTEM
         user = prompts.step3_user(ctx.core_inputs, ctx.angle)
-        text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["choose_structure"])
+        text = await self._call_llm(
+            system, user, temperature=_STEP_TEMPERATURES["choose_structure"]
+        )
 
         chosen = _extract_field(text, "Chosen Structure")
         beats = _extract_beat_list(text)
@@ -183,7 +187,9 @@ class ScriptingAgent:
 
         system = prompts.STEP4_SYSTEM
         user = prompts.step4_user(ctx.core_inputs, ctx.angle, ctx.structure)
-        text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["define_beat_intents"])
+        text = await self._call_llm(
+            system, user, temperature=_STEP_TEMPERATURES["define_beat_intents"]
+        )
 
         beat_intents = _extract_beat_intents(text)
         if not beat_intents:
@@ -270,13 +276,18 @@ class ScriptingAgent:
 
         system = prompts.STEP7_SYSTEM
         user = prompts.step7_user(ctx.draft)
-        text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["add_retention_mechanics"])
+        text = await self._call_llm(
+            system, user, temperature=_STEP_TEMPERATURES["add_retention_mechanics"]
+        )
 
-        script_text = _extract_section(
-            text,
-            start_marker="Revised Script:",
-            end_markers=("Then add:", "Retention changes made:"),
-        ) or text
+        script_text = (
+            _extract_section(
+                text,
+                start_marker="Revised Script:",
+                end_markers=("Then add:", "Retention changes made:"),
+            )
+            or text
+        )
         ctx.retention_revised = ScriptVersion(
             content=script_text.strip(),
             word_count=len(script_text.split()),
@@ -297,11 +308,14 @@ class ScriptingAgent:
         user = prompts.step8_user(source)
         text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["tighten"])
 
-        script_text = _extract_section(
-            text,
-            start_marker="Tightened Script:",
-            end_markers=("Then add:", "Cuts / improvements made:"),
-        ) or text
+        script_text = (
+            _extract_section(
+                text,
+                start_marker="Tightened Script:",
+                end_markers=("Then add:", "Cuts / improvements made:"),
+            )
+            or text
+        )
         ctx.tightened = ScriptVersion(
             content=script_text.strip(),
             word_count=len(script_text.split()),
@@ -320,7 +334,9 @@ class ScriptingAgent:
 
         system = prompts.STEP9_SYSTEM
         user = prompts.step9_user(source)
-        text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["add_visual_notes"])
+        text = await self._call_llm(
+            system, user, temperature=_STEP_TEMPERATURES["add_visual_notes"]
+        )
 
         ctx.annotated_script = ScriptVersion(
             content=text.strip(),
@@ -455,7 +471,9 @@ def _extract_beat_intents(text: str) -> list[BeatIntent]:
     for line in text.split("\n"):
         match = re.match(r"[-•]?\s*\[?(.+?)\]?\s*:\s*(.+)", line.strip())
         if match:
-            intents.append(BeatIntent(beat_name=match.group(1).strip(), intent=match.group(2).strip()))
+            intents.append(
+                BeatIntent(beat_name=match.group(1).strip(), intent=match.group(2).strip())
+            )
     return intents
 
 
@@ -507,7 +525,9 @@ def _extract_visual_notes(text: str) -> list[VisualNote]:
             current_line = beat_match.group(2).strip()
         elif bracket_match and current_beat:
             notes.append(
-                VisualNote(beat_name=current_beat, line=current_line, note=f"[{bracket_match.group(1)}]")
+                VisualNote(
+                    beat_name=current_beat, line=current_line, note=f"[{bracket_match.group(1)}]"
+                )
             )
             current_beat = ""
             current_line = ""
@@ -521,7 +541,9 @@ def _extract_qc_checks(text: str) -> list[QCCheck]:
     for line in text.split("\n"):
         match = re.match(r"[-•]\s*(.+?):\s*(Pass|Fail)", line.strip(), re.IGNORECASE)
         if match:
-            checks.append(QCCheck(item=match.group(1).strip(), passed=match.group(2).lower() == "pass"))
+            checks.append(
+                QCCheck(item=match.group(1).strip(), passed=match.group(2).lower() == "pass")
+            )
     return checks
 
 
