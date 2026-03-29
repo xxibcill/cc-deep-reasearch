@@ -25,6 +25,10 @@ from cc_deep_research.config import (
     load_config,
     update_config,
 )
+from cc_deep_research.content_gen.progress import (
+    PipelineRunJobRegistry,
+)
+from cc_deep_research.content_gen.router import register_content_gen_routes
 from cc_deep_research.event_router import EventRouter, WebSocketConnection
 from cc_deep_research.reporting import ReportGenerator
 from cc_deep_research.research_runs.jobs import ResearchRunJob, ResearchRunJobRegistry
@@ -80,6 +84,7 @@ class DashboardBackendRuntime:
 
     event_router: EventRouter
     jobs: ResearchRunJobRegistry
+    pipeline_jobs: PipelineRunJobRegistry
 
     async def start(self) -> None:
         """Start shared realtime infrastructure."""
@@ -88,6 +93,7 @@ class DashboardBackendRuntime:
     async def stop(self) -> None:
         """Stop shared infrastructure and cancel in-flight jobs."""
         await self.jobs.cancel_all()
+        await self.pipeline_jobs.cancel_all()
         await self.event_router.stop()
 
 
@@ -206,6 +212,7 @@ def create_app(
     app.state.dashboard_runtime = DashboardBackendRuntime(
         event_router=event_router or EventRouter(),
         jobs=job_registry or ResearchRunJobRegistry(),
+        pipeline_jobs=PipelineRunJobRegistry(),
     )
 
     # Configure CORS
@@ -219,6 +226,11 @@ def create_app(
     app.add_middleware(WebSocketDiagnosticsMiddleware)
 
     register_routes(app)
+
+    # Content generation routes
+    runtime = get_backend_runtime(app)
+    register_content_gen_routes(app, runtime.event_router, runtime.pipeline_jobs)
+
     return app
 
 
@@ -247,6 +259,11 @@ def get_event_router(app: FastAPI) -> EventRouter:
 def get_job_registry(app: FastAPI) -> ResearchRunJobRegistry:
     """Return the shared job registry from app runtime state."""
     return get_backend_runtime(app).jobs
+
+
+def get_pipeline_job_registry(app: FastAPI) -> PipelineRunJobRegistry:
+    """Return the shared pipeline job registry from app runtime state."""
+    return get_backend_runtime(app).pipeline_jobs
 
 
 def _serialize_timestamp(value: Any) -> str | None:
@@ -1866,6 +1883,7 @@ __all__ = [
     "get_app",
     "get_event_router",
     "get_job_registry",
+    "get_pipeline_job_registry",
     "register_routes",
     "start_server",
 ]
