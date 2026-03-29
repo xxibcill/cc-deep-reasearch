@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from cc_deep_research.content_gen.models import (
@@ -27,7 +28,34 @@ from cc_deep_research.llm import LLMRouter
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
 
+logger = logging.getLogger(__name__)
+
 AGENT_ID = "content_gen_scripting"
+
+# Per-step temperature defaults: creative steps get higher values,
+# analytical/QC steps get lower values.
+_STEP_TEMPERATURES: dict[str, float] = {
+    "define_core_inputs": 0.3,
+    "define_angle": 0.5,
+    "choose_structure": 0.3,
+    "define_beat_intents": 0.3,
+    "generate_hooks": 0.7,
+    "draft_script": 0.5,
+    "add_retention_mechanics": 0.4,
+    "tighten": 0.3,
+    "add_visual_notes": 0.3,
+    "run_qc": 0.2,
+}
+
+
+def _require(value: object, name: str, step: str) -> None:
+    """Raise ValueError if *value* is None or empty string."""
+    if value is None:
+        msg = f"Step '{step}' requires '{name}', but it was not provided."
+        raise ValueError(msg)
+    if isinstance(value, str) and not value.strip():
+        msg = f"Step '{step}' could not extract '{name}' from the LLM response."
+        raise ValueError(msg)
 
 
 class ScriptingAgent:
@@ -40,12 +68,18 @@ class ScriptingAgent:
         registry = LLMRouteRegistry(config.llm)
         self._router = LLMRouter(registry)
 
-    async def _call_llm(self, system_prompt: str, user_prompt: str) -> str:
+    async def _call_llm(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        temperature: float = 0.3,
+    ) -> str:
         response = await self._router.execute(
             AGENT_ID,
             user_prompt,
             system_prompt=system_prompt,
-            temperature=0.3,
+            temperature=temperature,
         )
         return response.content
 
@@ -56,11 +90,15 @@ class ScriptingAgent:
     async def define_core_inputs(self, raw_idea: str) -> ScriptingContext:
         system = prompts.STEP1_SYSTEM
         user = prompts.step1_user(raw_idea)
-        text = await self._call_llm(system, user)
+        text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["define_core_inputs"])
 
         topic = _extract_field(text, "Topic")
         outcome = _extract_field(text, "Outcome")
         audience = _extract_field(text, "Audience")
+
+        _require(topic, "Topic", "define_core_inputs")
+        _require(outcome, "Outcome", "define_core_inputs")
+        _require(audience, "Audience", "define_core_inputs")
 
         ctx = ScriptingContext(
             raw_idea=raw_idea,
@@ -73,16 +111,26 @@ class ScriptingAgent:
     # ------------------------------------------------------------------
 
     async def define_angle(self, ctx: ScriptingContext) -> ScriptingContext:
-        assert ctx.core_inputs is not None, "Core inputs required"
+        if ctx.core_inputs is None:
+            msg = "Step 'define_angle' requires 'core_inputs', but it was not provided."
+            raise ValueError(msg)
 
         system = prompts.STEP2_SYSTEM
         user = prompts.step2_user(ctx.core_inputs)
-        text = await self._call_llm(system, user)
+        text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["define_angle"])
+
+        angle = _extract_field(text, "Angle")
+        content_type = _extract_field(text, "Content Type")
+        core_tension = _extract_field(text, "Core Tension")
+
+        _require(angle, "Angle", "define_angle")
+        _require(content_type, "Content Type", "define_angle")
+        _require(core_tension, "Core Tension", "define_angle")
 
         ctx.angle = AngleDefinition(
-            angle=_extract_field(text, "Angle"),
-            content_type=_extract_field(text, "Content Type"),
-            core_tension=_extract_field(text, "Core Tension"),
+            angle=angle,
+            content_type=content_type,
+            core_tension=core_tension,
             why_it_works=_extract_field(text, "Why this angle works"),
         )
         return ctx
@@ -92,20 +140,28 @@ class ScriptingAgent:
     # ------------------------------------------------------------------
 
     async def choose_structure(self, ctx: ScriptingContext) -> ScriptingContext:
-        assert ctx.core_inputs is not None, "Core inputs required"
-        assert ctx.angle is not None, "Angle required"
+        if ctx.core_inputs is None:
+            msg = "Step 'choose_structure' requires 'core_inputs', but it was not provided."
+            raise ValueError(msg)
+        if ctx.angle is None:
+            msg = "Step 'choose_structure' requires 'angle', but it was not provided."
+            raise ValueError(msg)
 
         system = prompts.STEP3_SYSTEM
         user = prompts.step3_user(ctx.core_inputs, ctx.angle)
-        text = await self._call_llm(system, user)
+        text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["choose_structure"])
 
         chosen = _extract_field(text, "Chosen Structure")
-        why = _extract_field(text, "Why this structure fits")
         beats = _extract_beat_list(text)
+
+        _require(chosen, "Chosen Structure", "choose_structure")
+        if not beats:
+            msg = "Step 'choose_structure' could not extract 'Beat List' from the LLM response."
+            raise ValueError(msg)
 
         ctx.structure = ScriptStructure(
             chosen_structure=chosen,
-            why_it_fits=why,
+            why_it_fits=_extract_field(text, "Why this structure fits"),
             beat_list=beats,
         )
         return ctx
@@ -115,15 +171,25 @@ class ScriptingAgent:
     # ------------------------------------------------------------------
 
     async def define_beat_intents(self, ctx: ScriptingContext) -> ScriptingContext:
-        assert ctx.core_inputs is not None
-        assert ctx.angle is not None
-        assert ctx.structure is not None
+        if ctx.core_inputs is None:
+            msg = "Step 'define_beat_intents' requires 'core_inputs', but it was not provided."
+            raise ValueError(msg)
+        if ctx.angle is None:
+            msg = "Step 'define_beat_intents' requires 'angle', but it was not provided."
+            raise ValueError(msg)
+        if ctx.structure is None:
+            msg = "Step 'define_beat_intents' requires 'structure', but it was not provided."
+            raise ValueError(msg)
 
         system = prompts.STEP4_SYSTEM
         user = prompts.step4_user(ctx.core_inputs, ctx.angle, ctx.structure)
-        text = await self._call_llm(system, user)
+        text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["define_beat_intents"])
 
         beat_intents = _extract_beat_intents(text)
+        if not beat_intents:
+            msg = "Step 'define_beat_intents' could not extract beat intents from the LLM response."
+            raise ValueError(msg)
+
         ctx.beat_intents = BeatIntentMap(beats=beat_intents)
         return ctx
 
@@ -132,16 +198,22 @@ class ScriptingAgent:
     # ------------------------------------------------------------------
 
     async def generate_hooks(self, ctx: ScriptingContext) -> ScriptingContext:
-        assert ctx.core_inputs is not None
-        assert ctx.angle is not None
+        if ctx.core_inputs is None:
+            msg = "Step 'generate_hooks' requires 'core_inputs', but it was not provided."
+            raise ValueError(msg)
+        if ctx.angle is None:
+            msg = "Step 'generate_hooks' requires 'angle', but it was not provided."
+            raise ValueError(msg)
 
         system = prompts.STEP5_SYSTEM
         user = prompts.step5_user(ctx.core_inputs, ctx.angle)
-        text = await self._call_llm(system, user)
+        text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["generate_hooks"])
 
         hooks = _extract_numbered_list(text)
         best = _extract_field(text, "Best Hook")
         reason = _extract_field(text, "Why it is strongest")
+
+        _require(best, "Best Hook", "generate_hooks")
 
         ctx.hooks = HookSet(hooks=hooks, best_hook=best, best_hook_reason=reason)
         return ctx
@@ -151,11 +223,21 @@ class ScriptingAgent:
     # ------------------------------------------------------------------
 
     async def draft_script(self, ctx: ScriptingContext) -> ScriptingContext:
-        assert ctx.core_inputs is not None
-        assert ctx.angle is not None
-        assert ctx.structure is not None
-        assert ctx.beat_intents is not None
-        assert ctx.hooks is not None
+        if ctx.core_inputs is None:
+            msg = "Step 'draft_script' requires 'core_inputs', but it was not provided."
+            raise ValueError(msg)
+        if ctx.angle is None:
+            msg = "Step 'draft_script' requires 'angle', but it was not provided."
+            raise ValueError(msg)
+        if ctx.structure is None:
+            msg = "Step 'draft_script' requires 'structure', but it was not provided."
+            raise ValueError(msg)
+        if ctx.beat_intents is None:
+            msg = "Step 'draft_script' requires 'beat_intents', but it was not provided."
+            raise ValueError(msg)
+        if ctx.hooks is None:
+            msg = "Step 'draft_script' requires 'hooks', but it was not provided."
+            raise ValueError(msg)
 
         system = prompts.STEP6_SYSTEM
         user = prompts.step6_user(
@@ -165,7 +247,11 @@ class ScriptingAgent:
             ctx.beat_intents,
             ctx.hooks.best_hook,
         )
-        text = await self._call_llm(system, user)
+        text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["draft_script"])
+
+        if not text.strip():
+            msg = "Step 'draft_script' received an empty response from the LLM."
+            raise ValueError(msg)
 
         ctx.draft = ScriptVersion(
             content=text.strip(),
@@ -178,11 +264,13 @@ class ScriptingAgent:
     # ------------------------------------------------------------------
 
     async def add_retention_mechanics(self, ctx: ScriptingContext) -> ScriptingContext:
-        assert ctx.draft is not None
+        if ctx.draft is None:
+            msg = "Step 'add_retention_mechanics' requires 'draft', but it was not provided."
+            raise ValueError(msg)
 
         system = prompts.STEP7_SYSTEM
         user = prompts.step7_user(ctx.draft)
-        text = await self._call_llm(system, user)
+        text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["add_retention_mechanics"])
 
         script_text = _extract_section(
             text,
@@ -201,11 +289,13 @@ class ScriptingAgent:
 
     async def tighten(self, ctx: ScriptingContext) -> ScriptingContext:
         source = ctx.retention_revised or ctx.draft
-        assert source is not None
+        if source is None:
+            msg = "Step 'tighten' requires a previous script version, but none was found."
+            raise ValueError(msg)
 
         system = prompts.STEP8_SYSTEM
         user = prompts.step8_user(source)
-        text = await self._call_llm(system, user)
+        text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["tighten"])
 
         script_text = _extract_section(
             text,
@@ -224,11 +314,13 @@ class ScriptingAgent:
 
     async def add_visual_notes(self, ctx: ScriptingContext) -> ScriptingContext:
         source = ctx.tightened or ctx.retention_revised or ctx.draft
-        assert source is not None
+        if source is None:
+            msg = "Step 'add_visual_notes' requires a previous script version, but none was found."
+            raise ValueError(msg)
 
         system = prompts.STEP9_SYSTEM
         user = prompts.step9_user(source)
-        text = await self._call_llm(system, user)
+        text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["add_visual_notes"])
 
         ctx.annotated_script = ScriptVersion(
             content=text.strip(),
@@ -243,14 +335,16 @@ class ScriptingAgent:
 
     async def run_qc(self, ctx: ScriptingContext) -> ScriptingContext:
         source = ctx.annotated_script or ctx.tightened or ctx.retention_revised or ctx.draft
-        assert source is not None
+        if source is None:
+            msg = "Step 'run_qc' requires a previous script version, but none was found."
+            raise ValueError(msg)
 
         system = prompts.STEP10_SYSTEM
         user = prompts.step10_user(
             source,
             label="Annotated Script" if ctx.annotated_script is not None else "Script",
         )
-        text = await self._call_llm(system, user)
+        text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["run_qc"])
 
         checks = _extract_qc_checks(text)
         weakest = _extract_weakest_parts(text)
@@ -272,8 +366,17 @@ class ScriptingAgent:
         raw_idea: str,
         progress_callback: Callable[[int, str], None] | None = None,
     ) -> ScriptingContext:
-        ctx = await define_core_inputs_with_progress(self, raw_idea, progress_callback, 0)
-        ctx = await run_remaining_steps(self, ctx, start_step=1, progress_callback=progress_callback)
+        ctx = ScriptingContext()
+        for step_idx in range(len(SCRIPTING_STEPS)):
+            label = SCRIPTING_STEP_LABELS[SCRIPTING_STEPS[step_idx]]
+            if progress_callback:
+                progress_callback(step_idx, label)
+            try:
+                ctx = await _STEP_HANDLERS[step_idx](self, ctx if step_idx > 0 else raw_idea)  # type: ignore[arg-type]
+            except Exception:
+                logger.exception("Pipeline failed at step %d (%s)", step_idx + 1, label)
+                raise
+        ctx.raw_idea = raw_idea
         return ctx
 
     async def run_from_step(
@@ -282,59 +385,43 @@ class ScriptingAgent:
         step: int,
         progress_callback: Callable[[int, str], None] | None = None,
     ) -> ScriptingContext:
-        return await run_remaining_steps(self, ctx, start_step=step - 1, progress_callback=progress_callback)
+        start_idx = step - 1
+        for step_idx in range(start_idx, len(SCRIPTING_STEPS)):
+            label = SCRIPTING_STEP_LABELS[SCRIPTING_STEPS[step_idx]]
+            if progress_callback:
+                progress_callback(step_idx, label)
+            try:
+                ctx = await _STEP_HANDLERS[step_idx](self, ctx)
+            except Exception:
+                logger.exception("Pipeline failed at step %d (%s)", step_idx + 1, label)
+                raise
+        return ctx
 
 
-async def define_core_inputs_with_progress(
-    agent: ScriptingAgent,
-    raw_idea: str,
-    progress_callback: Callable[[int, str], None] | None,
-    step_index: int,
-) -> ScriptingContext:
-    if progress_callback:
-        progress_callback(step_index, "Defining core inputs")
-    return await agent.define_core_inputs(raw_idea)
+# ---------------------------------------------------------------------------
+# Dispatch table — replaces the if-chain
+# ---------------------------------------------------------------------------
+
+# Each handler receives (agent, ctx) except step 0 which receives (agent, raw_idea).
+# We normalise this in _wrap_step0.
 
 
-async def run_remaining_steps(
-    agent: ScriptingAgent,
-    ctx: ScriptingContext,
-    start_step: int,
-    progress_callback: Callable[[int, str], None] | None,
-) -> ScriptingContext:
-    for step_idx in range(start_step, len(SCRIPTING_STEPS)):
-        label = SCRIPTING_STEP_LABELS[SCRIPTING_STEPS[step_idx]]
-        if progress_callback:
-            progress_callback(step_idx, label)
-        ctx = await _run_step(agent, ctx, step_idx)
-
-    return ctx
+async def _wrap_step0(agent: ScriptingAgent, ctx: ScriptingContext) -> ScriptingContext:
+    return await agent.define_core_inputs(ctx.raw_idea)
 
 
-async def _run_step(agent: ScriptingAgent, ctx: ScriptingContext, step_idx: int) -> ScriptingContext:
-    if step_idx == 0:
-        return await agent.define_core_inputs(ctx.raw_idea)
-    if step_idx == 1:
-        return await agent.define_angle(ctx)
-    if step_idx == 2:
-        return await agent.choose_structure(ctx)
-    if step_idx == 3:
-        return await agent.define_beat_intents(ctx)
-    if step_idx == 4:
-        return await agent.generate_hooks(ctx)
-    if step_idx == 5:
-        return await agent.draft_script(ctx)
-    if step_idx == 6:
-        return await agent.add_retention_mechanics(ctx)
-    if step_idx == 7:
-        return await agent.tighten(ctx)
-    if step_idx == 8:
-        return await agent.add_visual_notes(ctx)
-    if step_idx == 9:
-        return await agent.run_qc(ctx)
-
-    msg = f"Unsupported scripting step index: {step_idx}"
-    raise ValueError(msg)
+_STEP_HANDLERS: list[Callable[[ScriptingAgent, ScriptingContext], Awaitable[ScriptingContext]]] = [
+    _wrap_step0,
+    lambda agent, ctx: agent.define_angle(ctx),
+    lambda agent, ctx: agent.choose_structure(ctx),
+    lambda agent, ctx: agent.define_beat_intents(ctx),
+    lambda agent, ctx: agent.generate_hooks(ctx),
+    lambda agent, ctx: agent.draft_script(ctx),
+    lambda agent, ctx: agent.add_retention_mechanics(ctx),
+    lambda agent, ctx: agent.tighten(ctx),
+    lambda agent, ctx: agent.add_visual_notes(ctx),
+    lambda agent, ctx: agent.run_qc(ctx),
+]
 
 
 # ---------------------------------------------------------------------------
