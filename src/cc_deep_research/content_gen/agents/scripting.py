@@ -273,6 +273,8 @@ class ScriptingAgent:
             ctx.beat_intents,
             ctx.hooks.best_hook,
             research_context=ctx.research_context,
+            tone=ctx.tone,
+            cta=ctx.cta,
         )
         text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["draft_script"])
 
@@ -284,6 +286,23 @@ class ScriptingAgent:
             content=text.strip(),
             word_count=len(text.split()),
         )
+
+        # Re-prompt if draft significantly exceeds 120-word target
+        if ctx.draft.word_count > 144:
+            trim_user = (
+                f"The previous draft was {ctx.draft.word_count} words. "
+                f"The hard cap is 120 words.\n\n"
+                f"Rewrite the script below to hit the target. "
+                f"Cut filler and redundancy. Preserve the angle and all beat intents.\n\n"
+                f"{ctx.draft.content}"
+            )
+            text2 = await self._call_llm(system, trim_user, temperature=0.3)
+            if text2.strip():
+                ctx.draft = ScriptVersion(
+                    content=text2.strip(),
+                    word_count=len(text2.split()),
+                )
+
         return ctx
 
     # ------------------------------------------------------------------
@@ -296,7 +315,11 @@ class ScriptingAgent:
             raise ValueError(msg)
 
         system = prompts.STEP7_SYSTEM
-        user = prompts.step7_user(ctx.draft)
+        user = prompts.step7_user(
+            ctx.draft,
+            beat_intents=ctx.beat_intents,
+            research_context=ctx.research_context,
+        )
         text = await self._call_llm(
             system, user, temperature=_STEP_TEMPERATURES["add_retention_mechanics"]
         )
@@ -326,7 +349,11 @@ class ScriptingAgent:
             raise ValueError(msg)
 
         system = prompts.STEP8_SYSTEM
-        user = prompts.step8_user(source)
+        user = prompts.step8_user(
+            source,
+            core_tension=ctx.angle.core_tension if ctx.angle else "",
+            research_context=ctx.research_context,
+        )
         text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["tighten"])
 
         script_text = (
@@ -380,6 +407,10 @@ class ScriptingAgent:
         user = prompts.step10_user(
             source,
             label="Annotated Script" if ctx.annotated_script is not None else "Script",
+            core_inputs=ctx.core_inputs,
+            angle=ctx.angle,
+            beat_intents=ctx.beat_intents,
+            research_context=ctx.research_context,
         )
         text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["run_qc"])
 

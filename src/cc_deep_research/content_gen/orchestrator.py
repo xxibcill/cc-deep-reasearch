@@ -322,17 +322,28 @@ async def _stage_run_scripting(
     seeded_ctx = ScriptingContext(
         raw_idea=raw_idea,
         research_context=_format_research_context(ctx.research_pack),
+        tone=(angle.tone if angle else ""),
+        cta=(angle.cta if angle else ""),
         core_inputs=CoreInputs(
             topic=item.idea if item else raw_idea,
-            outcome=(angle.core_promise if angle else "") or (item.problem if item else raw_idea),
-            audience=(angle.target_audience if angle else "") or (item.audience if item else ""),
+            outcome=(
+                (angle.primary_takeaway if angle else "")
+                or (item.problem if item else raw_idea)
+            ),
+            audience=(
+                (angle.target_audience if angle else "")
+                or (item.audience if item else "")
+            ),
         ),
         angle=AngleDefinition(
             angle=(angle.core_promise if angle else "") or raw_idea,
-            content_type=(angle.lens if angle else "") or "Insight",
+            content_type=(
+                (angle.format if angle else "")
+                or (angle.lens if angle else "")
+                or "Insight"
+            ),
             core_tension=(
                 (angle.viewer_problem if angle else "")
-                or (angle.why_this_version_should_exist if angle else "")
                 or (item.problem if item else "")
                 or raw_idea
             ),
@@ -464,10 +475,16 @@ def _format_research_context(research_pack: ResearchPack | None) -> str:
         return ""
 
     sections: list[str] = []
+    if research_pack.audience_insights:
+        sections.append("Audience insights:\n- " + "\n- ".join(research_pack.audience_insights[:3]))
     if research_pack.key_facts:
         sections.append("Key facts:\n- " + "\n- ".join(research_pack.key_facts[:3]))
     if research_pack.proof_points:
         sections.append("Proof points:\n- " + "\n- ".join(research_pack.proof_points[:5]))
+    if research_pack.examples:
+        sections.append("Examples:\n- " + "\n- ".join(research_pack.examples[:3]))
+    if research_pack.case_studies:
+        sections.append("Case studies:\n- " + "\n- ".join(research_pack.case_studies[:2]))
     if research_pack.gaps_to_exploit:
         sections.append("Competitor gaps:\n- " + "\n- ".join(research_pack.gaps_to_exploit[:2]))
     if research_pack.claims_requiring_verification:

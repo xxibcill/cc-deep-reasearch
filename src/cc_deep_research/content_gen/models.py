@@ -93,6 +93,8 @@ class ScriptingContext(BaseModel):
 
     raw_idea: str = ""
     research_context: str = ""
+    tone: str = ""
+    cta: str = ""
     core_inputs: CoreInputs | None = None
     angle: AngleDefinition | None = None
     structure: ScriptStructure | None = None
