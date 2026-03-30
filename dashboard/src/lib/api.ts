@@ -50,14 +50,46 @@ const SESSION_REPORT_TIMEOUT_MS = 120000;
 const SESSION_BUNDLE_TIMEOUT_MS = 120000;
 const BULK_DELETE_TIMEOUT_MS = 120000;
 
+function extractApiErrorPayload(data: unknown): string | null {
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+
+  const payload = data as Record<string, unknown>;
+  if (typeof payload.error === 'string' && payload.error.length > 0) {
+    return payload.error;
+  }
+  if (typeof payload.detail === 'string' && payload.detail.length > 0) {
+    return payload.detail;
+  }
+
+  return null;
+}
+
+function formatTimedOutRequest(error: axios.AxiosError): string {
+  const method = error.config?.method?.toUpperCase() ?? 'REQUEST';
+  const path = error.config?.url ?? dashboardRuntimeConfig.apiBaseUrl;
+  const timeoutMs = error.config?.timeout;
+  const timeoutText =
+    typeof timeoutMs === 'number' && timeoutMs > 0
+      ? `${(timeoutMs / 1000).toFixed(timeoutMs % 1000 === 0 ? 0 : 1)}s`
+      : 'the configured timeout';
+
+  return [
+    `${method} ${path} timed out after ${timeoutText} while waiting for the dashboard backend.`,
+    'No response body was received before the browser gave up.',
+    'If this is Quick Script on the Anthropic route, the backend may still be waiting on the provider or preparing the real provider error.',
+  ].join('\n');
+}
+
 export function getApiErrorMessage(error: unknown, fallback: string): string {
   if (axios.isAxiosError(error)) {
-    const responseError = error.response?.data?.error;
-    if (typeof responseError === 'string' && responseError.length > 0) {
+    const responseError = extractApiErrorPayload(error.response?.data);
+    if (responseError) {
       return responseError;
     }
     if (error.code === 'ECONNABORTED') {
-      return 'Request timed out while waiting for the dashboard backend.';
+      return formatTimedOutRequest(error);
     }
     if (error.message) {
       return error.message;

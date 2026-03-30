@@ -9,6 +9,8 @@ import type {
   PublishItem,
   StartPipelineRequest,
   ResumePipelineRequest,
+  RunScriptingRequest,
+  RunScriptingResponse,
 } from '@/types/content-gen';
 
 // ---------------------------------------------------------------------------
@@ -16,6 +18,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 const CONTENT_GEN_TIMEOUT_MS = 30000;
+const SCRIPTING_TIMEOUT_MS = 240000;
 
 const contentGenClient = axios.create({
   baseURL: `${dashboardRuntimeConfig.apiBaseUrl}/content-gen`,
@@ -92,10 +95,12 @@ export async function approveQC(pipelineId: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function runScripting(
-  idea: string,
-): Promise<{ script: string; run_id?: string; [key: string]: unknown }> {
+  req: RunScriptingRequest,
+): Promise<RunScriptingResponse> {
   try {
-    const response = await contentGenClient.post('/scripting', { idea });
+    const response = await contentGenClient.post('/scripting', req, {
+      timeout: SCRIPTING_TIMEOUT_MS,
+    });
     return response.data;
   } catch (error) {
     throw new Error(getApiErrorMessage(error, 'Failed to run scripting.'));
@@ -113,7 +118,7 @@ export async function listScripts(): Promise<SavedScriptRun[]> {
 
 export async function getScript(
   runId: string,
-): Promise<{ script: string; context?: string; [key: string]: unknown }> {
+): Promise<RunScriptingResponse> {
   try {
     const response = await contentGenClient.get(`/scripts/${runId}`);
     return response.data;

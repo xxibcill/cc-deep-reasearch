@@ -274,6 +274,30 @@ export interface QCResult {
   final_script: string;
 }
 
+export interface ScriptingLLMCallTrace {
+  call_index: number;
+  temperature: number;
+  system_prompt: string;
+  user_prompt: string;
+  raw_response: string;
+  provider: string;
+  model: string;
+  transport: string;
+  latency_ms: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  finish_reason: string | null;
+}
+
+export interface ScriptingStepTrace {
+  step_index: number;
+  step_name: string;
+  step_label: string;
+  iteration: number;
+  llm_calls: ScriptingLLMCallTrace[];
+  parsed_output: unknown;
+}
+
 export interface ScriptingContext {
   raw_idea: string;
   research_context: string;
@@ -290,6 +314,7 @@ export interface ScriptingContext {
   annotated_script: ScriptVersion | null;
   visual_notes: VisualNote[] | null;
   qc: QCResult | null;
+  step_traces: ScriptingStepTrace[];
 }
 
 export interface SavedScriptRun {
@@ -299,6 +324,9 @@ export interface SavedScriptRun {
   word_count: number;
   script_path: string;
   context_path: string;
+  result_path?: string | null;
+  execution_mode: 'single_pass' | 'iterative';
+  iterations?: ScriptingIterations | null;
 }
 
 // =============================================================================
@@ -455,6 +483,32 @@ export interface ResumePipelineRequest {
 
 export interface RunScriptingRequest {
   idea: string;
+  iterative_mode?: boolean | null;
+  max_iterations?: number | null;
+  llm_route?: 'openrouter' | 'cerebras' | 'anthropic' | 'heuristic' | null;
+}
+
+export interface ScriptingIterationSummary {
+  iteration: number;
+  score: number;
+  passes: boolean;
+}
+
+export interface ScriptingIterations {
+  count: number;
+  max_iterations: number;
+  converged: boolean;
+  quality_history: ScriptingIterationSummary[];
+}
+
+export interface RunScriptingResponse {
+  run_id?: string;
+  raw_idea: string;
+  script: string;
+  word_count: number;
+  context: ScriptingContext;
+  execution_mode: 'single_pass' | 'iterative';
+  iterations?: ScriptingIterations;
 }
 
 export interface UpdateStrategyRequest {
