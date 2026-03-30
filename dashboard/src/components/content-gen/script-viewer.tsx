@@ -1,6 +1,7 @@
 'use client'
 
-import { Copy, FileText } from 'lucide-react'
+import { useState } from 'react'
+import { Copy, FileText, Check } from 'lucide-react'
 
 interface ScriptViewerProps {
   content: string
@@ -13,37 +14,50 @@ export function ScriptViewer({
   label = 'Script',
   showWordCount = true,
 }: ScriptViewerProps) {
+  const [copied, setCopied] = useState(false)
   const wordCount = content ? content.split(/\s+/).filter(Boolean).length : 0
 
   const handleCopy = async () => {
     if (!content) return
     await navigator.clipboard.writeText(content)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <FileText className="h-4 w-4" />
-          {label}
+        <div className="flex items-center gap-2">
+          <FileText className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium font-display">{label}</span>
           {showWordCount && (
-            <span className="text-muted-foreground font-normal">
-              ({wordCount} words)
+            <span className="text-xs text-muted-foreground font-mono tabular-nums">
+              {wordCount}w
             </span>
           )}
         </div>
         <button
           onClick={handleCopy}
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          title="Copy to clipboard"
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded hover:bg-surface-raised"
         >
-          <Copy className="h-3.5 w-3.5" />
-          Copy
+          {copied ? (
+            <>
+              <Check className="h-3 w-3 text-success" />
+              <span className="text-success">Copied</span>
+            </>
+          ) : (
+            <>
+              <Copy className="h-3 w-3" />
+              Copy
+            </>
+          )}
         </button>
       </div>
-      <pre className="whitespace-pre-wrap text-sm leading-relaxed bg-muted/30 p-4 rounded-md border max-h-[500px] overflow-y-auto">
-        {content || <span className="text-muted-foreground italic">No content</span>}
-      </pre>
+      <div className="bg-background border border-border p-4 rounded-sm max-h-[500px] overflow-y-auto">
+        <pre className="whitespace-pre-wrap text-sm leading-[1.7] font-mono text-foreground/85">
+          {content || <span className="text-muted-foreground italic">No content</span>}
+        </pre>
+      </div>
     </div>
   )
 }
