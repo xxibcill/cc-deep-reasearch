@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.content_gen.models import (
-    AngleDefinition,
-    CoreInputs,
     PIPELINE_STAGE_LABELS,
     PIPELINE_STAGES,
+    AngleDefinition,
+    CoreInputs,
+    IterationState,
     PipelineContext,
+    QualityEvaluation,
     ResearchPack,
     ScriptingContext,
     ScriptVersion,
@@ -20,6 +23,8 @@ from cc_deep_research.content_gen.models import (
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
+
+logger = logging.getLogger(__name__)
 
 
 class ContentGenOrchestrator:
@@ -46,6 +51,7 @@ class ContentGenOrchestrator:
         from cc_deep_research.content_gen.agents.production import ProductionAgent
         from cc_deep_research.content_gen.agents.publish import PublishAgent
         from cc_deep_research.content_gen.agents.qc import QCAgent
+        from cc_deep_research.content_gen.agents.quality_evaluator import QualityEvaluatorAgent
         from cc_deep_research.content_gen.agents.research_pack import ResearchPackAgent
         from cc_deep_research.content_gen.agents.scripting import ScriptingAgent
         from cc_deep_research.content_gen.agents.visual import VisualAgent
@@ -61,6 +67,7 @@ class ContentGenOrchestrator:
             "qc": lambda: QCAgent(self._config),
             "publish": lambda: PublishAgent(self._config),
             "performance": lambda: PerformanceAgent(self._config),
+            "quality_evaluator": lambda: QualityEvaluatorAgent(self._config),
         }
         factory = factories.get(name)
         if factory is None:
@@ -80,22 +87,168 @@ class ContentGenOrchestrator:
         to_stage: int | None = None,
         progress_callback: Callable[[int, str], None] | None = None,
     ) -> PipelineContext:
-        """Run the full 12-stage content pipeline."""
+        """Run the full 12-stage content pipeline with iterative quality loop.
+
+        Phases:
+          1. Stages 0-3 (ideation) — run once
+          2. Stages 4-9 (content) — iterative loop with quality evaluation
+          3. Stages 10-11 (publish) — run once after loop exits
+        """
         ctx = PipelineContext(
             theme=theme,
             created_at=datetime.now(tz=UTC).isoformat(),
+            iteration_state=IterationState(
+                max_iterations=self._config.content_gen.max_iterations,
+            ),
         )
         end = to_stage if to_stage is not None else len(PIPELINE_STAGES) - 1
 
-        for idx in range(from_stage, end + 1):
-            stage_name = PIPELINE_STAGES[idx]
-            label = PIPELINE_STAGE_LABELS.get(stage_name, stage_name)
-            if progress_callback:
-                progress_callback(idx, label)
-            ctx.current_stage = idx
-            ctx = await _PIPELINE_HANDLERS[idx](self, ctx)
+        # Phase 1: Ideation stages (0-3) — run once
+        for idx in range(from_stage, min(4, end + 1)):
+            ctx = await self._run_stage(idx, ctx, progress_callback)
+
+        # Phase 2: Content stages (4-9) — iterative or single-pass
+        if self._config.content_gen.enable_iterative_mode and end >= 5 and from_stage <= 4:
+            ctx = await self._run_iterative_loop(ctx, progress_callback, end)
+        else:
+            for idx in range(max(4, from_stage), min(10, end + 1)):
+                ctx = await self._run_stage(idx, ctx, progress_callback)
+
+        # Phase 3: Post-content stages (10-11) — run once
+        for idx in range(10, end + 1):
+            ctx = await self._run_stage(idx, ctx, progress_callback)
 
         return ctx
+
+    async def _run_stage(
+        self,
+        idx: int,
+        ctx: PipelineContext,
+        progress_callback: Callable[[int, str], None] | None,
+    ) -> PipelineContext:
+        stage_name = PIPELINE_STAGES[idx]
+        label = PIPELINE_STAGE_LABELS.get(stage_name, stage_name)
+        if progress_callback:
+            progress_callback(idx, label)
+        ctx.current_stage = idx
+        return await _PIPELINE_HANDLERS[idx](self, ctx)
+
+    async def _run_iterative_loop(
+        self,
+        ctx: PipelineContext,
+        progress_callback: Callable[[int, str], None] | None,
+        end_stage: int,
+    ) -> PipelineContext:
+        iter_state = ctx.iteration_state or IterationState(
+            max_iterations=self._config.content_gen.max_iterations,
+        )
+        ctx.iteration_state = iter_state
+        max_iter = iter_state.max_iterations
+        threshold = self._config.content_gen.quality_threshold
+
+        while iter_state.current_iteration <= max_iter:
+            iteration = iter_state.current_iteration
+            logger.info(
+                "Content iteration %d/%d", iteration, max_iter,
+            )
+            if progress_callback:
+                progress_callback(-1, f"Iteration {iteration}/{max_iter}")
+
+            # Re-run research if gaps were identified in previous iteration
+            if iteration > 1 and iter_state.should_rerun_research:
+                ctx = await self._run_stage(4, ctx, progress_callback)
+                iter_state.should_rerun_research = False
+
+            # Run content stages 5-9
+            for idx in range(5, min(10, end_stage + 1)):
+                ctx = await self._run_stage(idx, ctx, progress_callback)
+
+            # Evaluate quality
+            quality_eval = await self._evaluate_quality(ctx, iteration, threshold)
+            iter_state.quality_history.append(quality_eval)
+            iter_state.latest_feedback = self._format_feedback(quality_eval)
+
+            # Check stop conditions
+            if self._should_stop_iterating(quality_eval, iter_state):
+                iter_state.is_converged = True
+                iter_state.convergence_reason = quality_eval.rationale
+                break
+
+            # Prepare next iteration
+            if quality_eval.research_gaps_identified:
+                iter_state.should_rerun_research = True
+            self._inject_feedback(ctx, quality_eval)
+            iter_state.current_iteration += 1
+
+        return ctx
+
+    async def _evaluate_quality(
+        self,
+        ctx: PipelineContext,
+        iteration: int,
+        threshold: float,
+    ) -> QualityEvaluation:
+        agent = self._get_agent("quality_evaluator")
+        previous_feedback = ""
+        if ctx.iteration_state and ctx.iteration_state.quality_history:
+            prev = ctx.iteration_state.quality_history[-1]
+            previous_feedback = self._format_feedback(prev)
+
+        return await agent.evaluate(
+            scripting=ctx.scripting or ScriptingContext(),
+            visual_plan=ctx.visual_plan,
+            packaging=ctx.packaging,
+            research_pack=ctx.research_pack,
+            angle=ctx.angles,
+            iteration_number=iteration,
+            quality_threshold=threshold,
+            previous_feedback=previous_feedback,
+        )
+
+    def _should_stop_iterating(
+        self,
+        quality_eval: QualityEvaluation,
+        iter_state: IterationState,
+    ) -> bool:
+        if quality_eval.passes_threshold:
+            return True
+        if iter_state.current_iteration >= iter_state.max_iterations:
+            return True
+        # Convergence: not improving enough
+        if len(iter_state.quality_history) >= 2:
+            prev_score = iter_state.quality_history[-2].overall_quality_score
+            improvement = quality_eval.overall_quality_score - prev_score
+            if improvement < self._config.content_gen.convergence_threshold:
+                return True
+        return False
+
+    @staticmethod
+    def _format_feedback(quality_eval: QualityEvaluation) -> str:
+        parts: list[str] = []
+        if quality_eval.critical_issues:
+            parts.append("Critical issues:")
+            parts.extend(f"- {i}" for i in quality_eval.critical_issues)
+        if quality_eval.improvement_suggestions:
+            parts.append("Improvement suggestions:")
+            parts.extend(f"- {s}" for s in quality_eval.improvement_suggestions)
+        if quality_eval.rationale:
+            parts.append(f"Rationale: {quality_eval.rationale}")
+        return "\n".join(parts)
+
+    @staticmethod
+    def _inject_feedback(ctx: PipelineContext, quality_eval: QualityEvaluation) -> None:
+        if not ctx.scripting:
+            return
+        feedback_lines = [f"Iteration {quality_eval.iteration_number} feedback:"]
+        if quality_eval.critical_issues:
+            feedback_lines.append("Critical issues to fix:")
+            feedback_lines.extend(f"- {i}" for i in quality_eval.critical_issues)
+        if quality_eval.improvement_suggestions:
+            feedback_lines.append("Improvement suggestions:")
+            feedback_lines.extend(f"- {s}" for s in quality_eval.improvement_suggestions)
+        feedback_text = "\n".join(feedback_lines)
+        existing = ctx.scripting.research_context or ""
+        ctx.scripting.research_context = f"{feedback_text}\n\n{existing}"
 
     # ------------------------------------------------------------------
     # Individual stage runners
@@ -298,7 +451,10 @@ async def _stage_build_research_pack(
     if item is None or angle is None:
         return ctx
     agent = orch._get_agent("research")
-    ctx.research_pack = await agent.build(item, angle)
+    feedback = ""
+    if ctx.iteration_state and ctx.iteration_state.should_rerun_research and ctx.iteration_state.latest_feedback:
+        feedback = ctx.iteration_state.latest_feedback
+    ctx.research_pack = await agent.build(item, angle, feedback=feedback)
     return ctx
 
 
@@ -319,9 +475,14 @@ async def _stage_run_scripting(
         angle = ctx.angles.angle_options[0]
     raw_idea = item.idea if item else ctx.theme
     agent = orch._get_agent("scripting")
+    # Preserve existing research context (includes feedback from prior iterations)
+    existing_research = ""
+    if ctx.scripting and ctx.scripting.research_context:
+        existing_research = ctx.scripting.research_context
+    research_context = existing_research or _format_research_context(ctx.research_pack)
     seeded_ctx = ScriptingContext(
         raw_idea=raw_idea,
-        research_context=_format_research_context(ctx.research_pack),
+        research_context=research_context,
         tone=(angle.tone if angle else ""),
         cta=(angle.cta if angle else ""),
         core_inputs=CoreInputs(

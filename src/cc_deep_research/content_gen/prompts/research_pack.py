@@ -73,11 +73,16 @@ def synthesis_user(
     item: BacklogItem,
     angle: AngleOption,
     search_context: str,
+    *,
+    feedback: str = "",
 ) -> str:
-    return (
-        f"Idea: {item.idea}\n"
-        f"Core Promise: {angle.core_promise}\n"
-        f"Target Audience: {angle.target_audience}\n"
-        f"Viewer Problem: {angle.viewer_problem}\n\n"
-        f"Search results:\n{search_context}"
-    )
+    parts = [
+        f"Idea: {item.idea}",
+        f"Core Promise: {angle.core_promise}",
+        f"Target Audience: {angle.target_audience}",
+        f"Viewer Problem: {angle.viewer_problem}",
+        f"\nSearch results:\n{search_context}",
+    ]
+    if feedback:
+        parts.append(f"\nPrevious iteration feedback to address:\n{feedback}")
+    return "\n".join(parts)
