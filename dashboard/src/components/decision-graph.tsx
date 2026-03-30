@@ -131,18 +131,18 @@ export function DecisionGraph({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-        <span className="rounded-full bg-slate-100 px-3 py-1">
+        <span className="rounded-full bg-surface-raised px-3 py-1">
           {graph.summary.node_count} nodes
         </span>
-        <span className="rounded-full bg-slate-100 px-3 py-1">
+        <span className="rounded-full bg-surface-raised px-3 py-1">
           {graph.summary.explicit_edge_count} explicit edges
         </span>
-        <span className="rounded-full bg-slate-100 px-3 py-1">
+        <span className="rounded-full bg-surface-raised px-3 py-1">
           {graph.summary.inferred_edge_count} inferred edges
         </span>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.10),transparent_35%),linear-gradient(180deg,#f8fafc,#eef2ff)]">
+      <div className="overflow-hidden rounded-2xl border bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.14),transparent_35%),linear-gradient(180deg,rgba(31,27,23,0.98),rgba(42,35,30,0.96))]">
         <svg
           ref={svgRef}
           className="h-[560px] w-full"
@@ -159,7 +159,7 @@ export function DecisionGraph({
               orient="auto"
               markerUnits="strokeWidth"
             >
-              <path d="M0,0 L0,6 L9,3 z" fill="#64748b" />
+              <path d="M0,0 L0,6 L9,3 z" fill="#b0a89c" />
             </marker>
           </defs>
 
@@ -179,9 +179,9 @@ export function DecisionGraph({
                   d={edgePath(source, target)}
                   fill="none"
                   markerEnd="url(#decision-graph-arrow)"
-                  stroke={edge.inferred ? '#64748b' : '#0f172a'}
+                  stroke={edge.inferred ? '#b0a89c' : '#f5f5f4'}
                   strokeDasharray={edge.inferred ? '7 6' : '0'}
-                  strokeOpacity={edge.inferred ? 0.65 : 0.88}
+                  strokeOpacity={edge.inferred ? 0.7 : 0.82}
                   strokeWidth={edge.inferred ? 2 : 2.4}
                   data-edge-inferred={edge.inferred ? 'true' : 'false'}
                   data-testid={`decision-graph-edge-${sanitizeTestId(edge.id)}`}
@@ -197,7 +197,7 @@ export function DecisionGraph({
                   textAnchor="middle"
                   fontSize="12"
                   fontWeight="700"
-                  fill="#475569"
+                  fill="#d6d0c7"
                   letterSpacing="0.12em"
                 >
                   {kind.replace('_', ' ').toUpperCase()}
@@ -239,7 +239,7 @@ export function DecisionGraph({
                     height={52}
                     fill={background}
                     opacity={node.inferred ? 0.78 : 0.96}
-                    stroke={isSelected ? '#0f172a' : '#ffffff'}
+                    stroke={isSelected ? '#fbbf24' : 'rgba(245,245,244,0.22)'}
                     strokeWidth={isSelected ? 4 : 2}
                   />
                   <text
@@ -268,7 +268,7 @@ export function DecisionGraph({
 
       <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
         <div className="flex items-center gap-2">
-          <span className="h-0.5 w-8 rounded-full bg-slate-900" />
+          <span className="h-0.5 w-8 rounded-full bg-foreground" />
           Explicit telemetry link
         </div>
         <div className="flex items-center gap-2">

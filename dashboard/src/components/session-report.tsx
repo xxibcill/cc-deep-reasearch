@@ -45,13 +45,13 @@ function renderReportContent(
     try {
       const parsed = JSON.parse(report.content);
       return (
-        <pre className="overflow-auto rounded-2xl bg-slate-950 p-5 text-sm text-slate-100">
+        <pre className="overflow-auto rounded-2xl bg-background p-5 text-sm text-foreground">
           {JSON.stringify(parsed, null, 2)}
         </pre>
       );
     } catch {
       return (
-        <pre className="overflow-auto rounded-2xl bg-slate-950 p-5 text-sm text-slate-100">
+        <pre className="overflow-auto rounded-2xl bg-background p-5 text-sm text-foreground">
           {report.content}
         </pre>
       );
@@ -61,7 +61,7 @@ function renderReportContent(
   if (selectedFormat === 'html') {
     return (
       <div
-        className="prose prose-slate max-w-none prose-headings:text-slate-900 prose-a:text-sky-700 dark:prose-invert"
+        className="prose prose-invert max-w-none prose-headings:text-foreground prose-a:text-primary prose-strong:text-foreground"
         dangerouslySetInnerHTML={{ __html: report.content }}
       />
     );
@@ -69,7 +69,7 @@ function renderReportContent(
 
   return (
     <ReactMarkdown
-      className="prose prose-slate max-w-none prose-headings:text-slate-900 prose-a:text-sky-700 prose-pre:rounded-2xl dark:prose-invert"
+      className="prose prose-invert max-w-none prose-headings:text-foreground prose-a:text-primary prose-strong:text-foreground prose-pre:rounded-2xl"
       remarkPlugins={[remarkGfm]}
     >
       {report.content}

@@ -5,6 +5,7 @@
 @tailwind utilities;
 
 :root {
+  color-scheme: dark;
   /* Warm dark palette — industrial console */
   --background: 30 6% 6%;
   --foreground: 36 14% 90%;
@@ -15,15 +16,15 @@
   --primary: 36 82% 55%;
   --primary-foreground: 30 6% 6%;
   --secondary: 30 5% 14%;
-  --secondary-foreground: 36 10% 70%;
+  --secondary-foreground: 36 12% 82%;
   --muted: 30 4% 14%;
-  --muted-foreground: 30 6% 46%;
+  --muted-foreground: 32 9% 68%;
   --accent: 36 82% 55%;
   --accent-foreground: 30 6% 6%;
   --destructive: 0 62% 50%;
   --destructive-foreground: 36 14% 90%;
-  --border: 30 4% 16%;
-  --input: 30 4% 16%;
+  --border: 30 4% 22%;
+  --input: 30 4% 22%;
   --ring: 36 82% 55%;
   --radius: 0.375rem;
 
@@ -34,7 +35,7 @@
   --success-muted: 174 30% 20%;
   --warning: 36 82% 55%;
   --warning-muted: 36 50% 18%;
-  --error: 0 62% 50%;
+  --error: 0 72% 62%;
   --error-muted: 0 40% 18%;
   --running-glow: 36 82% 55%;
 }
@@ -60,6 +61,25 @@ code,
   h1, h2, h3, h4, h5, h6 {
     font-family: "Space Grotesk", "Segoe UI", sans-serif;
     letter-spacing: -0.02em;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select {
+    @apply border-input bg-background text-foreground;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: hsl(var(--muted-foreground) / 0.7);
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: hsl(var(--primary));
+    background-color: hsl(var(--surface-raised));
+    border-color: hsl(var(--border));
+    color: hsl(var(--foreground));
   }
 }
 
@@ -197,4 +217,162 @@ code,
 ::selection {
   background: hsl(var(--warning) / 0.25);
   color: hsl(var(--foreground));
+}
+
+/* Normalize legacy light-surface utilities to the dashboard's dark palette. */
+.bg-white,
+.bg-white\/75,
+.bg-white\/80,
+.bg-white\/90,
+.bg-gray-100,
+.bg-neutral-100,
+.bg-slate-100,
+.bg-slate-100\/80,
+.bg-slate-50,
+.bg-slate-50\/60,
+.bg-slate-50\/70,
+.bg-slate-50\/80 {
+  background-color: hsl(var(--surface-raised));
+}
+
+.bg-green-50,
+.bg-green-100,
+.bg-emerald-50,
+.bg-emerald-100 {
+  background-color: hsl(var(--success-muted));
+}
+
+.bg-amber-50,
+.bg-amber-50\/80,
+.bg-amber-50\/70,
+.bg-amber-100,
+.bg-blue-50,
+.bg-blue-50\/70,
+.bg-yellow-50,
+.bg-yellow-100 {
+  background-color: hsl(var(--warning-muted));
+}
+
+.bg-red-50,
+.bg-red-50\/70,
+.bg-red-100,
+.bg-rose-100 {
+  background-color: hsl(var(--error-muted));
+}
+
+.hover\:bg-white\/80:hover,
+.hover\:bg-slate-50:hover,
+.hover\:bg-slate-100:hover {
+  background-color: hsl(var(--surface-raised));
+}
+
+.hover\:bg-green-100:hover,
+.hover\:bg-emerald-100:hover {
+  background-color: hsl(var(--success-muted) / 0.85);
+}
+
+.hover\:bg-amber-100:hover,
+.hover\:bg-yellow-100:hover {
+  background-color: hsl(var(--warning-muted) / 0.85);
+}
+
+.hover\:bg-red-100:hover {
+  background-color: hsl(var(--error-muted) / 0.85);
+}
+
+.border-neutral-100,
+.border-slate-100,
+.border-slate-200,
+.border-slate-200\/80,
+.border-slate-300,
+.border-slate-300\/90 {
+  border-color: hsl(var(--border));
+}
+
+.border-green-200,
+.border-green-300\/50,
+.border-emerald-300\/70 {
+  border-color: hsl(var(--success) / 0.35);
+}
+
+.border-amber-200,
+.border-amber-300\/70,
+.border-yellow-200 {
+  border-color: hsl(var(--warning) / 0.35);
+}
+
+.border-red-200 {
+  border-color: hsl(var(--error) / 0.35);
+}
+
+.border-blue-300,
+.border-blue-200,
+.border-sky-200 {
+  border-color: hsl(var(--primary) / 0.35);
+}
+
+.border-slate-500 {
+  border-color: hsl(var(--muted-foreground) / 0.6);
+}
+
+.text-slate-900,
+.text-slate-800,
+.text-slate-700,
+.text-gray-800,
+.text-neutral-100 {
+  color: hsl(var(--foreground));
+}
+
+.text-slate-600,
+.text-slate-500,
+.text-slate-400,
+.text-gray-700,
+.text-gray-600,
+.text-gray-400 {
+  color: hsl(var(--muted-foreground));
+}
+
+.text-green-900,
+.text-green-800,
+.text-green-600,
+.text-green-500,
+.text-emerald-900,
+.text-emerald-800 {
+  color: hsl(var(--success));
+}
+
+.text-amber-900,
+.text-amber-950,
+.text-amber-800,
+.text-amber-700,
+.text-amber-600,
+.text-amber-500,
+.text-blue-900,
+.text-blue-800,
+.text-yellow-800,
+.text-yellow-700,
+.text-yellow-600 {
+  color: hsl(var(--warning));
+}
+
+.text-red-900,
+.text-red-800,
+.text-red-700,
+.text-red-600,
+.text-red-500,
+.text-rose-800,
+.text-rose-500 {
+  color: hsl(var(--error));
+}
+
+.text-blue-700,
+.text-blue-600,
+.text-blue-500,
+.text-sky-900,
+.text-sky-700 {
+  color: hsl(var(--primary));
+}
+
+.hover\:text-blue-700:hover {
+  color: hsl(var(--primary));
 }
