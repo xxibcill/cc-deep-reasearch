@@ -573,6 +573,11 @@ def register_content_gen_commands(cli: click.Group) -> None:
         help="Save intermediate context as JSON",
     )
     @click.option("--quiet", is_flag=True, help="Only show final result")
+    @click.option(
+        "--no-iterate",
+        is_flag=True,
+        help="Disable iterative evaluation even if enabled in config",
+    )
     def script(
         idea: str | None,
         from_file: str | None,
@@ -580,6 +585,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
         output: str | None,
         save_context: bool,
         quiet: bool,
+        no_iterate: bool,
     ) -> None:
         """Run the 10-step scripting pipeline for a short-form video."""
         config = load_config()
@@ -626,6 +632,17 @@ def register_content_gen_commands(cli: click.Group) -> None:
                 if not quiet:
                     click.echo(f'Scripting: "{idea}"')
                     click.echo(f"Running {total}-step pipeline...\n")
+                if config.content_gen.enable_iterative_mode and not no_iterate:
+                    result_ctx, iter_state = await orch.run_scripting_iterative(
+                        idea, progress_callback=progress  # type: ignore[arg-type]
+                    )
+                    if not quiet and iter_state.current_iteration > 1:
+                        click.echo(
+                            f"\nCompleted in {iter_state.current_iteration} iterations"
+                        )
+                        if iter_state.is_converged:
+                            click.echo(f"Convergence: {iter_state.convergence_reason}")
+                    return result_ctx
                 return await orch.run_scripting(idea, progress_callback=progress)  # type: ignore[arg-type]
 
         try:

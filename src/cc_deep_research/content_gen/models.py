@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -84,6 +84,34 @@ class QCResult(BaseModel):
     final_script: str
 
 
+class ScriptingLLMCallTrace(BaseModel):
+    """Trace for a single LLM call inside a scripting step."""
+
+    call_index: int
+    temperature: float
+    system_prompt: str
+    user_prompt: str
+    raw_response: str
+    provider: str
+    model: str
+    transport: str
+    latency_ms: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    finish_reason: str | None = None
+
+
+class ScriptingStepTrace(BaseModel):
+    """Trace record for one completed scripting step."""
+
+    step_index: int
+    step_name: str
+    step_label: str
+    iteration: int = 1
+    llm_calls: list[ScriptingLLMCallTrace] = Field(default_factory=list)
+    parsed_output: Any = None
+
+
 class ScriptingContext(BaseModel):
     """Accumulated state passed through the scripting pipeline.
 
@@ -106,6 +134,7 @@ class ScriptingContext(BaseModel):
     annotated_script: ScriptVersion | None = None
     visual_notes: list[VisualNote] | None = None
     qc: QCResult | None = None
+    step_traces: list[ScriptingStepTrace] = Field(default_factory=list)
 
 
 class SavedScriptRun(BaseModel):
@@ -117,6 +146,9 @@ class SavedScriptRun(BaseModel):
     word_count: int = 0
     script_path: str
     context_path: str
+    result_path: str | None = None
+    execution_mode: Literal["single_pass", "iterative"] = "single_pass"
+    iterations: "ScriptingIterations | None" = None
 
 
 SCRIPTING_STEPS: list[str] = [
@@ -435,6 +467,35 @@ class IterationState(BaseModel):
     is_converged: bool = False
     convergence_reason: str = ""
     should_rerun_research: bool = False
+
+
+class ScriptingIterationSummary(BaseModel):
+    """Compact quality summary for one scripting iteration."""
+
+    iteration: int = Field(default=1, ge=1)
+    score: float = Field(default=0.0, ge=0.0, le=1.0)
+    passes: bool = False
+
+
+class ScriptingIterations(BaseModel):
+    """Saved iteration summary for iterative scripting runs."""
+
+    count: int = Field(default=1, ge=1)
+    max_iterations: int = Field(default=1, ge=1)
+    converged: bool = False
+    quality_history: list[ScriptingIterationSummary] = Field(default_factory=list)
+
+
+class ScriptingRunResult(BaseModel):
+    """Full saved response for a standalone scripting run."""
+
+    run_id: str | None = None
+    raw_idea: str = ""
+    script: str = ""
+    word_count: int = 0
+    context: ScriptingContext
+    execution_mode: Literal["single_pass", "iterative"] = "single_pass"
+    iterations: ScriptingIterations | None = None
 
 
 class PublishItem(BaseModel):

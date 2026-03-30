@@ -6,7 +6,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from cc_deep_research.content_gen.models import SavedScriptRun, ScriptingContext
+from cc_deep_research.content_gen.models import (
+    SavedScriptRun,
+    ScriptingContext,
+    ScriptingIterations,
+    ScriptingRunResult,
+)
 
 _DEFAULT_DIR = Path.home() / ".config" / "cc-deep-research" / "scripts"
 
@@ -21,7 +26,13 @@ class ScriptingStore:
     def path(self) -> Path:
         return self._path
 
-    def save(self, ctx: ScriptingContext) -> SavedScriptRun:
+    def save(
+        self,
+        ctx: ScriptingContext,
+        *,
+        execution_mode: str = "single_pass",
+        iterations: ScriptingIterations | None = None,
+    ) -> SavedScriptRun:
         """Persist a scripting run and update latest pointers."""
         saved_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         run_id = f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
@@ -31,8 +42,20 @@ class ScriptingStore:
         script = self._extract_script(ctx)
         script_path = run_dir / "script.txt"
         context_path = run_dir / "context.json"
+        result_path = run_dir / "result.json"
         script_path.write_text(script)
         context_path.write_text(ctx.model_dump_json(indent=2))
+
+        result = ScriptingRunResult(
+            run_id=run_id,
+            raw_idea=ctx.raw_idea,
+            script=script,
+            word_count=len(script.split()),
+            context=ctx,
+            execution_mode=execution_mode,
+            iterations=iterations,
+        )
+        result_path.write_text(result.model_dump_json(indent=2))
 
         record = SavedScriptRun(
             run_id=run_id,
@@ -41,12 +64,16 @@ class ScriptingStore:
             word_count=len(script.split()),
             script_path=str(script_path),
             context_path=str(context_path),
+            result_path=str(result_path),
+            execution_mode=execution_mode,
+            iterations=iterations,
         )
         (run_dir / "metadata.json").write_text(record.model_dump_json(indent=2))
 
         self._path.mkdir(parents=True, exist_ok=True)
         (self._path / "latest.txt").write_text(script)
         (self._path / "latest.context.json").write_text(ctx.model_dump_json(indent=2))
+        (self._path / "latest.result.json").write_text(result.model_dump_json(indent=2))
         (self._path / "latest.json").write_text(record.model_dump_json(indent=2))
         return record
 

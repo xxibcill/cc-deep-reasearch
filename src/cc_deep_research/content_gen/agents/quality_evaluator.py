@@ -77,6 +77,22 @@ class QualityEvaluatorAgent:
         text = await self._call_llm(system, user, temperature=0.2)
         return _parse_quality_evaluation(text, iteration_number)
 
+    async def evaluate_scripting(
+        self,
+        *,
+        scripting: ScriptingContext,
+        iteration_number: int = 1,
+        quality_threshold: float = 0.75,
+        previous_feedback: str = "",
+    ) -> QualityEvaluation:
+        """Evaluate quality for standalone scripting runs (no visual/packaging context)."""
+        return await self.evaluate(
+            scripting=scripting,
+            iteration_number=iteration_number,
+            quality_threshold=quality_threshold,
+            previous_feedback=previous_feedback,
+        )
+
 
 # ---------------------------------------------------------------------------
 # Summarization helpers

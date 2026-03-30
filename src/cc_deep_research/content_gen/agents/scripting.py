@@ -18,11 +18,14 @@ from cc_deep_research.content_gen.models import (
     QCCheck,
     QCResult,
     ScriptingContext,
+    ScriptingLLMCallTrace,
+    ScriptingStepTrace,
     ScriptStructure,
     ScriptVersion,
     VisualNote,
 )
 from cc_deep_research.content_gen.prompts import scripting as prompts
+from cc_deep_research.llm.base import LLMResponse, LLMTransportType
 from cc_deep_research.llm import LLMRouter
 
 if TYPE_CHECKING:
@@ -48,6 +51,20 @@ _STEP_TEMPERATURES: dict[str, float] = {
 }
 
 
+def _transport_from_route_name(route_name: str) -> LLMTransportType:
+    route_map = {
+        "openrouter": LLMTransportType.OPENROUTER_API,
+        "cerebras": LLMTransportType.CEREBRAS_API,
+        "anthropic": LLMTransportType.ANTHROPIC_API,
+        "heuristic": LLMTransportType.HEURISTIC,
+    }
+    transport = route_map.get(route_name)
+    if transport is None:
+        msg = f"Unsupported scripting LLM route: {route_name}"
+        raise ValueError(msg)
+    return transport
+
+
 def _require(value: object, name: str, step: str) -> None:
     """Raise ValueError if *value* is None or empty string."""
     if value is None:
@@ -61,12 +78,16 @@ def _require(value: object, name: str, step: str) -> None:
 class ScriptingAgent:
     """Execute the 10-step scripting pipeline for short-form video scripts."""
 
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, *, llm_route: str | None = None) -> None:
         from cc_deep_research.llm.registry import LLMRouteRegistry
 
         self._config = config
         registry = LLMRouteRegistry(config.llm)
+        if llm_route is not None:
+            transport = _transport_from_route_name(llm_route)
+            registry.set_route(AGENT_ID, registry.get_route_for_transport(transport))
         self._router = LLMRouter(registry)
+        self._active_iteration = 1
 
     async def _call_llm(
         self,
@@ -74,7 +95,7 @@ class ScriptingAgent:
         user_prompt: str,
         *,
         temperature: float = 0.3,
-    ) -> str:
+    ) -> LLMResponse:
         if not self._router.is_available(AGENT_ID):
             msg = (
                 "No LLM route is available for the scripting workflow. "
@@ -88,7 +109,52 @@ class ScriptingAgent:
             system_prompt=system_prompt,
             temperature=temperature,
         )
-        return response.content
+        return response
+
+    def _build_llm_call_trace(
+        self,
+        *,
+        call_index: int,
+        system_prompt: str,
+        user_prompt: str,
+        response: LLMResponse,
+        temperature: float,
+    ) -> ScriptingLLMCallTrace:
+        return ScriptingLLMCallTrace(
+            call_index=call_index,
+            temperature=temperature,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            raw_response=response.content,
+            provider=response.provider.value,
+            model=response.model,
+            transport=response.transport.value,
+            latency_ms=response.latency_ms,
+            prompt_tokens=int(response.usage.get("prompt_tokens", 0)),
+            completion_tokens=int(response.usage.get("completion_tokens", 0)),
+            finish_reason=response.finish_reason,
+        )
+
+    def _append_step_trace(
+        self,
+        ctx: ScriptingContext,
+        *,
+        step_name: str,
+        llm_calls: list[ScriptingLLMCallTrace],
+        parsed_output: object,
+    ) -> None:
+        step_index = SCRIPTING_STEPS.index(step_name)
+        serialized_output = _serialize_trace_value(parsed_output)
+        ctx.step_traces.append(
+            ScriptingStepTrace(
+                step_index=step_index,
+                step_name=step_name,
+                step_label=SCRIPTING_STEP_LABELS[step_name],
+                iteration=self._active_iteration,
+                llm_calls=llm_calls,
+                parsed_output=serialized_output,
+            )
+        )
 
     # ------------------------------------------------------------------
     # Step 1: Define Core Inputs
@@ -97,9 +163,10 @@ class ScriptingAgent:
     async def define_core_inputs(self, raw_idea: str) -> ScriptingContext:
         system = prompts.STEP1_SYSTEM
         user = prompts.step1_user(raw_idea)
-        text = await self._call_llm(
+        response = await self._call_llm(
             system, user, temperature=_STEP_TEMPERATURES["define_core_inputs"]
         )
+        text = response.content
 
         topic = _extract_field(text, "Topic")
         outcome = _extract_field(text, "Outcome")
@@ -112,6 +179,20 @@ class ScriptingAgent:
         ctx = ScriptingContext(
             raw_idea=raw_idea,
             core_inputs=CoreInputs(topic=topic, outcome=outcome, audience=audience),
+        )
+        self._append_step_trace(
+            ctx,
+            step_name="define_core_inputs",
+            llm_calls=[
+                self._build_llm_call_trace(
+                    call_index=1,
+                    system_prompt=system,
+                    user_prompt=user,
+                    response=response,
+                    temperature=_STEP_TEMPERATURES["define_core_inputs"],
+                )
+            ],
+            parsed_output=ctx.core_inputs,
         )
         return ctx
 
@@ -126,7 +207,10 @@ class ScriptingAgent:
 
         system = prompts.STEP2_SYSTEM
         user = prompts.step2_user(ctx.core_inputs)
-        text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["define_angle"])
+        response = await self._call_llm(
+            system, user, temperature=_STEP_TEMPERATURES["define_angle"]
+        )
+        text = response.content
 
         angle = _extract_field(text, "Angle")
         content_type = _extract_field(text, "Content Type")
@@ -141,6 +225,20 @@ class ScriptingAgent:
             content_type=content_type,
             core_tension=core_tension,
             why_it_works=_extract_field(text, "Why this angle works"),
+        )
+        self._append_step_trace(
+            ctx,
+            step_name="define_angle",
+            llm_calls=[
+                self._build_llm_call_trace(
+                    call_index=1,
+                    system_prompt=system,
+                    user_prompt=user,
+                    response=response,
+                    temperature=_STEP_TEMPERATURES["define_angle"],
+                )
+            ],
+            parsed_output=ctx.angle,
         )
         return ctx
 
@@ -158,9 +256,10 @@ class ScriptingAgent:
 
         system = prompts.STEP3_SYSTEM
         user = prompts.step3_user(ctx.core_inputs, ctx.angle)
-        text = await self._call_llm(
+        response = await self._call_llm(
             system, user, temperature=_STEP_TEMPERATURES["choose_structure"]
         )
+        text = response.content
 
         chosen = _extract_field(text, "Chosen Structure")
         beats = _extract_beat_list(text)
@@ -174,6 +273,20 @@ class ScriptingAgent:
             chosen_structure=chosen,
             why_it_fits=_extract_field(text, "Why this structure fits"),
             beat_list=beats,
+        )
+        self._append_step_trace(
+            ctx,
+            step_name="choose_structure",
+            llm_calls=[
+                self._build_llm_call_trace(
+                    call_index=1,
+                    system_prompt=system,
+                    user_prompt=user,
+                    response=response,
+                    temperature=_STEP_TEMPERATURES["choose_structure"],
+                )
+            ],
+            parsed_output=ctx.structure,
         )
         return ctx
 
@@ -199,9 +312,10 @@ class ScriptingAgent:
             ctx.structure,
             research_context=ctx.research_context,
         )
-        text = await self._call_llm(
+        response = await self._call_llm(
             system, user, temperature=_STEP_TEMPERATURES["define_beat_intents"]
         )
+        text = response.content
 
         beat_intents = _extract_beat_intents(text)
         if not beat_intents:
@@ -209,6 +323,20 @@ class ScriptingAgent:
             raise ValueError(msg)
 
         ctx.beat_intents = BeatIntentMap(beats=beat_intents)
+        self._append_step_trace(
+            ctx,
+            step_name="define_beat_intents",
+            llm_calls=[
+                self._build_llm_call_trace(
+                    call_index=1,
+                    system_prompt=system,
+                    user_prompt=user,
+                    response=response,
+                    temperature=_STEP_TEMPERATURES["define_beat_intents"],
+                )
+            ],
+            parsed_output=ctx.beat_intents,
+        )
         return ctx
 
     # ------------------------------------------------------------------
@@ -233,7 +361,10 @@ class ScriptingAgent:
             ctx.beat_intents,
             research_context=ctx.research_context,
         )
-        text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["generate_hooks"])
+        response = await self._call_llm(
+            system, user, temperature=_STEP_TEMPERATURES["generate_hooks"]
+        )
+        text = response.content
 
         hooks = _extract_numbered_list(text)
         best = _extract_field(text, "Best Hook")
@@ -242,6 +373,20 @@ class ScriptingAgent:
         _require(best, "Best Hook", "generate_hooks")
 
         ctx.hooks = HookSet(hooks=hooks, best_hook=best, best_hook_reason=reason)
+        self._append_step_trace(
+            ctx,
+            step_name="generate_hooks",
+            llm_calls=[
+                self._build_llm_call_trace(
+                    call_index=1,
+                    system_prompt=system,
+                    user_prompt=user,
+                    response=response,
+                    temperature=_STEP_TEMPERATURES["generate_hooks"],
+                )
+            ],
+            parsed_output=ctx.hooks,
+        )
         return ctx
 
     # ------------------------------------------------------------------
@@ -276,7 +421,19 @@ class ScriptingAgent:
             tone=ctx.tone,
             cta=ctx.cta,
         )
-        text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["draft_script"])
+        response = await self._call_llm(
+            system, user, temperature=_STEP_TEMPERATURES["draft_script"]
+        )
+        text = response.content
+        llm_calls = [
+            self._build_llm_call_trace(
+                call_index=1,
+                system_prompt=system,
+                user_prompt=user,
+                response=response,
+                temperature=_STEP_TEMPERATURES["draft_script"],
+            )
+        ]
 
         if not text.strip():
             msg = "Step 'draft_script' received an empty response from the LLM."
@@ -296,13 +453,29 @@ class ScriptingAgent:
                 f"Cut filler and redundancy. Preserve the angle and all beat intents.\n\n"
                 f"{ctx.draft.content}"
             )
-            text2 = await self._call_llm(system, trim_user, temperature=0.3)
+            trim_response = await self._call_llm(system, trim_user, temperature=0.3)
+            text2 = trim_response.content
+            llm_calls.append(
+                self._build_llm_call_trace(
+                    call_index=2,
+                    system_prompt=system,
+                    user_prompt=trim_user,
+                    response=trim_response,
+                    temperature=0.3,
+                )
+            )
             if text2.strip():
                 ctx.draft = ScriptVersion(
                     content=text2.strip(),
                     word_count=len(text2.split()),
                 )
 
+        self._append_step_trace(
+            ctx,
+            step_name="draft_script",
+            llm_calls=llm_calls,
+            parsed_output=ctx.draft,
+        )
         return ctx
 
     # ------------------------------------------------------------------
@@ -320,9 +493,10 @@ class ScriptingAgent:
             beat_intents=ctx.beat_intents,
             research_context=ctx.research_context,
         )
-        text = await self._call_llm(
+        response = await self._call_llm(
             system, user, temperature=_STEP_TEMPERATURES["add_retention_mechanics"]
         )
+        text = response.content
 
         script_text = (
             _extract_section(
@@ -335,6 +509,20 @@ class ScriptingAgent:
         ctx.retention_revised = ScriptVersion(
             content=script_text.strip(),
             word_count=len(script_text.split()),
+        )
+        self._append_step_trace(
+            ctx,
+            step_name="add_retention_mechanics",
+            llm_calls=[
+                self._build_llm_call_trace(
+                    call_index=1,
+                    system_prompt=system,
+                    user_prompt=user,
+                    response=response,
+                    temperature=_STEP_TEMPERATURES["add_retention_mechanics"],
+                )
+            ],
+            parsed_output=ctx.retention_revised,
         )
         return ctx
 
@@ -354,7 +542,8 @@ class ScriptingAgent:
             core_tension=ctx.angle.core_tension if ctx.angle else "",
             research_context=ctx.research_context,
         )
-        text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["tighten"])
+        response = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["tighten"])
+        text = response.content
 
         script_text = (
             _extract_section(
@@ -367,6 +556,20 @@ class ScriptingAgent:
         ctx.tightened = ScriptVersion(
             content=script_text.strip(),
             word_count=len(script_text.split()),
+        )
+        self._append_step_trace(
+            ctx,
+            step_name="tighten",
+            llm_calls=[
+                self._build_llm_call_trace(
+                    call_index=1,
+                    system_prompt=system,
+                    user_prompt=user,
+                    response=response,
+                    temperature=_STEP_TEMPERATURES["tighten"],
+                )
+            ],
+            parsed_output=ctx.tightened,
         )
         return ctx
 
@@ -382,15 +585,33 @@ class ScriptingAgent:
 
         system = prompts.STEP9_SYSTEM
         user = prompts.step9_user(source)
-        text = await self._call_llm(
+        response = await self._call_llm(
             system, user, temperature=_STEP_TEMPERATURES["add_visual_notes"]
         )
+        text = response.content
 
         ctx.annotated_script = ScriptVersion(
             content=text.strip(),
             word_count=len(text.split()),
         )
         ctx.visual_notes = _extract_visual_notes(text)
+        self._append_step_trace(
+            ctx,
+            step_name="add_visual_notes",
+            llm_calls=[
+                self._build_llm_call_trace(
+                    call_index=1,
+                    system_prompt=system,
+                    user_prompt=user,
+                    response=response,
+                    temperature=_STEP_TEMPERATURES["add_visual_notes"],
+                )
+            ],
+            parsed_output={
+                "annotated_script": ctx.annotated_script,
+                "visual_notes": ctx.visual_notes,
+            },
+        )
         return ctx
 
     # ------------------------------------------------------------------
@@ -412,7 +633,8 @@ class ScriptingAgent:
             beat_intents=ctx.beat_intents,
             research_context=ctx.research_context,
         )
-        text = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["run_qc"])
+        response = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["run_qc"])
+        text = response.content
 
         checks = _extract_qc_checks(text)
         weakest = _extract_weakest_parts(text)
@@ -422,6 +644,20 @@ class ScriptingAgent:
             checks=checks,
             weakest_parts=weakest,
             final_script=final.strip(),
+        )
+        self._append_step_trace(
+            ctx,
+            step_name="run_qc",
+            llm_calls=[
+                self._build_llm_call_trace(
+                    call_index=1,
+                    system_prompt=system,
+                    user_prompt=user,
+                    response=response,
+                    temperature=_STEP_TEMPERATURES["run_qc"],
+                )
+            ],
+            parsed_output=ctx.qc,
         )
         return ctx
 
@@ -433,17 +669,23 @@ class ScriptingAgent:
         self,
         raw_idea: str,
         progress_callback: Callable[[int, str], None] | None = None,
+        *,
+        iteration: int = 1,
     ) -> ScriptingContext:
         ctx = ScriptingContext(raw_idea=raw_idea)
-        for step_idx in range(len(SCRIPTING_STEPS)):
-            label = SCRIPTING_STEP_LABELS[SCRIPTING_STEPS[step_idx]]
-            if progress_callback:
-                progress_callback(step_idx, label)
-            try:
-                ctx = await _STEP_HANDLERS[step_idx](self, ctx)
-            except Exception:
-                logger.exception("Pipeline failed at step %d (%s)", step_idx + 1, label)
-                raise
+        self._active_iteration = iteration
+        try:
+            for step_idx in range(len(SCRIPTING_STEPS)):
+                label = SCRIPTING_STEP_LABELS[SCRIPTING_STEPS[step_idx]]
+                if progress_callback:
+                    progress_callback(step_idx, label)
+                try:
+                    ctx = await _STEP_HANDLERS[step_idx](self, ctx)
+                except Exception:
+                    logger.exception("Pipeline failed at step %d (%s)", step_idx + 1, label)
+                    raise
+        finally:
+            self._active_iteration = 1
         return ctx
 
     async def run_from_step(
@@ -451,17 +693,23 @@ class ScriptingAgent:
         ctx: ScriptingContext,
         step: int,
         progress_callback: Callable[[int, str], None] | None = None,
+        *,
+        iteration: int = 1,
     ) -> ScriptingContext:
         start_idx = step - 1
-        for step_idx in range(start_idx, len(SCRIPTING_STEPS)):
-            label = SCRIPTING_STEP_LABELS[SCRIPTING_STEPS[step_idx]]
-            if progress_callback:
-                progress_callback(step_idx, label)
-            try:
-                ctx = await _STEP_HANDLERS[step_idx](self, ctx)
-            except Exception:
-                logger.exception("Pipeline failed at step %d (%s)", step_idx + 1, label)
-                raise
+        self._active_iteration = iteration
+        try:
+            for step_idx in range(start_idx, len(SCRIPTING_STEPS)):
+                label = SCRIPTING_STEP_LABELS[SCRIPTING_STEPS[step_idx]]
+                if progress_callback:
+                    progress_callback(step_idx, label)
+                try:
+                    ctx = await _STEP_HANDLERS[step_idx](self, ctx)
+                except Exception:
+                    logger.exception("Pipeline failed at step %d (%s)", step_idx + 1, label)
+                    raise
+        finally:
+            self._active_iteration = 1
         return ctx
 
 
@@ -613,3 +861,13 @@ def _extract_weakest_parts(text: str) -> list[str]:
             elif stripped and not stripped.startswith("-") and not stripped.startswith("Final"):
                 break
     return parts
+
+
+def _serialize_trace_value(value: object) -> object:
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")  # type: ignore[union-attr]
+    if isinstance(value, list):
+        return [_serialize_trace_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _serialize_trace_value(item) for key, item in value.items()}
+    return value
