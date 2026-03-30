@@ -3,15 +3,20 @@
 import { useEffect, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import useContentGen from '@/hooks/useContentGen'
-import { ScriptViewer } from '@/components/content-gen/script-viewer'
+import { QuickScriptResultPanel } from '@/components/content-gen/quick-script-result-panel'
+import type { RunScriptingResponse } from '@/types/content-gen'
 
-export function ScriptsPanel() {
+interface ScriptsPanelProps {
+  onReuseInputs?: (rawIdea: string) => void
+}
+
+export function ScriptsPanel({ onReuseInputs }: ScriptsPanelProps) {
   const scripts = useContentGen((s) => s.scripts)
   const loadScripts = useContentGen((s) => s.loadScripts)
   const loading = useContentGen((s) => s.scriptsLoading)
 
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [scriptContent, setScriptContent] = useState<Record<string, string>>({})
+  const [scriptResults, setScriptResults] = useState<Record<string, RunScriptingResponse>>({})
 
   useEffect(() => {
     loadScripts()
@@ -25,13 +30,40 @@ export function ScriptsPanel() {
 
     setExpandedId(runId)
 
-    if (!scriptContent[runId]) {
+    if (!scriptResults[runId]) {
       try {
         const { getScript } = await import('@/lib/content-gen-api')
         const data = await getScript(runId)
-        setScriptContent((prev) => ({ ...prev, [runId]: data.script || '' }))
+        setScriptResults((prev) => ({ ...prev, [runId]: data }))
       } catch {
-        setScriptContent((prev) => ({ ...prev, [runId]: '[Error loading script]' }))
+        setScriptResults((prev) => ({
+          ...prev,
+          [runId]: {
+            run_id: runId,
+            raw_idea: '',
+            script: '[Error loading saved result]',
+            word_count: 0,
+            context: {
+              raw_idea: '',
+              research_context: '',
+              tone: '',
+              cta: '',
+              core_inputs: null,
+              angle: null,
+              structure: null,
+              beat_intents: null,
+              hooks: null,
+              draft: null,
+              retention_revised: null,
+              tightened: null,
+              annotated_script: null,
+              visual_notes: null,
+              qc: null,
+              step_traces: [],
+            },
+            execution_mode: 'single_pass',
+          },
+        }))
       }
     }
   }
@@ -68,16 +100,30 @@ export function ScriptsPanel() {
               <span className="truncate text-foreground/80">{run.raw_idea || 'Untitled'}</span>
             </div>
             <div className="flex items-center gap-3 shrink-0 text-xs text-muted-foreground font-mono tabular-nums">
+              <span className="hidden sm:inline">
+                {run.execution_mode === 'iterative' && run.iterations
+                  ? `${run.iterations.count}/${run.iterations.max_iterations}x`
+                  : '1x'}
+              </span>
               <span>{run.word_count}w</span>
               <span className="hidden sm:inline">{run.saved_at}</span>
             </div>
           </button>
           {expandedId === run.run_id && (
             <div className="px-3 pb-4 pt-1 border-t border-border animate-fade-in">
-              {scriptContent[run.run_id] ? (
-                <ScriptViewer content={scriptContent[run.run_id]} />
+              <div className="mb-3 flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => onReuseInputs?.(run.raw_idea)}
+                  className="rounded-sm border border-warning/30 bg-warning/10 px-3 py-1.5 text-xs font-medium text-warning transition-colors hover:bg-warning/15"
+                >
+                  Reuse Inputs
+                </button>
+              </div>
+              {scriptResults[run.run_id] ? (
+                <QuickScriptResultPanel result={scriptResults[run.run_id]} />
               ) : (
-                <p className="text-sm text-muted-foreground">Loading script...</p>
+                <p className="text-sm text-muted-foreground">Loading saved result...</p>
               )}
             </div>
           )}

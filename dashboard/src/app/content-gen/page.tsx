@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { Play, FileText, ArrowRight, Loader2 } from 'lucide-react'
+import { Play, FileText, ArrowRight } from 'lucide-react'
 import useContentGen from '@/hooks/useContentGen'
 import { Dialog } from '@/components/ui/dialog'
 import { StartPipelineForm } from '@/components/content-gen/start-pipeline-form'
@@ -12,6 +12,11 @@ import { ScriptsPanel } from '@/components/content-gen/scripts-panel'
 import { StrategyEditor } from '@/components/content-gen/strategy-editor'
 import { PublishQueuePanel } from '@/components/content-gen/publish-queue-panel'
 import { OverviewSidebar } from '@/components/content-gen/overview-sidebar'
+import {
+  createEmptyQuickScriptFields,
+  parseQuickScriptPrompt,
+  type QuickScriptFields,
+} from '@/lib/quick-script'
 
 export default function ContentGenPage() {
   const router = useRouter()
@@ -26,12 +31,17 @@ export default function ContentGenPage() {
 
   const [newPipelineOpen, setNewPipelineOpen] = useState(false)
   const [quickScriptOpen, setQuickScriptOpen] = useState(false)
-
-  const activePipelines = pipelines.filter(
-    (p) => p.status === 'running' || p.status === 'queued'
+  const [quickScriptInitialValues, setQuickScriptInitialValues] = useState<QuickScriptFields>(() =>
+    createEmptyQuickScriptFields(),
   )
+
+  useEffect(() => {
+    void loadAll()
+  }, [loadAll])
+
+  const activePipelines = pipelines.filter((p) => p.status === 'running' || p.status === 'queued')
   const pastPipelines = pipelines.filter(
-    (p) => p.status === 'completed' || p.status === 'failed' || p.status === 'cancelled'
+    (p) => p.status === 'completed' || p.status === 'failed' || p.status === 'cancelled',
   )
 
   const handleTabChange = (tab: string) => {
@@ -40,6 +50,16 @@ export default function ContentGenPage() {
 
   const handleRemoveFromQueue = async (ideaId: string, platform: string) => {
     await removeFromQueue(ideaId, platform)
+  }
+
+  const openQuickScriptBlank = () => {
+    setQuickScriptInitialValues(createEmptyQuickScriptFields())
+    setQuickScriptOpen(true)
+  }
+
+  const openQuickScriptFromHistory = (rawIdea: string) => {
+    setQuickScriptInitialValues(parseQuickScriptPrompt(rawIdea))
+    setQuickScriptOpen(true)
   }
 
   // Overview tab content
@@ -58,7 +78,7 @@ export default function ContentGenPage() {
             New Pipeline
           </button>
           <button
-            onClick={() => setQuickScriptOpen(true)}
+            onClick={openQuickScriptBlank}
             className="flex items-center gap-2 px-4 py-2.5 bg-surface border border-border text-foreground/80 rounded-sm text-sm font-medium font-display
               hover:bg-surface-raised hover:text-foreground transition-colors"
           >
@@ -119,9 +139,11 @@ export default function ContentGenPage() {
                     hover:border-border/80 transition-colors group"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <span className={`w-2 h-2 rounded-full shrink-0 ${
-                      p.status === 'completed' ? 'bg-success/60' : 'bg-error/60'
-                    }`} />
+                    <span
+                      className={`w-2 h-2 rounded-full shrink-0 ${
+                        p.status === 'completed' ? 'bg-success/60' : 'bg-error/60'
+                      }`}
+                    />
                     <span className="text-sm text-foreground/70 truncate">{p.theme}</span>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
@@ -139,9 +161,7 @@ export default function ContentGenPage() {
         {/* Empty state */}
         {activePipelines.length === 0 && pastPipelines.length === 0 && (
           <section className="py-16 text-center">
-            <p className="text-sm text-muted-foreground">
-              No pipelines yet.
-            </p>
+            <p className="text-sm text-muted-foreground">No pipelines yet.</p>
             <button
               onClick={() => setNewPipelineOpen(true)}
               className="inline-flex items-center gap-2 mt-4 text-sm text-warning hover:text-warning/80 transition-colors"
@@ -164,8 +184,8 @@ export default function ContentGenPage() {
       {activeTab === 'overview' && renderOverview()}
 
       {activeTab === 'scripts' && (
-        <div className="max-w-3xl">
-          <ScriptsPanel />
+        <div className="w-full">
+          <ScriptsPanel onReuseInputs={openQuickScriptFromHistory} />
         </div>
       )}
 
@@ -179,19 +199,12 @@ export default function ContentGenPage() {
 
       {activeTab === 'queue' && (
         <div className="max-w-3xl">
-          <PublishQueuePanel
-            items={publishQueue}
-            onRemove={handleRemoveFromQueue}
-          />
+          <PublishQueuePanel items={publishQueue} onRemove={handleRemoveFromQueue} />
         </div>
       )}
 
       {/* New Pipeline dialog */}
-      <Dialog
-        open={newPipelineOpen}
-        onOpenChange={setNewPipelineOpen}
-        title="New Pipeline"
-      >
+      <Dialog open={newPipelineOpen} onOpenChange={setNewPipelineOpen} title="New Pipeline">
         <div className="p-6">
           <StartPipelineForm
             onSuccess={(pipelineId) => {
@@ -203,13 +216,9 @@ export default function ContentGenPage() {
       </Dialog>
 
       {/* Quick Script dialog */}
-      <Dialog
-        open={quickScriptOpen}
-        onOpenChange={setQuickScriptOpen}
-        title="Quick Script"
-      >
+      <Dialog open={quickScriptOpen} onOpenChange={setQuickScriptOpen} title="Quick Script">
         <div className="p-6">
-          <QuickScriptForm />
+          <QuickScriptForm initialValues={quickScriptInitialValues} />
         </div>
       </Dialog>
     </>

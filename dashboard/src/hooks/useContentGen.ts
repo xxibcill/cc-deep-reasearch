@@ -170,7 +170,7 @@ const useContentGen = create<ContentGenState>((set, get) => ({
   runScripting: async (idea) => {
     set({ error: null });
     try {
-      await runScriptingApi(idea);
+      await runScriptingApi({ idea });
       const scripts = await listScripts();
       set({ scripts });
     } catch (err) {
