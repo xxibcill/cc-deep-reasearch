@@ -366,6 +366,9 @@ Requirements:
 
 - Follow the chosen structure
 - Use the beat intents exactly
+- Use exactly one hook line and exactly one CTA line in the script
+- The hook line must use the selected hook, not a new alternate
+- Do not include backup hooks, CTA options, or repeated CTA lines
 - One idea per sentence
 - 8–12 words per sentence when possible
 - Keep it conversational and speakable
@@ -591,6 +594,8 @@ Checklist:
 
 - Understandable in one pass
 - Hook creates curiosity, tension, or relevance
+- Exactly one hook is present
+- At most one CTA is present
 - No vague or generic phrasing
 - Every line adds value
 - Spoken rhythm feels natural

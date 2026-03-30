@@ -7,14 +7,21 @@ import json
 import logging
 from contextlib import suppress
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from cc_deep_research.config import load_config
-from cc_deep_research.content_gen.models import PIPELINE_STAGES, PipelineContext
+from cc_deep_research.content_gen.models import (
+    PIPELINE_STAGES,
+    PipelineContext,
+    ScriptingContext,
+    ScriptingIterationSummary,
+    ScriptingIterations,
+    ScriptingRunResult,
+)
 from cc_deep_research.content_gen.progress import (
     PipelineRunJob,
     PipelineRunJobRegistry,
@@ -52,12 +59,54 @@ class RunScriptingRequest(BaseModel):
     """Request body for standalone scripting runs."""
 
     idea: str = Field(min_length=1)
+    iterative_mode: bool | None = None
+    max_iterations: int | None = Field(default=None, ge=1, le=5)
+    llm_route: Literal["openrouter", "cerebras", "anthropic", "heuristic"] | None = Field(
+        default=None
+    )
 
 
 class UpdateStrategyRequest(BaseModel):
     """Request body for updating strategy memory."""
 
     patch: dict[str, Any] = Field(default_factory=dict)
+
+
+def _build_scripting_iterations(iter_state: Any) -> ScriptingIterations | None:
+    if iter_state is None:
+        return None
+    return ScriptingIterations(
+        count=iter_state.current_iteration,
+        max_iterations=iter_state.max_iterations,
+        converged=iter_state.is_converged,
+        quality_history=[
+            ScriptingIterationSummary(
+                iteration=q.iteration_number,
+                score=q.overall_quality_score,
+                passes=q.passes_threshold,
+            )
+            for q in iter_state.quality_history
+        ],
+    )
+
+
+def _build_scripting_result(
+    ctx: ScriptingContext,
+    *,
+    run_id: str | None = None,
+    execution_mode: Literal["single_pass", "iterative"] = "single_pass",
+    iterations: ScriptingIterations | None = None,
+) -> ScriptingRunResult:
+    script = ScriptingStore._extract_script(ctx)
+    return ScriptingRunResult(
+        run_id=run_id,
+        raw_idea=ctx.raw_idea,
+        script=script,
+        word_count=len(script.split()) if script else 0,
+        context=ctx,
+        execution_mode=execution_mode,
+        iterations=iterations,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -281,25 +330,38 @@ def register_content_gen_routes(
         from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
 
         orch = ContentGenOrchestrator(config)
+        iter_state = None
+        iterative_enabled = (
+            config.content_gen.enable_iterative_mode
+            if request.iterative_mode is None
+            else request.iterative_mode
+        )
         try:
-            ctx = await orch.run_scripting(request.idea)
+            if iterative_enabled:
+                ctx, iter_state = await orch.run_scripting_iterative(
+                    request.idea,
+                    llm_route=request.llm_route,
+                    max_iterations=request.max_iterations,
+                )
+            else:
+                ctx = await orch.run_scripting(request.idea, llm_route=request.llm_route)
         except Exception as exc:
             logger.exception("Scripting run failed")
             return JSONResponse(status_code=500, content={"error": str(exc)})
 
         store = ScriptingStore()
-        saved = store.save(ctx)
-
-        script = ScriptingStore._extract_script(ctx)
-        return JSONResponse(
-            content={
-                "run_id": saved.run_id,
-                "raw_idea": ctx.raw_idea,
-                "script": script,
-                "word_count": len(script.split()) if script else 0,
-                "context": json.loads(ctx.model_dump_json()),
-            }
+        execution_mode: Literal["single_pass", "iterative"] = (
+            "iterative" if iter_state is not None else "single_pass"
         )
+        iterations = _build_scripting_iterations(iter_state)
+        saved = store.save(ctx, execution_mode=execution_mode, iterations=iterations)
+        response_content = _build_scripting_result(
+            ctx,
+            run_id=saved.run_id,
+            execution_mode=execution_mode,
+            iterations=iterations,
+        )
+        return JSONResponse(content=json.loads(response_content.model_dump_json()))
 
     # ------------------------------------------------------------------
     # Saved scripts history
@@ -318,26 +380,41 @@ def register_content_gen_routes(
         run = store.get(run_id)
         if run is None:
             return JSONResponse(status_code=404, content={"error": "Script run not found"})
-        script_path = run.script_path
+        if run.result_path:
+            result_text = ""
+            with suppress(Exception):
+                from pathlib import Path
+
+                result_text = Path(run.result_path).read_text()
+            if result_text:
+                return JSONResponse(content=json.loads(result_text))
+
         script_text = ""
         with suppress(Exception):
             from pathlib import Path
 
-            script_text = Path(script_path).read_text()
-        context_text = ""
+            script_text = Path(run.script_path).read_text()
+        context: ScriptingContext | None = None
         with suppress(Exception):
             from pathlib import Path
 
             context_text = Path(run.context_path).read_text()
-        return JSONResponse(
-            content={
-                "run_id": run.run_id,
-                "raw_idea": run.raw_idea,
-                "word_count": run.word_count,
-                "script": script_text,
-                "context": json.loads(context_text) if context_text else None,
-            }
+            if context_text:
+                context = ScriptingContext.model_validate_json(context_text)
+
+        if context is None:
+            context = ScriptingContext(raw_idea=run.raw_idea)
+
+        response = _build_scripting_result(
+            context,
+            run_id=run.run_id,
+            execution_mode=run.execution_mode,
+            iterations=run.iterations,
         )
+        if script_text:
+            response.script = script_text
+            response.word_count = len(script_text.split())
+        return JSONResponse(content=json.loads(response.model_dump_json()))
 
     # ------------------------------------------------------------------
     # Strategy

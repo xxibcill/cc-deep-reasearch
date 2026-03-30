@@ -10,6 +10,16 @@ from datetime import datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
+from cc_deep_research.config import Config
+from cc_deep_research.content_gen.models import (
+    IterationState,
+    QCResult,
+    QualityEvaluation,
+    SavedScriptRun,
+    ScriptingContext,
+    ScriptingLLMCallTrace,
+    ScriptingStepTrace,
+)
 from cc_deep_research.event_router import EventRouter
 from cc_deep_research.models import ResearchDepth, ResearchSession
 from cc_deep_research.monitoring import ResearchMonitor
@@ -99,6 +109,312 @@ def test_job_registry_can_mark_run_cancelled() -> None:
     assert job.stop_requested is True
     assert job.status == ResearchRunStatus.CANCELLED
     assert job.completed_at is not None
+
+
+def test_run_scripting_endpoint_can_force_single_pass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The dashboard should be able to disable iterative scripting for one run."""
+    config = Config()
+    config.content_gen.enable_iterative_mode = True
+    monkeypatch.setattr("cc_deep_research.content_gen.router.load_config", lambda: config)
+
+    class FakeStore:
+        def save(
+            self,
+            ctx: ScriptingContext,
+            *,
+            execution_mode: str = "single_pass",
+            iterations=None,
+        ) -> SavedScriptRun:
+            del execution_mode, iterations
+            return SavedScriptRun(
+                run_id="run-123",
+                saved_at="2026-03-30T00:00:00+00:00",
+                raw_idea=ctx.raw_idea,
+                word_count=2,
+                script_path="/tmp/script.txt",
+                context_path="/tmp/context.json",
+            )
+
+        @staticmethod
+        def _extract_script(ctx: ScriptingContext) -> str:
+            return ctx.qc.final_script if ctx.qc else ""
+
+    class FakeOrchestrator:
+        def __init__(self, _config: Config) -> None:
+            self.single_pass_calls = 0
+
+        async def run_scripting(
+            self,
+            raw_idea: str,
+            progress_callback=None,
+            *,
+            llm_route=None,
+        ) -> ScriptingContext:
+            del progress_callback
+            self.single_pass_calls += 1
+            assert llm_route == "openrouter"
+            return ScriptingContext(
+                raw_idea=raw_idea,
+                qc=QCResult(checks=[], weakest_parts=[], final_script="Single pass script"),
+                step_traces=[
+                    ScriptingStepTrace(
+                        step_index=0,
+                        step_name="define_core_inputs",
+                        step_label="Defining core inputs",
+                        iteration=1,
+                        llm_calls=[
+                            ScriptingLLMCallTrace(
+                                call_index=1,
+                                temperature=0.3,
+                                system_prompt="system",
+                                user_prompt="user",
+                                raw_response="response",
+                                provider="anthropic",
+                                model="claude-test",
+                                transport="anthropic_api",
+                            )
+                        ],
+                        parsed_output={"topic": "Topic"},
+                    )
+                ],
+            )
+
+        async def run_scripting_iterative(self, raw_idea: str, progress_callback=None, max_iterations=None):
+            del raw_idea, progress_callback, max_iterations
+            raise AssertionError("Iterative path should not run")
+
+    monkeypatch.setattr("cc_deep_research.content_gen.router.ScriptingStore", FakeStore)
+    monkeypatch.setattr(
+        "cc_deep_research.content_gen.orchestrator.ContentGenOrchestrator",
+        FakeOrchestrator,
+    )
+
+    client = TestClient(create_app())
+    response = client.post(
+        "/api/content-gen/scripting",
+        json={"idea": "test idea", "iterative_mode": False, "llm_route": "openrouter"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["script"] == "Single pass script"
+    assert payload["execution_mode"] == "single_pass"
+    assert "iterations" not in payload
+    assert payload["context"]["step_traces"] == [
+        {
+            "step_index": 0,
+            "step_name": "define_core_inputs",
+            "step_label": "Defining core inputs",
+            "iteration": 1,
+            "llm_calls": [
+                {
+                    "call_index": 1,
+                    "temperature": 0.3,
+                    "system_prompt": "system",
+                    "user_prompt": "user",
+                    "raw_response": "response",
+                    "provider": "anthropic",
+                    "model": "claude-test",
+                    "transport": "anthropic_api",
+                    "latency_ms": 0,
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "finish_reason": None,
+                }
+            ],
+            "parsed_output": {"topic": "Topic"},
+        }
+    ]
+
+
+def test_run_scripting_endpoint_accepts_iteration_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The dashboard should be able to opt into iterative scripting with a custom pass cap."""
+    config = Config()
+    config.content_gen.enable_iterative_mode = False
+    monkeypatch.setattr("cc_deep_research.content_gen.router.load_config", lambda: config)
+
+    class FakeStore:
+        def save(
+            self,
+            ctx: ScriptingContext,
+            *,
+            execution_mode: str = "single_pass",
+            iterations=None,
+        ) -> SavedScriptRun:
+            del execution_mode, iterations
+            return SavedScriptRun(
+                run_id="run-123",
+                saved_at="2026-03-30T00:00:00+00:00",
+                raw_idea=ctx.raw_idea,
+                word_count=2,
+                script_path="/tmp/script.txt",
+                context_path="/tmp/context.json",
+            )
+
+        @staticmethod
+        def _extract_script(ctx: ScriptingContext) -> str:
+            return ctx.qc.final_script if ctx.qc else ""
+
+    class FakeOrchestrator:
+        def __init__(self, _config: Config) -> None:
+            pass
+
+        async def run_scripting(self, raw_idea: str, progress_callback=None) -> ScriptingContext:
+            del raw_idea, progress_callback
+            raise AssertionError("Single-pass path should not run")
+
+        async def run_scripting_iterative(
+            self,
+            raw_idea: str,
+            progress_callback=None,
+            max_iterations=None,
+            *,
+            llm_route=None,
+        ) -> tuple[ScriptingContext, IterationState]:
+            del progress_callback
+            assert raw_idea == "test idea"
+            assert max_iterations == 4
+            assert llm_route == "cerebras"
+            return (
+                ScriptingContext(
+                    raw_idea=raw_idea,
+                    qc=QCResult(checks=[], weakest_parts=[], final_script="Iterative script"),
+                ),
+                IterationState(
+                    current_iteration=3,
+                    max_iterations=4,
+                    quality_history=[
+                        QualityEvaluation(
+                            iteration_number=1,
+                            overall_quality_score=0.55,
+                            passes_threshold=False,
+                        ),
+                        QualityEvaluation(
+                            iteration_number=2,
+                            overall_quality_score=0.68,
+                            passes_threshold=False,
+                        ),
+                        QualityEvaluation(
+                            iteration_number=3,
+                            overall_quality_score=0.81,
+                            passes_threshold=True,
+                        ),
+                    ],
+                    is_converged=True,
+                    convergence_reason="Threshold reached",
+                ),
+            )
+
+    monkeypatch.setattr("cc_deep_research.content_gen.router.ScriptingStore", FakeStore)
+    monkeypatch.setattr(
+        "cc_deep_research.content_gen.orchestrator.ContentGenOrchestrator",
+        FakeOrchestrator,
+    )
+
+    client = TestClient(create_app())
+    response = client.post(
+        "/api/content-gen/scripting",
+        json={
+            "idea": "test idea",
+            "iterative_mode": True,
+            "max_iterations": 4,
+            "llm_route": "cerebras",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["script"] == "Iterative script"
+    assert payload["execution_mode"] == "iterative"
+    assert payload["iterations"] == {
+        "count": 3,
+        "max_iterations": 4,
+        "converged": True,
+        "quality_history": [
+            {"iteration": 1, "score": 0.55, "passes": False},
+            {"iteration": 2, "score": 0.68, "passes": False},
+            {"iteration": 3, "score": 0.81, "passes": True},
+        ],
+    }
+
+
+def test_get_saved_script_returns_full_saved_result(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """Saved Quick Script history should return the persisted full result payload."""
+    result_path = tmp_path / "result.json"
+    result_path.write_text(
+        json.dumps(
+            {
+                "run_id": "run-123",
+                "raw_idea": "test idea",
+                "script": "Saved script",
+                "word_count": 2,
+                "context": {
+                    "raw_idea": "test idea",
+                    "research_context": "",
+                    "tone": "",
+                    "cta": "",
+                    "core_inputs": None,
+                    "angle": None,
+                    "structure": None,
+                    "beat_intents": None,
+                    "hooks": None,
+                    "draft": None,
+                    "retention_revised": None,
+                    "tightened": None,
+                    "annotated_script": None,
+                    "visual_notes": None,
+                    "qc": {"checks": [], "weakest_parts": [], "final_script": "Saved script"},
+                    "step_traces": [],
+                },
+                "execution_mode": "iterative",
+                "iterations": {
+                    "count": 2,
+                    "max_iterations": 4,
+                    "converged": True,
+                    "quality_history": [
+                        {"iteration": 1, "score": 0.61, "passes": False},
+                        {"iteration": 2, "score": 0.82, "passes": True},
+                    ],
+                },
+            }
+        )
+    )
+
+    class FakeStore:
+        def get(self, run_id: str) -> SavedScriptRun | None:
+            assert run_id == "run-123"
+            return SavedScriptRun(
+                run_id="run-123",
+                saved_at="2026-03-30T00:00:00+00:00",
+                raw_idea="test idea",
+                word_count=2,
+                script_path=str(tmp_path / "script.txt"),
+                context_path=str(tmp_path / "context.json"),
+                result_path=str(result_path),
+                execution_mode="iterative",
+            )
+
+    monkeypatch.setattr("cc_deep_research.content_gen.router.ScriptingStore", FakeStore)
+
+    client = TestClient(create_app())
+    response = client.get("/api/content-gen/scripts/run-123")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run_id"] == "run-123"
+    assert payload["script"] == "Saved script"
+    assert payload["execution_mode"] == "iterative"
+    assert payload["iterations"]["quality_history"] == [
+        {"iteration": 1, "score": 0.61, "passes": False},
+        {"iteration": 2, "score": 0.82, "passes": True},
+    ]
 
 
 def test_stop_research_run_cancels_active_run_and_interrupts_session(

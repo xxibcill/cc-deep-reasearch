@@ -9,6 +9,7 @@ from click.testing import CliRunner
 
 from cc_deep_research.cli import main
 from cc_deep_research.content_gen.agents.scripting import _STEP_HANDLERS, ScriptingAgent
+from cc_deep_research.content_gen.prompts import scripting as scripting_prompts
 from cc_deep_research.content_gen.models import (
     PIPELINE_STAGES,
     SCRIPTING_STEPS,
@@ -36,19 +37,35 @@ from cc_deep_research.content_gen.models import (
     VisualPlanOutput,
 )
 from cc_deep_research.content_gen.orchestrator import _format_research_context
+from cc_deep_research.llm.base import LLMProviderType, LLMResponse, LLMTransportType
 
 
 class _FakeScriptingAgent(ScriptingAgent):
     def __init__(self, response: str) -> None:
         self._response = response
+        self._active_iteration = 1
         self.last_user_prompt = ""
         self.user_prompts: list[str] = []
 
-    async def _call_llm(self, system_prompt: str, user_prompt: str, *, temperature: float = 0.3) -> str:
+    async def _call_llm(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        temperature: float = 0.3,
+    ) -> LLMResponse:
         del system_prompt, temperature
         self.last_user_prompt = user_prompt
         self.user_prompts.append(user_prompt)
-        return self._response
+        return LLMResponse(
+            content=self._response,
+            model="test-model",
+            provider=LLMProviderType.ANTHROPIC,
+            transport=LLMTransportType.ANTHROPIC_API,
+            usage={"prompt_tokens": 11, "completion_tokens": 7},
+            latency_ms=123,
+            finish_reason="stop",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +266,50 @@ async def test_define_core_inputs_raises_on_empty_field() -> None:
 
 
 @pytest.mark.asyncio
+async def test_define_core_inputs_records_step_trace() -> None:
+    """Successful scripting steps should capture prompts, route, and parsed output."""
+    agent = _FakeScriptingAgent("Topic: Hooks\nOutcome: Better retention\nAudience: Founders")
+
+    ctx = await agent.define_core_inputs("some idea")
+
+    assert len(ctx.step_traces) == 1
+    trace = ctx.step_traces[0]
+    assert trace.step_name == "define_core_inputs"
+    assert trace.step_label == "Defining core inputs"
+    assert trace.iteration == 1
+    assert trace.parsed_output == {
+        "topic": "Hooks",
+        "outcome": "Better retention",
+        "audience": "Founders",
+    }
+    assert len(trace.llm_calls) == 1
+    call = trace.llm_calls[0]
+    assert call.user_prompt == "Raw idea:\nsome idea"
+    assert call.provider == "anthropic"
+    assert call.model == "test-model"
+    assert call.transport == "anthropic_api"
+    assert call.prompt_tokens == 11
+    assert call.completion_tokens == 7
+    assert call.raw_response == "Topic: Hooks\nOutcome: Better retention\nAudience: Founders"
+
+
+@pytest.mark.asyncio
+async def test_scripting_agent_applies_route_override_to_registry() -> None:
+    """Standalone scripting runs should be able to override the primary LLM route."""
+    from cc_deep_research.config import Config
+
+    config = Config()
+    config.llm.openrouter.enabled = True
+    config.llm.openrouter.api_key = "test-key"
+
+    agent = ScriptingAgent(config, llm_route="openrouter")
+    route = agent._router._registry.get_route("content_gen_scripting")
+
+    assert route.transport == LLMTransportType.OPENROUTER_API
+    assert route.provider == LLMProviderType.OPENROUTER
+
+
+@pytest.mark.asyncio
 async def test_define_core_inputs_raises_clear_error_without_llm_route() -> None:
     """Real scripting runs should fail fast when no routed LLM is configured."""
     from cc_deep_research.config import Config
@@ -394,6 +455,18 @@ def test_format_research_context_includes_audience_insights_and_examples() -> No
     assert "Example 1" in formatted
     assert "Case studies:" in formatted
     assert "Case 1" in formatted
+
+
+def test_step6_prompt_requires_single_hook_and_single_cta() -> None:
+    """Drafting prompt should explicitly enforce a single hook and CTA."""
+    assert "Use exactly one hook line and exactly one CTA line" in scripting_prompts.STEP6_SYSTEM
+    assert "Do not include multiple opening hooks, backup hooks, CTA variants" in scripting_prompts.STEP6_SYSTEM
+
+
+def test_step10_qc_checks_single_hook_and_cta_presence() -> None:
+    """Final QC should verify hook/CTA uniqueness before saving the script."""
+    assert "- Exactly one hook is present" in scripting_prompts.STEP10_SYSTEM
+    assert "- At most one CTA is present" in scripting_prompts.STEP10_SYSTEM
 
 
 def test_scripting_context_tone_and_cta_default_empty() -> None:
@@ -547,6 +620,12 @@ def test_cli_script_loads_effective_config(monkeypatch: pytest.MonkeyPatch) -> N
                 qc=QCResult(checks=[], weakest_parts=[], final_script="Final script"),
             )
 
+        async def run_scripting_iterative(self, raw_idea: str, progress_callback=None):
+            from cc_deep_research.content_gen.models import IterationState
+
+            ctx = await self.run_scripting(raw_idea, progress_callback=progress_callback)
+            return ctx, IterationState()
+
     monkeypatch.setattr(
         "cc_deep_research.content_gen.orchestrator.ContentGenOrchestrator",
         FakeOrchestrator,
@@ -603,6 +682,12 @@ def test_cli_script_autosaves_successful_run(
                 raw_idea=raw_idea,
                 qc=QCResult(checks=[], weakest_parts=[], final_script="Final script"),
             )
+
+        async def run_scripting_iterative(self, raw_idea: str, progress_callback=None):
+            from cc_deep_research.content_gen.models import IterationState
+
+            ctx = await self.run_scripting(raw_idea, progress_callback=progress_callback)
+            return ctx, IterationState()
 
     monkeypatch.setattr("cc_deep_research.content_gen.cli.ScriptingStore", FakeStore)
     monkeypatch.setattr(

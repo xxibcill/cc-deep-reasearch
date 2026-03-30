@@ -308,6 +308,9 @@ Write a full script using the selected hook and beat plan.
 Requirements:
 - Follow the chosen structure
 - Use the beat intents exactly
+- Use exactly one hook line and exactly one CTA line in the full script
+- The hook line must use the selected hook, not a rewritten alternate
+- Do not include multiple opening hooks, backup hooks, CTA variants, or repeated CTA lines
 - One idea per sentence
 - 8-12 words per sentence when possible
 - Keep it conversational and speakable
@@ -389,6 +392,9 @@ Apply these retention rules:
 - Do not add fluff
 - Do not make the script longer unless the added line clearly improves retention
 - Preserve clarity and natural spoken rhythm
+- Preserve exactly one hook line and at most one CTA line
+- Do not turn the opening into multiple hook lines
+- Do not add a second CTA
 
 Output format:
 
@@ -439,6 +445,8 @@ Editing rules:
 - Preserve the core angle and flow
 - Keep natural spoken rhythm
 - Do not over-polish into robotic language
+- Preserve exactly one hook line and at most one CTA line
+- If the script contains duplicate hooks or duplicate CTAs, collapse them into the single strongest version
 
 Output format:
 
@@ -490,6 +498,8 @@ Rules:
 - Do not annotate every line
 - Only add notes where visuals strengthen delivery
 - Keep notes simple and production-friendly
+- Keep exactly one [Hook] line and at most one [CTA] line in the annotated output
+- Do not split the hook or CTA into multiple labeled lines
 
 Output format:
 
@@ -519,6 +529,8 @@ Evaluate the script against the checklist below.
 Checklist:
 - Understandable in one pass
 - Hook creates curiosity, tension, or relevance
+- Exactly one hook is present
+- At most one CTA is present
 - No vague or generic phrasing
 - Every line adds value
 - Spoken rhythm feels natural
@@ -535,6 +547,7 @@ Instructions:
 - Then identify the 3 weakest parts
 - Then produce the final improved script
 - Be direct; do not protect weak writing
+- If the script has duplicate hook lines or duplicate CTA lines, fix that in the final script
 
 Output format:
 
