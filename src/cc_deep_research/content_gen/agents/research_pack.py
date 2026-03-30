@@ -53,12 +53,13 @@ class ResearchPackAgent:
         angle: AngleOption,
         *,
         max_queries: int | None = None,
+        feedback: str = "",
     ) -> ResearchPack:
         max_q = max_queries or self._config.content_gen.research_max_queries
         search_context = await self._run_searches(item, angle, max_queries=max_q)
 
         system = prompts.SYNTHESIS_SYSTEM
-        user = prompts.synthesis_user(item, angle, search_context)
+        user = prompts.synthesis_user(item, angle, search_context, feedback=feedback)
         text = await self._call_llm(system, user, temperature=0.3)
 
         return _parse_research_pack(text, item.idea_id, angle.angle_id)

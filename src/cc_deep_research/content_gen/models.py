@@ -404,6 +404,39 @@ class HumanQCGate(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class QualityEvaluation(BaseModel):
+    """Result of the quality evaluator agent.
+
+    Assesses the complete content package after each iteration to decide
+    whether to stop iterating or continue improving.
+    """
+
+    overall_quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    passes_threshold: bool = False
+    hook_quality: float = Field(default=0.0, ge=0.0, le=1.0)
+    content_clarity: float = Field(default=0.0, ge=0.0, le=1.0)
+    factual_accuracy: float = Field(default=0.0, ge=0.0, le=1.0)
+    audience_alignment: float = Field(default=0.0, ge=0.0, le=1.0)
+    production_readiness: float = Field(default=0.0, ge=0.0, le=1.0)
+    critical_issues: list[str] = Field(default_factory=list)
+    improvement_suggestions: list[str] = Field(default_factory=list)
+    research_gaps_identified: list[str] = Field(default_factory=list)
+    rationale: str = ""
+    iteration_number: int = 1
+
+
+class IterationState(BaseModel):
+    """State tracking for the iterative content generation loop."""
+
+    current_iteration: int = Field(default=1, ge=1)
+    max_iterations: int = Field(default=3, ge=1)
+    quality_history: list[QualityEvaluation] = Field(default_factory=list)
+    latest_feedback: str = ""
+    is_converged: bool = False
+    convergence_reason: str = ""
+    should_rerun_research: bool = False
+
+
 class PublishItem(BaseModel):
     """Single publish queue entry (spec stage 10)."""
 
@@ -469,6 +502,7 @@ class PipelineContext(BaseModel):
     qc_gate: HumanQCGate | None = None
     publish_item: PublishItem | None = None
     performance: PerformanceAnalysis | None = None
+    iteration_state: IterationState | None = None
 
 
 # ---------------------------------------------------------------------------

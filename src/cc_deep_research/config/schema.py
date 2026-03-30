@@ -331,6 +331,12 @@ class ContentGenConfig(BaseModel):
     research_max_queries: int = 6
     scoring_threshold_produce: int = 25  # out of 35 max
 
+    # Iterative quality-check loop settings
+    enable_iterative_mode: bool = True
+    max_iterations: int = Field(default=3, ge=1, le=5)
+    quality_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
+    convergence_threshold: float = Field(default=0.05, ge=0.0, le=0.2)
+
 
 class Config(BaseModel):
     """Main configuration model."""
