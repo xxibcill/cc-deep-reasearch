@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENT.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to LLM agents when working with code in this repository.
 
 Use Playwright as your eyes to inspect the UI, verify behavior, and fix frontend-side code issues based on what you observe in the browser.
 
@@ -99,7 +99,6 @@ uv run python -m cc_deep_research.cli research "query"
 ### CLI Entry Point
 
 [cli.py](src/cc_deep_research/cli.py) uses Click for command parsing:
-
 - `cc-deep-research research "query"` - Main research command
 - `cc-deep-research config set/show/init` - Configuration management
 
@@ -116,7 +115,6 @@ The orchestrator uses async/await throughout. Search operations, particularly in
 ### Configuration Hierarchy
 
 Configuration is loaded in this priority:
-
 1. CLI flags (highest priority)
 2. Environment variables (e.g., `TAVILY_API_KEYS`)
 3. Config file (`~/.config/cc-deep-research/config.yaml`)
