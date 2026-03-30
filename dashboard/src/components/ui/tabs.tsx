@@ -32,7 +32,7 @@ export function Tabs({
       className={cn(
         stretch ? 'grid' : 'inline-flex',
         isProminent
-          ? 'gap-2 rounded-2xl border border-slate-200/90 bg-white/75 p-2 shadow-sm backdrop-blur-sm'
+          ? 'gap-2 rounded-2xl border border-border bg-surface p-2 shadow-sm'
           : 'gap-0.5 rounded-lg border bg-muted/40 p-1',
         className
       )}
@@ -52,10 +52,10 @@ export function Tabs({
               isIconOnly && isProminent ? 'items-center justify-center px-0 py-3' : undefined,
               value === tab.value
                 ? isProminent
-                  ? 'border-sky-200 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(224,242,254,0.92))] text-slate-950 shadow-sm'
+                  ? 'border-primary/35 bg-surface-raised text-foreground shadow-sm'
                   : 'bg-background shadow-sm'
                 : isProminent
-                  ? 'border-transparent text-muted-foreground hover:border-slate-200 hover:bg-white/80 hover:text-foreground'
+                  ? 'border-transparent text-muted-foreground hover:border-border hover:bg-surface-raised hover:text-foreground'
                   : 'text-muted-foreground hover:text-foreground'
             )}
             aria-label={tab.label}
@@ -78,9 +78,9 @@ export function Tabs({
                   'rounded-full px-2 py-0.5 text-[11px] font-semibold',
                   value === tab.value
                     ? isProminent
-                      ? 'bg-sky-100 text-sky-900'
+                      ? 'bg-primary/15 text-primary'
                       : 'bg-muted text-foreground'
-                    : 'bg-slate-100 text-slate-600'
+                    : 'bg-muted text-muted-foreground'
                 )}
               >
                 {tab.badge}

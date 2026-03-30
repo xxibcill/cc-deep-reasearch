@@ -52,13 +52,13 @@ export function AlertDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-500/75 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm"
       onKeyDown={handleKeyDown}
     >
       <div className="absolute inset-0" onClick={() => onOpenChange(false)} />
       <div
         className={cn(
-          'relative z-10 w-full max-w-md rounded-xl border bg-neutral-100 p-6 shadow-2xl',
+          'relative z-10 w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-2xl',
         )}
         role="dialog"
         aria-modal="true"

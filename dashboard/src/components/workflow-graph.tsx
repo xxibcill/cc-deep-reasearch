@@ -130,7 +130,7 @@ export function WorkflowGraph({
       .attr('r', (node) => (node.type === 'session' ? 30 : 24))
       .attr('fill', (node) => STATUS_COLORS[node.status] ?? STATUS_COLORS.unknown)
       .attr('stroke', (node) =>
-        node.latestEventId && node.latestEventId === selectedEventId ? '#0f172a' : '#ffffff'
+        node.latestEventId && node.latestEventId === selectedEventId ? '#fbbf24' : '#44403c'
       )
       .attr('stroke-width', (node) => (node.latestEventId === selectedEventId ? 4 : 2));
 
@@ -140,6 +140,7 @@ export function WorkflowGraph({
       .attr('dy', 48)
       .attr('font-size', 13)
       .attr('font-weight', 600)
+      .attr('fill', '#f5f5f4')
       .text((node) => node.name);
 
     nodeGroup
@@ -147,9 +148,9 @@ export function WorkflowGraph({
       .attr('text-anchor', 'middle')
       .attr('dy', 64)
       .attr('font-size', 11)
-      .attr('fill', '#475569')
+      .attr('fill', '#b0a89c')
       .text((node) => node.status);
   }, [edges, eventIndex, nodes, onSelectEvent, positions, selectedEventId]);
 
-  return <svg ref={svgRef} className="h-[520px] w-full rounded-xl bg-slate-50" />;
+  return <svg ref={svgRef} className="h-[520px] w-full rounded-xl bg-surface" />;
 }
