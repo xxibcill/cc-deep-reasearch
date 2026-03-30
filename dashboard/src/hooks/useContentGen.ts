@@ -62,6 +62,8 @@ interface ContentGenState {
   loadPublishQueue: () => Promise<void>;
   removeFromQueue: (ideaId: string, platform: string) => Promise<void>;
 
+  loadAll: () => Promise<void>;
+
   clearError: () => void;
   reset: () => void;
 }
@@ -240,6 +242,15 @@ const useContentGen = create<ContentGenState>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  loadAll: async () => {
+    await Promise.allSettled([
+      get().loadPipelines(),
+      get().loadScripts(),
+      get().loadPublishQueue(),
+      get().loadStrategy(),
+    ]);
+  },
 
   reset: () => set(initialState),
 }));

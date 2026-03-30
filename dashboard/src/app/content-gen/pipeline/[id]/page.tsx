@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
-import Link from 'next/link'
-import { ArrowLeft, StopCircle } from 'lucide-react'
+import { StopCircle } from 'lucide-react'
 import useContentGen from '@/hooks/useContentGen'
 import { PipelineProgressTracker } from '@/components/content-gen/pipeline-progress-tracker'
 import { StageResultPanel } from '@/components/content-gen/stage-result-panel'
@@ -77,7 +76,6 @@ export default function PipelineDetailPage() {
             [data.stage_index]: 'failed',
           }))
         } else if (data.type === 'pipeline_completed') {
-          // Reload full context
           selectPipeline(pipelineId)
         }
       } catch {
@@ -101,15 +99,32 @@ export default function PipelineDetailPage() {
     switch (stageIndex) {
       case 0: // Strategy
         return ctx.strategy ? (
-          <div className="space-y-1 text-sm">
-            <p><strong>Niche:</strong> {ctx.strategy.niche || 'Not set'}</p>
-            <p><strong>Pillars:</strong> {ctx.strategy.content_pillars?.join(', ') || 'None'}</p>
+          <div className="space-y-2">
+            <div className="flex items-start gap-4 text-sm">
+              <div className="min-w-[80px]">
+                <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Niche</span>
+              </div>
+              <span className="text-foreground/80">{ctx.strategy.niche || 'Not set'}</span>
+            </div>
+            <div className="flex items-start gap-4 text-sm">
+              <div className="min-w-[80px]">
+                <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">Pillars</span>
+              </div>
+              <span className="text-foreground/80">{ctx.strategy.content_pillars?.join(', ') || 'None'}</span>
+            </div>
           </div>
         ) : null
       case 1: // Backlog
         return ctx.backlog ? (
           <div className="text-sm">
-            <p>{ctx.backlog.items.length} ideas generated, {ctx.backlog.rejected_count} rejected</p>
+            <span className="text-foreground/80">
+              {ctx.backlog.items.length} ideas generated
+            </span>
+            {ctx.backlog.rejected_count > 0 && (
+              <span className="text-muted-foreground ml-2">
+                ({ctx.backlog.rejected_count} rejected)
+              </span>
+            )}
           </div>
         ) : null
       case 5: // Scripting
@@ -126,10 +141,13 @@ export default function PipelineDetailPage() {
         ) : null
       case 8: // Packaging
         return ctx.packaging ? (
-          <div className="space-y-2 text-sm">
+          <div className="space-y-2">
             {ctx.packaging.platform_packages.map((pkg, i) => (
-              <div key={i} className="border rounded p-2">
-                <strong>{pkg.platform}</strong>: {pkg.primary_hook}
+              <div key={i} className="flex items-start gap-3 text-sm py-1.5 border-b border-border last:border-0">
+                <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground min-w-[80px] pt-0.5">
+                  {pkg.platform}
+                </span>
+                <span className="text-foreground/70">{pkg.primary_hook}</span>
               </div>
             ))}
           </div>
@@ -143,59 +161,84 @@ export default function PipelineDetailPage() {
     }
   }
 
+  const getStageStatus = (idx: number) => {
+    const explicit = stageStates[idx]
+    if (explicit) return explicit
+    if (idx < currentStage) return 'completed' as const
+    if (idx === currentStage && status === 'running') return 'running' as const
+    return 'pending' as const
+  }
+
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Link
-            href="/content-gen"
-            className="text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
+        <div className="flex items-center gap-4">
           <div>
-            <h1 className="text-xl font-bold">Pipeline {pipelineId}</h1>
+            <h1 className="text-lg font-display font-semibold tracking-tight">
+              Pipeline
+            </h1>
             {currentPipeline && (
-              <p className="text-sm text-muted-foreground">{currentPipeline.theme}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{currentPipeline.theme}</p>
             )}
           </div>
         </div>
-        {(status === 'running' || status === 'queued') && (
-          <button
-            onClick={() => stopPipeline(pipelineId)}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors"
-          >
-            <StopCircle className="h-4 w-4" />
-            Stop
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] font-mono text-muted-foreground tabular-nums">
+            {pipelineId.slice(0, 8)}
+          </span>
+          {(status === 'running' || status === 'queued') && (
+            <button
+              onClick={() => stopPipeline(pipelineId)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-error border border-error/20 rounded-sm
+                hover:bg-error/10 transition-colors"
+            >
+              <StopCircle className="h-3.5 w-3.5" />
+              Stop
+            </button>
+          )}
+        </div>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && (
+        <div className="text-sm text-error bg-error-muted/20 border border-error/20 rounded-sm px-3 py-2">
+          {error}
+        </div>
+      )}
 
-      {/* Progress tracker */}
-      <PipelineProgressTracker currentStage={currentStage} stageStates={stageStates} />
+      {/* Two-column layout: timeline + stage details */}
+      <div className="grid grid-cols-1 lg:grid-cols-[200px_1fr] gap-8">
+        {/* Timeline sidebar */}
+        <aside className="hidden lg:block">
+          <div className="sticky top-8">
+            <PipelineProgressTracker currentStage={currentStage} stageStates={stageStates} />
+          </div>
+        </aside>
 
-      {/* Stage panels */}
-      <div className="space-y-2">
-        {STAGE_LABELS.map((label, idx) => {
-          const stageStatus = stageStates[idx] ||
-            (idx < currentStage ? 'completed' : idx === currentStage && (status === 'running') ? 'running' : 'pending')
+        {/* Mobile timeline */}
+        <div className="lg:hidden">
+          <PipelineProgressTracker currentStage={currentStage} stageStates={stageStates} />
+        </div>
 
-          return (
-            <StageResultPanel
-              key={idx}
-              title={label}
-              stageIndex={idx}
-              status={stageStatus as 'pending' | 'running' | 'completed' | 'failed'}
-              defaultOpen={stageStatus === 'completed'}
-            >
-              {pipelineContext ? renderStageContent(pipelineContext, idx) : (
-                <p className="text-sm text-muted-foreground">Loading...</p>
-              )}
-            </StageResultPanel>
-          )
-        })}
+        {/* Stage panels */}
+        <div className="space-y-1.5">
+          {STAGE_LABELS.map((label, idx) => {
+            const stageStatus = getStageStatus(idx)
+            return (
+              <StageResultPanel
+                key={idx}
+                title={label}
+                stageIndex={idx}
+                status={stageStatus}
+                defaultOpen={stageStatus === 'completed'}
+              >
+                {pipelineContext ? renderStageContent(pipelineContext, idx) : (
+                  <p className="text-sm text-muted-foreground">Loading...</p>
+                )}
+              </StageResultPanel>
+            )
+          })}
+        </div>
       </div>
     </div>
   )

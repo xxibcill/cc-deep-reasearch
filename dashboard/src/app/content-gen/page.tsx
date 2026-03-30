@@ -1,102 +1,217 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { Play, FileText, Settings, ListVideo, BookOpen } from 'lucide-react'
+import { Play, FileText, ArrowRight, Loader2 } from 'lucide-react'
 import useContentGen from '@/hooks/useContentGen'
-
-const NAV_ITEMS = [
-  { href: '/content-gen/pipeline/new', label: 'New Pipeline', icon: Play },
-  { href: '/content-gen/scripting', label: 'Scripting', icon: FileText },
-  { href: '/content-gen/strategy', label: 'Strategy', icon: Settings },
-  { href: '/content-gen/scripts', label: 'Past Scripts', icon: BookOpen },
-  { href: '/content-gen/publish', label: 'Publish Queue', icon: ListVideo },
-]
+import { Dialog } from '@/components/ui/dialog'
+import { StartPipelineForm } from '@/components/content-gen/start-pipeline-form'
+import { QuickScriptForm } from '@/components/content-gen/quick-script-form'
+import { ScriptsPanel } from '@/components/content-gen/scripts-panel'
+import { StrategyEditor } from '@/components/content-gen/strategy-editor'
+import { PublishQueuePanel } from '@/components/content-gen/publish-queue-panel'
+import { OverviewSidebar } from '@/components/content-gen/overview-sidebar'
 
 export default function ContentGenPage() {
-  const pipelines = useContentGen((s) => s.pipelines)
-  const loadPipelines = useContentGen((s) => s.loadPipelines)
-  const scripts = useContentGen((s) => s.scripts)
-  const loadScripts = useContentGen((s) => s.loadScripts)
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const activeTab = searchParams.get('tab') || 'overview'
 
-  useEffect(() => {
-    loadPipelines()
-    loadScripts()
-  }, [loadPipelines, loadScripts])
+  const pipelines = useContentGen((s) => s.pipelines)
+  const publishQueue = useContentGen((s) => s.publishQueue)
+  const loadAll = useContentGen((s) => s.loadAll)
+  const removeFromQueue = useContentGen((s) => s.removeFromQueue)
+  const error = useContentGen((s) => s.error)
+
+  const [newPipelineOpen, setNewPipelineOpen] = useState(false)
+  const [quickScriptOpen, setQuickScriptOpen] = useState(false)
 
   const activePipelines = pipelines.filter(
     (p) => p.status === 'running' || p.status === 'queued'
   )
-  const recentScripts = scripts.slice(0, 5)
+  const pastPipelines = pipelines.filter(
+    (p) => p.status === 'completed' || p.status === 'failed' || p.status === 'cancelled'
+  )
+
+  const handleTabChange = (tab: string) => {
+    router.push(`/content-gen${tab === 'overview' ? '' : `?tab=${tab}`}`)
+  }
+
+  const handleRemoveFromQueue = async (ideaId: string, platform: string) => {
+    await removeFromQueue(ideaId, platform)
+  }
+
+  // Overview tab content
+  const renderOverview = () => (
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
+      {/* Left column */}
+      <div className="space-y-6">
+        {/* Quick actions */}
+        <div className="flex gap-3">
+          <button
+            onClick={() => setNewPipelineOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-warning/15 border border-warning/30 text-warning rounded-sm text-sm font-medium font-display
+              hover:bg-warning/25 transition-colors"
+          >
+            <Play className="h-4 w-4" />
+            New Pipeline
+          </button>
+          <button
+            onClick={() => setQuickScriptOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-surface border border-border text-foreground/80 rounded-sm text-sm font-medium font-display
+              hover:bg-surface-raised hover:text-foreground transition-colors"
+          >
+            <FileText className="h-4 w-4" />
+            Quick Script
+          </button>
+        </div>
+
+        {/* Error banner */}
+        {error && (
+          <div className="text-sm text-error bg-error-muted/20 border border-error/20 rounded-sm px-3 py-2">
+            {error}
+          </div>
+        )}
+
+        {/* Active pipelines */}
+        {activePipelines.length > 0 && (
+          <section>
+            <h2 className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-3">
+              Active Pipelines
+            </h2>
+            <div className="space-y-1">
+              {activePipelines.map((p) => (
+                <Link
+                  key={p.pipeline_id}
+                  href={`/content-gen/pipeline/${p.pipeline_id}`}
+                  className="flex items-center justify-between px-3 py-2.5 bg-surface border border-border rounded-sm
+                    hover:border-warning/30 transition-colors group"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="w-2 h-2 rounded-full bg-warning animate-stage-pulse shrink-0" />
+                    <span className="text-sm font-medium truncate">{p.theme}</span>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-[11px] font-mono text-warning tabular-nums">
+                      {String(p.current_stage + 1).padStart(2, '0')}/12
+                    </span>
+                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-warning transition-colors" />
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Past pipelines */}
+        {pastPipelines.length > 0 && (
+          <section>
+            <h2 className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-3">
+              Past Pipelines
+            </h2>
+            <div className="space-y-1">
+              {pastPipelines.map((p) => (
+                <Link
+                  key={p.pipeline_id}
+                  href={`/content-gen/pipeline/${p.pipeline_id}`}
+                  className="flex items-center justify-between px-3 py-2.5 bg-surface border border-border rounded-sm
+                    hover:border-border/80 transition-colors group"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${
+                      p.status === 'completed' ? 'bg-success/60' : 'bg-error/60'
+                    }`} />
+                    <span className="text-sm text-foreground/70 truncate">{p.theme}</span>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-[11px] font-mono text-muted-foreground tabular-nums">
+                      {p.status}
+                    </span>
+                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/50 group-hover:text-foreground transition-colors" />
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Empty state */}
+        {activePipelines.length === 0 && pastPipelines.length === 0 && (
+          <section className="py-16 text-center">
+            <p className="text-sm text-muted-foreground">
+              No pipelines yet.
+            </p>
+            <button
+              onClick={() => setNewPipelineOpen(true)}
+              className="inline-flex items-center gap-2 mt-4 text-sm text-warning hover:text-warning/80 transition-colors"
+            >
+              Start your first pipeline
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          </section>
+        )}
+      </div>
+
+      {/* Right sidebar */}
+      <OverviewSidebar onTabChange={handleTabChange} />
+    </div>
+  )
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Content Generation</h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Create short-form video content with AI
-        </p>
-      </div>
+    <>
+      {/* Tab content */}
+      {activeTab === 'overview' && renderOverview()}
 
-      {/* Navigation cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {NAV_ITEMS.map(({ href, label, icon: Icon }) => (
-          <Link
-            key={href}
-            href={href}
-            className="flex flex-col items-center gap-2 p-4 border rounded-md hover:bg-muted/50 transition-colors"
-          >
-            <Icon className="h-6 w-6 text-muted-foreground" />
-            <span className="text-sm font-medium">{label}</span>
-          </Link>
-        ))}
-      </div>
+      {activeTab === 'scripts' && (
+        <div className="max-w-3xl">
+          <ScriptsPanel />
+        </div>
+      )}
 
-      {/* Active pipelines */}
-      {activePipelines.length > 0 && (
-        <div>
-          <h2 className="text-lg font-semibold mb-3">Active Pipelines</h2>
-          <div className="space-y-2">
-            {activePipelines.map((p) => (
-              <Link
-                key={p.pipeline_id}
-                href={`/content-gen/pipeline/${p.pipeline_id}`}
-                className="block p-3 border rounded-md hover:bg-muted/50 transition-colors"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-sm">{p.theme}</span>
-                  <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-                    Stage {p.current_stage + 1}/12
-                  </span>
-                </div>
-                <span className="text-xs text-muted-foreground font-mono">
-                  {p.pipeline_id}
-                </span>
-              </Link>
-            ))}
+      {activeTab === 'strategy' && (
+        <div className="max-w-2xl">
+          <div className="bg-surface border border-border rounded-sm p-6">
+            <StrategyEditor />
           </div>
         </div>
       )}
 
-      {/* Recent scripts */}
-      {recentScripts.length > 0 && (
-        <div>
-          <h2 className="text-lg font-semibold mb-3">Recent Scripts</h2>
-          <div className="space-y-1">
-            {recentScripts.map((s) => (
-              <div
-                key={s.run_id}
-                className="flex items-center justify-between p-2 text-sm"
-              >
-                <span className="truncate max-w-[60%]">{s.raw_idea}</span>
-                <span className="text-xs text-muted-foreground">
-                  {s.word_count} words
-                </span>
-              </div>
-            ))}
-          </div>
+      {activeTab === 'queue' && (
+        <div className="max-w-3xl">
+          <PublishQueuePanel
+            items={publishQueue}
+            onRemove={handleRemoveFromQueue}
+          />
         </div>
       )}
-    </div>
+
+      {/* New Pipeline dialog */}
+      <Dialog
+        open={newPipelineOpen}
+        onOpenChange={setNewPipelineOpen}
+        title="New Pipeline"
+      >
+        <div className="p-6">
+          <StartPipelineForm
+            onSuccess={(pipelineId) => {
+              setNewPipelineOpen(false)
+              router.push(`/content-gen/pipeline/${pipelineId}`)
+            }}
+          />
+        </div>
+      </Dialog>
+
+      {/* Quick Script dialog */}
+      <Dialog
+        open={quickScriptOpen}
+        onOpenChange={setQuickScriptOpen}
+        title="Quick Script"
+      >
+        <div className="p-6">
+          <QuickScriptForm />
+        </div>
+      </Dialog>
+    </>
   )
 }

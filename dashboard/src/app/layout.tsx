@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'CC Deep Research Monitoring',
-  description: 'Real-time monitoring dashboard for CC Deep Research',
+  title: 'CC Deep Research — Content Studio',
+  description: 'Content generation studio for short-form video production',
 };
 
 export default function RootLayout({
@@ -13,7 +13,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body>{children}</body>
+      <body className="min-h-screen">{children}</body>
     </html>
   );
 }

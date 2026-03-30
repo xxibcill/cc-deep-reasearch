@@ -16,18 +16,18 @@ export function Dialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-500/75 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
       <div className="absolute inset-0" onClick={() => onOpenChange(false)} />
       <div
         className={cn(
-          'relative z-10 max-h-[85vh] w-full max-w-4xl overflow-hidden rounded-2xl border bg-neutral-100 shadow-2xl',
+          'relative z-10 max-h-[85vh] w-full max-w-4xl overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl',
         )}
       >
         <div className="flex items-center justify-between border-b px-5 py-4">
           <h2 className="text-lg font-semibold">{title}</h2>
           <button
             aria-label="Close dialog"
-            className="rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            className="rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-surface-raised hover:text-foreground"
             onClick={() => onOpenChange(false)}
           >
             Close

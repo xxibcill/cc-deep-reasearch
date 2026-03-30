@@ -1,50 +1,42 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Source+Sans+3:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --background: 214 38% 97%;
-  --foreground: 215 39% 16%;
-  --card: 0 0% 100%;
-  --card-foreground: 215 39% 16%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 215 39% 16%;
-  --primary: 212 86% 36%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 210 33% 94%;
-  --secondary-foreground: 215 39% 16%;
-  --muted: 210 33% 94%;
-  --muted-foreground: 215 16% 46%;
-  --accent: 197 76% 92%;
-  --accent-foreground: 215 39% 16%;
-  --destructive: 0 72% 45%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 214 26% 87%;
-  --input: 214 26% 87%;
-  --ring: 212 86% 36%;
-  --radius: 0.75rem;
-}
+  /* Warm dark palette — industrial console */
+  --background: 30 6% 6%;
+  --foreground: 36 14% 90%;
+  --card: 30 5% 9%;
+  --card-foreground: 36 14% 90%;
+  --popover: 30 5% 9%;
+  --popover-foreground: 36 14% 90%;
+  --primary: 36 82% 55%;
+  --primary-foreground: 30 6% 6%;
+  --secondary: 30 5% 14%;
+  --secondary-foreground: 36 10% 70%;
+  --muted: 30 4% 14%;
+  --muted-foreground: 30 6% 46%;
+  --accent: 36 82% 55%;
+  --accent-foreground: 30 6% 6%;
+  --destructive: 0 62% 50%;
+  --destructive-foreground: 36 14% 90%;
+  --border: 30 4% 16%;
+  --input: 30 4% 16%;
+  --ring: 36 82% 55%;
+  --radius: 0.375rem;
 
-.dark {
-  --background: 222.2 84% 4.9%;
-  --foreground: 210 40% 98%;
-  --card: 222.2 84% 4.9%;
-  --card-foreground: 210 40% 98%;
-  --popover: 222.2 84% 4.9%;
-  --popover-foreground: 210 40% 98%;
-  --primary: 210 40% 98%;
-  --primary-foreground: 222.2 47.4% 11.2%;
-  --secondary: 217.2 32.6% 17.5%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 217.2 32.6% 17.5%;
-  --muted-foreground: 215 20.2% 70%;
-  --accent: 217.2 32.6% 17.5%;
-  --accent-foreground: 210 40% 98%;
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 217.2 32.6% 17.5%;
-  --input: 217.2 32.6% 17.5%;
-  --ring: 212.7 26.8% 83.9%;
+  /* Extended palette */
+  --surface: 30 5% 11%;
+  --surface-raised: 30 5% 14%;
+  --success: 174 55% 54%;
+  --success-muted: 174 30% 20%;
+  --warning: 36 82% 55%;
+  --warning-muted: 36 50% 18%;
+  --error: 0 62% 50%;
+  --error-muted: 0 40% 18%;
+  --running-glow: 36 82% 55%;
 }
 
 * {
@@ -53,10 +45,156 @@
 
 body {
   @apply bg-background text-foreground antialiased;
-  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  font-family: "Source Sans 3", "Segoe UI", sans-serif;
 }
 
 pre,
-code {
-  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+code,
+.font-mono {
+  font-family: "JetBrains Mono", "SFMono-Regular", monospace;
+}
+
+/* ---- Base layer resets ---- */
+
+@layer base {
+  h1, h2, h3, h4, h5, h6 {
+    font-family: "Space Grotesk", "Segoe UI", sans-serif;
+    letter-spacing: -0.02em;
+  }
+}
+
+/* ---- Custom utilities ---- */
+
+@layer utilities {
+  /* Running stage pulse animation */
+  .stage-running {
+    position: relative;
+  }
+  .stage-running::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(
+      ellipse at left center,
+      hsl(var(--running-glow) / 0.08) 0%,
+      transparent 70%
+    );
+    animation: stage-pulse 2s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  /* Timeline connector line */
+  .timeline-line {
+    position: relative;
+  }
+  .timeline-line::after {
+    content: '';
+    position: absolute;
+    left: 15px;
+    top: 32px;
+    bottom: -8px;
+    width: 1px;
+    background: hsl(var(--border));
+  }
+  .timeline-line.completed::after {
+    background: hsl(var(--success) / 0.3);
+  }
+
+  /* Subtle top border accent */
+  .accent-top {
+    position: relative;
+  }
+  .accent-top::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(
+      90deg,
+      hsl(var(--warning) / 0.6) 0%,
+      transparent 100%
+    );
+  }
+
+  /* Flat surface with top rule */
+  .surface-rule {
+    border-top: 1px solid hsl(var(--border));
+    padding-top: 1.5rem;
+  }
+
+  /* Tabular numbers for IDs and counts */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Oversized stage number */
+  .stage-number {
+    font-family: "JetBrains Mono", monospace;
+    font-weight: 600;
+    font-size: 0.75rem;
+    line-height: 1;
+    letter-spacing: 0.05em;
+  }
+}
+
+/* ---- Animations ---- */
+
+@keyframes stage-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-down {
+  from {
+    opacity: 0;
+    grid-template-rows: 0fr;
+  }
+  to {
+    opacity: 1;
+    grid-template-rows: 1fr;
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+
+.animate-slide-down {
+  animation: slide-down 0.25s ease-out;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted));
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.3);
+}
+
+/* Focus ring */
+:focus-visible {
+  outline: 2px solid hsl(var(--accent) / 0.5);
+  outline-offset: 2px;
+}
+
+/* Selection */
+::selection {
+  background: hsl(var(--warning) / 0.25);
+  color: hsl(var(--foreground));
 }
