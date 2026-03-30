@@ -50,3 +50,4 @@ target/
 # Ralph backup directories (created by migration)
 .ralph_backup_*
 .venv/
+.claude/
