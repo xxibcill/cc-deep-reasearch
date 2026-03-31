@@ -2,12 +2,16 @@
 
 import { startTransition, useEffect, useState } from 'react';
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { AlertDialog } from '@/components/ui/alert-dialog';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-  getSearchCacheStats,
-  purgeExpiredSearchCacheEntries,
   clearSearchCache,
   getApiErrorMessage,
+  getSearchCacheStats,
+  purgeExpiredSearchCacheEntries,
 } from '@/lib/api';
 import type { SearchCacheStats } from '@/types/search-cache';
 
@@ -32,8 +36,10 @@ export function SearchCachePanel() {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
-  const loadStats = async () => {
-    setLoading(true);
+  const loadStats = async ({ preserveVisibleState = false }: { preserveVisibleState?: boolean } = {}) => {
+    if (!preserveVisibleState) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const response = await getSearchCacheStats();
@@ -43,7 +49,9 @@ export function SearchCachePanel() {
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to load cache stats.'));
     } finally {
-      setLoading(false);
+      if (!preserveVisibleState) {
+        setLoading(false);
+      }
     }
   };
 
@@ -58,7 +66,7 @@ export function SearchCachePanel() {
     try {
       const response = await purgeExpiredSearchCacheEntries();
       setActionMessage(response.message || `Purged ${response.purged} expired entries.`);
-      await loadStats();
+      await loadStats({ preserveVisibleState: true });
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to purge expired entries.'));
     } finally {
@@ -74,7 +82,7 @@ export function SearchCachePanel() {
     try {
       const response = await clearSearchCache();
       setActionMessage(response.message || `Cleared ${response.cleared} entries.`);
-      await loadStats();
+      await loadStats({ preserveVisibleState: true });
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to clear cache.'));
     } finally {
@@ -84,22 +92,38 @@ export function SearchCachePanel() {
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-        <h2 className="text-base font-semibold">Search cache</h2>
-        <p className="mt-2 text-sm text-muted-foreground">Loading cache stats…</p>
-      </div>
+      <Card className="border-border/80 bg-card/95">
+        <CardHeader>
+          <CardTitle className="text-base">Search cache</CardTitle>
+          <CardDescription>Loading cache health, capacity, and retention details.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Alert variant="default">
+            <AlertTitle>Loading cache stats</AlertTitle>
+            <AlertDescription>Fetching the latest search cache status from the backend.</AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
     );
   }
 
   if (error && !stats) {
     return (
-      <div className="rounded-2xl border border-destructive/30 bg-card p-5 shadow-sm">
-        <h2 className="text-base font-semibold">Search cache</h2>
-        <p className="mt-2 text-sm text-destructive">{error}</p>
-        <Button variant="outline" size="sm" className="mt-3" onClick={loadStats}>
-          Retry
-        </Button>
-      </div>
+      <Card className="border-border/80 bg-card/95">
+        <CardHeader>
+          <CardTitle className="text-base">Search cache</CardTitle>
+          <CardDescription>Cache operations are unavailable until the stats endpoint responds again.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Alert variant="destructive">
+            <AlertTitle>Cache stats unavailable</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+          <Button variant="outline" size="sm" onClick={() => void loadStats()}>
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -108,130 +132,166 @@ export function SearchCachePanel() {
   }
 
   return (
-    <div className="space-y-4 rounded-2xl border border-border bg-card p-5 shadow-sm">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-base font-semibold">Search cache</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {stats.enabled ? 'Cache is enabled' : 'Cache is disabled'}
-          </p>
-        </div>
-        <span
-          className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-            stats.enabled
-              ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-              : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
-          }`}
-        >
-          {stats.enabled ? 'Active' : 'Inactive'}
-        </span>
-      </div>
-
-      {error && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {error}
-        </div>
-      )}
-
-      {actionMessage && (
-        <div className="rounded-lg border border-green-300/50 bg-green-50 px-3 py-2 text-sm text-green-800 dark:bg-green-900/30 dark:text-green-200">
-          {actionMessage}
-        </div>
-      )}
-
-      {stats.enabled && (
-        <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-xl border border-border bg-background/50 px-3 py-2">
-              <div className="text-xs text-muted-foreground">Total entries</div>
-              <div className="text-lg font-semibold">{stats.total_entries}</div>
-            </div>
-            <div className="rounded-xl border border-border bg-background/50 px-3 py-2">
-              <div className="text-xs text-muted-foreground">Active entries</div>
-              <div className="text-lg font-semibold text-green-600 dark:text-green-400">
-                {stats.active_entries}
+    <>
+      <Card className="overflow-hidden border-border/80 bg-card/95">
+        <CardHeader className="gap-4 border-b border-border/80 bg-muted/20">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <CardTitle className="text-base">Search cache</CardTitle>
+                <Badge variant={stats.enabled ? 'success' : 'secondary'}>
+                  {stats.enabled ? 'Active' : 'Inactive'}
+                </Badge>
+                <Badge variant={stats.db_exists ? 'outline' : 'warning'}>
+                  {stats.db_exists ? 'Database ready' : 'Database pending'}
+                </Badge>
               </div>
+              <CardDescription>
+                {stats.enabled
+                  ? 'Reuse identical queries to reduce provider calls and keep repeat runs cheaper.'
+                  : 'Caching is disabled, so every query goes back to the upstream provider.'}
+              </CardDescription>
             </div>
-            <div className="rounded-xl border border-border bg-background/50 px-3 py-2">
-              <div className="text-xs text-muted-foreground">Expired entries</div>
-              <div className="text-lg font-semibold text-amber-600 dark:text-amber-400">
-                {stats.expired_entries}
-              </div>
-            </div>
-            <div className="rounded-xl border border-border bg-background/50 px-3 py-2">
-              <div className="text-xs text-muted-foreground">Total hits</div>
-              <div className="text-lg font-semibold">{stats.total_hits}</div>
-            </div>
-          </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-xl border border-border bg-background/50 px-3 py-2">
-              <div className="text-xs text-muted-foreground">TTL</div>
-              <div className="text-sm font-medium">{formatTtl(stats.ttl_seconds)}</div>
-            </div>
-            <div className="rounded-xl border border-border bg-background/50 px-3 py-2">
-              <div className="text-xs text-muted-foreground">Max entries</div>
-              <div className="text-sm font-medium">{stats.max_entries.toLocaleString()}</div>
-            </div>
-            <div className="rounded-xl border border-border bg-background/50 px-3 py-2">
-              <div className="text-xs text-muted-foreground">Size</div>
-              <div className="text-sm font-medium">{formatBytes(stats.approximate_size_bytes)}</div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handlePurgeExpired}
-              disabled={actionLoading || stats.expired_entries === 0}
-            >
-              {actionLoading ? 'Working…' : `Purge expired (${stats.expired_entries})`}
-            </Button>
-            {!showClearConfirm ? (
+            <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
                 size="sm"
+                onClick={() => void loadStats({ preserveVisibleState: true })}
+                disabled={actionLoading}
+              >
+                Refresh
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handlePurgeExpired}
+                disabled={actionLoading || !stats.enabled || stats.expired_entries === 0}
+              >
+                {actionLoading ? 'Working…' : `Purge expired (${stats.expired_entries})`}
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
                 onClick={() => setShowClearConfirm(true)}
-                disabled={actionLoading || stats.total_entries === 0}
-                className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                disabled={actionLoading || !stats.enabled || stats.total_entries === 0}
               >
                 Clear all
               </Button>
-            ) : (
-              <div className="flex gap-2">
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={handleClearCache}
-                  disabled={actionLoading}
-                >
-                  Confirm clear
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowClearConfirm(false)}
-                  disabled={actionLoading}
-                >
-                  Cancel
-                </Button>
-              </div>
-            )}
+            </div>
           </div>
-        </>
-      )}
+        </CardHeader>
 
-      {!stats.enabled && (
-        <p className="text-sm text-muted-foreground">
-          Enable the search cache in the config editor to reduce API costs by reusing search results.
-        </p>
-      )}
+        <CardContent className="space-y-4 pt-6">
+          {error ? (
+            <Alert variant="destructive">
+              <AlertTitle>Cache action failed</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
 
-      <div className="text-xs text-muted-foreground">
-        Database: {stats.db_path}
-        {stats.db_exists ? '' : ' (not yet created)'}
-      </div>
+          {actionMessage ? (
+            <Alert variant="success">
+              <AlertTitle>Cache updated</AlertTitle>
+              <AlertDescription>{actionMessage}</AlertDescription>
+            </Alert>
+          ) : null}
+
+          {!stats.enabled ? (
+            <Alert variant="warning">
+              <AlertTitle>Search cache is disabled</AlertTitle>
+              <AlertDescription>
+                Enable the cache in the config editor above if you want identical searches to reuse previous results.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <CacheMetric label="Total entries" value={stats.total_entries.toLocaleString()} />
+            <CacheMetric
+              label="Active entries"
+              value={stats.active_entries.toLocaleString()}
+              emphasis="success"
+            />
+            <CacheMetric
+              label="Expired entries"
+              value={stats.expired_entries.toLocaleString()}
+              emphasis={stats.expired_entries > 0 ? 'warning' : 'default'}
+            />
+            <CacheMetric label="Total hits" value={stats.total_hits.toLocaleString()} />
+            <CacheMetric label="TTL" value={formatTtl(stats.ttl_seconds)} />
+            <CacheMetric label="Capacity" value={stats.max_entries.toLocaleString()} />
+            <CacheMetric label="Approx. size" value={formatBytes(stats.approximate_size_bytes)} />
+            <CacheMetric
+              label="Hit reuse ratio"
+              value={
+                stats.total_entries > 0
+                  ? `${Math.round((stats.total_hits / stats.total_entries) * 10) / 10}x`
+                  : '0x'
+              }
+            />
+          </div>
+
+          <div className="rounded-xl border border-border bg-background/50 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="space-y-1">
+                <div className="text-sm font-medium">Cache database</div>
+                <div className="text-xs text-muted-foreground">
+                  {stats.db_exists
+                    ? 'Persistent cache file is available for new and existing entries.'
+                    : 'The database file will be created the first time the cache is written.'}
+                </div>
+              </div>
+              <Badge variant={stats.db_exists ? 'success' : 'warning'}>
+                {stats.db_exists ? 'Ready' : 'Not created'}
+              </Badge>
+            </div>
+            <p className="mt-3 break-all font-mono text-xs text-muted-foreground">{stats.db_path}</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <AlertDialog
+        open={showClearConfirm}
+        onOpenChange={setShowClearConfirm}
+        title="Clear all search cache entries?"
+        description={
+          <>
+            This removes <strong>{stats.total_entries.toLocaleString()}</strong> cached search
+            {stats.total_entries === 1 ? ' result' : ' results'} from the local cache database.
+            New searches will repopulate entries as they run.
+          </>
+        }
+        confirmLabel="Clear cache"
+        destructive
+        loading={actionLoading}
+        loadingLabel="Clearing…"
+        onConfirm={handleClearCache}
+      />
+    </>
+  );
+}
+
+function CacheMetric({
+  label,
+  value,
+  emphasis = 'default',
+}: {
+  label: string;
+  value: string;
+  emphasis?: 'default' | 'success' | 'warning';
+}) {
+  const valueClassName =
+    emphasis === 'success'
+      ? 'text-success'
+      : emphasis === 'warning'
+        ? 'text-warning'
+        : 'text-foreground';
+
+  return (
+    <div className="rounded-xl border border-border bg-background/50 px-4 py-3">
+      <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
+      <div className={`mt-2 text-xl font-semibold tabular-nums ${valueClassName}`}>{value}</div>
     </div>
   );
 }
