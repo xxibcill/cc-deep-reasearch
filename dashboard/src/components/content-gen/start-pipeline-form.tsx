@@ -2,6 +2,12 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { FormDescription, FormField, FormLabel, FormMessage } from '@/components/ui/form-field'
+import { Input } from '@/components/ui/input'
+import { NativeSelect } from '@/components/ui/native-select'
 import { startPipeline } from '@/lib/content-gen-api'
 
 const PIPELINE_STAGES = [
@@ -27,10 +33,18 @@ export function StartPipelineForm({ onSuccess }: { onSuccess?: (pipelineId: stri
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const hasInvalidRange = fromStage > toStage
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
     if (!theme.trim()) {
-      setError('Enter a theme to start')
+      setError('Enter a theme to start.')
+      return
+    }
+
+    if (hasInvalidRange) {
+      setError('Choose a valid stage range where the end stage comes after the start stage.')
       return
     }
 
@@ -56,81 +70,77 @@ export function StartPipelineForm({ onSuccess }: { onSuccess?: (pipelineId: stri
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      {/* Theme input */}
-      <div>
-        <label htmlFor="theme" className="block text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">
+      <FormField>
+        <FormLabel htmlFor="theme" required>
           Theme
-        </label>
-        <input
+        </FormLabel>
+        <FormDescription>
+          Define the topic or production theme that should drive the selected pipeline slice.
+        </FormDescription>
+        <Input
           id="theme"
           type="text"
           value={theme}
           onChange={(e) => setTheme(e.target.value)}
           placeholder='e.g. "productivity tips for remote workers"'
-          className="w-full px-3 py-2.5 bg-background border border-border rounded-sm text-sm
-            focus:outline-none focus:border-warning/50 focus:ring-1 focus:ring-warning/20
-            placeholder:text-muted-foreground/40 transition-colors"
           disabled={isSubmitting}
         />
-      </div>
+      </FormField>
 
-      {/* Stage range */}
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label htmlFor="from-stage" className="block text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">
-            From
-          </label>
-          <select
+      <div className="grid gap-4 sm:grid-cols-2">
+        <FormField>
+          <FormLabel htmlFor="from-stage">From</FormLabel>
+          <NativeSelect
             id="from-stage"
-            value={fromStage}
+            value={String(fromStage)}
             onChange={(e) => setFromStage(Number(e.target.value))}
-            className="w-full px-3 py-2.5 bg-background border border-border rounded-sm text-sm
-              focus:outline-none focus:border-warning/50 focus:ring-1 focus:ring-warning/20
-              disabled:opacity-50 transition-colors"
             disabled={isSubmitting}
           >
             {PIPELINE_STAGES.map((label, idx) => (
               <option key={idx} value={idx}>
-                {String(idx).padStart(2, '0')} — {label}
+                {String(idx).padStart(2, '0')} - {label}
               </option>
             ))}
-          </select>
-        </div>
-        <div>
-          <label htmlFor="to-stage" className="block text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2">
-            To
-          </label>
-          <select
+          </NativeSelect>
+        </FormField>
+
+        <FormField>
+          <FormLabel htmlFor="to-stage">To</FormLabel>
+          <NativeSelect
             id="to-stage"
-            value={toStage}
+            value={String(toStage)}
             onChange={(e) => setToStage(Number(e.target.value))}
-            className="w-full px-3 py-2.5 bg-background border border-border rounded-sm text-sm
-              focus:outline-none focus:border-warning/50 focus:ring-1 focus:ring-warning/20
-              disabled:opacity-50 transition-colors"
             disabled={isSubmitting}
           >
             {PIPELINE_STAGES.map((label, idx) => (
               <option key={idx} value={idx}>
-                {String(idx).padStart(2, '0')} — {label}
+                {String(idx).padStart(2, '0')} - {label}
               </option>
             ))}
-          </select>
-        </div>
+          </NativeSelect>
+        </FormField>
       </div>
 
-      {error && (
-        <p className="text-sm text-error">{error}</p>
-      )}
+      {hasInvalidRange ? (
+        <FormMessage tone="error">
+          The selected stage range is invalid. Adjust the start or end stage before submitting.
+        </FormMessage>
+      ) : null}
 
-      {/* Submit */}
-      <button
+      {error ? (
+        <Alert variant="destructive">
+          <AlertTitle>Pipeline start failed</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      <Button
         type="submit"
-        disabled={isSubmitting || !theme.trim()}
-        className="w-full px-4 py-2.5 bg-warning/15 border border-warning/30 text-warning rounded-sm text-sm font-medium font-display
-          hover:bg-warning/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        disabled={isSubmitting || !theme.trim() || hasInvalidRange}
+        className="w-full bg-warning text-background hover:bg-warning/90"
       >
         {isSubmitting ? 'Starting...' : 'Start Pipeline'}
-      </button>
+      </Button>
     </form>
   )
 }

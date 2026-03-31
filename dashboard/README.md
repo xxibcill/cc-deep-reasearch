@@ -110,7 +110,20 @@ To use the dashboard with real-time monitoring:
 
 ## Component Foundation
 
-The dashboard now uses shared `shadcn/ui`-style primitives from [`src/components/ui/`](src/components/ui) with class merging from [`src/lib/utils.ts`](src/lib/utils.ts). The local setup is declared in [`components.json`](components.json) so later dashboard panels can reuse the same dialog, tabs, badge, select, card, and scrollable-pane vocabulary.
+The dashboard now uses shared `shadcn/ui`-style primitives from [`src/components/ui/`](src/components/ui) with class merging from [`src/lib/utils.ts`](src/lib/utils.ts). The local setup is declared in [`components.json`](components.json) so dashboard surfaces can reuse the same vocabulary for:
+
+- dialogs and confirmation flows
+- buttons, badges, tabs, and cards
+- text inputs, textareas, labels, native selects, and field messaging
+- alerts, tables, separators, and collapsible content panels
+
+Intentionally custom surfaces still keep bespoke rendering logic and only reuse the shared shell around them:
+
+- workflow graphs
+- decision graphs
+- agent timelines
+- pipeline progress visualization
+- rich script and report viewers
 
 ## Performance Notes
 

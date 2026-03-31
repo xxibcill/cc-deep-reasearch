@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Play, FileText, ArrowRight } from 'lucide-react'
 import useContentGen from '@/hooks/useContentGen'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { StartPipelineForm } from '@/components/content-gen/start-pipeline-form'
 import { QuickScriptForm } from '@/components/content-gen/quick-script-form'
@@ -69,29 +71,31 @@ export default function ContentGenPage() {
       <div className="space-y-6">
         {/* Quick actions */}
         <div className="flex gap-3">
-          <button
+          <Button
+            type="button"
             onClick={() => setNewPipelineOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-warning/15 border border-warning/30 text-warning rounded-sm text-sm font-medium font-display
-              hover:bg-warning/25 transition-colors"
+            className="gap-2 bg-warning text-background hover:bg-warning/90"
           >
             <Play className="h-4 w-4" />
             New Pipeline
-          </button>
-          <button
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
             onClick={openQuickScriptBlank}
-            className="flex items-center gap-2 px-4 py-2.5 bg-surface border border-border text-foreground/80 rounded-sm text-sm font-medium font-display
-              hover:bg-surface-raised hover:text-foreground transition-colors"
+            className="gap-2"
           >
             <FileText className="h-4 w-4" />
             Quick Script
-          </button>
+          </Button>
         </div>
 
         {/* Error banner */}
         {error && (
-          <div className="text-sm text-error bg-error-muted/20 border border-error/20 rounded-sm px-3 py-2">
-            {error}
-          </div>
+          <Alert variant="destructive">
+            <AlertTitle>Content studio error</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
 
         {/* Active pipelines */}
@@ -162,13 +166,15 @@ export default function ContentGenPage() {
         {activePipelines.length === 0 && pastPipelines.length === 0 && (
           <section className="py-16 text-center">
             <p className="text-sm text-muted-foreground">No pipelines yet.</p>
-            <button
+            <Button
+              type="button"
+              variant="ghost"
               onClick={() => setNewPipelineOpen(true)}
-              className="inline-flex items-center gap-2 mt-4 text-sm text-warning hover:text-warning/80 transition-colors"
+              className="mt-4 gap-2 text-warning hover:bg-warning/10 hover:text-warning"
             >
               Start your first pipeline
               <ArrowRight className="h-3.5 w-3.5" />
-            </button>
+            </Button>
           </section>
         )}
       </div>

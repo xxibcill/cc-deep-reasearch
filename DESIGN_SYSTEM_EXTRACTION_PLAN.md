@@ -19,6 +19,14 @@ This document outlines the systematic extraction of reusable components, pattern
 - `dialog.tsx` - Dialog component
 - `select.tsx` - Select dropdown
 - `tabs.tsx` - Tab navigation (default, prominent variants)
+- `input.tsx` - Shared single-line text input
+- `textarea.tsx` - Shared multiline text input
+- `label.tsx` - Shared field label
+- `form-field.tsx` - Shared field wrapper, description, and message helpers
+- `native-select.tsx` - Shared native select input
+- `alert.tsx` - Inline status and error alerts
+- `table.tsx` - Shared table shell
+- `collapsible-panel.tsx` - Shared expandable panel shell
 
 **Design Tokens:** CSS custom properties in `globals.css`
 - Colors: background, foreground, card, primary, secondary, muted, accent, destructive, border, input, ring
@@ -35,6 +43,16 @@ This document outlines the systematic extraction of reusable components, pattern
 6. **Alert/Notice Patterns:** Multiple implementations of alert boxes with different styles
 7. **Loading States:** Repeated loading spinner implementations
 8. **Empty States:** Multiple empty state variations
+
+### Intentionally Custom Surfaces
+
+Not every dashboard surface benefits from being flattened into the primitive layer. These should keep their bespoke rendering logic and only reuse shared shell components around them:
+
+- `dashboard/src/components/workflow-graph.tsx`
+- `dashboard/src/components/decision-graph.tsx`
+- `dashboard/src/components/agent-timeline.tsx`
+- `dashboard/src/components/content-gen/pipeline-progress-tracker.tsx`
+- `dashboard/src/components/content-gen/script-viewer.tsx`
 
 ## Extraction Plan
 

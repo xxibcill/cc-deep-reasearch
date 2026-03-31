@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { StopCircle } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import useContentGen from '@/hooks/useContentGen'
 import { PipelineProgressTracker } from '@/components/content-gen/pipeline-progress-tracker'
 import { StageResultPanel } from '@/components/content-gen/stage-result-panel'
@@ -188,22 +190,24 @@ export default function PipelineDetailPage() {
             {pipelineId.slice(0, 8)}
           </span>
           {(status === 'running' || status === 'queued') && (
-            <button
+            <Button
+              type="button"
+              variant="destructive"
               onClick={() => stopPipeline(pipelineId)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-error border border-error/20 rounded-sm
-                hover:bg-error/10 transition-colors"
+              className="h-9 gap-1.5 px-3"
             >
               <StopCircle className="h-3.5 w-3.5" />
               Stop
-            </button>
+            </Button>
           )}
         </div>
       </div>
 
       {error && (
-        <div className="text-sm text-error bg-error-muted/20 border border-error/20 rounded-sm px-3 py-2">
-          {error}
-        </div>
+        <Alert variant="destructive">
+          <AlertTitle>Pipeline error</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {/* Two-column layout: timeline + stage details */}

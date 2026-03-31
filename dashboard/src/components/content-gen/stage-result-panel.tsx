@@ -1,7 +1,9 @@
 'use client'
 
-import { useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { useEffect, useState } from 'react'
+
+import { Badge } from '@/components/ui/badge'
+import { CollapsiblePanel } from '@/components/ui/collapsible-panel'
 
 interface StageResultPanelProps {
   title: string
@@ -20,50 +22,51 @@ export function StageResultPanel({
 }: StageResultPanelProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen || status === 'completed')
 
-  const stateStyles: Record<string, string> = {
-    completed: 'border-l-success/50',
-    running: 'border-l-warning/60',
-    failed: 'border-l-error/50',
-    pending: 'border-l-border',
+  useEffect(() => {
+    if (status === 'running' || status === 'completed') {
+      setIsOpen(true)
+    }
+  }, [status])
+
+  const stateStyles: Record<StageResultPanelProps['status'], string> = {
+    completed: 'border-success/30',
+    running: 'border-warning/40 stage-running',
+    failed: 'border-error/30',
+    pending: 'border-border',
   }
 
   return (
-    <div
-      className={[
-        'bg-surface border border-border border-l-2 rounded-sm',
-        stateStyles[status],
-        status === 'running' ? 'stage-running' : '',
-        isOpen ? 'animate-fade-in' : '',
-      ].join(' ')}
-    >
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-surface-raised/50 transition-colors"
-      >
+    <CollapsiblePanel
+      open={isOpen}
+      onOpenChange={setIsOpen}
+      className={stateStyles[status]}
+      summary={
         <div className="flex items-center gap-3">
           <span className="stage-number text-muted-foreground/40 tabular-nums">
             {String(stageIndex + 1).padStart(2, '0')}
           </span>
           <span className="text-sm font-medium font-display">{title}</span>
-          {status === 'running' && (
-            <span className="text-[10px] uppercase tracking-wider text-warning font-mono font-medium">
-              running
-            </span>
-          )}
         </div>
-        <div className="flex items-center gap-2">
-          {isOpen ? (
-            <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-          ) : (
-            <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-          )}
-        </div>
-      </button>
-      {isOpen && (
-        <div className="px-4 pb-4 pt-1 border-t border-border text-sm animate-fade-in">
-          {children}
-        </div>
-      )}
-    </div>
+      }
+      meta={
+        status === 'pending' ? null : (
+          <Badge
+            variant={
+              status === 'completed'
+                ? 'success'
+                : status === 'running'
+                  ? 'warning'
+                  : 'destructive'
+            }
+            className="rounded-md px-2 py-1 font-mono text-[10px] uppercase tracking-[0.2em]"
+          >
+            {status}
+          </Badge>
+        )
+      }
+      contentClassName="text-sm"
+    >
+      {children}
+    </CollapsiblePanel>
   )
 }
