@@ -1,19 +1,21 @@
-import { ReactNode, useEffect, useRef } from 'react'
+'use client';
 
-import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
+import { ReactNode, useEffect, useRef } from 'react';
+
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 
 interface AlertDialogProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  title: string
-  description: ReactNode
-  confirmLabel?: string
-  cancelLabel?: string
-  destructive?: boolean
-  onConfirm: () => void
-  loading?: boolean
-  loadingLabel?: string
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  description: ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  destructive?: boolean;
+  onConfirm: () => void;
+  loading?: boolean;
+  loadingLabel?: string;
 }
 
 export function AlertDialog({
@@ -28,42 +30,61 @@ export function AlertDialog({
   loading = false,
   loadingLabel = 'Loading...',
 }: AlertDialogProps) {
-  const cancelRef = useRef<HTMLButtonElement>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) {
-      cancelRef.current?.focus()
+      cancelRef.current?.focus();
+      dialogRef.current?.focus();
     }
-  }, [open])
+  }, [open]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onOpenChange(false);
+      }
+    };
+
+    if (open) {
+      document.addEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'hidden';
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = '';
+    };
+  }, [open, onOpenChange]);
 
   if (!open) {
-    return null
+    return null;
   }
 
   const handleConfirm = () => {
-    onConfirm()
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      onOpenChange(false)
-    }
-  }
+    onConfirm();
+  };
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm"
-      onKeyDown={handleKeyDown}
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="alert-dialog-title"
+      aria-describedby="alert-dialog-description"
     >
-      <div className="absolute inset-0" onClick={() => onOpenChange(false)} />
       <div
+        className="absolute inset-0"
+        onClick={() => onOpenChange(false)}
+        aria-hidden="true"
+      />
+      <div
+        ref={dialogRef}
         className={cn(
           'relative z-10 w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-2xl',
         )}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="alert-dialog-title"
-        aria-describedby="alert-dialog-description"
+        tabIndex={-1}
       >
         <div className="mb-4">
           <h2 id="alert-dialog-title" className="text-lg font-semibold">
@@ -94,5 +115,5 @@ export function AlertDialog({
         </div>
       </div>
     </div>
-  )
+  );
 }
