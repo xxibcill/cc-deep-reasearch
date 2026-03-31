@@ -11,9 +11,10 @@ import {
   XCircle,
 } from 'lucide-react';
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   getApiErrorMessage,
   getResearchRunStatus,
@@ -31,17 +32,17 @@ interface RunStatusSummaryProps {
 function statusIcon(status: ResearchRunStatus) {
   switch (status) {
     case 'queued':
-      return <Clock className="h-5 w-5 text-gray-600" />;
+      return <Clock className="h-5 w-5 text-muted-foreground" />;
     case 'running':
-      return <Loader2 className="h-5 w-5 animate-spin text-blue-500" />;
+      return <Loader2 className="h-5 w-5 animate-spin text-primary" />;
     case 'completed':
-      return <CheckCircle className="h-5 w-5 text-green-500" />;
+      return <CheckCircle className="h-5 w-5 text-success" />;
     case 'failed':
-      return <XCircle className="h-5 w-5 text-red-500" />;
+      return <XCircle className="h-5 w-5 text-error" />;
     case 'cancelled':
-      return <Ban className="h-5 w-5 text-amber-500" />;
+      return <Ban className="h-5 w-5 text-warning" />;
     default:
-      return <AlertCircle className="h-5 w-5 text-gray-600" />;
+      return <AlertCircle className="h-5 w-5 text-muted-foreground" />;
   }
 }
 
@@ -91,6 +92,17 @@ function formatDuration(start?: string, end?: string): string {
 
 function isActiveStatus(status: ResearchRunStatus): boolean {
   return status === 'queued' || status === 'running';
+}
+
+function DetailItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-2">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-1 text-sm font-medium text-foreground">{value}</p>
+    </div>
+  );
 }
 
 export function RunStatusSummary({
@@ -179,15 +191,15 @@ export function RunStatusSummary({
 
   if (error) {
     return (
-      <Card className="border-red-200 bg-red-50">
+      <Card className="shadow-sm">
         <CardContent className="p-4">
-          <div className="flex items-center gap-3">
-            <AlertCircle className="h-5 w-5 text-red-500" />
-            <div>
-              <p className="font-medium text-red-800">Failed to load run status</p>
-              <p className="text-sm text-red-600">{error}</p>
+          <Alert className="flex items-start gap-3" variant="destructive">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div className="space-y-1">
+              <AlertTitle>Failed to load run status</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
             </div>
-          </div>
+          </Alert>
         </CardContent>
       </Card>
     );
@@ -195,12 +207,12 @@ export function RunStatusSummary({
 
   if (!status) {
     return (
-      <Card>
+      <Card className="shadow-sm">
         <CardContent className="p-4">
-          <div className="flex items-center gap-3">
-            <Loader2 className="h-5 w-5 animate-spin text-gray-600" />
-            <span className="text-muted-foreground">Loading run status...</span>
-          </div>
+          <Alert className="flex items-center gap-3" variant="default">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <AlertDescription>Loading run status...</AlertDescription>
+          </Alert>
         </CardContent>
       </Card>
     );
@@ -210,46 +222,42 @@ export function RunStatusSummary({
   const showStopAction = isActiveStatus(status.status);
 
   return (
-    <Card>
-      <CardContent className="space-y-4 p-4">
+    <Card className="overflow-hidden border-slate-200/80 shadow-sm">
+      <CardHeader className="gap-4 border-b bg-[linear-gradient(135deg,rgba(15,23,42,0.04),rgba(56,189,248,0.10))]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex items-center gap-3">
-            {statusIcon(status.status)}
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-medium capitalize">{status.status}</span>
-                <Badge variant={statusBadgeVariant(status.status)}>{status.status}</Badge>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Run ID: <code className="text-xs">{status.run_id}</code>
-              </p>
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <CardTitle className="flex items-center gap-2">
+                {statusIcon(status.status)}
+                Run Status
+              </CardTitle>
+              <Badge variant={statusBadgeVariant(status.status)}>{status.status}</Badge>
+              {stopRequested && isActiveStatus(status.status) ? (
+                <Badge variant="warning">Stop Requested</Badge>
+              ) : null}
             </div>
+            <p className="text-sm text-muted-foreground">
+              Run <span className="font-mono text-xs text-foreground">{status.run_id}</span>
+              {status.session_id ? (
+                <>
+                  {' '}
+                  is attached to session{' '}
+                  <span className="font-mono text-xs text-foreground">{status.session_id}</span>.
+                </>
+              ) : (
+                '. Waiting for session allocation.'
+              )}
+            </p>
           </div>
 
           <div className="flex flex-col gap-3 lg:items-end">
-            <div className="text-sm lg:text-right">
-              {status.session_id ? (
-                <p>
-                  <span className="text-muted-foreground">Session: </span>
-                  <code className="text-xs">{status.session_id}</code>
-                </p>
-              ) : null}
-              {status.started_at ? (
-                <p>
-                  <span className="text-muted-foreground">Duration: </span>
-                  {formatDuration(status.started_at, status.completed_at)}
-                </p>
-              ) : null}
-              {status.completed_at ? (
-                <p>
-                  <span className="text-muted-foreground">Completed: </span>
-                  {formatTimestamp(status.completed_at)}
-                </p>
-              ) : null}
-            </div>
-
             {showStopAction ? (
-              <Button type="button" variant="outline" onClick={handleStop} disabled={stopping || stopRequested}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleStop}
+                disabled={stopping || stopRequested}
+              >
                 {stopping || stopRequested ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -265,48 +273,79 @@ export function RunStatusSummary({
             ) : null}
           </div>
         </div>
+      </CardHeader>
+
+      <CardContent className="space-y-4 p-5">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <DetailItem label="Run ID" value={status.run_id} />
+          <DetailItem label="Session" value={status.session_id ?? 'Pending'} />
+          <DetailItem
+            label="Duration"
+            value={status.started_at ? formatDuration(status.started_at, status.completed_at) : '-'}
+          />
+          <DetailItem
+            label="Completed"
+            value={status.completed_at ? formatTimestamp(status.completed_at) : 'In progress'}
+          />
+        </div>
 
         {stopRequested && isActiveStatus(status.status) ? (
-          <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
-            <p className="text-sm font-medium text-amber-800">Stop requested</p>
-            <p className="text-sm text-amber-700">
-              Waiting for the backend to confirm cancellation and close the session cleanly.
-            </p>
-          </div>
+          <Alert className="flex items-start gap-3" variant="warning">
+            <Clock className="mt-0.5 h-5 w-5 shrink-0" />
+            <div className="space-y-1">
+              <AlertTitle>Stop requested</AlertTitle>
+              <AlertDescription>
+                Waiting for the backend to confirm cancellation and close the session cleanly.
+              </AlertDescription>
+            </div>
+          </Alert>
         ) : null}
 
         {stopError ? (
-          <div className="rounded-md border border-red-200 bg-red-50 p-3">
-            <p className="text-sm font-medium text-red-800">Stop failed</p>
-            <p className="text-sm text-red-600">{stopError}</p>
-          </div>
+          <Alert className="flex items-start gap-3" variant="destructive">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div className="space-y-1">
+              <AlertTitle>Stop failed</AlertTitle>
+              <AlertDescription>{stopError}</AlertDescription>
+            </div>
+          </Alert>
         ) : null}
 
         {status.error && status.status !== 'cancelled' ? (
-          <div className="rounded-md border border-red-200 bg-red-50 p-3">
-            <p className="text-sm font-medium text-red-800">Error</p>
-            <p className="text-sm text-red-600">{status.error}</p>
-          </div>
+          <Alert className="flex items-start gap-3" variant="destructive">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div className="space-y-1">
+              <AlertTitle>Run error</AlertTitle>
+              <AlertDescription>{status.error}</AlertDescription>
+            </div>
+          </Alert>
         ) : null}
 
         {status.status === 'cancelled' ? (
-          <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
-            <p className="text-sm font-medium text-amber-800">Run cancelled</p>
-            <p className="text-sm text-amber-700">
-              {status.error ||
-                'The in-progress run was stopped. Historical session artifacts remain available for follow-on actions.'}
-            </p>
-          </div>
+          <Alert className="flex items-start gap-3" variant="warning">
+            <Ban className="mt-0.5 h-5 w-5 shrink-0" />
+            <div className="space-y-1">
+              <AlertTitle>Run cancelled</AlertTitle>
+              <AlertDescription>
+                {status.error ||
+                  'The in-progress run was stopped. Historical session artifacts remain available for follow-on actions.'}
+              </AlertDescription>
+            </div>
+          </Alert>
         ) : null}
 
         {status.result ? (
-          <div className="rounded-md border border-green-200 bg-green-50 p-3">
-            <p className="text-sm font-medium text-green-800">Result</p>
-            <p className="text-sm text-green-600">Session ID: {status.result.session_id}</p>
-            <p className="text-sm text-green-600">
-              Report: {status.result.report_path ?? 'Generated in memory'}
-            </p>
-          </div>
+          <Alert className="flex items-start gap-3" variant="success">
+            <CheckCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div className="space-y-1">
+              <AlertTitle>Result available</AlertTitle>
+              <AlertDescription>
+                Session ID: {status.result.session_id}
+                <br />
+                Report: {status.result.report_path ?? 'Generated in memory'}
+              </AlertDescription>
+            </div>
+          </Alert>
         ) : null}
       </CardContent>
     </Card>

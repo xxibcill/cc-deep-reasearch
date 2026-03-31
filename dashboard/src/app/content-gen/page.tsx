@@ -7,7 +7,15 @@ import { Play, FileText, ArrowRight } from 'lucide-react'
 import useContentGen from '@/hooks/useContentGen'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Dialog } from '@/components/ui/dialog'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { StartPipelineForm } from '@/components/content-gen/start-pipeline-form'
 import { QuickScriptForm } from '@/components/content-gen/quick-script-form'
 import { ScriptsPanel } from '@/components/content-gen/scripts-panel'
@@ -64,33 +72,98 @@ export default function ContentGenPage() {
     setQuickScriptOpen(true)
   }
 
+  const renderPipelineList = ({
+    title,
+    description,
+    items,
+    statusTone,
+  }: {
+    title: string
+    description: string
+    items: typeof pipelines
+    statusTone: 'active' | 'history'
+  }) => (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {items.map((p) => (
+          <Link
+            key={p.pipeline_id}
+            href={`/content-gen/pipeline/${p.pipeline_id}`}
+            className="group flex items-center justify-between rounded-xl border border-border bg-muted/10 px-4 py-3 transition-colors hover:border-warning/30 hover:bg-muted/20"
+          >
+            <div className="flex min-w-0 items-center gap-3">
+              <span
+                className={`h-2 w-2 shrink-0 rounded-full ${
+                  statusTone === 'active'
+                    ? 'bg-warning animate-stage-pulse'
+                    : p.status === 'completed'
+                      ? 'bg-success/70'
+                      : 'bg-error/70'
+                }`}
+              />
+              <span
+                className={`truncate text-sm ${statusTone === 'active' ? 'font-medium text-foreground' : 'text-foreground/75'}`}
+              >
+                {p.theme}
+              </span>
+            </div>
+            <div className="flex shrink-0 items-center gap-3">
+              <span
+                className={`text-[11px] font-mono tabular-nums ${
+                  statusTone === 'active' ? 'text-warning' : 'text-muted-foreground'
+                }`}
+              >
+                {statusTone === 'active'
+                  ? `${String(p.current_stage + 1).padStart(2, '0')}/12`
+                  : p.status}
+              </span>
+              <ArrowRight className="h-3.5 w-3.5 text-muted-foreground transition-colors group-hover:text-warning" />
+            </div>
+          </Link>
+        ))}
+      </CardContent>
+    </Card>
+  )
+
   // Overview tab content
   const renderOverview = () => (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
-      {/* Left column */}
       <div className="space-y-6">
-        {/* Quick actions */}
-        <div className="flex gap-3">
-          <Button
-            type="button"
-            onClick={() => setNewPipelineOpen(true)}
-            className="gap-2 bg-warning text-background hover:bg-warning/90"
-          >
-            <Play className="h-4 w-4" />
-            New Pipeline
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={openQuickScriptBlank}
-            className="gap-2"
-          >
-            <FileText className="h-4 w-4" />
-            Quick Script
-          </Button>
-        </div>
+        <Card className="overflow-hidden border-slate-200/80 shadow-sm">
+          <CardHeader className="gap-4 border-b bg-[linear-gradient(135deg,rgba(15,23,42,0.04),rgba(245,158,11,0.12))]">
+            <div className="space-y-2">
+              <CardTitle>Start from a strong entry point</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Launch a full pipeline when you need the end-to-end workflow, or open a quick
+                script when you want to iterate on a single idea immediately.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Button
+                type="button"
+                onClick={() => setNewPipelineOpen(true)}
+                className="gap-2 bg-warning text-background hover:bg-warning/90"
+              >
+                <Play className="h-4 w-4" />
+                New Pipeline
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={openQuickScriptBlank}
+                className="gap-2"
+              >
+                <FileText className="h-4 w-4" />
+                Quick Script
+              </Button>
+            </div>
+          </CardHeader>
+        </Card>
 
-        {/* Error banner */}
         {error && (
           <Alert variant="destructive">
             <AlertTitle>Content studio error</AlertTitle>
@@ -98,95 +171,53 @@ export default function ContentGenPage() {
           </Alert>
         )}
 
-        {/* Active pipelines */}
         {activePipelines.length > 0 && (
-          <section>
-            <h2 className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-3">
-              Active Pipelines
-            </h2>
-            <div className="space-y-1">
-              {activePipelines.map((p) => (
-                <Link
-                  key={p.pipeline_id}
-                  href={`/content-gen/pipeline/${p.pipeline_id}`}
-                  className="flex items-center justify-between px-3 py-2.5 bg-surface border border-border rounded-sm
-                    hover:border-warning/30 transition-colors group"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="w-2 h-2 rounded-full bg-warning animate-stage-pulse shrink-0" />
-                    <span className="text-sm font-medium truncate">{p.theme}</span>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-[11px] font-mono text-warning tabular-nums">
-                      {String(p.current_stage + 1).padStart(2, '0')}/12
-                    </span>
-                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-warning transition-colors" />
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
+          renderPipelineList({
+            title: 'Active Pipelines',
+            description: 'Runs that are still moving through the 12-stage production flow.',
+            items: activePipelines,
+            statusTone: 'active',
+          })
         )}
 
-        {/* Past pipelines */}
         {pastPipelines.length > 0 && (
-          <section>
-            <h2 className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-3">
-              Past Pipelines
-            </h2>
-            <div className="space-y-1">
-              {pastPipelines.map((p) => (
-                <Link
-                  key={p.pipeline_id}
-                  href={`/content-gen/pipeline/${p.pipeline_id}`}
-                  className="flex items-center justify-between px-3 py-2.5 bg-surface border border-border rounded-sm
-                    hover:border-border/80 transition-colors group"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${
-                        p.status === 'completed' ? 'bg-success/60' : 'bg-error/60'
-                      }`}
-                    />
-                    <span className="text-sm text-foreground/70 truncate">{p.theme}</span>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-[11px] font-mono text-muted-foreground tabular-nums">
-                      {p.status}
-                    </span>
-                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/50 group-hover:text-foreground transition-colors" />
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
+          renderPipelineList({
+            title: 'Past Pipelines',
+            description: 'Completed, failed, and cancelled runs that are ready for review or reuse.',
+            items: pastPipelines,
+            statusTone: 'history',
+          })
         )}
 
-        {/* Empty state */}
         {activePipelines.length === 0 && pastPipelines.length === 0 && (
-          <section className="py-16 text-center">
-            <p className="text-sm text-muted-foreground">No pipelines yet.</p>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setNewPipelineOpen(true)}
-              className="mt-4 gap-2 text-warning hover:bg-warning/10 hover:text-warning"
-            >
-              Start your first pipeline
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Button>
-          </section>
+          <Card className="border-dashed">
+            <CardContent className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+              <div className="space-y-1">
+                <p className="text-base font-medium text-foreground">No pipelines yet</p>
+                <p className="text-sm text-muted-foreground">
+                  Start a full production run or open a quick script to seed the workspace.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setNewPipelineOpen(true)}
+                className="gap-2 text-warning hover:bg-warning/10 hover:text-warning"
+              >
+                Start your first pipeline
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Button>
+            </CardContent>
+          </Card>
         )}
       </div>
 
-      {/* Right sidebar */}
       <OverviewSidebar onTabChange={handleTabChange} />
     </div>
   )
 
   return (
     <>
-      {/* Tab content */}
       {activeTab === 'overview' && renderOverview()}
 
       {activeTab === 'scripts' && (
@@ -197,9 +228,11 @@ export default function ContentGenPage() {
 
       {activeTab === 'strategy' && (
         <div className="max-w-2xl">
-          <div className="bg-surface border border-border rounded-sm p-6">
-            <StrategyEditor />
-          </div>
+          <Card>
+            <CardContent className="p-6">
+              <StrategyEditor />
+            </CardContent>
+          </Card>
         </div>
       )}
 
@@ -209,23 +242,38 @@ export default function ContentGenPage() {
         </div>
       )}
 
-      {/* New Pipeline dialog */}
-      <Dialog open={newPipelineOpen} onOpenChange={setNewPipelineOpen} title="New Pipeline">
-        <div className="p-6">
-          <StartPipelineForm
-            onSuccess={(pipelineId) => {
-              setNewPipelineOpen(false)
-              router.push(`/content-gen/pipeline/${pipelineId}`)
-            }}
-          />
-        </div>
+      <Dialog open={newPipelineOpen} onOpenChange={setNewPipelineOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New Pipeline</DialogTitle>
+            <DialogDescription>
+              Set the theme and launch a new end-to-end content generation run.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <StartPipelineForm
+              onSuccess={(pipelineId) => {
+                setNewPipelineOpen(false)
+                router.push(`/content-gen/pipeline/${pipelineId}`)
+              }}
+            />
+          </DialogBody>
+        </DialogContent>
       </Dialog>
 
-      {/* Quick Script dialog */}
-      <Dialog open={quickScriptOpen} onOpenChange={setQuickScriptOpen} title="Quick Script">
-        <div className="p-6">
-          <QuickScriptForm initialValues={quickScriptInitialValues} />
-        </div>
+      <Dialog open={quickScriptOpen} onOpenChange={setQuickScriptOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Quick Script</DialogTitle>
+            <DialogDescription>
+              Capture a single idea, generate copy quickly, and feed the result back into the
+              broader studio workflow.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <QuickScriptForm initialValues={quickScriptInitialValues} />
+          </DialogBody>
+        </DialogContent>
       </Dialog>
     </>
   )

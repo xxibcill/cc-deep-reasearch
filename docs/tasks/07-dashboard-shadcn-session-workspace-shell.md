@@ -1,6 +1,6 @@
 # 07. Dashboard shadcn Session Workspace Shell
 
-Status: Planned
+Status: Done
 
 ## Goal
 
