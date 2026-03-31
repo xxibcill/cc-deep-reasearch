@@ -1,6 +1,6 @@
 # 01. Dashboard shadcn Foundation Primitives
 
-Status: Planned
+Status: Done
 
 ## Goal
 

@@ -29,6 +29,9 @@
   --ring: 36 82% 55%;
   --radius: 0.375rem;
 
+  /* Radix accordion */
+  --radix-accordion-content-height: 0px;
+
   /* Extended palette */
   --surface: 30 5% 11%;
   --surface-raised: 30 5% 14%;
