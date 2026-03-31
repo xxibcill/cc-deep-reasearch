@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { useDeferredValue, useEffect, useState } from 'react';
 
 import { SessionList } from '@/components/session-list';
@@ -117,10 +118,14 @@ export default function HomePage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[340px_1fr]">
         <aside className="lg:sticky lg:top-8 lg:self-start">
-          <div className="rounded-lg border bg-card p-5">
-            <h2 className="text-lg font-semibold mb-4">Start Research</h2>
-            <StartResearchForm />
-          </div>
+          <Card className="p-5">
+            <CardHeader>
+              <CardTitle>Start Research</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <StartResearchForm />
+            </CardContent>
+          </Card>
         </aside>
 
         <section>

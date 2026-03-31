@@ -1,6 +1,6 @@
 # 03. Dashboard shadcn Start Research Form
 
-Status: Planned
+Status: Done
 
 ## Goal
 
