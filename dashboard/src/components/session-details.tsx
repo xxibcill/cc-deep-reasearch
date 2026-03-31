@@ -1,11 +1,20 @@
 import dynamic from 'next/dynamic';
 import { useDeferredValue, useMemo, useState } from 'react';
-import { Activity, ChevronDown, FileText, GitBranch, List, Network, SlidersHorizontal, Zap } from 'lucide-react';
+import { Activity, FileText, GitBranch, List, Network, SlidersHorizontal, Zap } from 'lucide-react';
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog } from '@/components/ui/dialog';
+import { CollapsiblePanel } from '@/components/ui/collapsible-panel';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select } from '@/components/ui/select';
 import { Tabs } from '@/components/ui/tabs';
@@ -109,20 +118,16 @@ function ViewModeSelector({
   ];
 
   return (
-    <div className="flex items-center gap-2">
-      {buttons.map(({ mode, title, icon: Icon }) => (
-        <Button
-          key={mode}
-          onClick={() => onViewModeChange(mode)}
-          variant={currentMode === mode ? 'default' : 'outline'}
-          size="icon"
-          title={title}
-          aria-label={title}
-        >
-          <Icon className="h-5 w-5" />
-        </Button>
-      ))}
-    </div>
+    <Tabs
+      className="max-w-full"
+      onValueChange={(value) => onViewModeChange(value as ViewMode)}
+      tabs={buttons.map(({ mode, title, icon }) => ({
+        value: mode,
+        label: title,
+        icon,
+      }))}
+      value={currentMode}
+    />
   );
 }
 
@@ -179,11 +184,19 @@ function EventTable({
     'minmax(120px,0.95fr) minmax(160px,1.2fr) minmax(110px,0.8fr) minmax(220px,1.35fr) minmax(120px,0.8fr) minmax(110px,0.7fr)';
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Event Table</CardTitle>
+    <Card className="overflow-hidden">
+      <CardHeader className="border-b bg-muted/20">
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+          <div className="space-y-1">
+            <CardTitle>Event Table</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Virtualized event rows keep the full session log responsive while preserving click-to-inspect detail access.
+            </p>
+          </div>
+          <Badge variant="outline">{sortedEvents.length} events</Badge>
+        </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-0">
         <ScrollArea
           className="h-[520px]"
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
@@ -218,17 +231,9 @@ function EventTable({
                     <div className="p-3">{event.category}</div>
                     <div className="p-3">{event.name}</div>
                     <div className="p-3">
-                      <span
-                        className={`rounded px-2 py-1 text-xs ${
-                          event.status === 'completed'
-                            ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100'
-                            : event.status === 'failed'
-                              ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100'
-                              : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'
-                        }`}
-                      >
+                      <Badge variant={statusAccent(event.status)}>
                         {event.status}
-                      </span>
+                      </Badge>
                     </div>
                     <div className="p-3">{event.agentId || '-'}</div>
                   </button>
@@ -250,12 +255,21 @@ function EventDetailsModal({
   onClose: () => void;
 }) {
   return (
-    <Dialog open={Boolean(event)} onOpenChange={(open) => !open && onClose()} title="Event Details">
-      <div className="p-4">
-        <pre className="text-sm bg-muted p-4 rounded-md overflow-auto">
-          {JSON.stringify(event, null, 2)}
-        </pre>
-      </div>
+    <Dialog open={Boolean(event)} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-5xl">
+        <DialogHeader>
+          <DialogTitle>Event Details</DialogTitle>
+          <DialogDescription>
+            Inspect the raw telemetry payload for{' '}
+            <span className="font-mono text-xs text-foreground">{event.eventId}</span>.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody>
+          <pre className="overflow-auto rounded-xl bg-muted p-4 text-sm">
+            {JSON.stringify(event, null, 2)}
+          </pre>
+        </DialogBody>
+      </DialogContent>
     </Dialog>
   );
 }
@@ -320,6 +334,20 @@ function getActiveFilters(filters: EventFilter): Array<{ label: string; value: s
     { label: 'Provider', value: filters.provider[0] ?? '' },
     { label: 'Status', value: filters.status[0] ?? '' },
     { label: 'Event Type', value: filters.eventTypes[0] ?? '' },
+  ].filter((entry): entry is { label: string; value: string } => Boolean(entry.value));
+}
+
+function getActiveDecisionGraphFilters(
+  filters: DecisionGraphFilters
+): Array<{ label: string; value: string }> {
+  return [
+    { label: 'Decision Type', value: filters.decisionType },
+    { label: 'Actor', value: filters.actor },
+    { label: 'Severity', value: filters.severity },
+    {
+      label: 'Links',
+      value: filters.edgeMode === 'all' ? '' : filters.edgeMode,
+    },
   ].filter((entry): entry is { label: string; value: string } => Boolean(entry.value));
 }
 
@@ -481,9 +509,13 @@ function DetailInspector({
           </div>
         )}
         {!event && !toolExecution && !reasoning && (
-          <div className="rounded-xl border border-dashed p-8 text-sm text-muted-foreground">
-            Select a graph node, timeline span, event row, tool execution, or LLM interaction to inspect structured details.
-          </div>
+          <Alert className="border-dashed" variant="default">
+            <AlertTitle>Nothing selected yet</AlertTitle>
+            <AlertDescription>
+              Select a graph node, timeline span, event row, tool execution, or LLM interaction to
+              inspect structured details.
+            </AlertDescription>
+          </Alert>
         )}
       </CardContent>
     </Card>
@@ -498,8 +530,14 @@ function PromptConfigurationPanel({
   if (!promptMetadata) {
     return (
       <Card className="h-full">
-        <CardContent className="flex items-center justify-center py-10 text-sm text-muted-foreground">
-          Prompt configuration not available. This data is loaded from historical sessions.
+        <CardContent className="py-10">
+          <Alert variant="default">
+            <AlertTitle>Prompt configuration unavailable</AlertTitle>
+            <AlertDescription>
+              This data is loaded from historical sessions and is not available for the current
+              view.
+            </AlertDescription>
+          </Alert>
         </CardContent>
       </Card>
     );
@@ -618,13 +656,17 @@ export function SessionDetails({
   const toolEvents = filteredEvents.filter((event) => event.category === 'tool');
   const llmEvents = filteredEvents.filter((event) => event.category === 'llm');
   const activeFilters = useMemo(() => getActiveFilters(filters), [filters]);
+  const activeDecisionGraphFilters = useMemo(
+    () => getActiveDecisionGraphFilters(decisionGraphFilters),
+    [decisionGraphFilters]
+  );
   const [filtersOpen, setFiltersOpen] = useState(() => activeFilters.length > 0);
   const detailTabs = [
-    { value: 'inspect', label: 'Inspect', icon: List, hideLabel: true },
-    { value: 'tools', label: 'Tools', icon: Zap, hideLabel: true },
-    { value: 'llm', label: 'LLM', icon: Network, hideLabel: true },
-    { value: 'derived', label: 'Derived', icon: Activity, hideLabel: true },
-    { value: 'prompts', label: 'Prompts', icon: FileText, hideLabel: true },
+    { value: 'inspect', label: 'Inspect', icon: List },
+    { value: 'tools', label: 'Tools', icon: Zap },
+    { value: 'llm', label: 'LLM', icon: Network },
+    { value: 'derived', label: 'Derived', icon: Activity },
+    { value: 'prompts', label: 'Prompts', icon: FileText },
   ];
 
   return (
@@ -705,11 +747,23 @@ export function SessionDetails({
               {viewMode === 'decision_graph' && (
                 <Card>
                   <CardHeader className="space-y-4">
-                    <div>
-                      <CardTitle>Decision Graph</CardTitle>
-                      <p className="text-sm text-muted-foreground">
-                        Causal decision links derived from explicit telemetry, with inferred edges shown separately.
-                      </p>
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <CardTitle>Decision Graph</CardTitle>
+                        <p className="text-sm text-muted-foreground">
+                          Causal decision links derived from explicit telemetry, with inferred edges shown separately.
+                        </p>
+                      </div>
+                      {activeDecisionGraphFilters.length > 0 ? (
+                        <Button
+                          onClick={() => setDecisionGraphFilters(EMPTY_DECISION_GRAPH_FILTERS)}
+                          size="sm"
+                          type="button"
+                          variant="ghost"
+                        >
+                          Clear filters
+                        </Button>
+                      ) : null}
                     </div>
                     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                       <Select
@@ -761,6 +815,15 @@ export function SessionDetails({
                         }
                       />
                     </div>
+                    {activeDecisionGraphFilters.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {activeDecisionGraphFilters.map((filter) => (
+                          <Badge key={filter.label} variant="outline">
+                            {filter.label}: {filter.value}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : null}
                   </CardHeader>
                   <CardContent>
                     <DecisionGraphView
@@ -856,8 +919,14 @@ export function SessionDetails({
                 )}
                 {detailTab === 'derived' && !derivedOutputs && (
                   <Card className="h-full">
-                    <CardContent className="flex items-center justify-center py-10 text-sm text-muted-foreground">
-                      Derived outputs not available. This data is loaded from historical sessions.
+                    <CardContent className="py-10">
+                      <Alert variant="default">
+                        <AlertTitle>Derived outputs unavailable</AlertTitle>
+                        <AlertDescription>
+                          This data is loaded from historical sessions and is not available for the
+                          current view.
+                        </AlertDescription>
+                      </Alert>
                     </CardContent>
                   </Card>
                 )}
@@ -866,115 +935,110 @@ export function SessionDetails({
                 )}
               </div>
 
-              <Card className="border-dashed border-slate-200/80 bg-slate-50/70 shadow-none">
-                <CardHeader className="gap-3 pb-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
-                        <SlidersHorizontal className="h-3.5 w-3.5" />
-                        Refine Results
-                      </div>
-                      <CardTitle className="text-sm font-semibold">Filters</CardTitle>
-                      <p className="text-xs text-muted-foreground">
-                        {activeFilters.length === 0
-                          ? 'Showing all telemetry data. Open filters only when you need to narrow the view.'
-                          : `${activeFilters.length} active filter${activeFilters.length === 1 ? '' : 's'} narrowing the workspace.`}
-                      </p>
+              <CollapsiblePanel
+                actions={
+                  activeFilters.length > 0 ? (
+                    <Button
+                      className="text-slate-600"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setFilters(EMPTY_FILTERS);
+                        setFiltersOpen(false);
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      Clear
+                    </Button>
+                  ) : undefined
+                }
+                className="border-dashed border-slate-200/80 bg-slate-50/70 shadow-none"
+                defaultOpen={activeFilters.length > 0}
+                meta={
+                  activeFilters.length > 0 ? (
+                    <Badge variant="outline" className="bg-white/80">
+                      {activeFilters.length} active
+                    </Badge>
+                  ) : undefined
+                }
+                onOpenChange={setFiltersOpen}
+                open={filtersOpen}
+                summary={
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+                      <SlidersHorizontal className="h-3.5 w-3.5" />
+                      Refine Results
                     </div>
-                    <div className="flex items-center gap-2">
-                      {activeFilters.length > 0 && (
-                        <Button
-                          className="text-slate-600"
-                          onClick={() => {
-                            setFilters(EMPTY_FILTERS);
-                            setFiltersOpen(false);
-                          }}
-                          size="sm"
-                          type="button"
-                          variant="ghost"
-                        >
-                          Clear
-                        </Button>
-                      )}
-                      <Button
-                        className="gap-2 text-slate-700"
-                        onClick={() => setFiltersOpen((open) => !open)}
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        {filtersOpen ? 'Hide' : 'Show'}
-                        <ChevronDown
-                          className={`h-4 w-4 transition-transform ${filtersOpen ? 'rotate-180' : ''}`}
-                        />
-                      </Button>
-                    </div>
+                    <div className="text-sm font-semibold text-foreground">Filters</div>
+                    <p className="text-xs text-muted-foreground">
+                      {activeFilters.length === 0
+                        ? 'Showing all telemetry data. Expand filters only when you need to narrow the view.'
+                        : `${activeFilters.length} active filter${activeFilters.length === 1 ? '' : 's'} narrowing the workspace.`}
+                    </p>
                   </div>
-                  {activeFilters.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {activeFilters.map((filter) => (
-                        <Badge key={filter.label} variant="outline" className="bg-white/80 text-[11px]">
-                          {filter.label}: {filter.value}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                </CardHeader>
-                {filtersOpen && (
-                  <CardContent className="pt-0">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <Select
-                        label="Agent"
-                        value={filters.agent[0] ?? ''}
-                        options={derived.agents}
-                        onChange={(value) => setFilters({ agent: value ? [value] : [] })}
-                        className="h-9 bg-white/90"
-                        labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
-                      />
-                      <Select
-                        label="Phase"
-                        value={filters.phase[0] ?? ''}
-                        options={derived.phases}
-                        onChange={(value) => setFilters({ phase: value ? [value] : [] })}
-                        className="h-9 bg-white/90"
-                        labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
-                      />
-                      <Select
-                        label="Tool"
-                        value={filters.tool[0] ?? ''}
-                        options={derived.tools}
-                        onChange={(value) => setFilters({ tool: value ? [value] : [] })}
-                        className="h-9 bg-white/90"
-                        labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
-                      />
-                      <Select
-                        label="Provider"
-                        value={filters.provider[0] ?? ''}
-                        options={derived.providers}
-                        onChange={(value) => setFilters({ provider: value ? [value] : [] })}
-                        className="h-9 bg-white/90"
-                        labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
-                      />
-                      <Select
-                        label="Status"
-                        value={filters.status[0] ?? ''}
-                        options={derived.statuses}
-                        onChange={(value) => setFilters({ status: value ? [value] : [] })}
-                        className="h-9 bg-white/90"
-                        labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
-                      />
-                      <Select
-                        label="Event Type"
-                        value={filters.eventTypes[0] ?? ''}
-                        options={derived.eventTypes}
-                        onChange={(value) => setFilters({ eventTypes: value ? [value] : [] })}
-                        className="h-9 bg-white/90"
-                        labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
-                      />
-                    </div>
-                  </CardContent>
-                )}
-              </Card>
+                }
+              >
+                {activeFilters.length > 0 ? (
+                  <div className="mb-4 flex flex-wrap gap-2">
+                    {activeFilters.map((filter) => (
+                      <Badge key={filter.label} variant="outline" className="bg-white/80 text-[11px]">
+                        {filter.label}: {filter.value}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Select
+                    label="Agent"
+                    value={filters.agent[0] ?? ''}
+                    options={derived.agents}
+                    onChange={(value) => setFilters({ agent: value ? [value] : [] })}
+                    className="h-9 bg-white/90"
+                    labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
+                  />
+                  <Select
+                    label="Phase"
+                    value={filters.phase[0] ?? ''}
+                    options={derived.phases}
+                    onChange={(value) => setFilters({ phase: value ? [value] : [] })}
+                    className="h-9 bg-white/90"
+                    labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
+                  />
+                  <Select
+                    label="Tool"
+                    value={filters.tool[0] ?? ''}
+                    options={derived.tools}
+                    onChange={(value) => setFilters({ tool: value ? [value] : [] })}
+                    className="h-9 bg-white/90"
+                    labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
+                  />
+                  <Select
+                    label="Provider"
+                    value={filters.provider[0] ?? ''}
+                    options={derived.providers}
+                    onChange={(value) => setFilters({ provider: value ? [value] : [] })}
+                    className="h-9 bg-white/90"
+                    labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
+                  />
+                  <Select
+                    label="Status"
+                    value={filters.status[0] ?? ''}
+                    options={derived.statuses}
+                    onChange={(value) => setFilters({ status: value ? [value] : [] })}
+                    className="h-9 bg-white/90"
+                    labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
+                  />
+                  <Select
+                    label="Event Type"
+                    value={filters.eventTypes[0] ?? ''}
+                    options={derived.eventTypes}
+                    onChange={(value) => setFilters({ eventTypes: value ? [value] : [] })}
+                    className="h-9 bg-white/90"
+                    labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
+                  />
+                </div>
+              </CollapsiblePanel>
             </div>
           </div>
         </CardContent>

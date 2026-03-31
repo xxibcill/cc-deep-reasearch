@@ -1,6 +1,6 @@
 # 08. Dashboard shadcn Session Filters And Table
 
-Status: Planned
+Status: Done
 
 ## Goal
 

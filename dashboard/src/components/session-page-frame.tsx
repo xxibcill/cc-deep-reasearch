@@ -4,7 +4,9 @@ import Link from 'next/link';
 import { FileText, Radar, ScrollText, TimerReset } from 'lucide-react';
 
 import { RunStatusSummary } from '@/components/run-status-summary';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useSessionRoute } from '@/hooks/useSessionRoute';
 import { runStatusBadgeVariant } from '@/lib/session-route';
@@ -106,7 +108,10 @@ export function SessionPageFrame({
                   </p>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <nav
+                  aria-label="Session workspace routes"
+                  className="inline-flex flex-wrap gap-1 rounded-lg border bg-muted/40 p-1"
+                >
                   {(Object.entries(viewMeta) as Array<[SessionView, (typeof viewMeta)[SessionView]]>).map(
                     ([key, item]) => {
                       const Icon = item.icon;
@@ -117,11 +122,16 @@ export function SessionPageFrame({
                           key={key}
                           href={item.href(resolvedSessionId)}
                           className={cn(
-                            'inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium transition-colors',
+                            buttonVariants({
+                              variant: active ? 'default' : 'ghost',
+                              size: 'sm',
+                            }),
+                            'gap-2',
                             active
-                              ? 'border-primary bg-primary text-primary-foreground'
-                              : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
+                              ? 'shadow-sm'
+                              : 'text-muted-foreground'
                           )}
+                          aria-current={active ? 'page' : undefined}
                         >
                           <Icon className="h-4 w-4" />
                           {item.label}
@@ -129,16 +139,19 @@ export function SessionPageFrame({
                       );
                     }
                   )}
-                </div>
+                </nav>
               </div>
             </CardHeader>
 
             {sessionError ? (
-              <CardContent className="border-t bg-amber-50/80 p-4">
-                <div className="flex items-start gap-3 text-sm text-amber-800">
+              <CardContent className="border-t p-4">
+                <Alert className="flex items-start gap-3" variant="warning">
                   <TimerReset className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>{sessionError}</span>
-                </div>
+                  <div className="space-y-1">
+                    <AlertTitle>Session route is still resolving</AlertTitle>
+                    <AlertDescription>{sessionError}</AlertDescription>
+                  </div>
+                </Alert>
               </CardContent>
             ) : null}
           </Card>

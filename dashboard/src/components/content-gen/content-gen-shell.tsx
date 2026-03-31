@@ -4,8 +4,11 @@ import { useEffect } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { LayoutDashboard, FileText, Settings, ListVideo, ArrowLeft } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { buttonVariants } from '@/components/ui/button'
 import { Tabs } from '@/components/ui/tabs'
 import useContentGen from '@/hooks/useContentGen'
+import { cn } from '@/lib/utils'
 
 const TAB_CONFIG = [
   { value: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -58,38 +61,60 @@ export function ContentGenShell({
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border">
-        <div className="max-w-[1400px] mx-auto px-4">
-          <div className="flex items-center justify-between h-12">
-            <div className="flex items-center gap-3">
-              {isPipelineDetail && (
-                <Link
-                  href="/content-gen"
-                  className="text-muted-foreground hover:text-foreground transition-colors p-1 -ml-1"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                </Link>
-              )}
-              <h1 className="text-sm font-display font-semibold tracking-tight text-foreground">
-                Content Studio
-              </h1>
+      <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur-sm">
+        <div className="mx-auto max-w-[1400px] px-4 py-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                {isPipelineDetail && (
+                  <Link
+                    href="/content-gen"
+                    className={buttonVariants({
+                      variant: 'ghost',
+                      size: 'sm',
+                      className: '-ml-2 gap-2 px-2 text-muted-foreground',
+                    })}
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Back
+                  </Link>
+                )}
+                <div className="space-y-1">
+                  <h1 className="text-sm font-display font-semibold tracking-tight text-foreground">
+                    Content Studio
+                  </h1>
+                  <p className="text-sm text-muted-foreground">
+                    Editorial planning, scripting, and publishing workflows in one workspace.
+                  </p>
+                </div>
+              </div>
             </div>
-            {isPipelineDetail && activePipelineCount > 0 && (
-              <span className="flex items-center gap-1.5 text-xs font-mono text-warning">
-                <span className="w-1.5 h-1.5 rounded-full bg-warning animate-stage-pulse" />
-                {activePipelineCount} active
-              </span>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              {activePipelineCount > 0 ? (
+                <Badge variant="warning">
+                  {activePipelineCount} active pipeline{activePipelineCount === 1 ? '' : 's'}
+                </Badge>
+              ) : (
+                <Badge variant="secondary">No active pipelines</Badge>
+              )}
+            </div>
           </div>
           {!isPipelineDetail && (
-            <nav className="pb-2">
+            <nav className="mt-4">
               <Tabs
+                className={cn('w-full max-w-3xl', 'md:w-auto')}
                 value={activeTab}
                 onValueChange={handleTabChange}
                 tabs={tabsWithBadges}
                 stretch
               />
             </nav>
+          )}
+          {isPipelineDetail && activePipelineCount > 0 && (
+            <div className="mt-3 flex items-center gap-2 text-xs text-warning">
+              <span className="h-1.5 w-1.5 rounded-full bg-warning animate-stage-pulse" />
+              Monitoring active content runs while viewing pipeline history.
+            </div>
           )}
         </div>
       </header>

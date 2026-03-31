@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { AlertCircle, FileJson, FileText, Globe, Loader2 } from 'lucide-react';
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs } from '@/components/ui/tabs';
@@ -78,20 +79,50 @@ function renderReportContent(
 }
 
 function WaitingCard({
+  icon: Icon,
   title,
   body,
 }: {
+  icon: typeof Loader2;
   title: string;
   body: string;
 }) {
   return (
     <Card className="border-dashed border-slate-300/90 shadow-sm">
       <CardContent className="flex min-h-[360px] flex-col items-center justify-center gap-4">
-        <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
+        <Icon className={Icon === Loader2 ? 'h-8 w-8 animate-spin text-slate-500' : 'h-8 w-8 text-slate-500'} />
         <div className="space-y-1 text-center">
           <p className="text-lg font-medium text-slate-900">{title}</p>
           <p className="text-sm text-muted-foreground">{body}</p>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReportStateAlert({
+  variant,
+  icon: Icon,
+  title,
+  body,
+}: {
+  variant: 'warning' | 'destructive';
+  icon: typeof AlertCircle;
+  title: string;
+  body: string;
+}) {
+  return (
+    <Card className="shadow-sm">
+      <CardContent className="p-6">
+        <Alert className="flex min-h-[300px] items-center justify-center" variant={variant}>
+          <div className="flex max-w-lg flex-col items-center gap-4 text-center">
+            <Icon className="h-8 w-8" />
+            <div className="space-y-2">
+              <AlertTitle className="text-base">{title}</AlertTitle>
+              <AlertDescription>{body}</AlertDescription>
+            </div>
+          </div>
+        </Alert>
       </CardContent>
     </Card>
   );
@@ -158,6 +189,7 @@ export function SessionReport({ sessionId, runStatus, hasReport }: SessionReport
   if (runStatus === 'queued' || runStatus === 'running') {
     return (
       <WaitingCard
+        icon={Loader2}
         title={runStatus === 'queued' ? 'Report queue is warming up' : 'Research is still running'}
         body="The page stays lightweight while the report is being finalized. It will appear here as soon as the run completes."
       />
@@ -166,33 +198,23 @@ export function SessionReport({ sessionId, runStatus, hasReport }: SessionReport
 
   if (runStatus === 'failed') {
     return (
-      <Card className="border-destructive bg-destructive/5 shadow-sm">
-        <CardContent className="flex min-h-[360px] flex-col items-center justify-center gap-4">
-          <AlertCircle className="h-8 w-8 text-destructive" />
-          <div className="space-y-1 text-center">
-            <p className="text-lg font-medium text-destructive">Research run failed</p>
-            <p className="text-sm text-muted-foreground">
-              No report is available because the run did not complete successfully.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <ReportStateAlert
+        body="No report is available because the run did not complete successfully."
+        icon={AlertCircle}
+        title="Research run failed"
+        variant="destructive"
+      />
     );
   }
 
   if (runStatus === 'cancelled') {
     return (
-      <Card className="border-amber-200 bg-amber-50/80 shadow-sm">
-        <CardContent className="flex min-h-[360px] flex-col items-center justify-center gap-4">
-          <AlertCircle className="h-8 w-8 text-amber-600" />
-          <div className="space-y-1 text-center">
-            <p className="text-lg font-medium text-amber-900">Run was cancelled</p>
-            <p className="text-sm text-amber-800">
-              The session stopped before a final report artifact was produced.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <ReportStateAlert
+        body="The session stopped before a final report artifact was produced."
+        icon={AlertCircle}
+        title="Run was cancelled"
+        variant="warning"
+      />
     );
   }
 
@@ -200,13 +222,17 @@ export function SessionReport({ sessionId, runStatus, hasReport }: SessionReport
     return (
       <Card className="border-dashed border-slate-300/90 shadow-sm">
         <CardContent className="flex min-h-[360px] flex-col items-center justify-center gap-4">
-          <FileText className="h-8 w-8 text-slate-400" />
-          <div className="space-y-1 text-center">
-            <p className="text-lg font-medium text-slate-900">No report artifact available</p>
-            <p className="text-sm text-muted-foreground">
-              This session does not currently expose a rendered report.
-            </p>
-          </div>
+          <Alert className="flex min-h-[300px] items-center justify-center" variant="default">
+            <div className="flex max-w-lg flex-col items-center gap-4 text-center">
+              <FileText className="h-8 w-8 text-slate-400" />
+              <div className="space-y-2">
+                <AlertTitle className="text-base">No report artifact available</AlertTitle>
+                <AlertDescription>
+                  This session does not currently expose a rendered report.
+                </AlertDescription>
+              </div>
+            </div>
+          </Alert>
         </CardContent>
       </Card>
     );
@@ -237,6 +263,7 @@ export function SessionReport({ sessionId, runStatus, hasReport }: SessionReport
               tabs={REPORT_FORMATS.map((format) => ({
                 value: format.value,
                 label: format.label,
+                icon: format.icon,
               }))}
               value={selectedFormat}
               onValueChange={(value) => setSelectedFormat(value as ResearchOutputFormat)}
@@ -250,35 +277,39 @@ export function SessionReport({ sessionId, runStatus, hasReport }: SessionReport
 
       <CardContent className="min-h-[360px] p-6">
         {loadingFormat === selectedFormat && !selectedReport ? (
-          <div className="flex min-h-[300px] flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-slate-300">
-            <Loader2 className="h-7 w-7 animate-spin text-slate-500" />
-            <p className="text-sm text-muted-foreground">
-              Loading {formatLabel(selectedFormat).toLowerCase()} report…
-            </p>
-          </div>
+          <Alert className="flex min-h-[300px] items-center justify-center border-dashed" variant="default">
+            <div className="flex flex-col items-center gap-4 text-center">
+              <Loader2 className="h-7 w-7 animate-spin text-slate-500" />
+              <AlertDescription>
+                Loading {formatLabel(selectedFormat).toLowerCase()} report…
+              </AlertDescription>
+            </div>
+          </Alert>
         ) : null}
 
         {!selectedReport && error ? (
-          <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-5">
-            <div className="flex items-center gap-2 text-destructive">
-              <AlertCircle className="h-5 w-5" />
-              <p className="font-medium">Report Error</p>
+          <Alert className="flex items-start gap-3" variant="destructive">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div className="space-y-1">
+              <AlertTitle>Report error</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
             </div>
-            <p className="mt-3 text-sm text-destructive">{error}</p>
-          </div>
+          </Alert>
         ) : null}
 
         {!selectedReport && !error && loadingFormat !== selectedFormat ? (
-          <div className="flex min-h-[300px] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-300">
-            <FileText className="h-8 w-8 text-slate-400" />
-            <div className="space-y-1 text-center">
-              <p className="font-medium text-slate-900">No report available</p>
-              <p className="text-sm text-muted-foreground">
-                The report may still be finalizing. Try refreshing once the session reaches a
-                completed state.
-              </p>
+          <Alert className="flex min-h-[300px] items-center justify-center border-dashed" variant="default">
+            <div className="flex max-w-lg flex-col items-center gap-3 text-center">
+              <FileText className="h-8 w-8 text-slate-400" />
+              <div className="space-y-1">
+                <AlertTitle>No report available</AlertTitle>
+                <AlertDescription>
+                  The report may still be finalizing. Try refreshing once the session reaches a
+                  completed state.
+                </AlertDescription>
+              </div>
             </div>
-          </div>
+          </Alert>
         ) : null}
 
         {selectedReport ? renderReportContent(selectedReport, selectedFormat) : null}
