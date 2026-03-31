@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { type AxiosError } from 'axios';
 import { dashboardRuntimeConfig } from '@/lib/runtime-config';
 import { normalizeEvent, normalizeSession } from '@/lib/telemetry-transformers';
 import {
@@ -66,7 +66,7 @@ function extractApiErrorPayload(data: unknown): string | null {
   return null;
 }
 
-function formatTimedOutRequest(error: axios.AxiosError): string {
+function formatTimedOutRequest(error: AxiosError): string {
   const method = error.config?.method?.toUpperCase() ?? 'REQUEST';
   const path = error.config?.url ?? dashboardRuntimeConfig.apiBaseUrl;
   const timeoutMs = error.config?.timeout;
