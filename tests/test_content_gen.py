@@ -18,8 +18,11 @@ from cc_deep_research.content_gen.models import (
     AngleOutput,
     BacklogItem,
     BacklogOutput,
+    BeatIntent,
+    BeatIntentMap,
     BeatVisual,
     CoreInputs,
+    HookSet,
     HumanQCGate,
     IdeaScores,
     PackagingOutput,
@@ -32,6 +35,7 @@ from cc_deep_research.content_gen.models import (
     SavedScriptRun,
     ScoringOutput,
     ScriptingContext,
+    ScriptStructure,
     ScriptVersion,
     StrategyMemory,
     VisualPlanOutput,
@@ -391,6 +395,30 @@ Final line
     agent = _FakeScriptingAgent(response)
     ctx = ScriptingContext(
         raw_idea="content idea",
+        research_context="Proof points:\n- Specific proof",
+        tone="direct",
+        cta="Subscribe for more teardown videos",
+        core_inputs=CoreInputs(topic="Hooks", outcome="More retention", audience="Founders"),
+        angle=AngleDefinition(
+            angle="Most founders bury the payoff",
+            content_type="Contrarian",
+            core_tension="Good ideas die in weak openings",
+        ),
+        structure=ScriptStructure(
+            chosen_structure="Insight Breakdown",
+            beat_list=["Hook", "Problem", "Fix", "Payoff", "CTA"],
+        ),
+        beat_intents=BeatIntentMap(
+            beats=[
+                BeatIntent(beat_name="Hook", intent="Create tension immediately"),
+                BeatIntent(beat_name="Fix", intent="Show the concrete improvement"),
+            ]
+        ),
+        hooks=HookSet(
+            hooks=["Your intro is killing watch time"],
+            best_hook="Your intro is killing watch time",
+            best_hook_reason="Specific and urgent",
+        ),
         tightened=ScriptVersion(content="Tight script", word_count=2),
         annotated_script=ScriptVersion(
             content='Hook: "Line one"\n[Cut]',
@@ -401,6 +429,10 @@ Final line
     result = await agent.run_qc(ctx)
 
     assert 'Annotated Script:\nHook: "Line one"\n[Cut]' in agent.last_user_prompt
+    assert "Chosen Structure:\nInsight Breakdown" in agent.last_user_prompt
+    assert "Selected Hook:\nYour intro is killing watch time" in agent.last_user_prompt
+    assert "CTA goal:\nSubscribe for more teardown videos" in agent.last_user_prompt
+    assert "Research Context:" in agent.last_user_prompt
     assert isinstance(result.qc, QCResult)
     assert result.qc.final_script == "Final line"
 
@@ -418,6 +450,40 @@ Audience: Audience
         await agent.run_pipeline("seeded idea")
 
     assert agent.user_prompts[0] == "Raw idea:\nseeded idea"
+
+
+@pytest.mark.asyncio
+async def test_run_from_step_one_preserves_seeded_context_fields() -> None:
+    """Restarting from step 1 should not discard pre-seeded upstream context."""
+    response = """Topic: Topic
+Outcome: Outcome
+Audience: Audience
+"""
+    agent = _FakeScriptingAgent(response)
+    ctx = ScriptingContext(
+        raw_idea="seeded idea",
+        research_context="Proof points:\n- Example",
+        tone="confident",
+        cta="Book a demo",
+        angle=AngleDefinition(
+            angle="stale angle",
+            content_type="Contrarian",
+            core_tension="stale tension",
+        ),
+    )
+
+    with pytest.raises(ValueError, match="angle"):
+        await agent.run_from_step(ctx, 1)
+
+    assert ctx.raw_idea == "seeded idea"
+    assert ctx.research_context == "Proof points:\n- Example"
+    assert ctx.tone == "confident"
+    assert ctx.cta == "Book a demo"
+    assert ctx.core_inputs is not None
+    assert ctx.core_inputs.topic == "Topic"
+    assert ctx.angle is None
+    assert len(ctx.step_traces) == 1
+    assert ctx.step_traces[0].step_name == "define_core_inputs"
 
 
 def test_format_research_context_is_compact_and_selective() -> None:
