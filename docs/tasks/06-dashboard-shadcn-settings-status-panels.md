@@ -1,6 +1,6 @@
 # 06. Dashboard shadcn Settings Status Panels
 
-Status: Planned
+Status: Done
 
 ## Goal
 

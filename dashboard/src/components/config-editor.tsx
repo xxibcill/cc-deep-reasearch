@@ -1,10 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { startTransition, useEffect, useState, type ReactNode } from 'react';
+import { startTransition, useEffect, useState } from 'react';
 
 import { ConfigSecretsPanel } from '@/components/config-secrets-panel';
-import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { SettingFieldShell } from '@/components/ui/form-field';
 import {
   getApiErrorMessage,
   getConfig,
@@ -210,14 +214,36 @@ export function ConfigEditor() {
   }, []);
 
   if (loading) {
-    return <div className="rounded-3xl border border-border bg-card p-8">Loading settings…</div>;
+    return (
+      <Card className="border-border/80 bg-card/95">
+        <CardHeader>
+          <CardTitle>Config editor</CardTitle>
+          <CardDescription>Loading persisted settings and runtime override metadata.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Alert variant="default">
+            <AlertTitle>Loading settings</AlertTitle>
+            <AlertDescription>The dashboard is fetching the latest config snapshot.</AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
+    );
   }
 
   if (loadError || !config || !form) {
     return (
-      <div className="rounded-3xl border border-destructive/30 bg-card p-8">
-        <p className="text-sm text-destructive">{loadError ?? 'Configuration is unavailable.'}</p>
-      </div>
+      <Card className="border-border/80 bg-card/95">
+        <CardHeader>
+          <CardTitle>Config editor</CardTitle>
+          <CardDescription>The settings workspace cannot render without a config payload.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Alert variant="destructive">
+            <AlertTitle>Configuration unavailable</AlertTitle>
+            <AlertDescription>{loadError ?? 'Configuration is unavailable.'}</AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -305,15 +331,15 @@ export function ConfigEditor() {
           <section className="space-y-3">
             <h2 className="text-lg font-semibold">Research defaults</h2>
             <div className="grid gap-4 sm:grid-cols-2">
-              <FieldShell definition={FIELD_DEFINITIONS[0]} error={fieldErrors['search.providers']} overridden={overriddenFields.has('search.providers')} effectiveValue={String(readPath(config.effective_config, 'search.providers') ?? '')} persistedValue={String(readPath(config.persisted_config, 'search.providers') ?? '')} overrideSource={overrideSources['search.providers']}>
+              <SettingFieldShell label={FIELD_DEFINITIONS[0].label} description={FIELD_DEFINITIONS[0].description} error={fieldErrors['search.providers']} overridden={overriddenFields.has('search.providers')} effectiveValue={String(readPath(config.effective_config, 'search.providers') ?? '')} persistedValue={String(readPath(config.persisted_config, 'search.providers') ?? '')} overrideSource={overrideSources['search.providers']}>
                 <input
                   className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
                   disabled={saving || overriddenFields.has('search.providers')}
                   value={form.searchProviders}
                   onChange={(event) => updateField('searchProviders', event.target.value)}
                 />
-              </FieldShell>
-              <FieldShell definition={FIELD_DEFINITIONS[1]} error={fieldErrors['search.depth']} overridden={overriddenFields.has('search.depth')} effectiveValue={String(readPath(config.effective_config, 'search.depth') ?? '')} persistedValue={String(readPath(config.persisted_config, 'search.depth') ?? '')} overrideSource={overrideSources['search.depth']}>
+              </SettingFieldShell>
+              <SettingFieldShell label={FIELD_DEFINITIONS[1].label} description={FIELD_DEFINITIONS[1].description} error={fieldErrors['search.depth']} overridden={overriddenFields.has('search.depth')} effectiveValue={String(readPath(config.effective_config, 'search.depth') ?? '')} persistedValue={String(readPath(config.persisted_config, 'search.depth') ?? '')} overrideSource={overrideSources['search.depth']}>
                 <select
                   className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
                   disabled={saving || overriddenFields.has('search.depth')}
@@ -326,8 +352,8 @@ export function ConfigEditor() {
                     </option>
                   ))}
                 </select>
-              </FieldShell>
-              <FieldShell definition={FIELD_DEFINITIONS[2]} error={fieldErrors['research.enable_cross_ref']} overridden={overriddenFields.has('research.enable_cross_ref')} effectiveValue={String(readPath(config.effective_config, 'research.enable_cross_ref') ?? '')} persistedValue={String(readPath(config.persisted_config, 'research.enable_cross_ref') ?? '')} overrideSource={overrideSources['research.enable_cross_ref']}>
+              </SettingFieldShell>
+              <SettingFieldShell label={FIELD_DEFINITIONS[2].label} description={FIELD_DEFINITIONS[2].description} error={fieldErrors['research.enable_cross_ref']} overridden={overriddenFields.has('research.enable_cross_ref')} effectiveValue={String(readPath(config.effective_config, 'research.enable_cross_ref') ?? '')} persistedValue={String(readPath(config.persisted_config, 'research.enable_cross_ref') ?? '')} overrideSource={overrideSources['research.enable_cross_ref']}>
                 <label className="flex items-center gap-2.5 rounded-lg border border-border bg-background px-3 py-2 text-sm">
                   <input
                     checked={form.enableCrossRef}
@@ -338,14 +364,14 @@ export function ConfigEditor() {
                   />
                   Enable cross-reference analysis
                 </label>
-              </FieldShell>
+              </SettingFieldShell>
             </div>
           </section>
 
           <section className="space-y-3">
             <h2 className="text-lg font-semibold">Execution and output</h2>
             <div className="grid gap-4 sm:grid-cols-2">
-              <FieldShell definition={FIELD_DEFINITIONS[3]} error={fieldErrors['search_team.team_size']} overridden={overriddenFields.has('search_team.team_size')} effectiveValue={String(readPath(config.effective_config, 'search_team.team_size') ?? '')} persistedValue={String(readPath(config.persisted_config, 'search_team.team_size') ?? '')} overrideSource={overrideSources['search_team.team_size']}>
+              <SettingFieldShell label={FIELD_DEFINITIONS[3].label} description={FIELD_DEFINITIONS[3].description} error={fieldErrors['search_team.team_size']} overridden={overriddenFields.has('search_team.team_size')} effectiveValue={String(readPath(config.effective_config, 'search_team.team_size') ?? '')} persistedValue={String(readPath(config.persisted_config, 'search_team.team_size') ?? '')} overrideSource={overrideSources['search_team.team_size']}>
                 <input
                   className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
                   disabled={saving || overriddenFields.has('search_team.team_size')}
@@ -355,8 +381,8 @@ export function ConfigEditor() {
                   value={form.teamSize}
                   onChange={(event) => updateField('teamSize', event.target.value)}
                 />
-              </FieldShell>
-              <FieldShell definition={FIELD_DEFINITIONS[4]} error={fieldErrors['search_team.parallel_execution']} overridden={overriddenFields.has('search_team.parallel_execution')} effectiveValue={String(readPath(config.effective_config, 'search_team.parallel_execution') ?? '')} persistedValue={String(readPath(config.persisted_config, 'search_team.parallel_execution') ?? '')} overrideSource={overrideSources['search_team.parallel_execution']}>
+              </SettingFieldShell>
+              <SettingFieldShell label={FIELD_DEFINITIONS[4].label} description={FIELD_DEFINITIONS[4].description} error={fieldErrors['search_team.parallel_execution']} overridden={overriddenFields.has('search_team.parallel_execution')} effectiveValue={String(readPath(config.effective_config, 'search_team.parallel_execution') ?? '')} persistedValue={String(readPath(config.persisted_config, 'search_team.parallel_execution') ?? '')} overrideSource={overrideSources['search_team.parallel_execution']}>
                 <label className="flex items-center gap-2.5 rounded-lg border border-border bg-background px-3 py-2 text-sm">
                   <input
                     checked={form.parallelExecution}
@@ -367,8 +393,8 @@ export function ConfigEditor() {
                   />
                   Run the search team in parallel
                 </label>
-              </FieldShell>
-              <FieldShell definition={FIELD_DEFINITIONS[5]} error={fieldErrors['output.format']} overridden={overriddenFields.has('output.format')} effectiveValue={String(readPath(config.effective_config, 'output.format') ?? '')} persistedValue={String(readPath(config.persisted_config, 'output.format') ?? '')} overrideSource={overrideSources['output.format']}>
+              </SettingFieldShell>
+              <SettingFieldShell label={FIELD_DEFINITIONS[5].label} description={FIELD_DEFINITIONS[5].description} error={fieldErrors['output.format']} overridden={overriddenFields.has('output.format')} effectiveValue={String(readPath(config.effective_config, 'output.format') ?? '')} persistedValue={String(readPath(config.persisted_config, 'output.format') ?? '')} overrideSource={overrideSources['output.format']}>
                 <select
                   className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
                   disabled={saving || overriddenFields.has('output.format')}
@@ -381,15 +407,15 @@ export function ConfigEditor() {
                     </option>
                   ))}
                 </select>
-              </FieldShell>
-              <FieldShell definition={FIELD_DEFINITIONS[6]} error={fieldErrors['output.save_dir']} overridden={overriddenFields.has('output.save_dir')} effectiveValue={String(readPath(config.effective_config, 'output.save_dir') ?? '')} persistedValue={String(readPath(config.persisted_config, 'output.save_dir') ?? '')} overrideSource={overrideSources['output.save_dir']}>
+              </SettingFieldShell>
+              <SettingFieldShell label={FIELD_DEFINITIONS[6].label} description={FIELD_DEFINITIONS[6].description} error={fieldErrors['output.save_dir']} overridden={overriddenFields.has('output.save_dir')} effectiveValue={String(readPath(config.effective_config, 'output.save_dir') ?? '')} persistedValue={String(readPath(config.persisted_config, 'output.save_dir') ?? '')} overrideSource={overrideSources['output.save_dir']}>
                 <input
                   className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
                   disabled={saving || overriddenFields.has('output.save_dir')}
                   value={form.outputSaveDir}
                   onChange={(event) => updateField('outputSaveDir', event.target.value)}
                 />
-              </FieldShell>
+              </SettingFieldShell>
             </div>
           </section>
 
@@ -410,7 +436,7 @@ export function ConfigEditor() {
               Cache search results to reduce API calls and costs. Cached results are reused for identical queries.
             </p>
             <div className="grid gap-4 sm:grid-cols-3">
-              <FieldShell definition={FIELD_DEFINITIONS[12]} error={fieldErrors['search_cache.enabled']} overridden={overriddenFields.has('search_cache.enabled')} effectiveValue={String(readPath(config.effective_config, 'search_cache.enabled') ?? false)} persistedValue={String(readPath(config.persisted_config, 'search_cache.enabled') ?? false)} overrideSource={overrideSources['search_cache.enabled']}>
+              <SettingFieldShell label={FIELD_DEFINITIONS[12].label} description={FIELD_DEFINITIONS[12].description} error={fieldErrors['search_cache.enabled']} overridden={overriddenFields.has('search_cache.enabled')} effectiveValue={String(readPath(config.effective_config, 'search_cache.enabled') ?? false)} persistedValue={String(readPath(config.persisted_config, 'search_cache.enabled') ?? false)} overrideSource={overrideSources['search_cache.enabled']}>
                 <label className="flex items-center gap-2.5 rounded-lg border border-border bg-background px-3 py-2 text-sm">
                   <input
                     checked={form.cacheEnabled}
@@ -421,8 +447,8 @@ export function ConfigEditor() {
                   />
                   Enable search cache
                 </label>
-              </FieldShell>
-              <FieldShell definition={FIELD_DEFINITIONS[13]} error={fieldErrors['search_cache.ttl_seconds']} overridden={overriddenFields.has('search_cache.ttl_seconds')} effectiveValue={String(readPath(config.effective_config, 'search_cache.ttl_seconds') ?? 3600)} persistedValue={String(readPath(config.persisted_config, 'search_cache.ttl_seconds') ?? 3600)} overrideSource={overrideSources['search_cache.ttl_seconds']}>
+              </SettingFieldShell>
+              <SettingFieldShell label={FIELD_DEFINITIONS[13].label} description={FIELD_DEFINITIONS[13].description} error={fieldErrors['search_cache.ttl_seconds']} overridden={overriddenFields.has('search_cache.ttl_seconds')} effectiveValue={String(readPath(config.effective_config, 'search_cache.ttl_seconds') ?? 3600)} persistedValue={String(readPath(config.persisted_config, 'search_cache.ttl_seconds') ?? 3600)} overrideSource={overrideSources['search_cache.ttl_seconds']}>
                 <input
                   className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
                   disabled={saving || overriddenFields.has('search_cache.ttl_seconds')}
@@ -431,8 +457,8 @@ export function ConfigEditor() {
                   value={form.cacheTtlSeconds}
                   onChange={(event) => updateField('cacheTtlSeconds', event.target.value)}
                 />
-              </FieldShell>
-              <FieldShell definition={FIELD_DEFINITIONS[14]} error={fieldErrors['search_cache.max_entries']} overridden={overriddenFields.has('search_cache.max_entries')} effectiveValue={String(readPath(config.effective_config, 'search_cache.max_entries') ?? 1000)} persistedValue={String(readPath(config.persisted_config, 'search_cache.max_entries') ?? 1000)} overrideSource={overrideSources['search_cache.max_entries']}>
+              </SettingFieldShell>
+              <SettingFieldShell label={FIELD_DEFINITIONS[14].label} description={FIELD_DEFINITIONS[14].description} error={fieldErrors['search_cache.max_entries']} overridden={overriddenFields.has('search_cache.max_entries')} effectiveValue={String(readPath(config.effective_config, 'search_cache.max_entries') ?? 1000)} persistedValue={String(readPath(config.persisted_config, 'search_cache.max_entries') ?? 1000)} overrideSource={overrideSources['search_cache.max_entries']}>
                 <input
                   className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
                   disabled={saving || overriddenFields.has('search_cache.max_entries')}
@@ -441,13 +467,27 @@ export function ConfigEditor() {
                   value={form.cacheMaxEntries}
                   onChange={(event) => updateField('cacheMaxEntries', event.target.value)}
                 />
-              </FieldShell>
+              </SettingFieldShell>
             </div>
           </section>
 
           <footer className="flex flex-col gap-3 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-sm text-muted-foreground">
-              {saveError ? <span className="text-destructive">{saveError}</span> : saveMessage}
+            <div className="flex-1">
+              {saveError ? (
+                <Alert variant="destructive" className="py-2.5">
+                  <AlertTitle>Save failed</AlertTitle>
+                  <AlertDescription>{saveError}</AlertDescription>
+                </Alert>
+              ) : saveMessage ? (
+                <Alert variant="success" className="py-2.5">
+                  <AlertTitle>Config saved</AlertTitle>
+                  <AlertDescription>{saveMessage}</AlertDescription>
+                </Alert>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Changes apply to future runs after you save the persisted config.
+                </p>
+              )}
             </div>
             <div className="flex gap-2">
               <Button
@@ -466,41 +506,70 @@ export function ConfigEditor() {
         </div>
 
         <aside className="space-y-5">
-          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-            <h2 className="text-base font-semibold">Override status</h2>
-            <p className="mt-1.5 text-sm text-muted-foreground">
-              Fields with active env overrides are read-only here because runtime still prefers the
-              environment.
-            </p>
-            <div className="mt-4 space-y-2 text-sm">
+          <Card className="border-border/80 bg-card/95">
+            <CardHeader className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <CardTitle className="text-base">Override status</CardTitle>
+                <Badge variant={config.overridden_fields.length === 0 ? 'secondary' : 'warning'}>
+                  {config.overridden_fields.length === 0
+                    ? 'No overrides'
+                    : `${config.overridden_fields.length} active`}
+                </Badge>
+              </div>
+              <CardDescription>
+                Fields with active env overrides are read-only here because runtime still prefers the environment.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
               {config.overridden_fields.length === 0 ? (
-                <div className="rounded-2xl border border-border bg-background px-4 py-3">
-                  No active environment overrides.
-                </div>
+                <Alert variant="default">
+                  <AlertTitle>No active overrides</AlertTitle>
+                  <AlertDescription>
+                    Runtime currently matches the persisted config for editable dashboard settings.
+                  </AlertDescription>
+                </Alert>
               ) : (
-                config.overridden_fields.map((field) => (
-                  <div key={field} className="rounded-2xl border border-amber-300/70 bg-amber-50 px-4 py-3 text-amber-950">
-                    <div className="font-medium">{field}</div>
-                    <div className="mt-1 text-xs">{(overrideSources[field] ?? []).join(', ')}</div>
+                <>
+                  <Alert variant="warning">
+                    <AlertTitle>Environment values still take priority</AlertTitle>
+                    <AlertDescription>
+                      Persisted changes save normally, but overridden fields stay locked until those env vars change.
+                    </AlertDescription>
+                  </Alert>
+                  <div className="space-y-2 text-sm">
+                    {config.overridden_fields.map((field) => (
+                      <div
+                        key={field}
+                        className="rounded-xl border border-border bg-background/60 px-4 py-3"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="font-medium break-all">{field}</div>
+                          <Badge variant="warning">Env override</Badge>
+                        </div>
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          {(overrideSources[field] ?? []).join(', ') || 'Environment source not reported.'}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))
+                </>
               )}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
           <ConfigSecretsPanel config={config} onConfigChange={setConfig} />
 
-          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-            <h2 className="text-base font-semibold">Navigation</h2>
-            <div className="mt-3">
-              <Link
-                className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-                href="/"
-              >
+          <Card className="border-border/80 bg-card/95">
+            <CardHeader>
+              <CardTitle className="text-base">Navigation</CardTitle>
+              <CardDescription>Return to the session workspace after finishing configuration updates.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Link className={`${buttonVariants({ variant: 'outline', size: 'sm' })} w-full`} href="/">
                 Back to sessions
               </Link>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </aside>
       </div>
     </div>
@@ -530,8 +599,9 @@ function RouteField({
 }) {
   const overridden = overriddenFields.has(field);
   return (
-    <FieldShell
-      definition={definition}
+    <SettingFieldShell
+      label={definition.label}
+      description={definition.description}
       error={error}
       overridden={overridden}
       effectiveValue={String(readPath(config.effective_config, field) ?? '')}
@@ -550,49 +620,6 @@ function RouteField({
           </option>
         ))}
       </select>
-    </FieldShell>
-  );
-}
-
-function FieldShell({
-  definition,
-  error,
-  overridden,
-  effectiveValue,
-  persistedValue,
-  overrideSource,
-  children,
-}: {
-  definition: FieldDefinition;
-  error?: string;
-  overridden: boolean;
-  effectiveValue: string;
-  persistedValue: string;
-  overrideSource?: string[];
-  children: ReactNode;
-}) {
-  return (
-    <div className="space-y-2 rounded-xl border border-border bg-muted/30 p-3">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <div className="text-sm font-medium">{definition.label}</div>
-          <div className="text-xs text-muted-foreground">{definition.description}</div>
-        </div>
-        {overridden ? (
-          <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-amber-900 dark:bg-amber-900 dark:text-amber-100">
-            Env override
-          </span>
-        ) : null}
-      </div>
-      {children}
-      {overridden ? (
-        <p className="text-xs text-amber-900">
-          Saved: <span className="font-medium">{persistedValue}</span>. Runtime:{' '}
-          <span className="font-medium">{effectiveValue}</span>. Source:{' '}
-          {(overrideSource ?? []).join(', ')}
-        </p>
-      ) : null}
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
-    </div>
+    </SettingFieldShell>
   );
 }

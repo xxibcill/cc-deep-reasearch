@@ -248,3 +248,52 @@ export function FormRow({
     </div>
   )
 }
+
+export interface SettingFieldShellProps {
+  label: string
+  description: string
+  error?: string
+  overridden: boolean
+  effectiveValue?: string
+  persistedValue?: string
+  overrideSource?: string[]
+  children: React.ReactNode
+  className?: string
+}
+
+export function SettingFieldShell({
+  label,
+  description,
+  error,
+  overridden,
+  effectiveValue,
+  persistedValue,
+  overrideSource,
+  children,
+  className,
+}: SettingFieldShellProps) {
+  return (
+    <div className={cn('space-y-2 rounded-xl border border-border bg-muted/30 p-3', className)}>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="text-sm font-medium">{label}</div>
+          <div className="text-xs text-muted-foreground">{description}</div>
+        </div>
+        {overridden ? (
+          <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-amber-900 dark:bg-amber-900 dark:text-amber-100">
+            Env override
+          </span>
+        ) : null}
+      </div>
+      {children}
+      {overridden ? (
+        <p className="text-xs text-amber-900">
+          Saved: <span className="font-medium">{persistedValue}</span>. Runtime:{' '}
+          <span className="font-medium">{effectiveValue}</span>. Source:{' '}
+          {(overrideSource ?? []).join(', ')}
+        </p>
+      ) : null}
+      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+    </div>
+  )
+}
