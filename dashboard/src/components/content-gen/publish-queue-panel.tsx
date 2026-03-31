@@ -2,6 +2,10 @@
 
 import { useState } from 'react'
 import { Trash2 } from 'lucide-react'
+
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { PublishItem } from '@/types/content-gen'
 
 interface PublishQueuePanelProps {
@@ -15,6 +19,7 @@ export function PublishQueuePanel({ items, loading, onRemove }: PublishQueuePane
 
   const handleRemove = async (ideaId: string, platform: string) => {
     if (!onRemove) return
+
     const key = `${ideaId}-${platform}`
     try {
       setRemoving(key)
@@ -25,82 +30,79 @@ export function PublishQueuePanel({ items, loading, onRemove }: PublishQueuePane
   }
 
   if (loading) {
-    return <div className="text-muted-foreground text-sm py-8 text-center">Loading publish queue...</div>
+    return <div className="py-8 text-center text-sm text-muted-foreground">Loading publish queue...</div>
   }
 
   if (!items.length) {
     return (
-      <div className="py-12 text-center">
+      <div className="rounded-xl border border-dashed border-border bg-card/70 py-12 text-center">
         <p className="text-sm text-muted-foreground">No items in queue</p>
-        <p className="text-xs text-muted-foreground/50 mt-1">Run a pipeline to generate content for publishing</p>
+        <p className="mt-1 text-xs text-muted-foreground/60">
+          Run a pipeline to generate content for publishing.
+        </p>
       </div>
     )
   }
 
   return (
-    <div className="border border-border rounded-sm overflow-hidden">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="bg-surface-raised/50 border-b border-border">
-            <th className="text-left px-4 py-2.5 text-xs font-mono uppercase tracking-wider text-muted-foreground font-medium">
-              ID
-            </th>
-            <th className="text-left px-4 py-2.5 text-xs font-mono uppercase tracking-wider text-muted-foreground font-medium">
-              Platform
-            </th>
-            <th className="text-left px-4 py-2.5 text-xs font-mono uppercase tracking-wider text-muted-foreground font-medium">
-              Scheduled
-            </th>
-            <th className="text-left px-4 py-2.5 text-xs font-mono uppercase tracking-wider text-muted-foreground font-medium">
-              Status
-            </th>
-            <th className="text-right px-4 py-2.5 text-xs font-mono uppercase tracking-wider text-muted-foreground font-medium">
-              &nbsp;
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
+    <div className="overflow-hidden rounded-xl border border-border bg-card/95 shadow-sm">
+      <Table>
+        <TableHeader className="bg-surface-raised/60">
+          <TableRow className="hover:bg-transparent">
+            <TableHead>ID</TableHead>
+            <TableHead>Platform</TableHead>
+            <TableHead>Scheduled</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead className="text-right">&nbsp;</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {items.map((item) => {
             const key = `${item.idea_id}-${item.platform}`
+
             return (
-              <tr key={key} className="hover:bg-surface-raised/30 transition-colors">
-                <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground tabular-nums">
+              <TableRow key={key}>
+                <TableCell className="font-mono text-xs text-muted-foreground tabular-nums">
                   {item.idea_id.slice(0, 8)}
-                </td>
-                <td className="px-4 py-2.5 text-foreground/80">{item.platform}</td>
-                <td className="px-4 py-2.5 text-muted-foreground text-xs tabular-nums">
+                </TableCell>
+                <TableCell className="text-foreground/80">{item.platform}</TableCell>
+                <TableCell className="text-xs text-muted-foreground tabular-nums">
                   {item.publish_datetime}
-                </td>
-                <td className="px-4 py-2.5">
-                  <span
-                    className={`inline-flex px-2 py-0.5 rounded-sm text-xs font-mono font-medium ${
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant={
                       item.status === 'scheduled'
-                        ? 'bg-warning/10 text-warning border border-warning/20'
+                        ? 'warning'
                         : item.status === 'published'
-                          ? 'bg-success/10 text-success border border-success/20'
-                          : 'bg-surface text-muted-foreground border border-border'
-                    }`}
+                          ? 'success'
+                          : 'outline'
+                    }
+                    className="rounded-md px-2 py-1 font-mono"
                   >
                     {item.status}
-                  </span>
-                </td>
-                <td className="px-4 py-2.5 text-right">
-                  {onRemove && (
-                    <button
-                      onClick={() => handleRemove(item.idea_id, item.platform)}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right">
+                  {onRemove ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => void handleRemove(item.idea_id, item.platform)}
                       disabled={removing === key}
-                      className="text-muted-foreground/50 hover:text-error transition-colors disabled:opacity-30"
+                      className="h-8 w-8 text-muted-foreground/60 hover:text-error"
                       title="Remove from queue"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                </td>
-              </tr>
+                    </Button>
+                  ) : null}
+                </TableCell>
+              </TableRow>
             )
           })}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   )
 }

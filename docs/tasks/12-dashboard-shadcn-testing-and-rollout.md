@@ -1,6 +1,6 @@
 # 12. Dashboard shadcn Testing And Rollout
 
-Status: Planned
+Status: Done
 
 ## Goal
 

@@ -67,8 +67,11 @@ flowchart LR
 ### Frontend
 
 - home page: [`dashboard/src/app/page.tsx`](../dashboard/src/app/page.tsx)
+- content studio home: [`dashboard/src/app/content-gen/page.tsx`](../dashboard/src/app/content-gen/page.tsx)
+- content studio pipeline detail: [`dashboard/src/app/content-gen/pipeline/[id]/page.tsx`](../dashboard/src/app/content-gen/pipeline/[id]/page.tsx)
 - session page: [`dashboard/src/app/session/[id]/page.tsx`](../dashboard/src/app/session/[id]/page.tsx)
 - form to launch research: [`dashboard/src/components/start-research-form.tsx`](../dashboard/src/components/start-research-form.tsx)
+- content studio forms: [`dashboard/src/components/content-gen/start-pipeline-form.tsx`](../dashboard/src/components/content-gen/start-pipeline-form.tsx), [`dashboard/src/components/content-gen/quick-script-form.tsx`](../dashboard/src/components/content-gen/quick-script-form.tsx), [`dashboard/src/components/content-gen/strategy-editor.tsx`](../dashboard/src/components/content-gen/strategy-editor.tsx)
 - recent sessions list: [`dashboard/src/components/session-list.tsx`](../dashboard/src/components/session-list.tsx)
 - session detail surface: [`dashboard/src/components/session-details.tsx`](../dashboard/src/components/session-details.tsx)
 - report viewer: [`dashboard/src/components/session-report.tsx`](../dashboard/src/components/session-report.tsx)
@@ -186,6 +189,43 @@ Secret handling is separate from normal settings:
 - clearing a secret requires confirmation
 
 All settings saves apply to future runs. Active runs keep the config that was resolved when they started.
+
+### Content Studio
+
+The content-studio workspace in [`dashboard/src/app/content-gen/page.tsx`](../dashboard/src/app/content-gen/page.tsx) now shares the same primitive layer as the rest of the dashboard for:
+
+- pipeline launch inputs
+- quick-script run controls and markdown transfer
+- strategy editing fields
+- publish-queue tables
+- expandable script history rows
+- expandable pipeline stage result panels
+
+The shared content-studio primitive set currently lives under [`dashboard/src/components/ui/`](../dashboard/src/components/ui/) and includes:
+
+- `input.tsx`
+- `textarea.tsx`
+- `label.tsx`
+- `form-field.tsx`
+- `native-select.tsx`
+- `alert.tsx`
+- `table.tsx`
+- `collapsible-panel.tsx`
+
+The migration is intentionally not forcing every visualization into generic primitives. These surfaces remain custom by design:
+
+- [`dashboard/src/components/workflow-graph.tsx`](../dashboard/src/components/workflow-graph.tsx)
+- [`dashboard/src/components/decision-graph.tsx`](../dashboard/src/components/decision-graph.tsx)
+- [`dashboard/src/components/agent-timeline.tsx`](../dashboard/src/components/agent-timeline.tsx)
+- [`dashboard/src/components/content-gen/pipeline-progress-tracker.tsx`](../dashboard/src/components/content-gen/pipeline-progress-tracker.tsx)
+- [`dashboard/src/components/content-gen/script-viewer.tsx`](../dashboard/src/components/content-gen/script-viewer.tsx)
+
+After the content-studio migration, the remaining raw form controls are concentrated in older research, settings, and session-management surfaces:
+
+- [`dashboard/src/components/start-research-form.tsx`](../dashboard/src/components/start-research-form.tsx)
+- [`dashboard/src/components/config-editor.tsx`](../dashboard/src/components/config-editor.tsx)
+- [`dashboard/src/components/config-secrets-panel.tsx`](../dashboard/src/components/config-secrets-panel.tsx)
+- [`dashboard/src/components/session-list.tsx`](../dashboard/src/components/session-list.tsx)
 
 ### Start Research Form
 
