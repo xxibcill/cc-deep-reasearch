@@ -1,6 +1,6 @@
 # 02. Dashboard shadcn Form Primitives
 
-Status: Planned
+Status: Done
 
 ## Goal
 
