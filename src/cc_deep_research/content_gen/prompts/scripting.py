@@ -16,6 +16,51 @@ def _render_research_context(research_context: str) -> str:
         return ""
     return f"\nResearch Context:\n{research_context.strip()}"
 
+
+def _append_context_handoff(
+    parts: list[str],
+    *,
+    inputs: CoreInputs | None = None,
+    angle: AngleDefinition | None = None,
+    structure: ScriptStructure | None = None,
+    beat_intents: BeatIntentMap | None = None,
+    best_hook: str = "",
+    tone: str = "",
+    cta: str = "",
+    research_context: str = "",
+) -> None:
+    if inputs:
+        parts.append(
+            f"\nOriginal intent:\n"
+            f"Topic: {inputs.topic}\n"
+            f"Outcome: {inputs.outcome}\n"
+            f"Audience: {inputs.audience}"
+        )
+    if angle:
+        parts.append(
+            f"\nAngle:\n{angle.angle}\n"
+            f"Content Type: {angle.content_type}\n"
+            f"Core Tension: {angle.core_tension}"
+        )
+    if structure:
+        beat_list = "\n".join(f"- {beat}" for beat in structure.beat_list)
+        parts.append(
+            f"\nChosen Structure:\n{structure.chosen_structure}\n"
+            f"Beat List:\n{beat_list}"
+        )
+    if beat_intents:
+        beat_lines = "\n".join(f"- {b.beat_name}: {b.intent}" for b in beat_intents.beats)
+        parts.append(f"\nBeat Intents:\n{beat_lines}")
+    if best_hook:
+        parts.append(f"\nSelected Hook:\n{best_hook}")
+    if tone:
+        parts.append(f"\nTone:\n{tone}")
+    if cta:
+        parts.append(f"\nCTA goal:\n{cta}")
+    research = _render_research_context(research_context)
+    if research:
+        parts.append(research)
+
 GLOBAL_RULES = """\
 You are generating short-form video scripting outputs inside a modular workflow.
 
@@ -365,7 +410,9 @@ def step6_user(
         parts.append(f"Tone:\n{tone}")
     if cta:
         parts.append(f"CTA goal:\n{cta}")
-    parts.append(_render_research_context(research_context))
+    research = _render_research_context(research_context)
+    if research:
+        parts.append(research)
     return "\n".join(parts)
 
 
@@ -413,14 +460,27 @@ Retention changes made:
 def step7_user(
     draft: ScriptVersion,
     *,
+    core_inputs: CoreInputs | None = None,
+    angle: AngleDefinition | None = None,
+    structure: ScriptStructure | None = None,
     beat_intents: BeatIntentMap | None = None,
+    best_hook: str = "",
+    tone: str = "",
+    cta: str = "",
     research_context: str = "",
 ) -> str:
     parts = [f"Draft Script:\n{draft.content}"]
-    if beat_intents:
-        beat_lines = "\n".join(f"- {b.beat_name}: {b.intent}" for b in beat_intents.beats)
-        parts.append(f"\nOriginal Beat Intents:\n{beat_lines}")
-    parts.append(_render_research_context(research_context))
+    _append_context_handoff(
+        parts,
+        inputs=core_inputs,
+        angle=angle,
+        structure=structure,
+        beat_intents=beat_intents,
+        best_hook=best_hook,
+        tone=tone,
+        cta=cta,
+        research_context=research_context,
+    )
     return "\n".join(parts)
 
 
@@ -465,13 +525,30 @@ Cuts / improvements made:
 def step8_user(
     revised: ScriptVersion,
     *,
+    core_inputs: CoreInputs | None = None,
+    angle: AngleDefinition | None = None,
+    structure: ScriptStructure | None = None,
+    beat_intents: BeatIntentMap | None = None,
+    best_hook: str = "",
     core_tension: str = "",
+    tone: str = "",
+    cta: str = "",
     research_context: str = "",
 ) -> str:
     parts = [f"Revised Script:\n{revised.content}"]
     if core_tension:
         parts.append(f"\nCore Tension (must be preserved):\n{core_tension}")
-    parts.append(_render_research_context(research_context))
+    _append_context_handoff(
+        parts,
+        inputs=core_inputs,
+        angle=angle,
+        structure=structure,
+        beat_intents=beat_intents,
+        best_hook=best_hook,
+        tone=tone,
+        cta=cta,
+        research_context=research_context,
+    )
     return "\n".join(parts)
 
 
@@ -510,8 +587,31 @@ Output format:
 [Beat Name]: "Line...\""""
 
 
-def step9_user(tightened: ScriptVersion) -> str:
-    return f"Tightened Script:\n{tightened.content}"
+def step9_user(
+    tightened: ScriptVersion,
+    *,
+    core_inputs: CoreInputs | None = None,
+    angle: AngleDefinition | None = None,
+    structure: ScriptStructure | None = None,
+    beat_intents: BeatIntentMap | None = None,
+    best_hook: str = "",
+    tone: str = "",
+    cta: str = "",
+    research_context: str = "",
+) -> str:
+    parts = [f"Tightened Script:\n{tightened.content}"]
+    _append_context_handoff(
+        parts,
+        inputs=core_inputs,
+        angle=angle,
+        structure=structure,
+        beat_intents=beat_intents,
+        best_hook=best_hook,
+        tone=tone,
+        cta=cta,
+        research_context=research_context,
+    )
+    return "\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -572,21 +672,23 @@ def step10_user(
     label: str = "Script",
     core_inputs: CoreInputs | None = None,
     angle: AngleDefinition | None = None,
+    structure: ScriptStructure | None = None,
     beat_intents: BeatIntentMap | None = None,
+    best_hook: str = "",
+    tone: str = "",
+    cta: str = "",
     research_context: str = "",
 ) -> str:
     parts = [f"{label}:\n{script.content}"]
-    if core_inputs:
-        parts.append(
-            f"\nOriginal intent:\n"
-            f"Topic: {core_inputs.topic}\n"
-            f"Outcome: {core_inputs.outcome}\n"
-            f"Audience: {core_inputs.audience}"
-        )
-    if angle:
-        parts.append(f"\nAngle: {angle.angle}\nCore Tension: {angle.core_tension}")
-    if beat_intents:
-        beat_lines = "\n".join(f"- {b.beat_name}: {b.intent}" for b in beat_intents.beats)
-        parts.append(f"\nBeat Intents:\n{beat_lines}")
-    parts.append(_render_research_context(research_context))
+    _append_context_handoff(
+        parts,
+        inputs=core_inputs,
+        angle=angle,
+        structure=structure,
+        beat_intents=beat_intents,
+        best_hook=best_hook,
+        tone=tone,
+        cta=cta,
+        research_context=research_context,
+    )
     return "\n".join(parts)

@@ -50,6 +50,76 @@ _STEP_TEMPERATURES: dict[str, float] = {
     "run_qc": 0.2,
 }
 
+_RESET_FIELDS_BY_STEP: dict[int, tuple[str, ...]] = {
+    1: (
+        "core_inputs",
+        "angle",
+        "structure",
+        "beat_intents",
+        "hooks",
+        "draft",
+        "retention_revised",
+        "tightened",
+        "annotated_script",
+        "visual_notes",
+        "qc",
+    ),
+    2: (
+        "angle",
+        "structure",
+        "beat_intents",
+        "hooks",
+        "draft",
+        "retention_revised",
+        "tightened",
+        "annotated_script",
+        "visual_notes",
+        "qc",
+    ),
+    3: (
+        "structure",
+        "beat_intents",
+        "hooks",
+        "draft",
+        "retention_revised",
+        "tightened",
+        "annotated_script",
+        "visual_notes",
+        "qc",
+    ),
+    4: (
+        "beat_intents",
+        "hooks",
+        "draft",
+        "retention_revised",
+        "tightened",
+        "annotated_script",
+        "visual_notes",
+        "qc",
+    ),
+    5: (
+        "hooks",
+        "draft",
+        "retention_revised",
+        "tightened",
+        "annotated_script",
+        "visual_notes",
+        "qc",
+    ),
+    6: (
+        "draft",
+        "retention_revised",
+        "tightened",
+        "annotated_script",
+        "visual_notes",
+        "qc",
+    ),
+    7: ("retention_revised", "tightened", "annotated_script", "visual_notes", "qc"),
+    8: ("tightened", "annotated_script", "visual_notes", "qc"),
+    9: ("annotated_script", "visual_notes", "qc"),
+    10: ("qc",),
+}
+
 
 def _transport_from_route_name(route_name: str) -> LLMTransportType:
     route_map = {
@@ -195,6 +265,24 @@ class ScriptingAgent:
             parsed_output=ctx.core_inputs,
         )
         return ctx
+
+    def _seed_core_inputs(
+        self,
+        ctx: ScriptingContext,
+        *,
+        raw_idea: str,
+        core_inputs: CoreInputs,
+        step_traces: list[ScriptingStepTrace] | None = None,
+    ) -> ScriptingContext:
+        ctx.raw_idea = raw_idea
+        ctx.core_inputs = core_inputs
+        if step_traces:
+            ctx.step_traces.extend(step_traces)
+        return ctx
+
+    def _reset_outputs_from_step(self, ctx: ScriptingContext, step: int) -> None:
+        for field_name in _RESET_FIELDS_BY_STEP.get(step, ()):
+            setattr(ctx, field_name, None)
 
     # ------------------------------------------------------------------
     # Step 2: Define Angle
@@ -490,7 +578,13 @@ class ScriptingAgent:
         system = prompts.STEP7_SYSTEM
         user = prompts.step7_user(
             ctx.draft,
+            core_inputs=ctx.core_inputs,
+            angle=ctx.angle,
+            structure=ctx.structure,
             beat_intents=ctx.beat_intents,
+            best_hook=ctx.hooks.best_hook if ctx.hooks else "",
+            tone=ctx.tone,
+            cta=ctx.cta,
             research_context=ctx.research_context,
         )
         response = await self._call_llm(
@@ -539,7 +633,14 @@ class ScriptingAgent:
         system = prompts.STEP8_SYSTEM
         user = prompts.step8_user(
             source,
+            core_inputs=ctx.core_inputs,
+            angle=ctx.angle,
+            structure=ctx.structure,
+            beat_intents=ctx.beat_intents,
+            best_hook=ctx.hooks.best_hook if ctx.hooks else "",
             core_tension=ctx.angle.core_tension if ctx.angle else "",
+            tone=ctx.tone,
+            cta=ctx.cta,
             research_context=ctx.research_context,
         )
         response = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["tighten"])
@@ -584,7 +685,17 @@ class ScriptingAgent:
             raise ValueError(msg)
 
         system = prompts.STEP9_SYSTEM
-        user = prompts.step9_user(source)
+        user = prompts.step9_user(
+            source,
+            core_inputs=ctx.core_inputs,
+            angle=ctx.angle,
+            structure=ctx.structure,
+            beat_intents=ctx.beat_intents,
+            best_hook=ctx.hooks.best_hook if ctx.hooks else "",
+            tone=ctx.tone,
+            cta=ctx.cta,
+            research_context=ctx.research_context,
+        )
         response = await self._call_llm(
             system, user, temperature=_STEP_TEMPERATURES["add_visual_notes"]
         )
@@ -630,7 +741,11 @@ class ScriptingAgent:
             label="Annotated Script" if ctx.annotated_script is not None else "Script",
             core_inputs=ctx.core_inputs,
             angle=ctx.angle,
+            structure=ctx.structure,
             beat_intents=ctx.beat_intents,
+            best_hook=ctx.hooks.best_hook if ctx.hooks else "",
+            tone=ctx.tone,
+            cta=ctx.cta,
             research_context=ctx.research_context,
         )
         response = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["run_qc"])
@@ -697,6 +812,7 @@ class ScriptingAgent:
         iteration: int = 1,
     ) -> ScriptingContext:
         start_idx = step - 1
+        self._reset_outputs_from_step(ctx, step)
         self._active_iteration = iteration
         try:
             for step_idx in range(start_idx, len(SCRIPTING_STEPS)):
@@ -722,7 +838,13 @@ class ScriptingAgent:
 
 
 async def _wrap_step0(agent: ScriptingAgent, ctx: ScriptingContext) -> ScriptingContext:
-    return await agent.define_core_inputs(ctx.raw_idea)
+    result = await agent.define_core_inputs(ctx.raw_idea)
+    return agent._seed_core_inputs(
+        ctx,
+        raw_idea=result.raw_idea,
+        core_inputs=result.core_inputs,
+        step_traces=result.step_traces,
+    )
 
 
 _STEP_HANDLERS: list[Callable[[ScriptingAgent, ScriptingContext], Awaitable[ScriptingContext]]] = [
