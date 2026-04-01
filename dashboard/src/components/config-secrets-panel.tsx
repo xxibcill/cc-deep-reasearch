@@ -4,6 +4,9 @@ import { startTransition, useMemo, useState } from 'react';
 
 import { AlertDialog } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { FormMessage } from '@/components/ui/form-field';
+import { Textarea } from '@/components/ui/textarea';
 import {
   getConfigUpdateErrorDetails,
   updateConfig,
@@ -190,14 +193,10 @@ export function ConfigSecretsPanel({
         </div>
 
         {message ? (
-          <div className="mt-4 rounded-xl border border-emerald-300/70 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-            {message}
-          </div>
+          <FormMessage tone="success" className="mt-4">{message}</FormMessage>
         ) : null}
         {error ? (
-          <div className="mt-4 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {error}
-          </div>
+          <FormMessage tone="error" className="mt-4">{error}</FormMessage>
         ) : null}
 
         <div className="mt-4 space-y-3">
@@ -266,20 +265,19 @@ export function ConfigSecretsPanel({
                       {multiValue ? 'One secret per line' : 'Replacement value'}
                     </label>
                     {multiValue ? (
-                      <textarea
+                      <Textarea
                         id={`secret-${field.field}`}
-                        className="min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                        className="min-h-[120px]"
                         disabled={isSaving}
                         value={draftValue}
                         onChange={(event) => setDraftValue(event.target.value)}
                         placeholder="Paste each key on its own line"
                       />
                     ) : (
-                      <input
+                      <Input
                         id={`secret-${field.field}`}
-                        className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"
-                        disabled={isSaving}
                         type="password"
+                        disabled={isSaving}
                         value={draftValue}
                         onChange={(event) => setDraftValue(event.target.value)}
                         placeholder="Enter a replacement value"

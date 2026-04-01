@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -14,6 +15,13 @@ from cc_deep_research.content_gen.models import (
 )
 
 _DEFAULT_DIR = Path.home() / ".config" / "cc-deep-research" / "scripts"
+
+
+def _serialize_saved_payload(payload: dict[str, object]) -> str:
+    serialized = dict(payload)
+    if serialized.get("iterations") is None:
+        serialized.pop("iterations", None)
+    return json.dumps(serialized, indent=2)
 
 
 class ScriptingStore:
@@ -55,7 +63,7 @@ class ScriptingStore:
             execution_mode=execution_mode,
             iterations=iterations,
         )
-        result_path.write_text(result.model_dump_json(indent=2))
+        result_path.write_text(_serialize_saved_payload(result.model_dump(mode="json")))
 
         record = SavedScriptRun(
             run_id=run_id,
@@ -68,13 +76,19 @@ class ScriptingStore:
             execution_mode=execution_mode,
             iterations=iterations,
         )
-        (run_dir / "metadata.json").write_text(record.model_dump_json(indent=2))
+        (run_dir / "metadata.json").write_text(
+            _serialize_saved_payload(record.model_dump(mode="json"))
+        )
 
         self._path.mkdir(parents=True, exist_ok=True)
         (self._path / "latest.txt").write_text(script)
         (self._path / "latest.context.json").write_text(ctx.model_dump_json(indent=2))
-        (self._path / "latest.result.json").write_text(result.model_dump_json(indent=2))
-        (self._path / "latest.json").write_text(record.model_dump_json(indent=2))
+        (self._path / "latest.result.json").write_text(
+            _serialize_saved_payload(result.model_dump(mode="json"))
+        )
+        (self._path / "latest.json").write_text(
+            _serialize_saved_payload(record.model_dump(mode="json"))
+        )
         return record
 
     def list_runs(self, *, limit: int | None = None) -> list[SavedScriptRun]:

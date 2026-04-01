@@ -8,7 +8,9 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { SettingFieldShell } from '@/components/ui/form-field';
+import { CheckboxRow, SettingFieldShell } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
+import { NativeSelect } from '@/components/ui/native-select';
 import {
   getApiErrorMessage,
   getConfig,
@@ -332,16 +334,16 @@ export function ConfigEditor() {
             <h2 className="text-lg font-semibold">Research defaults</h2>
             <div className="grid gap-4 sm:grid-cols-2">
               <SettingFieldShell label={FIELD_DEFINITIONS[0].label} description={FIELD_DEFINITIONS[0].description} error={fieldErrors['search.providers']} overridden={overriddenFields.has('search.providers')} effectiveValue={String(readPath(config.effective_config, 'search.providers') ?? '')} persistedValue={String(readPath(config.persisted_config, 'search.providers') ?? '')} overrideSource={overrideSources['search.providers']}>
-                <input
-                  className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                <Input
+                  className="h-9"
                   disabled={saving || overriddenFields.has('search.providers')}
                   value={form.searchProviders}
                   onChange={(event) => updateField('searchProviders', event.target.value)}
                 />
               </SettingFieldShell>
               <SettingFieldShell label={FIELD_DEFINITIONS[1].label} description={FIELD_DEFINITIONS[1].description} error={fieldErrors['search.depth']} overridden={overriddenFields.has('search.depth')} effectiveValue={String(readPath(config.effective_config, 'search.depth') ?? '')} persistedValue={String(readPath(config.persisted_config, 'search.depth') ?? '')} overrideSource={overrideSources['search.depth']}>
-                <select
-                  className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                <NativeSelect
+                  className="h-9"
                   disabled={saving || overriddenFields.has('search.depth')}
                   value={form.searchDepth}
                   onChange={(event) => updateField('searchDepth', event.target.value)}
@@ -351,19 +353,16 @@ export function ConfigEditor() {
                       {option}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </SettingFieldShell>
               <SettingFieldShell label={FIELD_DEFINITIONS[2].label} description={FIELD_DEFINITIONS[2].description} error={fieldErrors['research.enable_cross_ref']} overridden={overriddenFields.has('research.enable_cross_ref')} effectiveValue={String(readPath(config.effective_config, 'research.enable_cross_ref') ?? '')} persistedValue={String(readPath(config.persisted_config, 'research.enable_cross_ref') ?? '')} overrideSource={overrideSources['research.enable_cross_ref']}>
-                <label className="flex items-center gap-2.5 rounded-lg border border-border bg-background px-3 py-2 text-sm">
-                  <input
-                    checked={form.enableCrossRef}
-                    className="h-4 w-4"
-                    disabled={saving || overriddenFields.has('research.enable_cross_ref')}
-                    type="checkbox"
-                    onChange={(event) => updateField('enableCrossRef', event.target.checked)}
-                  />
-                  Enable cross-reference analysis
-                </label>
+                <CheckboxRow
+                  checked={form.enableCrossRef}
+                  disabled={saving || overriddenFields.has('research.enable_cross_ref')}
+                  id="config-enable-cross-ref"
+                  label="Enable cross-reference analysis"
+                  onCheckedChange={(checked) => updateField('enableCrossRef', checked)}
+                />
               </SettingFieldShell>
             </div>
           </section>
@@ -372,8 +371,7 @@ export function ConfigEditor() {
             <h2 className="text-lg font-semibold">Execution and output</h2>
             <div className="grid gap-4 sm:grid-cols-2">
               <SettingFieldShell label={FIELD_DEFINITIONS[3].label} description={FIELD_DEFINITIONS[3].description} error={fieldErrors['search_team.team_size']} overridden={overriddenFields.has('search_team.team_size')} effectiveValue={String(readPath(config.effective_config, 'search_team.team_size') ?? '')} persistedValue={String(readPath(config.persisted_config, 'search_team.team_size') ?? '')} overrideSource={overrideSources['search_team.team_size']}>
-                <input
-                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                <Input
                   disabled={saving || overriddenFields.has('search_team.team_size')}
                   min={2}
                   max={8}
@@ -383,20 +381,16 @@ export function ConfigEditor() {
                 />
               </SettingFieldShell>
               <SettingFieldShell label={FIELD_DEFINITIONS[4].label} description={FIELD_DEFINITIONS[4].description} error={fieldErrors['search_team.parallel_execution']} overridden={overriddenFields.has('search_team.parallel_execution')} effectiveValue={String(readPath(config.effective_config, 'search_team.parallel_execution') ?? '')} persistedValue={String(readPath(config.persisted_config, 'search_team.parallel_execution') ?? '')} overrideSource={overrideSources['search_team.parallel_execution']}>
-                <label className="flex items-center gap-2.5 rounded-lg border border-border bg-background px-3 py-2 text-sm">
-                  <input
-                    checked={form.parallelExecution}
-                    className="h-4 w-4"
-                    disabled={saving || overriddenFields.has('search_team.parallel_execution')}
-                    type="checkbox"
-                    onChange={(event) => updateField('parallelExecution', event.target.checked)}
-                  />
-                  Run the search team in parallel
-                </label>
+                <CheckboxRow
+                  checked={form.parallelExecution}
+                  disabled={saving || overriddenFields.has('search_team.parallel_execution')}
+                  id="config-parallel-execution"
+                  label="Run the search team in parallel"
+                  onCheckedChange={(checked) => updateField('parallelExecution', checked)}
+                />
               </SettingFieldShell>
               <SettingFieldShell label={FIELD_DEFINITIONS[5].label} description={FIELD_DEFINITIONS[5].description} error={fieldErrors['output.format']} overridden={overriddenFields.has('output.format')} effectiveValue={String(readPath(config.effective_config, 'output.format') ?? '')} persistedValue={String(readPath(config.persisted_config, 'output.format') ?? '')} overrideSource={overrideSources['output.format']}>
-                <select
-                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                <NativeSelect
                   disabled={saving || overriddenFields.has('output.format')}
                   value={form.outputFormat}
                   onChange={(event) => updateField('outputFormat', event.target.value)}
@@ -406,11 +400,10 @@ export function ConfigEditor() {
                       {option}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </SettingFieldShell>
               <SettingFieldShell label={FIELD_DEFINITIONS[6].label} description={FIELD_DEFINITIONS[6].description} error={fieldErrors['output.save_dir']} overridden={overriddenFields.has('output.save_dir')} effectiveValue={String(readPath(config.effective_config, 'output.save_dir') ?? '')} persistedValue={String(readPath(config.persisted_config, 'output.save_dir') ?? '')} overrideSource={overrideSources['output.save_dir']}>
-                <input
-                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                <Input
                   disabled={saving || overriddenFields.has('output.save_dir')}
                   value={form.outputSaveDir}
                   onChange={(event) => updateField('outputSaveDir', event.target.value)}
@@ -437,20 +430,16 @@ export function ConfigEditor() {
             </p>
             <div className="grid gap-4 sm:grid-cols-3">
               <SettingFieldShell label={FIELD_DEFINITIONS[12].label} description={FIELD_DEFINITIONS[12].description} error={fieldErrors['search_cache.enabled']} overridden={overriddenFields.has('search_cache.enabled')} effectiveValue={String(readPath(config.effective_config, 'search_cache.enabled') ?? false)} persistedValue={String(readPath(config.persisted_config, 'search_cache.enabled') ?? false)} overrideSource={overrideSources['search_cache.enabled']}>
-                <label className="flex items-center gap-2.5 rounded-lg border border-border bg-background px-3 py-2 text-sm">
-                  <input
-                    checked={form.cacheEnabled}
-                    className="h-4 w-4"
-                    disabled={saving || overriddenFields.has('search_cache.enabled')}
-                    type="checkbox"
-                    onChange={(event) => updateField('cacheEnabled', event.target.checked)}
-                  />
-                  Enable search cache
-                </label>
+                <CheckboxRow
+                  checked={form.cacheEnabled}
+                  disabled={saving || overriddenFields.has('search_cache.enabled')}
+                  id="config-cache-enabled"
+                  label="Enable search cache"
+                  onCheckedChange={(checked) => updateField('cacheEnabled', checked)}
+                />
               </SettingFieldShell>
               <SettingFieldShell label={FIELD_DEFINITIONS[13].label} description={FIELD_DEFINITIONS[13].description} error={fieldErrors['search_cache.ttl_seconds']} overridden={overriddenFields.has('search_cache.ttl_seconds')} effectiveValue={String(readPath(config.effective_config, 'search_cache.ttl_seconds') ?? 3600)} persistedValue={String(readPath(config.persisted_config, 'search_cache.ttl_seconds') ?? 3600)} overrideSource={overrideSources['search_cache.ttl_seconds']}>
-                <input
-                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                <Input
                   disabled={saving || overriddenFields.has('search_cache.ttl_seconds')}
                   min={1}
                   type="number"
@@ -459,8 +448,7 @@ export function ConfigEditor() {
                 />
               </SettingFieldShell>
               <SettingFieldShell label={FIELD_DEFINITIONS[14].label} description={FIELD_DEFINITIONS[14].description} error={fieldErrors['search_cache.max_entries']} overridden={overriddenFields.has('search_cache.max_entries')} effectiveValue={String(readPath(config.effective_config, 'search_cache.max_entries') ?? 1000)} persistedValue={String(readPath(config.persisted_config, 'search_cache.max_entries') ?? 1000)} overrideSource={overrideSources['search_cache.max_entries']}>
-                <input
-                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                <Input
                   disabled={saving || overriddenFields.has('search_cache.max_entries')}
                   min={1}
                   type="number"
@@ -608,8 +596,8 @@ function RouteField({
       persistedValue={String(readPath(config.persisted_config, field) ?? '')}
       overrideSource={overrideSources[field]}
     >
-      <select
-        className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
+      <NativeSelect
+        className="h-9"
         disabled={disabled || overridden}
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -619,7 +607,7 @@ function RouteField({
             {option}
           </option>
         ))}
-      </select>
+      </NativeSelect>
     </SettingFieldShell>
   );
 }

@@ -1,6 +1,6 @@
 # Dashboard shadcn Migration Plan
 
-Status: Planned
+Status: Done
 
 ## Goal
 
