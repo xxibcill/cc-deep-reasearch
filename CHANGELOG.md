@@ -61,6 +61,13 @@ Phase 2 - Extended lifecycle management:
 - Persisted prompt overrides and effective prompt configuration in session metadata and exposed configured prompts in session detail UI
 - Added backend/frontend test coverage and documented the v1 boundary for heuristic-only agents
 
+#### Dashboard shadcn Migration (13 tasks)
+
+- Defined a staged migration plan for the Next.js dashboard, preserving custom graph and timeline renderers while standardizing the shell around them
+- Replaced and expanded the shared `ui/` primitive layer and field-shell patterns for forms, dialogs, tabs, tables, alerts, filters, and navigation
+- Migrated the start-research flow, home/session list, settings surfaces, session workspace, session filters/table, and content-studio shell onto the shared shadcn-style vocabulary
+- Completed content-studio form and data-panel migration, then closed the rollout with regression review, accessibility/visual-consistency checks, cleanup, and documentation updates
+
 #### Decision Graph Observability (30 tasks)
 
 - Added a first-class backend-derived `decision_graph` contract with stable nodes, edges, and explicit-versus-inferred relationship markers
@@ -68,6 +75,10 @@ Phase 2 - Extended lifecycle management:
 - Added `decision_graph` delivery in live session detail, historical session detail, session API responses, and portable trace bundle exports
 - Added a dedicated dashboard decision-graph view with node inspection, filters, zoom/pan, and explicit-versus-inferred styling
 - Added fixtures, backend/API/export/UI tests, rollout phases, and operator-facing documentation for graph limits and telemetry coverage
+
+### Removed
+
+- Removed completed task-planning documents from `docs/tasks/` after consolidating their delivered work into this changelog
 
 ## [0.1.0] - 2026-03-11
 
