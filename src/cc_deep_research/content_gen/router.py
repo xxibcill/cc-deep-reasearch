@@ -109,6 +109,20 @@ def _build_scripting_result(
     )
 
 
+def _serialize_scripting_payload(result: ScriptingRunResult) -> dict[str, Any]:
+    payload = result.model_dump(mode="json")
+    if payload.get("iterations") is None:
+        payload.pop("iterations", None)
+    return payload
+
+
+def _serialize_saved_script_run(run: Any) -> dict[str, Any]:
+    payload = run.model_dump(mode="json")
+    if payload.get("iterations") is None:
+        payload.pop("iterations", None)
+    return payload
+
+
 # ---------------------------------------------------------------------------
 # Router registration
 # ---------------------------------------------------------------------------
@@ -361,7 +375,7 @@ def register_content_gen_routes(
             execution_mode=execution_mode,
             iterations=iterations,
         )
-        return JSONResponse(content=json.loads(response_content.model_dump_json()))
+        return JSONResponse(content=_serialize_scripting_payload(response_content))
 
     # ------------------------------------------------------------------
     # Saved scripts history
@@ -371,7 +385,7 @@ def register_content_gen_routes(
     async def list_scripts() -> JSONResponse:
         store = ScriptingStore()
         runs = store.list_runs(limit=50)
-        items = [json.loads(r.model_dump_json()) for r in runs]
+        items = [_serialize_saved_script_run(r) for r in runs]
         return JSONResponse(content={"items": items})
 
     @app.get("/api/content-gen/scripts/{run_id}")

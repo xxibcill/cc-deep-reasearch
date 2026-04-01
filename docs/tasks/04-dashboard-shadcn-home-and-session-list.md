@@ -1,6 +1,6 @@
 # 04. Dashboard shadcn Home And Session List
 
-Status: Planned
+Status: Done
 
 ## Goal
 

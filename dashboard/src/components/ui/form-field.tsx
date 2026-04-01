@@ -2,7 +2,7 @@ import * as React from 'react'
 
 import { cn } from '@/lib/utils'
 import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
+import { Checkbox, type CheckboxProps } from '@/components/ui/checkbox'
 
 export function FormField({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn('space-y-2', className)} {...props} />
@@ -105,7 +105,7 @@ export function FormMessage({
   return <p className={cn('text-sm leading-relaxed', toneClassName, className)} {...props} />
 }
 
-export interface CheckboxRowProps extends React.InputHTMLAttributes<HTMLInputElement> {
+export interface CheckboxRowProps extends CheckboxProps {
   label: string
   description?: string
 }

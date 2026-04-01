@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { NativeSelect } from '@/components/ui/native-select'
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
@@ -146,19 +147,18 @@ export function StartResearchForm() {
       <div className="flex flex-col gap-4">
         <div className="space-y-2">
           <Label htmlFor="depth">Research Depth</Label>
-          <select
+          <NativeSelect
             id="depth"
             value={formData.depth}
             onChange={(e) =>
               setFormData((prev) => ({ ...prev, depth: e.target.value as ResearchDepth }))
             }
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground transition-colors placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={isSubmitting}
           >
             <option value="quick">Quick (3-5 sources)</option>
             <option value="standard">Standard (10-15 sources)</option>
             <option value="deep">Deep (20+ sources)</option>
-          </select>
+          </NativeSelect>
         </div>
 
         <div className="space-y-2">

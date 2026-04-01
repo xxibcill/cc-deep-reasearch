@@ -18,7 +18,12 @@ import {
 
 import { BulkSessionDeleteResponse, Session, SessionListQueryState } from '@/types/telemetry';
 import { AlertDialog } from '@/components/ui/alert-dialog';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import useDashboardStore from '@/hooks/useDashboard';
 import {
@@ -183,22 +188,18 @@ function SessionCard({
                     : 'Select session'
                 }
               >
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={selected}
                   disabled={session.active}
-                  onChange={() => onToggleSelection(session.sessionId)}
-                  className="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-500"
+                  onCheckedChange={() => onToggleSelection(session.sessionId)}
                   aria-label={`Select session ${session.label}`}
                 />
               </label>
             ) : (
               <label className="flex items-center" title="Select for comparison">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={compareSelected}
-                  onChange={() => onToggleCompare(session.sessionId)}
-                  className="h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
+                  onCheckedChange={() => onToggleCompare(session.sessionId)}
                   aria-label={`Compare session ${session.label}`}
                 />
               </label>
@@ -216,13 +217,9 @@ function SessionCard({
           </div>
         </div>
         {session.active ? (
-          <span className="shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-100">
-            Live
-          </span>
+          <Badge variant="success">Live</Badge>
         ) : isArchived ? (
-          <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-100">
-            Archived
-          </span>
+          <Badge variant="warning">Archived</Badge>
         ) : null}
       </div>
 
@@ -231,15 +228,9 @@ function SessionCard({
       ) : null}
 
       <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-          {formatDepth(session.depth)}
-        </span>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-          Payload {session.hasSessionPayload ? 'available' : 'missing'}
-        </span>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-          Report {session.hasReport ? 'available' : 'unavailable'}
-        </span>
+        <Badge variant="secondary">{formatDepth(session.depth)}</Badge>
+        <Badge variant="secondary">Payload {session.hasSessionPayload ? 'available' : 'missing'}</Badge>
+        <Badge variant="secondary">Report {session.hasReport ? 'available' : 'unavailable'}</Badge>
       </div>
 
       <div className="mt-3 space-y-1.5 text-sm">
@@ -328,14 +319,14 @@ function SessionFilters() {
           <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Search
           </span>
-          <div className="flex h-9 items-center rounded-md border bg-background px-3">
-            <Search className="mr-2 h-4 w-4 text-muted-foreground shrink-0" />
-            <input
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground shrink-0" />
+            <Input
               type="search"
               value={query.search}
               onChange={(event) => setSessionListQuery({ search: event.target.value })}
               placeholder="Query, label, or session ID"
-              className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              className="pl-9"
             />
           </div>
         </label>
@@ -375,30 +366,31 @@ function SessionFilters() {
 
 function LoadingState() {
   return (
-    <div className="flex min-h-48 items-center justify-center">
-      <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
-    </div>
+    <Card className="flex min-h-48 items-center justify-center">
+      <CardContent className="flex items-center gap-3">
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-primary" />
+        <span className="text-muted-foreground">Loading sessions...</span>
+      </CardContent>
+    </Card>
   );
 }
 
 function ErrorState({ error, onRetry }: { error: string; onRetry?: () => void }) {
   return (
-    <div className="rounded-lg border border-red-200 bg-red-50 p-6">
+    <Alert variant="destructive">
       <div className="flex items-start gap-3">
-        <AlertCircle className="mt-0.5 h-5 w-5 text-red-600" />
-        <div className="space-y-3">
-          <div>
-            <p className="font-medium text-red-800">Failed to load sessions</p>
-            <p className="text-sm text-red-700">{error}</p>
-          </div>
+        <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
+        <div className="space-y-2">
+          <AlertTitle>Failed to load sessions</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
           {onRetry ? (
-            <Button onClick={onRetry} type="button" variant="outline">
+            <Button onClick={onRetry} type="button" variant="outline" size="sm">
               Retry
             </Button>
           ) : null}
         </div>
       </div>
-    </div>
+    </Alert>
   );
 }
 
@@ -410,22 +402,24 @@ function EmptyState({
   onClearFilters: () => void;
 }) {
   return (
-    <div className="py-12 text-center">
-      <Network className="mx-auto mb-4 h-16 w-16 text-muted-foreground" />
-      <p className="mb-2 text-xl text-muted-foreground">
-        {filtered ? 'No sessions match the current filters' : 'No sessions available'}
-      </p>
-      <p className="text-muted-foreground">
-        {filtered
-          ? 'Try broadening the search or filters.'
-          : 'Start a research session to begin monitoring.'}
-      </p>
-      {filtered ? (
-        <Button className="mt-4" type="button" variant="outline" onClick={onClearFilters}>
-          Clear Filters
-        </Button>
-      ) : null}
-    </div>
+    <Card className="py-12">
+      <CardContent className="text-center">
+        <Network className="mx-auto mb-4 h-16 w-16 text-muted-foreground" />
+        <CardTitle className="text-xl text-muted-foreground">
+          {filtered ? 'No sessions match the current filters' : 'No sessions available'}
+        </CardTitle>
+        <p className="mt-2 text-muted-foreground">
+          {filtered
+            ? 'Try broadening the search or filters.'
+            : 'Start a research session to begin monitoring.'}
+        </p>
+        {filtered ? (
+          <Button className="mt-4" type="button" variant="outline" onClick={onClearFilters}>
+            Clear Filters
+          </Button>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -638,9 +632,9 @@ export function SessionList({
               </p>
               <p className="font-mono text-xs text-slate-600">{session.sessionId}</p>
               {deleteError ? (
-                <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700">
-                  {deleteError}
-                </p>
+                <Alert variant="destructive" className="mt-2">
+                  <AlertDescription>{deleteError}</AlertDescription>
+                </Alert>
               ) : (
                 <p>This action cannot be undone.</p>
               )}
@@ -653,10 +647,12 @@ export function SessionList({
     return (
       <div className="space-y-3">
         {deleteDialog.forceDelete ? (
-          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-700">
-            Some selected sessions are currently active. Force deleting will stop any running
-            processes before removing their telemetry, report, and analytics history.
-          </p>
+          <Alert variant="warning" className="mt-2">
+            <AlertDescription>
+              Some selected sessions are currently active. Force deleting will stop any running
+              processes before removing their telemetry, report, and analytics history.
+            </AlertDescription>
+          </Alert>
         ) : null}
         <p>
           This will permanently delete {pluralize(sessionCount, 'selected session')} from{' '}
@@ -676,9 +672,9 @@ export function SessionList({
           ) : null}
         </ul>
         {deleteError ? (
-          <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700">
-            {deleteError}
-          </p>
+          <Alert variant="destructive" className="mt-2">
+            <AlertDescription>{deleteError}</AlertDescription>
+          </Alert>
         ) : (
           <p>This action cannot be undone.</p>
         )}
@@ -731,14 +727,14 @@ export function SessionList({
         <SessionFilters />
 
         {compareMode && canViewComparison ? (
-          <div className="flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50/70 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <Alert variant="info" className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="font-medium text-blue-900">
+              <AlertTitle>
                 2 sessions selected for comparison
-              </p>
-              <p className="text-sm text-blue-800">
+              </AlertTitle>
+              <AlertDescription>
                 Ready to compare {sessions.find((s) => s.sessionId === sessionA)?.label || 'Session A'} vs {sessions.find((s) => s.sessionId === sessionB)?.label || 'Session B'}
-              </p>
+              </AlertDescription>
             </div>
             <Link href={`/compare?a=${sessionA}&b=${sessionB}`} className="inline-flex">
               <Button type="button" variant="default">
@@ -746,18 +742,18 @@ export function SessionList({
                 View Comparison
               </Button>
             </Link>
-          </div>
+          </Alert>
         ) : null}
 
         {selectedSessions.length > 0 ? (
-          <div className="flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50/70 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <Alert variant="destructive" className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="font-medium text-red-900">
+              <AlertTitle>
                 {pluralize(selectedSessions.length, 'session')} selected for deletion
-              </p>
-              <p className="text-sm text-red-800">
+              </AlertTitle>
+              <AlertDescription>
                 Scope: {buildFilterSummary(query)}
-              </p>
+              </AlertDescription>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" onClick={clearSessionSelection}>
@@ -768,7 +764,7 @@ export function SessionList({
                 Delete Selected
               </Button>
             </div>
-          </div>
+          </Alert>
         ) : null}
 
         {loading ? (
@@ -802,9 +798,9 @@ export function SessionList({
             </div>
 
             {loadMoreError ? (
-              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                {loadMoreError}
-              </div>
+              <Alert variant="destructive" className="mt-4">
+                <AlertDescription>{loadMoreError}</AlertDescription>
+              </Alert>
             ) : null}
 
             {nextCursor && onLoadMore ? (

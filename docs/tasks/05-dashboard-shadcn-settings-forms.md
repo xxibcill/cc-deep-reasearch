@@ -1,6 +1,6 @@
 # 05. Dashboard shadcn Settings Forms
 
-Status: Planned
+Status: Done
 
 ## Goal
 
