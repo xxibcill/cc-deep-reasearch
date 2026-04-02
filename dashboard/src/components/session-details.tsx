@@ -1,30 +1,26 @@
 import dynamic from 'next/dynamic';
 import { useDeferredValue, useMemo, useState } from 'react';
-import { Activity, FileText, GitBranch, List, Network, SlidersHorizontal, Zap } from 'lucide-react';
+import { Activity, FileText, List, Network, Zap } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { CollapsiblePanel } from '@/components/ui/collapsible-panel';
-import {
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { ErrorBoundary } from '@/components/error-boundary';
 import { Select } from '@/components/ui/select';
 import { Tabs } from '@/components/ui/tabs';
 import { DerivedOutputsPanel } from '@/components/derived-outputs-panel';
+import { EventDetailsModal } from '@/components/telemetry/event-details-modal';
+import { EventTable } from '@/components/telemetry/event-table';
+import { DetailInspector } from '@/components/telemetry/detail-inspector';
+import { FilterPanel, getActiveFilters } from '@/components/telemetry/filter-panel';
+import { PromptConfigurationPanel } from '@/components/telemetry/prompt-config-panel';
+import { StatsCard } from '@/components/telemetry/stats-card';
+import { StatusBadge, ViewModeSelector } from '@/components/telemetry/telemetry-header';
 import useDashboardStore from '@/hooks/useDashboard';
 import { filterEvents, deriveTelemetryState } from '@/lib/telemetry-transformers';
-import {
-  LLMReasoning,
+import type {
   TelemetryEvent,
-  ToolExecution,
   ViewMode,
   CriticalPath,
   DecisionGraph,
@@ -34,7 +30,6 @@ import {
   Failure,
   ApiTelemetryEvent,
   SessionPromptMetadata,
-  EventFilter,
 } from '@/types/telemetry';
 
 const WorkflowGraph = dynamic(
@@ -66,7 +61,6 @@ interface SessionDetailsProps {
   viewMode: ViewMode;
   onSelectEvent: (event: TelemetryEvent | null) => void;
   onViewModeChange: (mode: ViewMode) => void;
-  // Derived outputs from API
   derivedOutputs?: {
     narrative: ApiTelemetryEvent[];
     criticalPath: CriticalPath;
@@ -76,217 +70,7 @@ interface SessionDetailsProps {
     failures: Failure[];
     decisionGraph: DecisionGraph;
   };
-  // Prompt configuration from session metadata
   promptMetadata?: SessionPromptMetadata;
-}
-
-function formatEventTime(timestamp: string): string {
-  const date = new Date(timestamp);
-  return Number.isNaN(date.getTime()) ? timestamp : date.toLocaleTimeString();
-}
-
-function StatusBadge({
-  connected,
-  eventCount,
-}: {
-  connected: boolean;
-  eventCount: number;
-}) {
-  if (connected) {
-    return <Badge variant="success">Live</Badge>;
-  }
-
-  if (eventCount > 0) {
-    return <Badge variant="secondary">Snapshot</Badge>;
-  }
-
-  return <Badge variant="destructive">Offline</Badge>;
-}
-
-function ViewModeSelector({
-  currentMode,
-  onViewModeChange,
-}: {
-  currentMode: ViewMode;
-  onViewModeChange: (mode: ViewMode) => void;
-}) {
-  const buttons: Array<{ mode: ViewMode; title: string; icon: typeof Network }> = [
-    { mode: 'graph', title: 'Workflow Graph', icon: Network },
-    { mode: 'decision_graph', title: 'Decision Graph', icon: GitBranch },
-    { mode: 'timeline', title: 'Agent Timeline', icon: Activity },
-    { mode: 'table', title: 'Event Table', icon: List },
-  ];
-
-  return (
-    <Tabs
-      className="max-w-full"
-      onValueChange={(value) => onViewModeChange(value as ViewMode)}
-      tabs={buttons.map(({ mode, title, icon }) => ({
-        value: mode,
-        label: title,
-        icon,
-      }))}
-      value={currentMode}
-    />
-  );
-}
-
-function StatsCard({
-  icon: Icon,
-  label,
-  value,
-  accentClass,
-}: {
-  icon: typeof Activity;
-  label: string;
-  value: number;
-  accentClass: string;
-}) {
-  return (
-    <Card>
-      <CardContent className="p-3">
-        <div className="flex items-center gap-2">
-          <Icon className={`h-4 w-4 ${accentClass}`} />
-          <span className="text-xs text-muted-foreground">{label}</span>
-        </div>
-        <div className="mt-1 text-xl font-bold">{value}</div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function EventTable({
-  events,
-  onSelectEvent,
-}: {
-  events: TelemetryEvent[];
-  onSelectEvent: (event: TelemetryEvent) => void;
-}) {
-  const [scrollTop, setScrollTop] = useState(0);
-  const rowHeight = 56;
-  const viewportHeight = 520;
-  const overscan = 10;
-  const sortedEvents = useMemo(() => {
-    return [...events].sort((left, right) => {
-      const timestampOrder = right.timestamp.localeCompare(left.timestamp);
-      if (timestampOrder !== 0) {
-        return timestampOrder;
-      }
-
-      return right.sequenceNumber - left.sequenceNumber;
-    });
-  }, [events]);
-  const totalHeight = sortedEvents.length * rowHeight;
-  const startIndex = Math.max(Math.floor(scrollTop / rowHeight) - overscan, 0);
-  const visibleCount = Math.ceil(viewportHeight / rowHeight) + overscan * 2;
-  const visibleEvents = sortedEvents.slice(startIndex, startIndex + visibleCount);
-  const columnTemplate =
-    'minmax(120px,0.95fr) minmax(160px,1.2fr) minmax(110px,0.8fr) minmax(220px,1.35fr) minmax(120px,0.8fr) minmax(110px,0.7fr)';
-
-  return (
-    <Card className="overflow-hidden">
-      <CardHeader className="border-b bg-muted/20">
-        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-          <div className="space-y-1">
-            <CardTitle>Event Table</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Virtualized event rows keep the full session log responsive while preserving click-to-inspect detail access.
-            </p>
-          </div>
-          <Badge variant="outline">{sortedEvents.length} events</Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="p-0">
-        <ScrollArea
-          className="h-[520px]"
-          onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-        >
-          <div className="min-w-[920px] text-sm">
-            <div
-              className="sticky top-0 z-10 grid border-b bg-card"
-              style={{ gridTemplateColumns: columnTemplate }}
-            >
-              <div className="p-3 font-medium">Time</div>
-              <div className="p-3 font-medium">Type</div>
-              <div className="p-3 font-medium">Category</div>
-              <div className="p-3 font-medium">Name</div>
-              <div className="p-3 font-medium">Status</div>
-              <div className="p-3 font-medium">Agent</div>
-            </div>
-            <div style={{ height: totalHeight, position: 'relative' }}>
-              <div
-                className="absolute inset-x-0"
-                style={{ transform: `translateY(${startIndex * rowHeight}px)` }}
-              >
-                {visibleEvents.map((event) => (
-                  <button
-                    key={event.eventId}
-                    onClick={() => onSelectEvent(event)}
-                    className="grid w-full cursor-pointer border-b text-left hover:bg-accent"
-                    style={{ gridTemplateColumns: columnTemplate, minHeight: rowHeight }}
-                    type="button"
-                  >
-                    <div className="p-3">{formatEventTime(event.timestamp)}</div>
-                    <div className="p-3 font-mono text-xs">{event.eventType}</div>
-                    <div className="p-3">{event.category}</div>
-                    <div className="p-3">{event.name}</div>
-                    <div className="p-3">
-                      <Badge variant={statusAccent(event.status)}>
-                        {event.status}
-                      </Badge>
-                    </div>
-                    <div className="p-3">{event.agentId || '-'}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </ScrollArea>
-      </CardContent>
-    </Card>
-  );
-}
-
-function EventDetailsModal({
-  event,
-  onClose,
-}: {
-  event: TelemetryEvent;
-  onClose: () => void;
-}) {
-  return (
-    <Dialog open={Boolean(event)} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-5xl">
-        <DialogHeader>
-          <DialogTitle>Event Details</DialogTitle>
-          <DialogDescription>
-            Inspect the raw telemetry payload for{' '}
-            <span className="font-mono text-xs text-foreground">{event.eventId}</span>.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogBody>
-          <pre className="overflow-auto rounded-xl bg-muted p-4 text-sm">
-            {JSON.stringify(event, null, 2)}
-          </pre>
-        </DialogBody>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function statusAccent(
-  status: string
-): 'success' | 'warning' | 'destructive' | 'secondary' {
-  if (status === 'completed' || status === 'success') {
-    return 'success';
-  }
-  if (status === 'failed' || status === 'error') {
-    return 'destructive';
-  }
-  if (status === 'timeout' || status === 'fallback') {
-    return 'warning';
-  }
-  return 'secondary';
 }
 
 type DetailTab = 'inspect' | 'tools' | 'llm' | 'derived' | 'prompts';
@@ -298,15 +82,6 @@ interface DecisionGraphFilters {
   severity: string;
   edgeMode: DecisionGraphEdgeMode;
 }
-
-const EMPTY_FILTERS: Partial<EventFilter> = {
-  agent: [],
-  phase: [],
-  tool: [],
-  provider: [],
-  status: [],
-  eventTypes: [],
-};
 
 const EMPTY_DECISION_GRAPH_FILTERS: DecisionGraphFilters = {
   decisionType: '',
@@ -325,17 +100,6 @@ const EMPTY_DECISION_GRAPH: DecisionGraph = {
     inferred_edge_count: 0,
   },
 };
-
-function getActiveFilters(filters: EventFilter): Array<{ label: string; value: string }> {
-  return [
-    { label: 'Agent', value: filters.agent[0] ?? '' },
-    { label: 'Phase', value: filters.phase[0] ?? '' },
-    { label: 'Tool', value: filters.tool[0] ?? '' },
-    { label: 'Provider', value: filters.provider[0] ?? '' },
-    { label: 'Status', value: filters.status[0] ?? '' },
-    { label: 'Event Type', value: filters.eventTypes[0] ?? '' },
-  ].filter((entry): entry is { label: string; value: string } => Boolean(entry.value));
-}
 
 function getActiveDecisionGraphFilters(
   filters: DecisionGraphFilters
@@ -446,170 +210,6 @@ function filterDecisionGraph(
   };
 }
 
-function DetailInspector({
-  event,
-  toolExecution,
-  reasoning,
-}: {
-  event: TelemetryEvent | null;
-  toolExecution: ToolExecution | null;
-  reasoning: LLMReasoning | null;
-}) {
-  return (
-    <Card className="h-full">
-      <CardHeader>
-        <CardTitle>Inspection</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {toolExecution && (
-          <div className="space-y-3 rounded-xl border p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="font-semibold">{toolExecution.toolName}</div>
-              <Badge variant={statusAccent(toolExecution.status)}>{toolExecution.status}</Badge>
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {toolExecution.agentId} • {toolExecution.duration} ms • {toolExecution.phase ?? 'No phase'}
-            </div>
-            <pre className="overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100">
-              {JSON.stringify(toolExecution.request.parameters, null, 2)}
-            </pre>
-          </div>
-        )}
-        {reasoning && (
-          <div className="space-y-3 rounded-xl border p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="font-semibold">{reasoning.operation}</div>
-              <Badge variant={statusAccent(reasoning.status)}>{reasoning.status}</Badge>
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {reasoning.provider}/{reasoning.transport} • {reasoning.model} • {reasoning.totalTokens} tokens • {reasoning.latency} ms
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <pre className="overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100">
-                {reasoning.prompt || 'No prompt preview captured.'}
-              </pre>
-              <pre className="overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100">
-                {reasoning.response || 'No response preview captured.'}
-              </pre>
-            </div>
-          </div>
-        )}
-        {event && (
-          <div className="space-y-3 rounded-xl border p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="font-semibold">{event.name}</div>
-              <Badge variant={statusAccent(event.status)}>{event.status}</Badge>
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {event.eventType} • {event.category} • {event.agentId ?? 'system'}
-            </div>
-            <pre className="overflow-auto rounded-lg bg-slate-100 p-3 text-xs text-slate-800 dark:bg-slate-900 dark:text-slate-200">
-              {JSON.stringify(event.metadata, null, 2)}
-            </pre>
-          </div>
-        )}
-        {!event && !toolExecution && !reasoning && (
-          <Alert className="border-dashed" variant="default">
-            <AlertTitle>Nothing selected yet</AlertTitle>
-            <AlertDescription>
-              Select a graph node, timeline span, event row, tool execution, or LLM interaction to
-              inspect structured details.
-            </AlertDescription>
-          </Alert>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function PromptConfigurationPanel({
-  promptMetadata,
-}: {
-  promptMetadata?: SessionPromptMetadata;
-}) {
-  if (!promptMetadata) {
-    return (
-      <Card className="h-full">
-        <CardContent className="py-10">
-          <Alert variant="default">
-            <AlertTitle>Prompt configuration unavailable</AlertTitle>
-            <AlertDescription>
-              This data is loaded from historical sessions and is not available for the current
-              view.
-            </AlertDescription>
-          </Alert>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const agentLabels: Record<string, string> = {
-    analyzer: 'Analyzer',
-    deep_analyzer: 'Deep Analyzer',
-    report_quality_evaluator: 'Report Quality Evaluator',
-  };
-
-  return (
-    <Card className="h-full">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <FileText className="h-5 w-5" />
-          Prompt Configuration
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex items-center gap-2">
-          <Badge variant={promptMetadata.overrides_applied ? 'default' : 'secondary'}>
-            {promptMetadata.overrides_applied ? 'Custom Prompts Applied' : 'Default Prompts'}
-          </Badge>
-        </div>
-
-        {promptMetadata.overrides_applied && (
-          <div className="space-y-3">
-            <h4 className="text-sm font-medium">Effective Overrides</h4>
-            {Object.entries(promptMetadata.effective_overrides).map(([agentId, override]) => (
-              <div key={agentId} className="rounded-xl border p-3 space-y-2">
-                <div className="font-medium text-sm">
-                  {agentLabels[agentId] || agentId}
-                </div>
-                {override.prompt_prefix && (
-                  <div className="space-y-1">
-                    <span className="text-xs text-muted-foreground">Prompt Prefix:</span>
-                    <pre className="overflow-auto rounded-lg bg-slate-100 p-2 text-xs text-slate-800 dark:bg-slate-900 dark:text-slate-200 max-h-32">
-                      {override.prompt_prefix}
-                    </pre>
-                  </div>
-                )}
-                {override.system_prompt && (
-                  <div className="space-y-1">
-                    <span className="text-xs text-muted-foreground">System Prompt Override:</span>
-                    <pre className="overflow-auto rounded-lg bg-slate-100 p-2 text-xs text-slate-800 dark:bg-slate-900 dark:text-slate-200 max-h-32">
-                      {override.system_prompt}
-                    </pre>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {promptMetadata.default_prompts_used.length > 0 && (
-          <div className="space-y-2">
-            <h4 className="text-sm font-medium">Agents Using Default Prompts</h4>
-            <div className="flex flex-wrap gap-2">
-              {promptMetadata.default_prompts_used.map((agentId) => (
-                <Badge key={agentId} variant="outline">
-                  {agentLabels[agentId] || agentId}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
 export function SessionDetails({
   sessionId,
   connected,
@@ -652,9 +252,11 @@ export function SessionDetails({
     () => filterDecisionGraph(derivedOutputs?.decisionGraph, decisionGraphFilters),
     [decisionGraphFilters, derivedOutputs?.decisionGraph]
   );
-  const agentEvents = filteredEvents.filter((event) => event.category === 'agent');
-  const toolEvents = filteredEvents.filter((event) => event.category === 'tool');
-  const llmEvents = filteredEvents.filter((event) => event.category === 'llm');
+  const { agentEvents, toolEvents, llmEvents } = useMemo(() => ({
+    agentEvents: filteredEvents.filter((event) => event.category === 'agent'),
+    toolEvents: filteredEvents.filter((event) => event.category === 'tool'),
+    llmEvents: filteredEvents.filter((event) => event.category === 'llm'),
+  }), [filteredEvents]);
   const activeFilters = useMemo(() => getActiveFilters(filters), [filters]);
   const activeDecisionGraphFilters = useMemo(
     () => getActiveDecisionGraphFilters(decisionGraphFilters),
@@ -671,7 +273,7 @@ export function SessionDetails({
 
   return (
     <div className="space-y-5">
-      <Card className="overflow-hidden border-slate-200/80 shadow-sm">
+      <Card className="overflow-hidden">
         <CardHeader className="border-b bg-[linear-gradient(135deg,rgba(15,23,42,0.04),rgba(14,165,233,0.10))]">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-2">
@@ -717,12 +319,14 @@ export function SessionDetails({
               label="Total Events"
               value={filteredEvents.length}
               accentClass="text-slate-700"
+              prominence="primary"
             />
           </div>
 
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div className="space-y-5">
               {viewMode === 'graph' && (
+                <ErrorBoundary>
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between">
                     <div>
@@ -742,9 +346,11 @@ export function SessionDetails({
                     />
                   </CardContent>
                 </Card>
+                </ErrorBoundary>
               )}
 
               {viewMode === 'decision_graph' && (
+                <ErrorBoundary>
                 <Card>
                   <CardHeader className="space-y-4">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -837,9 +443,11 @@ export function SessionDetails({
                     />
                   </CardContent>
                 </Card>
+                </ErrorBoundary>
               )}
 
               {viewMode === 'timeline' && (
+                <ErrorBoundary>
                 <Card>
                   <CardHeader>
                     <CardTitle>Agent Timeline</CardTitle>
@@ -852,6 +460,7 @@ export function SessionDetails({
                     />
                   </CardContent>
                 </Card>
+                </ErrorBoundary>
               )}
 
               {viewMode === 'table' && (
@@ -935,110 +544,13 @@ export function SessionDetails({
                 )}
               </div>
 
-              <CollapsiblePanel
-                actions={
-                  activeFilters.length > 0 ? (
-                    <Button
-                      className="text-slate-600"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setFilters(EMPTY_FILTERS);
-                        setFiltersOpen(false);
-                      }}
-                      size="sm"
-                      type="button"
-                      variant="ghost"
-                    >
-                      Clear
-                    </Button>
-                  ) : undefined
-                }
-                className="border-dashed border-slate-200/80 bg-slate-50/70 shadow-none"
-                defaultOpen={activeFilters.length > 0}
-                meta={
-                  activeFilters.length > 0 ? (
-                    <Badge variant="outline" className="bg-white/80">
-                      {activeFilters.length} active
-                    </Badge>
-                  ) : undefined
-                }
-                onOpenChange={setFiltersOpen}
-                open={filtersOpen}
-                summary={
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
-                      <SlidersHorizontal className="h-3.5 w-3.5" />
-                      Refine Results
-                    </div>
-                    <div className="text-sm font-semibold text-foreground">Filters</div>
-                    <p className="text-xs text-muted-foreground">
-                      {activeFilters.length === 0
-                        ? 'Showing all telemetry data. Expand filters only when you need to narrow the view.'
-                        : `${activeFilters.length} active filter${activeFilters.length === 1 ? '' : 's'} narrowing the workspace.`}
-                    </p>
-                  </div>
-                }
-              >
-                {activeFilters.length > 0 ? (
-                  <div className="mb-4 flex flex-wrap gap-2">
-                    {activeFilters.map((filter) => (
-                      <Badge key={filter.label} variant="outline" className="bg-white/80 text-[11px]">
-                        {filter.label}: {filter.value}
-                      </Badge>
-                    ))}
-                  </div>
-                ) : null}
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Select
-                    label="Agent"
-                    value={filters.agent[0] ?? ''}
-                    options={derived.agents}
-                    onChange={(value) => setFilters({ agent: value ? [value] : [] })}
-                    className="h-9 bg-white/90"
-                    labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
-                  />
-                  <Select
-                    label="Phase"
-                    value={filters.phase[0] ?? ''}
-                    options={derived.phases}
-                    onChange={(value) => setFilters({ phase: value ? [value] : [] })}
-                    className="h-9 bg-white/90"
-                    labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
-                  />
-                  <Select
-                    label="Tool"
-                    value={filters.tool[0] ?? ''}
-                    options={derived.tools}
-                    onChange={(value) => setFilters({ tool: value ? [value] : [] })}
-                    className="h-9 bg-white/90"
-                    labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
-                  />
-                  <Select
-                    label="Provider"
-                    value={filters.provider[0] ?? ''}
-                    options={derived.providers}
-                    onChange={(value) => setFilters({ provider: value ? [value] : [] })}
-                    className="h-9 bg-white/90"
-                    labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
-                  />
-                  <Select
-                    label="Status"
-                    value={filters.status[0] ?? ''}
-                    options={derived.statuses}
-                    onChange={(value) => setFilters({ status: value ? [value] : [] })}
-                    className="h-9 bg-white/90"
-                    labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
-                  />
-                  <Select
-                    label="Event Type"
-                    value={filters.eventTypes[0] ?? ''}
-                    options={derived.eventTypes}
-                    onChange={(value) => setFilters({ eventTypes: value ? [value] : [] })}
-                    className="h-9 bg-white/90"
-                    labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-slate-500"
-                  />
-                </div>
-              </CollapsiblePanel>
+              <FilterPanel
+                filters={filters}
+                derived={derived}
+                filtersOpen={filtersOpen}
+                onFiltersOpenChange={setFiltersOpen}
+                onFiltersChange={setFilters}
+              />
             </div>
           </div>
         </CardContent>
