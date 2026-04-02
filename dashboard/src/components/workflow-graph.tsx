@@ -59,6 +59,10 @@ export function WorkflowGraph({
   onSelectEvent: (event: TelemetryEvent | null) => void;
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const onSelectEventRef = useRef(onSelectEvent);
+  onSelectEventRef.current = onSelectEvent;
+  const selectedEventIdRef = useRef(selectedEventId);
+  selectedEventIdRef.current = selectedEventId;
   const positions = useMemo(() => layoutNodes(nodes), [nodes]);
 
   useEffect(() => {
@@ -122,7 +126,7 @@ export function WorkflowGraph({
       .style('cursor', 'pointer')
       .on('click', (_event, node) => {
         const eventId = node.latestEventId ?? node.eventIds.at(-1) ?? null;
-        onSelectEvent(eventId ? eventIndex.get(eventId) ?? null : null);
+        onSelectEventRef.current(eventId ? eventIndex.get(eventId) ?? null : null);
       });
 
     nodeGroup
@@ -130,9 +134,9 @@ export function WorkflowGraph({
       .attr('r', (node) => (node.type === 'session' ? 30 : 24))
       .attr('fill', (node) => STATUS_COLORS[node.status] ?? STATUS_COLORS.unknown)
       .attr('stroke', (node) =>
-        node.latestEventId && node.latestEventId === selectedEventId ? '#fbbf24' : '#44403c'
+        node.latestEventId && node.latestEventId === selectedEventIdRef.current ? '#fbbf24' : '#44403c'
       )
-      .attr('stroke-width', (node) => (node.latestEventId === selectedEventId ? 4 : 2));
+      .attr('stroke-width', (node) => (node.latestEventId === selectedEventIdRef.current ? 4 : 2));
 
     nodeGroup
       .append('text')
@@ -150,7 +154,7 @@ export function WorkflowGraph({
       .attr('font-size', 11)
       .attr('fill', '#b0a89c')
       .text((node) => node.status);
-  }, [edges, eventIndex, nodes, onSelectEvent, positions, selectedEventId]);
+  }, [edges, eventIndex, nodes, positions]);
 
   return <svg ref={svgRef} className="h-[520px] w-full rounded-xl bg-surface" />;
 }

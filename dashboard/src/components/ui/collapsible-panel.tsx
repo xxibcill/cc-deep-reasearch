@@ -65,14 +65,19 @@ export function CollapsiblePanel({
           {actions}
         </div>
       </button>
-      {isOpen ? (
-        <div
-          id={contentId}
-          className={cn('border-t border-border px-4 py-4 text-sm animate-fade-in', contentClassName)}
-        >
-          {children}
+      <div
+        id={contentId}
+        className={cn(
+          'grid transition-[grid-template-rows] duration-200 ease-out',
+          isOpen ? 'grid-template-rows-[1fr]' : 'grid-template-rows-[0fr]',
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className={cn('border-t border-border px-4 py-4 text-sm', contentClassName)}>
+            {children}
+          </div>
         </div>
-      ) : null}
+      </div>
     </div>
   )
 }

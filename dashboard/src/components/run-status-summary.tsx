@@ -20,6 +20,7 @@ import {
   getResearchRunStatus,
   stopResearchRun,
 } from '@/lib/api';
+import { runStatusBadgeVariant } from '@/lib/session-route';
 import type { ResearchRunStatus, ResearchRunStatusResponse } from '@/types/telemetry';
 
 interface RunStatusSummaryProps {
@@ -43,25 +44,6 @@ function statusIcon(status: ResearchRunStatus) {
       return <Ban className="h-5 w-5 text-warning" />;
     default:
       return <AlertCircle className="h-5 w-5 text-muted-foreground" />;
-  }
-}
-
-function statusBadgeVariant(
-  status: ResearchRunStatus
-): 'default' | 'secondary' | 'success' | 'destructive' | 'warning' {
-  switch (status) {
-    case 'queued':
-      return 'secondary';
-    case 'running':
-      return 'default';
-    case 'completed':
-      return 'success';
-    case 'failed':
-      return 'destructive';
-    case 'cancelled':
-      return 'warning';
-    default:
-      return 'secondary';
   }
 }
 
@@ -191,7 +173,7 @@ export function RunStatusSummary({
 
   if (error) {
     return (
-      <Card className="shadow-sm">
+      <Card>
         <CardContent className="p-4">
           <Alert className="flex items-start gap-3" variant="destructive">
             <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
@@ -207,7 +189,7 @@ export function RunStatusSummary({
 
   if (!status) {
     return (
-      <Card className="shadow-sm">
+      <Card>
         <CardContent className="p-4">
           <Alert className="flex items-center gap-3" variant="default">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -222,7 +204,7 @@ export function RunStatusSummary({
   const showStopAction = isActiveStatus(status.status);
 
   return (
-    <Card className="overflow-hidden border-slate-200/80 shadow-sm">
+    <Card className="overflow-hidden">
       <CardHeader className="gap-4 border-b bg-[linear-gradient(135deg,rgba(15,23,42,0.04),rgba(56,189,248,0.10))]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-2">
@@ -231,7 +213,7 @@ export function RunStatusSummary({
                 {statusIcon(status.status)}
                 Run Status
               </CardTitle>
-              <Badge variant={statusBadgeVariant(status.status)}>{status.status}</Badge>
+              <Badge variant={runStatusBadgeVariant(status.status)}>{status.status}</Badge>
               {stopRequested && isActiveStatus(status.status) ? (
                 <Badge variant="warning">Stop Requested</Badge>
               ) : null}
