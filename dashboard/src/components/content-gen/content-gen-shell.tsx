@@ -60,34 +60,27 @@ export function ContentGenShell({
   }
 
   return (
-    <div className="min-h-screen">
-      <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur-sm">
-        <div className="mx-auto max-w-[1400px] px-4 py-4">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="space-y-2">
-              <div className="flex items-center gap-3">
-                {isPipelineDetail && (
-                  <Link
-                    href="/content-gen"
-                    className={buttonVariants({
-                      variant: 'ghost',
-                      size: 'sm',
-                      className: '-ml-2 gap-2 px-2 text-muted-foreground',
-                    })}
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                    Back
-                  </Link>
-                )}
-                <div className="space-y-1">
-                  <h1 className="text-sm font-display font-semibold tracking-tight text-foreground">
-                    Content Studio
-                  </h1>
-                  <p className="text-sm text-muted-foreground">
-                    Editorial planning, scripting, and publishing workflows in one workspace.
-                  </p>
-                </div>
-              </div>
+    <div>
+      <div className="border-b bg-background">
+        <div className="mx-auto max-w-content px-page-x py-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-3">
+              {isPipelineDetail && (
+                <Link
+                  href="/content-gen"
+                  className={buttonVariants({
+                    variant: 'ghost',
+                    size: 'sm',
+                    className: '-ml-2 gap-2 px-2 text-muted-foreground',
+                  })}
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back
+                </Link>
+              )}
+              <p className="text-sm text-muted-foreground">
+                Editorial planning, scripting, and publishing workflows.
+              </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {activePipelineCount > 0 ? (
@@ -100,7 +93,7 @@ export function ContentGenShell({
             </div>
           </div>
           {!isPipelineDetail && (
-            <nav className="mt-4">
+            <nav className="mt-3">
               <Tabs
                 className={cn('w-full max-w-3xl', 'md:w-auto')}
                 value={activeTab}
@@ -111,14 +104,14 @@ export function ContentGenShell({
             </nav>
           )}
           {isPipelineDetail && activePipelineCount > 0 && (
-            <div className="mt-3 flex items-center gap-2 text-xs text-warning">
+            <div className="mt-2 flex items-center gap-2 text-xs text-warning">
               <span className="h-1.5 w-1.5 rounded-full bg-warning animate-stage-pulse" />
               Monitoring active content runs while viewing pipeline history.
             </div>
           )}
         </div>
-      </header>
-      <main className="max-w-[1400px] mx-auto px-4 py-6">
+      </div>
+      <main className="mx-auto max-w-content px-page-x py-page-y">
         {children}
       </main>
     </div>

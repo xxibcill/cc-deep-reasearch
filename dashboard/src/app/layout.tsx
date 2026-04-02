@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { AppShell } from '@/components/app-shell';
 
 export const metadata: Metadata = {
   title: 'CC Deep Research — Content Studio',
@@ -13,7 +14,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="min-h-screen">{children}</body>
+      <body className="min-h-screen">
+        <AppShell>{children}</AppShell>
+      </body>
     </html>
   );
 }

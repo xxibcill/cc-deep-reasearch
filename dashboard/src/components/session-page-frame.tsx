@@ -6,6 +6,7 @@ import { FileText, Radar, ScrollText, TimerReset } from 'lucide-react';
 import { RunStatusSummary } from '@/components/run-status-summary';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Breadcrumb } from '@/components/ui/breadcrumb';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useSessionRoute } from '@/hooks/useSessionRoute';
@@ -67,7 +68,15 @@ export function SessionPageFrame({
   } = useSessionRoute(routeId);
 
   return (
-    <div className="mx-auto max-w-[1600px] space-y-6 px-4 py-6">
+    <div className="mx-auto max-w-content space-y-6 px-page-x py-page-y">
+      <Breadcrumb
+        items={[
+          { label: 'Research', href: '/' },
+          { label: resolvedSessionId ? `Session ${resolvedSessionId.slice(0, 8)}` : 'Session', href: resolvedSessionId ? `/session/${resolvedSessionId}` : undefined },
+          { label: viewMeta[view].label },
+        ]}
+      />
+
       {isRunRoute ? (
         <RunStatusSummary
           runId={routeId}
@@ -78,14 +87,14 @@ export function SessionPageFrame({
       ) : null}
 
       {!resolvedSessionId ? (
-        <Card className="border-dashed border-slate-300/90 shadow-sm">
+        <Card className="border-dashed">
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
             Waiting for the backend to allocate a session ID before the session workspace can load.
           </CardContent>
         </Card>
       ) : (
         <>
-          <Card className="overflow-hidden border-slate-200/80 shadow-sm">
+          <Card className="overflow-hidden">
             <CardHeader className="gap-4 border-b bg-[linear-gradient(160deg,rgba(15,23,42,0.04),rgba(125,211,252,0.18))]">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                 <div className="space-y-2">
