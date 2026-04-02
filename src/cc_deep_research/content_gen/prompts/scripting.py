@@ -17,9 +17,19 @@ def _render_research_context(research_context: str) -> str:
     return f"\nResearch Context:\n{research_context.strip()}"
 
 
+def _render_original_brief(raw_idea: str) -> str:
+    if not raw_idea.strip():
+        return ""
+    return (
+        "\nOriginal Brief (preserve any still-relevant constraints, preferences, "
+        f"must-includes, and must-avoids):\n{raw_idea.strip()}"
+    )
+
+
 def _append_context_handoff(
     parts: list[str],
     *,
+    raw_idea: str = "",
     inputs: CoreInputs | None = None,
     angle: AngleDefinition | None = None,
     structure: ScriptStructure | None = None,
@@ -29,6 +39,9 @@ def _append_context_handoff(
     cta: str = "",
     research_context: str = "",
 ) -> None:
+    brief = _render_original_brief(raw_idea)
+    if brief:
+        parts.append(brief)
     if inputs:
         parts.append(
             f"\nOriginal intent:\n"
@@ -72,6 +85,7 @@ Important:
 - If the input is vague, fix the vagueness
 - If the angle is weak, strengthen it
 - If the writing is generic, sharpen it
+- If an Original Brief is provided, preserve its constraints unless they conflict with this step's explicit task
 - Optimize for spoken delivery, retention, and compression"""
 
 
@@ -143,8 +157,16 @@ Core Tension:
 Why this angle works:"""
 
 
-def step2_user(inputs: CoreInputs) -> str:
-    return f"Topic:\n{inputs.topic}\n\nOutcome:\n{inputs.outcome}\n\nAudience:\n{inputs.audience}"
+def step2_user(inputs: CoreInputs, raw_idea: str = "") -> str:
+    parts = [
+        f"Topic:\n{inputs.topic}",
+        f"Outcome:\n{inputs.outcome}",
+        f"Audience:\n{inputs.audience}",
+    ]
+    brief = _render_original_brief(raw_idea)
+    if brief:
+        parts.append(brief)
+    return "\n\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -211,15 +233,19 @@ Beat List:
 3. ..."""
 
 
-def step3_user(inputs: CoreInputs, angle: AngleDefinition) -> str:
-    return (
-        f"Topic:\n{inputs.topic}\n"
-        f"Outcome:\n{inputs.outcome}\n"
-        f"Audience:\n{inputs.audience}\n"
-        f"Angle:\n{angle.angle}\n"
-        f"Content Type:\n{angle.content_type}\n"
-        f"Core Tension:\n{angle.core_tension}"
-    )
+def step3_user(inputs: CoreInputs, angle: AngleDefinition, raw_idea: str = "") -> str:
+    parts = [
+        f"Topic:\n{inputs.topic}",
+        f"Outcome:\n{inputs.outcome}",
+        f"Audience:\n{inputs.audience}",
+        f"Angle:\n{angle.angle}",
+        f"Content Type:\n{angle.content_type}",
+        f"Core Tension:\n{angle.core_tension}",
+    ]
+    brief = _render_original_brief(raw_idea)
+    if brief:
+        parts.append(brief)
+    return "\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -254,20 +280,27 @@ def step4_user(
     inputs: CoreInputs,
     angle: AngleDefinition,
     structure: ScriptStructure,
+    raw_idea: str = "",
     research_context: str = "",
 ) -> str:
     beats = "\n".join(f"- {b}" for b in structure.beat_list)
-    return (
-        f"Topic:\n{inputs.topic}\n"
-        f"Outcome:\n{inputs.outcome}\n"
-        f"Audience:\n{inputs.audience}\n"
-        f"Angle:\n{angle.angle}\n"
-        f"Content Type:\n{angle.content_type}\n"
-        f"Core Tension:\n{angle.core_tension}\n"
-        f"Chosen Structure:\n{structure.chosen_structure}\n"
-        f"Beat List:\n{beats}"
-        f"{_render_research_context(research_context)}"
-    )
+    parts = [
+        f"Topic:\n{inputs.topic}",
+        f"Outcome:\n{inputs.outcome}",
+        f"Audience:\n{inputs.audience}",
+        f"Angle:\n{angle.angle}",
+        f"Content Type:\n{angle.content_type}",
+        f"Core Tension:\n{angle.core_tension}",
+        f"Chosen Structure:\n{structure.chosen_structure}",
+        f"Beat List:\n{beats}",
+    ]
+    brief = _render_original_brief(raw_idea)
+    if brief:
+        parts.append(brief)
+    research = _render_research_context(research_context)
+    if research:
+        parts.append(research)
+    return "\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -324,18 +357,25 @@ def step5_user(
     inputs: CoreInputs,
     angle: AngleDefinition,
     beat_intents: BeatIntentMap,
+    raw_idea: str = "",
     research_context: str = "",
 ) -> str:
     beat_lines = "\n".join(f"- {b.beat_name}: {b.intent}" for b in beat_intents.beats)
-    return (
-        f"Topic:\n{inputs.topic}\n"
-        f"Outcome:\n{inputs.outcome}\n"
-        f"Audience:\n{inputs.audience}\n"
-        f"Angle:\n{angle.angle}\n"
-        f"Core Tension:\n{angle.core_tension}\n"
-        f"Beat Intent Map:\n{beat_lines}"
-        f"{_render_research_context(research_context)}"
-    )
+    parts = [
+        f"Topic:\n{inputs.topic}",
+        f"Outcome:\n{inputs.outcome}",
+        f"Audience:\n{inputs.audience}",
+        f"Angle:\n{angle.angle}",
+        f"Core Tension:\n{angle.core_tension}",
+        f"Beat Intent Map:\n{beat_lines}",
+    ]
+    brief = _render_original_brief(raw_idea)
+    if brief:
+        parts.append(brief)
+    research = _render_research_context(research_context)
+    if research:
+        parts.append(research)
+    return "\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -390,6 +430,7 @@ def step6_user(
     structure: ScriptStructure,
     beat_intents: BeatIntentMap,
     best_hook: str,
+    raw_idea: str = "",
     research_context: str = "",
     *,
     tone: str = "",
@@ -406,6 +447,9 @@ def step6_user(
         f"Beat Intent Map:\n{beat_lines}",
         f"Best Hook:\n{best_hook}",
     ]
+    brief = _render_original_brief(raw_idea)
+    if brief:
+        parts.append(brief)
     if tone:
         parts.append(f"Tone:\n{tone}")
     if cta:
@@ -460,6 +504,7 @@ Retention changes made:
 def step7_user(
     draft: ScriptVersion,
     *,
+    raw_idea: str = "",
     core_inputs: CoreInputs | None = None,
     angle: AngleDefinition | None = None,
     structure: ScriptStructure | None = None,
@@ -472,6 +517,7 @@ def step7_user(
     parts = [f"Draft Script:\n{draft.content}"]
     _append_context_handoff(
         parts,
+        raw_idea=raw_idea,
         inputs=core_inputs,
         angle=angle,
         structure=structure,
@@ -525,6 +571,7 @@ Cuts / improvements made:
 def step8_user(
     revised: ScriptVersion,
     *,
+    raw_idea: str = "",
     core_inputs: CoreInputs | None = None,
     angle: AngleDefinition | None = None,
     structure: ScriptStructure | None = None,
@@ -540,6 +587,7 @@ def step8_user(
         parts.append(f"\nCore Tension (must be preserved):\n{core_tension}")
     _append_context_handoff(
         parts,
+        raw_idea=raw_idea,
         inputs=core_inputs,
         angle=angle,
         structure=structure,
@@ -590,6 +638,7 @@ Output format:
 def step9_user(
     tightened: ScriptVersion,
     *,
+    raw_idea: str = "",
     core_inputs: CoreInputs | None = None,
     angle: AngleDefinition | None = None,
     structure: ScriptStructure | None = None,
@@ -602,6 +651,7 @@ def step9_user(
     parts = [f"Tightened Script:\n{tightened.content}"]
     _append_context_handoff(
         parts,
+        raw_idea=raw_idea,
         inputs=core_inputs,
         angle=angle,
         structure=structure,
@@ -670,6 +720,7 @@ def step10_user(
     script: ScriptVersion,
     *,
     label: str = "Script",
+    raw_idea: str = "",
     core_inputs: CoreInputs | None = None,
     angle: AngleDefinition | None = None,
     structure: ScriptStructure | None = None,
@@ -682,6 +733,7 @@ def step10_user(
     parts = [f"{label}:\n{script.content}"]
     _append_context_handoff(
         parts,
+        raw_idea=raw_idea,
         inputs=core_inputs,
         angle=angle,
         structure=structure,

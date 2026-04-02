@@ -294,7 +294,7 @@ class ScriptingAgent:
             raise ValueError(msg)
 
         system = prompts.STEP2_SYSTEM
-        user = prompts.step2_user(ctx.core_inputs)
+        user = prompts.step2_user(ctx.core_inputs, raw_idea=ctx.raw_idea)
         response = await self._call_llm(
             system, user, temperature=_STEP_TEMPERATURES["define_angle"]
         )
@@ -343,7 +343,7 @@ class ScriptingAgent:
             raise ValueError(msg)
 
         system = prompts.STEP3_SYSTEM
-        user = prompts.step3_user(ctx.core_inputs, ctx.angle)
+        user = prompts.step3_user(ctx.core_inputs, ctx.angle, raw_idea=ctx.raw_idea)
         response = await self._call_llm(
             system, user, temperature=_STEP_TEMPERATURES["choose_structure"]
         )
@@ -398,6 +398,7 @@ class ScriptingAgent:
             ctx.core_inputs,
             ctx.angle,
             ctx.structure,
+            raw_idea=ctx.raw_idea,
             research_context=ctx.research_context,
         )
         response = await self._call_llm(
@@ -447,6 +448,7 @@ class ScriptingAgent:
             ctx.core_inputs,
             ctx.angle,
             ctx.beat_intents,
+            raw_idea=ctx.raw_idea,
             research_context=ctx.research_context,
         )
         response = await self._call_llm(
@@ -505,6 +507,7 @@ class ScriptingAgent:
             ctx.structure,
             ctx.beat_intents,
             ctx.hooks.best_hook,
+            raw_idea=ctx.raw_idea,
             research_context=ctx.research_context,
             tone=ctx.tone,
             cta=ctx.cta,
@@ -578,6 +581,7 @@ class ScriptingAgent:
         system = prompts.STEP7_SYSTEM
         user = prompts.step7_user(
             ctx.draft,
+            raw_idea=ctx.raw_idea,
             core_inputs=ctx.core_inputs,
             angle=ctx.angle,
             structure=ctx.structure,
@@ -633,6 +637,7 @@ class ScriptingAgent:
         system = prompts.STEP8_SYSTEM
         user = prompts.step8_user(
             source,
+            raw_idea=ctx.raw_idea,
             core_inputs=ctx.core_inputs,
             angle=ctx.angle,
             structure=ctx.structure,
@@ -687,6 +692,7 @@ class ScriptingAgent:
         system = prompts.STEP9_SYSTEM
         user = prompts.step9_user(
             source,
+            raw_idea=ctx.raw_idea,
             core_inputs=ctx.core_inputs,
             angle=ctx.angle,
             structure=ctx.structure,
@@ -739,6 +745,7 @@ class ScriptingAgent:
         user = prompts.step10_user(
             source,
             label="Annotated Script" if ctx.annotated_script is not None else "Script",
+            raw_idea=ctx.raw_idea,
             core_inputs=ctx.core_inputs,
             angle=ctx.angle,
             structure=ctx.structure,
