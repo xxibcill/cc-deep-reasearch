@@ -335,6 +335,34 @@ async def test_define_angle_raises_on_missing_core_inputs() -> None:
 
 
 @pytest.mark.asyncio
+async def test_define_angle_prompt_keeps_original_brief_constraints() -> None:
+    """Step 2 should still receive the full quick-script brief, not just normalized fields."""
+    agent = _FakeScriptingAgent(
+        "Angle: Strong angle\nContent Type: Contrarian\nCore Tension: Sharp tension"
+    )
+    ctx = ScriptingContext(
+        raw_idea=(
+            "Raw idea:\nHow to stop rambling on camera\n\n"
+            "Desired length:\n30 sec\n\n"
+            "Must avoid:\nGuru-sounding claims\n\n"
+            "Must include:\nA concrete before/after example"
+        ),
+        core_inputs=CoreInputs(
+            topic="Stop rambling on camera",
+            outcome="Help viewers sound tighter on video",
+            audience="Founders recording short-form videos",
+        ),
+    )
+
+    await agent.define_angle(ctx)
+
+    assert "Original Brief" in agent.last_user_prompt
+    assert "Desired length:\n30 sec" in agent.last_user_prompt
+    assert "Must avoid:\nGuru-sounding claims" in agent.last_user_prompt
+    assert "Must include:\nA concrete before/after example" in agent.last_user_prompt
+
+
+@pytest.mark.asyncio
 async def test_generate_hooks_requires_beat_intents() -> None:
     """Step 5 should not run without the beat intent map required by the SOP."""
     agent = _FakeScriptingAgent("1. Hook\nBest Hook: Hook\nWhy it is strongest: Strong")
@@ -394,7 +422,12 @@ Final line
 """
     agent = _FakeScriptingAgent(response)
     ctx = ScriptingContext(
-        raw_idea="content idea",
+        raw_idea=(
+            "Raw idea:\ncontent idea\n\n"
+            "Platform:\nShorts\n\n"
+            "Desired length:\n30 sec\n\n"
+            "Must avoid:\nHype language"
+        ),
         research_context="Proof points:\n- Specific proof",
         tone="direct",
         cta="Subscribe for more teardown videos",
@@ -429,6 +462,9 @@ Final line
     result = await agent.run_qc(ctx)
 
     assert 'Annotated Script:\nHook: "Line one"\n[Cut]' in agent.last_user_prompt
+    assert "Original Brief" in agent.last_user_prompt
+    assert "Desired length:\n30 sec" in agent.last_user_prompt
+    assert "Must avoid:\nHype language" in agent.last_user_prompt
     assert "Chosen Structure:\nInsight Breakdown" in agent.last_user_prompt
     assert "Selected Hook:\nYour intro is killing watch time" in agent.last_user_prompt
     assert "CTA goal:\nSubscribe for more teardown videos" in agent.last_user_prompt
