@@ -9,6 +9,19 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      spacing: {
+        'page-x': '1rem',
+        'page-y': '1.5rem',
+        section: '1.5rem',
+      },
+      maxWidth: {
+        content: '80rem',
+      },
+      boxShadow: {
+        card: '0 1px 2px 0 rgb(0 0 0 / 0.15)',
+        'card-raised': '0 4px 6px -1px rgb(0 0 0 / 0.2), 0 2px 4px -2px rgb(0 0 0 / 0.15)',
+        'card-flat': 'none',
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

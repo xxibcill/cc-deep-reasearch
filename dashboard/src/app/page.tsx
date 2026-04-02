@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { useDeferredValue, useEffect, useState } from 'react';
 
@@ -100,19 +99,11 @@ export default function HomePage() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-page-x py-8">
       <header className="mb-8">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">CC Deep Research</h1>
-            <p className="text-sm text-muted-foreground mt-1">AI-powered research with real-time monitoring</p>
-          </div>
-          <Link
-            className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-            href="/settings"
-          >
-            Open settings
-          </Link>
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">CC Deep Research</h1>
+          <p className="text-sm text-muted-foreground mt-1">AI-powered research with real-time monitoring</p>
         </div>
       </header>
 
