@@ -6,7 +6,7 @@ export function Badge({
   children,
 }: {
   className?: string;
-  variant?: 'default' | 'secondary' | 'success' | 'warning' | 'destructive' | 'outline';
+  variant?: 'default' | 'secondary' | 'success' | 'warning' | 'destructive' | 'outline' | 'info';
   children: React.ReactNode;
 }) {
   const variants = {
@@ -16,12 +16,13 @@ export function Badge({
     warning: 'bg-warning-muted text-warning',
     destructive: 'bg-error-muted text-error',
     outline: 'border border-border bg-background text-foreground',
+    info: 'bg-primary/15 text-primary',
   };
 
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold',
+        'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold transition-colors duration-300',
         variants[variant],
         className
       )}

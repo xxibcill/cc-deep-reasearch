@@ -124,7 +124,7 @@ export function SessionStaticDetails({
                   {sessionSummary?.label ?? sessionId}
                 </h2>
                 <Badge variant={runStatusBadgeVariant(runStatus)}>{runStatus ?? 'loading'}</Badge>
-                {sessionSummary?.active ? <Badge variant="success">Live</Badge> : null}
+                {sessionSummary?.active ? <Badge variant="info">Live</Badge> : null}
                 {sessionSummary?.archived ? <Badge variant="warning">Archived</Badge> : null}
               </div>
               <p className="text-xs font-mono text-muted-foreground">{sessionId}</p>
