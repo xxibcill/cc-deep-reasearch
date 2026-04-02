@@ -22,6 +22,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { SkeletonSessionCard, SkeletonCard } from '@/components/ui/skeleton';
+import { getErrorGuidance } from '@/lib/error-messages';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -173,15 +175,16 @@ function SessionCard({
   const timeValue = session.completedAt ?? session.lastEventAt;
   const showsQuery = session.query && session.query !== session.label;
   const isArchived = session.archived;
+  const [expanded, setExpanded] = useState(false);
 
   return (
-    <article className="flex h-full flex-col rounded-lg border p-4">
+    <article className="flex h-full flex-col rounded-lg border p-4 transition-shadow duration-150 hover:shadow-card-raised">
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-start gap-2.5">
           <div className="pt-0.5">
             {!compareMode ? (
               <label
-                className="flex items-center"
+                className="flex min-h-[44px] min-w-[44px] items-center justify-center"
                 title={
                   session.active
                     ? 'Stop the active run before selecting this session for deletion.'
@@ -217,41 +220,58 @@ function SessionCard({
           </div>
         </div>
         {session.active ? (
-          <Badge variant="success">Live</Badge>
+          <Badge variant="info">Live</Badge>
         ) : isArchived ? (
           <Badge variant="warning">Archived</Badge>
         ) : null}
       </div>
 
-      {showsQuery ? (
-        <p className="mt-3 text-sm text-muted-foreground line-clamp-2">{session.query}</p>
-      ) : null}
-
-      <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
         <Badge variant="secondary">{formatDepth(session.depth)}</Badge>
-        <Badge variant="secondary">Payload {session.hasSessionPayload ? 'available' : 'missing'}</Badge>
-        <Badge variant="secondary">Report {session.hasReport ? 'available' : 'unavailable'}</Badge>
+        <span className="text-muted-foreground">
+          {session.totalSources} sources
+        </span>
+        <button
+          type="button"
+          onClick={() => setExpanded((prev) => !prev)}
+          className="ml-auto text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {expanded ? 'Less' : 'More'}
+        </button>
       </div>
 
-      <div className="mt-3 space-y-1.5 text-sm">
-        <div className="flex items-center gap-2">
-          <Activity className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          <span className="text-muted-foreground min-w-[60px]">Status:</span>
-          <span className="font-medium">{session.status}</span>
-        </div>
+      {expanded && (
+        <div className="mt-3 animate-fade-in space-y-3">
+          {showsQuery ? (
+            <p className="text-sm text-muted-foreground line-clamp-2">{session.query}</p>
+          ) : null}
 
-        <div className="flex items-center gap-2">
-          <Network className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          <span className="text-muted-foreground min-w-[60px]">Sources:</span>
-          <span className="font-medium">{session.totalSources}</span>
-        </div>
+          <div className="flex flex-wrap gap-1.5 text-xs">
+            <Badge variant="secondary">Payload {session.hasSessionPayload ? 'available' : 'missing'}</Badge>
+            <Badge variant="secondary">Report {session.hasReport ? 'available' : 'unavailable'}</Badge>
+          </div>
 
-        <div className="flex items-center gap-2">
-          <Cpu className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          <span className="text-muted-foreground min-w-[60px]">{timeLabel}:</span>
-          <span className="font-medium truncate">{formatTimestamp(timeValue)}</span>
+          <div className="space-y-1.5 text-sm">
+            <div className="flex items-center gap-2">
+              <Activity className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span className="text-muted-foreground min-w-[60px]">Status:</span>
+              <span className="font-medium">{session.status}</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Network className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span className="text-muted-foreground min-w-[60px]">Sources:</span>
+              <span className="font-medium">{session.totalSources}</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Cpu className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span className="text-muted-foreground min-w-[60px]">{timeLabel}:</span>
+              <span className="font-medium truncate">{formatTimestamp(timeValue)}</span>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="mt-auto pt-4 flex flex-wrap gap-2 border-t">
         <Link
@@ -327,6 +347,7 @@ function SessionFilters() {
               onChange={(event) => setSessionListQuery({ search: event.target.value })}
               placeholder="Query, label, or session ID"
               className="pl-9"
+              aria-label="Search sessions"
             />
           </div>
         </label>
@@ -366,16 +387,16 @@ function SessionFilters() {
 
 function LoadingState() {
   return (
-    <Card className="flex min-h-48 items-center justify-center">
-      <CardContent className="flex items-center gap-3">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-primary" />
-        <span className="text-muted-foreground">Loading sessions...</span>
-      </CardContent>
-    </Card>
+    <div className="space-y-3" role="status" aria-label="Loading sessions">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <SkeletonSessionCard key={i} />
+      ))}
+    </div>
   );
 }
 
 function ErrorState({ error, onRetry }: { error: string; onRetry?: () => void }) {
+  const { guidance } = getErrorGuidance(error);
   return (
     <Alert variant="destructive">
       <div className="flex items-start gap-3">
@@ -383,6 +404,9 @@ function ErrorState({ error, onRetry }: { error: string; onRetry?: () => void })
         <div className="space-y-2">
           <AlertTitle>Failed to load sessions</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
+          {guidance && (
+            <p className="text-xs text-muted-foreground">{guidance}</p>
+          )}
           {onRetry ? (
             <Button onClick={onRetry} type="button" variant="outline" size="sm">
               Retry

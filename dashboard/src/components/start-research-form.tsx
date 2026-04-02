@@ -38,6 +38,8 @@ const DEFAULT_PROMPT_PREFIXES: Record<string, string> = {
   report_quality_evaluator: '',
 }
 
+const MAX_QUERY_LENGTH = 2000;
+
 export function StartResearchForm() {
   const router = useRouter()
   const [formData, setFormData] = useState<FormData>({
@@ -47,6 +49,8 @@ export function StartResearchForm() {
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [queryTouched, setQueryTouched] = useState(false)
+  const [sourcesError, setSourcesError] = useState<string | null>(null)
   const [accordionValue, setAccordionValue] = useState('')
   const [promptPrefixes, setPromptPrefixes] = useState<Record<string, string>>({
     analyzer: '',
@@ -88,12 +92,29 @@ export function StartResearchForm() {
     return Object.keys(overrides).length > 0 ? overrides : undefined
   }
 
+  const validateSources = (value: string) => {
+    if (!value) {
+      setSourcesError(null)
+      return
+    }
+    const num = parseInt(value, 10)
+    if (Number.isNaN(num) || num < 1 || num > 100) {
+      setSourcesError('Must be between 1 and 100')
+    } else {
+      setSourcesError(null)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setQueryTouched(true)
+
     if (!formData.query.trim()) {
       setError('Please enter a research query')
       return
     }
+
+    if (sourcesError) return
 
     setIsSubmitting(true)
     setError(null)
@@ -128,7 +149,11 @@ export function StartResearchForm() {
       report_quality_evaluator: '',
     })
     setError(null)
+    setQueryTouched(false)
+    setSourcesError(null)
   }
+
+  const queryEmpty = queryTouched && !formData.query.trim()
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -137,11 +162,26 @@ export function StartResearchForm() {
         <Textarea
           id="query"
           value={formData.query}
-          onChange={(e) => setFormData((prev) => ({ ...prev, query: e.target.value }))}
+          onChange={(e) => {
+            setFormData((prev) => ({ ...prev, query: e.target.value }))
+            if (queryTouched && e.target.value.trim()) setError(null)
+          }}
+          onBlur={() => setQueryTouched(true)}
           placeholder="What would you like to research?"
           className="min-h-[100px] resize-y"
           disabled={isSubmitting}
+          aria-invalid={queryEmpty}
         />
+        <div className="flex items-center justify-between text-xs">
+          {queryEmpty ? (
+            <span className="text-error">A research query is required</span>
+          ) : (
+            <span />
+          )}
+          <span className={formData.query.length > MAX_QUERY_LENGTH ? 'text-error' : 'text-muted-foreground'}>
+            {formData.query.length}/{MAX_QUERY_LENGTH}
+          </span>
+        </div>
       </div>
 
       <div className="flex flex-col gap-4">
@@ -169,10 +209,18 @@ export function StartResearchForm() {
             min="1"
             max="100"
             value={formData.minSources}
-            onChange={(e) => setFormData((prev) => ({ ...prev, minSources: e.target.value }))}
+            onChange={(e) => {
+              setFormData((prev) => ({ ...prev, minSources: e.target.value }))
+              validateSources(e.target.value)
+            }}
+            onBlur={() => validateSources(formData.minSources)}
             placeholder="Auto"
             disabled={isSubmitting}
+            aria-invalid={Boolean(sourcesError)}
           />
+          {sourcesError && (
+            <p className="text-xs text-error">{sourcesError}</p>
+          )}
         </div>
       </div>
 
@@ -242,17 +290,20 @@ export function StartResearchForm() {
         </Alert>
       )}
 
-      <div className="flex gap-2">
+      <div className="flex items-center gap-2">
         <Button type="submit" className="flex-1" disabled={isSubmitting || !formData.query.trim()}>
           {isSubmitting ? 'Starting Research...' : 'Start Research'}
         </Button>
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
+          size="sm"
           onClick={handleReset}
           disabled={isSubmitting}
+          className="text-muted-foreground"
         >
-          Reset
+          <RotateCcw className="h-3.5 w-3.5 mr-1" />
+          Clear
         </Button>
       </div>
     </form>

@@ -9,6 +9,8 @@ import { useWebSocket } from '@/lib/websocket';
 import { SessionDetails } from '@/components/session-details';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { SkeletonCard } from '@/components/ui/skeleton';
+import { getErrorGuidance } from '@/lib/error-messages';
 import type { SessionPromptMetadata } from '@/types/telemetry';
 
 export function SessionTelemetryWorkspace({ sessionId }: { sessionId: string }) {
@@ -62,14 +64,15 @@ export function SessionTelemetryWorkspace({ sessionId }: { sessionId: string }) 
 
   if (loading && events.length === 0) {
     return (
-      <Card className="border-slate-200/80 shadow-sm">
-        <CardContent className="flex min-h-[280px] flex-col items-center justify-center gap-4">
-          <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
-          <div className="space-y-1 text-center">
-            <p className="font-medium text-slate-900">Booting telemetry workspace</p>
-            <p className="text-sm text-muted-foreground">
-              Loading historical events, derived outputs, and live updates.
-            </p>
+      <Card>
+        <CardContent className="p-5 space-y-5">
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <SkeletonCard key={i} />
+            ))}
+          </div>
+          <div className="h-[300px] rounded-xl border flex items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         </CardContent>
       </Card>
@@ -87,6 +90,10 @@ export function SessionTelemetryWorkspace({ sessionId }: { sessionId: string }) 
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-destructive">{error}</p>
+          {(() => {
+            const { guidance } = getErrorGuidance(error);
+            return guidance ? <p className="text-xs text-muted-foreground">{guidance}</p> : null;
+          })()}
           <Button onClick={() => setReloadNonce((value) => value + 1)} variant="outline">
             Retry
           </Button>
@@ -98,7 +105,7 @@ export function SessionTelemetryWorkspace({ sessionId }: { sessionId: string }) 
   return (
     <div className="space-y-4">
       {error ? (
-        <Card className="border-amber-200 bg-amber-50/70 shadow-sm">
+        <Card className="bg-amber-50/70">
           <CardContent className="flex items-start gap-3 p-4">
             <Radar className="mt-0.5 h-5 w-5 text-amber-600" />
             <div className="space-y-1">
