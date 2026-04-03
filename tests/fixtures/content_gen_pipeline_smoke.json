@@ -1,0 +1,390 @@
+{
+  "theme": "pricing anchors for enterprise SaaS",
+  "strategy": {
+    "niche": "B2B SaaS growth",
+    "content_pillars": [
+      "pricing strategy",
+      "sales messaging"
+    ],
+    "audience_segments": [
+      {
+        "name": "SaaS founders",
+        "description": "Operators refining pricing and packaging",
+        "pain_points": [
+          "weak differentiation",
+          "discount-driven deals"
+        ]
+      }
+    ],
+    "tone_rules": [
+      "be specific",
+      "avoid hype"
+    ],
+    "offer_cta_rules": [
+      "invite follow-up teardown"
+    ],
+    "platforms": [
+      "tiktok"
+    ],
+    "forbidden_claims": [
+      "guaranteed revenue lifts"
+    ],
+    "proof_standards": [
+      "use concrete examples"
+    ],
+    "past_winners": [
+      {
+        "title": "Why annual discounts backfire",
+        "why_it_worked_or_failed": "Strong opinion with concrete proof"
+      }
+    ],
+    "past_losers": []
+  },
+  "opportunity_brief": {
+    "theme": "pricing anchors for enterprise SaaS",
+    "goal": "Turn a broad pricing topic into a concrete short-form breakdown",
+    "primary_audience_segment": "SaaS founders",
+    "secondary_audience_segments": [
+      "growth marketers"
+    ],
+    "problem_statements": [
+      "buyers do not understand why the premium tier exists"
+    ],
+    "content_objective": "Show how anchor tiers reduce price shock",
+    "proof_requirements": [
+      "real pricing page examples",
+      "clear before/after framing"
+    ],
+    "platform_constraints": [
+      "deliver in under 45 seconds"
+    ],
+    "risk_constraints": [
+      "avoid universal pricing promises"
+    ],
+    "freshness_rationale": "SaaS teams are revisiting pricing in a tighter market",
+    "sub_angles": [
+      "bad-better-best framing",
+      "enterprise decoy tier mistakes"
+    ],
+    "research_hypotheses": [
+      "premium anchor tiers increase perceived plan value"
+    ],
+    "success_criteria": [
+      "viewer can explain why the middle plan feels safer"
+    ]
+  },
+  "backlog": {
+    "items": [
+      {
+        "idea_id": "idea-alpha",
+        "category": "authority-building",
+        "idea": "Why most pricing pages hide the real reason enterprise exists",
+        "audience": "SaaS founders",
+        "problem": "premium tiers feel arbitrary",
+        "source": "pricing teardowns",
+        "why_now": "many teams are revisiting packaging in 2026",
+        "potential_hook": "Your enterprise tier may only exist to make pro look cheap",
+        "content_type": "teardown",
+        "evidence": "public SaaS pricing examples",
+        "risk_level": "medium",
+        "priority_score": 4.2
+      },
+      {
+        "idea_id": "idea-beta",
+        "category": "evergreen",
+        "idea": "Use pricing anchors so your middle plan feels like the safe choice",
+        "audience": "SaaS founders",
+        "problem": "buyers default to the cheapest plan when value is unclear",
+        "source": "pricing strategy playbooks",
+        "why_now": "budget pressure makes pricing clarity more important",
+        "potential_hook": "If buyers jump to cheapest, your anchor tier is broken",
+        "content_type": "framework",
+        "evidence": "behavioral pricing examples",
+        "risk_level": "low",
+        "priority_score": 4.8
+      }
+    ],
+    "rejected_count": 1,
+    "rejection_reasons": [
+      "one idea was too broad to prove"
+    ]
+  },
+  "scoring": {
+    "scores": [
+      {
+        "idea_id": "idea-alpha",
+        "relevance": 4,
+        "novelty": 4,
+        "authority_fit": 4,
+        "production_ease": 4,
+        "evidence_strength": 4,
+        "hook_strength": 4,
+        "repurposing": 4,
+        "total_score": 28,
+        "recommendation": "produce_now",
+        "reason": "Strong teardown potential"
+      },
+      {
+        "idea_id": "idea-beta",
+        "relevance": 5,
+        "novelty": 4,
+        "authority_fit": 5,
+        "production_ease": 5,
+        "evidence_strength": 4,
+        "hook_strength": 5,
+        "repurposing": 5,
+        "total_score": 33,
+        "recommendation": "produce_now",
+        "reason": "Best mix of clarity, proof, and distribution"
+      }
+    ],
+    "produce_now": [
+      "idea-alpha",
+      "idea-beta"
+    ],
+    "shortlist": [
+      "idea-beta",
+      "idea-alpha"
+    ],
+    "selected_idea_id": "idea-beta",
+    "selection_reasoning": "The middle-plan framing is easier to prove and easier to execute in under 45 seconds.",
+    "runner_up_idea_ids": [
+      "idea-alpha"
+    ],
+    "hold": [],
+    "killed": []
+  },
+  "angles": {
+    "idea_id": "idea-beta",
+    "angle_options": [
+      {
+        "angle_id": "angle-beta",
+        "target_audience": "SaaS founders",
+        "viewer_problem": "buyers keep choosing the cheapest plan",
+        "core_promise": "Make your middle tier feel safer with a clear anchor plan",
+        "primary_takeaway": "A visible premium anchor clarifies the value of the middle plan",
+        "lens": "pricing teardown",
+        "format": "framework",
+        "tone": "direct",
+        "cta": "Follow for more SaaS teardown lessons",
+        "why_this_version_should_exist": "It turns an abstract pricing concept into a simple operator checklist"
+      }
+    ],
+    "selected_angle_id": "angle-beta",
+    "selection_reasoning": "Best fit for a short, proof-backed educational clip"
+  },
+  "research_pack": {
+    "idea_id": "idea-beta",
+    "angle_id": "angle-beta",
+    "audience_insights": [
+      "Founders want clearer plan differentiation without adding discounting"
+    ],
+    "competitor_observations": [
+      "Many pricing pages explain features but not anchor logic"
+    ],
+    "key_facts": [
+      "Anchors shape perceived value before a buyer compares feature details"
+    ],
+    "proof_points": [
+      "Premium plans can make the middle tier feel safer instead of more expensive"
+    ],
+    "examples": [
+      "Compare a two-tier pricing page with a three-tier anchor setup"
+    ],
+    "case_studies": [
+      "Show how a premium decoy reframes the center plan"
+    ],
+    "gaps_to_exploit": [
+      "Competitors rarely explain why the top plan exists"
+    ],
+    "assets_needed": [
+      "pricing page screenshots"
+    ],
+    "claims_requiring_verification": [
+      "anchor pricing shifts plan selection"
+    ],
+    "unsafe_or_uncertain_claims": [
+      "do not promise conversion gains"
+    ],
+    "research_stop_reason": "Enough evidence gathered for a short educational script"
+  },
+  "scripting": {
+    "raw_idea": "Use pricing anchors so your middle plan feels like the safe choice",
+    "research_context": "Key facts:\\n- Anchors shape perceived value\\nProof points:\\n- Premium tiers reframe the middle plan",
+    "tone": "direct",
+    "cta": "Follow for more SaaS teardown lessons",
+    "core_inputs": {
+      "topic": "pricing anchors",
+      "outcome": "make the middle tier feel safer",
+      "audience": "SaaS founders"
+    },
+    "angle": {
+      "angle": "Your enterprise plan is not the hero. It is the anchor.",
+      "content_type": "framework",
+      "core_tension": "buyers assume cheapest is safest when anchor logic is invisible",
+      "why_it_works": "It gives a concrete mental model"
+    },
+    "structure": {
+      "chosen_structure": "Problem -> Example -> Fix -> CTA",
+      "why_it_fits": "Works for short educational breakdowns",
+      "beat_list": [
+        "Hook",
+        "Problem",
+        "Example",
+        "Fix",
+        "CTA"
+      ]
+    },
+    "beat_intents": {
+      "beats": [
+        {
+          "beat_name": "Hook",
+          "intent": "Create immediate tension"
+        },
+        {
+          "beat_name": "Fix",
+          "intent": "Give a practical anchor rule"
+        }
+      ]
+    },
+    "hooks": {
+      "hooks": [
+        "If buyers always choose cheapest, your anchor tier is broken"
+      ],
+      "best_hook": "If buyers always choose cheapest, your anchor tier is broken",
+      "best_hook_reason": "Specific and diagnostic"
+    },
+    "draft": {
+      "content": "If buyers always choose cheapest, your anchor tier is broken. The top plan should make the middle plan feel safe, not random. Show one premium tier with a clear contrast so the buyer immediately understands why pro is the practical pick. Follow for more SaaS teardown lessons.",
+      "word_count": 45
+    },
+    "tightened": {
+      "content": "If buyers always choose cheapest, your anchor tier is broken. Use the top plan to make the middle option feel safe and obvious. Follow for more SaaS teardown lessons.",
+      "word_count": 28
+    },
+    "qc": {
+      "checks": [
+        {
+          "item": "Exactly one hook is present",
+          "passed": true
+        },
+        {
+          "item": "At most one CTA is present",
+          "passed": true
+        }
+      ],
+      "weakest_parts": [
+        "Could add one more concrete example"
+      ],
+      "final_script": "If buyers always choose cheapest, your anchor tier is broken. Use the top plan to make the middle option feel safe and obvious. Follow for more SaaS teardown lessons."
+    },
+    "step_traces": [
+      {
+        "step_index": 0,
+        "step_name": "define_core_inputs",
+        "step_label": "Defining core inputs",
+        "iteration": 1,
+        "llm_calls": [],
+        "parsed_output": {
+          "topic": "pricing anchors"
+        }
+      }
+    ]
+  },
+  "visual_plan": {
+    "idea_id": "idea-beta",
+    "angle_id": "angle-beta",
+    "visual_plan": [
+      {
+        "beat": "Hook",
+        "spoken_line": "If buyers always choose cheapest, your anchor tier is broken.",
+        "visual": "Highlight the cheapest plan selection on a pricing page",
+        "shot_type": "screen-record",
+        "a_roll": "Presenter points at pricing table",
+        "b_roll": "Zoom on enterprise column",
+        "on_screen_text": "Anchor tier broken",
+        "overlay_or_graphic": "Arrow from enterprise to pro",
+        "prop_or_asset": "pricing screenshot",
+        "transition": "hard cut",
+        "retention_function": "pattern interrupt"
+      }
+    ],
+    "visual_refresh_check": "pass"
+  },
+  "production_brief": {
+    "idea_id": "idea-beta",
+    "location": "Desk setup with monitor capture",
+    "setup": "Screen recording plus talking head",
+    "wardrobe": "Neutral tee",
+    "props": [
+      "pricing page screenshots"
+    ],
+    "assets_to_prepare": [
+      "annotated pricing table"
+    ],
+    "audio_checks": [
+      "lav mic level check"
+    ],
+    "battery_checks": [
+      "camera battery above 70 percent"
+    ],
+    "storage_checks": [
+      "at least 10 GB free"
+    ],
+    "pickup_lines_to_capture": [
+      "The anchor plan exists to frame the middle plan"
+    ],
+    "backup_plan": "Record a pure screen-share version"
+  },
+  "packaging": {
+    "idea_id": "idea-beta",
+    "platform_packages": [
+      {
+        "platform": "tiktok",
+        "primary_hook": "If buyers always choose cheapest, your anchor tier is broken",
+        "alternate_hooks": [
+          "Your top plan is not supposed to sell"
+        ],
+        "cover_text": "Fix your pricing anchor",
+        "caption": "Use your premium plan to make the middle tier feel safer.",
+        "keywords": [
+          "pricing strategy",
+          "saas pricing"
+        ],
+        "hashtags": [
+          "#saas",
+          "#pricing"
+        ],
+        "pinned_comment": "Want more pricing teardown examples?",
+        "cta": "Follow for more SaaS teardown lessons",
+        "version_notes": "Lead with the broken-anchor concept"
+      }
+    ]
+  },
+  "qc_gate": {
+    "review_round": 1,
+    "hook_strength": "strong",
+    "clarity_issues": [],
+    "factual_issues": [],
+    "visual_issues": [],
+    "audio_issues": [],
+    "caption_issues": [],
+    "must_fix_items": [],
+    "approved_for_publish": true
+  },
+  "publish_items": [
+    {
+      "idea_id": "idea-beta",
+      "platform": "tiktok",
+      "publish_datetime": "2026-04-10T09:00:00+00:00",
+      "asset_version": "v1",
+      "caption_version": "v1",
+      "pinned_comment": "Want more pricing teardown examples?",
+      "cross_post_targets": [
+        "youtube-shorts"
+      ],
+      "first_30_minute_engagement_plan": "Reply to comments with one extra teardown example",
+      "status": "scheduled"
+    }
+  ]
+}

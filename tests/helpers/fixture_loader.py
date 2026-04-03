@@ -55,6 +55,11 @@ def load_analysis_cross_reference() -> dict[str, Any]:
     return load_fixture("analysis_cross_reference")
 
 
+def load_content_gen_pipeline_smoke() -> dict[str, Any]:
+    """Load the fixture-backed content-gen pipeline smoke payload."""
+    return load_fixture("content_gen_pipeline_smoke")
+
+
 def list_fixtures() -> list[str]:
     """List all available fixture files.
 
@@ -71,5 +76,6 @@ __all__ = [
     "load_analysis_healthy",
     "load_analysis_malformed",
     "load_analysis_cross_reference",
+    "load_content_gen_pipeline_smoke",
     "list_fixtures",
 ]

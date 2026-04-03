@@ -225,7 +225,7 @@ def register_content_gen_routes(
                 )
 
                 job_registry.update_context(job.pipeline_id, ctx)
-                job_registry.mark_completed(job.pipeline_id)
+                job_registry.mark_completed(job.pipeline_id, context=ctx)
 
                 await event_router.publish(
                     job.pipeline_id,
@@ -255,7 +255,7 @@ def register_content_gen_routes(
 
         task = asyncio.create_task(_run())
         job_registry.attach_task(job.pipeline_id, task)
-        return JSONResponse(content=_job_summary(job))
+        return JSONResponse(status_code=202, content=_job_summary(job))
 
     @app.get("/api/content-gen/pipelines/{pipeline_id}")
     async def get_pipeline(pipeline_id: str) -> JSONResponse:
@@ -373,7 +373,7 @@ def register_content_gen_routes(
                     stage_completed_callback=_stage_completed,
                 )
                 job_registry.update_context(new_job.pipeline_id, result_ctx)
-                job_registry.mark_completed(new_job.pipeline_id)
+                job_registry.mark_completed(new_job.pipeline_id, context=result_ctx)
                 await event_router.publish(
                     new_job.pipeline_id,
                     {"type": "pipeline_completed", "timestamp": datetime.now(UTC).isoformat()},
