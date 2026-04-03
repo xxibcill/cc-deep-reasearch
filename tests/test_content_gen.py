@@ -418,6 +418,61 @@ async def test_stage_completed_callback_emits_for_skipped_stage() -> None:
 
 
 @pytest.mark.asyncio
+async def test_failed_stage_is_recorded_in_traces() -> None:
+    """Failed stages should be recorded in stage_traces."""
+    from cc_deep_research.content_gen.orchestrator import (
+        _PIPELINE_HANDLERS,
+        ContentGenOrchestrator,
+    )
+
+    class FakeConfig:
+        content_gen = type(
+            "ContentGen",
+            (),
+            {
+                "max_iterations": 1,
+                "quality_threshold": 0.7,
+                "convergence_threshold": 0.1,
+                "enable_iterative_mode": False,
+                "scoring_threshold_produce": 3.5,
+                "default_platforms": ["tiktok"],
+            },
+        )()
+
+        llm = type(
+            "LLM",
+            (),
+            {
+                "anthropic": type("C", (), {"enabled": True, "api_key": "test"})(),
+            },
+        )()
+
+    orch = ContentGenOrchestrator(FakeConfig())
+    ctx = PipelineContext(theme="test")
+
+    async def failing_stage(
+        _orch: ContentGenOrchestrator, ctx: PipelineContext
+    ) -> PipelineContext:
+        raise ValueError("Stage failed intentionally")
+
+    orig_stage_build_backlog = _PIPELINE_HANDLERS[2]
+    _PIPELINE_HANDLERS[2] = failing_stage
+
+    try:
+        with pytest.raises(ValueError, match="Stage failed intentionally"):
+            await orch._run_stage(2, ctx, None)
+    finally:
+        _PIPELINE_HANDLERS[2] = orig_stage_build_backlog
+
+    assert len(ctx.stage_traces) == 1
+    trace = ctx.stage_traces[0]
+    assert trace.stage_index == 2
+    assert trace.status == "failed"
+    assert "Stage failed intentionally" in trace.output_summary
+    assert len(trace.warnings) > 0
+
+
+@pytest.mark.asyncio
 async def test_stage_completed_callback_emits_after_stage() -> None:
     """stage_completed_callback should be called immediately after stage runs."""
     from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator

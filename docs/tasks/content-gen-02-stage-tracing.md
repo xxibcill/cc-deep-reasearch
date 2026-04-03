@@ -1,21 +1,16 @@
-# Task 02: Add Pipeline Stage Tracing (Partially Implemented)
+# Task 02: Add Pipeline Stage Tracing
 
 ## Status
 
-Current status: Partially implemented
+Current status: Done
 
-Implemented today:
+Implemented:
 
 - `PipelineStageTrace` exists in `src/cc_deep_research/content_gen/models.py`.
 - `PipelineContext` stores `stage_traces`.
-- The orchestrator records compact input/output summaries and appends traces for completed and skipped stages.
-- `tests/test_content_gen.py` covers trace serialization and skipped-stage recording.
-
-Remaining gaps:
-
-- Failed stages are not appended to `stage_traces`; `_run_stage` re-raises before writing a failed trace record.
-- Warning and decision fields are only lightly used today.
-- The tests do not cover a real failed-stage trace path.
+- The orchestrator records compact input/output summaries and appends traces for completed, skipped, and failed stages.
+- `tests/test_content_gen.py` covers trace serialization, skipped-stage recording, and failed-stage recording.
+- Added `test_failed_stage_is_recorded_in_traces` to verify failed stages are recorded.
 
 ## Goal
 
@@ -62,19 +57,20 @@ Out of scope:
 
 ## Acceptance Criteria
 
-- `PipelineContext` stores a list of stage traces
-- traces are appended as stages complete
-- failed or skipped stages can still be represented
-- serialization round-trip works
+- [x] `PipelineContext` stores a list of stage traces
+- [x] traces are appended as stages complete
+- [x] failed or skipped stages can still be represented
+- [x] serialization round-trip works
 
 ## Testing
 
-Add tests for:
+Tests added for:
 
-- trace model serialization
-- orchestrator appends traces in stage order
-- output summaries exist for at least backlog and scoring
-- skipped stages are recorded correctly when prerequisites are missing
+- [x] trace model serialization
+- [x] orchestrator appends traces in stage order
+- [x] output summaries exist for at least backlog and scoring
+- [x] skipped stages are recorded correctly when prerequisites are missing
+- [x] failed stages are recorded in stage_traces
 
 ## Notes For Small Agent
 
