@@ -83,7 +83,7 @@ export default function ContentGenPage() {
     items: typeof pipelines
     statusTone: 'active' | 'history'
   }) => (
-    <Card>
+    <Card className="rounded-[1.3rem]">
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         <p className="text-sm text-muted-foreground">{description}</p>
@@ -93,7 +93,7 @@ export default function ContentGenPage() {
           <Link
             key={p.pipeline_id}
             href={`/content-gen/pipeline/${p.pipeline_id}`}
-            className="group flex items-center justify-between rounded-xl border border-border bg-muted/10 px-4 py-3 transition-colors hover:border-warning/30 hover:bg-muted/20"
+            className="group flex items-center justify-between rounded-[1rem] border border-border/75 bg-surface/62 px-4 py-3 transition-all hover:-translate-y-px hover:border-warning/30 hover:bg-surface-raised/72"
           >
             <div className="flex min-w-0 items-center gap-3">
               <span
@@ -133,10 +133,11 @@ export default function ContentGenPage() {
   const renderOverview = () => (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
       <div className="space-y-6">
-        <Card className="overflow-hidden border-slate-200/80 shadow-sm">
-          <CardHeader className="gap-4 border-b bg-[linear-gradient(135deg,rgba(15,23,42,0.04),rgba(245,158,11,0.12))]">
+        <Card className="overflow-hidden rounded-[1.35rem]">
+          <CardHeader className="gap-5 border-b border-border/70 bg-[linear-gradient(135deg,rgba(217,130,60,0.16),rgba(13,44,45,0.08))]">
+            <p className="eyebrow">Entry points</p>
             <div className="space-y-2">
-              <CardTitle>Start from a strong entry point</CardTitle>
+              <CardTitle className="text-[2.3rem]">Start from a strong entry point</CardTitle>
               <p className="text-sm text-muted-foreground">
                 Launch a full pipeline when you need the end-to-end workflow, or open a quick
                 script when you want to iterate on a single idea immediately.
@@ -190,7 +191,7 @@ export default function ContentGenPage() {
         )}
 
         {activePipelines.length === 0 && pastPipelines.length === 0 && (
-          <Card className="border-dashed">
+          <Card className="rounded-[1.3rem] border-dashed">
             <CardContent className="flex flex-col items-center justify-center gap-4 py-16 text-center">
               <div className="space-y-1">
                 <p className="text-base font-medium text-foreground">No pipelines yet</p>
@@ -228,7 +229,7 @@ export default function ContentGenPage() {
 
       {activeTab === 'strategy' && (
         <div className="max-w-2xl">
-          <Card>
+          <Card className="rounded-[1.3rem]">
             <CardContent className="p-6">
               <StrategyEditor />
             </CardContent>

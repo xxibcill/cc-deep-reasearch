@@ -10,17 +10,18 @@ const config: Config = {
   theme: {
     extend: {
       spacing: {
-        'page-x': '1rem',
-        'page-y': '1.5rem',
-        section: '1.5rem',
+        'page-x': 'clamp(1rem, 2.4vw, 2rem)',
+        'page-y': 'clamp(1.5rem, 3vw, 2.5rem)',
+        section: 'clamp(1.5rem, 2.4vw, 2.5rem)',
       },
       maxWidth: {
-        content: '80rem',
+        content: '88rem',
       },
       boxShadow: {
-        card: '0 1px 2px 0 rgb(0 0 0 / 0.15)',
-        'card-raised': '0 4px 6px -1px rgb(0 0 0 / 0.2), 0 2px 4px -2px rgb(0 0 0 / 0.15)',
+        card: '0 18px 40px rgb(1 13 16 / 0.24), inset 0 1px 0 rgb(255 255 255 / 0.03)',
+        'card-raised': '0 28px 60px rgb(1 13 16 / 0.38), inset 0 1px 0 rgb(255 255 255 / 0.04)',
         'card-flat': 'none',
+        panel: '0 28px 65px rgb(1 13 16 / 0.38), inset 0 1px 0 rgb(255 255 255 / 0.04)',
       },
       colors: {
         border: "hsl(var(--border))",
@@ -38,9 +39,9 @@ const config: Config = {
         "error-muted": "hsl(var(--error-muted))",
       },
       fontFamily: {
-        display: ['"Space Grotesk"', '"Segoe UI"', 'sans-serif'],
-        body: ['"Source Sans 3"', '"Segoe UI"', 'sans-serif'],
-        mono: ['"JetBrains Mono"', '"SFMono-Regular"', 'monospace'],
+        display: ['"Barlow Condensed"', '"Arial Narrow"', 'sans-serif'],
+        body: ['"IBM Plex Sans"', '"Segoe UI"', 'sans-serif'],
+        mono: ['"IBM Plex Mono"', '"SFMono-Regular"', 'monospace'],
       },
       keyframes: {
         'stage-pulse': {

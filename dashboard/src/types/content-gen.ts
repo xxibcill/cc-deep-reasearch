@@ -529,6 +529,8 @@ export interface PipelineStageStartedEvent {
 export interface PipelineStageCompletedEvent {
   type: 'pipeline_stage_completed';
   stage_index: number;
+  stage_status: 'completed' | 'skipped' | 'failed';
+  stage_detail: string;
   timestamp: string;
 }
 

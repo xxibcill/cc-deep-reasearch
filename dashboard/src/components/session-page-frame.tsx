@@ -94,66 +94,63 @@ export function SessionPageFrame({
         </Card>
       ) : (
         <>
-          <Card className="overflow-hidden">
-            <CardHeader className="gap-4 border-b bg-[linear-gradient(160deg,rgba(15,23,42,0.04),rgba(125,211,252,0.18))]">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {(() => {
-                      const Icon = viewMeta[view].icon;
-                      return (
-                        <CardTitle className="flex items-center gap-2">
-                          <Icon className="h-5 w-5 text-sky-700" />
-                          {title}
-                        </CardTitle>
-                      );
-                    })()}
-                    <Badge variant={runStatusBadgeVariant(runStatus)}>{runStatus ?? 'loading'}</Badge>
-                    {sessionSummary?.hasReport ? <Badge variant="success">Report Ready</Badge> : null}
-                  </div>
-                  <p className="text-sm text-muted-foreground">{description}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Session <span className="font-mono text-foreground">{resolvedSessionId}</span>
-                  </p>
+          <section className="panel-shell overflow-hidden rounded-[1.45rem]">
+            <div className="grid gap-6 p-6 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
+              <div className="space-y-4">
+                <p className="eyebrow">Session workspace</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {(() => {
+                    const Icon = viewMeta[view].icon;
+                    return (
+                      <CardTitle className="flex items-center gap-3 text-[2.6rem]">
+                        <Icon className="h-6 w-6 text-primary" />
+                        {title}
+                      </CardTitle>
+                    );
+                  })()}
+                  <Badge variant={runStatusBadgeVariant(runStatus)}>{runStatus ?? 'loading'}</Badge>
+                  {sessionSummary?.hasReport ? <Badge variant="success">Report ready</Badge> : null}
                 </div>
-
-                <nav
-                  aria-label="Session workspace routes"
-                  className="inline-flex flex-wrap gap-1 rounded-lg border bg-muted/40 p-1"
-                >
-                  {(Object.entries(viewMeta) as Array<[SessionView, (typeof viewMeta)[SessionView]]>).map(
-                    ([key, item]) => {
-                      const Icon = item.icon;
-                      const active = key === view;
-
-                      return (
-                        <Link
-                          key={key}
-                          href={item.href(resolvedSessionId)}
-                          className={cn(
-                            buttonVariants({
-                              variant: active ? 'default' : 'ghost',
-                              size: 'sm',
-                            }),
-                            'gap-2',
-                            active
-                              ? 'shadow-sm'
-                              : 'text-muted-foreground'
-                          )}
-                          aria-current={active ? 'page' : undefined}
-                        >
-                          <Icon className="h-4 w-4" />
-                          {item.label}
-                        </Link>
-                      );
-                    }
-                  )}
-                </nav>
+                <p className="max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
+                <p className="font-mono text-[0.74rem] uppercase tracking-[0.18em] text-muted-foreground">
+                  Session <span className="text-foreground">{resolvedSessionId}</span>
+                </p>
               </div>
-            </CardHeader>
+
+              <nav
+                aria-label="Session workspace routes"
+                className="grid gap-2 rounded-[1.1rem] border border-border/75 bg-surface/72 p-2 sm:grid-cols-3"
+              >
+                {(Object.entries(viewMeta) as Array<[SessionView, (typeof viewMeta)[SessionView]]>).map(
+                  ([key, item]) => {
+                    const Icon = item.icon;
+                    const active = key === view;
+
+                    return (
+                      <Link
+                        key={key}
+                        href={item.href(resolvedSessionId)}
+                        className={cn(
+                          buttonVariants({
+                            variant: active ? 'default' : 'ghost',
+                            size: 'sm',
+                          }),
+                          'justify-start px-4',
+                          !active ? 'text-muted-foreground' : undefined
+                        )}
+                        aria-current={active ? 'page' : undefined}
+                      >
+                        <Icon className="h-4 w-4" />
+                        {item.label}
+                      </Link>
+                    );
+                  }
+                )}
+              </nav>
+            </div>
 
             {sessionError ? (
-              <CardContent className="border-t p-4">
+              <div className="border-t border-border/70 p-4">
                 <Alert className="flex items-start gap-3" variant="warning">
                   <TimerReset className="mt-0.5 h-4 w-4 shrink-0" />
                   <div className="space-y-1">
@@ -161,9 +158,9 @@ export function SessionPageFrame({
                     <AlertDescription>{sessionError}</AlertDescription>
                   </div>
                 </Alert>
-              </CardContent>
+              </div>
             ) : null}
-          </Card>
+          </section>
 
           {children({
             sessionId: resolvedSessionId,

@@ -48,7 +48,11 @@ const AccordionItem = React.forwardRef<HTMLDivElement, AccordionItemProps>(
 
     return (
       <div
-        className={cn('rounded-md border border-border', isOpen && 'bg-surface', className)}
+        className={cn(
+          'rounded-[1rem] border border-border/80 bg-surface/60 transition-colors',
+          isOpen && 'bg-surface-raised/60',
+          className
+        )}
         ref={ref}
         {...props}
       />
@@ -70,7 +74,7 @@ const AccordionTrigger = React.forwardRef<HTMLButtonElement, AccordionTriggerPro
       <button
         ref={ref}
         className={cn(
-          'flex flex-1 items-center justify-between px-4 py-3 text-sm font-medium transition-all hover:text-foreground [&[data-state=open]>svg]:rotate-180',
+          'flex flex-1 items-center justify-between px-4 py-3.5 text-left font-display text-[0.88rem] font-semibold uppercase tracking-[0.14em] transition-all hover:text-foreground [&[data-state=open]>svg]:rotate-180',
           !isOpen && 'text-muted-foreground',
           className
         )}
