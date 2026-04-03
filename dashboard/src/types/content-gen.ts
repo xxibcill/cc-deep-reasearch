@@ -199,6 +199,8 @@ export interface BacklogOutput {
   items: BacklogItem[];
   rejected_count: number;
   rejection_reasons: string[];
+  is_degraded: boolean;
+  degradation_reason: string;
 }
 
 // =============================================================================
@@ -222,8 +224,14 @@ export interface IdeaScores {
 export interface ScoringOutput {
   scores: IdeaScores[];
   produce_now: string[];
+  shortlist: string[];
+  selected_idea_id: string;
+  selection_reasoning: string;
+  runner_up_idea_ids: string[];
   hold: string[];
   killed: string[];
+  is_degraded: boolean;
+  degradation_reason: string;
 }
 
 // =============================================================================
@@ -552,6 +560,10 @@ export interface PipelineContext {
   opportunity_brief: OpportunityBrief | null;
   backlog: BacklogOutput | null;
   scoring: ScoringOutput | null;
+  shortlist: string[];
+  selected_idea_id: string;
+  selection_reasoning: string;
+  runner_up_idea_ids: string[];
   angles: AngleOutput | null;
   research_pack: ResearchPack | null;
   scripting: ScriptingContext | null;
