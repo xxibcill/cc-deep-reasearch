@@ -18,6 +18,7 @@ from cc_deep_research.content_gen.models import (
     PipelineStageTrace,
     QualityEvaluation,
     ResearchPack,
+    ScoringOutput,
     ScriptingContext,
     ScriptVersion,
     StrategyMemory,
@@ -27,6 +28,55 @@ if TYPE_CHECKING:
     from cc_deep_research.config import Config
 
 logger = logging.getLogger(__name__)
+
+
+def _selected_idea_candidates(ctx: PipelineContext) -> list[str]:
+    candidates: list[str] = []
+    if ctx.selected_idea_id:
+        candidates.append(ctx.selected_idea_id)
+    if ctx.scoring:
+        if ctx.scoring.selected_idea_id:
+            candidates.append(ctx.scoring.selected_idea_id)
+        candidates.extend(ctx.shortlist or ctx.scoring.shortlist)
+        candidates.extend(ctx.scoring.produce_now)
+
+    ordered: list[str] = []
+    for idea_id in candidates:
+        if idea_id and idea_id not in ordered:
+            ordered.append(idea_id)
+    return ordered
+
+
+def _resolve_selected_item(ctx: PipelineContext) -> Any | None:
+    if ctx.backlog is None:
+        return None
+
+    for idea_id in _selected_idea_candidates(ctx):
+        item = next((candidate for candidate in ctx.backlog.items if candidate.idea_id == idea_id), None)
+        if item is not None:
+            return item
+    return None
+
+
+def _resolve_selected_idea_id(ctx: PipelineContext) -> str:
+    item = _resolve_selected_item(ctx)
+    if item is not None:
+        return item.idea_id
+    candidates = _selected_idea_candidates(ctx)
+    return candidates[0] if candidates else ""
+
+
+def _resolve_selected_angle(ctx: PipelineContext) -> Any | None:
+    if ctx.angles is None:
+        return None
+    if ctx.angles.selected_angle_id:
+        angle = next(
+            (option for option in ctx.angles.angle_options if option.angle_id == ctx.angles.selected_angle_id),
+            None,
+        )
+        if angle is not None:
+            return angle
+    return ctx.angles.angle_options[0] if ctx.angles.angle_options else None
 
 
 class ContentGenOrchestrator:
@@ -132,18 +182,15 @@ class ContentGenOrchestrator:
             if ctx.backlog is None:
                 return False, "backlog missing"
         if stage == "generate_angles":
-            if ctx.scoring is None or not ctx.scoring.produce_now:
-                return False, "scoring/produce_now missing"
             if ctx.backlog is None:
                 return False, "backlog missing"
+            if _resolve_selected_item(ctx) is None:
+                return False, "scoring/selected idea missing"
         if stage == "build_research_pack":
             if ctx.backlog is None or ctx.angles is None:
                 return False, "backlog/angles missing"
-            if ctx.scoring and ctx.scoring.produce_now:
-                idea_id = ctx.scoring.produce_now[0]
-                item = next((i for i in ctx.backlog.items if i.idea_id == idea_id), None)
-                if item is None:
-                    return False, "selected idea not found"
+            if _resolve_selected_item(ctx) is None:
+                return False, "selected idea not found"
         if stage == "run_scripting":
             if ctx.backlog is None or ctx.angles is None:
                 return False, "backlog/angles missing"
@@ -402,11 +449,14 @@ class ContentGenOrchestrator:
             return "items=0"
         if stage == "generate_angles":
             if ctx.scoring:
-                return f"produce_now={len(ctx.scoring.produce_now)}"
-            return "produce_now=0"
+                return (
+                    f"selected_idea_id={_resolve_selected_idea_id(ctx) or 'none'}, "
+                    f"shortlist={len(ctx.shortlist or ctx.scoring.shortlist)}"
+                )
+            return "selected_idea_id=none, shortlist=0"
         if stage == "build_research_pack":
             if ctx.angles:
-                return f"idea_id={ctx.scoring.produce_now[0] if ctx.scoring and ctx.scoring.produce_now else 'none'}"
+                return f"idea_id={_resolve_selected_idea_id(ctx) or 'none'}"
             return "idea_id=none"
         if stage == "run_scripting":
             if ctx.research_pack:
@@ -444,7 +494,13 @@ class ContentGenOrchestrator:
             return "items=0"
         if stage == "score_ideas":
             if ctx.scoring:
-                return f"produce={len(ctx.scoring.produce_now)}, hold={len(ctx.scoring.hold)}, kill={len(ctx.scoring.killed)}"
+                return (
+                    f"produce={len(ctx.scoring.produce_now)}, "
+                    f"shortlist={len(ctx.scoring.shortlist)}, "
+                    f"selected={ctx.scoring.selected_idea_id or 'none'}, "
+                    f"hold={len(ctx.scoring.hold)}, "
+                    f"kill={len(ctx.scoring.killed)}"
+                )
             return "no scores"
         if stage == "generate_angles":
             if ctx.angles:
@@ -726,29 +782,38 @@ async def _stage_build_backlog(
         ctx.strategy or StrategyMemory(),
         opportunity_brief=ctx.opportunity_brief,
     )
+    if ctx.backlog and ctx.backlog.is_degraded and ctx.stage_traces:
+        ctx.stage_traces[-1].warnings.append(f"Backlog degraded: {ctx.backlog.degradation_reason}")
     return ctx
 
 
 async def _stage_score_ideas(orch: ContentGenOrchestrator, ctx: PipelineContext) -> PipelineContext:
     if ctx.backlog is None:
         return ctx
+    if not ctx.backlog.items:
+        ctx.scoring = ScoringOutput(is_degraded=True, degradation_reason="backlog has zero items")
+        ctx.shortlist = []
+        ctx.selected_idea_id = ""
+        ctx.selection_reasoning = ""
+        ctx.runner_up_idea_ids = []
+        return ctx
     agent = orch._get_agent("backlog")
     strategy = ctx.strategy or StrategyMemory()
     threshold = orch._config.content_gen.scoring_threshold_produce
     ctx.scoring = await agent.score_ideas(ctx.backlog.items, strategy, threshold=threshold)
+    ctx.shortlist = ctx.scoring.shortlist
+    ctx.selected_idea_id = ctx.scoring.selected_idea_id
+    ctx.selection_reasoning = ctx.scoring.selection_reasoning
+    ctx.runner_up_idea_ids = ctx.scoring.runner_up_idea_ids
+    if ctx.scoring and ctx.scoring.is_degraded and ctx.stage_traces:
+        ctx.stage_traces[-1].warnings.append(f"Scoring degraded: {ctx.scoring.degradation_reason}")
     return ctx
 
 
 async def _stage_generate_angles(
     orch: ContentGenOrchestrator, ctx: PipelineContext
 ) -> PipelineContext:
-    if ctx.scoring is None or not ctx.scoring.produce_now:
-        return ctx
-    if ctx.backlog is None:
-        return ctx
-    # Select the first "produce_now" idea
-    idea_id = ctx.scoring.produce_now[0]
-    item = next((i for i in ctx.backlog.items if i.idea_id == idea_id), None)
+    item = _resolve_selected_item(ctx)
     if item is None:
         return ctx
     strategy = ctx.strategy or StrategyMemory()
@@ -762,16 +827,8 @@ async def _stage_build_research_pack(
 ) -> PipelineContext:
     if ctx.backlog is None or ctx.angles is None:
         return ctx
-    idea_id = ctx.scoring.produce_now[0] if ctx.scoring and ctx.scoring.produce_now else ""
-    item = next((i for i in ctx.backlog.items if i.idea_id == idea_id), None)
-    angle = None
-    if ctx.angles.selected_angle_id:
-        angle = next(
-            (a for a in ctx.angles.angle_options if a.angle_id == ctx.angles.selected_angle_id),
-            None,
-        )
-    if angle is None and ctx.angles.angle_options:
-        angle = ctx.angles.angle_options[0]
+    item = _resolve_selected_item(ctx)
+    angle = _resolve_selected_angle(ctx)
     if item is None or angle is None:
         return ctx
     agent = orch._get_agent("research")
@@ -787,16 +844,8 @@ async def _stage_run_scripting(
 ) -> PipelineContext:
     if ctx.backlog is None or ctx.angles is None:
         return ctx
-    idea_id = ctx.scoring.produce_now[0] if ctx.scoring and ctx.scoring.produce_now else ""
-    item = next((i for i in ctx.backlog.items if i.idea_id == idea_id), None)
-    angle = None
-    if ctx.angles.selected_angle_id:
-        angle = next(
-            (a for a in ctx.angles.angle_options if a.angle_id == ctx.angles.selected_angle_id),
-            None,
-        )
-    if angle is None and ctx.angles.angle_options:
-        angle = ctx.angles.angle_options[0]
+    item = _resolve_selected_item(ctx)
+    angle = _resolve_selected_angle(ctx)
     raw_idea = item.idea if item else ctx.theme
     agent = orch._get_agent("scripting")
     # Preserve existing research context (includes feedback from prior iterations)
@@ -875,14 +924,7 @@ async def _stage_packaging(orch: ContentGenOrchestrator, ctx: PipelineContext) -
         return ctx
 
     script = ScriptVersion(content=source, word_count=len(source.split()))
-    angle = None
-    if ctx.angles.selected_angle_id:
-        angle = next(
-            (a for a in ctx.angles.angle_options if a.angle_id == ctx.angles.selected_angle_id),
-            None,
-        )
-    if angle is None and ctx.angles.angle_options:
-        angle = ctx.angles.angle_options[0]
+    angle = _resolve_selected_angle(ctx)
     if angle is None:
         return ctx
     agent = orch._get_agent("packaging")
@@ -923,7 +965,7 @@ async def _stage_publish_queue(
 ) -> PipelineContext:
     if ctx.packaging is None or ctx.qc_gate is None or not ctx.qc_gate.approved_for_publish:
         return ctx
-    idea_id = ctx.scoring.produce_now[0] if ctx.scoring and ctx.scoring.produce_now else ""
+    idea_id = _resolve_selected_idea_id(ctx)
     agent = orch._get_agent("publish")
     items = await agent.schedule(ctx.packaging, idea_id=idea_id)
     # Store first publish item in context

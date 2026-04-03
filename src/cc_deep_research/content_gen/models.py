@@ -274,6 +274,8 @@ class BacklogOutput(BaseModel):
     items: list[BacklogItem] = Field(default_factory=list)
     rejected_count: int = 0
     rejection_reasons: list[str] = Field(default_factory=list)
+    is_degraded: bool = False
+    degradation_reason: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -302,8 +304,14 @@ class ScoringOutput(BaseModel):
 
     scores: list[IdeaScores] = Field(default_factory=list)
     produce_now: list[str] = Field(default_factory=list)  # idea_ids
+    shortlist: list[str] = Field(default_factory=list)  # ranked idea_ids
+    selected_idea_id: str = ""
+    selection_reasoning: str = ""
+    runner_up_idea_ids: list[str] = Field(default_factory=list)
     hold: list[str] = Field(default_factory=list)  # idea_ids
     killed: list[str] = Field(default_factory=list)  # idea_ids
+    is_degraded: bool = False
+    degradation_reason: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -603,6 +611,10 @@ class PipelineContext(BaseModel):
     opportunity_brief: OpportunityBrief | None = None
     backlog: BacklogOutput | None = None
     scoring: ScoringOutput | None = None
+    shortlist: list[str] = Field(default_factory=list)
+    selected_idea_id: str = ""
+    selection_reasoning: str = ""
+    runner_up_idea_ids: list[str] = Field(default_factory=list)
     angles: AngleOutput | None = None
     research_pack: ResearchPack | None = None
     scripting: ScriptingContext | None = None

@@ -129,6 +129,8 @@ Score each idea from 1-5 on these dimensions:
 Hard rules:
 - Kill anything with weak evidence AND weak hook
 - Produce_now only if total score passes the threshold
+- Build a ranked shortlist from the strongest produce_now ideas only
+- Pick one selected idea_id from the shortlist and explain why it won
 - Be honest about weak ideas — do not inflate scores
 
 Output format — repeat for each idea:
@@ -145,7 +147,14 @@ repurposing: (1-5)
 total_score: (sum)
 recommendation: produce_now | hold | kill
 reason: (one sentence)
----"""
+---
+
+After all idea blocks, add:
+shortlist:
+- (idea_id)
+- (idea_id)
+selected_idea_id: (winner from shortlist, leave blank if there is no shortlist)
+selection_reasoning: (why this shortlisted idea should be produced first)"""
 
 
 def score_ideas_user(

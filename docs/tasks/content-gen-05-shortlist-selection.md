@@ -1,15 +1,16 @@
-# Task 05: Replace First-Winner Selection With Shortlist Logic (Not Implemented)
+# Task 05: Replace First-Winner Selection With Shortlist Logic (Done)
 
 ## Status
 
-Current status: Not implemented
+Current status: Done
 
-Evidence in the current codebase:
+Implemented today:
 
-- `ScoringOutput` still only stores `produce_now`, `hold`, and `killed`.
-- There is no shortlist model, `selected_idea_id`, or winner rationale in `PipelineContext`.
-- Downstream stages in `src/cc_deep_research/content_gen/orchestrator.py` still select `ctx.scoring.produce_now[0]`.
-- There are no tests covering shortlist selection or explicit chosen-idea precedence.
+- `ScoringOutput` now carries `shortlist`, `selected_idea_id`, `selection_reasoning`, and `runner_up_idea_ids`.
+- `PipelineContext` now stores the explicit idea selection state so downstream stages do not depend on list position.
+- The scoring prompt and parser now support shortlist ranking plus deterministic fallback selection.
+- Downstream orchestrator stages resolve the chosen idea explicitly instead of reading `produce_now[0]`.
+- Regression tests now cover shortlist serialization, explicit selected-idea precedence, and downstream angle/research selection.
 
 ## Goal
 

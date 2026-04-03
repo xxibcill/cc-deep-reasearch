@@ -70,13 +70,18 @@ class BacklogAgent:
         rejected_count = _extract_int_field(text, "Rejected ideas")
         rejection_reasons = _extract_list_section(text, "Rejection reasons")
 
+        is_degraded = False
+        degradation_reason = ""
         if not items:
-            logger.warning("Backlog generation produced zero valid items from LLM response")
+            is_degraded = True
+            degradation_reason = "zero valid ideas parsed from LLM response"
 
         return BacklogOutput(
             items=items,
             rejected_count=rejected_count,
             rejection_reasons=rejection_reasons,
+            is_degraded=is_degraded,
+            degradation_reason=degradation_reason,
         )
 
     # ------------------------------------------------------------------
@@ -109,14 +114,31 @@ class BacklogAgent:
             logger.warning(f"Scoring output contained {invalid_count} invalid recommendations, defaulting to 'hold'")
 
         produce_now = [s.idea_id for s in valid_scores if s.recommendation == "produce_now"]
+        shortlist, selected_idea_id, selection_reasoning, runner_up_idea_ids = _derive_selection(
+            text,
+            valid_scores,
+            items,
+        )
         hold = [s.idea_id for s in valid_scores if s.recommendation == "hold"]
         killed = [s.idea_id for s in valid_scores if s.recommendation == "kill"]
+
+        is_degraded = False
+        degradation_reason = ""
+        if not valid_scores:
+            is_degraded = True
+            degradation_reason = "zero valid scores parsed from LLM response"
 
         return ScoringOutput(
             scores=valid_scores,
             produce_now=produce_now,
+            shortlist=shortlist,
+            selected_idea_id=selected_idea_id,
+            selection_reasoning=selection_reasoning,
+            runner_up_idea_ids=runner_up_idea_ids,
             hold=hold,
             killed=killed,
+            is_degraded=is_degraded,
+            degradation_reason=degradation_reason,
         )
 
 
@@ -244,3 +266,71 @@ def _validate_scores(scores: list[IdeaScores]) -> list[IdeaScores]:
             score.recommendation = "hold"
         validated.append(score)
     return validated
+
+
+def _derive_selection(
+    text: str,
+    scores: list[IdeaScores],
+    items: list[BacklogItem],
+) -> tuple[list[str], str, str, list[str]]:
+    produce_now_scores = [score for score in scores if score.recommendation == "produce_now"]
+    if not produce_now_scores:
+        return [], "", "", []
+
+    valid_ids = {score.idea_id for score in produce_now_scores}
+    ranked_scores = _rank_scores(produce_now_scores, items)
+    fallback_shortlist = [score.idea_id for score in ranked_scores]
+    parsed_shortlist = [
+        idea_id for idea_id in _extract_shortlist(text, valid_ids) if idea_id in valid_ids
+    ]
+    shortlist = _merge_preserving_order(parsed_shortlist, fallback_shortlist)
+
+    selected_idea_id = _normalize_idea_id(_extract_block_field(text, "selected_idea_id"), valid_ids)
+    if not selected_idea_id or selected_idea_id not in shortlist:
+        selected_idea_id = shortlist[0]
+
+    selection_reasoning = _extract_block_field(text, "selection_reasoning").strip()
+    if not selection_reasoning:
+        selected_score = next((score for score in ranked_scores if score.idea_id == selected_idea_id), None)
+        selection_reasoning = selected_score.reason if selected_score else ""
+
+    runner_up_idea_ids = [idea_id for idea_id in shortlist if idea_id != selected_idea_id]
+    return shortlist, selected_idea_id, selection_reasoning, runner_up_idea_ids
+
+
+def _extract_shortlist(text: str, valid_ids: set[str]) -> list[str]:
+    raw_entries = _extract_list_section(text, "shortlist")
+    shortlist: list[str] = []
+    for entry in raw_entries:
+        idea_id = _normalize_idea_id(entry, valid_ids)
+        if idea_id and idea_id not in shortlist:
+            shortlist.append(idea_id)
+    return shortlist
+
+
+def _normalize_idea_id(raw_value: str, valid_ids: set[str]) -> str:
+    cleaned = re.sub(r"^\d+[\.\)]\s*", "", raw_value).strip()
+    candidate = cleaned.split(":", 1)[0].strip()
+    candidate = candidate.split(" ", 1)[0].strip()
+    if candidate in valid_ids:
+        return candidate
+    for idea_id in valid_ids:
+        if re.search(rf"\b{re.escape(idea_id)}\b", cleaned):
+            return idea_id
+    return ""
+
+
+def _rank_scores(scores: list[IdeaScores], items: list[BacklogItem]) -> list[IdeaScores]:
+    item_order = {item.idea_id: index for index, item in enumerate(items)}
+    return sorted(
+        scores,
+        key=lambda score: (-score.total_score, item_order.get(score.idea_id, len(item_order))),
+    )
+
+
+def _merge_preserving_order(primary: list[str], fallback: list[str]) -> list[str]:
+    merged: list[str] = []
+    for idea_id in [*primary, *fallback]:
+        if idea_id and idea_id not in merged:
+            merged.append(idea_id)
+    return merged

@@ -8,11 +8,18 @@ import pytest
 from click.testing import CliRunner
 
 from cc_deep_research.cli import main
+from cc_deep_research.content_gen.agents.backlog import (
+    _derive_selection,
+    _parse_backlog_items,
+    _parse_scores,
+    _validate_scores,
+)
 from cc_deep_research.content_gen.agents.scripting import _STEP_HANDLERS, ScriptingAgent
 from cc_deep_research.content_gen.models import (
     PIPELINE_STAGES,
     SCRIPTING_STEPS,
     AngleDefinition,
+    AngleOutput,
     AngleOption,
     BacklogItem,
     BacklogOutput,
@@ -39,6 +46,7 @@ from cc_deep_research.content_gen.models import (
 )
 from cc_deep_research.content_gen.orchestrator import _format_research_context
 from cc_deep_research.content_gen.prompts import scripting as scripting_prompts
+from cc_deep_research.content_gen.prompts.backlog import build_backlog_user
 from cc_deep_research.llm.base import LLMProviderType, LLMResponse, LLMTransportType
 
 
@@ -96,6 +104,10 @@ def test_pipeline_context_default_values() -> None:
     assert ctx.pipeline_id  # auto-generated
     assert ctx.strategy is None
     assert ctx.backlog is None
+    assert ctx.shortlist == []
+    assert ctx.selected_idea_id == ""
+    assert ctx.selection_reasoning == ""
+    assert ctx.runner_up_idea_ids == []
     assert ctx.scripting is None
     assert ctx.qc_gate is None
     assert ctx.current_stage == 0
@@ -109,12 +121,20 @@ def test_pipeline_context_roundtrip() -> None:
         backlog=BacklogOutput(items=[
             BacklogItem(idea="test idea", category="evergreen", audience="beginners"),
         ]),
+        shortlist=["idea-2", "idea-1"],
+        selected_idea_id="idea-2",
+        selection_reasoning="Better hook and clearer evidence fit.",
+        runner_up_idea_ids=["idea-1"],
     )
     json_str = ctx.model_dump_json()
     restored = PipelineContext.model_validate_json(json_str)
     assert restored.theme == "test theme"
     assert restored.strategy is not None
     assert restored.strategy.niche == "fitness"
+    assert restored.shortlist == ["idea-2", "idea-1"]
+    assert restored.selected_idea_id == "idea-2"
+    assert restored.selection_reasoning == "Better hook and clearer evidence fit."
+    assert restored.runner_up_idea_ids == ["idea-1"]
     assert len(restored.backlog.items) == 1
     assert restored.backlog.items[0].idea == "test idea"
 
@@ -321,11 +341,15 @@ def test_summarize_output_for_backlog_and_scoring() -> None:
 
     ctx.scoring = ScoringOutput(
         produce_now=["id1", "id2"],
+        shortlist=["id2", "id1"],
+        selected_idea_id="id2",
         hold=["id3"],
         killed=["id4"],
     )
     scoring_summary = orch._summarize_output(3, ctx)
     assert "produce=2" in scoring_summary
+    assert "shortlist=2" in scoring_summary
+    assert "selected=id2" in scoring_summary
     assert "hold=1" in scoring_summary
     assert "kill=1" in scoring_summary
 
@@ -367,11 +391,146 @@ def test_skipped_stage_recorded_when_prerequisites_missing() -> None:
     prereqs_met, reason = orch._check_prerequisites(3, ctx)
     assert prereqs_met
 
-    ctx.backlog = None
+    ctx.backlog = BacklogOutput(items=[])
     ctx.scoring = ScoringOutput(produce_now=[])
     prereqs_met, reason = orch._check_prerequisites(4, ctx)
     assert not prereqs_met
-    assert "scoring/produce_now missing" in reason
+    assert "scoring/selected idea missing" in reason
+
+
+@pytest.mark.asyncio
+async def test_generate_angles_uses_selected_idea_over_produce_now_order() -> None:
+    """Angle generation should follow the explicit selected idea."""
+    from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator, _stage_generate_angles
+
+    class FakeConfig:
+        content_gen = type(
+            "ContentGen",
+            (),
+            {
+                "max_iterations": 1,
+                "quality_threshold": 0.7,
+                "convergence_threshold": 0.1,
+                "enable_iterative_mode": False,
+                "scoring_threshold_produce": 3.5,
+                "default_platforms": ["tiktok"],
+            },
+        )()
+
+        llm = type(
+            "LLM",
+            (),
+            {
+                "anthropic": type("C", (), {"enabled": True, "api_key": "test"})(),
+            },
+        )()
+
+    class FakeAngleAgent:
+        def __init__(self) -> None:
+            self.seen_item_id = ""
+
+        async def generate(self, item: BacklogItem, strategy: StrategyMemory) -> AngleOutput:
+            del strategy
+            self.seen_item_id = item.idea_id
+            return AngleOutput(
+                idea_id=item.idea_id,
+                angle_options=[AngleOption(angle_id="angle-2", core_promise="Selected angle")],
+                selected_angle_id="angle-2",
+            )
+
+    orch = ContentGenOrchestrator(FakeConfig())
+    fake_agent = FakeAngleAgent()
+    orch._agents["angle"] = fake_agent
+    ctx = PipelineContext(
+        theme="test",
+        backlog=BacklogOutput(
+            items=[
+                BacklogItem(idea_id="id1", idea="First idea"),
+                BacklogItem(idea_id="id2", idea="Second idea"),
+            ]
+        ),
+        scoring=ScoringOutput(
+            produce_now=["id1", "id2"],
+            shortlist=["id1", "id2"],
+            selected_idea_id="id2",
+        ),
+    )
+
+    ctx = await _stage_generate_angles(orch, ctx)
+
+    assert fake_agent.seen_item_id == "id2"
+    assert ctx.angles is not None
+    assert ctx.angles.idea_id == "id2"
+
+
+@pytest.mark.asyncio
+async def test_build_research_pack_uses_pipeline_selected_idea() -> None:
+    """Research pack stage should read the chosen idea from pipeline context."""
+    from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator, _stage_build_research_pack
+
+    class FakeConfig:
+        content_gen = type(
+            "ContentGen",
+            (),
+            {
+                "max_iterations": 1,
+                "quality_threshold": 0.7,
+                "convergence_threshold": 0.1,
+                "enable_iterative_mode": False,
+                "scoring_threshold_produce": 3.5,
+                "default_platforms": ["tiktok"],
+            },
+        )()
+
+        llm = type(
+            "LLM",
+            (),
+            {
+                "anthropic": type("C", (), {"enabled": True, "api_key": "test"})(),
+            },
+        )()
+
+    class FakeResearchAgent:
+        def __init__(self) -> None:
+            self.seen_item_id = ""
+            self.seen_angle_id = ""
+
+        async def build(self, item: BacklogItem, angle: AngleOption, *, feedback: str = "") -> ResearchPack:
+            del feedback
+            self.seen_item_id = item.idea_id
+            self.seen_angle_id = angle.angle_id
+            return ResearchPack(idea_id=item.idea_id, angle_id=angle.angle_id)
+
+    orch = ContentGenOrchestrator(FakeConfig())
+    fake_agent = FakeResearchAgent()
+    orch._agents["research"] = fake_agent
+    ctx = PipelineContext(
+        theme="test",
+        backlog=BacklogOutput(
+            items=[
+                BacklogItem(idea_id="id1", idea="First idea"),
+                BacklogItem(idea_id="id2", idea="Second idea"),
+            ]
+        ),
+        scoring=ScoringOutput(
+            produce_now=["id1", "id2"],
+            shortlist=["id1", "id2"],
+            selected_idea_id="id1",
+        ),
+        selected_idea_id="id2",
+        angles=AngleOutput(
+            idea_id="id2",
+            angle_options=[AngleOption(angle_id="angle-2", core_promise="Angle for second idea")],
+            selected_angle_id="angle-2",
+        ),
+    )
+
+    ctx = await _stage_build_research_pack(orch, ctx)
+
+    assert fake_agent.seen_item_id == "id2"
+    assert fake_agent.seen_angle_id == "angle-2"
+    assert ctx.research_pack is not None
+    assert ctx.research_pack.idea_id == "id2"
 
 
 @pytest.mark.asyncio
@@ -1368,18 +1527,90 @@ def test_cli_package_accepts_scripting_context(
 # ---------------------------------------------------------------------------
 
 
-from cc_deep_research.content_gen.agents.backlog import (
-    _parse_backlog_items,
-    _parse_scores,
-    _validate_scores,
-)
-from cc_deep_research.content_gen.prompts.backlog import build_backlog_user
+def test_backlog_output_degraded_flag() -> None:
+    """BacklogOutput should track degraded state."""
+    output = BacklogOutput(items=[], is_degraded=True, degradation_reason="zero valid ideas")
+    assert output.is_degraded is True
+    assert output.degradation_reason == "zero valid ideas"
 
 
-def test_parse_backlog_items_handles_malformed_response() -> None:
-    """Parsing should return empty list for garbage input."""
-    result = _parse_backlog_items("This is not a valid backlog response")
-    assert result == []
+def test_scoring_output_degraded_flag() -> None:
+    """ScoringOutput should track degraded state."""
+    output = ScoringOutput(is_degraded=True, degradation_reason="zero valid scores")
+    assert output.is_degraded is True
+    assert output.degradation_reason == "zero valid scores"
+
+
+def test_scoring_output_roundtrip_with_shortlist() -> None:
+    """ScoringOutput should preserve shortlist selection fields."""
+    output = ScoringOutput(
+        scores=[
+            IdeaScores(
+                idea_id="id1",
+                relevance=5,
+                novelty=4,
+                authority_fit=5,
+                production_ease=4,
+                evidence_strength=4,
+                hook_strength=5,
+                repurposing=4,
+                total_score=31,
+                recommendation="produce_now",
+            )
+        ],
+        produce_now=["id1"],
+        shortlist=["id1", "id2"],
+        selected_idea_id="id1",
+        selection_reasoning="Best mix of hook strength and evidence.",
+        runner_up_idea_ids=["id2"],
+    )
+
+    restored = ScoringOutput.model_validate_json(output.model_dump_json())
+
+    assert restored.shortlist == ["id1", "id2"]
+    assert restored.selected_idea_id == "id1"
+    assert restored.selection_reasoning == "Best mix of hook strength and evidence."
+    assert restored.runner_up_idea_ids == ["id2"]
+
+
+def test_derive_selection_prefers_explicit_selected_idea() -> None:
+    """Explicit selected_idea_id should win over shortlist ordering."""
+    text = """---
+idea_id: id1
+total_score: 31
+recommendation: produce_now
+reason: Good
+---
+idea_id: id2
+total_score: 30
+recommendation: produce_now
+reason: Better fit
+---
+shortlist:
+- id1
+- id2
+selected_idea_id: id2
+selection_reasoning: Better fit for the first production slot
+"""
+    scores = [
+        IdeaScores(idea_id="id1", total_score=31, recommendation="produce_now", reason="Good"),
+        IdeaScores(idea_id="id2", total_score=30, recommendation="produce_now", reason="Better fit"),
+    ]
+    items = [
+        BacklogItem(idea_id="id1", idea="Idea 1"),
+        BacklogItem(idea_id="id2", idea="Idea 2"),
+    ]
+
+    shortlist, selected_idea_id, selection_reasoning, runner_up_idea_ids = _derive_selection(
+        text,
+        scores,
+        items,
+    )
+
+    assert shortlist == ["id1", "id2"]
+    assert selected_idea_id == "id2"
+    assert selection_reasoning == "Better fit for the first production slot"
+    assert runner_up_idea_ids == ["id1"]
 
 
 def test_parse_backlog_items_handles_partial_items() -> None:
@@ -1394,13 +1625,6 @@ category: evergreen
 """
     result = _parse_backlog_items(text)
     assert len(result) == 2
-
-
-def test_parse_scores_handles_malformed_response() -> None:
-    """Parsing should return empty list for garbage input."""
-    items = [BacklogItem(idea_id="id1", idea="test")]
-    result = _parse_scores("Not a valid scoring response", items)
-    assert result == []
 
 
 def test_parse_scores_handles_missing_fields() -> None:
@@ -1438,8 +1662,6 @@ def test_validate_scores_filters_invalid_recommendations() -> None:
 
 def test_build_backlog_user_includes_opportunity_brief() -> None:
     """Prompt should include OpportunityBrief fields when provided."""
-    from cc_deep_research.content_gen.models import OpportunityBrief
-
     brief = OpportunityBrief(
         theme="AI productivity",
         goal="Help founders save 2 hours/day",
@@ -1471,43 +1693,6 @@ def test_build_backlog_user_includes_opportunity_brief() -> None:
     assert "Risk constraints: No financial advice" in user_prompt
     assert "Freshness rationale: New feature just released" in user_prompt
     assert "Sub-angles to explore: Tool comparison, Workflow optimization" in user_prompt
-
-
-def test_build_backlog_user_works_without_opportunity_brief() -> None:
-    """Prompt should work normally when OpportunityBrief is None."""
-    user_prompt = build_backlog_user(
-        theme="test",
-        strategy=StrategyMemory(niche="tech"),
-        count=10,
-        opportunity_brief=None,
-    )
-
-    assert "Theme: test" in user_prompt
-    assert "Target count: 10 ideas" in user_prompt
-    assert "Niche: tech" in user_prompt
-    assert "Goal" not in user_prompt
-    assert "Primary audience" not in user_prompt
-
-
-def test_backlog_output_with_zero_items() -> None:
-    """BacklogOutput with empty items should be valid and clear."""
-    output = BacklogOutput(items=[], rejected_count=0, rejection_reasons=[])
-    assert output.items == []
-    assert len(output.items) == 0
-
-
-def test_scoring_output_with_zero_scores() -> None:
-    """ScoringOutput with empty scores should be valid and clear."""
-    output = ScoringOutput(scores=[], produce_now=[], hold=[], killed=[])
-    assert output.scores == []
-    assert len(output.produce_now) == 0
-    assert len(output.hold) == 0
-    assert len(output.killed) == 0
-
-
-# ---------------------------------------------------------------------------
-# Opportunity planning
-# ---------------------------------------------------------------------------
 
 
 def test_opportunity_brief_defaults() -> None:

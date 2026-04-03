@@ -290,8 +290,9 @@ cc-deep-research content-gen backlog score --from-file backlog.json --select-top
 
 Pipeline behavior:
 
-- the full pipeline takes the first `produce_now` idea only
-- it does not currently branch into multiple ideas or keep a ranked work queue inside the pipeline context
+- scoring now returns a ranked `shortlist`, `selected_idea_id`, `selection_reasoning`, and `runner_up_idea_ids`
+- the full pipeline stores that selection state on `PipelineContext` and uses the chosen idea consistently downstream
+- it still does not branch into multiple ideas or keep a multi-idea execution queue
 
 ### Stage 4: Angle Generation
 
@@ -760,7 +761,7 @@ Practical impact:
 
 The pipeline:
 
-- chooses the first `produce_now` idea
+- chooses one explicit shortlisted winner and preserves runner-ups
 - chooses the selected angle if present, otherwise the first angle
 - does not fan out across multiple shortlisted ideas
 
