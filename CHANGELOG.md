@@ -76,9 +76,18 @@ Phase 2 - Extended lifecycle management:
 - Added a dedicated dashboard decision-graph view with node inspection, filters, zoom/pan, and explicit-versus-inferred styling
 - Added fixtures, backend/API/export/UI tests, rollout phases, and operator-facing documentation for graph limits and telemetry coverage
 
+#### Content Generation Pipeline Upgrade (7 tasks)
+
+- Added an `OpportunityBrief` planning contract, `plan_opportunity` stage, new planning agent/prompt, and supporting documentation/tests for the upgraded content-generation flow
+- Added `PipelineStageTrace` persistence with compact input/output summaries, skipped/failed/degraded coverage, and live per-stage router events that reflect execution order
+- Hardened backlog and scoring stages with degraded-state signaling, empty-input short-circuiting, and trace warnings when parsing yields sparse or malformed results
+- Replaced first-hit idea selection with explicit shortlist metadata (`selected_idea_id`, `selection_reasoning`, `runner_up_idea_ids`) and downstream chosen-idea resolution
+- Aligned the dashboard pipeline view and client types with backend shortlist/degraded-state fields so operators can inspect selection rationale and stage health directly
+- Added fixture-backed content-generation smoke coverage plus router/API regressions for live stage events and completed browser-started runs
+
 ### Removed
 
-- Removed completed task-planning documents from `docs/tasks/` after consolidating their delivered work into this changelog
+- Removed completed task-planning documents, including the content-generation pipeline upgrade task docs, from `docs/tasks/` after consolidating their delivered work into this changelog
 
 ## [0.1.0] - 2026-03-11
 
