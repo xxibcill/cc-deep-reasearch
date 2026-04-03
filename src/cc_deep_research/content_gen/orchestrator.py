@@ -228,6 +228,24 @@ class ContentGenOrchestrator:
             status = "failed"
             output_summary = str(e)
             warnings = [f"Stage failed: {e}"]
+            completed_at = datetime.now(tz=UTC).isoformat()
+            trace = PipelineStageTrace(
+                stage_index=idx,
+                stage_name=stage_name,
+                stage_label=label,
+                status=status,
+                started_at=started_at,
+                completed_at=completed_at,
+                duration_ms=int(
+                    (datetime.fromisoformat(completed_at) - datetime.fromisoformat(started_at))
+                    .total_seconds()
+                    * 1000
+                ),
+                input_summary=input_summary,
+                output_summary=output_summary,
+                warnings=warnings,
+            )
+            ctx.stage_traces.append(trace)
             if stage_completed_callback:
                 stage_completed_callback(idx, "failed", str(e))
             raise
