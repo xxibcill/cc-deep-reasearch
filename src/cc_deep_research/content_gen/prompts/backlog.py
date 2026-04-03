@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from cc_deep_research.content_gen.models import (
     BacklogItem,
+    OpportunityBrief,
     StrategyMemory,
 )
 
@@ -65,6 +66,7 @@ def build_backlog_user(
     strategy: StrategyMemory,
     *,
     count: int = 20,
+    opportunity_brief: OpportunityBrief | None = None,
 ) -> str:
     parts = [f"Theme: {theme}", f"Target count: {count} ideas"]
     if strategy.niche:
@@ -79,6 +81,29 @@ def build_backlog_user(
     if strategy.past_winners:
         winners = "; ".join(w.title for w in strategy.past_winners[:5])
         parts.append(f"Past winners: {winners}")
+
+    if opportunity_brief:
+        if opportunity_brief.goal:
+            parts.append(f"\nGoal: {opportunity_brief.goal}")
+        if opportunity_brief.primary_audience_segment:
+            parts.append(f"Primary audience: {opportunity_brief.primary_audience_segment}")
+        if opportunity_brief.secondary_audience_segments:
+            parts.append(f"Secondary audiences: {', '.join(opportunity_brief.secondary_audience_segments)}")
+        if opportunity_brief.problem_statements:
+            parts.append(f"Problem statements: {'; '.join(opportunity_brief.problem_statements)}")
+        if opportunity_brief.content_objective:
+            parts.append(f"Content objective: {opportunity_brief.content_objective}")
+        if opportunity_brief.proof_requirements:
+            parts.append(f"Proof requirements: {', '.join(opportunity_brief.proof_requirements)}")
+        if opportunity_brief.platform_constraints:
+            parts.append(f"Platform constraints: {', '.join(opportunity_brief.platform_constraints)}")
+        if opportunity_brief.risk_constraints:
+            parts.append(f"Risk constraints: {', '.join(opportunity_brief.risk_constraints)}")
+        if opportunity_brief.freshness_rationale:
+            parts.append(f"Freshness rationale: {opportunity_brief.freshness_rationale}")
+        if opportunity_brief.sub_angles:
+            parts.append(f"Sub-angles to explore: {', '.join(opportunity_brief.sub_angles)}")
+
     return "\n".join(parts)
 
 

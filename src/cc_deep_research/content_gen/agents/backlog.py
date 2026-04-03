@@ -10,6 +10,7 @@ from cc_deep_research.content_gen.models import (
     BacklogItem,
     BacklogOutput,
     IdeaScores,
+    OpportunityBrief,
     ScoringOutput,
     StrategyMemory,
 )
@@ -59,14 +60,18 @@ class BacklogAgent:
         strategy: StrategyMemory,
         *,
         count: int = 20,
+        opportunity_brief: OpportunityBrief | None = None,
     ) -> BacklogOutput:
         system = prompts.BUILD_BACKLOG_SYSTEM
-        user = prompts.build_backlog_user(theme, strategy, count=count)
+        user = prompts.build_backlog_user(theme, strategy, count=count, opportunity_brief=opportunity_brief)
         text = await self._call_llm(system, user, temperature=0.7)
 
         items = _parse_backlog_items(text)
         rejected_count = _extract_int_field(text, "Rejected ideas")
         rejection_reasons = _extract_list_section(text, "Rejection reasons")
+
+        if not items:
+            logger.warning("Backlog generation produced zero valid items from LLM response")
 
         return BacklogOutput(
             items=items,
@@ -86,6 +91,7 @@ class BacklogAgent:
         threshold: int = 25,
     ) -> ScoringOutput:
         if not items:
+            logger.warning("Scoring called with empty items list")
             return ScoringOutput()
 
         system = prompts.SCORE_IDEAS_SYSTEM
@@ -93,12 +99,21 @@ class BacklogAgent:
         text = await self._call_llm(system, user, temperature=0.3)
 
         scores = _parse_scores(text, items)
-        produce_now = [s.idea_id for s in scores if s.recommendation == "produce_now"]
-        hold = [s.idea_id for s in scores if s.recommendation == "hold"]
-        killed = [s.idea_id for s in scores if s.recommendation == "kill"]
+
+        if not scores:
+            logger.warning("Scoring parsing produced zero valid scores from LLM response")
+
+        valid_scores = _validate_scores(scores)
+        if len(valid_scores) != len(scores):
+            invalid_count = len(scores) - len(valid_scores)
+            logger.warning(f"Scoring output contained {invalid_count} invalid recommendations, defaulting to 'hold'")
+
+        produce_now = [s.idea_id for s in valid_scores if s.recommendation == "produce_now"]
+        hold = [s.idea_id for s in valid_scores if s.recommendation == "hold"]
+        killed = [s.idea_id for s in valid_scores if s.recommendation == "kill"]
 
         return ScoringOutput(
-            scores=scores,
+            scores=valid_scores,
             produce_now=produce_now,
             hold=hold,
             killed=killed,
@@ -199,7 +214,7 @@ def _parse_scores(text: str, _items: list[BacklogItem]) -> list[IdeaScores]:
             try:
                 dim_scores[field] = max(1, min(5, int(val)))
             except (ValueError, TypeError):
-                dim_scores[field] = 0
+                dim_scores[field] = 1
         total_str = _extract_block_field(block_text, "total_score")
         try:
             total = int(total_str)
@@ -219,3 +234,13 @@ def _parse_scores(text: str, _items: list[BacklogItem]) -> list[IdeaScores]:
             )
         )
     return scores
+
+
+def _validate_scores(scores: list[IdeaScores]) -> list[IdeaScores]:
+    valid_recommendations = {"produce_now", "hold", "kill"}
+    validated: list[IdeaScores] = []
+    for score in scores:
+        if score.recommendation not in valid_recommendations:
+            score.recommendation = "hold"
+        validated.append(score)
+    return validated

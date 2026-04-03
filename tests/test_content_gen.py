@@ -9,26 +9,23 @@ from click.testing import CliRunner
 
 from cc_deep_research.cli import main
 from cc_deep_research.content_gen.agents.scripting import _STEP_HANDLERS, ScriptingAgent
-from cc_deep_research.content_gen.prompts import scripting as scripting_prompts
 from cc_deep_research.content_gen.models import (
     PIPELINE_STAGES,
     SCRIPTING_STEPS,
     AngleDefinition,
     AngleOption,
-    AngleOutput,
     BacklogItem,
     BacklogOutput,
     BeatIntent,
     BeatIntentMap,
-    BeatVisual,
     CoreInputs,
     HookSet,
     HumanQCGate,
     IdeaScores,
     PackagingOutput,
     PipelineContext,
+    PipelineStageTrace,
     PlatformPackage,
-    ProductionBrief,
     PublishItem,
     QCResult,
     ResearchPack,
@@ -38,9 +35,9 @@ from cc_deep_research.content_gen.models import (
     ScriptStructure,
     ScriptVersion,
     StrategyMemory,
-    VisualPlanOutput,
 )
 from cc_deep_research.content_gen.orchestrator import _format_research_context
+from cc_deep_research.content_gen.prompts import scripting as scripting_prompts
 from cc_deep_research.llm.base import LLMProviderType, LLMResponse, LLMTransportType
 
 
@@ -119,6 +116,347 @@ def test_pipeline_context_roundtrip() -> None:
     assert restored.strategy.niche == "fitness"
     assert len(restored.backlog.items) == 1
     assert restored.backlog.items[0].idea == "test idea"
+
+
+def test_pipeline_stage_trace_defaults() -> None:
+    """PipelineStageTrace should have sensible defaults."""
+    trace = PipelineStageTrace(
+        stage_index=0,
+        stage_name="load_strategy",
+        stage_label="Loading strategy memory",
+    )
+    assert trace.status == "completed"
+    assert trace.started_at == ""
+    assert trace.completed_at == ""
+    assert trace.duration_ms == 0
+    assert trace.input_summary == ""
+    assert trace.output_summary == ""
+    assert trace.warnings == []
+    assert trace.decision_summary == ""
+
+
+def test_pipeline_stage_trace_roundtrip() -> None:
+    """PipelineStageTrace should survive JSON serialization."""
+    trace = PipelineStageTrace(
+        stage_index=2,
+        stage_name="score_ideas",
+        stage_label="Scoring ideas",
+        status="completed",
+        started_at="2026-03-29T10:00:00+00:00",
+        completed_at="2026-03-29T10:00:05+00:00",
+        duration_ms=5000,
+        input_summary="items=10",
+        output_summary="produce=3, hold=5, kill=2",
+        warnings=[],
+        decision_summary="",
+    )
+    json_str = trace.model_dump_json()
+    restored = PipelineStageTrace.model_validate_json(json_str)
+    assert restored.stage_index == 2
+    assert restored.stage_name == "score_ideas"
+    assert restored.duration_ms == 5000
+    assert restored.input_summary == "items=10"
+
+
+def test_pipeline_context_with_traces_roundtrip() -> None:
+    """PipelineContext with stage_traces should survive JSON serialization."""
+    ctx = PipelineContext(
+        theme="test",
+        stage_traces=[
+            PipelineStageTrace(
+                stage_index=0,
+                stage_name="load_strategy",
+                stage_label="Loading strategy memory",
+                status="completed",
+                started_at="2026-03-29T10:00:00+00:00",
+                completed_at="2026-03-29T10:00:01+00:00",
+                duration_ms=1000,
+                input_summary="",
+                output_summary="niche=fitness",
+            ),
+            PipelineStageTrace(
+                stage_index=1,
+                stage_name="build_backlog",
+                stage_label="Building backlog",
+                status="skipped",
+                started_at="2026-03-29T10:00:01+00:00",
+                completed_at="2026-03-29T10:00:01+00:00",
+                duration_ms=0,
+                input_summary="theme=test",
+                output_summary="backlog missing",
+                decision_summary="Skipped: backlog missing",
+            ),
+        ],
+    )
+    json_str = ctx.model_dump_json()
+    restored = PipelineContext.model_validate_json(json_str)
+    assert len(restored.stage_traces) == 2
+    assert restored.stage_traces[0].status == "completed"
+    assert restored.stage_traces[1].status == "skipped"
+
+
+def test_orchestrator_records_traces_in_stage_order() -> None:
+    """Orchestrator should append traces for each stage in order."""
+    from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
+
+    class FakeConfig:
+        content_gen = type(
+            "ContentGen",
+            (),
+            {
+                "max_iterations": 1,
+                "quality_threshold": 0.7,
+                "convergence_threshold": 0.1,
+                "enable_iterative_mode": False,
+                "scoring_threshold_produce": 3.5,
+                "default_platforms": ["tiktok"],
+            },
+        )()
+
+        llm = type(
+            "LLM",
+            (),
+            {
+                "anthropic": type("C", (), {"enabled": True, "api_key": "test"})(),
+            },
+        )()
+
+    _ = ContentGenOrchestrator(FakeConfig())
+    ctx = PipelineContext(theme="test")
+
+    trace1 = PipelineStageTrace(
+        stage_index=0,
+        stage_name="load_strategy",
+        stage_label="Loading strategy memory",
+        input_summary="",
+        output_summary="niche=fitness",
+    )
+    trace2 = PipelineStageTrace(
+        stage_index=1,
+        stage_name="build_backlog",
+        stage_label="Building backlog",
+        input_summary="theme=test",
+        output_summary="items=5",
+    )
+    ctx.stage_traces.extend([trace1, trace2])
+
+    assert ctx.stage_traces[0].stage_index == 0
+    assert ctx.stage_traces[1].stage_index == 1
+
+
+def test_summarize_input_for_backlog_and_scoring() -> None:
+    """Input summaries should exist for backlog and scoring stages."""
+    from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
+
+    class FakeConfig:
+        content_gen = type(
+            "ContentGen",
+            (),
+            {
+                "max_iterations": 1,
+                "quality_threshold": 0.7,
+                "convergence_threshold": 0.1,
+                "enable_iterative_mode": False,
+                "scoring_threshold_produce": 3.5,
+                "default_platforms": ["tiktok"],
+            },
+        )()
+
+        llm = type(
+            "LLM",
+            (),
+            {
+                "anthropic": type("C", (), {"enabled": True, "api_key": "test"})(),
+            },
+        )()
+
+    orch = ContentGenOrchestrator(FakeConfig())
+    ctx = PipelineContext(theme="my theme")
+
+    backlog_summary = orch._summarize_input(1, ctx)
+    assert "theme=my theme" in backlog_summary
+
+    ctx.backlog = BacklogOutput(items=[BacklogItem(idea="test") for _ in range(10)])
+    scoring_summary = orch._summarize_input(2, ctx)
+    assert "items=10" in scoring_summary
+
+
+def test_summarize_output_for_backlog_and_scoring() -> None:
+    """Output summaries should exist for backlog and scoring stages."""
+    from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
+
+    class FakeConfig:
+        content_gen = type(
+            "ContentGen",
+            (),
+            {
+                "max_iterations": 1,
+                "quality_threshold": 0.7,
+                "convergence_threshold": 0.1,
+                "enable_iterative_mode": False,
+                "scoring_threshold_produce": 3.5,
+                "default_platforms": ["tiktok"],
+            },
+        )()
+
+        llm = type(
+            "LLM",
+            (),
+            {
+                "anthropic": type("C", (), {"enabled": True, "api_key": "test"})(),
+            },
+        )()
+
+    orch = ContentGenOrchestrator(FakeConfig())
+    ctx = PipelineContext(theme="my theme")
+
+    ctx.backlog = BacklogOutput(
+        items=[BacklogItem(idea="test") for _ in range(10)],
+        rejected_count=2,
+    )
+    backlog_summary = orch._summarize_output(1, ctx)
+    assert "items=10" in backlog_summary
+    assert "rejected=2" in backlog_summary
+
+    ctx.scoring = ScoringOutput(
+        produce_now=["id1", "id2"],
+        hold=["id3"],
+        killed=["id4"],
+    )
+    scoring_summary = orch._summarize_output(2, ctx)
+    assert "produce=2" in scoring_summary
+    assert "hold=1" in scoring_summary
+    assert "kill=1" in scoring_summary
+
+
+def test_skipped_stage_recorded_when_prerequisites_missing() -> None:
+    """Skipped stages should be recorded when prerequisites are missing."""
+    from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
+
+    class FakeConfig:
+        content_gen = type(
+            "ContentGen",
+            (),
+            {
+                "max_iterations": 1,
+                "quality_threshold": 0.7,
+                "convergence_threshold": 0.1,
+                "enable_iterative_mode": False,
+                "scoring_threshold_produce": 3.5,
+                "default_platforms": ["tiktok"],
+            },
+        )()
+
+        llm = type(
+            "LLM",
+            (),
+            {
+                "anthropic": type("C", (), {"enabled": True, "api_key": "test"})(),
+            },
+        )()
+
+    orch = ContentGenOrchestrator(FakeConfig())
+    ctx = PipelineContext(theme="test")
+
+    prereqs_met, reason = orch._check_prerequisites(2, ctx)
+    assert not prereqs_met
+    assert "backlog missing" in reason
+
+    ctx.backlog = BacklogOutput(items=[])
+    prereqs_met, reason = orch._check_prerequisites(2, ctx)
+    assert prereqs_met
+
+    ctx.backlog = None
+    ctx.scoring = ScoringOutput(produce_now=[])
+    prereqs_met, reason = orch._check_prerequisites(3, ctx)
+    assert not prereqs_met
+    assert "scoring/produce_now missing" in reason
+
+
+@pytest.mark.asyncio
+async def test_stage_completed_callback_emits_for_skipped_stage() -> None:
+    """stage_completed_callback should be called for skipped stages."""
+    from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
+
+    class FakeConfig:
+        content_gen = type(
+            "ContentGen",
+            (),
+            {
+                "max_iterations": 1,
+                "quality_threshold": 0.7,
+                "convergence_threshold": 0.1,
+                "enable_iterative_mode": False,
+                "scoring_threshold_produce": 3.5,
+                "default_platforms": ["tiktok"],
+            },
+        )()
+
+        llm = type(
+            "LLM",
+            (),
+            {
+                "anthropic": type("C", (), {"enabled": True, "api_key": "test"})(),
+            },
+        )()
+
+    orch = ContentGenOrchestrator(FakeConfig())
+    recorded_events: list[tuple[int, str, str]] = []
+
+    def on_stage_completed(stage_idx: int, status: str, detail: str) -> None:
+        recorded_events.append((stage_idx, status, detail))
+
+    ctx = PipelineContext(theme="test")
+    await orch._run_stage(2, ctx, None, stage_completed_callback=on_stage_completed)
+
+    assert len(recorded_events) == 1
+    idx, status, detail = recorded_events[0]
+    assert idx == 2
+    assert status == "skipped"
+    assert "backlog missing" in detail
+
+
+@pytest.mark.asyncio
+async def test_stage_completed_callback_emits_after_stage() -> None:
+    """stage_completed_callback should be called immediately after stage runs."""
+    from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
+
+    class FakeConfig:
+        content_gen = type(
+            "ContentGen",
+            (),
+            {
+                "max_iterations": 1,
+                "quality_threshold": 0.7,
+                "convergence_threshold": 0.1,
+                "enable_iterative_mode": False,
+                "scoring_threshold_produce": 3.5,
+                "default_platforms": ["tiktok"],
+            },
+        )()
+
+        llm = type(
+            "LLM",
+            (),
+            {
+                "anthropic": type("C", (), {"enabled": True, "api_key": "test"})(),
+            },
+        )()
+
+    orch = ContentGenOrchestrator(FakeConfig())
+    recorded_events: list[tuple[int, str, str]] = []
+
+    def on_stage_completed(stage_idx: int, status: str, detail: str) -> None:
+        recorded_events.append((stage_idx, status, detail))
+
+    ctx = PipelineContext(theme="test")
+    await orch._run_stage(0, ctx, None, stage_completed_callback=on_stage_completed)
+
+    assert len(recorded_events) == 1
+    idx, status, detail = recorded_events[0]
+    assert idx == 0
+    assert status == "completed"
+    assert detail == ""
 
 
 # ---------------------------------------------------------------------------
@@ -967,3 +1305,145 @@ def test_cli_package_accepts_scripting_context(
     )
 
     assert result.exit_code == 0
+
+
+# ---------------------------------------------------------------------------
+# Backlog hardening tests
+# ---------------------------------------------------------------------------
+
+
+from cc_deep_research.content_gen.agents.backlog import (
+    _parse_backlog_items,
+    _parse_scores,
+    _validate_scores,
+)
+from cc_deep_research.content_gen.prompts.backlog import build_backlog_user
+
+
+def test_parse_backlog_items_handles_malformed_response() -> None:
+    """Parsing should return empty list for garbage input."""
+    result = _parse_backlog_items("This is not a valid backlog response")
+    assert result == []
+
+
+def test_parse_backlog_items_handles_partial_items() -> None:
+    """Parsing should return items that have at least an idea field."""
+    text = """---
+idea: First idea
+audience: Test audience
+---
+idea: Second idea
+---
+category: evergreen
+"""
+    result = _parse_backlog_items(text)
+    assert len(result) == 2
+
+
+def test_parse_scores_handles_malformed_response() -> None:
+    """Parsing should return empty list for garbage input."""
+    items = [BacklogItem(idea_id="id1", idea="test")]
+    result = _parse_scores("Not a valid scoring response", items)
+    assert result == []
+
+
+def test_parse_scores_handles_missing_fields() -> None:
+    """Parsing should handle blocks missing some fields."""
+    text = """---
+idea_id: id1
+relevance: 3
+total_score: 15
+recommendation: produce_now
+---
+idea_id: id2
+"""
+    items = [
+        BacklogItem(idea_id="id1", idea="test1"),
+        BacklogItem(idea_id="id2", idea="test2"),
+    ]
+    result = _parse_scores(text, items)
+    assert len(result) == 2
+    assert result[0].total_score == 15
+    assert result[1].total_score == 7
+
+
+def test_validate_scores_filters_invalid_recommendations() -> None:
+    """Invalid recommendations should be corrected to 'hold'."""
+    scores = [
+        IdeaScores(idea_id="id1", recommendation="produce_now"),
+        IdeaScores(idea_id="id2", recommendation="invalid"),
+        IdeaScores(idea_id="id3", recommendation="hold"),
+    ]
+    validated = _validate_scores(scores)
+    assert validated[0].recommendation == "produce_now"
+    assert validated[1].recommendation == "hold"
+    assert validated[2].recommendation == "hold"
+
+
+def test_build_backlog_user_includes_opportunity_brief() -> None:
+    """Prompt should include OpportunityBrief fields when provided."""
+    from cc_deep_research.content_gen.models import OpportunityBrief
+
+    brief = OpportunityBrief(
+        theme="AI productivity",
+        goal="Help founders save 2 hours/day",
+        primary_audience_segment="Startup founders",
+        secondary_audience_segments=["Engineering managers"],
+        problem_statements=["Too many meetings", "Context switching"],
+        content_objective="Show 3 specific tools",
+        proof_requirements=["Case study", "Data"],
+        platform_constraints=["Short-form only"],
+        risk_constraints=["No financial advice"],
+        freshness_rationale="New feature just released",
+        sub_angles=["Tool comparison", "Workflow optimization"],
+    )
+
+    user_prompt = build_backlog_user(
+        theme="AI productivity",
+        strategy=StrategyMemory(),
+        count=20,
+        opportunity_brief=brief,
+    )
+
+    assert "Goal: Help founders save 2 hours/day" in user_prompt
+    assert "Primary audience: Startup founders" in user_prompt
+    assert "Secondary audiences: Engineering managers" in user_prompt
+    assert "Problem statements: Too many meetings; Context switching" in user_prompt
+    assert "Content objective: Show 3 specific tools" in user_prompt
+    assert "Proof requirements: Case study, Data" in user_prompt
+    assert "Platform constraints: Short-form only" in user_prompt
+    assert "Risk constraints: No financial advice" in user_prompt
+    assert "Freshness rationale: New feature just released" in user_prompt
+    assert "Sub-angles to explore: Tool comparison, Workflow optimization" in user_prompt
+
+
+def test_build_backlog_user_works_without_opportunity_brief() -> None:
+    """Prompt should work normally when OpportunityBrief is None."""
+    user_prompt = build_backlog_user(
+        theme="test",
+        strategy=StrategyMemory(niche="tech"),
+        count=10,
+        opportunity_brief=None,
+    )
+
+    assert "Theme: test" in user_prompt
+    assert "Target count: 10 ideas" in user_prompt
+    assert "Niche: tech" in user_prompt
+    assert "Goal" not in user_prompt
+    assert "Primary audience" not in user_prompt
+
+
+def test_backlog_output_with_zero_items() -> None:
+    """BacklogOutput with empty items should be valid and clear."""
+    output = BacklogOutput(items=[], rejected_count=0, rejection_reasons=[])
+    assert output.items == []
+    assert len(output.items) == 0
+
+
+def test_scoring_output_with_zero_scores() -> None:
+    """ScoringOutput with empty scores should be valid and clear."""
+    output = ScoringOutput(scores=[], produce_now=[], hold=[], killed=[])
+    assert output.scores == []
+    assert len(output.produce_now) == 0
+    assert len(output.hold) == 0
+    assert len(output.killed) == 0
