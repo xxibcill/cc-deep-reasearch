@@ -7,6 +7,7 @@ import {
   AlertCircle,
   Archive,
   ArchiveRestore,
+  ArrowUpRight,
   GitCompare,
   Cpu,
   Filter,
@@ -21,8 +22,8 @@ import { AlertDialog } from '@/components/ui/alert-dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { SkeletonSessionCard, SkeletonCard } from '@/components/ui/skeleton';
+import { Card, CardContent, CardTitle } from '@/components/ui/card';
+import { SkeletonSessionCard } from '@/components/ui/skeleton';
 import { getErrorGuidance } from '@/lib/error-messages';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -178,146 +179,186 @@ function SessionCard({
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <article className="flex h-full flex-col rounded-lg border p-4 transition-shadow duration-150 hover:shadow-card-raised">
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 flex-1 items-start gap-2.5">
-          <div className="pt-0.5">
-            {!compareMode ? (
-              <label
-                className="flex min-h-[44px] min-w-[44px] items-center justify-center"
-                title={
-                  session.active
-                    ? 'Stop the active run before selecting this session for deletion.'
-                    : 'Select session'
-                }
-              >
-                <Checkbox
-                  checked={selected}
-                  disabled={session.active}
-                  onCheckedChange={() => onToggleSelection(session.sessionId)}
-                  aria-label={`Select session ${session.label}`}
-                />
-              </label>
-            ) : (
-              <label className="flex items-center" title="Select for comparison">
-                <Checkbox
-                  checked={compareSelected}
-                  onCheckedChange={() => onToggleCompare(session.sessionId)}
-                  aria-label={`Compare session ${session.label}`}
-                />
-              </label>
-            )}
+    <article className="group relative overflow-hidden rounded-[1.2rem] border border-border/80 bg-[linear-gradient(180deg,rgba(19,34,38,0.9),rgba(16,27,31,0.94))] p-4 shadow-card transition-all duration-200 hover:-translate-y-px hover:shadow-card-raised">
+      <div className="absolute inset-y-0 left-0 w-px bg-gradient-to-b from-primary via-primary/40 to-transparent" />
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.9fr)_auto]">
+        <div className="min-w-0 space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="pt-1">
+              {!compareMode ? (
+                <label
+                  className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full"
+                  title={
+                    session.active
+                      ? 'Stop the active run before selecting this session for deletion.'
+                      : 'Select session'
+                  }
+                >
+                  <Checkbox
+                    checked={selected}
+                    disabled={session.active}
+                    onCheckedChange={() => onToggleSelection(session.sessionId)}
+                    aria-label={`Select session ${session.label}`}
+                  />
+                </label>
+              ) : (
+                <label className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full" title="Select for comparison">
+                  <Checkbox
+                    checked={compareSelected}
+                    onCheckedChange={() => onToggleCompare(session.sessionId)}
+                    aria-label={`Compare session ${session.label}`}
+                  />
+                </label>
+              )}
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary">{formatDepth(session.depth)}</Badge>
+                <Badge variant={session.active ? 'info' : isArchived ? 'warning' : 'outline'}>
+                  {session.active ? 'Live' : isArchived ? 'Archived' : session.status}
+                </Badge>
+                {session.hasReport ? <Badge variant="success">Report ready</Badge> : null}
+              </div>
+
+              <Link href={`/session/${session.sessionId}`} className="mt-3 block">
+                <h3 className="truncate font-display text-[2rem] font-semibold uppercase tracking-[0.02em] text-foreground transition-colors group-hover:text-primary">
+                  {session.label}
+                </h3>
+              </Link>
+              <p className="mt-1 truncate font-mono text-[0.74rem] uppercase tracking-[0.14em] text-muted-foreground">
+                {session.sessionId}
+              </p>
+
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
+                {showsQuery ? session.query : 'Research session with telemetry, routing, and output history available for inspection.'}
+              </p>
+            </div>
           </div>
-          <div className="min-w-0 flex-1">
-            <Link href={`/session/${session.sessionId}`} className="block">
-              <h3 className="text-base font-semibold leading-snug hover:text-blue-700 truncate">
-                {session.label}
-              </h3>
-            </Link>
-            <p className="mt-0.5 truncate text-xs font-mono text-muted-foreground">
-              {session.sessionId}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">
+              Payload {session.hasSessionPayload ? 'available' : 'missing'}
+            </Badge>
+            <Badge variant="outline">
+              Report {session.hasReport ? 'available' : 'unavailable'}
+            </Badge>
+            <button
+              type="button"
+              onClick={() => setExpanded((prev) => !prev)}
+              className="ml-auto font-mono text-[0.72rem] uppercase tracking-[0.16em] text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {expanded ? 'Hide detail' : 'Expand detail'}
+            </button>
+          </div>
+        </div>
+
+        <dl className="grid gap-3 rounded-[1rem] border border-border/70 bg-surface/68 p-4 sm:grid-cols-2 xl:grid-cols-1">
+          <div className="space-y-1">
+            <dt className="eyebrow">Status</dt>
+            <dd className="flex items-center gap-2 text-sm text-foreground">
+              <Activity className="h-4 w-4 text-primary" />
+              <span className="font-medium capitalize">{session.status}</span>
+            </dd>
+          </div>
+          <div className="space-y-1">
+            <dt className="eyebrow">Sources</dt>
+            <dd className="flex items-center gap-2 text-sm text-foreground">
+              <Network className="h-4 w-4 text-primary" />
+              <span className="font-medium tabular-nums">{session.totalSources}</span>
+            </dd>
+          </div>
+          <div className="space-y-1 sm:col-span-2 xl:col-span-1">
+            <dt className="eyebrow">{timeLabel}</dt>
+            <dd className="flex items-start gap-2 text-sm text-foreground">
+              <Cpu className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <span className="leading-6">{formatTimestamp(timeValue)}</span>
+            </dd>
+          </div>
+        </dl>
+
+        <div className="flex flex-col gap-2 xl:min-w-[12rem]">
+          <Link
+            href={`/session/${session.sessionId}`}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-[0.9rem] border border-primary/40 bg-primary px-4 font-display text-[0.82rem] font-semibold uppercase tracking-[0.16em] text-primary-foreground transition-all duration-200 hover:-translate-y-px hover:bg-primary/92"
+          >
+            <Play className="h-3.5 w-3.5" />
+            View details
+          </Link>
+          <Link
+            href={`/session/${session.sessionId}`}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-[0.9rem] border border-border/80 bg-surface/72 px-4 font-display text-[0.8rem] font-semibold uppercase tracking-[0.14em] text-foreground transition-all duration-200 hover:-translate-y-px hover:border-primary/35 hover:bg-surface-raised"
+          >
+            <ArrowUpRight className="h-3.5 w-3.5" />
+            Open workspace
+          </Link>
+          {!session.active && !isArchived && onArchive ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onArchive(session)}
+              title="Archive session"
+            >
+              <Archive className="h-3.5 w-3.5" />
+              Archive
+            </Button>
+          ) : null}
+          {!session.active && isArchived && onRestore ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onRestore(session)}
+              title="Restore archived session"
+            >
+              <ArchiveRestore className="h-3.5 w-3.5" />
+              Restore
+            </Button>
+          ) : null}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onDelete(session)}
+            disabled={session.active}
+            title={
+              session.active
+                ? 'Stop the active run before deleting this session.'
+                : 'Delete session'
+            }
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete
+          </Button>
+        </div>
+      </div>
+
+      {expanded ? (
+        <div className="mt-4 grid gap-3 border-t border-border/70 pt-4 text-sm text-muted-foreground animate-fade-in md:grid-cols-2">
+          <div className="rounded-[0.95rem] border border-border/65 bg-surface/55 p-4">
+            <p className="eyebrow">Query context</p>
+            <p className="mt-3 leading-6 text-foreground/88">
+              {session.query || 'No explicit query text recorded for this session.'}
             </p>
           </div>
-        </div>
-        {session.active ? (
-          <Badge variant="info">Live</Badge>
-        ) : isArchived ? (
-          <Badge variant="warning">Archived</Badge>
-        ) : null}
-      </div>
-
-      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
-        <Badge variant="secondary">{formatDepth(session.depth)}</Badge>
-        <span className="text-muted-foreground">
-          {session.totalSources} sources
-        </span>
-        <button
-          type="button"
-          onClick={() => setExpanded((prev) => !prev)}
-          className="ml-auto text-muted-foreground hover:text-foreground transition-colors"
-        >
-          {expanded ? 'Less' : 'More'}
-        </button>
-      </div>
-
-      {expanded && (
-        <div className="mt-3 animate-fade-in space-y-3">
-          {showsQuery ? (
-            <p className="text-sm text-muted-foreground line-clamp-2">{session.query}</p>
-          ) : null}
-
-          <div className="flex flex-wrap gap-1.5 text-xs">
-            <Badge variant="secondary">Payload {session.hasSessionPayload ? 'available' : 'missing'}</Badge>
-            <Badge variant="secondary">Report {session.hasReport ? 'available' : 'unavailable'}</Badge>
-          </div>
-
-          <div className="space-y-1.5 text-sm">
-            <div className="flex items-center gap-2">
-              <Activity className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <span className="text-muted-foreground min-w-[60px]">Status:</span>
-              <span className="font-medium">{session.status}</span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Network className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <span className="text-muted-foreground min-w-[60px]">Sources:</span>
-              <span className="font-medium">{session.totalSources}</span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Cpu className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <span className="text-muted-foreground min-w-[60px]">{timeLabel}:</span>
-              <span className="font-medium truncate">{formatTimestamp(timeValue)}</span>
+          <div className="rounded-[0.95rem] border border-border/65 bg-surface/55 p-4">
+            <p className="eyebrow">Retention state</p>
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center justify-between gap-4">
+                <span>Telemetry payload</span>
+                <span className="font-mono text-xs uppercase tracking-[0.16em] text-foreground">
+                  {session.hasSessionPayload ? 'Stored' : 'Missing'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span>Report artifact</span>
+                <span className="font-mono text-xs uppercase tracking-[0.16em] text-foreground">
+                  {session.hasReport ? 'Stored' : 'Missing'}
+                </span>
+              </div>
             </div>
           </div>
         </div>
-      )}
-
-      <div className="mt-auto pt-4 flex flex-wrap gap-2 border-t">
-        <Link
-          href={`/session/${session.sessionId}`}
-          className="inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:opacity-90"
-        >
-          <Play className="mr-1.5 h-3.5 w-3.5" />
-          View Details
-        </Link>
-        {!session.active && !isArchived && onArchive ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onArchive(session)}
-            title="Archive session"
-          >
-            <Archive className="mr-1.5 h-3.5 w-3.5" />
-            Archive
-          </Button>
-        ) : null}
-        {!session.active && isArchived && onRestore ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onRestore(session)}
-            title="Restore archived session"
-          >
-            <ArchiveRestore className="mr-1.5 h-3.5 w-3.5" />
-            Restore
-          </Button>
-        ) : null}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onDelete(session)}
-          disabled={session.active}
-          title={
-            session.active
-              ? 'Stop the active run before deleting this session.'
-              : 'Delete session'
-          }
-        >
-          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-          Delete
-        </Button>
-      </div>
+      ) : null}
     </article>
   );
 }
@@ -329,14 +370,28 @@ function SessionFilters() {
     query.search.trim().length > 0 || query.status.length > 0 || query.activeOnly;
 
   return (
-    <div className="space-y-3 rounded-lg border bg-slate-50/60 p-4">
-      <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
-        <Filter className="h-4 w-4" />
-        Filter Sessions
+    <div className="rounded-[1.2rem] border border-border/80 bg-surface/68 p-4 shadow-card">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm text-foreground">
+          <Filter className="h-4 w-4 text-primary" />
+          <span className="font-display text-[1.05rem] font-semibold uppercase tracking-[0.12em]">
+            Session filters
+          </span>
+        </div>
+        {hasFilters ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => setSessionListQuery({ search: '', status: '', activeOnly: false })}
+          >
+            Clear
+          </Button>
+        ) : null}
       </div>
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-        <label className="flex-1">
-          <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_12rem_12rem]">
+        <label className="min-w-0">
+          <span className="mb-1.5 block text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             Search
           </span>
           <div className="relative">
@@ -358,28 +413,18 @@ function SessionFilters() {
           onChange={(value) => setSessionListQuery({ status: value })}
         />
         <div className="flex min-w-[11rem] flex-col gap-1.5">
-          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <span className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             Activity
           </span>
           <Button
             type="button"
-            size="sm"
+            size="default"
             variant={query.activeOnly ? 'default' : 'outline'}
             onClick={() => setSessionListQuery({ activeOnly: !query.activeOnly })}
           >
             {query.activeOnly ? 'Active Only' : 'All Sessions'}
           </Button>
         </div>
-        {hasFilters ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            onClick={() => setSessionListQuery({ search: '', status: '', activeOnly: false })}
-          >
-            Clear
-          </Button>
-        ) : null}
       </div>
     </div>
   );
@@ -398,7 +443,7 @@ function LoadingState() {
 function ErrorState({ error, onRetry }: { error: string; onRetry?: () => void }) {
   const { guidance } = getErrorGuidance(error);
   return (
-    <Alert variant="destructive">
+    <Alert variant="destructive" className="rounded-[1.2rem]">
       <div className="flex items-start gap-3">
         <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
         <div className="space-y-2">
@@ -426,10 +471,10 @@ function EmptyState({
   onClearFilters: () => void;
 }) {
   return (
-    <Card className="py-12">
+    <Card className="rounded-[1.25rem] py-12">
       <CardContent className="text-center">
         <Network className="mx-auto mb-4 h-16 w-16 text-muted-foreground" />
-        <CardTitle className="text-xl text-muted-foreground">
+        <CardTitle className="text-[2rem] text-muted-foreground">
           {filtered ? 'No sessions match the current filters' : 'No sessions available'}
         </CardTitle>
         <p className="mt-2 text-muted-foreground">
@@ -639,14 +684,14 @@ export function SessionList({
         <div className="space-y-3">
           {deleteDialog.forceDelete ? (
             <>
-              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-700">
+              <p className="rounded-[0.9rem] border border-warning/30 bg-warning-muted/30 px-3 py-2 text-warning">
                 This session is currently active. Force deleting will stop the running process.
               </p>
               <p>
                 This will permanently delete <span className="font-medium">{session.label}</span> and
                 all associated telemetry, report, and analytics history.
               </p>
-              <p className="font-mono text-xs text-slate-600">{session.sessionId}</p>
+              <p className="font-mono text-xs text-muted-foreground">{session.sessionId}</p>
             </>
           ) : (
             <>
@@ -654,7 +699,7 @@ export function SessionList({
                 This will permanently delete <span className="font-medium">{session.label}</span> and
                 all associated telemetry, report, and analytics history.
               </p>
-              <p className="font-mono text-xs text-slate-600">{session.sessionId}</p>
+              <p className="font-mono text-xs text-muted-foreground">{session.sessionId}</p>
               {deleteError ? (
                 <Alert variant="destructive" className="mt-2">
                   <AlertDescription>{deleteError}</AlertDescription>
@@ -682,15 +727,15 @@ export function SessionList({
           This will permanently delete {pluralize(sessionCount, 'selected session')} from{' '}
           <span className="font-medium">{buildFilterSummary(query)}</span>.
         </p>
-        <ul className="space-y-2 rounded-md border bg-slate-50 px-3 py-3 text-slate-700">
+        <ul className="space-y-2 rounded-[0.95rem] border border-border/70 bg-surface/62 px-3 py-3 text-foreground">
           {previewSessions.map((session) => (
             <li key={session.sessionId} className="flex flex-col gap-1">
               <span className="font-medium">{session.label}</span>
-              <span className="font-mono text-xs text-slate-600">{session.sessionId}</span>
+              <span className="font-mono text-xs text-muted-foreground">{session.sessionId}</span>
             </li>
           ))}
           {remainingCount > 0 ? (
-            <li className="text-xs uppercase tracking-wide text-slate-600">
+            <li className="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">
               And {pluralize(remainingCount, 'more session')}
             </li>
           ) : null}
@@ -709,49 +754,52 @@ export function SessionList({
   return (
     <>
       <div className="space-y-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-xl font-semibold">
+        <div className="panel-shell rounded-[1.4rem] p-5 sm:p-6">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div className="space-y-3">
+              <p className="eyebrow">Research archive</p>
+              <h2 className="font-display text-[2.6rem] font-semibold uppercase tracking-[0.02em] text-foreground">
               {compareMode ? 'Select Sessions to Compare' : 'Research Sessions'}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {compareMode
-                ? `Select up to 2 sessions (${compareSessionIdSet.size}/2 selected)`
-                : `Showing ${sessions.length} of ${total} matching sessions`}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant={compareMode ? 'default' : 'outline'}
-              onClick={() => setCompareMode(!compareMode)}
-            >
-              <GitCompare className="mr-1.5 h-3.5 w-3.5" />
-              Compare
-            </Button>
-            {!compareMode && selectableSessions.length > 0 ? (
-              <Button type="button" size="sm" variant="outline" onClick={handleSelectVisible}>
-                {allSelectableSelected ? 'Clear Selection' : 'Select Visible'}
-              </Button>
-            ) : null}
-            {compareMode && compareSessionIdSet.size > 0 ? (
+              </h2>
+              <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+                {compareMode
+                  ? `Select up to 2 sessions (${compareSessionIdSet.size}/2 selected)`
+                  : `Showing ${sessions.length} of ${total} matching sessions`}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 size="sm"
-                variant="ghost"
-                onClick={clearCompareSessionIds}
+                variant={compareMode ? 'default' : 'outline'}
+                onClick={() => setCompareMode(!compareMode)}
               >
-                Clear Selection
+                <GitCompare className="h-3.5 w-3.5" />
+                Compare
               </Button>
-            ) : null}
+              {!compareMode && selectableSessions.length > 0 ? (
+                <Button type="button" size="sm" variant="outline" onClick={handleSelectVisible}>
+                  {allSelectableSelected ? 'Clear Selection' : 'Select Visible'}
+                </Button>
+              ) : null}
+              {compareMode && compareSessionIdSet.size > 0 ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={clearCompareSessionIds}
+                >
+                  Clear Selection
+                </Button>
+              ) : null}
+            </div>
           </div>
         </div>
 
         <SessionFilters />
 
         {compareMode && canViewComparison ? (
-          <Alert variant="info" className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <Alert variant="info" className="flex flex-col gap-3 rounded-[1.15rem] lg:flex-row lg:items-center lg:justify-between">
             <div>
               <AlertTitle>
                 2 sessions selected for comparison
@@ -770,7 +818,7 @@ export function SessionList({
         ) : null}
 
         {selectedSessions.length > 0 ? (
-          <Alert variant="destructive" className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <Alert variant="destructive" className="flex flex-col gap-3 rounded-[1.15rem] lg:flex-row lg:items-center lg:justify-between">
             <div>
               <AlertTitle>
                 {pluralize(selectedSessions.length, 'session')} selected for deletion
@@ -804,7 +852,7 @@ export function SessionList({
           />
         ) : (
           <>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-3">
               {sessions.map((session) => (
                 <SessionCard
                   key={session.sessionId}
@@ -822,7 +870,7 @@ export function SessionList({
             </div>
 
             {loadMoreError ? (
-              <Alert variant="destructive" className="mt-4">
+              <Alert variant="destructive" className="mt-4 rounded-[1.15rem]">
                 <AlertDescription>{loadMoreError}</AlertDescription>
               </Alert>
             ) : null}

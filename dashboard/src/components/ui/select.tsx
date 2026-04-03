@@ -18,13 +18,16 @@ export function Select({
   return (
     <label
       className={cn(
-        'flex min-w-[10rem] flex-col gap-1 text-xs font-medium uppercase tracking-wide text-muted-foreground',
+        'flex min-w-[10rem] flex-col gap-1.5 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground',
         labelClassName
       )}
     >
       {label}
       <select
-        className={cn('h-10 rounded-md border bg-background px-3 text-sm text-foreground', className)}
+        className={cn(
+          'h-11 rounded-[0.95rem] border border-input/90 bg-surface/72 px-3.5 text-sm text-foreground transition-all focus:border-primary/55 focus:bg-surface-raised',
+          className
+        )}
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >

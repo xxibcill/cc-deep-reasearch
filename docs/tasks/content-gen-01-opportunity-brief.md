@@ -1,4 +1,17 @@
-# Task 01: Add Opportunity Brief Stage (Done)
+# Task 01: Add Opportunity Brief Stage (Implemented)
+
+## Status
+
+Current status: Implemented
+
+Evidence in the current codebase:
+
+- `OpportunityBrief` exists in `src/cc_deep_research/content_gen/models.py`.
+- `PipelineContext` stores `opportunity_brief`, and `PIPELINE_STAGES` includes `plan_opportunity`.
+- `OpportunityPlanningAgent` and `prompts/opportunity.py` are implemented.
+- The orchestrator runs `plan_opportunity` between strategy load and backlog generation.
+- `docs/content-generation.md` reflects the updated stage order.
+- `tests/test_content_gen.py` covers round-trip serialization, stage ordering, handler wiring, and blank-strategy execution.
 
 ## Goal
 

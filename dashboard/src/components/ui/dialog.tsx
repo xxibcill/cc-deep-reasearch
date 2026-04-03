@@ -111,7 +111,7 @@ export const DialogContent = React.forwardRef<
       ref={ref}
       data-dialog-content="true"
       className={cn(
-        'relative z-10 flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl',
+        'panel-shell relative z-10 flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-[1.25rem] shadow-2xl',
         className
       )}
       role="dialog"
@@ -142,7 +142,7 @@ export const DialogHeader = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn('space-y-2 border-b px-5 py-4 pr-14 text-left', className)}
+    className={cn('space-y-2 border-b border-border/70 px-5 py-4 pr-14 text-left', className)}
     {...props}
   />
 ));
@@ -154,7 +154,14 @@ export const DialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => {
   const { titleId } = useDialogContext();
 
-  return <h2 ref={ref} className={cn('text-lg font-semibold', className)} id={titleId} {...props} />;
+  return (
+    <h2
+      ref={ref}
+      className={cn('font-display text-[1.8rem] font-semibold uppercase tracking-[0.02em]', className)}
+      id={titleId}
+      {...props}
+    />
+  );
 });
 DialogTitle.displayName = 'DialogTitle';
 
