@@ -22,6 +22,7 @@ from cc_deep_research.content_gen.models import (
     HookSet,
     HumanQCGate,
     IdeaScores,
+    OpportunityBrief,
     PackagingOutput,
     PipelineContext,
     PipelineStageTrace,
@@ -85,8 +86,8 @@ def test_dispatch_table_covers_all_steps() -> None:
 
 
 def test_pipeline_stages_count() -> None:
-    """The pipeline should have 12 stages (0-11)."""
-    assert len(PIPELINE_STAGES) == 12
+    """The pipeline should have 13 stages (0-12)."""
+    assert len(PIPELINE_STAGES) == 13
 
 
 def test_pipeline_context_default_values() -> None:
@@ -273,11 +274,11 @@ def test_summarize_input_for_backlog_and_scoring() -> None:
     orch = ContentGenOrchestrator(FakeConfig())
     ctx = PipelineContext(theme="my theme")
 
-    backlog_summary = orch._summarize_input(1, ctx)
+    backlog_summary = orch._summarize_input(2, ctx)
     assert "theme=my theme" in backlog_summary
 
     ctx.backlog = BacklogOutput(items=[BacklogItem(idea="test") for _ in range(10)])
-    scoring_summary = orch._summarize_input(2, ctx)
+    scoring_summary = orch._summarize_input(3, ctx)
     assert "items=10" in scoring_summary
 
 
@@ -314,7 +315,7 @@ def test_summarize_output_for_backlog_and_scoring() -> None:
         items=[BacklogItem(idea="test") for _ in range(10)],
         rejected_count=2,
     )
-    backlog_summary = orch._summarize_output(1, ctx)
+    backlog_summary = orch._summarize_output(2, ctx)
     assert "items=10" in backlog_summary
     assert "rejected=2" in backlog_summary
 
@@ -323,7 +324,7 @@ def test_summarize_output_for_backlog_and_scoring() -> None:
         hold=["id3"],
         killed=["id4"],
     )
-    scoring_summary = orch._summarize_output(2, ctx)
+    scoring_summary = orch._summarize_output(3, ctx)
     assert "produce=2" in scoring_summary
     assert "hold=1" in scoring_summary
     assert "kill=1" in scoring_summary
@@ -358,17 +359,17 @@ def test_skipped_stage_recorded_when_prerequisites_missing() -> None:
     orch = ContentGenOrchestrator(FakeConfig())
     ctx = PipelineContext(theme="test")
 
-    prereqs_met, reason = orch._check_prerequisites(2, ctx)
+    prereqs_met, reason = orch._check_prerequisites(3, ctx)
     assert not prereqs_met
     assert "backlog missing" in reason
 
     ctx.backlog = BacklogOutput(items=[])
-    prereqs_met, reason = orch._check_prerequisites(2, ctx)
+    prereqs_met, reason = orch._check_prerequisites(3, ctx)
     assert prereqs_met
 
     ctx.backlog = None
     ctx.scoring = ScoringOutput(produce_now=[])
-    prereqs_met, reason = orch._check_prerequisites(3, ctx)
+    prereqs_met, reason = orch._check_prerequisites(4, ctx)
     assert not prereqs_met
     assert "scoring/produce_now missing" in reason
 
@@ -407,11 +408,11 @@ async def test_stage_completed_callback_emits_for_skipped_stage() -> None:
         recorded_events.append((stage_idx, status, detail))
 
     ctx = PipelineContext(theme="test")
-    await orch._run_stage(2, ctx, None, stage_completed_callback=on_stage_completed)
+    await orch._run_stage(3, ctx, None, stage_completed_callback=on_stage_completed)
 
     assert len(recorded_events) == 1
     idx, status, detail = recorded_events[0]
-    assert idx == 2
+    assert idx == 3
     assert status == "skipped"
     assert "backlog missing" in detail
 
@@ -1447,3 +1448,218 @@ def test_scoring_output_with_zero_scores() -> None:
     assert len(output.produce_now) == 0
     assert len(output.hold) == 0
     assert len(output.killed) == 0
+
+
+# ---------------------------------------------------------------------------
+# Opportunity planning
+# ---------------------------------------------------------------------------
+
+
+def test_opportunity_brief_defaults() -> None:
+    """OpportunityBrief should have sensible defaults."""
+    brief = OpportunityBrief()
+    assert brief.theme == ""
+    assert brief.goal == ""
+    assert brief.primary_audience_segment == ""
+    assert brief.secondary_audience_segments == []
+    assert brief.problem_statements == []
+    assert brief.content_objective == ""
+    assert brief.proof_requirements == []
+    assert brief.platform_constraints == []
+    assert brief.risk_constraints == []
+    assert brief.freshness_rationale == ""
+    assert brief.sub_angles == []
+    assert brief.research_hypotheses == []
+    assert brief.success_criteria == []
+
+
+def test_opportunity_brief_roundtrip() -> None:
+    """OpportunityBrief should survive JSON round-trip."""
+    brief = OpportunityBrief(
+        theme="AI agent safety",
+        goal="Produce a viral short on AI agent guardrails",
+        primary_audience_segment="ML engineers building agents",
+        secondary_audience_segments=["PMs evaluating AI tools", "Founders shipping AI products"],
+        problem_statements=["No one explains guardrails simply", "Hype drowns out safety"],
+        content_objective="Teach one concrete guardrail pattern",
+        proof_requirements=["Cite a real incident", "Show code-level fix"],
+        platform_constraints=["Under 60 seconds", "No jargon"],
+        risk_constraints=["Do not downplay risks", "Avoid FUD"],
+        freshness_rationale="OpenAI o-series reasoning launch",
+        sub_angles=["Guardrails as product moat", "Safety as speed advantage"],
+        research_hypotheses=["Developers want safety but lack examples", "Guardrail content is underserved"],
+        success_criteria=["50k+ views in 48h", "10+ code forks"],
+    )
+    json_str = brief.model_dump_json()
+    restored = OpportunityBrief.model_validate_json(json_str)
+    assert restored.theme == "AI agent safety"
+    assert restored.goal == "Produce a viral short on AI agent guardrails"
+    assert len(restored.secondary_audience_segments) == 2
+    assert len(restored.problem_statements) == 2
+    assert len(restored.sub_angles) == 2
+    assert restored.freshness_rationale == "OpenAI o-series reasoning launch"
+
+
+def test_pipeline_includes_plan_opportunity_stage() -> None:
+    """plan_opportunity should appear after load_strategy and before build_backlog."""
+    assert PIPELINE_STAGES[0] == "load_strategy"
+    assert PIPELINE_STAGES[1] == "plan_opportunity"
+    assert PIPELINE_STAGES[2] == "build_backlog"
+
+
+def test_pipeline_stage_labels_include_plan_opportunity() -> None:
+    """plan_opportunity should have a human-readable label."""
+    from cc_deep_research.content_gen.models import PIPELINE_STAGE_LABELS
+
+    assert "plan_opportunity" in PIPELINE_STAGE_LABELS
+    assert PIPELINE_STAGE_LABELS["plan_opportunity"] == "Planning opportunity brief"
+
+
+def test_pipeline_context_stores_opportunity_brief() -> None:
+    """PipelineContext should store an OpportunityBrief."""
+    brief = OpportunityBrief(theme="test", goal="test goal")
+    ctx = PipelineContext(theme="test", opportunity_brief=brief)
+    assert ctx.opportunity_brief is not None
+    assert ctx.opportunity_brief.theme == "test"
+    assert ctx.opportunity_brief.goal == "test goal"
+
+    # Round-trip
+    json_str = ctx.model_dump_json()
+    restored = PipelineContext.model_validate_json(json_str)
+    assert restored.opportunity_brief is not None
+    assert restored.opportunity_brief.theme == "test"
+
+
+def test_pipeline_context_default_opportunity_brief_is_none() -> None:
+    """PipelineContext should default opportunity_brief to None."""
+    ctx = PipelineContext()
+    assert ctx.opportunity_brief is None
+
+
+@pytest.mark.asyncio
+async def test_opportunity_stage_handler_writes_brief() -> None:
+    """The plan_opportunity handler should write OpportunityBrief into context."""
+    from cc_deep_research.content_gen.orchestrator import _stage_plan_opportunity
+
+    class FakeOrchestrator:
+        def _get_agent(self, name: str):
+            assert name == "opportunity"
+
+            class FakeAgent:
+                async def plan(self, theme, _strategy):
+                    return OpportunityBrief(
+                        theme=theme,
+                        goal="test goal",
+                        sub_angles=["angle1", "angle2"],
+                    )
+
+            return FakeAgent()
+
+    ctx = PipelineContext(theme="my theme", strategy=StrategyMemory())
+    result = await _stage_plan_opportunity(FakeOrchestrator(), ctx)
+    assert result.opportunity_brief is not None
+    assert result.opportunity_brief.theme == "my theme"
+    assert result.opportunity_brief.goal == "test goal"
+    assert len(result.opportunity_brief.sub_angles) == 2
+
+
+@pytest.mark.asyncio
+async def test_opportunity_stage_runs_with_blank_strategy() -> None:
+    """The opportunity stage should work with a blank StrategyMemory."""
+    from cc_deep_research.content_gen.orchestrator import _stage_plan_opportunity
+
+    class FakeOrchestrator:
+        def _get_agent(self, _name: str):
+
+            class FakeAgent:
+                async def plan(self, theme, strategy):
+                    assert strategy.niche == ""
+                    return OpportunityBrief(theme=theme)
+
+            return FakeAgent()
+
+    ctx = PipelineContext(theme="bare theme")
+    result = await _stage_plan_opportunity(FakeOrchestrator(), ctx)
+    assert result.opportunity_brief is not None
+
+
+def test_opportunity_brief_parsing() -> None:
+    """The opportunity parser should extract structured fields from LLM text."""
+    from cc_deep_research.content_gen.agents.opportunity import _parse_opportunity_brief
+
+    sample_response = """\
+Theme: Why most SaaS onboarding fails after day 1
+Goal: Help founders fix activation by exposing the false success moment
+Primary audience segment: Seed-stage SaaS founders
+Secondary audience segments:
+- Growth PMs at early-stage startups
+- Product designers working on onboarding flows
+Problem statements:
+- Activation drops after signup because onboarding celebrates the wrong moment
+- Users think they succeeded but never reached the real aha moment
+Content objective: Show one concrete fix for the false success moment
+Proof requirements:
+- Cite a specific activation metric example
+- Show a before/after onboarding flow
+Platform constraints:
+- Under 60 seconds
+- No jargon
+Risk constraints:
+- Do not downplay churn risk
+- Avoid FUD
+Freshness rationale: Multiple SaaS companies reported Q1 2026 activation drops
+Sub-angles:
+- Guardrails as product moat
+- Safety as speed advantage
+- The false success pattern
+Research hypotheses:
+- Developers want safety but lack examples
+- Guardrail content is underserved
+Success criteria:
+- 50k views in 48h
+- 10 code forks"""
+
+    brief = _parse_opportunity_brief(sample_response, "fallback")
+    assert brief.theme == "Why most SaaS onboarding fails after day 1"
+    assert brief.goal == "Help founders fix activation by exposing the false success moment"
+    assert brief.primary_audience_segment == "Seed-stage SaaS founders"
+    assert len(brief.secondary_audience_segments) == 2
+    assert len(brief.problem_statements) == 2
+    assert brief.content_objective == "Show one concrete fix for the false success moment"
+    assert len(brief.proof_requirements) == 2
+    assert len(brief.platform_constraints) == 2
+    assert len(brief.risk_constraints) == 2
+    assert "Q1 2026" in brief.freshness_rationale
+    assert len(brief.sub_angles) == 3
+    assert len(brief.research_hypotheses) == 2
+    assert len(brief.success_criteria) == 2
+
+
+def test_opportunity_brief_parsing_uses_fallback_theme() -> None:
+    """Parser should fall back to the provided theme when LLM omits it."""
+    from cc_deep_research.content_gen.agents.opportunity import _parse_opportunity_brief
+
+    brief = _parse_opportunity_brief("Goal: something\n", "fallback theme")
+    assert brief.theme == "fallback theme"
+
+
+def test_opportunity_prompt_user_includes_strategy_fields() -> None:
+    """The user prompt should include available strategy fields."""
+    from cc_deep_research.content_gen.prompts.opportunity import plan_opportunity_user
+
+    strategy = StrategyMemory(
+        niche="fitness",
+        content_pillars=["strength", "mobility"],
+        platforms=["tiktok", "shorts"],
+        forbidden_claims=["spot reduction"],
+        proof_standards=["peer-reviewed"],
+        tone_rules=["no hype"],
+    )
+    result = plan_opportunity_user("strength training", strategy)
+    assert "Theme: strength training" in result
+    assert "Niche: fitness" in result
+    assert "strength, mobility" in result
+    assert "tiktok, shorts" in result
+    assert "spot reduction" in result
+    assert "peer-reviewed" in result
+    assert "no hype" in result
