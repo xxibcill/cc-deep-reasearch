@@ -165,6 +165,19 @@ def register_content_gen_commands(cli: click.Group) -> None:
                 if score:
                     click.echo(f"  {sid}: {score.total_score}/35 — {score.reason}")
 
+            if result.shortlist:
+                click.echo(f"\nShortlist ({len(result.shortlist)}):")
+                for sid in result.shortlist[:select_top]:
+                    score = next((s for s in result.scores if s.idea_id == sid), None)
+                    if score:
+                        click.echo(f"  {sid}: {score.total_score}/35")
+                    else:
+                        click.echo(f"  {sid}")
+            if result.selected_idea_id:
+                click.echo(f"\nSelected: {result.selected_idea_id}")
+                if result.selection_reasoning:
+                    click.echo(f"Reason: {result.selection_reasoning}")
+
             click.echo(f"\nHold ({len(result.hold)}):")
             for sid in result.hold[:5]:
                 click.echo(f"  {sid}")
@@ -806,7 +819,12 @@ def register_content_gen_commands(cli: click.Group) -> None:
             if result.backlog:
                 click.echo(f"Backlog: {len(result.backlog.items)} ideas")
             if result.scoring:
-                click.echo(f"Scoring: {len(result.scoring.produce_now)} produce now")
+                click.echo(
+                    "Scoring: "
+                    f"{len(result.scoring.produce_now)} produce now, "
+                    f"{len(result.scoring.shortlist)} shortlisted, "
+                    f"selected={result.selected_idea_id or result.scoring.selected_idea_id or 'none'}"
+                )
             if result.angles:
                 click.echo(f"Angles: {len(result.angles.angle_options)} generated")
             if result.scripting and result.scripting.qc:
