@@ -1,8 +1,8 @@
-# Task 06: Expose Pipeline Traces in the Dashboard (Not Implemented)
+# Task 06: Expose Pipeline Traces in the Dashboard (Done)
 
 ## Status
 
-Current status: Not implemented
+Current status: Done
 
 Evidence in the current codebase:
 

@@ -9,27 +9,17 @@ import { FormDescription, FormField, FormLabel, FormMessage } from '@/components
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { startPipeline } from '@/lib/content-gen-api'
-
-const PIPELINE_STAGES = [
-  'Load Strategy',
-  'Build Backlog',
-  'Score Ideas',
-  'Generate Angles',
-  'Build Research',
-  'Run Scripting',
-  'Visual Translation',
-  'Production Brief',
-  'Packaging',
-  'Human QC',
-  'Publish Queue',
-  'Performance',
-]
+import {
+  PIPELINE_STAGE_ORDER,
+  PIPELINE_STAGE_SHORT_LABELS,
+  TOTAL_PIPELINE_STAGES,
+} from '@/types/content-gen'
 
 export function StartPipelineForm({ onSuccess }: { onSuccess?: (pipelineId: string) => void } = {}) {
   const router = useRouter()
   const [theme, setTheme] = useState('')
   const [fromStage, setFromStage] = useState(0)
-  const [toStage, setToStage] = useState(11)
+  const [toStage, setToStage] = useState(TOTAL_PIPELINE_STAGES - 1)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -96,9 +86,9 @@ export function StartPipelineForm({ onSuccess }: { onSuccess?: (pipelineId: stri
             onChange={(e) => setFromStage(Number(e.target.value))}
             disabled={isSubmitting}
           >
-            {PIPELINE_STAGES.map((label, idx) => (
+            {PIPELINE_STAGE_ORDER.map((stageName, idx) => (
               <option key={idx} value={idx}>
-                {String(idx).padStart(2, '0')} - {label}
+                {String(idx).padStart(2, '0')} - {PIPELINE_STAGE_SHORT_LABELS[stageName]}
               </option>
             ))}
           </NativeSelect>
@@ -112,9 +102,9 @@ export function StartPipelineForm({ onSuccess }: { onSuccess?: (pipelineId: stri
             onChange={(e) => setToStage(Number(e.target.value))}
             disabled={isSubmitting}
           >
-            {PIPELINE_STAGES.map((label, idx) => (
+            {PIPELINE_STAGE_ORDER.map((stageName, idx) => (
               <option key={idx} value={idx}>
-                {String(idx).padStart(2, '0')} - {label}
+                {String(idx).padStart(2, '0')} - {PIPELINE_STAGE_SHORT_LABELS[stageName]}
               </option>
             ))}
           </NativeSelect>

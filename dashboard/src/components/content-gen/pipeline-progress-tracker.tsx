@@ -1,23 +1,17 @@
 'use client'
 
-import { CheckCircle2, Circle, Loader2, XCircle } from 'lucide-react'
+import { CheckCircle2, Circle, Loader2, SkipForward, XCircle } from 'lucide-react'
 
-const STAGE_LABELS = [
-  'Load Strategy',
-  'Build Backlog',
-  'Score Ideas',
-  'Generate Angles',
-  'Build Research',
-  'Run Scripting',
-  'Visual Translation',
-  'Production Brief',
-  'Packaging',
-  'Human QC',
-  'Publish Queue',
-  'Performance',
-]
+import {
+  PIPELINE_STAGE_ORDER,
+  PIPELINE_STAGE_SHORT_LABELS,
+  TOTAL_PIPELINE_STAGES,
+  type PipelineTraceStatus,
+} from '@/types/content-gen'
 
-export type StageState = 'pending' | 'running' | 'completed' | 'failed'
+const STAGE_LABELS = PIPELINE_STAGE_ORDER.map((stageName) => PIPELINE_STAGE_SHORT_LABELS[stageName])
+
+export type StageState = 'pending' | 'running' | PipelineTraceStatus
 
 interface PipelineProgressTrackerProps {
   currentStage: number
@@ -43,6 +37,8 @@ function StageNode({ state, label, index, isLast }: {
               ? 'bg-success/15 border border-success/40'
               : state === 'running'
                 ? 'bg-warning/15 border border-warning/50 stage-running'
+                : state === 'skipped'
+                  ? 'bg-warning-muted/40 border border-warning/35'
                 : state === 'failed'
                   ? 'bg-error/15 border border-error/40'
                   : 'bg-surface border border-border'
@@ -55,6 +51,9 @@ function StageNode({ state, label, index, isLast }: {
           {state === 'running' && (
             <Loader2 className="h-4 w-4 text-warning animate-spin" />
           )}
+          {state === 'skipped' && (
+            <SkipForward className="h-3.5 w-3.5 text-warning" />
+          )}
           {state === 'failed' && (
             <XCircle className="h-4 w-4 text-error" />
           )}
@@ -66,7 +65,11 @@ function StageNode({ state, label, index, isLast }: {
         {!isLast && (
           <div
             className={`w-px flex-1 min-h-[16px] transition-colors duration-300 ${
-              state === 'completed' ? 'bg-success/25' : 'bg-border'
+              state === 'completed'
+                ? 'bg-success/25'
+                : state === 'skipped'
+                  ? 'bg-warning/25'
+                  : 'bg-border'
             }`}
           />
         )}
@@ -84,6 +87,8 @@ function StageNode({ state, label, index, isLast }: {
                 ? 'text-warning'
                 : state === 'completed'
                   ? 'text-success/80'
+                  : state === 'skipped'
+                    ? 'text-warning'
                   : state === 'failed'
                     ? 'text-error'
                     : 'text-muted-foreground/60'
@@ -99,7 +104,7 @@ function StageNode({ state, label, index, isLast }: {
 
 export function PipelineProgressTracker({
   currentStage,
-  totalStages = 12,
+  totalStages = TOTAL_PIPELINE_STAGES,
   stageStates = {},
 }: PipelineProgressTrackerProps) {
   return (

@@ -24,6 +24,9 @@ export function getStatusBadgeVariant(status: string): BadgeVariant {
   if (status === 'cancelled') {
     return 'warning';
   }
+  if (status === 'skipped') {
+    return 'warning';
+  }
   if (status === 'timeout' || status === 'fallback') {
     return 'warning';
   }

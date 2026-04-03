@@ -8,7 +8,7 @@ import { CollapsiblePanel } from '@/components/ui/collapsible-panel'
 interface StageResultPanelProps {
   title: string
   stageIndex: number
-  status: 'pending' | 'running' | 'completed' | 'failed'
+  status: 'pending' | 'running' | 'completed' | 'skipped' | 'failed'
   children: React.ReactNode
   defaultOpen?: boolean
 }
@@ -23,7 +23,7 @@ export function StageResultPanel({
   const [isOpen, setIsOpen] = useState(defaultOpen || status === 'completed')
 
   useEffect(() => {
-    if (status === 'running' || status === 'completed') {
+    if (status === 'running' || status === 'completed' || status === 'skipped' || status === 'failed') {
       setIsOpen(true)
     }
   }, [status])
@@ -31,6 +31,7 @@ export function StageResultPanel({
   const stateStyles: Record<StageResultPanelProps['status'], string> = {
     completed: 'border-success/30',
     running: 'border-warning/40 stage-running',
+    skipped: 'border-warning/30',
     failed: 'border-error/30',
     pending: 'border-border',
   }
@@ -56,6 +57,8 @@ export function StageResultPanel({
                 ? 'success'
                 : status === 'running'
                   ? 'warning'
+                  : status === 'skipped'
+                    ? 'warning'
                   : 'destructive'
             }
             className="rounded-md px-2 py-1 font-mono text-[10px] uppercase tracking-[0.2em]"
