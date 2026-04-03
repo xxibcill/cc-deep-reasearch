@@ -175,24 +175,28 @@ def register_content_gen_routes(
                     )
                 )
 
+            def _stage_completed(stage_idx: int, status: str, detail: str) -> None:
+                asyncio.get_running_loop().create_task(
+                    event_router.publish(
+                        job.pipeline_id,
+                        {
+                            "type": "pipeline_stage_completed",
+                            "stage_index": stage_idx,
+                            "stage_status": status,
+                            "stage_detail": detail,
+                            "timestamp": datetime.now(UTC).isoformat(),
+                        },
+                    )
+                )
+
             try:
                 ctx = await orch.run_full_pipeline(
                     request.theme,
                     from_stage=request.from_stage,
                     to_stage=end,
                     progress_callback=_progress,
+                    stage_completed_callback=_stage_completed,
                 )
-
-                # Broadcast completion for each stage
-                for idx in range(request.from_stage, end + 1):
-                    await event_router.publish(
-                        job.pipeline_id,
-                        {
-                            "type": "pipeline_stage_completed",
-                            "stage_index": idx,
-                            "timestamp": datetime.now(UTC).isoformat(),
-                        },
-                    )
 
                 job_registry.update_context(job.pipeline_id, ctx)
                 job_registry.mark_completed(job.pipeline_id)
@@ -293,12 +297,27 @@ def register_content_gen_routes(
                     )
                 )
 
+            def _stage_completed(stage_idx: int, status: str, detail: str) -> None:
+                asyncio.get_running_loop().create_task(
+                    event_router.publish(
+                        new_job.pipeline_id,
+                        {
+                            "type": "pipeline_stage_completed",
+                            "stage_index": stage_idx,
+                            "stage_status": status,
+                            "stage_detail": detail,
+                            "timestamp": datetime.now(UTC).isoformat(),
+                        },
+                    )
+                )
+
             try:
                 result_ctx = await orch.run_full_pipeline(
                     job.theme,
                     from_stage=request.from_stage,
                     to_stage=end,
                     progress_callback=_progress,
+                    stage_completed_callback=_stage_completed,
                 )
                 job_registry.update_context(new_job.pipeline_id, result_ctx)
                 job_registry.mark_completed(new_job.pipeline_id)

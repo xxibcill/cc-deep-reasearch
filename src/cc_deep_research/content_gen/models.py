@@ -148,7 +148,7 @@ class SavedScriptRun(BaseModel):
     context_path: str
     result_path: str | None = None
     execution_mode: Literal["single_pass", "iterative"] = "single_pass"
-    iterations: "ScriptingIterations | None" = None
+    iterations: ScriptingIterations | None = None
 
 
 SCRIPTING_STEPS: list[str] = [
@@ -219,7 +219,34 @@ class StrategyMemory(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Pipeline stage 1: Backlog builder
+# Pipeline stage 1: Opportunity planning
+# ---------------------------------------------------------------------------
+
+
+class OpportunityBrief(BaseModel):
+    """Structured planning artifact (stage 1).
+
+    Turns a raw theme into a focused editorial contract that guides
+    backlog generation and later scoring.
+    """
+
+    theme: str = ""
+    goal: str = ""
+    primary_audience_segment: str = ""
+    secondary_audience_segments: list[str] = Field(default_factory=list)
+    problem_statements: list[str] = Field(default_factory=list)
+    content_objective: str = ""
+    proof_requirements: list[str] = Field(default_factory=list)
+    platform_constraints: list[str] = Field(default_factory=list)
+    risk_constraints: list[str] = Field(default_factory=list)
+    freshness_rationale: str = ""
+    sub_angles: list[str] = Field(default_factory=list)
+    research_hypotheses: list[str] = Field(default_factory=list)
+    success_criteria: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Pipeline stage 2: Backlog builder
 # ---------------------------------------------------------------------------
 
 
@@ -534,6 +561,27 @@ class PerformanceAnalysis(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Pipeline stage tracing
+# ---------------------------------------------------------------------------
+
+
+class PipelineStageTrace(BaseModel):
+    """Trace record for one completed pipeline stage."""
+
+    stage_index: int
+    stage_name: str
+    stage_label: str
+    status: str = "completed"  # completed | skipped | failed
+    started_at: str = ""
+    completed_at: str = ""
+    duration_ms: int = 0
+    input_summary: str = ""
+    output_summary: str = ""
+    warnings: list[str] = Field(default_factory=list)
+    decision_summary: str = ""
+
+
+# ---------------------------------------------------------------------------
 # Full pipeline context
 # ---------------------------------------------------------------------------
 
@@ -552,6 +600,7 @@ class PipelineContext(BaseModel):
     current_stage: int = 0
 
     strategy: StrategyMemory | None = None
+    opportunity_brief: OpportunityBrief | None = None
     backlog: BacklogOutput | None = None
     scoring: ScoringOutput | None = None
     angles: AngleOutput | None = None
@@ -564,6 +613,7 @@ class PipelineContext(BaseModel):
     publish_item: PublishItem | None = None
     performance: PerformanceAnalysis | None = None
     iteration_state: IterationState | None = None
+    stage_traces: list[PipelineStageTrace] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -573,6 +623,7 @@ class PipelineContext(BaseModel):
 
 PIPELINE_STAGES: list[str] = [
     "load_strategy",
+    "plan_opportunity",
     "build_backlog",
     "score_ideas",
     "generate_angles",
@@ -588,6 +639,7 @@ PIPELINE_STAGES: list[str] = [
 
 PIPELINE_STAGE_LABELS: dict[str, str] = {
     "load_strategy": "Loading strategy memory",
+    "plan_opportunity": "Planning opportunity brief",
     "build_backlog": "Building backlog",
     "score_ideas": "Scoring ideas",
     "generate_angles": "Generating angles",

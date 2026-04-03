@@ -7,6 +7,7 @@ This document describes the full content-generation system as it is currently im
 The content-generation subsystem is separate from the research-report pipeline. It lives under [`src/cc_deep_research/content_gen/`](../src/cc_deep_research/content_gen/) and is focused on short-form video creation:
 
 - persistent strategy memory
+- opportunity brief planning
 - idea backlog generation and scoring
 - angle development
 - compact research-pack synthesis
@@ -62,13 +63,14 @@ The scripting agent is the strictest implementation. It validates missing fields
 The workflow revolves around two context objects:
 
 - [`PipelineContext`](../src/cc_deep_research/content_gen/models.py)
-  The top-level 12-stage pipeline state.
+  The top-level 13-stage pipeline state.
 - [`ScriptingContext`](../src/cc_deep_research/content_gen/models.py)
   The nested 10-step script-generation state machine.
 
 Important stage models:
 
 - `StrategyMemory`
+- `OpportunityBrief`
 - `BacklogOutput` and `BacklogItem`
 - `ScoringOutput` and `IdeaScores`
 - `AngleOutput` and `AngleOption`
@@ -127,22 +129,24 @@ This path works for generation up through QC, but it currently has important gap
 The implemented pipeline order is defined by `PIPELINE_STAGES` in [`src/cc_deep_research/content_gen/models.py`](../src/cc_deep_research/content_gen/models.py):
 
 1. `load_strategy`
-2. `build_backlog`
-3. `score_ideas`
-4. `generate_angles`
-5. `build_research_pack`
-6. `run_scripting`
-7. `visual_translation`
-8. `production_brief`
-9. `packaging`
-10. `human_qc`
-11. `publish_queue`
-12. `performance_analysis`
+2. `plan_opportunity`
+3. `build_backlog`
+4. `score_ideas`
+5. `generate_angles`
+6. `build_research_pack`
+7. `run_scripting`
+8. `visual_translation`
+9. `production_brief`
+10. `packaging`
+11. `human_qc`
+12. `publish_queue`
+13. `performance_analysis`
 
 Operationally, the flow looks like this:
 
 ```text
 strategy memory
+  -> opportunity brief
   -> backlog ideas
   -> scored shortlist
   -> one selected idea
@@ -190,7 +194,38 @@ Notes:
 - `strategy set` only supports shallow scalar updates and a few comma-separated list fields
 - nested structures like `audience_segments` are not managed ergonomically through the CLI yet
 
-### Stage 1: Backlog Builder
+### Stage 1: Opportunity Planning
+
+Implementation:
+
+- agent: [`OpportunityPlanningAgent`](../src/cc_deep_research/content_gen/agents/opportunity.py)
+- prompt: [`prompts/opportunity.py`](../src/cc_deep_research/content_gen/prompts/opportunity.py)
+- output model: `OpportunityBrief`
+
+Purpose:
+
+- turn a raw theme into a structured editorial contract
+- define audience segments, problem statements, proof requirements, and success criteria
+- provide sub-angles and research hypotheses to guide backlog generation and scoring
+
+Input sources:
+
+- theme
+- strategy memory
+
+Output fields:
+
+- `theme`, `goal`, `primary_audience_segment`, `secondary_audience_segments`
+- `problem_statements`, `content_objective`, `proof_requirements`
+- `platform_constraints`, `risk_constraints`, `freshness_rationale`
+- `sub_angles`, `research_hypotheses`, `success_criteria`
+
+Pipeline behavior:
+
+- runs after strategy load and before backlog generation
+- the backlog builder can read the brief for richer context, though it does not require every field
+
+### Stage 2: Backlog Builder
 
 Implementation:
 
@@ -225,7 +260,7 @@ Persistence behavior:
 - the command prints results and can save JSON with `-o`
 - it does not automatically persist to [`BacklogStore`](../src/cc_deep_research/content_gen/storage/backlog_store.py)
 
-### Stage 2: Idea Scoring
+### Stage 3: Idea Scoring
 
 Implementation:
 
@@ -258,7 +293,7 @@ Pipeline behavior:
 - the full pipeline takes the first `produce_now` idea only
 - it does not currently branch into multiple ideas or keep a ranked work queue inside the pipeline context
 
-### Stage 3: Angle Generation
+### Stage 4: Angle Generation
 
 Implementation:
 
@@ -292,7 +327,7 @@ Pipeline behavior:
 - if `selected_angle_id` is present, the pipeline uses it
 - otherwise it falls back to the first angle option
 
-### Stage 4: Research Pack Builder
+### Stage 5: Research Pack Builder
 
 Implementation:
 
@@ -332,7 +367,7 @@ Important implementation details:
 - one built-in query template is still hard-coded to `content trends 2025`, which is stale and should be treated as technical debt
 - the stored research pack is compact by design and not a citation-grade source graph
 
-### Stage 5: Scripting Pipeline
+### Stage 6: Scripting Pipeline
 
 Implementation:
 
@@ -382,7 +417,7 @@ How the full pipeline uses it:
 
 That means the full pipeline treats the earlier backlog, angle, and research stages as the upstream planning work for the scripting engine.
 
-### Stage 6: Visual Translation
+### Stage 7: Visual Translation
 
 Implementation:
 
@@ -412,7 +447,7 @@ Guardrail:
 - this stage requires both a script and a structure
 - if either is missing, the standalone orchestrator call raises a `ValueError`
 
-### Stage 7: Production Brief
+### Stage 8: Production Brief
 
 Implementation:
 
@@ -431,7 +466,7 @@ CLI:
 cc-deep-research content-gen production --from-file visual.json -o production.json
 ```
 
-### Stage 8: Packaging
+### Stage 9: Packaging
 
 Implementation:
 
@@ -460,7 +495,7 @@ Input behavior:
 - the CLI accepts either a scripting context or a full pipeline context
 - helper functions extract the best available final script and angle information
 
-### Stage 9: Human QC Gate
+### Stage 10: Human QC Gate
 
 Implementation:
 
@@ -491,7 +526,7 @@ Current behavior:
 - `qc review` runs a fresh review from the saved context
 - `qc approve` mutates the saved context JSON by flipping `approved_for_publish` to `True`
 
-### Stage 10: Publish Queue
+### Stage 11: Publish Queue
 
 Implementation:
 
@@ -521,7 +556,7 @@ Important detail:
 - the standalone publish path persists every generated publish item
 - the full pipeline only stores the first generated `PublishItem` in `PipelineContext`
 
-### Stage 11: Performance Analysis
+### Stage 12: Performance Analysis
 
 Implementation:
 

@@ -2,6 +2,7 @@
 
 from cc_deep_research.content_gen.agents.angle import AngleAgent
 from cc_deep_research.content_gen.agents.backlog import BacklogAgent
+from cc_deep_research.content_gen.agents.opportunity import OpportunityPlanningAgent
 from cc_deep_research.content_gen.agents.packaging import PackagingAgent
 from cc_deep_research.content_gen.agents.performance import PerformanceAgent
 from cc_deep_research.content_gen.agents.production import ProductionAgent
@@ -15,6 +16,7 @@ from cc_deep_research.content_gen.agents.visual import VisualAgent
 __all__ = [
     "AngleAgent",
     "BacklogAgent",
+    "OpportunityPlanningAgent",
     "PackagingAgent",
     "ProductionAgent",
     "PerformanceAgent",
