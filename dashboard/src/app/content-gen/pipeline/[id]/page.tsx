@@ -28,8 +28,25 @@ function normalizeTraceState(status: string): Exclude<StageState, 'pending' | 'r
   return 'completed'
 }
 
+function uniqueIdeaIds(ideaIds: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>()
+  const normalized: string[] = []
+
+  for (const ideaId of ideaIds) {
+    if (!ideaId || seen.has(ideaId)) {
+      continue
+    }
+    seen.add(ideaId)
+    normalized.push(ideaId)
+  }
+
+  return normalized
+}
+
 function findSelectedIdeaId(ctx: PipelineContext): string | null {
   return (
+    ctx.selected_idea_id ||
+    ctx.scoring?.selected_idea_id ||
     ctx.angles?.idea_id ||
     ctx.research_pack?.idea_id ||
     ctx.visual_plan?.idea_id ||
@@ -52,9 +69,20 @@ function findSelectedIdea(ctx: PipelineContext): { item: BacklogItem | null; sco
 
 function buildShortlist(ctx: PipelineContext): Array<{ item: BacklogItem; score: IdeaScores | null }> {
   const scoredIdeas = [...(ctx.scoring?.scores ?? [])].sort((left, right) => right.total_score - left.total_score)
-  const shortlistIds = ctx.scoring?.produce_now?.length
-    ? ctx.scoring.produce_now
-    : scoredIdeas.slice(0, 3).map((score) => score.idea_id)
+  const selectedIdeaId = findSelectedIdeaId(ctx)
+  const shortlistIds = ctx.shortlist.length
+    ? uniqueIdeaIds([selectedIdeaId, ...ctx.shortlist])
+    : ctx.scoring?.shortlist?.length
+      ? uniqueIdeaIds([selectedIdeaId, ...ctx.scoring.shortlist])
+      : ctx.runner_up_idea_ids.length || ctx.scoring?.runner_up_idea_ids?.length
+        ? uniqueIdeaIds([
+            selectedIdeaId,
+            ...ctx.runner_up_idea_ids,
+            ...(ctx.scoring?.runner_up_idea_ids ?? []),
+          ])
+        : ctx.scoring?.produce_now?.length
+          ? uniqueIdeaIds(ctx.scoring.produce_now)
+          : scoredIdeas.slice(0, 3).map((score) => score.idea_id)
 
   return shortlistIds
     .map((ideaId) => ({
@@ -138,6 +166,7 @@ export default function PipelineDetailPage() {
   const selectedIdea = pipelineContext ? findSelectedIdea(pipelineContext) : { item: null, score: null }
   const shortlistedIdeas = pipelineContext ? buildShortlist(pipelineContext) : []
   const alternateIdeas = shortlistedIdeas.filter((entry) => entry.item.idea_id !== selectedIdea.item?.idea_id)
+  const selectionReasoning = pipelineContext?.selection_reasoning || pipelineContext?.scoring?.selection_reasoning || null
   const selectedAngle = pipelineContext?.angles?.angle_options.find(
     (option) => option.angle_id === pipelineContext.angles?.selected_angle_id,
   )
@@ -276,6 +305,14 @@ export default function PipelineDetailPage() {
                 <Badge variant="warning">{ctx.backlog.rejected_count} rejected</Badge>
               ) : null}
             </div>
+            {ctx.backlog.is_degraded ? (
+              <Alert variant="warning">
+                <AlertTitle>Backlog degraded</AlertTitle>
+                <AlertDescription>
+                  {ctx.backlog.degradation_reason || 'The backlog stage completed with degraded output.'}
+                </AlertDescription>
+              </Alert>
+            ) : null}
             {selectedIdea.item ? (
               <div className="rounded-[1rem] border border-border/80 bg-background/55 p-4">
                 <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-muted-foreground">
@@ -298,9 +335,18 @@ export default function PipelineDetailPage() {
           <div className="space-y-4">
             <div className="flex flex-wrap gap-2">
               <Badge variant="success">{ctx.scoring.produce_now.length} produce now</Badge>
+              <Badge variant="info">{shortlistedIdeas.length} shortlisted</Badge>
               <Badge variant="secondary">{ctx.scoring.hold.length} hold</Badge>
               <Badge variant="destructive">{ctx.scoring.killed.length} kill</Badge>
             </div>
+            {ctx.scoring.is_degraded ? (
+              <Alert variant="warning">
+                <AlertTitle>Scoring degraded</AlertTitle>
+                <AlertDescription>
+                  {ctx.scoring.degradation_reason || 'The scoring stage completed with degraded output.'}
+                </AlertDescription>
+              </Alert>
+            ) : null}
 
             {selectedIdea.item ? (
               <div className="rounded-[1rem] border border-success/25 bg-success-muted/10 p-4">
@@ -319,7 +365,11 @@ export default function PipelineDetailPage() {
                 <p className="mt-2 text-sm text-foreground/72">
                   {selectedIdea.item.problem}
                 </p>
-                {selectedIdea.score?.reason ? (
+                {selectionReasoning ? (
+                  <p className="mt-3 text-sm leading-relaxed text-foreground/78">
+                    {selectionReasoning}
+                  </p>
+                ) : selectedIdea.score?.reason ? (
                   <p className="mt-3 text-sm leading-relaxed text-foreground/78">
                     {selectedIdea.score.reason}
                   </p>

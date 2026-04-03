@@ -4,12 +4,15 @@
 
 Current status: Done
 
-Evidence in the current codebase:
+Verified against the current codebase on 2026-04-03.
 
-- The dashboard has basic progress UI, but it does not render `stage_traces`, warnings, skips, or decision summaries.
-- `dashboard/src/types/content-gen.ts` does not model `OpportunityBrief`, `PipelineStageTrace`, or `PipelineContext.stage_traces`.
-- `dashboard/src/app/content-gen/pipeline/[id]/page.tsx` still uses a 12-stage label list and omits `plan_opportunity`.
-- The current pipeline page does not expose selected-idea rationale, shortlist context, or trace details.
+Implemented today:
+
+- `dashboard/src/types/content-gen.ts` now includes backend-aligned degraded-state and shortlist-selection fields on `BacklogOutput`, `ScoringOutput`, and `PipelineContext`.
+- `dashboard/src/lib/content-gen-api.ts` now seeds those explicit shortlist-selection fields in the empty dashboard pipeline context.
+- `dashboard/src/app/content-gen/pipeline/[id]/page.tsx` now prefers backend `selected_idea_id`, `shortlist`, `runner_up_idea_ids`, and `selection_reasoning` over inferred list position.
+- The pipeline detail page now surfaces pipeline-level selection rationale and degraded-stage reasons directly in the scoring and backlog panels.
+- `dashboard/tests/e2e/content-gen-observability.spec.ts` now type-checks the dashboard fixture against `PipelineContext` and covers degraded-state messaging plus backend-driven selection rationale rendering.
 
 ## Goal
 
