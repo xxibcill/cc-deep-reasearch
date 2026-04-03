@@ -72,10 +72,15 @@ export default function PipelineDetailPage() {
             ...prev,
             [data.stage_index]: 'completed',
           }))
-        } else if (data.type === 'pipeline_stage_error') {
+        } else if (data.type === 'pipeline_stage_failed') {
           setStageStates((prev) => ({
             ...prev,
             [data.stage_index]: 'failed',
+          }))
+        } else if (data.type === 'pipeline_stage_skipped') {
+          setStageStates((prev) => ({
+            ...prev,
+            [data.stage_index]: 'completed',
           }))
         } else if (data.type === 'pipeline_completed') {
           selectPipeline(pipelineId)
