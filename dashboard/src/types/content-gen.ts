@@ -534,6 +534,22 @@ export interface PipelineStageCompletedEvent {
   timestamp: string;
 }
 
+export interface PipelineStageFailedEvent {
+  type: 'pipeline_stage_failed';
+  stage_index: number;
+  stage_label: string;
+  error: string;
+  timestamp: string;
+}
+
+export interface PipelineStageSkippedEvent {
+  type: 'pipeline_stage_skipped';
+  stage_index: number;
+  stage_label: string;
+  reason: string;
+  timestamp: string;
+}
+
 export interface PipelineCompletedEvent {
   type: 'pipeline_completed';
   current_stage: number;
@@ -570,6 +586,8 @@ export interface PipelineCancelledEvent {
 export type ContentGenWebSocketEvent =
   | PipelineStageStartedEvent
   | PipelineStageCompletedEvent
+  | PipelineStageFailedEvent
+  | PipelineStageSkippedEvent
   | PipelineCompletedEvent
   | PipelineErrorEvent
   | ScriptingStepEvent

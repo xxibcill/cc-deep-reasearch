@@ -9,23 +9,22 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from cc_deep_research.config import load_config
 from cc_deep_research.content_gen.models import (
+    PIPELINE_STAGE_LABELS,
     PIPELINE_STAGES,
-    PipelineContext,
     ScriptingContext,
-    ScriptingIterationSummary,
     ScriptingIterations,
+    ScriptingIterationSummary,
     ScriptingRunResult,
 )
 from cc_deep_research.content_gen.progress import (
     PipelineRunJob,
     PipelineRunJobRegistry,
-    PipelineRunStatus,
 )
 from cc_deep_research.content_gen.storage import (
     PublishQueueStore,
@@ -176,18 +175,45 @@ def register_content_gen_routes(
                 )
 
             def _stage_completed(stage_idx: int, status: str, detail: str) -> None:
-                asyncio.get_running_loop().create_task(
-                    event_router.publish(
-                        job.pipeline_id,
-                        {
-                            "type": "pipeline_stage_completed",
-                            "stage_index": stage_idx,
-                            "stage_status": status,
-                            "stage_detail": detail,
-                            "timestamp": datetime.now(UTC).isoformat(),
-                        },
+                if status == "failed":
+                    asyncio.get_running_loop().create_task(
+                        event_router.publish(
+                            job.pipeline_id,
+                            {
+                                "type": "pipeline_stage_failed",
+                                "stage_index": stage_idx,
+                                "stage_label": PIPELINE_STAGE_LABELS.get(PIPELINE_STAGES[stage_idx], ""),
+                                "error": detail,
+                                "timestamp": datetime.now(UTC).isoformat(),
+                            },
+                        )
                     )
-                )
+                elif status == "skipped":
+                    asyncio.get_running_loop().create_task(
+                        event_router.publish(
+                            job.pipeline_id,
+                            {
+                                "type": "pipeline_stage_skipped",
+                                "stage_index": stage_idx,
+                                "stage_label": PIPELINE_STAGE_LABELS.get(PIPELINE_STAGES[stage_idx], ""),
+                                "reason": detail,
+                                "timestamp": datetime.now(UTC).isoformat(),
+                            },
+                        )
+                    )
+                else:
+                    asyncio.get_running_loop().create_task(
+                        event_router.publish(
+                            job.pipeline_id,
+                            {
+                                "type": "pipeline_stage_completed",
+                                "stage_index": stage_idx,
+                                "stage_status": status,
+                                "stage_detail": detail,
+                                "timestamp": datetime.now(UTC).isoformat(),
+                            },
+                        )
+                    )
 
             try:
                 ctx = await orch.run_full_pipeline(
@@ -298,18 +324,45 @@ def register_content_gen_routes(
                 )
 
             def _stage_completed(stage_idx: int, status: str, detail: str) -> None:
-                asyncio.get_running_loop().create_task(
-                    event_router.publish(
-                        new_job.pipeline_id,
-                        {
-                            "type": "pipeline_stage_completed",
-                            "stage_index": stage_idx,
-                            "stage_status": status,
-                            "stage_detail": detail,
-                            "timestamp": datetime.now(UTC).isoformat(),
-                        },
+                if status == "failed":
+                    asyncio.get_running_loop().create_task(
+                        event_router.publish(
+                            new_job.pipeline_id,
+                            {
+                                "type": "pipeline_stage_failed",
+                                "stage_index": stage_idx,
+                                "stage_label": PIPELINE_STAGE_LABELS.get(PIPELINE_STAGES[stage_idx], ""),
+                                "error": detail,
+                                "timestamp": datetime.now(UTC).isoformat(),
+                            },
+                        )
                     )
-                )
+                elif status == "skipped":
+                    asyncio.get_running_loop().create_task(
+                        event_router.publish(
+                            new_job.pipeline_id,
+                            {
+                                "type": "pipeline_stage_skipped",
+                                "stage_index": stage_idx,
+                                "stage_label": PIPELINE_STAGE_LABELS.get(PIPELINE_STAGES[stage_idx], ""),
+                                "reason": detail,
+                                "timestamp": datetime.now(UTC).isoformat(),
+                            },
+                        )
+                    )
+                else:
+                    asyncio.get_running_loop().create_task(
+                        event_router.publish(
+                            new_job.pipeline_id,
+                            {
+                                "type": "pipeline_stage_completed",
+                                "stage_index": stage_idx,
+                                "stage_status": status,
+                                "stage_detail": detail,
+                                "timestamp": datetime.now(UTC).isoformat(),
+                            },
+                        )
+                    )
 
             try:
                 result_ctx = await orch.run_full_pipeline(
