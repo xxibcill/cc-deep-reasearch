@@ -1,19 +1,15 @@
-# Task 07: Add Regression Tests and Fixture Coverage (Partially Implemented)
+# Task 07: Add Regression Tests and Fixture Coverage (Done)
 
 ## Status
 
-Current status: Partially implemented
+Current status: Done
 
 Implemented today:
 
-- `tests/test_content_gen.py` covers `OpportunityBrief`, pipeline stage traces, skipped-stage behavior, and malformed backlog/scoring parsing.
-- There are tests for the new planning-stage order and backlog prompt usage of `OpportunityBrief`.
-
-Remaining gaps:
-
-- There are no router/API tests proving live per-stage event emission.
-- There are no shortlist-selection regression tests because shortlist selection has not been implemented yet.
-- The fixture-backed smoke-path coverage described here is still missing.
+- Added a fixture-backed full-pipeline smoke test in `tests/test_content_gen.py` using `tests/fixtures/content_gen_pipeline_smoke.json`.
+- Added router/API regression tests in `tests/test_web_server.py` that prove live per-stage WebSocket emission for completed, skipped, and failed stages.
+- Added a fixture loader helper for the new content-gen smoke payload.
+- Fixed the content-gen router happy path so completed browser-started runs are marked completed with their final context.
 
 ## Goal
 

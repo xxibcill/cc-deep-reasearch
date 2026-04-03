@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 import time
 from datetime import datetime, timedelta
 
@@ -13,6 +14,8 @@ from fastapi.testclient import TestClient
 from cc_deep_research.config import Config
 from cc_deep_research.content_gen.models import (
     IterationState,
+    PipelineContext,
+    PipelineStageTrace,
     QCResult,
     QualityEvaluation,
     SavedScriptRun,
@@ -417,6 +420,219 @@ def test_get_saved_script_returns_full_saved_result(
     ]
 
 
+def test_content_gen_pipeline_websocket_streams_live_stage_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Browser-started pipeline runs should stream per-stage progress live."""
+    config = Config()
+    monkeypatch.setattr("cc_deep_research.content_gen.router.load_config", lambda: config)
+    allow_run = threading.Event()
+
+    class FakeOrchestrator:
+        def __init__(self, _config: Config) -> None:
+            pass
+
+        async def run_full_pipeline(
+            self,
+            theme: str,
+            *,
+            from_stage: int = 0,
+            to_stage: int | None = None,
+            progress_callback=None,
+            stage_completed_callback=None,
+        ) -> PipelineContext:
+            assert theme == "pricing anchors"
+            assert from_stage == 0
+            assert to_stage == 2
+
+            while not allow_run.is_set():
+                await asyncio.sleep(0.001)
+
+            if progress_callback is not None:
+                progress_callback(0, "Loading strategy memory")
+            await asyncio.sleep(0)
+            if stage_completed_callback is not None:
+                stage_completed_callback(0, "completed", "")
+            await asyncio.sleep(0)
+            if progress_callback is not None:
+                progress_callback(1, "Planning opportunity brief")
+            await asyncio.sleep(0)
+            if stage_completed_callback is not None:
+                stage_completed_callback(1, "skipped", "already planned")
+            await asyncio.sleep(0)
+
+            return PipelineContext(
+                theme=theme,
+                current_stage=1,
+                selected_idea_id="idea-beta",
+                stage_traces=[
+                    PipelineStageTrace(
+                        stage_index=0,
+                        stage_name="load_strategy",
+                        stage_label="Loading strategy memory",
+                    ),
+                    PipelineStageTrace(
+                        stage_index=1,
+                        stage_name="plan_opportunity",
+                        stage_label="Planning opportunity brief",
+                        status="skipped",
+                        output_summary="already planned",
+                    ),
+                ],
+            )
+
+    monkeypatch.setattr(
+        "cc_deep_research.content_gen.orchestrator.ContentGenOrchestrator",
+        FakeOrchestrator,
+    )
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/api/content-gen/pipelines",
+            json={"theme": "pricing anchors", "from_stage": 0, "to_stage": 2},
+        )
+
+        assert response.status_code == 202
+        pipeline_id = response.json()["pipeline_id"]
+
+        with client.websocket_connect(f"/ws/content-gen/pipeline/{pipeline_id}") as websocket:
+            initial = websocket.receive_json()
+            assert initial["type"] == "pipeline_status"
+            assert initial["pipeline_id"] == pipeline_id
+            assert initial["status"] in {"queued", "running"}
+
+            allow_run.set()
+
+            started = websocket.receive_json()
+            completed = websocket.receive_json()
+            started_second = websocket.receive_json()
+            skipped = websocket.receive_json()
+            finished = websocket.receive_json()
+
+        assert started == {
+            "type": "pipeline_stage_started",
+            "stage_index": 0,
+            "stage_label": "Loading strategy memory",
+            "timestamp": started["timestamp"],
+        }
+        assert completed == {
+            "type": "pipeline_stage_completed",
+            "stage_index": 0,
+            "stage_status": "completed",
+            "stage_detail": "",
+            "timestamp": completed["timestamp"],
+        }
+        assert started_second == {
+            "type": "pipeline_stage_started",
+            "stage_index": 1,
+            "stage_label": "Planning opportunity brief",
+            "timestamp": started_second["timestamp"],
+        }
+        assert skipped == {
+            "type": "pipeline_stage_skipped",
+            "stage_index": 1,
+            "stage_label": "Planning opportunity brief",
+            "reason": "already planned",
+            "timestamp": skipped["timestamp"],
+        }
+        assert finished["type"] == "pipeline_completed"
+        assert finished["current_stage"] == 1
+
+        status_response = client.get(f"/api/content-gen/pipelines/{pipeline_id}")
+        assert status_response.status_code == 200
+        payload = status_response.json()
+        assert payload["status"] == "completed"
+        assert payload["current_stage"] == 1
+        assert payload["context"]["selected_idea_id"] == "idea-beta"
+
+
+def test_content_gen_pipeline_websocket_streams_failed_stage_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stage failures should emit both the failed-stage event and terminal pipeline error."""
+    config = Config()
+    monkeypatch.setattr("cc_deep_research.content_gen.router.load_config", lambda: config)
+    allow_run = threading.Event()
+
+    class FakeOrchestrator:
+        def __init__(self, _config: Config) -> None:
+            pass
+
+        async def run_full_pipeline(
+            self,
+            theme: str,
+            *,
+            from_stage: int = 0,
+            to_stage: int | None = None,
+            progress_callback=None,
+            stage_completed_callback=None,
+        ) -> PipelineContext:
+            assert theme == "pricing anchors"
+            assert from_stage == 0
+            assert to_stage == 3
+
+            while not allow_run.is_set():
+                await asyncio.sleep(0.001)
+
+            if progress_callback is not None:
+                progress_callback(3, "Scoring ideas")
+            await asyncio.sleep(0)
+            if stage_completed_callback is not None:
+                stage_completed_callback(3, "failed", "Malformed scoring response")
+            await asyncio.sleep(0)
+            raise ValueError("Malformed scoring response")
+
+    monkeypatch.setattr(
+        "cc_deep_research.content_gen.orchestrator.ContentGenOrchestrator",
+        FakeOrchestrator,
+    )
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/api/content-gen/pipelines",
+            json={"theme": "pricing anchors", "from_stage": 0, "to_stage": 3},
+        )
+
+        assert response.status_code == 202
+        pipeline_id = response.json()["pipeline_id"]
+
+        with client.websocket_connect(f"/ws/content-gen/pipeline/{pipeline_id}") as websocket:
+            initial = websocket.receive_json()
+            assert initial["type"] == "pipeline_status"
+            assert initial["pipeline_id"] == pipeline_id
+
+            allow_run.set()
+
+            started = websocket.receive_json()
+            failed = websocket.receive_json()
+            pipeline_error = websocket.receive_json()
+
+        assert started == {
+            "type": "pipeline_stage_started",
+            "stage_index": 3,
+            "stage_label": "Scoring ideas",
+            "timestamp": started["timestamp"],
+        }
+        assert failed == {
+            "type": "pipeline_stage_failed",
+            "stage_index": 3,
+            "stage_label": "Scoring ideas",
+            "error": "Malformed scoring response",
+            "timestamp": failed["timestamp"],
+        }
+        assert pipeline_error == {
+            "type": "pipeline_error",
+            "error": "Malformed scoring response",
+            "timestamp": pipeline_error["timestamp"],
+        }
+
+        status_response = client.get(f"/api/content-gen/pipelines/{pipeline_id}")
+        assert status_response.status_code == 200
+        payload = status_response.json()
+        assert payload["status"] == "failed"
+        assert payload["error"] == "Malformed scoring response"
+
+
 def test_stop_research_run_cancels_active_run_and_interrupts_session(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -622,6 +838,8 @@ def test_patch_config_clears_secret_fields(
 ) -> None:
     """The config patch endpoint should support explicit secret clear actions."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEYS", raising=False)
     config_dir = tmp_path / "xdg" / "cc-deep-research"
     config_dir.mkdir(parents=True)
     (config_dir / "config.yaml").write_text(

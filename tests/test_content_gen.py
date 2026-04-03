@@ -30,6 +30,7 @@ from cc_deep_research.content_gen.models import (
     HumanQCGate,
     IdeaScores,
     OpportunityBrief,
+    ProductionBrief,
     PackagingOutput,
     PipelineContext,
     PipelineStageTrace,
@@ -48,6 +49,7 @@ from cc_deep_research.content_gen.orchestrator import _format_research_context
 from cc_deep_research.content_gen.prompts import scripting as scripting_prompts
 from cc_deep_research.content_gen.prompts.backlog import build_backlog_user
 from cc_deep_research.llm.base import LLMProviderType, LLMResponse, LLMTransportType
+from tests.helpers.fixture_loader import load_content_gen_pipeline_smoke
 
 
 class _FakeScriptingAgent(ScriptingAgent):
@@ -672,6 +674,182 @@ async def test_stage_completed_callback_emits_after_stage() -> None:
     assert idx == 0
     assert status == "completed"
     assert detail == ""
+
+
+@pytest.mark.asyncio
+async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The full pipeline should wire deterministic fixture outputs end to end."""
+    from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
+
+    fixture = load_content_gen_pipeline_smoke()
+    selected_idea_id = fixture["scoring"]["selected_idea_id"]
+    selected_idea = next(
+        item for item in fixture["backlog"]["items"] if item["idea_id"] == selected_idea_id
+    )
+
+    class FakeConfig:
+        content_gen = type(
+            "ContentGen",
+            (),
+            {
+                "max_iterations": 1,
+                "quality_threshold": 0.7,
+                "convergence_threshold": 0.1,
+                "enable_iterative_mode": False,
+                "scoring_threshold_produce": 3.5,
+                "default_platforms": ["tiktok"],
+            },
+        )()
+
+        llm = type(
+            "LLM",
+            (),
+            {
+                "anthropic": type("C", (), {"enabled": True, "api_key": "test"})(),
+            },
+        )()
+
+    class FakeStrategyStore:
+        def load(self) -> StrategyMemory:
+            return StrategyMemory.model_validate(fixture["strategy"])
+
+    class FakeOpportunityAgent:
+        async def plan(self, theme: str, strategy: StrategyMemory) -> OpportunityBrief:
+            assert theme == fixture["theme"]
+            assert strategy.niche == fixture["strategy"]["niche"]
+            return OpportunityBrief.model_validate(fixture["opportunity_brief"])
+
+    class FakeBacklogAgent:
+        async def build_backlog(
+            self,
+            theme: str,
+            strategy: StrategyMemory,
+            *,
+            opportunity_brief: OpportunityBrief | None = None,
+        ) -> BacklogOutput:
+            assert theme == fixture["theme"]
+            assert strategy.niche == fixture["strategy"]["niche"]
+            assert opportunity_brief is not None
+            assert opportunity_brief.goal == fixture["opportunity_brief"]["goal"]
+            return BacklogOutput.model_validate(fixture["backlog"])
+
+        async def score_ideas(
+            self,
+            items: list[BacklogItem],
+            strategy: StrategyMemory,
+            *,
+            threshold: float,
+        ) -> ScoringOutput:
+            assert [item.idea_id for item in items] == ["idea-alpha", "idea-beta"]
+            assert strategy.niche == fixture["strategy"]["niche"]
+            assert threshold == 3.5
+            return ScoringOutput.model_validate(fixture["scoring"])
+
+    class FakeAngleAgent:
+        async def generate(self, item: BacklogItem, strategy: StrategyMemory) -> AngleOutput:
+            assert item.idea_id == selected_idea_id
+            assert strategy.niche == fixture["strategy"]["niche"]
+            return AngleOutput.model_validate(fixture["angles"])
+
+    class FakeResearchAgent:
+        async def build(self, item: BacklogItem, angle: AngleOption, *, feedback: str = "") -> ResearchPack:
+            assert item.idea_id == selected_idea_id
+            assert angle.angle_id == fixture["angles"]["selected_angle_id"]
+            assert feedback == ""
+            return ResearchPack.model_validate(fixture["research_pack"])
+
+    class FakeScriptingAgent:
+        async def run_from_step(self, ctx: ScriptingContext, step: int) -> ScriptingContext:
+            assert step == 3
+            assert ctx.raw_idea == selected_idea["idea"]
+            assert ctx.core_inputs is not None
+            assert ctx.core_inputs.topic == selected_idea["idea"]
+            assert "Anchors shape perceived value" in ctx.research_context
+            return ScriptingContext.model_validate(fixture["scripting"])
+
+    class FakeVisualAgent:
+        async def translate(self, script: ScriptVersion, structure: ScriptStructure) -> object:
+            assert "anchor tier is broken" in script.content
+            assert structure.chosen_structure == fixture["scripting"]["structure"]["chosen_structure"]
+            from cc_deep_research.content_gen.models import VisualPlanOutput
+
+            return VisualPlanOutput.model_validate(fixture["visual_plan"])
+
+    class FakeProductionAgent:
+        async def brief(self, visual_plan) -> object:
+            assert visual_plan.idea_id == selected_idea_id
+            return ProductionBrief.model_validate(fixture["production_brief"])
+
+    class FakePackagingAgent:
+        async def generate(
+            self,
+            script: ScriptVersion,
+            angle: AngleOption,
+            platforms: list[str],
+            *,
+            strategy: StrategyMemory,
+        ) -> PackagingOutput:
+            assert "anchor tier is broken" in script.content
+            assert angle.angle_id == fixture["angles"]["selected_angle_id"]
+            assert platforms == ["tiktok"]
+            assert strategy.niche == fixture["strategy"]["niche"]
+            return PackagingOutput.model_validate(fixture["packaging"])
+
+    class FakeQCAgent:
+        async def review(
+            self,
+            *,
+            script: str,
+            visual_summary: str,
+            packaging_summary: str,
+        ) -> HumanQCGate:
+            assert "anchor tier is broken" in script
+            assert "Hook: Highlight the cheapest plan selection on a pricing page" in visual_summary
+            assert "tiktok: If buyers always choose cheapest, your anchor tier is broken" in packaging_summary
+            return HumanQCGate.model_validate(fixture["qc_gate"])
+
+    class FakePublishAgent:
+        async def schedule(self, packaging: PackagingOutput, *, idea_id: str) -> list[PublishItem]:
+            assert packaging.idea_id == selected_idea_id
+            assert idea_id == selected_idea_id
+            return [PublishItem.model_validate(item) for item in fixture["publish_items"]]
+
+    monkeypatch.setattr("cc_deep_research.content_gen.storage.StrategyStore", FakeStrategyStore)
+
+    orch = ContentGenOrchestrator(FakeConfig())
+    orch._agents["opportunity"] = FakeOpportunityAgent()
+    orch._agents["backlog"] = FakeBacklogAgent()
+    orch._agents["angle"] = FakeAngleAgent()
+    orch._agents["research"] = FakeResearchAgent()
+    orch._agents["scripting"] = FakeScriptingAgent()
+    orch._agents["visual"] = FakeVisualAgent()
+    orch._agents["production"] = FakeProductionAgent()
+    orch._agents["packaging"] = FakePackagingAgent()
+    orch._agents["qc"] = FakeQCAgent()
+    orch._agents["publish"] = FakePublishAgent()
+
+    ctx = await orch.run_full_pipeline(fixture["theme"], to_stage=len(PIPELINE_STAGES) - 1)
+
+    assert ctx.theme == fixture["theme"]
+    assert ctx.opportunity_brief is not None
+    assert ctx.opportunity_brief.goal == fixture["opportunity_brief"]["goal"]
+    assert ctx.shortlist == fixture["scoring"]["shortlist"]
+    assert ctx.selected_idea_id == selected_idea_id
+    assert ctx.selection_reasoning == fixture["scoring"]["selection_reasoning"]
+    assert ctx.research_pack is not None
+    assert ctx.research_pack.idea_id == selected_idea_id
+    assert ctx.scripting is not None
+    assert ctx.scripting.raw_idea == fixture["scripting"]["raw_idea"]
+    assert ctx.packaging is not None
+    assert ctx.packaging.idea_id == selected_idea_id
+    assert ctx.qc_gate is not None
+    assert ctx.qc_gate.approved_for_publish is True
+    assert ctx.publish_item is not None
+    assert ctx.publish_item.idea_id == selected_idea_id
+    assert [trace.stage_name for trace in ctx.stage_traces] == PIPELINE_STAGES
+    assert all(trace.status == "completed" for trace in ctx.stage_traces)
 
 
 # ---------------------------------------------------------------------------
