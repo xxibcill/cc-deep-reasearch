@@ -27,6 +27,7 @@ import {
   parseQuickScriptPrompt,
   type QuickScriptFields,
 } from '@/lib/quick-script'
+import { TOTAL_PIPELINE_STAGES } from '@/types/content-gen'
 
 export default function ContentGenPage() {
   const router = useRouter()
@@ -118,7 +119,7 @@ export default function ContentGenPage() {
                 }`}
               >
                 {statusTone === 'active'
-                  ? `${String(p.current_stage + 1).padStart(2, '0')}/12`
+                  ? `${String(p.current_stage + 1).padStart(2, '0')}/${TOTAL_PIPELINE_STAGES}`
                   : p.status}
               </span>
               <ArrowRight className="h-3.5 w-3.5 text-muted-foreground transition-colors group-hover:text-warning" />
@@ -175,7 +176,7 @@ export default function ContentGenPage() {
         {activePipelines.length > 0 && (
           renderPipelineList({
             title: 'Active Pipelines',
-            description: 'Runs that are still moving through the 12-stage production flow.',
+            description: `Runs that are still moving through the ${TOTAL_PIPELINE_STAGES}-stage production flow.`,
             items: activePipelines,
             statusTone: 'active',
           })

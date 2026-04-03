@@ -13,6 +13,34 @@ import type {
   RunScriptingResponse,
 } from '@/types/content-gen';
 
+interface PipelineRunDetailResponse extends PipelineRunSummary {
+  context?: PipelineContext;
+}
+
+function emptyPipelineContext(summary: PipelineRunSummary): PipelineContext {
+  return {
+    pipeline_id: summary.pipeline_id,
+    theme: summary.theme,
+    created_at: summary.created_at,
+    current_stage: summary.current_stage,
+    strategy: null,
+    opportunity_brief: null,
+    backlog: null,
+    scoring: null,
+    angles: null,
+    research_pack: null,
+    scripting: null,
+    visual_plan: null,
+    production_brief: null,
+    packaging: null,
+    qc_gate: null,
+    publish_item: null,
+    performance: null,
+    iteration_state: null,
+    stage_traces: [],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Client
 // ---------------------------------------------------------------------------
@@ -51,8 +79,8 @@ export async function listPipelines(): Promise<PipelineRunSummary[]> {
 
 export async function getPipeline(id: string): Promise<PipelineContext> {
   try {
-    const response = await contentGenClient.get(`/pipelines/${id}`);
-    return response.data;
+    const response = await contentGenClient.get<PipelineRunDetailResponse>(`/pipelines/${id}`);
+    return response.data.context ?? emptyPipelineContext(response.data);
   } catch (error) {
     throw new Error(getApiErrorMessage(error, 'Failed to get pipeline.'));
   }

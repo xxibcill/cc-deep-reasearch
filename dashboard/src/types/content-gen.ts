@@ -34,6 +34,7 @@ export type ScoreRecommendation = 'produce_now' | 'hold' | 'kill';
 export type HookStrength = 'strong' | 'adequate' | 'weak';
 
 export type PublishItemStatus = 'scheduled' | 'published';
+export type PipelineTraceStatus = 'completed' | 'skipped' | 'failed';
 
 // =============================================================================
 // Pipeline stage & scripting step constants (mirrors Python lists)
@@ -41,6 +42,7 @@ export type PublishItemStatus = 'scheduled' | 'published';
 
 export type PipelineStageName =
   | 'load_strategy'
+  | 'plan_opportunity'
   | 'build_backlog'
   | 'score_ideas'
   | 'generate_angles'
@@ -52,6 +54,40 @@ export type PipelineStageName =
   | 'human_qc'
   | 'publish_queue'
   | 'performance_analysis';
+
+export const PIPELINE_STAGE_ORDER: PipelineStageName[] = [
+  'load_strategy',
+  'plan_opportunity',
+  'build_backlog',
+  'score_ideas',
+  'generate_angles',
+  'build_research_pack',
+  'run_scripting',
+  'visual_translation',
+  'production_brief',
+  'packaging',
+  'human_qc',
+  'publish_queue',
+  'performance_analysis',
+];
+
+export const PIPELINE_STAGE_SHORT_LABELS: Record<PipelineStageName, string> = {
+  load_strategy: 'Load Strategy',
+  plan_opportunity: 'Plan Opportunity',
+  build_backlog: 'Build Backlog',
+  score_ideas: 'Score Ideas',
+  generate_angles: 'Generate Angles',
+  build_research_pack: 'Build Research',
+  run_scripting: 'Run Scripting',
+  visual_translation: 'Visual Translation',
+  production_brief: 'Production Brief',
+  packaging: 'Packaging',
+  human_qc: 'Human QC',
+  publish_queue: 'Publish Queue',
+  performance_analysis: 'Performance',
+};
+
+export const TOTAL_PIPELINE_STAGES = PIPELINE_STAGE_ORDER.length;
 
 export type ScriptingStepName =
   | 'define_core_inputs'
@@ -117,6 +153,26 @@ export interface StrategyMemory {
   proof_standards: string[];
   past_winners: ContentExample[];
   past_losers: ContentExample[];
+}
+
+// =============================================================================
+// Opportunity brief (stage 1)
+// =============================================================================
+
+export interface OpportunityBrief {
+  theme: string;
+  goal: string;
+  primary_audience_segment: string;
+  secondary_audience_segments: string[];
+  problem_statements: string[];
+  content_objective: string;
+  proof_requirements: string[];
+  platform_constraints: string[];
+  risk_constraints: string[];
+  freshness_rationale: string;
+  sub_angles: string[];
+  research_hypotheses: string[];
+  success_criteria: string[];
 }
 
 // =============================================================================
@@ -444,6 +500,45 @@ export interface PerformanceAnalysis {
   backlog_updates: string[];
 }
 
+export interface QualityEvaluation {
+  overall_quality_score: number;
+  passes_threshold: boolean;
+  hook_quality: number;
+  content_clarity: number;
+  factual_accuracy: number;
+  audience_alignment: number;
+  production_readiness: number;
+  critical_issues: string[];
+  improvement_suggestions: string[];
+  research_gaps_identified: string[];
+  rationale: string;
+  iteration_number: number;
+}
+
+export interface IterationState {
+  current_iteration: number;
+  max_iterations: number;
+  quality_history: QualityEvaluation[];
+  latest_feedback: string;
+  is_converged: boolean;
+  convergence_reason: string;
+  should_rerun_research: boolean;
+}
+
+export interface PipelineStageTrace {
+  stage_index: number;
+  stage_name: PipelineStageName | string;
+  stage_label: string;
+  status: PipelineTraceStatus | string;
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+  input_summary: string;
+  output_summary: string;
+  warnings: string[];
+  decision_summary: string;
+}
+
 // =============================================================================
 // Full pipeline context
 // =============================================================================
@@ -454,6 +549,7 @@ export interface PipelineContext {
   created_at: string;
   current_stage: number;
   strategy: StrategyMemory | null;
+  opportunity_brief: OpportunityBrief | null;
   backlog: BacklogOutput | null;
   scoring: ScoringOutput | null;
   angles: AngleOutput | null;
@@ -465,6 +561,8 @@ export interface PipelineContext {
   qc_gate: HumanQCGate | null;
   publish_item: PublishItem | null;
   performance: PerformanceAnalysis | null;
+  iteration_state: IterationState | null;
+  stage_traces: PipelineStageTrace[];
 }
 
 // =============================================================================
@@ -529,7 +627,7 @@ export interface PipelineStageStartedEvent {
 export interface PipelineStageCompletedEvent {
   type: 'pipeline_stage_completed';
   stage_index: number;
-  stage_status: 'completed' | 'skipped' | 'failed';
+  stage_status: PipelineTraceStatus;
   stage_detail: string;
   timestamp: string;
 }
