@@ -6,6 +6,7 @@ import type { ScriptingLLMCallTrace, ScriptingStepTrace } from '@/types/content-
 
 interface QuickScriptProcessPanelProps {
   traces: ScriptingStepTrace[]
+  label?: string
 }
 
 function formatTraceValue(value: unknown): string {
@@ -85,6 +86,7 @@ function CallPanel({ call }: { call: ScriptingLLMCallTrace }) {
 
 export function QuickScriptProcessPanel({
   traces,
+  label = 'Quick Script Process',
 }: QuickScriptProcessPanelProps) {
   if (traces.length === 0) {
     return null
@@ -98,7 +100,7 @@ export function QuickScriptProcessPanel({
       <div className="rounded-sm border border-border bg-background px-4 py-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
-            Quick Script Process
+            {label}
           </span>
           <span className="rounded-sm border border-border px-2 py-1 text-[11px] font-mono text-muted-foreground">
             {traces.length} steps captured
