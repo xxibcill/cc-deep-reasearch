@@ -108,6 +108,7 @@ export function QCGatePanel({ qcGate, pipelineId, onApprove }: QCGatePanelProps)
         {issueSection('Clarity', qcGate.clarity_issues)}
         {issueSection('Factual', qcGate.factual_issues)}
         {issueSection('Visual', qcGate.visual_issues)}
+        {issueSection('Audio', qcGate.audio_issues)}
         {issueSection('Caption', qcGate.caption_issues)}
       </div>
 
