@@ -1,20 +1,26 @@
 'use client'
 
+import type { ReactNode } from 'react'
+
 export function SectionList({
   label,
   items,
   emptyLabel = 'None recorded',
+  children,
 }: {
   label: string
   items: string[]
   emptyLabel?: string
+  children?: ReactNode
 }) {
   return (
     <div className="space-y-2">
       <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-muted-foreground">
         {label}
       </p>
-      {items.length > 0 ? (
+      {children ? (
+        children
+      ) : items.length > 0 ? (
         <ul className="space-y-2">
           {items.map((item, index) => (
             <li
