@@ -452,17 +452,14 @@ test("pipeline detail surfaces traces, skips, and shortlist rationale from backe
   await expect(page.getByText("1 low-confidence source left in backlog for manual verification.")).toBeVisible();
   await expect(page.getByText("Skipped: research pack reused from cached brief")).toBeVisible();
 
-  await expect(page.getByText("Chosen idea")).toBeVisible();
+  await expect(page.getByText("Scored ideas")).toBeVisible();
+  await expect(page.getByText("idea-selected", { exact: true })).toBeVisible();
   await expect(
     page.getByText(
       "Selected idea-selected for the clearest authority-to-action path after comparing launch specificity across the shortlist.",
     ),
   ).toBeVisible();
-  await expect(page.getByText("Shortlist context")).toBeVisible();
-  await expect(page.getByText("Agent launch videos keep skipping the handoff from demo to real workflow.")).toBeVisible();
-  await expect(
-    page.getByText("Best connects launch friction to a concrete operator payoff without diluting the hook."),
-  ).toBeVisible();
+  await expect(page.getByText("idea-alt", { exact: true })).toBeVisible();
 });
 
 test("pipeline detail shows degraded reasons when backlog or scoring complete in degraded mode", async ({

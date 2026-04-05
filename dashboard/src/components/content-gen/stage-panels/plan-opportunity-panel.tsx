@@ -25,6 +25,32 @@ export function PlanOpportunityPanel({ ctx }: { ctx: PipelineContext }) {
           value={ctx.opportunity_brief.freshness_rationale || 'No freshness rationale captured'}
         />
       </div>
+
+      <SectionList
+        label="Secondary audiences"
+        items={ctx.opportunity_brief.secondary_audience_segments}
+        emptyLabel="No secondary audiences specified"
+      />
+
+      <SectionList
+        label="Research hypotheses"
+        items={ctx.opportunity_brief.research_hypotheses}
+        emptyLabel="No research hypotheses"
+      />
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <SectionList
+          label="Platform constraints"
+          items={ctx.opportunity_brief.platform_constraints}
+          emptyLabel="No platform constraints"
+        />
+        <SectionList
+          label="Risk constraints"
+          items={ctx.opportunity_brief.risk_constraints}
+          emptyLabel="No risk constraints"
+        />
+      </div>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionList label="Problem statements" items={ctx.opportunity_brief.problem_statements} />
         <SectionList label="Sub-angles" items={ctx.opportunity_brief.sub_angles} />
