@@ -61,6 +61,19 @@ Phase 2 - Extended lifecycle management:
 - Persisted prompt overrides and effective prompt configuration in session metadata and exposed configured prompts in session detail UI
 - Added backend/frontend test coverage and documented the v1 boundary for heuristic-only agents
 
+#### Dashboard Operator Workspace Upgrade (10 tasks)
+
+- Normalized the dashboard visual system across home, session overview, monitor, report, compare, and settings surfaces so the app reads as one operator-focused product
+- Reworked the home page into a control room with clearer active-run, attention-needed, and recent-outcome triage while keeping launch actions available without dominating the page
+- Built a unified session workspace shell spanning Overview, Monitor, and Report routes with stronger shared framing, route switching, and session identity/status context
+- Redesigned the session overview into an operator summary that highlights execution state, evidence, artifacts, technical facts, and likely next actions instead of a raw metadata dump
+- Integrated monitor and report panels into the same workspace model with calmer framing, consistent loading/empty/failure states, and better first-screen orientation
+- Added deterministic operator insights and next-step guidance derived from telemetry so common session-health questions are answerable without scanning the full event stream first
+- Improved the launch flow with clearer presets, better progressive disclosure, and less intimidating access to advanced prompt overrides
+- Tightened historical triage and two-session comparison flows so compare mode, compare outputs, and session-state cues are easier to enter and interpret
+- Refreshed dashboard Playwright coverage, accessibility checks, screenshots, and operator-facing docs to match the upgraded home, workspace, and compare flows
+- Clarified settings/runtime override behavior so persisted values, environment-shadowed fields, future-run impact, and secret flows are easier for operators to understand
+
 #### Dashboard shadcn Migration (13 tasks)
 
 - Defined a staged migration plan for the Next.js dashboard, preserving custom graph and timeline renderers while standardizing the shell around them
@@ -97,7 +110,8 @@ Phase 2 - Extended lifecycle management:
 
 ### Removed
 
-- Removed completed task-planning documents from `docs/tasks/` after consolidating their delivered work into this changelog, including the dashboard-detail upgrade task pack
+- Removed completed dashboard-upgrade planning documents `docs/tasks/01-dashboard-visual-foundation.md` through `docs/tasks/10-settings-runtime-clarity.md` after consolidating their delivered work into this changelog
+- Removed previously completed task-planning documents from `docs/tasks/` after consolidating their delivered work into this changelog, including the dashboard-detail upgrade task pack
 
 ## [0.1.0] - 2026-03-11
 
