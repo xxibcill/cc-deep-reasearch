@@ -17,7 +17,7 @@ const SessionTelemetryWorkspace = dynamic(
         <CardContent className="flex min-h-[260px] items-center justify-center">
           <div className="space-y-2 text-center">
             <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
-            <p className="text-sm text-muted-foreground">Loading telemetry monitor…</p>
+            <p className="text-sm text-muted-foreground">Loading monitor...</p>
           </div>
         </CardContent>
       </Card>
@@ -31,7 +31,7 @@ export default function SessionMonitorPage({ params }: { params: { id: string } 
       routeId={params.id}
       view="monitor"
       title="Telemetry Monitor"
-      description="Live telemetry, workflow graphs, event tables, and execution traces stay isolated on the monitor route."
+      description="View live telemetry, workflow graphs, event tables, and execution traces."
     >
       {({ sessionId }) => <SessionTelemetryWorkspace sessionId={sessionId} />}
     </SessionPageFrame>
