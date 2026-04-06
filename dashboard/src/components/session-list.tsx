@@ -15,6 +15,7 @@ import {
   Play,
   Search,
   Trash2,
+  CheckCircle2,
 } from 'lucide-react';
 
 import { BulkSessionDeleteResponse, Session, SessionListQueryState } from '@/types/telemetry';
@@ -64,6 +65,8 @@ interface SessionCardProps {
   selected: boolean;
   compareMode: boolean;
   compareSelected: boolean;
+  compareSlot: 'A' | 'B' | null;
+  compareLocked: boolean;
   onDelete: (session: Session) => void;
   onToggleSelection: (sessionId: string) => void;
   onToggleCompare: (sessionId: string) => void;
@@ -161,11 +164,142 @@ function buildBulkDeleteAttentionMessage(
   return `${attentionSummary} ${retrySummary}`;
 }
 
+interface SessionGroup {
+  title: string;
+  description: string;
+  icon: React.ElementType;
+  sessions: Session[];
+  variant: 'default' | 'warning' | 'success';
+}
+
+interface SessionTriageMeta {
+  label: string;
+  summary: string;
+  badgeVariant: 'info' | 'warning' | 'success' | 'outline';
+}
+
+function getSessionTriageMeta(session: Session): SessionTriageMeta {
+  if (session.active) {
+    return {
+      label: 'Active',
+      summary: 'Live session. Best candidate for monitor-first triage or an in-flight compare baseline.',
+      badgeVariant: 'info',
+    };
+  }
+
+  if (session.status === 'failed' || session.status === 'interrupted') {
+    return {
+      label: 'Needs attention',
+      summary: 'Failure-state session. Prioritize review, compare, or archive only after investigation.',
+      badgeVariant: 'warning',
+    };
+  }
+
+  if (session.archived) {
+    return {
+      label: 'Archived',
+      summary: 'Kept for record or retrospective comparison, but removed from the active working set.',
+      badgeVariant: 'outline',
+    };
+  }
+
+  if (session.hasReport) {
+    return {
+      label: 'Report ready',
+      summary: 'Finished cleanly with artifacts available. Good candidate for compare or downstream review.',
+      badgeVariant: 'success',
+    };
+  }
+
+  return {
+    label: 'Recent history',
+    summary: 'Completed session without a report artifact. Keep it for trace review or lightweight reference.',
+    badgeVariant: 'outline',
+  };
+}
+
+function categorizeSessions(sessions: Session[]): SessionGroup[] {
+  const activeSessions = sessions.filter((s) => s.active);
+  const attentionSessions = sessions.filter(
+    (s) => !s.active && (s.status === 'failed' || s.status === 'interrupted')
+  );
+  const reportReadySessions = sessions.filter(
+    (s) => !s.active && !s.archived && s.hasReport && s.status !== 'failed' && s.status !== 'interrupted'
+  );
+  const archivedSessions = sessions.filter(
+    (s) => !s.active && Boolean(s.archived)
+  );
+  const historySessions = sessions.filter(
+    (s) =>
+      !s.active &&
+      s.status !== 'failed' &&
+      s.status !== 'interrupted' &&
+      !s.archived &&
+      !s.hasReport
+  );
+
+  const groups: SessionGroup[] = [];
+
+  if (activeSessions.length > 0) {
+    groups.push({
+      title: 'Running',
+      description: 'Sessions currently in progress',
+      icon: Play,
+      sessions: activeSessions,
+      variant: 'default',
+    });
+  }
+
+  if (attentionSessions.length > 0) {
+    groups.push({
+      title: 'Needs Attention',
+      description: 'Failed or interrupted sessions',
+      icon: AlertCircle,
+      sessions: attentionSessions,
+      variant: 'warning',
+    });
+  }
+
+  if (reportReadySessions.length > 0) {
+    groups.push({
+      title: 'Report Ready',
+      description: 'Completed sessions with reviewable report artifacts',
+      icon: CheckCircle2,
+      sessions: reportReadySessions,
+      variant: 'success',
+    });
+  }
+
+  if (archivedSessions.length > 0) {
+    groups.push({
+      title: 'Archived',
+      description: 'Historical sessions retained for later reference or comparison',
+      icon: Archive,
+      sessions: archivedSessions,
+      variant: 'default',
+    });
+  }
+
+  if (historySessions.length > 0) {
+    groups.push({
+      title: 'Recent History',
+      description: 'Completed sessions that are neither urgent nor report-ready',
+      icon: Activity,
+      sessions: historySessions,
+      variant: 'default',
+    });
+  }
+
+  return groups;
+}
+
 function SessionCard({
   session,
   selected,
   compareMode,
   compareSelected,
+  compareSlot,
+  compareLocked,
   onDelete,
   onToggleSelection,
   onToggleCompare,
@@ -177,6 +311,20 @@ function SessionCard({
   const showsQuery = session.query && session.query !== session.label;
   const isArchived = session.archived;
   const [expanded, setExpanded] = useState(false);
+  const triage = getSessionTriageMeta(session);
+  const compareSelectionLabel =
+    compareSlot === 'A'
+      ? 'Baseline'
+      : compareSlot === 'B'
+        ? 'Comparison'
+        : compareLocked
+          ? 'Selection full'
+          : 'Compare';
+  const compareSelectionTitle = compareSelected
+    ? `Remove ${session.label} from comparison`
+    : compareLocked
+      ? 'Two sessions are already selected. Deselect one to change the pair.'
+      : 'Select for comparison';
 
   return (
     <article className="group relative overflow-hidden rounded-[1.2rem] border border-border/80 bg-[linear-gradient(180deg,rgba(19,34,38,0.9),rgba(16,27,31,0.94))] p-4 shadow-card transition-all duration-200 hover:-translate-y-px hover:shadow-card-raised">
@@ -203,13 +351,22 @@ function SessionCard({
                   />
                 </label>
               ) : (
-                <label className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full" title="Select for comparison">
-                  <Checkbox
-                    checked={compareSelected}
-                    onCheckedChange={() => onToggleCompare(session.sessionId)}
-                    aria-label={`Compare session ${session.label}`}
-                  />
-                </label>
+                <div className="flex flex-col items-center gap-2 pt-0.5">
+                  <label
+                    className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full"
+                    title={compareSelectionTitle}
+                  >
+                    <Checkbox
+                      checked={compareSelected}
+                      disabled={compareLocked && !compareSelected}
+                      onCheckedChange={() => onToggleCompare(session.sessionId)}
+                      aria-label={`Compare session ${session.label}`}
+                    />
+                  </label>
+                  <Badge variant={compareSelected ? 'info' : 'outline'} className="px-2">
+                    {compareSelectionLabel}
+                  </Badge>
+                </div>
               )}
             </div>
 
@@ -219,6 +376,7 @@ function SessionCard({
                 <Badge variant={session.active ? 'info' : isArchived ? 'warning' : 'outline'}>
                   {session.active ? 'Live' : isArchived ? 'Archived' : session.status}
                 </Badge>
+                <Badge variant={triage.badgeVariant}>{triage.label}</Badge>
                 {session.hasReport ? <Badge variant="success">Report ready</Badge> : null}
               </div>
 
@@ -233,6 +391,9 @@ function SessionCard({
 
               <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
                 {showsQuery ? session.query : 'Research session with telemetry, routing, and output history available for inspection.'}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-foreground/86">
+                {triage.summary}
               </p>
             </div>
           </div>
@@ -333,7 +494,7 @@ function SessionCard({
       </div>
 
       {expanded ? (
-        <div className="mt-4 grid gap-3 border-t border-border/70 pt-4 text-sm text-muted-foreground animate-fade-in md:grid-cols-2">
+        <div className="mt-4 grid gap-3 border-t border-border/70 pt-4 text-sm text-muted-foreground animate-fade-in md:grid-cols-3">
           <div className="rounded-[0.95rem] border border-border/65 bg-surface/55 p-4">
             <p className="eyebrow">Query context</p>
             <p className="mt-3 leading-6 text-foreground/88">
@@ -356,6 +517,10 @@ function SessionCard({
                 </span>
               </div>
             </div>
+          </div>
+          <div className="rounded-[0.95rem] border border-border/65 bg-surface/55 p-4">
+            <p className="eyebrow">Triage guidance</p>
+            <p className="mt-3 leading-6 text-foreground/88">{triage.summary}</p>
           </div>
         </div>
       ) : null}
@@ -527,10 +692,11 @@ export function SessionList({
   const filtered =
     query.search.trim().length > 0 || query.status.length > 0 || query.activeOnly;
 
-  // Compare mode state
   const compareSessionIdSet = new Set(compareSessionIds.filter(Boolean) as string[]);
   const canViewComparison = compareSessionIdSet.size === 2;
   const [sessionA, sessionB] = compareSessionIds;
+  const compareBaseline = sessions.find((session) => session.sessionId === sessionA) ?? null;
+  const compareCandidate = sessions.find((session) => session.sessionId === sessionB) ?? null;
 
   const selectedSessionIdSet = new Set(selectedSessionIds);
   const selectableSessions = sessions.filter((session) => !session.active);
@@ -751,6 +917,8 @@ export function SessionList({
     );
   };
 
+  const sessionGroups = categorizeSessions(sessions);
+
   return (
     <>
       <div className="space-y-4">
@@ -759,12 +927,12 @@ export function SessionList({
             <div className="space-y-3">
               <p className="eyebrow">Research archive</p>
               <h2 className="font-display text-[2.6rem] font-semibold uppercase tracking-[0.02em] text-foreground">
-              {compareMode ? 'Select Sessions to Compare' : 'Research Sessions'}
+                {compareMode ? 'Compare Sessions' : 'Research Sessions'}
               </h2>
               <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
                 {compareMode
-                  ? `Select up to 2 sessions (${compareSessionIdSet.size}/2 selected)`
-                  : `Showing ${sessions.length} of ${total} matching sessions`}
+                  ? 'Pick a baseline and one comparison session. The list locks after two selections.'
+                  : `${sessions.length} of ${total} sessions`}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -775,7 +943,7 @@ export function SessionList({
                 onClick={() => setCompareMode(!compareMode)}
               >
                 <GitCompare className="h-3.5 w-3.5" />
-                Compare
+                {compareMode ? 'Exit Compare' : 'Start Compare'}
               </Button>
               {!compareMode && selectableSessions.length > 0 ? (
                 <Button type="button" size="sm" variant="outline" onClick={handleSelectVisible}>
@@ -798,22 +966,47 @@ export function SessionList({
 
         <SessionFilters />
 
-        {compareMode && canViewComparison ? (
-          <Alert variant="info" className="flex flex-col gap-3 rounded-[1.15rem] lg:flex-row lg:items-center lg:justify-between">
-            <div>
+        {compareMode ? (
+          <Alert variant="info" className="flex flex-col gap-4 rounded-[1.15rem] lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-2">
               <AlertTitle>
-                2 sessions selected for comparison
+                {compareSessionIdSet.size === 0
+                  ? 'Compare mode is active'
+                  : compareSessionIdSet.size === 1
+                    ? 'Baseline selected'
+                    : 'Comparison ready'}
               </AlertTitle>
               <AlertDescription>
-                Ready to compare {sessions.find((s) => s.sessionId === sessionA)?.label || 'Session A'} vs {sessions.find((s) => s.sessionId === sessionB)?.label || 'Session B'}
+                {compareSessionIdSet.size === 0
+                  ? 'Start with the session you trust as the baseline, then pick a second session to explain what changed.'
+                  : compareSessionIdSet.size === 1
+                    ? `Baseline locked: ${compareBaseline?.label || 'Session A'}. Choose one more session for the side-by-side summary.`
+                    : `Ready to compare ${compareBaseline?.label || 'Session A'} against ${compareCandidate?.label || 'Session B'}.`}
               </AlertDescription>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant={compareBaseline ? 'info' : 'outline'}>
+                  A: {compareBaseline?.label || 'Choose baseline'}
+                </Badge>
+                <Badge variant={compareCandidate ? 'info' : 'outline'}>
+                  B: {compareCandidate?.label || 'Choose comparison'}
+                </Badge>
+              </div>
             </div>
-            <Link href={`/compare?a=${sessionA}&b=${sessionB}`} className="inline-flex">
-              <Button type="button" variant="default">
-                <GitCompare className="mr-2 h-4 w-4" />
-                View Comparison
-              </Button>
-            </Link>
+            <div className="flex flex-wrap gap-2">
+              {canViewComparison ? (
+                <Link href={`/compare?a=${sessionA}&b=${sessionB}`} className="inline-flex">
+                  <Button type="button" variant="default">
+                    <GitCompare className="mr-2 h-4 w-4" />
+                    View Comparison
+                  </Button>
+                </Link>
+              ) : null}
+              {compareSessionIdSet.size > 0 ? (
+                <Button type="button" variant="outline" onClick={clearCompareSessionIds}>
+                  Clear Compare Pair
+                </Button>
+              ) : null}
+            </div>
           </Alert>
         ) : null}
 
@@ -852,20 +1045,40 @@ export function SessionList({
           />
         ) : (
           <>
-            <div className="space-y-3">
-              {sessions.map((session) => (
-                <SessionCard
-                  key={session.sessionId}
-                  session={session}
-                  selected={selectedSessionIdSet.has(session.sessionId)}
-                  compareMode={compareMode}
-                  compareSelected={compareSessionIdSet.has(session.sessionId)}
-                  onDelete={handleDeleteClick}
-                  onToggleSelection={toggleSessionSelection}
-                  onToggleCompare={toggleCompareSessionId}
-                  onArchive={handleArchive}
-                  onRestore={handleRestore}
-                />
+            <div className="space-y-6">
+              {sessionGroups.map((group) => (
+                <div key={group.title} className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <group.icon className="h-5 w-5 text-primary" />
+                    <div>
+                      <h3 className="font-display text-[1.4rem] font-semibold uppercase tracking-[0.02em] text-foreground">
+                        {group.title}
+                      </h3>
+                      <p className="text-sm text-muted-foreground">{group.description}</p>
+                    </div>
+                    <Badge variant={group.variant === 'warning' ? 'warning' : group.variant === 'success' ? 'success' : 'outline'} className="ml-auto">
+                      {group.sessions.length}
+                    </Badge>
+                  </div>
+                  <div className="space-y-3">
+                    {group.sessions.map((session) => (
+                      <SessionCard
+                        key={session.sessionId}
+                        session={session}
+                        selected={selectedSessionIdSet.has(session.sessionId)}
+                        compareMode={compareMode}
+                        compareSelected={compareSessionIdSet.has(session.sessionId)}
+                        compareSlot={session.sessionId === sessionA ? 'A' : session.sessionId === sessionB ? 'B' : null}
+                        compareLocked={compareSessionIdSet.size >= 2}
+                        onDelete={handleDeleteClick}
+                        onToggleSelection={toggleSessionSelection}
+                        onToggleCompare={toggleCompareSessionId}
+                        onArchive={handleArchive}
+                        onRestore={handleRestore}
+                      />
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
 
