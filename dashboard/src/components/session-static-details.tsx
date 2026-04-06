@@ -56,14 +56,14 @@ function MetricCard({
   icon: typeof Activity;
 }) {
   return (
-    <Card className="border-slate-200/80 shadow-sm">
+    <Card className="border-border shadow-sm">
       <CardContent className="flex items-center gap-3 p-4">
-        <div className="rounded-xl bg-slate-100 p-2 text-slate-700">
+        <div className="rounded-xl bg-surface-raised p-2 text-muted-foreground">
           <Icon className="h-4 w-4" />
         </div>
         <div>
           <p className="text-xs uppercase tracking-wide text-muted-foreground">{title}</p>
-          <p className="text-lg font-semibold text-slate-900">{value}</p>
+          <p className="text-lg font-semibold text-foreground">{value}</p>
         </div>
       </CardContent>
     </Card>
@@ -72,9 +72,9 @@ function MetricCard({
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-slate-100 py-3 last:border-b-0 last:pb-0 first:pt-0">
+    <div className="flex items-start justify-between gap-4 border-b border-border py-3 last:border-b-0 last:pb-0 first:pt-0">
       <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="text-right text-sm font-medium text-slate-900">{value}</span>
+      <span className="text-right text-sm font-medium text-foreground">{value}</span>
     </div>
   );
 }
@@ -110,17 +110,17 @@ export function SessionStaticDetails({
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_360px]">
-        <Card className="border-slate-200/80 shadow-sm">
+        <Card className="border-border shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Search className="h-5 w-5 text-sky-700" />
+              <Search className="h-5 w-5 text-primary" />
               Session Summary
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
+                <h2 className="text-2xl font-semibold tracking-tight text-foreground">
                   {sessionSummary?.label ?? sessionId}
                 </h2>
                 <Badge variant={runStatusBadgeVariant(runStatus)}>{runStatus ?? 'loading'}</Badge>
@@ -130,17 +130,17 @@ export function SessionStaticDetails({
               <p className="text-xs font-mono text-muted-foreground">{sessionId}</p>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+            <div className="rounded-2xl border border-border bg-surface-raised p-4">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Query</p>
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-900">
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground">
                 {sessionSummary?.query ?? 'No query metadata was captured for this session.'}
               </p>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-2xl border border-slate-200 p-4">
+              <div className="rounded-2xl border border-border p-4">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Execution</p>
-                <div className="mt-3 space-y-1.5 text-sm text-slate-900">
+                <div className="mt-3 space-y-1.5 text-sm text-foreground">
                   <p>Depth: {formatDepth(sessionSummary?.depth ?? null)}</p>
                   <p>Created: {formatTimestamp(sessionSummary?.createdAt ?? null)}</p>
                   <p>Last event: {formatTimestamp(sessionSummary?.lastEventAt ?? null)}</p>
@@ -148,7 +148,7 @@ export function SessionStaticDetails({
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 p-4">
+              <div className="rounded-2xl border border-border p-4">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Artifacts</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Badge variant={sessionSummary?.hasSessionPayload ? 'success' : 'secondary'}>
@@ -163,10 +163,10 @@ export function SessionStaticDetails({
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200/80 shadow-sm">
+        <Card className="border-border shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <HardDrive className="h-5 w-5 text-slate-700" />
+              <HardDrive className="h-5 w-5 text-muted-foreground" />
               Session Facts
             </CardTitle>
           </CardHeader>
@@ -197,11 +197,11 @@ export function SessionStaticDetails({
       </div>
 
       {!sessionSummary?.hasReport ? (
-        <Card className="border-dashed border-slate-300/90 shadow-sm">
+        <Card className="border-dashed border-border/70 shadow-sm">
           <CardContent className="flex items-start gap-3 p-5">
-            <FileText className="mt-0.5 h-5 w-5 text-slate-500" />
+            <FileText className="mt-0.5 h-5 w-5 text-muted-foreground" />
             <div className="space-y-1">
-              <p className="text-sm font-medium text-slate-900">Report route is conditional</p>
+              <p className="text-sm font-medium text-foreground">Report route is conditional</p>
               <p className="text-sm text-muted-foreground">
                 Open <span className="font-mono">/session/{sessionId}/report</span> after the run
                 completes and a report artifact is available.
