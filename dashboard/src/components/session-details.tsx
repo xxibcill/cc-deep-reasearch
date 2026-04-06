@@ -282,8 +282,8 @@ export function SessionDetails({
                 <StatusBadge connected={connected} eventCount={deferredEvents.length} />
               </div>
               <p className="text-sm text-muted-foreground">
-                Session <span className="font-mono text-xs text-foreground">{sessionId}</span> with{' '}
-                {deferredEvents.length} buffered events ready for inspection.
+                <span className="font-mono text-xs text-foreground">{sessionId}</span> —{' '}
+                {deferredEvents.length} events buffered.
               </p>
             </div>
             <div className="flex items-center gap-3">
