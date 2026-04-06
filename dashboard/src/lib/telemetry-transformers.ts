@@ -76,71 +76,89 @@ export function deriveOperatorInsights(
   });
 
   const phases = derived.phases;
-  const hasFailures = derived.toolExecutions.some((t) => t.status === 'failed' || t.status === 'error');
-  const hasLLMErrors = derived.llmReasoning.some(
-    (l) => l.status === 'failed' || l.status === 'error' || l.status === 'timeout'
+  const toolFailures = derived.toolExecutions.filter(
+    (tool) => tool.status === 'failed' || tool.status === 'error'
   );
-  const failedPhases = new Set<string>();
-  const failedAgents = new Set<string>();
-  const toolFailures: ToolExecution[] = [];
-
-  for (const tool of derived.toolExecutions) {
-    if (tool.status === 'failed' || tool.status === 'error') {
-      failedAgents.add(tool.agentId);
-      if (tool.phase) {
-        failedPhases.add(tool.phase);
-      }
-      toolFailures.push(tool);
-    }
-  }
+  const llmFailures = derived.llmReasoning.filter(
+    (item) => item.status === 'failed' || item.status === 'error' || item.status === 'timeout'
+  );
+  const failedPhases = Array.from(
+    new Set(
+      toolFailures
+        .map((tool) => tool.phase)
+        .filter((phase): phase is string => Boolean(phase))
+    )
+  );
+  const hasFailures = toolFailures.length > 0;
+  const hasLLMErrors = llmFailures.length > 0;
 
   const activePhases = phases.filter(
-    (phase) => !sortedEvents.some((e) => e.category === 'phase' && e.name === phase && (e.status === 'completed' || e.status === 'failed'))
+    (phase) =>
+      !sortedEvents.some(
+        (event) =>
+          event.category === 'phase'
+          && event.name === phase
+          && (event.status === 'completed' || event.status === 'failed')
+      )
   );
   const completedPhases = phases.filter(
-    (phase) => sortedEvents.some((e) => e.category === 'phase' && e.name === phase && e.status === 'completed')
+    (phase) =>
+      sortedEvents.some(
+        (event) =>
+          event.category === 'phase' && event.name === phase && event.status === 'completed'
+      )
   );
 
   const lastEvent = sortedEvents.at(-1);
   const now = Date.now();
   const lastEventTime = lastEvent ? asTimestamp(lastEvent.timestamp) : 0;
   const isStalled = lastEvent && lastEvent.status !== 'completed' && lastEvent.status !== 'failed' && (now - lastEventTime) > STALL_THRESHOLD_MS;
-  const allPhasesCompleted = phases.length > 0 && phases.every((phase) =>
-    sortedEvents.some((e) => e.category === 'phase' && e.name === phase && e.status === 'completed')
-  );
+  const allPhasesCompleted =
+    phases.length > 0
+    && phases.every((phase) =>
+      sortedEvents.some(
+        (event) =>
+          event.category === 'phase' && event.name === phase && event.status === 'completed'
+      )
+    );
 
   if (hasFailures || hasLLMErrors) {
-    const allFailures = [...derived.toolExecutions.filter((t) => t.status === 'failed' || t.status === 'error')];
-    if (allFailures.length > 0) {
-      const phaseList = Array.from(failedPhases);
+    if (toolFailures.length > 0) {
       insights.push({
         id: 'insight-failures',
         status: 'error',
         category: 'failure',
-        title: allFailures.length === 1 ? '1 tool failure detected' : `${allFailures.length} tool failures detected`,
-        description: phaseList.length > 0
-          ? `Failures occurred in phase${phaseList.length === 1 ? '' : 's'}: ${phaseList.join(', ')}`
-          : 'Review the tool execution details for more information.',
+        title:
+          toolFailures.length === 1
+            ? '1 tool failure detected'
+            : `${toolFailures.length} tool failures detected`,
+        description:
+          failedPhases.length > 0
+            ? `Failures occurred in phase${failedPhases.length === 1 ? '' : 's'}: ${failedPhases.join(', ')}.${hasReport ? '' : ' Report generation is blocked until the failing step is understood.'}`
+            : `One or more tool executions failed.${hasReport ? '' : ' Report generation is blocked until the failure path is reviewed.'}`,
         actions: [
           { label: 'Inspect tool failures', actionType: 'inspect_tool_failures' },
+          ...(!hasReport ? [{ label: 'Compare against a healthy run', actionType: 'compare_runs' as const }] : []),
         ],
-        eventId: allFailures[0].eventId,
-        phase: phaseList[0] ?? null,
+        eventId: toolFailures[0].eventId,
+        phase: failedPhases[0] ?? null,
       });
     }
 
     if (hasLLMErrors) {
-      const errorLLMs = derived.llmReasoning.filter((l) => l.status === 'failed' || l.status === 'error' || l.status === 'timeout');
       insights.push({
         id: 'insight-llm-failures',
         status: 'error',
         category: 'failure',
-        title: errorLLMs.length === 1 ? '1 LLM call failed' : `${errorLLMs.length} LLM calls failed`,
-        description: 'One or more LLM calls failed or timed out. Review the LLM reasoning for details.',
+        title:
+          llmFailures.length === 1 ? '1 LLM call failed' : `${llmFailures.length} LLM calls failed`,
+        description: hasReport
+          ? 'One or more LLM calls failed or timed out. Review the reasoning trace for the exact failure path.'
+          : 'One or more LLM calls failed or timed out, which can block report generation or leave the run incomplete.',
         actions: [
           { label: 'Review LLM reasoning', actionType: 'review_llm_reasoning' },
         ],
-        eventId: errorLLMs[0]?.requestEventId ?? null,
+        eventId: llmFailures[0]?.requestEventId ?? null,
       });
     }
   }
@@ -163,9 +181,11 @@ export function deriveOperatorInsights(
         status: 'warning',
         category: 'blocker',
         title: 'Run complete, report not available',
-        description: 'All phases completed but report generation may be blocked.',
+        description:
+          'All phases completed, but no report artifact is available yet. Review the phase flow before comparing against a previous successful run.',
         actions: [
           { label: 'View phases', actionType: 'view_phases' },
+          { label: 'Compare against a successful run', actionType: 'compare_runs' },
         ],
       });
     }
@@ -178,9 +198,9 @@ export function deriveOperatorInsights(
         status: 'warning',
         category: 'performance',
         title: 'Run appears stalled',
-        description: `No events received in the last ${Math.round(STALL_THRESHOLD_MS / 1000)} seconds. The session may be hung.`,
+        description: `No events received in the last ${Math.round(STALL_THRESHOLD_MS / 1000)} seconds.${activePhases.length > 0 ? ` Active phase: ${activePhases.join(', ')}.` : ''} The session may be hung or waiting on an external dependency.`,
         actions: [
-          { label: 'Inspect tool failures', actionType: 'inspect_tool_failures' },
+          { label: 'View phases', actionType: 'view_phases' },
           { label: 'Review LLM reasoning', actionType: 'review_llm_reasoning' },
         ],
       });
@@ -190,8 +210,8 @@ export function deriveOperatorInsights(
         status: 'healthy',
         category: 'health',
         title: 'Run is active and healthy',
-        description: `${activePhases.join(' → ')} in progress...`,
-        actions: [],
+        description: `${activePhases.join(' → ')} in progress. ${completedPhases.length} of ${phases.length || activePhases.length} tracked phase${(phases.length || activePhases.length) === 1 ? '' : 's'} finished.`,
+        actions: [{ label: 'View phases', actionType: 'view_phases' }],
       });
     }
   }
@@ -209,17 +229,21 @@ export function deriveOperatorInsights(
 
   const slowTools = derived.toolExecutions.filter((t) => (t.duration ?? 0) > SLOW_THRESHOLD_MS && t.status !== 'failed' && t.status !== 'error');
   if (slowTools.length > 0 && !hasFailures) {
+    const slowestTool = slowTools.reduce((slowest, current) =>
+      current.duration > slowest.duration ? current : slowest
+    );
     insights.push({
       id: 'insight-slow',
       status: 'warning',
       category: 'performance',
       title: slowTools.length === 1 ? 'Slow tool detected' : `${slowTools.length} slow tools detected`,
-      description: `Some tools exceeded ${Math.round(SLOW_THRESHOLD_MS / 1000)}s duration. Check performance analysis.`,
+      description: `${slowestTool.toolName} took ${Math.round(slowestTool.duration / 1000)}s.${slowestTool.phase ? ` Slowdown surfaced in ${slowestTool.phase}.` : ''}`,
       actions: [
+        { label: 'Inspect slow tool activity', actionType: 'inspect_tool_failures' },
         { label: 'View decisions', actionType: 'view_decisions' },
       ],
-      eventId: slowTools[0].eventId,
-      phase: slowTools[0].phase ?? null,
+      eventId: slowestTool.eventId,
+      phase: slowestTool.phase ?? null,
     });
   }
 

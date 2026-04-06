@@ -7,6 +7,7 @@ import useDashboardStore from '@/hooks/useDashboard';
 import { getApiErrorMessage, getSessionDetail, type SessionDetailResult } from '@/lib/api';
 import { useWebSocket } from '@/lib/websocket';
 import { SessionDetails } from '@/components/session-details';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { SkeletonCard } from '@/components/ui/skeleton';
@@ -64,14 +65,23 @@ export function SessionTelemetryWorkspace({ sessionId }: { sessionId: string }) 
 
   if (loading && events.length === 0) {
     return (
-      <Card>
-        <CardContent className="p-5 space-y-5">
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b border-border/60 bg-surface-raised/45">
+          <div className="space-y-2">
+            <p className="eyebrow">Monitor summary</p>
+            <CardTitle className="text-[1.25rem]">Preparing telemetry workspace</CardTitle>
+            <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+              Loading event history, derived outputs, and prompt metadata for this session.
+            </p>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-5 p-5">
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
               <SkeletonCard key={i} />
             ))}
           </div>
-          <div className="h-[300px] rounded-xl border flex items-center justify-center">
+          <div className="flex h-[300px] items-center justify-center rounded-xl border border-border/70 bg-surface/58">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         </CardContent>
@@ -81,15 +91,18 @@ export function SessionTelemetryWorkspace({ sessionId }: { sessionId: string }) 
 
   if (error && events.length === 0) {
     return (
-      <Card className="border-destructive">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-destructive">
-            <AlertCircle className="h-5 w-5" />
+      <Card className="overflow-hidden border-error/25">
+        <CardHeader className="border-b border-border/60 bg-error-muted/18">
+          <CardTitle className="flex items-center gap-2 text-[1.25rem] text-foreground">
+            <AlertCircle className="h-5 w-5 text-error" />
             Telemetry Unavailable
           </CardTitle>
+          <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+            The workspace could not assemble the telemetry history for this session.
+          </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm text-destructive">{error}</p>
+          <p className="text-sm text-error">{error}</p>
           {(() => {
             const { guidance } = getErrorGuidance(error);
             return guidance ? <p className="text-xs text-muted-foreground">{guidance}</p> : null;
@@ -107,8 +120,8 @@ export function SessionTelemetryWorkspace({ sessionId }: { sessionId: string }) 
 
   if (!hasEvents) {
     return (
-      <Card>
-        <CardHeader className="border-b bg-[linear-gradient(135deg,rgba(15,23,42,0.04),rgba(14,165,233,0.10))]">
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b border-border/60 bg-surface-raised/45">
           <div className="flex items-center justify-between">
             <div className="space-y-2">
               <CardTitle className="flex items-center gap-2">
@@ -116,16 +129,14 @@ export function SessionTelemetryWorkspace({ sessionId }: { sessionId: string }) 
                 Telemetry Explorer
               </CardTitle>
               <p className="text-sm text-muted-foreground">
-                Session <span className="font-mono text-xs text-foreground">{sessionId}</span> — waiting for events to arrive.
+                Session <span className="font-mono text-xs text-foreground">{sessionId}</span> is
+                connected to the workspace shell, but no telemetry has been recorded yet.
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="inline-flex h-2.5 w-2.5 animate-pulse rounded-full bg-amber-500" />
-              <span className="text-sm text-muted-foreground">Live</span>
-            </div>
+            <Badge variant={isLive ? 'info' : 'secondary'}>{isLive ? 'Live' : 'Reconnecting'}</Badge>
           </div>
         </CardHeader>
-        <CardContent className="flex min-h-[320px] flex-col items-center justify-center gap-4">
+        <CardContent className="flex min-h-[320px] flex-col items-center justify-center gap-4 bg-surface/52">
           <Waves className="h-10 w-10 text-muted-foreground" />
           <div className="space-y-1 text-center">
             <p className="text-lg font-medium text-foreground">No telemetry events yet</p>
@@ -142,12 +153,15 @@ export function SessionTelemetryWorkspace({ sessionId }: { sessionId: string }) 
   return (
     <div className="space-y-4">
       {error ? (
-        <Card className="border-warning/30 bg-warning-muted/30">
+        <Card className="border-warning/25 bg-warning-muted/22">
           <CardContent className="flex items-start gap-3 p-4">
             <Radar className="mt-0.5 h-5 w-5 text-warning" />
             <div className="space-y-1">
               <p className="text-sm font-medium text-foreground">Partial telemetry data</p>
-              <p className="text-sm text-muted-foreground">{error}</p>
+              <p className="text-sm text-muted-foreground">
+                Historical event data loaded, but one or more supplemental monitor datasets failed
+                to refresh. {error}
+              </p>
             </div>
           </CardContent>
         </Card>

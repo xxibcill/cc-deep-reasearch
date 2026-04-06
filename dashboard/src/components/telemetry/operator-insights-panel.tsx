@@ -11,23 +11,23 @@ import type { OperatorInsight, InsightStatus, OperatorInsightAction } from '@/ty
 const STATUS_CONFIG: Record<InsightStatus, { icon: typeof AlertCircle; className: string; bgClass: string }> = {
   healthy: {
     icon: CheckCircle2,
-    className: 'text-emerald-600',
-    bgClass: 'bg-emerald-50 dark:bg-emerald-950/30',
+    className: 'text-success',
+    bgClass: 'bg-success-muted/20',
   },
   warning: {
     icon: AlertCircle,
-    className: 'text-amber-600',
-    bgClass: 'bg-amber-50 dark:bg-amber-950/30',
+    className: 'text-warning',
+    bgClass: 'bg-warning-muted/20',
   },
   error: {
     icon: AlertCircle,
-    className: 'text-red-600',
-    bgClass: 'bg-red-50 dark:bg-red-950/30',
+    className: 'text-error',
+    bgClass: 'bg-error-muted/20',
   },
   unknown: {
     icon: HelpCircle,
-    className: 'text-slate-500',
-    bgClass: 'bg-slate-50 dark:bg-slate-950/30',
+    className: 'text-muted-foreground',
+    bgClass: 'bg-surface-raised/40',
   },
 };
 
@@ -83,7 +83,7 @@ export function OperatorInsightsPanel({ insights, className, onAction }: Operato
 
   return (
     <Card className={cn('overflow-hidden', className)}>
-      <CardHeader className="border-b bg-[linear-gradient(135deg,rgba(15,23,42,0.04),rgba(14,165,233,0.10))] py-3">
+      <CardHeader className="border-b border-border/60 bg-surface-raised/45 py-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <Search className="h-4 w-4 text-primary" />
           Operator Insights
@@ -100,16 +100,16 @@ export function OperatorInsightsPanel({ insights, className, onAction }: Operato
               className={cn(
                 'rounded-lg border p-3',
                 config.bgClass,
-                insight.status === 'error' && 'border-red-200 dark:border-red-800',
-                insight.status === 'warning' && 'border-amber-200 dark:border-amber-800',
-                insight.status === 'healthy' && 'border-emerald-200 dark:border-emerald-800',
-                insight.status === 'unknown' && 'border-slate-200 dark:border-slate-700'
+                insight.status === 'error' && 'border-error/25',
+                insight.status === 'warning' && 'border-warning/25',
+                insight.status === 'healthy' && 'border-success/25',
+                insight.status === 'unknown' && 'border-border/70'
               )}
             >
               <div className="flex items-start gap-2">
                 <StatusIcon className={cn('mt-0.5 h-4 w-4 flex-shrink-0', config.className)} />
                 <div className="flex-1 space-y-1.5">
-                  <p className="font-medium text-sm leading-tight">{insight.title}</p>
+                  <p className="text-sm font-medium leading-tight text-foreground">{insight.title}</p>
                   <p className="text-xs text-muted-foreground">{insight.description}</p>
                   {insight.actions.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 pt-1.5">

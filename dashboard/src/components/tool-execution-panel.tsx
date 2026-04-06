@@ -37,7 +37,9 @@ export function ToolExecutionPanel({
               <button
                 key={execution.id}
                 className={`w-full rounded-xl border p-4 text-left transition-colors ${
-                  execution.id === selectedExecutionId ? 'border-slate-900 bg-slate-50' : 'hover:bg-slate-50'
+                  execution.id === selectedExecutionId
+                    ? 'border-primary/35 bg-surface-raised/72 shadow-card'
+                    : 'border-border/70 bg-surface/56 hover:bg-surface-raised/56'
                 }`}
                 onClick={() => onSelectExecution(execution)}
                 type="button"
@@ -49,7 +51,7 @@ export function ToolExecutionPanel({
                 <div className="text-xs text-muted-foreground">
                   {execution.agentId} • {execution.phase ?? 'No phase'} • {execution.duration} ms
                 </div>
-                <p className="mt-2 line-clamp-2 text-sm text-slate-700">{execution.summary}</p>
+                <p className="mt-2 line-clamp-2 text-sm text-foreground/82">{execution.summary}</p>
               </button>
             ))}
           </div>

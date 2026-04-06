@@ -13,10 +13,10 @@ const SessionTelemetryWorkspace = dynamic(
   {
     ssr: false,
     loading: () => (
-      <Card className="border-slate-200/80 shadow-sm">
+      <Card className="border-border/70 bg-surface/68">
         <CardContent className="flex min-h-[260px] items-center justify-center">
           <div className="space-y-2 text-center">
-            <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
+            <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-border border-t-primary" />
             <p className="text-sm text-muted-foreground">Loading monitor...</p>
           </div>
         </CardContent>
