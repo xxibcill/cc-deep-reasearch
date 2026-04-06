@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AlertCircle, Loader2, Radar } from 'lucide-react';
+import { AlertCircle, Loader2, Radar, Waves } from 'lucide-react';
 
 import useDashboardStore from '@/hooks/useDashboard';
 import { getApiErrorMessage, getSessionDetail, type SessionDetailResult } from '@/lib/api';
@@ -97,6 +97,43 @@ export function SessionTelemetryWorkspace({ sessionId }: { sessionId: string }) 
           <Button onClick={() => setReloadNonce((value) => value + 1)} variant="outline">
             Retry
           </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const hasEvents = events.length > 0;
+  const isLive = connected;
+
+  if (!hasEvents) {
+    return (
+      <Card>
+        <CardHeader className="border-b bg-[linear-gradient(135deg,rgba(15,23,42,0.04),rgba(14,165,233,0.10))]">
+          <div className="flex items-center justify-between">
+            <div className="space-y-2">
+              <CardTitle className="flex items-center gap-2">
+                <Radar className="h-5 w-5 text-primary" />
+                Telemetry Explorer
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Session <span className="font-mono text-xs text-foreground">{sessionId}</span> — waiting for events to arrive.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex h-2.5 w-2.5 animate-pulse rounded-full bg-amber-500" />
+              <span className="text-sm text-muted-foreground">Live</span>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="flex min-h-[320px] flex-col items-center justify-center gap-4">
+          <Waves className="h-10 w-10 text-muted-foreground" />
+          <div className="space-y-1 text-center">
+            <p className="text-lg font-medium text-foreground">No telemetry events yet</p>
+            <p className="text-sm text-muted-foreground">
+              Events will appear here as the research session progresses.
+              {isLive ? ' Connected and listening for activity.' : ' Reconnecting to live stream...'}
+            </p>
+          </div>
         </CardContent>
       </Card>
     );

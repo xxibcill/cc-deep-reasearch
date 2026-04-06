@@ -242,20 +242,9 @@ export function SessionReport({ sessionId, runStatus, hasReport }: SessionReport
     <Card className="overflow-hidden border-border shadow-sm">
       <CardHeader className="gap-4 border-b bg-[linear-gradient(135deg,rgba(15,23,42,0.04),rgba(56,189,248,0.12))]">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5 text-primary" />
-                Report Workspace
-              </CardTitle>
-              <Badge variant="secondary">{formatLabel(selectedFormat)}</Badge>
-              {loadingFormat === selectedFormat ? <Badge variant="outline">Loading</Badge> : null}
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Report-first view for session{' '}
-              <span className="font-mono text-xs text-foreground">{sessionId}</span>. Formats are
-              fetched and cached independently so switching tabs stays cheap after the first load.
-            </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="secondary">{formatLabel(selectedFormat)}</Badge>
+            {loadingFormat === selectedFormat ? <Badge variant="outline">Loading</Badge> : null}
           </div>
 
           <div className="flex flex-col gap-2 xl:items-end">
@@ -269,7 +258,7 @@ export function SessionReport({ sessionId, runStatus, hasReport }: SessionReport
               onValueChange={(value) => setSelectedFormat(value as ResearchOutputFormat)}
             />
             <p className="text-xs text-muted-foreground">
-              Markdown is optimized for the initial render. JSON and HTML are loaded on demand.
+              Formats load on demand; switching tabs stays fast after first fetch.
             </p>
           </div>
         </div>

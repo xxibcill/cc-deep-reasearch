@@ -31,7 +31,7 @@ export default function SessionMonitorPage({ params }: { params: { id: string } 
       routeId={params.id}
       view="monitor"
       title="Telemetry Monitor"
-      description="View live telemetry, workflow graphs, event tables, and execution traces."
+      description="Live telemetry, workflow graphs, event tables, and execution traces."
     >
       {({ sessionId }) => <SessionTelemetryWorkspace sessionId={sessionId} />}
     </SessionPageFrame>
