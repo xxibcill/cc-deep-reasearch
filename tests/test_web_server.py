@@ -452,13 +452,53 @@ def test_content_gen_pipeline_websocket_streams_live_stage_events(
                 progress_callback(0, "Loading strategy memory")
             await asyncio.sleep(0)
             if stage_completed_callback is not None:
-                stage_completed_callback(0, "completed", "")
+                stage_completed_callback(
+                    0,
+                    "completed",
+                    "",
+                    PipelineContext(
+                        theme=theme,
+                        current_stage=0,
+                        selected_idea_id="idea-alpha",
+                        stage_traces=[
+                            PipelineStageTrace(
+                                stage_index=0,
+                                stage_name="load_strategy",
+                                stage_label="Loading strategy memory",
+                            ),
+                        ],
+                    ),
+                )
             await asyncio.sleep(0)
             if progress_callback is not None:
                 progress_callback(1, "Planning opportunity brief")
             await asyncio.sleep(0)
             if stage_completed_callback is not None:
-                stage_completed_callback(1, "skipped", "already planned")
+                stage_completed_callback(
+                    1,
+                    "skipped",
+                    "already planned",
+                    PipelineContext(
+                        theme=theme,
+                        current_stage=1,
+                        selected_idea_id="idea-beta",
+                        stage_traces=[
+                            PipelineStageTrace(
+                                stage_index=0,
+                                stage_name="load_strategy",
+                                stage_label="Loading strategy memory",
+                            ),
+                            PipelineStageTrace(
+                                stage_index=1,
+                                stage_name="plan_opportunity",
+                                stage_label="Planning opportunity brief",
+                                status="skipped",
+                                output_summary="already planned",
+                                decision_summary="Skipped: already planned",
+                            ),
+                        ],
+                    ),
+                )
             await asyncio.sleep(0)
 
             return PipelineContext(
@@ -520,8 +560,11 @@ def test_content_gen_pipeline_websocket_streams_live_stage_events(
             "stage_index": 0,
             "stage_status": "completed",
             "stage_detail": "",
+            "context": completed["context"],
             "timestamp": completed["timestamp"],
         }
+        assert completed["context"]["current_stage"] == 0
+        assert completed["context"]["selected_idea_id"] == "idea-alpha"
         assert started_second == {
             "type": "pipeline_stage_started",
             "stage_index": 1,
@@ -533,8 +576,11 @@ def test_content_gen_pipeline_websocket_streams_live_stage_events(
             "stage_index": 1,
             "stage_label": "Planning opportunity brief",
             "reason": "already planned",
+            "context": skipped["context"],
             "timestamp": skipped["timestamp"],
         }
+        assert skipped["context"]["current_stage"] == 1
+        assert skipped["context"]["selected_idea_id"] == "idea-beta"
         assert finished["type"] == "pipeline_completed"
         assert finished["current_stage"] == 1
 
@@ -578,7 +624,25 @@ def test_content_gen_pipeline_websocket_streams_failed_stage_events(
                 progress_callback(3, "Scoring ideas")
             await asyncio.sleep(0)
             if stage_completed_callback is not None:
-                stage_completed_callback(3, "failed", "Malformed scoring response")
+                stage_completed_callback(
+                    3,
+                    "failed",
+                    "Malformed scoring response",
+                    PipelineContext(
+                        theme=theme,
+                        current_stage=3,
+                        stage_traces=[
+                            PipelineStageTrace(
+                                stage_index=3,
+                                stage_name="score_ideas",
+                                stage_label="Scoring ideas",
+                                status="failed",
+                                output_summary="Malformed scoring response",
+                                decision_summary="Stage failed: Malformed scoring response",
+                            ),
+                        ],
+                    ),
+                )
             await asyncio.sleep(0)
             raise ValueError("Malformed scoring response")
 
@@ -618,8 +682,10 @@ def test_content_gen_pipeline_websocket_streams_failed_stage_events(
             "stage_index": 3,
             "stage_label": "Scoring ideas",
             "error": "Malformed scoring response",
+            "context": failed["context"],
             "timestamp": failed["timestamp"],
         }
+        assert failed["context"]["current_stage"] == 3
         assert pipeline_error == {
             "type": "pipeline_error",
             "error": "Malformed scoring response",

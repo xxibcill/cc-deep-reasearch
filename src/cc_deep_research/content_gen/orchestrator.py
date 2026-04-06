@@ -141,7 +141,7 @@ class ContentGenOrchestrator:
         from_stage: int = 0,
         to_stage: int | None = None,
         progress_callback: Callable[[int, str], None] | None = None,
-        stage_completed_callback: Callable[[int, str, str], None] | None = None,
+        stage_completed_callback: Callable[[int, str, str, PipelineContext], None] | None = None,
     ) -> PipelineContext:
         """Run the full 13-stage content pipeline with iterative quality loop.
 
@@ -238,7 +238,7 @@ class ContentGenOrchestrator:
         idx: int,
         ctx: PipelineContext,
         progress_callback: Callable[[int, str], None] | None,
-        stage_completed_callback: Callable[[int, str, str], None] | None = None,
+        stage_completed_callback: Callable[[int, str, str, PipelineContext], None] | None = None,
     ) -> PipelineContext:
         stage_name = PIPELINE_STAGES[idx]
         label = PIPELINE_STAGE_LABELS.get(stage_name, stage_name)
@@ -251,6 +251,7 @@ class ContentGenOrchestrator:
 
         prereqs_met, skip_reason = self._check_prerequisites(idx, ctx)
         if not prereqs_met:
+            warnings = self._collect_trace_warnings(idx, ctx, status="skipped", detail=skip_reason)
             trace = PipelineStageTrace(
                 stage_index=idx,
                 stage_name=stage_name,
@@ -260,23 +261,25 @@ class ContentGenOrchestrator:
                 completed_at=datetime.now(tz=UTC).isoformat(),
                 input_summary=input_summary,
                 output_summary=skip_reason,
-                decision_summary=f"Skipped: {skip_reason}",
+                warnings=warnings,
+                decision_summary=self._build_decision_summary(idx, ctx, status="skipped", detail=skip_reason),
                 metadata=self._build_trace_metadata(idx, ctx),
             )
             ctx.stage_traces.append(trace)
             if stage_completed_callback:
-                stage_completed_callback(idx, "skipped", skip_reason)
+                stage_completed_callback(idx, "skipped", skip_reason, ctx)
             return ctx
 
         try:
             ctx = await _PIPELINE_HANDLERS[idx](self, ctx)
             status = "completed"
             output_summary = self._summarize_output(idx, ctx)
-            warnings: list[str] = []
+            warnings = self._collect_trace_warnings(idx, ctx, status=status)
+            decision_summary = self._build_decision_summary(idx, ctx, status=status)
         except Exception as e:
             status = "failed"
             output_summary = str(e)
-            warnings = [f"Stage failed: {e}"]
+            warnings = self._collect_trace_warnings(idx, ctx, status=status, detail=str(e))
             completed_at = datetime.now(tz=UTC).isoformat()
             trace = PipelineStageTrace(
                 stage_index=idx,
@@ -293,11 +296,12 @@ class ContentGenOrchestrator:
                 input_summary=input_summary,
                 output_summary=output_summary,
                 warnings=warnings,
+                decision_summary=self._build_decision_summary(idx, ctx, status=status, detail=str(e)),
                 metadata=self._build_trace_metadata(idx, ctx),
             )
             ctx.stage_traces.append(trace)
             if stage_completed_callback:
-                stage_completed_callback(idx, "failed", str(e))
+                stage_completed_callback(idx, "failed", str(e), ctx)
             raise
 
         completed_at = datetime.now(tz=UTC).isoformat()
@@ -316,11 +320,12 @@ class ContentGenOrchestrator:
             input_summary=input_summary,
             output_summary=output_summary,
             warnings=warnings,
+            decision_summary=decision_summary,
             metadata=self._build_trace_metadata(idx, ctx),
         )
         ctx.stage_traces.append(trace)
         if stage_completed_callback:
-            stage_completed_callback(idx, "completed", "")
+            stage_completed_callback(idx, "completed", "", ctx)
         return ctx
 
     async def _run_iterative_loop(
@@ -328,7 +333,7 @@ class ContentGenOrchestrator:
         ctx: PipelineContext,
         progress_callback: Callable[[int, str], None] | None,
         end_stage: int,
-        stage_completed_callback: Callable[[int, str, str], None] | None = None,
+        stage_completed_callback: Callable[[int, str, str, PipelineContext], None] | None = None,
     ) -> PipelineContext:
         iter_state = ctx.iteration_state or IterationState(
             max_iterations=self._config.content_gen.max_iterations,
@@ -557,27 +562,47 @@ class ContentGenOrchestrator:
                 meta.degradation_reason = ctx.scoring.degradation_reason
         elif stage == "generate_angles":
             if ctx.angles:
+                meta.selected_idea_id = ctx.angles.idea_id or _resolve_selected_idea_id(ctx)
                 meta.selected_angle_id = ctx.angles.selected_angle_id or ""
                 meta.option_count = len(ctx.angles.angle_options)
         elif stage == "build_research_pack":
             if ctx.research_pack:
+                meta.selected_idea_id = ctx.research_pack.idea_id or _resolve_selected_idea_id(ctx)
+                meta.selected_angle_id = ctx.research_pack.angle_id or ""
                 meta.fact_count = len(ctx.research_pack.key_facts)
                 meta.proof_count = len(ctx.research_pack.proof_points)
+                meta.cache_reused = "cache" in ctx.research_pack.research_stop_reason.lower()
         elif stage == "run_scripting":
             if ctx.scripting:
+                meta.selected_idea_id = _resolve_selected_idea_id(ctx)
+                angle = _resolve_selected_angle(ctx)
+                meta.selected_angle_id = getattr(angle, "angle_id", "")
                 if ctx.scripting.step_traces:
                     meta.step_count = len(ctx.scripting.step_traces)
                     meta.llm_call_count = sum(
                         len(st.llm_calls) for st in ctx.scripting.step_traces
                     )
+                final_script = ""
                 if ctx.scripting.qc:
-                    meta.final_word_count = ctx.scripting.qc.final_script.split().__len__()
+                    final_script = ctx.scripting.qc.final_script
+                elif ctx.scripting.tightened:
+                    final_script = ctx.scripting.tightened.content
+                elif ctx.scripting.draft:
+                    final_script = ctx.scripting.draft.content
+                if final_script:
+                    meta.final_word_count = len(final_script.split())
         elif stage == "visual_translation":
             if ctx.visual_plan:
+                meta.selected_idea_id = ctx.visual_plan.idea_id or _resolve_selected_idea_id(ctx)
+                meta.selected_angle_id = ctx.visual_plan.angle_id or ""
                 meta.beats_count = len(ctx.visual_plan.visual_plan)
         elif stage == "packaging":
             if ctx.packaging:
+                meta.selected_idea_id = ctx.packaging.idea_id or _resolve_selected_idea_id(ctx)
                 meta.platforms_count = len(ctx.packaging.platform_packages)
+        elif stage == "publish_queue":
+            if ctx.publish_item:
+                meta.selected_idea_id = ctx.publish_item.idea_id or _resolve_selected_idea_id(ctx)
         elif stage == "human_qc":
             if ctx.qc_gate:
                 meta.approved = ctx.qc_gate.approved_for_publish
@@ -589,6 +614,63 @@ class ContentGenOrchestrator:
             meta.should_rerun_research = ctx.iteration_state.should_rerun_research
 
         return meta
+
+    def _collect_trace_warnings(
+        self,
+        idx: int,
+        ctx: PipelineContext,
+        *,
+        status: str,
+        detail: str = "",
+    ) -> list[str]:
+        stage = PIPELINE_STAGES[idx]
+        warnings: list[str] = []
+
+        if status == "failed" and detail:
+            warnings.append(f"Stage failed: {detail}")
+
+        if stage == "build_backlog" and ctx.backlog and ctx.backlog.is_degraded:
+            reason = ctx.backlog.degradation_reason or "Backlog completed with degraded output."
+            warnings.append(f"Backlog degraded: {reason}")
+        elif stage == "score_ideas" and ctx.scoring and ctx.scoring.is_degraded:
+            reason = ctx.scoring.degradation_reason or "Scoring completed with degraded output."
+            warnings.append(f"Scoring degraded: {reason}")
+        elif stage == "human_qc" and ctx.qc_gate and ctx.qc_gate.must_fix_items:
+            warnings.append(
+                f"Human QC blocked publish until {len(ctx.qc_gate.must_fix_items)} must-fix item(s) are resolved."
+            )
+
+        return warnings
+
+    def _build_decision_summary(
+        self,
+        idx: int,
+        ctx: PipelineContext,
+        *,
+        status: str,
+        detail: str = "",
+    ) -> str:
+        if status == "skipped":
+            return f"Skipped: {detail}"
+        if status == "failed":
+            return f"Stage failed: {detail}"
+
+        stage = PIPELINE_STAGES[idx]
+        if stage == "score_ideas":
+            return ctx.selection_reasoning or (ctx.scoring.selection_reasoning if ctx.scoring else "")
+        if stage == "generate_angles" and ctx.angles:
+            return ctx.angles.selection_reasoning
+        if stage == "build_research_pack" and ctx.research_pack:
+            return ctx.research_pack.research_stop_reason
+        if stage == "human_qc" and ctx.qc_gate:
+            if ctx.qc_gate.approved_for_publish:
+                return "Human QC approved the package for publish."
+            if ctx.qc_gate.must_fix_items:
+                return f"Human QC requires {len(ctx.qc_gate.must_fix_items)} must-fix item(s) before publish."
+            return "Human QC review completed without approval."
+        if stage == "run_scripting" and ctx.scripting and ctx.scripting.angle:
+            return ctx.scripting.angle.why_it_works
+        return ""
 
     # ------------------------------------------------------------------
     # Individual stage runners
@@ -836,8 +918,6 @@ async def _stage_build_backlog(
         ctx.strategy or StrategyMemory(),
         opportunity_brief=ctx.opportunity_brief,
     )
-    if ctx.backlog and ctx.backlog.is_degraded and ctx.stage_traces:
-        ctx.stage_traces[-1].warnings.append(f"Backlog degraded: {ctx.backlog.degradation_reason}")
     return ctx
 
 
@@ -859,8 +939,6 @@ async def _stage_score_ideas(orch: ContentGenOrchestrator, ctx: PipelineContext)
     ctx.selected_idea_id = ctx.scoring.selected_idea_id
     ctx.selection_reasoning = ctx.scoring.selection_reasoning
     ctx.runner_up_idea_ids = ctx.scoring.runner_up_idea_ids
-    if ctx.scoring and ctx.scoring.is_degraded and ctx.stage_traces:
-        ctx.stage_traces[-1].warnings.append(f"Scoring degraded: {ctx.scoring.degradation_reason}")
     return ctx
 
 

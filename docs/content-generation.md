@@ -732,6 +732,16 @@ The main automated coverage is in [`tests/test_content_gen.py`](../tests/test_co
 
 This is useful regression coverage, but it is not a full live integration suite for every agent against every provider.
 
+## Dashboard Operator Visibility
+
+The dashboard pipeline detail page at `/content-gen/pipeline/[id]` is the operator-facing view for a live or completed content-generation run.
+
+- Each pipeline stage renders its own detailed panel instead of a compact summary-only block.
+- Ideation stages surface the full shortlist, scoring breakdowns, angle options, and research-pack detail already stored in `PipelineContext`.
+- The scripting stage shows both the final script artifact and the full step-trace inspector, including prompts, provider/model metadata, raw responses, and parsed outputs.
+- Stage traces expose structured metadata such as selected idea/angle ids, shortlist counts, proof/fact counts, cache reuse, LLM call counts, word counts, and iteration signals.
+- While a run is active, websocket stage events carry the latest context snapshot so stage detail becomes visible progressively instead of waiting for terminal completion.
+
 ## Current Gaps And Caveats
 
 The implementation is usable, but several parts are still transitional.

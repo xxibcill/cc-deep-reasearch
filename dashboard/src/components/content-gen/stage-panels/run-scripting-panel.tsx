@@ -10,6 +10,18 @@ export function RunScriptingPanel({ ctx }: { ctx: PipelineContext }) {
   }
 
   const scripting = ctx.scripting
+  const finalScript =
+    scripting.qc?.final_script ||
+    scripting.tightened?.content ||
+    scripting.draft?.content ||
+    ''
+  const finalWordCount =
+    scripting.tightened?.word_count ||
+    scripting.draft?.word_count ||
+    (finalScript ? finalScript.trim().split(/\s+/).length : 0)
+  const traceIterations = new Set(scripting.step_traces.map((trace) => trace.iteration))
+  const iterationCount = traceIterations.size || 1
+  const executionMode = iterationCount > 1 ? 'Iterative refinement' : 'Single pass'
 
   return (
     <div className="space-y-3">
@@ -19,7 +31,10 @@ export function RunScriptingPanel({ ctx }: { ctx: PipelineContext }) {
             Execution
           </p>
           <p className="mt-1 text-sm text-foreground">
-            {scripting.cta ? 'Iterative refinement' : 'Single pass'}
+            {executionMode}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {iterationCount > 1 ? `${iterationCount} passes captured` : '1 pass captured'}
           </p>
         </div>
 
@@ -48,6 +63,15 @@ export function RunScriptingPanel({ ctx }: { ctx: PipelineContext }) {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {finalWordCount > 0 && (
+          <div className="rounded-sm border border-border bg-background px-3 py-2">
+            <p className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+              Word Count
+            </p>
+            <p className="mt-1 text-sm text-foreground">{finalWordCount}</p>
           </div>
         )}
       </div>
@@ -82,17 +106,23 @@ export function RunScriptingPanel({ ctx }: { ctx: PipelineContext }) {
         </div>
       )}
 
-      <QuickScriptProcessPanel traces={scripting.step_traces} />
+      {scripting.hooks && (
+        <div className="rounded-sm border border-border bg-background px-3 py-2">
+          <p className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+            Hook
+          </p>
+          <p className="mt-1 text-sm text-foreground">{scripting.hooks.best_hook}</p>
+          {scripting.hooks.best_hook_reason && (
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              {scripting.hooks.best_hook_reason}
+            </p>
+          )}
+        </div>
+      )}
 
-      <ScriptViewer
-        content={
-          scripting.qc?.final_script ||
-          scripting.tightened?.content ||
-          scripting.draft?.content ||
-          ''
-        }
-        label="Final Script"
-      />
+      <ScriptViewer content={finalScript} label="Final Script" />
+
+      <QuickScriptProcessPanel traces={scripting.step_traces} label="Scripting Process" />
     </div>
   )
 }

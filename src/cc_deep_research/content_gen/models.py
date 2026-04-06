@@ -588,6 +588,7 @@ class StageTraceMetadata(BaseModel):
     degradation_reason: str = ""
     fact_count: int = 0
     proof_count: int = 0
+    cache_reused: bool = False
     step_count: int = 0
     llm_call_count: int = 0
     final_word_count: int = 0

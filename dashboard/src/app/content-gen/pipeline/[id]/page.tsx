@@ -126,6 +126,14 @@ export default function PipelineDetailPage() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data) as Record<string, unknown>
+        if (data.context) {
+          updatePipelineContext(data.context as PipelineContext)
+        }
+
+        if (data.type === 'pipeline_status') {
+          return
+        }
+
         if (data.type === 'pipeline_stage_started' && typeof data.stage_index === 'number') {
           const stageIndex = data.stage_index
           setStageStates((previous) => ({
@@ -141,9 +149,6 @@ export default function PipelineDetailPage() {
                 ? data.stage_status
                 : 'completed',
           }))
-          if (data.context) {
-            updatePipelineContext(data.context as PipelineContext)
-          }
         } else if (data.type === 'pipeline_stage_failed' && typeof data.stage_index === 'number') {
           const stageIndex = data.stage_index
           setStageStates((previous) => ({

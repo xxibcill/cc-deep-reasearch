@@ -37,6 +37,8 @@ function MetadataGrid({ metadata }: { metadata: StageTraceMetadata }) {
     { label: 'Ideas', value: metadata.shortlist_count ? metadata.shortlist_count : null },
     { label: 'Angles', value: metadata.option_count ? metadata.option_count : null },
     { label: 'Facts', value: metadata.fact_count ? metadata.fact_count : null },
+    { label: 'Proofs', value: metadata.proof_count ? metadata.proof_count : null },
+    { label: 'Cached', value: metadata.cache_reused ? metadata.cache_reused : null },
     { label: 'Steps', value: metadata.step_count ? metadata.step_count : null },
     { label: 'LLM', value: metadata.llm_call_count ? metadata.llm_call_count : null },
     { label: 'Words', value: metadata.final_word_count ? metadata.final_word_count : null },
@@ -44,6 +46,7 @@ function MetadataGrid({ metadata }: { metadata: StageTraceMetadata }) {
     { label: 'Platforms', value: metadata.platforms_count ? metadata.platforms_count : null },
     { label: 'Iter', value: metadata.current_iteration ? metadata.current_iteration : null },
     { label: 'Score', value: metadata.latest_quality_score ? metadata.latest_quality_score.toFixed(2) : null },
+    { label: 'Rerun research', value: metadata.should_rerun_research ? metadata.should_rerun_research : null },
   ].filter(p => p.value !== null) as Array<{ label: string; value: string | number }>
 
   if (pills.length === 0) {

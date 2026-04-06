@@ -80,6 +80,10 @@ flowchart LR
 - REST client: [`dashboard/src/lib/api.ts`](../dashboard/src/lib/api.ts)
 - WebSocket client: [`dashboard/src/lib/websocket.ts`](../dashboard/src/lib/websocket.ts)
 - event normalization and derived view models: [`dashboard/src/lib/telemetry-transformers.ts`](../dashboard/src/lib/telemetry-transformers.ts)
+- pipeline stage panels: [`dashboard/src/components/content-gen/stage-panels/*.tsx`](../dashboard/src/components/content-gen/stage-panels/)
+- stage trace summary: [`dashboard/src/components/content-gen/stage-trace-summary.tsx`](../dashboard/src/components/content-gen/stage-trace-summary.tsx)
+- stage result panel: [`dashboard/src/components/content-gen/stage-result-panel.tsx`](../dashboard/src/components/content-gen/stage-result-panel.tsx)
+- pipeline progress tracker: [`dashboard/src/components/content-gen/pipeline-progress-tracker.tsx`](../dashboard/src/components/content-gen/pipeline-progress-tracker.tsx)
 
 ## How To Start The Dashboard
 
@@ -226,6 +230,64 @@ After the content-studio migration, the remaining raw form controls are concentr
 - [`dashboard/src/components/config-editor.tsx`](../dashboard/src/components/config-editor.tsx)
 - [`dashboard/src/components/config-secrets-panel.tsx`](../dashboard/src/components/config-secrets-panel.tsx)
 - [`dashboard/src/components/session-list.tsx`](../dashboard/src/components/session-list.tsx)
+
+### Pipeline Detail Page
+
+The pipeline detail page at `/content-gen/pipeline/[id]` provides a comprehensive view of a content-generation pipeline's execution:
+
+**Main Components:**
+
+- Pipeline header with theme, iteration badge, and stop control
+- Stage status badges showing completed/skipped/failed counts and warnings
+- Sidebar progress tracker showing all 13 pipeline stages
+- Expandable stage result panels with trace summaries and stage outputs
+
+**Stage Trace Summary:**
+
+Each stage displays rich metadata from the trace:
+
+- Status badge (completed/skip/failed)
+- Duration in human-readable format
+- Warning count and degradation indicators
+- Selected idea/angle identifiers
+- Metadata pills showing counts and flags (Ideas, Angles, Facts, Proofs, Cached, Steps, LLM calls, Words, Beats, Platforms, Iteration, Score, rerun-research)
+- Decision summary explaining the stage's reasoning
+- Input/output summaries
+- Warnings and degradation reasons
+
+**Stage Output Panels:**
+
+The page renders detailed output panels for each pipeline stage:
+
+- **Load Strategy**: Strategy memory configuration
+- **Plan Opportunity**: Opportunity brief with goal, audience, problem statements
+- **Build Backlog**: All backlog items with category, score, risk level, audience, why-now, and evidence
+- **Score Ideas**: Scored ideas with breakdown by dimension (relevance, novelty, authority fit, etc.), total scores, and recommendations
+- **Generate Angles**: Angle options with target audience, core promise, primary takeaway
+- **Build Research Pack**: Research findings including key facts, proof points, and gaps
+- **Run Scripting**: Script execution details including beat structure, tone, CTA, angle, hooks, final word count, the final script, and the full scripting process trace with prompts and raw responses
+- **Visual Translation**: Visual plan with beat-by-beat treatments
+- **Production Brief**: Filming checklist with locations, props, and setup notes
+- **Packaging**: Platform-specific packages with hooks, captions, and hashtags
+- **Human QC**: QC review results with issue categories and approval status
+- **Publish Queue**: Scheduled publish items
+- **Performance Analysis**: Performance metrics and lessons learned
+
+**WebSocket Live Updates:**
+
+The page connects to `/ws/content-gen/pipeline/{pipelineId}` for real-time updates:
+
+- `pipeline_stage_started`: Marks a stage as running
+- `pipeline_stage_completed`: Updates stage state and includes the latest pipeline context snapshot
+- `pipeline_stage_failed`: Marks a stage as failed and includes the latest pipeline context snapshot
+- `pipeline_stage_skipped`: Marks a stage as skipped and includes the latest pipeline context snapshot
+- `pipeline_completed` / `pipeline_cancelled`: Triggers full context refresh
+
+The WebSocket updates both the stage progress indicators and the full pipeline context when stages complete, enabling live monitoring of pipeline progress without manual refresh.
+
+**Iteration State:**
+
+When iteration mode is enabled, the header displays an iteration badge showing `iteration X/Y`. Iteration state includes quality history and convergence feedback.
 
 ### Start Research Form
 
