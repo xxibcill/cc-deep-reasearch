@@ -38,6 +38,8 @@ export const DEFAULT_LIVE_STREAM_STATUS: LiveStreamStatus = {
   canReconnect: false,
 };
 
+export const MAX_BUFFERED_EVENTS = 4000;
+
 interface DashboardState {
   sessionId: string | null;
   setSessionId: (id: string | null) => void;
@@ -76,6 +78,7 @@ interface DashboardState {
   replaceEvents: (events: TelemetryEvent[]) => void;
   appendEvent: (event: TelemetryEvent) => void;
   appendEvents: (events: TelemetryEvent[]) => void;
+  appendBufferedEvents: (events: TelemetryEvent[]) => void;
   setConnected: (connected: boolean) => void;
   setLiveStreamStatus: (status: Partial<LiveStreamStatus>) => void;
   setSelectedEvent: (event: TelemetryEvent | null) => void;
@@ -105,12 +108,17 @@ function sortEvents(events: TelemetryEvent[]): TelemetryEvent[] {
   });
 }
 
-function mergeEvents(existing: TelemetryEvent[], incoming: TelemetryEvent[]): TelemetryEvent[] {
+function mergeEvents(
+  existing: TelemetryEvent[],
+  incoming: TelemetryEvent[],
+  options?: { limit?: number }
+): TelemetryEvent[] {
   const byId = new Map(existing.map((event) => [event.eventId, event]));
   for (const event of incoming) {
     byId.set(event.eventId, event);
   }
-  return sortEvents(Array.from(byId.values())).slice(-4000);
+  const merged = sortEvents(Array.from(byId.values()));
+  return typeof options?.limit === 'number' ? merged.slice(-options.limit) : merged;
 }
 
 function mergeSessions(existing: Session[], incoming: Session[]): Session[] {
@@ -245,10 +253,20 @@ const useDashboardStore = create<DashboardState>((set) => ({
       if (state.events.some((existing) => existing.eventId === event.eventId)) {
         return {};
       }
-      return { events: mergeEvents(state.events, [event]) };
+      return {
+        events: mergeEvents(state.events, [event], {
+          limit: MAX_BUFFERED_EVENTS,
+        }),
+      };
     }),
   appendEvents: (events) =>
     set((state) => ({ events: mergeEvents(state.events, events) })),
+  appendBufferedEvents: (events) =>
+    set((state) => ({
+      events: mergeEvents(state.events, events, {
+        limit: MAX_BUFFERED_EVENTS,
+      }),
+    })),
   setConnected: (connected) => set({ connected }),
   setLiveStreamStatus: (status) =>
     set((state) => ({

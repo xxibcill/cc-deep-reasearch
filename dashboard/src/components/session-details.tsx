@@ -1,5 +1,5 @@
 import dynamic from 'next/dynamic';
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { startTransition, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Activity, FileText, List, Network, Zap } from 'lucide-react';
 
@@ -19,12 +19,13 @@ import { OperatorInsightsPanel } from '@/components/telemetry/operator-insights-
 import { PromptConfigurationPanel } from '@/components/telemetry/prompt-config-panel';
 import { StatsCard } from '@/components/telemetry/stats-card';
 import { StatusBadge, ViewModeSelector } from '@/components/telemetry/telemetry-header';
-import useDashboardStore from '@/hooks/useDashboard';
+import useDashboardStore, { MAX_BUFFERED_EVENTS } from '@/hooks/useDashboard';
 import { areEventFiltersEqual, sanitizeTelemetryFilters } from '@/lib/saved-views';
 import { filterEvents, deriveTelemetryState, deriveOperatorInsights } from '@/lib/telemetry-transformers';
 import type {
   TelemetryEvent,
   ViewMode,
+  EventFilter,
   LiveStreamStatus,
   CriticalPath,
   DecisionGraph,
@@ -35,6 +36,7 @@ import type {
   ApiTelemetryEvent,
   SessionPromptMetadata,
   OperatorInsightAction,
+  DecisionGraphNode,
 } from '@/types/telemetry';
 
 const WorkflowGraph = dynamic(
@@ -105,6 +107,8 @@ const EMPTY_DECISION_GRAPH: DecisionGraph = {
     inferred_edge_count: 0,
   },
 };
+
+const LARGE_SESSION_EVENT_THRESHOLD = 1200;
 
 function getActiveDecisionGraphFilters(
   filters: DecisionGraphFilters
@@ -241,13 +245,11 @@ export function SessionDetails({
   );
   const [selectedToolId, setSelectedToolId] = useState<string | null>(null);
   const [selectedReasoningId, setSelectedReasoningId] = useState<string | null>(null);
-  const eventIndex = useMemo(
-    () => new Map(deferredEvents.map((event) => [event.eventId, event])),
-    [deferredEvents]
-  );
+  const [selectedDecisionNodeId, setSelectedDecisionNodeId] = useState<string | null>(null);
+  const eventIndex = derived.eventIndex;
   const filteredEvents = useMemo(
-    () => filterEvents(deferredEvents, filters),
-    [deferredEvents, filters]
+    () => filterEvents(deferredEvents, filters, derived.phaseLookup),
+    [deferredEvents, derived.phaseLookup, filters]
   );
   const filteredDerived = useMemo(() => deriveTelemetryState(filteredEvents), [filteredEvents]);
   const selectedTool = filteredDerived.toolExecutions.find((execution) => execution.id === selectedToolId) ?? null;
@@ -262,11 +264,11 @@ export function SessionDetails({
     () => filterDecisionGraph(derivedOutputs?.decisionGraph, decisionGraphFilters),
     [decisionGraphFilters, derivedOutputs?.decisionGraph]
   );
-  const { agentEvents, toolEvents, llmEvents } = useMemo(() => ({
-    agentEvents: filteredEvents.filter((event) => event.category === 'agent'),
-    toolEvents: filteredEvents.filter((event) => event.category === 'tool'),
-    llmEvents: filteredEvents.filter((event) => event.category === 'llm'),
-  }), [filteredEvents]);
+  const selectedDecisionNode = useMemo(
+    () =>
+      filteredDecisionGraph.nodes.find((node) => node.id === selectedDecisionNodeId) ?? null,
+    [filteredDecisionGraph.nodes, selectedDecisionNodeId]
+  );
   const activeFilters = useMemo(() => getActiveFilters(filters), [filters]);
   const activeDecisionGraphFilters = useMemo(
     () => getActiveDecisionGraphFilters(decisionGraphFilters),
@@ -274,6 +276,10 @@ export function SessionDetails({
   );
   const [filtersOpen, setFiltersOpen] = useState(() => activeFilters.length > 0);
   const hasDecisionGraph = Boolean(derivedOutputs?.decisionGraph.nodes.length);
+  const largeSessionGuardrailsActive =
+    deferredEvents.length >= LARGE_SESSION_EVENT_THRESHOLD;
+  const liveBufferGuardrailActive =
+    liveStreamStatus.phase !== 'historical' && deferredEvents.length >= MAX_BUFFERED_EVENTS;
   const insights = useMemo(
     () => deriveOperatorInsights(deferredEvents, derived, Boolean(derivedOutputs?.narrative?.length)),
     [deferredEvents, derived, derivedOutputs]
@@ -286,36 +292,109 @@ export function SessionDetails({
     setFilters(filters);
   }, [filters, setFilters, storedFilters]);
 
+  useEffect(() => {
+    if (
+      selectedToolId
+      && !filteredDerived.toolExecutions.some((execution) => execution.id === selectedToolId)
+    ) {
+      setSelectedToolId(null);
+    }
+  }, [filteredDerived.toolExecutions, selectedToolId]);
+
+  useEffect(() => {
+    if (
+      selectedReasoningId
+      && !filteredDerived.llmReasoning.some((item) => item.id === selectedReasoningId)
+    ) {
+      setSelectedReasoningId(null);
+    }
+  }, [filteredDerived.llmReasoning, selectedReasoningId]);
+
+  useEffect(() => {
+    if (
+      selectedDecisionNodeId
+      && !filteredDecisionGraph.nodes.some((node) => node.id === selectedDecisionNodeId)
+    ) {
+      setSelectedDecisionNodeId(null);
+    }
+  }, [filteredDecisionGraph.nodes, selectedDecisionNodeId]);
+
+  const handleFiltersChange = (nextFilters: Partial<EventFilter>) => {
+    startTransition(() => {
+      setFilters(nextFilters);
+    });
+  };
+
+  const handleViewModeChange = (mode: ViewMode) => {
+    startTransition(() => {
+      onViewModeChange(mode);
+    });
+  };
+
+  const handleDecisionGraphFiltersChange = (
+    update:
+      | Partial<DecisionGraphFilters>
+      | ((current: DecisionGraphFilters) => DecisionGraphFilters)
+  ) => {
+    startTransition(() => {
+      setDecisionGraphFilters((current) =>
+        typeof update === 'function' ? update(current) : { ...current, ...update }
+      );
+    });
+  };
+
+  const focusInspectorSelection = ({
+    event,
+    toolId = null,
+    reasoningId = null,
+    decisionNode = null,
+    detailTabValue = 'inspect',
+  }: {
+    event: TelemetryEvent | null;
+    toolId?: string | null;
+    reasoningId?: string | null;
+    decisionNode?: DecisionGraphNode | null;
+    detailTabValue?: DetailTab;
+  }) => {
+    onSelectEvent(event);
+    setSelectedToolId(toolId);
+    setSelectedReasoningId(reasoningId);
+    setSelectedDecisionNodeId(decisionNode?.id ?? null);
+    startTransition(() => {
+      setDetailTab(detailTabValue);
+    });
+  };
+
   const focusInsightEvent = (eventId?: string | null) => {
     if (!eventId) {
       return;
     }
     const event = eventIndex.get(eventId);
     if (event) {
-      onSelectEvent(event);
+      focusInspectorSelection({ event });
     }
   };
   const handleInsightAction = (action: OperatorInsightAction) => {
-    focusInsightEvent(action.eventId);
-
     switch (action.actionType) {
       case 'inspect_tool_failures':
-        setDetailTab('tools');
+        focusInsightEvent(action.eventId);
+        startTransition(() => setDetailTab('tools'));
         break;
       case 'review_llm_reasoning':
-        setDetailTab('llm');
+        focusInsightEvent(action.eventId);
+        startTransition(() => setDetailTab('llm'));
         break;
       case 'open_report':
         router.push(`/session/${sessionId}/report`);
         break;
       case 'view_phases':
-        onViewModeChange('graph');
+        handleViewModeChange('graph');
         break;
       case 'view_decisions':
         if (hasDecisionGraph) {
-          onViewModeChange('decision_graph');
+          handleViewModeChange('decision_graph');
         } else {
-          setDetailTab('derived');
+          startTransition(() => setDetailTab('derived'));
         }
         break;
       case 'compare_runs':
@@ -330,6 +409,9 @@ export function SessionDetails({
     { value: 'derived', label: 'Derived', icon: Activity },
     { value: 'prompts', label: 'Prompts', icon: FileText },
   ];
+  const closeEventModal = () => {
+    onSelectEvent(null);
+  };
 
   return (
     <div className="space-y-5">
@@ -359,35 +441,47 @@ export function SessionDetails({
               <span className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
                 View
               </span>
-              <ViewModeSelector currentMode={viewMode} onViewModeChange={onViewModeChange} />
+              <ViewModeSelector currentMode={viewMode} onViewModeChange={handleViewModeChange} />
             </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-5 p-5">
           <OperatorInsightsPanel insights={insights} onAction={handleInsightAction} />
+          {(largeSessionGuardrailsActive || liveBufferGuardrailActive) ? (
+            <Alert className="border-border/70 bg-surface-raised/48">
+              <AlertTitle>Large-session guardrails active</AlertTitle>
+              <AlertDescription>
+                Event rows stay virtualized, expensive view changes are deferred, and live stream
+                buffering keeps the most recent {MAX_BUFFERED_EVENTS.toLocaleString()} events.
+                {liveBufferGuardrailActive
+                  ? ' Apply filters or switch to the table and detail panels when the workspace gets dense.'
+                  : ' Apply filters to narrow graph-heavy views when you need a tighter inspection pass.'}
+              </AlertDescription>
+            </Alert>
+          ) : null}
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             <StatsCard
               icon={Activity}
               label="Agents"
-              value={agentEvents.length}
+              value={filteredDerived.categoryCounts.agent}
               accentClass="text-primary"
             />
             <StatsCard
               icon={Zap}
               label="Tool Calls"
-              value={toolEvents.length}
+              value={filteredDerived.categoryCounts.tool}
               accentClass="text-warning"
             />
             <StatsCard
               icon={Network}
               label="LLM Calls"
-              value={llmEvents.length}
+              value={filteredDerived.categoryCounts.llm}
               accentClass="text-success"
             />
             <StatsCard
               icon={List}
               label="Total Events"
-              value={filteredEvents.length}
+              value={filteredDerived.categoryCounts.total}
               accentClass="text-foreground"
               prominence="primary"
             />
@@ -411,7 +505,7 @@ export function SessionDetails({
                       edges={filteredDerived.graph.edges}
                       eventIndex={eventIndex}
                       nodes={filteredDerived.graph.nodes}
-                      onSelectEvent={onSelectEvent}
+                      onSelectEvent={(event) => focusInspectorSelection({ event })}
                       selectedEventId={selectedEventId}
                     />
                   </CardContent>
@@ -432,7 +526,9 @@ export function SessionDetails({
                       </div>
                       {activeDecisionGraphFilters.length > 0 ? (
                         <Button
-                          onClick={() => setDecisionGraphFilters(EMPTY_DECISION_GRAPH_FILTERS)}
+                          onClick={() =>
+                            handleDecisionGraphFiltersChange(EMPTY_DECISION_GRAPH_FILTERS)
+                          }
                           size="sm"
                           type="button"
                           variant="ghost"
@@ -447,10 +543,7 @@ export function SessionDetails({
                         value={decisionGraphFilters.decisionType}
                         options={decisionGraphOptions.decisionTypes}
                         onChange={(value) =>
-                          setDecisionGraphFilters((current) => ({
-                            ...current,
-                            decisionType: value,
-                          }))
+                          handleDecisionGraphFiltersChange({ decisionType: value })
                         }
                       />
                       <Select
@@ -458,10 +551,7 @@ export function SessionDetails({
                         value={decisionGraphFilters.actor}
                         options={decisionGraphOptions.actors}
                         onChange={(value) =>
-                          setDecisionGraphFilters((current) => ({
-                            ...current,
-                            actor: value,
-                          }))
+                          handleDecisionGraphFiltersChange({ actor: value })
                         }
                       />
                       <Select
@@ -469,10 +559,7 @@ export function SessionDetails({
                         value={decisionGraphFilters.severity}
                         options={decisionGraphOptions.severities}
                         onChange={(value) =>
-                          setDecisionGraphFilters((current) => ({
-                            ...current,
-                            severity: value,
-                          }))
+                          handleDecisionGraphFiltersChange({ severity: value })
                         }
                       />
                       <Select
@@ -484,10 +571,9 @@ export function SessionDetails({
                         }
                         options={['explicit', 'inferred']}
                         onChange={(value) =>
-                          setDecisionGraphFilters((current) => ({
-                            ...current,
+                          handleDecisionGraphFiltersChange({
                             edgeMode: value ? (value as DecisionGraphEdgeMode) : 'all',
-                          }))
+                          })
                         }
                       />
                     </div>
@@ -505,10 +591,10 @@ export function SessionDetails({
                     <DecisionGraphView
                       eventIndex={eventIndex}
                       graph={filteredDecisionGraph}
-                      onSelectEvent={(event) => {
-                        onSelectEvent(event);
-                        setDetailTab('inspect');
+                      onSelectEvent={(event, node) => {
+                        focusInspectorSelection({ event, decisionNode: node });
                       }}
+                      selectedNodeId={selectedDecisionNodeId}
                       selectedEventId={selectedEventId}
                     />
                   </CardContent>
@@ -526,7 +612,7 @@ export function SessionDetails({
                     <AgentTimeline
                       eventIndex={eventIndex}
                       lanes={filteredDerived.timeline}
-                      onSelectEvent={onSelectEvent}
+                      onSelectEvent={(event) => focusInspectorSelection({ event })}
                     />
                   </CardContent>
                 </Card>
@@ -534,7 +620,10 @@ export function SessionDetails({
               )}
 
               {viewMode === 'table' && (
-                <EventTable events={filteredEvents} onSelectEvent={onSelectEvent} />
+                <EventTable
+                  events={filteredEvents}
+                  onSelectEvent={(event) => focusInspectorSelection({ event })}
+                />
               )}
             </div>
 
@@ -543,13 +632,16 @@ export function SessionDetails({
                 <Tabs
                   tabs={detailTabs}
                   value={detailTab}
-                  onValueChange={(value) => setDetailTab(value as DetailTab)}
+                  onValueChange={(value) =>
+                    startTransition(() => setDetailTab(value as DetailTab))
+                  }
                   variant="prominent"
                   stretch
                 />
 
                 {detailTab === 'inspect' && (
                   <DetailInspector
+                    decisionNode={selectedDecisionNode}
                     event={selectedEvent}
                     reasoning={selectedReasoning}
                     toolExecution={selectedTool}
@@ -559,8 +651,11 @@ export function SessionDetails({
                   <ToolExecutionPanel
                     executions={filteredDerived.toolExecutions}
                     onSelectExecution={(execution) => {
-                      setSelectedToolId(execution.id);
-                      onSelectEvent(eventIndex.get(execution.eventId) ?? null);
+                      focusInspectorSelection({
+                        event: eventIndex.get(execution.eventId) ?? null,
+                        toolId: execution.id,
+                        detailTabValue: 'tools',
+                      });
                     }}
                     selectedExecutionId={selectedToolId}
                   />
@@ -569,10 +664,13 @@ export function SessionDetails({
                   <LLMReasoningPanel
                     items={filteredDerived.llmReasoning}
                     onSelectReasoning={(item) => {
-                      setSelectedReasoningId(item.id);
                       const eventId =
                         item.completionEventId ?? item.requestEventId ?? item.routeEventId;
-                      onSelectEvent(eventId ? eventIndex.get(eventId) ?? null : null);
+                      focusInspectorSelection({
+                        event: eventId ? eventIndex.get(eventId) ?? null : null,
+                        reasoningId: item.id,
+                        detailTabValue: 'llm',
+                      });
                     }}
                     selectedReasoningId={selectedReasoningId}
                   />
@@ -586,12 +684,11 @@ export function SessionDetails({
                     degradations={derivedOutputs.degradations}
                     failures={derivedOutputs.failures}
                     hasDecisionGraph={hasDecisionGraph}
-                    onOpenDecisionGraph={() => onViewModeChange('decision_graph')}
+                    onOpenDecisionGraph={() => handleViewModeChange('decision_graph')}
                     onSelectEvent={(eventId) => {
                       const event = eventIndex.get(eventId);
                       if (event) {
-                        onSelectEvent(event);
-                        setDetailTab('inspect');
+                        focusInspectorSelection({ event });
                       }
                     }}
                   />
@@ -619,14 +716,19 @@ export function SessionDetails({
                 derived={derived}
                 filtersOpen={filtersOpen}
                 onFiltersOpenChange={setFiltersOpen}
-                onFiltersChange={setFilters}
+                onFiltersChange={handleFiltersChange}
               />
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {selectedEvent && <EventDetailsModal event={selectedEvent} onClose={() => onSelectEvent(null)} />}
+      {selectedEvent && (
+        <EventDetailsModal
+          event={selectedEvent}
+          onClose={closeEventModal}
+        />
+      )}
     </div>
   );
 }

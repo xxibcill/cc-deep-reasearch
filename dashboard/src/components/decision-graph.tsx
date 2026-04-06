@@ -19,15 +19,22 @@ const KIND_ORDER: DecisionGraphNode['kind'][] = [
 ];
 
 const NODE_COLORS: Record<DecisionGraphNode['kind'], string> = {
-  event: '#cbd5e1',
+  event: '#64748b',
   decision: '#0f766e',
   outcome: '#0369a1',
   state_change: '#2563eb',
   degradation: '#d97706',
-  failure: '#dc2626',
+  failure: '#b91c1c',
 };
 
-function truncateLabel(label: string, maxLength = 26): string {
+const SEVERITY_COLORS: Record<string, string> = {
+  info: '#38bdf8',
+  warning: '#f59e0b',
+  error: '#ef4444',
+  critical: '#dc2626',
+};
+
+function truncateLabel(label: string, maxLength = 28): string {
   if (label.length <= maxLength) {
     return label;
   }
@@ -36,6 +43,21 @@ function truncateLabel(label: string, maxLength = 26): string {
 
 function sanitizeTestId(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]+/g, '-');
+}
+
+function formatKind(kind: DecisionGraphNode['kind']): string {
+  return kind.replace(/_/g, ' ');
+}
+
+function getNodeSubtitle(node: DecisionGraphNode): string {
+  const fragments = [formatKind(node.kind)];
+  if (node.actor_id) {
+    fragments.push(node.actor_id);
+  }
+  if (node.severity && node.severity !== 'info') {
+    fragments.push(node.severity);
+  }
+  return fragments.join(' • ');
 }
 
 function layoutNodes(nodes: DecisionGraphNode[]) {
@@ -58,8 +80,8 @@ function layoutNodes(nodes: DecisionGraphNode[]) {
 
     group.forEach((node, rowIndex) => {
       positions.set(node.id, {
-        x: 120 + columnIndex * 220,
-        y: 90 + rowIndex * 96,
+        x: 132 + columnIndex * 228,
+        y: 110 + rowIndex * 108,
       });
     });
   });
@@ -80,8 +102,8 @@ function graphBounds(positions: Map<string, { x: number; y: number }>) {
   const maxX = values.length > 0 ? Math.max(...values.map((position) => position.x)) : 0;
   const maxY = values.length > 0 ? Math.max(...values.map((position) => position.y)) : 0;
   return {
-    width: Math.max(maxX + 180, 900),
-    height: Math.max(maxY + 140, 420),
+    width: Math.max(maxX + 190, 980),
+    height: Math.max(maxY + 160, 460),
   };
 }
 
@@ -89,17 +111,23 @@ export function DecisionGraph({
   graph,
   eventIndex,
   selectedEventId,
+  selectedNodeId,
   onSelectEvent,
 }: {
   graph: DecisionGraphModel;
   eventIndex: Map<string, TelemetryEvent>;
   selectedEventId: string | null;
-  onSelectEvent: (event: TelemetryEvent | null) => void;
+  selectedNodeId: string | null;
+  onSelectEvent: (event: TelemetryEvent | null, node: DecisionGraphNode) => void;
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const zoomLayerRef = useRef<SVGGElement | null>(null);
   const positions = useMemo(() => layoutNodes(graph.nodes), [graph.nodes]);
   const { width, height } = useMemo(() => graphBounds(positions), [positions]);
+  const selectedNode = useMemo(
+    () => graph.nodes.find((node) => node.id === selectedNodeId) ?? null,
+    [graph.nodes, selectedNodeId]
+  );
 
   useEffect(() => {
     const element = svgRef.current;
@@ -110,6 +138,7 @@ export function DecisionGraph({
 
     const svg = d3.select<SVGSVGElement, unknown>(element);
     const zoomLayerSelection = d3.select<SVGGElement, unknown>(zoomLayer);
+    svg.on('.zoom', null);
     svg.call(
       d3
         .zoom<SVGSVGElement, unknown>()
@@ -140,6 +169,31 @@ export function DecisionGraph({
         <span className="rounded-full bg-surface-raised px-3 py-1">
           {graph.summary.inferred_edge_count} inferred edges
         </span>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <div className="rounded-2xl border border-border/70 bg-surface-raised/42 p-4 text-xs text-muted-foreground">
+          <p className="font-medium text-foreground">Read the graph fast</p>
+          <p className="mt-1">
+            Solid links come directly from telemetry. Dashed links are inferred causal joins.
+            Warning and error nodes get a bright severity marker so they stand out before you open
+            the inspector.
+          </p>
+        </div>
+        <div className="rounded-2xl border border-border/70 bg-surface-raised/42 p-4 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <span className="h-0.5 w-8 rounded-full bg-foreground" />
+            Explicit telemetry link
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <span className="h-0.5 w-8 rounded-full border-t-2 border-dashed border-border" />
+            Inferred domain link
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <span className="h-3 w-3 rounded-full bg-warning" />
+            High-severity decision path
+          </div>
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-2xl border bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.14),transparent_35%),linear-gradient(180deg,rgba(31,27,23,0.98),rgba(42,35,30,0.96))]">
@@ -192,15 +246,15 @@ export function DecisionGraph({
             {KIND_ORDER.map((kind, index) => (
               <g key={kind}>
                 <text
-                  x={120 + index * 220}
-                  y={36}
+                  x={132 + index * 228}
+                  y={40}
                   textAnchor="middle"
                   fontSize="12"
                   fontWeight="700"
                   fill="#d6d0c7"
                   letterSpacing="0.12em"
                 >
-                  {kind.replace('_', ' ').toUpperCase()}
+                  {formatKind(kind).toUpperCase()}
                 </text>
               </g>
             ))}
@@ -211,40 +265,50 @@ export function DecisionGraph({
                 return null;
               }
 
-              const isSelected = Boolean(node.event_id && node.event_id === selectedEventId);
+              const isSelected =
+                node.id === selectedNodeId
+                || (node.event_id !== null && node.event_id === selectedEventId);
               const background = NODE_COLORS[node.kind];
               const event = node.event_id ? eventIndex.get(node.event_id) ?? null : null;
+              const severityColor =
+                node.severity && node.severity !== 'info'
+                  ? SEVERITY_COLORS[node.severity] ?? SEVERITY_COLORS.warning
+                  : null;
+
               return (
                 <g
                   key={node.id}
                   role="button"
                   tabIndex={0}
                   transform={`translate(${position.x}, ${position.y})`}
-                  style={{ cursor: node.event_id ? 'pointer' : 'default' }}
-                  onClick={() => onSelectEvent(event)}
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => onSelectEvent(event, node)}
                   onKeyDown={(keyboardEvent) => {
                     if (keyboardEvent.key === 'Enter' || keyboardEvent.key === ' ') {
                       keyboardEvent.preventDefault();
-                      onSelectEvent(event);
+                      onSelectEvent(event, node);
                     }
                   }}
                   aria-label={node.label}
                   data-testid={`decision-graph-node-${sanitizeTestId(node.id)}`}
                 >
                   <rect
-                    x={-72}
-                    y={-26}
-                    rx={16}
-                    width={144}
-                    height={52}
+                    x={-78}
+                    y={-30}
+                    rx={18}
+                    width={156}
+                    height={60}
                     fill={background}
-                    opacity={node.inferred ? 0.78 : 0.96}
+                    opacity={node.inferred ? 0.82 : 0.96}
                     stroke={isSelected ? '#fbbf24' : 'rgba(245,245,244,0.22)'}
                     strokeWidth={isSelected ? 4 : 2}
                   />
+                  {severityColor ? (
+                    <circle cx={58} cy={-16} r={6} fill={severityColor} />
+                  ) : null}
                   <text
                     textAnchor="middle"
-                    y={-2}
+                    y={-5}
                     fontSize="12"
                     fontWeight="700"
                     fill="#f8fafc"
@@ -253,11 +317,11 @@ export function DecisionGraph({
                   </text>
                   <text
                     textAnchor="middle"
-                    y={15}
+                    y={14}
                     fontSize="10"
-                    fill="rgba(248,250,252,0.88)"
+                    fill="rgba(248,250,252,0.92)"
                   >
-                    {node.event_type ?? node.kind}
+                    {truncateLabel(getNodeSubtitle(node), 30)}
                   </text>
                 </g>
               );
@@ -266,16 +330,17 @@ export function DecisionGraph({
         </svg>
       </div>
 
-      <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-        <div className="flex items-center gap-2">
-          <span className="h-0.5 w-8 rounded-full bg-foreground" />
-          Explicit telemetry link
+      {selectedNode ? (
+        <div className="rounded-2xl border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-50">
+          <span className="font-semibold text-amber-100">Selected:</span> {selectedNode.label}
+          <span className="ml-2 text-amber-100/80">
+            {selectedNode.inferred ? 'Inferred link context.' : 'Explicit telemetry context.'}
+            {selectedNode.severity && selectedNode.severity !== 'info'
+              ? ` Severity: ${selectedNode.severity}.`
+              : ''}
+          </span>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="h-0.5 w-8 rounded-full border-t-2 border-dashed border-border" />
-          Inferred domain link
-        </div>
-      </div>
+      ) : null}
     </div>
   );
 }

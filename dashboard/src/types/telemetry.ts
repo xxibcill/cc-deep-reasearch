@@ -250,12 +250,20 @@ export interface TelemetryDerivedState {
   timeline: AgentExecution[];
   toolExecutions: ToolExecution[];
   llmReasoning: LLMReasoning[];
+  phaseLookup: Map<string, string | null>;
+  eventIndex: Map<string, TelemetryEvent>;
   phases: string[];
   agents: string[];
   tools: string[];
   providers: string[];
   statuses: string[];
   eventTypes: string[];
+  categoryCounts: {
+    total: number;
+    agent: number;
+    tool: number;
+    llm: number;
+  };
 }
 
 export type EventFilter = {

@@ -2,6 +2,8 @@
 
 import { AgentExecution, TelemetryEvent } from '@/types/telemetry';
 
+const MAX_VISIBLE_MARKERS_PER_LANE = 18;
+
 const STATUS_CLASS: Record<string, string> = {
   completed: 'bg-success',
   success: 'bg-success',
@@ -18,6 +20,29 @@ function percent(value: number, min: number, max: number): number {
     return 0;
   }
   return ((value - min) / (max - min)) * 100;
+}
+
+function sampleMarkers(markers: AgentExecution['markers']) {
+  if (markers.length <= MAX_VISIBLE_MARKERS_PER_LANE) {
+    return {
+      markers,
+      hiddenCount: 0,
+    };
+  }
+
+  const lastIndex = markers.length - 1;
+  const selectedIndexes = new Set<number>([0, lastIndex]);
+  const targetInteriorCount = MAX_VISIBLE_MARKERS_PER_LANE - 2;
+
+  for (let step = 1; step <= targetInteriorCount; step += 1) {
+    const index = Math.round((step * lastIndex) / (targetInteriorCount + 1));
+    selectedIndexes.add(index);
+  }
+
+  return {
+    markers: markers.filter((_, index) => selectedIndexes.has(index)),
+    hiddenCount: markers.length - selectedIndexes.size,
+  };
 }
 
 export function AgentTimeline({
@@ -43,6 +68,7 @@ export function AgentTimeline({
         const laneEnd = percent(lane.endTime ?? lane.startTime, minStart, maxEnd);
         const width = Math.max(laneEnd - laneStart, 3);
         const representativeEvent = lane.eventIds.at(-1);
+        const visibleMarkers = sampleMarkers(lane.markers);
 
         return (
           <div key={lane.id} className="rounded-xl border border-border/70 bg-surface/56 p-4">
@@ -61,12 +87,17 @@ export function AgentTimeline({
                 Inspect lane
               </button>
             </div>
+            {visibleMarkers.hiddenCount > 0 ? (
+              <p className="mb-3 text-xs text-muted-foreground">
+                Showing key checkpoints plus a sampled subset of markers for this dense lane.
+              </p>
+            ) : null}
             <div className="relative h-16 rounded-lg border border-border/60 bg-surface-raised/72">
               <div
                 className={`absolute top-5 h-6 rounded-full ${STATUS_CLASS[lane.status] ?? STATUS_CLASS.unknown}`}
                 style={{ left: `${laneStart}%`, width: `${width}%` }}
               />
-              {lane.markers.map((marker) => (
+              {visibleMarkers.markers.map((marker) => (
                 <button
                   key={marker.id}
                   className="absolute top-2 h-12 -translate-x-1/2"

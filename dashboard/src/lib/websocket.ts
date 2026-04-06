@@ -40,6 +40,7 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
   const connected = useDashboardStore((state) => state.connected);
   const events = useDashboardStore((state) => state.events);
   const liveStreamStatus = useDashboardStore((state) => state.liveStreamStatus);
+  const appendBufferedEvents = useDashboardStore((state) => state.appendBufferedEvents);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef(0);
@@ -84,8 +85,8 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
       return;
     }
     eventBufferRef.current = [];
-    useDashboardStore.getState().appendEvents(buffered);
-  }, []);
+    appendBufferedEvents(buffered);
+  }, [appendBufferedEvents]);
 
   const updateLiveStreamStatus = useCallback(
     (status: Partial<LiveStreamStatus>) => {
@@ -210,14 +211,14 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
           scheduleFlush();
         } else if (message.type === 'history' && message.events) {
           flushBufferedEvents();
-          useDashboardStore.getState().appendEvents(message.events.map(normalizeEvent));
+          appendBufferedEvents(message.events.map(normalizeEvent));
           updateLiveStreamStatus({
             lastHistoryAt: receivedAt,
           });
         } else if (message.type === 'history_page') {
           const pageMessage = message as WSHistoryPageMessage;
           flushBufferedEvents();
-          useDashboardStore.getState().appendEvents(pageMessage.events.map(normalizeEvent));
+          appendBufferedEvents(pageMessage.events.map(normalizeEvent));
           updateLiveStreamStatus({
             lastHistoryAt: receivedAt,
           });
@@ -307,6 +308,7 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
     };
   }, [
     enabled,
+    appendBufferedEvents,
     flushBufferedEvents,
     historical,
     probeBackend,
