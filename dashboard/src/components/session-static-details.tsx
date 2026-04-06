@@ -6,7 +6,6 @@ import { ArrowRight, Archive, CheckCircle2, Clock3, Database, FileText, Home, Ra
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { runStatusBadgeVariant } from '@/lib/session-route';
 import type { ResearchRunStatus, Session } from '@/types/telemetry';
 
 interface SessionOverviewProps {
@@ -115,6 +114,34 @@ function QueryDisplay({ query }: { query: string | null }) {
             Query truncated. View full query in technical details below.
           </p>
         )}
+      </div>
+    </div>
+  );
+}
+
+function SessionIdentity({
+  label,
+  sessionId,
+}: {
+  label: string | null;
+  sessionId: string;
+}) {
+  return (
+    <div className="space-y-3 rounded-2xl border border-border bg-surface-raised p-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="outline">Session brief</Badge>
+        <span className="font-mono text-[0.72rem] uppercase tracking-[0.14em] text-muted-foreground">
+          {sessionId.slice(0, 8)}
+        </span>
+      </div>
+      <div className="space-y-1">
+        <p className="text-[1.2rem] font-semibold leading-tight text-foreground">
+          {label ?? 'Untitled session'}
+        </p>
+        <p className="text-sm leading-6 text-muted-foreground">
+          Primary operator summary for this run before drilling into telemetry, artifacts, or
+          technical details.
+        </p>
       </div>
     </div>
   );
@@ -301,12 +328,11 @@ function NextActions({
 }
 
 export function SessionOverview({ sessionId, runStatus, sessionSummary }: SessionOverviewProps) {
-  const isActive = sessionSummary?.active ?? runStatus === 'running';
-
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_280px]">
       <div className="space-y-6">
         <StatusIndicator status={runStatus} />
+        <SessionIdentity label={sessionSummary?.label ?? null} sessionId={sessionId} />
 
         <QueryDisplay query={sessionSummary?.query ?? null} />
 

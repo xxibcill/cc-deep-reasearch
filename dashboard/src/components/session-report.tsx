@@ -7,7 +7,7 @@ import { AlertCircle, FileJson, FileText, Globe, Loader2 } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs } from '@/components/ui/tabs';
 import { getApiErrorMessage, getSessionReport } from '@/lib/api';
 import type {
@@ -239,12 +239,30 @@ export function SessionReport({ sessionId, runStatus, hasReport }: SessionReport
   }
 
   return (
-    <Card className="overflow-hidden border-border shadow-sm">
-      <CardHeader className="gap-4 border-b bg-[linear-gradient(135deg,rgba(15,23,42,0.04),rgba(56,189,248,0.12))]">
+    <Card className="overflow-hidden border-border/70">
+      <CardHeader className="gap-5 border-b border-border/60 bg-surface-raised/45">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary">{formatLabel(selectedFormat)}</Badge>
-            {loadingFormat === selectedFormat ? <Badge variant="outline">Loading</Badge> : null}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm text-primary">
+              <FileText className="h-4 w-4" />
+              <span className="font-display text-[0.86rem] uppercase tracking-[0.14em]">
+                Research artifact
+              </span>
+            </div>
+            <div className="space-y-2">
+              <CardTitle className="text-[1.2rem]">Rendered report</CardTitle>
+              <CardDescription className="max-w-2xl leading-6">
+                Review the final research artifact in markdown, JSON, or HTML without leaving the
+                current session workspace.
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="secondary">{formatLabel(selectedFormat)}</Badge>
+              {loadingFormat === selectedFormat ? <Badge variant="outline">Loading</Badge> : null}
+              <Badge variant="outline" className="font-mono text-[0.7rem]">
+                {sessionId.slice(0, 8)}
+              </Badge>
+            </div>
           </div>
 
           <div className="flex flex-col gap-2 xl:items-end">

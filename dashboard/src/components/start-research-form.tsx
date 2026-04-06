@@ -2,24 +2,37 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { RotateCcw } from 'lucide-react'
+import { Radar, RotateCcw, SearchCheck, Telescope } from 'lucide-react'
 import { startResearchRun } from '@/lib/api'
 import type { ResearchRunRequest, AgentPromptOverride } from '@/types/telemetry'
 
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NativeSelect } from '@/components/ui/native-select'
-import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Textarea } from '@/components/ui/textarea'
 
 type ResearchDepth = 'quick' | 'standard' | 'deep'
+type LaunchPresetId = 'factual' | 'standard' | 'deep'
 
 interface FormData {
   query: string
+  presetId: LaunchPresetId
   depth: ResearchDepth
   minSources: string
+}
+
+interface LaunchPreset {
+  id: LaunchPresetId
+  label: string
+  description: string
+  guidance: string
+  depth: ResearchDepth
+  minSources: string
+  icon: typeof SearchCheck
 }
 
 const SUPPORTED_AGENTS = [
@@ -38,20 +51,53 @@ const DEFAULT_PROMPT_PREFIXES: Record<string, string> = {
   report_quality_evaluator: '',
 }
 
-const MAX_QUERY_LENGTH = 2000;
+const LAUNCH_PRESETS: LaunchPreset[] = [
+  {
+    id: 'factual',
+    label: 'Quick factual check',
+    description: 'Fast verification for a claim, update, or short question.',
+    guidance: 'Use this when the operator mainly needs a confident answer fast.',
+    depth: 'quick',
+    minSources: '3',
+    icon: SearchCheck,
+  },
+  {
+    id: 'standard',
+    label: 'Standard research pass',
+    description: 'Balanced coverage for most day-to-day research requests.',
+    guidance: 'This is the default path for a normal investigation with moderate scrutiny.',
+    depth: 'standard',
+    minSources: '8',
+    icon: Radar,
+  },
+  {
+    id: 'deep',
+    label: 'Deep investigation',
+    description: 'Broader collection and more synthesis room for complex topics.',
+    guidance: 'Use this when the question is ambiguous, contested, or high stakes.',
+    depth: 'deep',
+    minSources: '15',
+    icon: Telescope,
+  },
+]
+
+const DEFAULT_PRESET = LAUNCH_PRESETS[1]
+const MAX_QUERY_LENGTH = 2000
 
 export function StartResearchForm() {
   const router = useRouter()
   const [formData, setFormData] = useState<FormData>({
     query: '',
-    depth: 'deep',
-    minSources: '',
+    presetId: DEFAULT_PRESET.id,
+    depth: DEFAULT_PRESET.depth,
+    minSources: DEFAULT_PRESET.minSources,
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [queryTouched, setQueryTouched] = useState(false)
   const [sourcesError, setSourcesError] = useState<string | null>(null)
-  const [accordionValue, setAccordionValue] = useState('')
+  const [planAccordionValue, setPlanAccordionValue] = useState('')
+  const [advancedAccordionValue, setAdvancedAccordionValue] = useState('')
   const [promptPrefixes, setPromptPrefixes] = useState<Record<string, string>>({
     analyzer: '',
     deep_analyzer: '',
@@ -105,6 +151,16 @@ export function StartResearchForm() {
     }
   }
 
+  const applyPreset = (preset: LaunchPreset) => {
+    setFormData((prev) => ({
+      ...prev,
+      presetId: preset.id,
+      depth: preset.depth,
+      minSources: preset.minSources,
+    }))
+    validateSources(preset.minSources)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setQueryTouched(true)
@@ -129,7 +185,6 @@ export function StartResearchForm() {
       }
 
       const response = await startResearchRun(request)
-
       router.push(`/session/${response.run_id}/monitor`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start research run')
@@ -140,8 +195,9 @@ export function StartResearchForm() {
   const handleReset = () => {
     setFormData({
       query: '',
-      depth: 'deep',
-      minSources: '',
+      presetId: DEFAULT_PRESET.id,
+      depth: DEFAULT_PRESET.depth,
+      minSources: DEFAULT_PRESET.minSources,
     })
     setPromptPrefixes({
       analyzer: '',
@@ -151,12 +207,80 @@ export function StartResearchForm() {
     setError(null)
     setQueryTouched(false)
     setSourcesError(null)
+    setPlanAccordionValue('')
+    setAdvancedAccordionValue('')
   }
 
+  const selectedPreset =
+    LAUNCH_PRESETS.find((preset) => preset.id === formData.presetId) ?? DEFAULT_PRESET
+  const presetTuned =
+    selectedPreset.depth !== formData.depth || selectedPreset.minSources !== formData.minSources
+  const promptOverrideCount = Object.values(promptPrefixes).filter((prefix) => prefix.trim()).length
   const queryEmpty = queryTouched && !formData.query.trim()
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-5">
+      <div className="space-y-3">
+        <div className="space-y-1">
+          <Label>Launch Preset</Label>
+          <p className="text-sm leading-6 text-muted-foreground">
+            Start with the operator path that matches the question, then expose more controls only
+            if the run needs them.
+          </p>
+        </div>
+
+        <div className="grid gap-3">
+          {LAUNCH_PRESETS.map((preset) => {
+            const Icon = preset.icon
+            const isActive = formData.presetId === preset.id
+
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => applyPreset(preset)}
+                className={`rounded-[1rem] border p-4 text-left transition-all ${
+                  isActive
+                    ? 'border-primary/45 bg-primary/[0.08] shadow-card'
+                    : 'border-border/80 bg-surface/62 hover:border-primary/25 hover:bg-surface-raised/72'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Icon className={`h-4 w-4 ${isActive ? 'text-primary' : 'text-muted-foreground'}`} />
+                      <span className="font-display text-[0.95rem] font-semibold uppercase tracking-[0.1em] text-foreground">
+                        {preset.label}
+                      </span>
+                    </div>
+                    <p className="text-sm text-foreground">{preset.description}</p>
+                    <p className="text-xs leading-5 text-muted-foreground">{preset.guidance}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-2 text-right">
+                    <Badge variant={isActive ? 'info' : 'outline'}>{preset.depth}</Badge>
+                    <span className="text-[0.72rem] uppercase tracking-[0.14em] text-muted-foreground">
+                      Min {preset.minSources} sources
+                    </span>
+                  </div>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+
+        <Alert variant="info" className="rounded-[1rem]">
+          <AlertDescription className="space-y-1">
+            <p className="font-medium text-foreground">{selectedPreset.label}</p>
+            <p>
+              Default plan: <span className="capitalize">{selectedPreset.depth}</span> depth with a{' '}
+              {selectedPreset.minSources}-source floor.
+              {presetTuned ? ' Research plan details have been customized from the preset.' : ''}
+            </p>
+          </AlertDescription>
+        </Alert>
+      </div>
+
       <div className="space-y-2">
         <Label htmlFor="query">Research Query</Label>
         <Textarea
@@ -167,7 +291,7 @@ export function StartResearchForm() {
             if (queryTouched && e.target.value.trim()) setError(null)
           }}
           onBlur={() => setQueryTouched(true)}
-          placeholder="What would you like to research?"
+          placeholder="What would you like to research, verify, or investigate?"
           className="min-h-[100px] resize-y"
           disabled={isSubmitting}
           aria-invalid={queryEmpty}
@@ -176,7 +300,9 @@ export function StartResearchForm() {
           {queryEmpty ? (
             <span className="text-error">A research query is required</span>
           ) : (
-            <span />
+            <span className="text-muted-foreground">
+              Lead with the core question. Add context or constraints after that.
+            </span>
           )}
           <span className={formData.query.length > MAX_QUERY_LENGTH ? 'text-error' : 'text-muted-foreground'}>
             {formData.query.length}/{MAX_QUERY_LENGTH}
@@ -184,65 +310,85 @@ export function StartResearchForm() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="depth">Research Depth</Label>
-          <NativeSelect
-            id="depth"
-            value={formData.depth}
-            onChange={(e) =>
-              setFormData((prev) => ({ ...prev, depth: e.target.value as ResearchDepth }))
-            }
-            disabled={isSubmitting}
-          >
-            <option value="quick">Quick (3-5 sources)</option>
-            <option value="standard">Standard (10-15 sources)</option>
-            <option value="deep">Deep (20+ sources)</option>
-          </NativeSelect>
-        </div>
+      <Accordion value={planAccordionValue} onValueChange={setPlanAccordionValue}>
+        <AccordionItem value="plan">
+          <AccordionTrigger value="plan">Research Plan Details</AccordionTrigger>
+          <AccordionContent value="plan">
+            <div className="space-y-4">
+              <p className="text-sm leading-6 text-muted-foreground">
+                Override the preset only when the investigation needs a different evidence budget
+                or a stricter source floor.
+              </p>
 
-        <div className="space-y-2">
-          <Label htmlFor="minSources">Minimum Sources (optional)</Label>
-          <Input
-            id="minSources"
-            type="number"
-            min="1"
-            max="100"
-            value={formData.minSources}
-            onChange={(e) => {
-              setFormData((prev) => ({ ...prev, minSources: e.target.value }))
-              validateSources(e.target.value)
-            }}
-            onBlur={() => validateSources(formData.minSources)}
-            placeholder="Auto"
-            disabled={isSubmitting}
-            aria-invalid={Boolean(sourcesError)}
-          />
-          {sourcesError && (
-            <p className="text-xs text-error">{sourcesError}</p>
-          )}
-        </div>
-      </div>
+              <div className="grid gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="depth">Research Depth</Label>
+                  <NativeSelect
+                    id="depth"
+                    value={formData.depth}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, depth: e.target.value as ResearchDepth }))
+                    }
+                    disabled={isSubmitting}
+                  >
+                    <option value="quick">Quick: fastest pass with lighter evidence gathering</option>
+                    <option value="standard">Standard: balanced coverage and synthesis</option>
+                    <option value="deep">Deep: broader collection for higher-scrutiny topics</option>
+                  </NativeSelect>
+                </div>
 
-      <Accordion
-        value={accordionValue}
-        onValueChange={setAccordionValue}
-      >
+                <div className="space-y-2">
+                  <Label htmlFor="minSources">Minimum Sources</Label>
+                  <Input
+                    id="minSources"
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={formData.minSources}
+                    onChange={(e) => {
+                      setFormData((prev) => ({ ...prev, minSources: e.target.value }))
+                      validateSources(e.target.value)
+                    }}
+                    onBlur={() => validateSources(formData.minSources)}
+                    placeholder="Auto"
+                    disabled={isSubmitting}
+                    aria-invalid={Boolean(sourcesError)}
+                  />
+                  {sourcesError ? (
+                    <p className="text-xs text-error">{sourcesError}</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Leave blank to let the backend decide the source floor automatically.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
+
+      <Accordion value={advancedAccordionValue} onValueChange={setAdvancedAccordionValue}>
         <AccordionItem value="advanced">
-          <AccordionTrigger value="advanced">Advanced Settings (Agent Prompts)</AccordionTrigger>
+          <AccordionTrigger value="advanced">
+            Operator Prompt Overrides {promptOverrideCount > 0 ? `(${promptOverrideCount})` : ''}
+          </AccordionTrigger>
           <AccordionContent value="advanced">
             <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Customize prompts for LLM-backed agents. Prompt prefixes are prepended to the
-                default prompts, allowing you to extend behavior without replacing defaults.
-              </p>
+              <Alert className="rounded-[0.95rem]">
+                <AlertDescription className="text-sm leading-6 text-muted-foreground">
+                  Prompt prefixes are prepended to the default agent instructions. Treat them as
+                  advanced operator tooling for steering or debugging, not the normal path.
+                </AlertDescription>
+              </Alert>
+
               <p className="text-xs text-muted-foreground">
                 V1 support is limited to Analyzer, Deep Analyzer, and Report Quality Evaluator.
               </p>
 
               {SUPPORTED_AGENTS.map((agent) => (
                 <div key={agent.id} className="space-y-2">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-3">
                     <div>
                       <Label htmlFor={`prompt-${agent.id}`} className="text-sm font-medium">
                         {agent.label} Prompt Prefix
@@ -256,7 +402,7 @@ export function StartResearchForm() {
                       onClick={() => resetPromptPrefix(agent.id)}
                       disabled={isSubmitting}
                     >
-                      <RotateCcw className="h-3 w-3 mr-1" />
+                      <RotateCcw className="mr-1 h-3 w-3" />
                       Reset
                     </Button>
                   </div>
@@ -271,28 +417,27 @@ export function StartResearchForm() {
                 </div>
               ))}
 
-              {hasPromptOverrides() && (
+              {hasPromptOverrides() ? (
                 <Alert variant="warning">
                   <AlertDescription>
-                    <strong>Note:</strong> Prompt overrides will be applied to this research run
-                    and recorded in session metadata.
+                    Prompt overrides will be sent with this run and recorded in session metadata.
                   </AlertDescription>
                 </Alert>
-              )}
+              ) : null}
             </div>
           </AccordionContent>
         </AccordionItem>
       </Accordion>
 
-      {error && (
+      {error ? (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
-      )}
+      ) : null}
 
       <div className="flex items-center gap-2">
         <Button type="submit" className="flex-1" disabled={isSubmitting || !formData.query.trim()}>
-          {isSubmitting ? 'Starting Research...' : 'Start Research'}
+          {isSubmitting ? 'Starting Research...' : `Start ${selectedPreset.label}`}
         </Button>
         <Button
           type="button"
@@ -302,7 +447,7 @@ export function StartResearchForm() {
           disabled={isSubmitting}
           className="text-muted-foreground"
         >
-          <RotateCcw className="h-3.5 w-3.5 mr-1" />
+          <RotateCcw className="mr-1 h-3.5 w-3.5" />
           Clear
         </Button>
       </div>

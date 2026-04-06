@@ -1,7 +1,7 @@
 'use client';
 
 import { useDeferredValue, useEffect, useState } from 'react';
-import { Activity, Archive, DatabaseZap, Radar } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Play, Radar, Zap } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -23,9 +23,11 @@ export default function HomePage() {
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
   const deferredSearch = useDeferredValue(query.search);
-  const activeSessions = sessions.filter((session) => session.active).length;
-  const reportReady = sessions.filter((session) => session.hasReport).length;
-  const archivedSessions = sessions.filter((session) => session.archived).length;
+
+  const activeSessions = sessions.filter((s) => s.active);
+  const failedSessions = sessions.filter((s) => !s.active && (s.status === 'failed' || s.status === 'interrupted'));
+  const readySessions = sessions.filter((s) => s.hasReport && !s.active);
+  const hasNoSessions = total === 0 && !loading;
 
   useEffect(() => {
     let mounted = true;
@@ -105,105 +107,72 @@ export default function HomePage() {
 
   return (
     <div className="mx-auto max-w-content px-page-x py-page-y">
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_24rem]">
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,0.62fr)]">
         <div className="panel-shell data-grid rounded-[1.5rem] p-6 sm:p-8">
-          <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_18rem]">
-            <div className="space-y-6">
-              <div className="space-y-4">
-                <p className="eyebrow">Research control room</p>
-                <h1 className="font-display text-[clamp(3.2rem,8vw,6.2rem)] font-semibold uppercase tracking-[0.01em] text-foreground">
-                  Monitor the research machine, not just the prompt.
-                </h1>
-                <p className="max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
-                  A live workspace for starting runs, tracing agent behavior, and reviewing the
-                  research archive without falling back into generic dashboard chrome.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="warning">Live telemetry</Badge>
-                <Badge variant="secondary">Session archive</Badge>
-                <Badge variant="outline">Traceable prompts</Badge>
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-3">
-                {[
-                  {
-                    label: 'Active sessions',
-                    value: activeSessions,
-                    note: 'Runs still generating telemetry',
-                    icon: Activity,
-                  },
-                  {
-                    label: 'Reports ready',
-                    value: reportReady,
-                    note: 'Sessions with exportable output',
-                    icon: Radar,
-                  },
-                  {
-                    label: 'Archive loaded',
-                    value: total,
-                    note: 'Sessions currently in scope',
-                    icon: DatabaseZap,
-                  },
-                ].map(({ label, value, note, icon: Icon }) => (
-                  <div
-                    key={label}
-                    className="rounded-[1rem] border border-border/75 bg-surface/72 p-4 shadow-card"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="eyebrow">{label}</p>
-                      <Icon className="h-4 w-4 text-primary" />
-                    </div>
-                    <p className="mt-4 font-display text-[2.8rem] font-semibold leading-none tabular-nums text-foreground">
-                      {loading ? '...' : value}
-                    </p>
-                    <p className="mt-2 text-sm leading-6 text-muted-foreground">{note}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="section-rule space-y-4 xl:pl-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="eyebrow">Current frame</p>
-                  <h2 className="mt-2 font-display text-[2rem] font-semibold uppercase tracking-[0.02em]">
-                    Archive ledger
-                  </h2>
-                </div>
-                <Archive className="h-5 w-5 text-primary" />
-              </div>
-
-              <div className="space-y-3 rounded-[1rem] border border-border/75 bg-surface/72 p-4 shadow-card">
-                {[
-                  ['Visible sessions', sessions.length],
-                  ['Archived', archivedSessions],
-                  ['With reports', reportReady],
-                ].map(([label, value]) => (
-                  <div key={label} className="flex items-center justify-between gap-4 border-b border-border/60 pb-3 last:border-b-0 last:pb-0">
-                    <span className="text-sm text-muted-foreground">{label}</span>
-                    <span className="font-mono text-sm tabular-nums text-foreground">{loading ? '--' : value}</span>
-                  </div>
-                ))}
-              </div>
-
-              <p className="text-sm leading-6 text-muted-foreground">
-                The archive is optimized for technical operators: dense where it should be dense,
-                quiet where it should let the data breathe.
+          <div className="space-y-8">
+            <div className="space-y-4">
+              <p className="eyebrow">Control room</p>
+              <h1 className="font-display text-[clamp(2.8rem,6vw,4.8rem)] font-semibold uppercase tracking-[0.01em] text-foreground">
+                {hasNoSessions ? 'Ready to research' : 'Operations overview'}
+              </h1>
+              <p className="max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
+                {hasNoSessions
+                  ? 'Start your first research session to begin monitoring runs, tracing agent behavior, and building your archive.'
+                  : 'Active runs, attention-needed sessions, and completed research with reports ready.'}
               </p>
             </div>
+
+            {hasNoSessions ? (
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="info">No sessions yet</Badge>
+              </div>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="group rounded-[1rem] border border-primary/20 bg-primary/[0.03] p-4 shadow-card transition-colors hover:border-primary/35 hover:bg-primary/[0.05]">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="eyebrow">Running now</p>
+                    <Play className="h-4 w-4 text-primary" />
+                  </div>
+                  <p className="mt-4 font-display text-[2.8rem] font-semibold leading-none tabular-nums text-foreground">
+                    {loading ? '...' : activeSessions.length}
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">Active research runs</p>
+                </div>
+
+                <div className="group rounded-[1rem] border border-warning/20 bg-warning/[0.03] p-4 shadow-card transition-colors hover:border-warning/35 hover:bg-warning/[0.05]">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="eyebrow">Needs attention</p>
+                    <AlertCircle className="h-4 w-4 text-warning" />
+                  </div>
+                  <p className="mt-4 font-display text-[2.8rem] font-semibold leading-none tabular-nums text-foreground">
+                    {loading ? '...' : failedSessions.length}
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">Failed or interrupted</p>
+                </div>
+
+                <div className="group rounded-[1rem] border border-success/20 bg-success/[0.03] p-4 shadow-card transition-colors hover:border-success/35 hover:bg-success/[0.05]">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="eyebrow">Reports ready</p>
+                    <Radar className="h-4 w-4 text-success" />
+                  </div>
+                  <p className="mt-4 font-display text-[2.8rem] font-semibold leading-none tabular-nums text-foreground">
+                    {loading ? '...' : readySessions.length}
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">Ready for review</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
         <aside className="xl:sticky xl:top-[7.5rem] xl:self-start">
-          <Card className="rounded-[1.45rem]">
+          <Card className={`rounded-[1.45rem] ${hasNoSessions ? '' : 'opacity-75'}`}>
             <CardHeader className="border-b border-border/70">
               <p className="eyebrow">Launch console</p>
               <CardTitle className="text-[2rem]">Start Research</CardTitle>
               <p className="max-w-[28ch] text-sm leading-6 text-muted-foreground">
-                Define the question, tune depth, and apply prompt overrides without leaving the
-                primary workspace.
+                Pick a preset, describe the question, then open operator controls only when the
+                run needs custom tuning.
               </p>
             </CardHeader>
             <CardContent className="pt-6">
