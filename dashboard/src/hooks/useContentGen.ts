@@ -52,6 +52,7 @@ interface ContentGenState {
   stopPipeline: (id: string) => Promise<void>;
   approveQC: (pipelineId: string) => Promise<void>;
   updateStageProgress: (stageIndex: number, event: Record<string, unknown>) => void;
+  updatePipelineContext: (context: PipelineContext) => void;
 
   runScripting: (idea: string) => Promise<void>;
   loadScripts: () => Promise<void>;
@@ -165,6 +166,10 @@ const useContentGen = create<ContentGenState>((set, get) => ({
         } as StageProgress,
       },
     }));
+  },
+
+  updatePipelineContext: (context) => {
+    set({ pipelineContext: context });
   },
 
   runScripting: async (idea) => {

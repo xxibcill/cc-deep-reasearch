@@ -175,6 +175,9 @@ def register_content_gen_routes(
                 )
 
             def _stage_completed(stage_idx: int, status: str, detail: str) -> None:
+                # Update job registry with latest context after each stage
+                job_registry.update_context(job.pipeline_id, ctx)
+
                 if status == "failed":
                     asyncio.get_running_loop().create_task(
                         event_router.publish(
@@ -210,6 +213,7 @@ def register_content_gen_routes(
                                 "stage_index": stage_idx,
                                 "stage_status": status,
                                 "stage_detail": detail,
+                                "context": json.loads(ctx.model_dump_json()),
                                 "timestamp": datetime.now(UTC).isoformat(),
                             },
                         )
@@ -324,6 +328,9 @@ def register_content_gen_routes(
                 )
 
             def _stage_completed(stage_idx: int, status: str, detail: str) -> None:
+                # Update job registry with latest context after each stage
+                job_registry.update_context(new_job.pipeline_id, result_ctx)
+
                 if status == "failed":
                     asyncio.get_running_loop().create_task(
                         event_router.publish(
@@ -359,6 +366,7 @@ def register_content_gen_routes(
                                 "stage_index": stage_idx,
                                 "stage_status": status,
                                 "stage_detail": detail,
+                                "context": json.loads(result_ctx.model_dump_json()),
                                 "timestamp": datetime.now(UTC).isoformat(),
                             },
                         )
