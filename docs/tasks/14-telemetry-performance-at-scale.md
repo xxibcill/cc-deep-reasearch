@@ -1,5 +1,7 @@
 # Task 14: Improve Telemetry Performance At Scale
 
+Status: Done
+
 ## Goal
 
 Keep the telemetry workspace responsive when sessions contain large event volumes and complex derived views.

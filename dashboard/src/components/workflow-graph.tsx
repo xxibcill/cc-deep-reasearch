@@ -59,10 +59,9 @@ export function WorkflowGraph({
   onSelectEvent: (event: TelemetryEvent | null) => void;
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const rootRef = useRef<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null);
   const onSelectEventRef = useRef(onSelectEvent);
   onSelectEventRef.current = onSelectEvent;
-  const selectedEventIdRef = useRef(selectedEventId);
-  selectedEventIdRef.current = selectedEventId;
   const positions = useMemo(() => layoutNodes(nodes), [nodes]);
 
   useEffect(() => {
@@ -79,6 +78,8 @@ export function WorkflowGraph({
     svg.attr('viewBox', `0 0 ${width} ${height}`);
 
     const root = svg.append('g');
+    rootRef.current = root;
+    svg.on('.zoom', null);
     svg.call(
       d3
         .zoom<SVGSVGElement, unknown>()
@@ -131,12 +132,11 @@ export function WorkflowGraph({
 
     nodeGroup
       .append('circle')
+      .attr('class', 'node-circle')
       .attr('r', (node) => (node.type === 'session' ? 30 : 24))
       .attr('fill', (node) => STATUS_COLORS[node.status] ?? STATUS_COLORS.unknown)
-      .attr('stroke', (node) =>
-        node.latestEventId && node.latestEventId === selectedEventIdRef.current ? '#fbbf24' : '#44403c'
-      )
-      .attr('stroke-width', (node) => (node.latestEventId === selectedEventIdRef.current ? 4 : 2));
+      .attr('stroke', '#44403c')
+      .attr('stroke-width', 2);
 
     nodeGroup
       .append('text')
@@ -155,6 +155,22 @@ export function WorkflowGraph({
       .attr('fill', '#b0a89c')
       .text((node) => node.status);
   }, [edges, eventIndex, nodes, positions]);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) {
+      return;
+    }
+
+    root
+      .selectAll<SVGCircleElement, WorkflowNode>('g.node .node-circle')
+      .attr('stroke', (node) =>
+        node.latestEventId && node.latestEventId === selectedEventId ? '#fbbf24' : '#44403c'
+      )
+      .attr('stroke-width', (node) =>
+        node.latestEventId && node.latestEventId === selectedEventId ? 4 : 2
+      );
+  }, [selectedEventId]);
 
   return <svg ref={svgRef} className="h-[520px] w-full rounded-xl bg-surface" />;
 }

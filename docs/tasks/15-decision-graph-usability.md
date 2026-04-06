@@ -1,5 +1,7 @@
 # Task 15: Improve Decision Graph Usability And Explainability
 
+Status: Done
+
 ## Goal
 
 Make the decision graph easier to understand and more actionable for operators who are not already deep in the telemetry schema.

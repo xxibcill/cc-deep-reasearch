@@ -59,6 +59,37 @@ function asTimestamp(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function isSortedBySequenceAndTimestamp(events: TelemetryEvent[]): boolean {
+  for (let index = 1; index < events.length; index += 1) {
+    const previous = events[index - 1];
+    const current = events[index];
+    if (previous.sequenceNumber > current.sequenceNumber) {
+      return false;
+    }
+    if (
+      previous.sequenceNumber === current.sequenceNumber
+      && previous.timestamp.localeCompare(current.timestamp) > 0
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function getSortedEvents(events: TelemetryEvent[]): TelemetryEvent[] {
+  if (events.length < 2 || isSortedBySequenceAndTimestamp(events)) {
+    return events;
+  }
+
+  return [...events].sort((left, right) => {
+    if (left.sequenceNumber !== right.sequenceNumber) {
+      return left.sequenceNumber - right.sequenceNumber;
+    }
+    return left.timestamp.localeCompare(right.timestamp);
+  });
+}
+
 const STALL_THRESHOLD_MS = 120000;
 const SLOW_THRESHOLD_MS = 30000;
 
@@ -68,12 +99,7 @@ export function deriveOperatorInsights(
   hasReport: boolean = false
 ): OperatorInsight[] {
   const insights: OperatorInsight[] = [];
-  const sortedEvents = [...events].sort((left, right) => {
-    if (left.sequenceNumber !== right.sequenceNumber) {
-      return left.sequenceNumber - right.sequenceNumber;
-    }
-    return left.timestamp.localeCompare(right.timestamp);
-  });
+  const sortedEvents = getSortedEvents(events);
 
   const phases = derived.phases;
   const toolFailures = derived.toolExecutions.filter(
@@ -622,8 +648,11 @@ function buildLLMReasoning(
     .sort((left, right) => right.startTime - left.startTime);
 }
 
-export function filterEvents(events: TelemetryEvent[], filters: EventFilter): TelemetryEvent[] {
-  const phaseLookup = derivePhaseLookup(events);
+export function filterEvents(
+  events: TelemetryEvent[],
+  filters: EventFilter,
+  phaseLookup: Map<string, string | null> = derivePhaseLookup(events)
+): TelemetryEvent[] {
   return events.filter((event) => {
     const timestamp = asTimestamp(event.timestamp);
     const metadata = event.metadata;
@@ -676,22 +705,34 @@ export function filterEvents(events: TelemetryEvent[], filters: EventFilter): Te
 }
 
 export function deriveTelemetryState(events: TelemetryEvent[]): TelemetryDerivedState {
-  const sortedEvents = [...events].sort((left, right) => {
-    if (left.sequenceNumber !== right.sequenceNumber) {
-      return left.sequenceNumber - right.sequenceNumber;
-    }
-    return left.timestamp.localeCompare(right.timestamp);
-  });
+  const sortedEvents = getSortedEvents(events);
   const phaseLookup = derivePhaseLookup(sortedEvents);
+  const eventIndex = new Map(sortedEvents.map((event) => [event.eventId, event]));
   const timeline = buildTimeline(sortedEvents, phaseLookup);
   const toolExecutions = buildToolExecutions(sortedEvents, phaseLookup);
   const llmReasoning = buildLLMReasoning(sortedEvents, phaseLookup);
+  const categoryCounts = sortedEvents.reduce(
+    (counts, event) => {
+      counts.total += 1;
+      if (event.category === 'agent') {
+        counts.agent += 1;
+      } else if (event.category === 'tool') {
+        counts.tool += 1;
+      } else if (event.category === 'llm') {
+        counts.llm += 1;
+      }
+      return counts;
+    },
+    { total: 0, agent: 0, tool: 0, llm: 0 }
+  );
 
   return {
     graph: buildGraph(sortedEvents, phaseLookup),
     timeline,
     toolExecutions,
     llmReasoning,
+    phaseLookup,
+    eventIndex,
     phases: Array.from(new Set(timeline.map((item) => item.phase).filter((value): value is string => Boolean(value)))),
     agents: Array.from(
       new Set(sortedEvents.map((event) => event.agentId).filter((value): value is string => Boolean(value)))
@@ -712,6 +753,7 @@ export function deriveTelemetryState(events: TelemetryEvent[]): TelemetryDerived
     eventTypes: Array.from(new Set(sortedEvents.map((event) => event.eventType))).sort((left, right) =>
       left.localeCompare(right)
     ),
+    categoryCounts,
   };
 }
 
