@@ -533,6 +533,26 @@ export interface IterationState {
   should_rerun_research: boolean;
 }
 
+export interface StageTraceMetadata {
+  selected_idea_id?: string;
+  selected_angle_id?: string;
+  shortlist_count?: number;
+  option_count?: number;
+  is_degraded?: boolean;
+  degradation_reason?: string;
+  fact_count?: number;
+  proof_count?: number;
+  step_count?: number;
+  llm_call_count?: number;
+  final_word_count?: number;
+  current_iteration?: number;
+  latest_quality_score?: number;
+  should_rerun_research?: boolean;
+  beats_count?: number;
+  platforms_count?: number;
+  approved?: boolean;
+}
+
 export interface PipelineStageTrace {
   stage_index: number;
   stage_name: PipelineStageName | string;
@@ -545,6 +565,7 @@ export interface PipelineStageTrace {
   output_summary: string;
   warnings: string[];
   decision_summary: string;
+  metadata: StageTraceMetadata;
 }
 
 // =============================================================================
