@@ -128,6 +128,37 @@ type MockOptions = {
   sessions?: MockSession[];
 };
 
+function filterSessionsForRequest(url: URL, sessions: MockSession[]): MockSession[] {
+  const search = url.searchParams.get("search")?.trim().toLowerCase() ?? "";
+  const status = url.searchParams.get("status")?.trim() ?? "";
+  const activeOnly = url.searchParams.get("active_only") === "true";
+  const archivedOnly = url.searchParams.get("archived_only") === "true";
+  const limit = Number(url.searchParams.get("limit") ?? sessions.length);
+
+  const filtered = sessions.filter((session) => {
+    if (activeOnly && !session.active) {
+      return false;
+    }
+    if (archivedOnly && !session.archived) {
+      return false;
+    }
+    if (status && session.status !== status) {
+      return false;
+    }
+    if (!search) {
+      return true;
+    }
+
+    return [
+      session.session_id,
+      session.label,
+      session.query,
+    ].some((value) => value.toLowerCase().includes(search));
+  });
+
+  return filtered.slice(0, Number.isFinite(limit) && limit > 0 ? limit : filtered.length);
+}
+
 function getSession(sessionId: string, sessions: MockSession[]): MockSession {
   const session = sessions.find((item) => item.session_id === sessionId);
   if (!session) {
@@ -253,20 +284,88 @@ function buildReport(session: MockSession) {
 }
 
 export async function mockDashboardApis(page: Page, options: MockOptions = {}) {
-  const sessions = options.sessions ?? mockSessions;
+  let sessions = [...(options.sessions ?? mockSessions)];
 
   await page.route("**/api/sessions**", async (route) => {
     const url = new URL(route.request().url());
     const pathName = url.pathname;
 
-    if (pathName.endsWith("/api/sessions")) {
+    const archiveMatch = pathName.match(/\/api\/sessions\/([^/]+)\/archive$/);
+    if (archiveMatch) {
+      sessions = sessions.map((session) =>
+        session.session_id === archiveMatch[1]
+          ? { ...session, archived: true }
+          : session
+      );
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
-          sessions,
-          total: sessions.length,
+          session_id: archiveMatch[1],
+          archived: true,
+        }),
+      });
+      return;
+    }
+
+    const restoreMatch = pathName.match(/\/api\/sessions\/([^/]+)\/restore$/);
+    if (restoreMatch) {
+      sessions = sessions.map((session) =>
+        session.session_id === restoreMatch[1]
+          ? { ...session, archived: false }
+          : session
+      );
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          session_id: restoreMatch[1],
+          archived: false,
+        }),
+      });
+      return;
+    }
+
+    if (pathName.endsWith("/api/sessions")) {
+      const filteredSessions = filterSessionsForRequest(url, sessions);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          sessions: filteredSessions,
+          total: filteredSessions.length,
           next_cursor: null,
+        }),
+      });
+      return;
+    }
+
+    const deleteMatch = pathName.match(/\/api\/sessions\/([^/]+)$/);
+    if (deleteMatch && route.request().method() === "DELETE") {
+      const session = sessions.find((item) => item.session_id === deleteMatch[1]);
+      if (!session) {
+        await route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({
+            session_id: deleteMatch[1],
+            outcome: "not_found",
+            deleted_layers: [],
+            active_conflict: false,
+          }),
+        });
+        return;
+      }
+
+      sessions = sessions.filter((item) => item.session_id !== deleteMatch[1]);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          session_id: deleteMatch[1],
+          outcome: "deleted",
+          deleted_layers: [],
+          active_conflict: false,
         }),
       });
       return;

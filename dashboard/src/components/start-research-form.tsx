@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NativeSelect } from '@/components/ui/native-select'
+import { useNotifications } from '@/components/ui/notification-center'
 import { Textarea } from '@/components/ui/textarea'
 
 type ResearchDepth = 'quick' | 'standard' | 'deep'
@@ -86,6 +87,7 @@ const MAX_QUERY_LENGTH = 2000
 
 export function StartResearchForm() {
   const router = useRouter()
+  const { notify } = useNotifications()
   const [formData, setFormData] = useState<FormData>({
     query: '',
     presetId: DEFAULT_PRESET.id,
@@ -185,9 +187,28 @@ export function StartResearchForm() {
       }
 
       const response = await startResearchRun(request)
-      router.push(`/session/${response.run_id}/monitor`)
+      const monitorHref = `/session/${response.run_id}/monitor`
+      notify({
+        variant: 'success',
+        title: response.status === 'queued' ? 'Run queued' : 'Run started',
+        description: `Opened monitor for ${response.run_id}. The dashboard will keep polling until the run settles.`,
+        actions: [
+          {
+            label: 'Open monitor',
+            href: monitorHref,
+          },
+        ],
+      })
+      router.push(monitorHref)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start research run')
+      const message = err instanceof Error ? err.message : 'Failed to start research run'
+      setError(null)
+      notify({
+        variant: 'destructive',
+        persistent: true,
+        title: 'Run launch failed',
+        description: message,
+      })
       setIsSubmitting(false)
     }
   }

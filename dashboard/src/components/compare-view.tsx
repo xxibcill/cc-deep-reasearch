@@ -1,16 +1,28 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { AlertCircle, ArrowLeft, ArrowRight, ArrowUpRight, GitCompare } from 'lucide-react'
+import {
+  AlertCircle,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUpRight,
+  Compass,
+  GitCompare,
+  Sparkles,
+} from 'lucide-react'
 
-import { getSession } from '@/lib/api'
+import { getSession, getSessions } from '@/lib/api'
 import {
   buildCompareNarrative,
   computeCompareDeltas,
+  describeBaselineFit,
   formatCountDelta,
   formatDurationDelta,
   getDeltaColor,
+  suggestBaselineSessions,
+  type BaselineSuggestion,
+  type BaselineFit,
   type SessionPair,
 } from '@/lib/compare-utils'
 import { Session } from '@/types/telemetry'
@@ -130,47 +142,23 @@ function SessionCard({
             value={session.lastEventAt ? new Date(session.lastEventAt).toLocaleString() : null}
           />
         </div>
-
-        <div className="flex flex-wrap gap-1.5 text-xs">
-          <span
-            className={`rounded-full px-2 py-0.5 ${
-              session.active
-                ? 'border border-success/30 bg-success-muted/30 text-success'
-                : 'border border-border bg-surface-raised text-muted-foreground'
-            }`}
-          >
-            {session.active ? 'Active' : 'Inactive'}
-          </span>
-          <span
-            className={`rounded-full px-2 py-0.5 ${
-              session.hasSessionPayload
-                ? 'border border-success/30 bg-success-muted/30 text-success'
-                : 'border border-border bg-surface-raised text-muted-foreground'
-            }`}
-          >
-            Payload {session.hasSessionPayload ? 'Available' : 'Missing'}
-          </span>
-          <span
-            className={`rounded-full px-2 py-0.5 ${
-              session.hasReport
-                ? 'border border-success/30 bg-success-muted/30 text-success'
-                : 'border border-border bg-surface-raised text-muted-foreground'
-            }`}
-          >
-            Report {session.hasReport ? 'Available' : 'Unavailable'}
-          </span>
-        </div>
       </CardContent>
     </Card>
   )
 }
 
-function DeltaColumn({ pair }: { pair: SessionPair }) {
-  const deltas = computeCompareDeltas(pair)
-  const narrative = buildCompareNarrative(pair)
-  const toneClasses: Record<'positive' | 'negative' | 'neutral', string> = {
-    positive: 'border-success/25 bg-success-muted/20',
-    negative: 'border-warning/25 bg-warning-muted/25',
+function ComparisonContext({
+  sessionB,
+  baselineFit,
+  suggestions,
+}: {
+  sessionB: Session | null
+  baselineFit: BaselineFit
+  suggestions: BaselineSuggestion[]
+}) {
+  const toneClasses: Record<BaselineFit['tone'], string> = {
+    positive: 'border-success/25 bg-success-muted/18',
+    negative: 'border-warning/25 bg-warning-muted/22',
     neutral: 'border-border/70 bg-surface/68',
   }
 
@@ -179,100 +167,247 @@ function DeltaColumn({ pair }: { pair: SessionPair }) {
       <CardHeader className="border-b border-border/70">
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-sm text-primary">
-            <GitCompare className="h-4 w-4" />
+            <Compass className="h-4 w-4" />
             <span className="font-display text-[0.86rem] uppercase tracking-[0.14em]">
-              Operator summary
+              Comparison context
             </span>
           </div>
-          <CardTitle className="text-[1.2rem]">{narrative.headline}</CardTitle>
-          <p className="text-sm leading-6 text-muted-foreground">{narrative.summary}</p>
+          <CardTitle className="text-[1.2rem]">{baselineFit.label}</CardTitle>
+          <p className="text-sm leading-6 text-muted-foreground">{baselineFit.summary}</p>
         </div>
       </CardHeader>
-      <CardContent className="space-y-5 pt-6">
-        <div className="grid gap-3">
-          {narrative.insights.map((insight) => (
-            <div
-              key={insight.title}
-              className={`rounded-[1rem] border p-4 ${toneClasses[insight.tone]}`}
-            >
-              <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                {insight.title}
-              </p>
-              <p className="mt-2 text-sm font-medium text-foreground">{insight.summary}</p>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">{insight.detail}</p>
-            </div>
-          ))}
-        </div>
-
-        <div className="space-y-3">
+      <CardContent className="space-y-4 pt-6">
+        <div className={`rounded-[1rem] border p-4 ${toneClasses[baselineFit.tone]}`}>
           <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-            Raw deltas (B - A)
+            Baseline check
           </p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <MetricValue
-              label="Duration"
-              value={null}
-              delta={deltas.durationDelta}
-              formatter={formatDurationDelta}
-              tone={
-                deltas.durationDelta != null && deltas.durationDelta < 0
-                  ? 'positive'
-                  : deltas.durationDelta != null && deltas.durationDelta > 0
-                    ? 'negative'
-                    : 'neutral'
-              }
-            />
-            <MetricValue
-              label="Sources"
-              value={null}
-              delta={deltas.sourceCountDelta}
-              tone={
-                deltas.sourceCountDelta != null && deltas.sourceCountDelta > 0
-                  ? 'positive'
-                  : deltas.sourceCountDelta != null && deltas.sourceCountDelta < 0
-                    ? 'negative'
-                    : 'neutral'
-              }
-            />
-            <MetricValue label="Events" value={null} delta={deltas.eventCountDelta} />
-            <MetricValue
-              label="Failures"
-              value={null}
-              delta={deltas.failureCountDelta}
-              tone={
-                deltas.failureCountDelta != null && deltas.failureCountDelta > 0
-                  ? 'negative'
-                  : deltas.failureCountDelta != null && deltas.failureCountDelta < 0
-                    ? 'positive'
-                    : 'neutral'
-              }
-            />
-          </div>
+          <p className="mt-2 text-sm leading-6 text-foreground">
+            The suggestions below only use explicit heuristics from recent sessions: same query,
+            similar label, or the most recent successful run.
+          </p>
         </div>
 
-        {narrative.changes.length > 0 ? (
-          <div className="space-y-2 border-t border-border/70 pt-4">
+        {sessionB && suggestions.length > 0 ? (
+          <div className="space-y-3">
             <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-              Material changes
+              Suggested baselines for Session B
             </p>
-            <ul className="space-y-2 text-sm text-foreground">
-              {narrative.changes.map((reason, idx) => (
-                <li
-                  key={`${reason}-${idx}`}
-                  className="rounded-[0.9rem] border border-border/70 bg-surface/55 px-3 py-2"
+            <div className="space-y-3">
+              {suggestions.map((suggestion) => (
+                <div
+                  key={suggestion.session.sessionId}
+                  className="rounded-[1rem] border border-border/70 bg-surface/58 p-4"
                 >
-                  {reason}
-                </li>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="outline">{suggestion.badge}</Badge>
+                        <Badge
+                          variant={
+                            suggestion.confidence === 'high'
+                              ? 'success'
+                              : suggestion.confidence === 'medium'
+                                ? 'info'
+                                : 'outline'
+                          }
+                        >
+                          {suggestion.confidence} confidence
+                        </Badge>
+                      </div>
+                      <p className="text-sm font-semibold text-foreground">
+                        {suggestion.session.label}
+                      </p>
+                      <p className="text-sm leading-6 text-muted-foreground">
+                        {suggestion.reason} {suggestion.detail}
+                      </p>
+                    </div>
+                    <Link
+                      href={`/compare?a=${suggestion.session.sessionId}&b=${sessionB.sessionId}`}
+                      className="inline-flex"
+                    >
+                      <Button size="sm" variant="outline">
+                        Use as baseline
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
               ))}
-            </ul>
+            </div>
           </div>
         ) : (
           <div className="rounded-[0.95rem] border border-border/70 bg-surface/55 px-4 py-3 text-sm text-muted-foreground">
-            No material status or artifact changes were detected beyond the numeric deltas above.
+            No stronger baseline suggestion was found in the recent session list.
           </div>
         )}
       </CardContent>
     </Card>
+  )
+}
+
+function DeltaColumn({
+  pair,
+  baselineFit,
+  suggestions,
+}: {
+  pair: SessionPair
+  baselineFit: BaselineFit
+  suggestions: BaselineSuggestion[]
+}) {
+  const deltas = computeCompareDeltas(pair)
+  const narrative = buildCompareNarrative(pair)
+  const toneClasses: Record<'positive' | 'negative' | 'neutral', string> = {
+    positive: 'border-success/25 bg-success-muted/20',
+    negative: 'border-warning/25 bg-warning-muted/25',
+    neutral: 'border-border/70 bg-surface/68',
+  }
+  const assessmentVariant =
+    narrative.assessment === 'improved'
+      ? 'success'
+      : narrative.assessment === 'regressed'
+        ? 'warning'
+        : narrative.assessment === 'stable'
+          ? 'outline'
+          : 'info'
+  const baselineVariant =
+    baselineFit.tone === 'positive'
+      ? 'success'
+      : baselineFit.tone === 'negative'
+        ? 'warning'
+        : 'outline'
+
+  return (
+    <div className="space-y-5">
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b border-border/70">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2 text-sm text-primary">
+              <GitCompare className="h-4 w-4" />
+              <span className="font-display text-[0.86rem] uppercase tracking-[0.14em]">
+                Operator summary
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={assessmentVariant}>{narrative.assessmentLabel}</Badge>
+              <Badge variant={baselineVariant}>{baselineFit.label}</Badge>
+            </div>
+            <CardTitle className="text-[1.2rem]">{narrative.headline}</CardTitle>
+            <p className="text-sm leading-6 text-muted-foreground">{narrative.summary}</p>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-5 pt-6">
+          <div className="grid gap-3">
+            {narrative.insights.map((insight) => (
+              <div
+                key={insight.title}
+                className={`rounded-[1rem] border p-4 ${toneClasses[insight.tone]}`}
+              >
+                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                  {insight.title}
+                </p>
+                <p className="mt-2 text-sm font-medium text-foreground">{insight.summary}</p>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">{insight.detail}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+              Raw deltas (B - A)
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <MetricValue
+                label="Duration"
+                value={null}
+                delta={deltas.durationDelta}
+                formatter={formatDurationDelta}
+                tone={
+                  deltas.durationDelta != null && deltas.durationDelta < 0
+                    ? 'positive'
+                    : deltas.durationDelta != null && deltas.durationDelta > 0
+                      ? 'negative'
+                      : 'neutral'
+                }
+              />
+              <MetricValue
+                label="Sources"
+                value={null}
+                delta={deltas.sourceCountDelta}
+                tone={
+                  deltas.sourceCountDelta != null && deltas.sourceCountDelta > 0
+                    ? 'positive'
+                    : deltas.sourceCountDelta != null && deltas.sourceCountDelta < 0
+                      ? 'negative'
+                      : 'neutral'
+                }
+              />
+              <MetricValue label="Events" value={null} delta={deltas.eventCountDelta} />
+              <MetricValue
+                label="Failures"
+                value={null}
+                delta={deltas.failureCountDelta}
+                tone={
+                  deltas.failureCountDelta != null && deltas.failureCountDelta > 0
+                    ? 'negative'
+                    : deltas.failureCountDelta != null && deltas.failureCountDelta < 0
+                      ? 'positive'
+                      : 'neutral'
+                }
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2 border-t border-border/70 pt-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+              Inspect next
+            </p>
+            <div className="space-y-3">
+              {narrative.nextSteps.map((step) => (
+                <div
+                  key={`${step.title}-${step.href}`}
+                  className="rounded-[0.95rem] border border-border/70 bg-surface/55 px-4 py-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{step.title}</p>
+                      <p className="mt-1 text-sm leading-6 text-muted-foreground">{step.detail}</p>
+                    </div>
+                    <Link href={step.href} className="inline-flex">
+                      <Button size="sm" variant="outline">
+                        Open
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {narrative.changes.length > 0 ? (
+            <div className="space-y-2 border-t border-border/70 pt-4">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                Material changes
+              </p>
+              <ul className="space-y-2 text-sm text-foreground">
+                {narrative.changes.map((reason, idx) => (
+                  <li
+                    key={`${reason}-${idx}`}
+                    className="rounded-[0.9rem] border border-border/70 bg-surface/55 px-3 py-2"
+                  >
+                    {reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <div className="rounded-[0.95rem] border border-border/70 bg-surface/55 px-4 py-3 text-sm text-muted-foreground">
+              No material status or artifact changes were detected beyond the numeric deltas above.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <ComparisonContext sessionB={pair.sessionB} baselineFit={baselineFit} suggestions={suggestions} />
+    </div>
   )
 }
 
@@ -284,6 +419,7 @@ interface CompareViewProps {
 export function CompareView({ sessionIdA, sessionIdB }: CompareViewProps) {
   const [sessionA, setSessionA] = useState<Session | null>(null)
   const [sessionB, setSessionB] = useState<Session | null>(null)
+  const [recentSessions, setRecentSessions] = useState<Session[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -291,10 +427,26 @@ export function CompareView({ sessionIdA, sessionIdB }: CompareViewProps) {
     async function loadSessions() {
       setLoading(true)
       setError(null)
+
       try {
-        const [resultA, resultB] = await Promise.all([getSession(sessionIdA), getSession(sessionIdB)])
-        setSessionA(resultA.session)
-        setSessionB(resultB.session)
+        const [resultA, resultB, recentResult] = await Promise.allSettled([
+          getSession(sessionIdA),
+          getSession(sessionIdB),
+          getSessions({ limit: 50 }),
+        ])
+
+        if (resultA.status === 'rejected' || resultB.status === 'rejected') {
+          throw new Error('Failed to load sessions')
+        }
+
+        setSessionA(resultA.value.session)
+        setSessionB(resultB.value.session)
+
+        if (recentResult.status === 'fulfilled') {
+          setRecentSessions(recentResult.value.sessions)
+        } else {
+          setRecentSessions([])
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load sessions')
       } finally {
@@ -305,6 +457,23 @@ export function CompareView({ sessionIdA, sessionIdB }: CompareViewProps) {
   }, [sessionIdA, sessionIdB])
 
   const pair: SessionPair = { sessionA, sessionB }
+  const rankedBaselines = useMemo(
+    () =>
+      suggestBaselineSessions(
+        sessionB,
+        recentSessions,
+        { limit: 3 }
+      ),
+    [recentSessions, sessionB]
+  )
+  const baselineSuggestions = useMemo(
+    () => rankedBaselines.filter((suggestion) => suggestion.session.sessionId !== sessionA?.sessionId),
+    [rankedBaselines, sessionA?.sessionId]
+  )
+  const baselineFit = useMemo(
+    () => describeBaselineFit(sessionA, sessionB, rankedBaselines),
+    [rankedBaselines, sessionA, sessionB]
+  )
 
   if (loading) {
     return (
@@ -337,13 +506,17 @@ export function CompareView({ sessionIdA, sessionIdB }: CompareViewProps) {
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="info">Compare route</Badge>
                 <Badge variant="outline">B minus A deltas</Badge>
+                <Badge variant="outline">
+                  <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                  Baseline suggestions enabled
+                </Badge>
               </div>
               <div>
                 <CardTitle className="text-[1.75rem]">Session Comparison</CardTitle>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
                   Compare a baseline session against a second run without decoding raw telemetry by
-                  hand first. The middle column summarizes operator-relevant changes before you open
-                  either workspace.
+                  hand first. This view now scores the baseline context, summarizes likely impact,
+                  and points to the next inspection path.
                 </p>
               </div>
             </div>
@@ -361,9 +534,9 @@ export function CompareView({ sessionIdA, sessionIdB }: CompareViewProps) {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,0.95fr)_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(24rem,1.05fr)_minmax(0,1fr)]">
         <SessionCard session={sessionA} title="Session A · Baseline" />
-        <DeltaColumn pair={pair} />
+        <DeltaColumn pair={pair} baselineFit={baselineFit} suggestions={baselineSuggestions} />
         <SessionCard session={sessionB} title="Session B · Comparison" />
       </div>
 

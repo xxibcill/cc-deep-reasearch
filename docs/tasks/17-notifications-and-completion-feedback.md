@@ -1,5 +1,7 @@
 # Task 17: Add Better Notifications And Completion Feedback
 
+Status: Done
+
 ## Goal
 
 Improve immediate feedback for long-running operations so operators know when important actions succeed, fail, or require follow-up.

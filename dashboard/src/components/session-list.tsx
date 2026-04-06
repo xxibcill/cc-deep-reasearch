@@ -28,8 +28,10 @@ import { SkeletonSessionCard } from '@/components/ui/skeleton';
 import { getErrorGuidance } from '@/lib/error-messages';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { useNotifications } from '@/components/ui/notification-center';
 import { Select } from '@/components/ui/select';
-import useDashboardStore from '@/hooks/useDashboard';
+import { SavedViewControls } from '@/components/saved-view-controls';
+import useDashboardStore, { DEFAULT_SESSION_LIST_QUERY } from '@/hooks/useDashboard';
 import {
   archiveSession,
   bulkDeleteSessions,
@@ -37,8 +39,18 @@ import {
   getApiErrorMessage,
   restoreSession,
 } from '@/lib/api';
+import { suggestBaselineSessions } from '@/lib/compare-utils';
+import {
+  areSessionListQueriesEqual,
+  sanitizeSessionListQuery,
+} from '@/lib/saved-views';
 
 const sessionStatusOptions = ['completed', 'failed', 'interrupted', 'running', 'unknown'];
+const SESSION_LIST_VIEW_STORAGE_KEY = 'ccdr.dashboard.saved-session-list-views';
+
+function sanitizeSessionListSavedView(value: unknown): SessionListQueryState {
+  return sanitizeSessionListQuery(value, sessionStatusOptions);
+}
 
 interface SessionListProps {
   error?: string | null;
@@ -531,8 +543,11 @@ function SessionCard({
 function SessionFilters() {
   const query = useDashboardStore((state) => state.sessionListQuery);
   const setSessionListQuery = useDashboardStore((state) => state.setSessionListQuery);
+  const normalizedQuery = sanitizeSessionListSavedView(query);
   const hasFilters =
-    query.search.trim().length > 0 || query.status.length > 0 || query.activeOnly;
+    normalizedQuery.search.trim().length > 0
+    || normalizedQuery.status.length > 0
+    || normalizedQuery.activeOnly;
 
   return (
     <div className="rounded-[1.2rem] border border-border/80 bg-surface/68 p-4 shadow-card">
@@ -548,11 +563,29 @@ function SessionFilters() {
             type="button"
             size="sm"
             variant="ghost"
-            onClick={() => setSessionListQuery({ search: '', status: '', activeOnly: false })}
+            onClick={() => setSessionListQuery(DEFAULT_SESSION_LIST_QUERY)}
           >
             Clear
           </Button>
         ) : null}
+      </div>
+      <div className="mt-4">
+        <SavedViewControls
+          storageKey={SESSION_LIST_VIEW_STORAGE_KEY}
+          title="Saved Views"
+          description="Keep a few reusable session-list presets for repeated triage work."
+          itemLabel="session view"
+          testIdPrefix="session-view"
+          selectLabel="Saved session view"
+          inputLabel="View name"
+          emptyState="No saved session views yet."
+          currentValue={normalizedQuery}
+          sanitizeStoredValue={sanitizeSessionListSavedView}
+          sanitizeForSave={sanitizeSessionListSavedView}
+          sanitizeForApply={sanitizeSessionListSavedView}
+          isEqual={areSessionListQueriesEqual}
+          onApply={(value) => setSessionListQuery(value)}
+        />
       </div>
       <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_12rem_12rem]">
         <label className="min-w-0">
@@ -669,6 +702,7 @@ export function SessionList({
   sessions,
   total,
 }: SessionListProps) {
+  const { notify } = useNotifications();
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>({
     mode: null,
     sessions: [],
@@ -687,6 +721,7 @@ export function SessionList({
   const compareMode = useDashboardStore((state) => state.compareMode);
   const setCompareMode = useDashboardStore((state) => state.setCompareMode);
   const compareSessionIds = useDashboardStore((state) => state.compareSessionIds);
+  const setCompareSessionIds = useDashboardStore((state) => state.setCompareSessionIds);
   const toggleCompareSessionId = useDashboardStore((state) => state.toggleCompareSessionId);
   const clearCompareSessionIds = useDashboardStore((state) => state.clearCompareSessionIds);
   const filtered =
@@ -697,6 +732,34 @@ export function SessionList({
   const [sessionA, sessionB] = compareSessionIds;
   const compareBaseline = sessions.find((session) => session.sessionId === sessionA) ?? null;
   const compareCandidate = sessions.find((session) => session.sessionId === sessionB) ?? null;
+  const compareAssistTarget = compareSessionIdSet.size === 1 ? compareBaseline : compareCandidate;
+  const baselineSuggestions = compareMode
+    ? suggestBaselineSessions(
+        compareAssistTarget,
+        sessions.filter((session) => session.sessionId !== sessionA),
+        { limit: 3 }
+      )
+    : [];
+  const suggestedBaseline = baselineSuggestions[0] ?? null;
+  const shouldOfferSuggestedBaseline =
+    compareMode &&
+    compareSessionIdSet.size === 1 &&
+    compareBaseline &&
+    suggestedBaseline &&
+    suggestedBaseline.session.sessionId !== compareBaseline.sessionId &&
+    (
+      compareBaseline.active
+      || compareBaseline.status !== 'completed'
+      || !compareBaseline.hasReport
+      || suggestedBaseline.confidence === 'high'
+    );
+  const shouldOfferBaselineSwitch =
+    compareMode &&
+    compareSessionIdSet.size === 2 &&
+    compareCandidate &&
+    suggestedBaseline &&
+    suggestedBaseline.session.sessionId !== sessionA &&
+    suggestedBaseline.confidence !== 'low';
 
   const selectedSessionIdSet = new Set(selectedSessionIds);
   const selectableSessions = sessions.filter((session) => !session.active);
@@ -722,15 +785,65 @@ export function SessionList({
   const handleArchive = async (session: Session) => {
     const result = await archiveSession(session.sessionId);
     if (result.success) {
+      notify({
+        variant: 'success',
+        title: 'Session archived',
+        description: `${session.label} moved out of the active working set.`,
+        actions: [
+          {
+            label: 'Open session',
+            href: `/session/${session.sessionId}`,
+          },
+        ],
+      });
       refreshSessions();
+      return;
     }
+
+    notify({
+      variant: 'destructive',
+      persistent: true,
+      title: 'Archive failed',
+      description: result.error || 'Failed to archive session.',
+      actions: [
+        {
+          label: 'Open session',
+          href: `/session/${session.sessionId}`,
+        },
+      ],
+    });
   };
 
   const handleRestore = async (session: Session) => {
     const result = await restoreSession(session.sessionId);
     if (result.success) {
+      notify({
+        variant: 'success',
+        title: 'Session restored',
+        description: `${session.label} is back in the active working set.`,
+        actions: [
+          {
+            label: 'Open session',
+            href: `/session/${session.sessionId}`,
+          },
+        ],
+      });
       refreshSessions();
+      return;
     }
+
+    notify({
+      variant: 'destructive',
+      persistent: true,
+      title: 'Restore failed',
+      description: result.error || 'Failed to restore session.',
+      actions: [
+        {
+          label: 'Open session',
+          href: `/session/${session.sessionId}`,
+        },
+      ],
+    });
   };
 
   const refreshSessions = () => {
@@ -752,6 +865,11 @@ export function SessionList({
       if (result.success) {
         removeSession(session.sessionId);
         setDeleteDialog({ mode: null, sessions: [], deleting: false, forceDelete: false });
+        notify({
+          variant: 'success',
+          title: 'Session deleted',
+          description: `${session.label} and its stored artifacts were removed.`,
+        });
         refreshSessions();
         return;
       }
@@ -768,6 +886,12 @@ export function SessionList({
       }
 
       setDeleteError(result.error || 'Failed to delete session');
+      notify({
+        variant: 'destructive',
+        persistent: true,
+        title: 'Delete failed',
+        description: result.error || 'Failed to delete session.',
+      });
       setDeleteDialog((previous) => ({ ...previous, deleting: false }));
       return;
     }
@@ -793,6 +917,14 @@ export function SessionList({
 
       if (retainedIds.size === 0) {
         setDeleteDialog({ mode: null, sessions: [], deleting: false, forceDelete: false });
+        notify({
+          variant: 'success',
+          title: 'Selected sessions deleted',
+          description:
+            removableIds.length > 0
+              ? `Removed ${pluralize(removableIds.length, 'session')} from ${buildFilterSummary(query)}.`
+              : 'The selected sessions were already gone.',
+        });
         return;
       }
 
@@ -815,10 +947,29 @@ export function SessionList({
           forceRetryAvailable
         )
       );
+      notify({
+        variant:
+          response.summary.active_conflict_count > 0 || response.summary.partial_failure_count > 0
+            ? 'warning'
+            : 'destructive',
+        persistent: true,
+        title: 'Some sessions still need attention',
+        description: buildBulkDeleteAttentionMessage(
+          response,
+          remainingSessions.length,
+          removableIds.length,
+          forceRetryAvailable
+        ),
+      });
     } catch (requestError) {
-      setDeleteError(
-        getApiErrorMessage(requestError, 'Failed to delete the selected sessions')
-      );
+      const message = getApiErrorMessage(requestError, 'Failed to delete the selected sessions');
+      setDeleteError(message);
+      notify({
+        variant: 'destructive',
+        persistent: true,
+        title: 'Bulk delete failed',
+        description: message,
+      });
       setDeleteDialog((previous) => ({ ...previous, deleting: false }));
     }
   };
@@ -991,8 +1142,58 @@ export function SessionList({
                   B: {compareCandidate?.label || 'Choose comparison'}
                 </Badge>
               </div>
+              {shouldOfferSuggestedBaseline && compareBaseline && suggestedBaseline ? (
+                <div className="rounded-[0.95rem] border border-primary/25 bg-surface/50 px-4 py-3">
+                  <p className="text-sm font-medium text-foreground">
+                    Suggested baseline: {suggestedBaseline.session.label}
+                  </p>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    If {compareBaseline.label} is the run you want to explain, start from{' '}
+                    {suggestedBaseline.session.label}. {suggestedBaseline.reason}
+                  </p>
+                </div>
+              ) : null}
+              {shouldOfferBaselineSwitch && compareCandidate && suggestedBaseline ? (
+                <div className="rounded-[0.95rem] border border-border/70 bg-surface/50 px-4 py-3">
+                  <p className="text-sm font-medium text-foreground">
+                    Alternative baseline available
+                  </p>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    {suggestedBaseline.session.label} is a stronger heuristic match for{' '}
+                    {compareCandidate.label}. {suggestedBaseline.reason}
+                  </p>
+                </div>
+              ) : null}
             </div>
             <div className="flex flex-wrap gap-2">
+              {shouldOfferSuggestedBaseline && compareBaseline && suggestedBaseline ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() =>
+                    setCompareSessionIds([
+                      suggestedBaseline.session.sessionId,
+                      compareBaseline.sessionId,
+                    ])
+                  }
+                >
+                  Use Suggested Baseline
+                </Button>
+              ) : null}
+              {shouldOfferBaselineSwitch && compareCandidate && suggestedBaseline ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() =>
+                    setCompareSessionIds([
+                      suggestedBaseline.session.sessionId,
+                      compareCandidate.sessionId,
+                    ])
+                  }
+                >
+                  Switch Baseline
+                </Button>
+              ) : null}
               {canViewComparison ? (
                 <Link href={`/compare?a=${sessionA}&b=${sessionB}`} className="inline-flex">
                   <Button type="button" variant="default">
@@ -1039,9 +1240,7 @@ export function SessionList({
         ) : sessions.length === 0 ? (
           <EmptyState
             filtered={filtered}
-            onClearFilters={() =>
-              setSessionListQuery({ search: '', status: '', activeOnly: false })
-            }
+            onClearFilters={() => setSessionListQuery(DEFAULT_SESSION_LIST_QUERY)}
           />
         ) : (
           <>

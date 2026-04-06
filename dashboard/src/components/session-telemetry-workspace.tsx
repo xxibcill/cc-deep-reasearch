@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Loader2, Radar, RefreshCcw, Waves } from 'lucide-react';
 
 import useDashboardStore from '@/hooks/useDashboard';
@@ -12,6 +12,7 @@ import { getStatusBadgeMeta } from '@/components/telemetry/telemetry-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useNotifications } from '@/components/ui/notification-center';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { getErrorGuidance } from '@/lib/error-messages';
 import type {
@@ -58,6 +59,7 @@ export function SessionTelemetryWorkspace({
   runStatus,
   sessionSummary,
 }: SessionTelemetryWorkspaceProps) {
+  const { notify } = useNotifications();
   const selectedEvent = useDashboardStore((state) => state.selectedEvent);
   const viewMode = useDashboardStore((state) => state.viewMode);
   const setSelectedEvent = useDashboardStore((state) => state.setSelectedEvent);
@@ -76,6 +78,7 @@ export function SessionTelemetryWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const previousPhaseRef = useRef(liveStreamStatus.phase);
 
   useEffect(() => {
     if (liveStreamStatus.phase !== 'reconnecting' || !liveStreamStatus.nextRetryAt) {
@@ -124,6 +127,32 @@ export function SessionTelemetryWorkspace({
       mounted = false;
     };
   }, [appendEvents, reloadNonce, sessionId]);
+
+  useEffect(() => {
+    const previousPhase = previousPhaseRef.current;
+    previousPhaseRef.current = liveStreamStatus.phase;
+
+    if (liveStreamStatus.phase !== 'failed' || previousPhase === 'failed') {
+      return;
+    }
+
+    notify({
+      variant: 'warning',
+      persistent: true,
+      title: 'Live stream dropped',
+      description:
+        liveStreamStatus.failureReason ??
+        'The monitor kept buffered history, but live telemetry needs operator attention.',
+      actions: liveStreamStatus.canReconnect
+        ? [
+            {
+              label: 'Retry stream',
+              onClick: reconnect,
+            },
+          ]
+        : undefined,
+    });
+  }, [liveStreamStatus.canReconnect, liveStreamStatus.failureReason, liveStreamStatus.phase, notify, reconnect]);
 
   if (loading && events.length === 0) {
     return (
@@ -200,48 +229,64 @@ export function SessionTelemetryWorkspace({
               : 'Waiting for the telemetry stream to begin.';
 
     return (
-      <Card className="overflow-hidden">
-        <CardHeader className="border-b border-border/60 bg-surface-raised/45">
-          <div className="flex items-center justify-between">
-            <div className="space-y-2">
-              <CardTitle className="flex items-center gap-2">
-                <Radar className="h-5 w-5 text-primary" />
-                Telemetry Explorer
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Session <span className="font-mono text-xs text-foreground">{sessionId}</span>{' '}
-                {liveStreamStatus.phase === 'historical'
-                  ? 'has no active live stream.'
-                  : 'is preparing the live telemetry feed.'}
-              </p>
+      <div className="space-y-4">
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b border-border/60 bg-surface-raised/45">
+            <div className="flex items-center justify-between">
+              <div className="space-y-2">
+                <CardTitle className="flex items-center gap-2">
+                  <Radar className="h-5 w-5 text-primary" />
+                  Telemetry Explorer
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Session <span className="font-mono text-xs text-foreground">{sessionId}</span>{' '}
+                  {liveStreamStatus.phase === 'historical'
+                    ? 'has no active live stream.'
+                    : 'is preparing the live telemetry feed.'}
+                </p>
+              </div>
+              <Badge variant={badge.variant}>{badge.label}</Badge>
             </div>
-            <Badge variant={badge.variant}>{badge.label}</Badge>
-          </div>
-        </CardHeader>
-        <CardContent className="flex min-h-[320px] flex-col items-center justify-center gap-4 bg-surface/52">
-          <Waves className="h-10 w-10 text-muted-foreground" />
-          <div className="space-y-1 text-center">
-            <p className="text-lg font-medium text-foreground">No telemetry events yet</p>
-            <p className="max-w-xl text-sm text-muted-foreground">{emptyStateDescription}</p>
-            {liveStreamStatus.failureReason ? (
-              <p className="max-w-xl text-xs text-muted-foreground">
-                Last connection issue: {liveStreamStatus.failureReason}
-              </p>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center justify-center gap-3">
-            <Button onClick={refreshWorkspace} type="button" variant="outline">
-              <RefreshCcw className="mr-2 h-4 w-4" />
-              Refresh history
-            </Button>
-            {canRetryLiveStream ? (
-              <Button onClick={reconnect} type="button" variant="outline">
-                Retry live stream
+          </CardHeader>
+          <CardContent className="flex min-h-[320px] flex-col items-center justify-center gap-4 bg-surface/52">
+            <Waves className="h-10 w-10 text-muted-foreground" />
+            <div className="space-y-1 text-center">
+              <p className="text-lg font-medium text-foreground">No telemetry events yet</p>
+              <p className="max-w-xl text-sm text-muted-foreground">{emptyStateDescription}</p>
+              {liveStreamStatus.failureReason ? (
+                <p className="max-w-xl text-xs text-muted-foreground">
+                  Last connection issue: {liveStreamStatus.failureReason}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <Button onClick={refreshWorkspace} type="button" variant="outline">
+                <RefreshCcw className="mr-2 h-4 w-4" />
+                Refresh history
               </Button>
-            ) : null}
-          </div>
-        </CardContent>
-      </Card>
+              {canRetryLiveStream ? (
+                <Button onClick={reconnect} type="button" variant="outline">
+                  Retry live stream
+                </Button>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
+
+        {(derivedOutputs || promptMetadata) ? (
+          <SessionDetails
+            sessionId={sessionId}
+            liveStreamStatus={liveStreamStatus}
+            events={events}
+            selectedEvent={selectedEvent}
+            viewMode={viewMode}
+            onSelectEvent={setSelectedEvent}
+            onViewModeChange={setViewMode}
+            derivedOutputs={derivedOutputs ?? undefined}
+            promptMetadata={promptMetadata ?? undefined}
+          />
+        ) : null}
+      </div>
     );
   }
 

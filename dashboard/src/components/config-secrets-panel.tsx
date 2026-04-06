@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { useNotifications } from '@/components/ui/notification-center';
 import { Textarea } from '@/components/ui/textarea';
 import { getConfigUpdateErrorDetails, updateConfig } from '@/lib/api';
 import type { ConfigResponse } from '@/types/config';
@@ -61,6 +62,7 @@ export function ConfigSecretsPanel({
   config,
   onConfigChange,
 }: ConfigSecretsPanelProps) {
+  const { notify } = useNotifications();
   const overriddenFields = useMemo(
     () => new Set(config.overridden_fields),
     [config.overridden_fields]
@@ -136,10 +138,21 @@ export function ConfigSecretsPanel({
           description: `${getSecretFieldLabel(activeField.field)} was updated in the persisted config. Future runs will use it.`,
         });
       });
+      notify({
+        variant: 'success',
+        title: 'Secret saved',
+        description: `${getSecretFieldLabel(activeField.field)} will be used for future runs.`,
+      });
     } catch (updateError) {
       const details = getConfigUpdateErrorDetails(updateError);
       setBanner({
         variant: 'destructive',
+        title: 'Secret update failed',
+        description: details.message,
+      });
+      notify({
+        variant: 'destructive',
+        persistent: true,
         title: 'Secret update failed',
         description: details.message,
       });
@@ -175,10 +188,21 @@ export function ConfigSecretsPanel({
           description: `${getSecretFieldLabel(clearTarget.field)} was removed from the persisted config. Future runs will no longer load it from saved settings.`,
         });
       });
+      notify({
+        variant: 'success',
+        title: 'Secret cleared',
+        description: `${getSecretFieldLabel(clearTarget.field)} was removed from saved settings.`,
+      });
     } catch (updateError) {
       const details = getConfigUpdateErrorDetails(updateError);
       setBanner({
         variant: 'destructive',
+        title: 'Secret clear failed',
+        description: details.message,
+      });
+      notify({
+        variant: 'destructive',
+        persistent: true,
         title: 'Secret clear failed',
         description: details.message,
       });

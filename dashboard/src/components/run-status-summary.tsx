@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   AlertCircle,
   Ban,
@@ -15,6 +15,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useNotifications } from '@/components/ui/notification-center';
 import {
   getApiErrorMessage,
   getResearchRunStatus,
@@ -93,36 +94,43 @@ export function RunStatusSummary({
   onStatusChange,
   onStatusLoaded,
 }: RunStatusSummaryProps) {
+  const { notify } = useNotifications();
   const [status, setStatus] = useState<ResearchRunStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stopError, setStopError] = useState<string | null>(null);
   const [stopping, setStopping] = useState(false);
 
+  const fetchStatus = useCallback(async () => {
+    const response = await getResearchRunStatus(runId);
+
+    setStatus(response);
+    setError(null);
+
+    if (onStatusChange) {
+      onStatusChange(response.status);
+    }
+    if (response.session_id && onSessionIdResolved) {
+      onSessionIdResolved(response.session_id);
+    }
+    if (onStatusLoaded) {
+      onStatusLoaded(response);
+    }
+    if (!isActiveStatus(response.status)) {
+      setStopping(false);
+    }
+
+    return response;
+  }, [onSessionIdResolved, onStatusChange, onStatusLoaded, runId]);
+
   useEffect(() => {
     let mounted = true;
     let intervalId: NodeJS.Timeout | null = null;
 
-    const fetchStatus = async () => {
+    const pollStatus = async () => {
       try {
-        const response = await getResearchRunStatus(runId);
+        const response = await fetchStatus();
         if (!mounted) {
           return;
-        }
-
-        setStatus(response);
-        setError(null);
-
-        if (onStatusChange) {
-          onStatusChange(response.status);
-        }
-        if (response.session_id && onSessionIdResolved) {
-          onSessionIdResolved(response.session_id);
-        }
-        if (onStatusLoaded) {
-          onStatusLoaded(response);
-        }
-        if (!isActiveStatus(response.status)) {
-          setStopping(false);
         }
         if (!isActiveStatus(response.status) && intervalId) {
           clearInterval(intervalId);
@@ -135,8 +143,8 @@ export function RunStatusSummary({
       }
     };
 
-    void fetchStatus();
-    intervalId = setInterval(fetchStatus, 2000);
+    void pollStatus();
+    intervalId = setInterval(pollStatus, 2000);
 
     return () => {
       mounted = false;
@@ -144,7 +152,7 @@ export function RunStatusSummary({
         clearInterval(intervalId);
       }
     };
-  }, [runId, onSessionIdResolved, onStatusChange, onStatusLoaded]);
+  }, [fetchStatus]);
 
   const handleStop = async () => {
     setStopError(null);
@@ -165,8 +173,31 @@ export function RunStatusSummary({
       if (response.status === 'cancelled') {
         setStopping(false);
       }
+      notify({
+        variant: 'warning',
+        title: response.status === 'cancelled' ? 'Run cancelled' : 'Stop requested',
+        description:
+          response.status === 'cancelled'
+            ? 'The backend confirmed cancellation for this run.'
+            : 'The backend is stopping the run and will update the status when cleanup finishes.',
+      });
     } catch (requestError) {
-      setStopError(getApiErrorMessage(requestError, 'Failed to stop run'));
+      const message = getApiErrorMessage(requestError, 'Failed to stop run');
+      setStopError(message);
+      notify({
+        variant: 'destructive',
+        persistent: true,
+        title: 'Stop failed',
+        description: message,
+        actions: [
+          {
+            label: 'Retry status',
+            onClick: () => {
+              void fetchStatus();
+            },
+          },
+        ],
+      });
       setStopping(false);
     }
   };
