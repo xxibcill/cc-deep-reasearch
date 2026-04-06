@@ -254,6 +254,8 @@ export interface SettingFieldShellProps {
   description: string
   error?: string
   overridden: boolean
+  dirty?: boolean
+  draftValue?: string
   effectiveValue?: string
   persistedValue?: string
   overrideSource?: string[]
@@ -266,12 +268,34 @@ export function SettingFieldShell({
   description,
   error,
   overridden,
+  dirty = false,
+  draftValue,
   effectiveValue,
   persistedValue,
   overrideSource,
   children,
   className,
 }: SettingFieldShellProps) {
+  const statusLine = overridden
+    ? (
+        <>
+          Runtime currently uses <span className="font-medium">{effectiveValue || 'Not set'}</span>.
+          Saved config remains <span className="font-medium">{persistedValue || 'Not set'}</span>.
+          Source: {(overrideSource ?? []).join(', ') || 'Environment override'}.
+        </>
+      )
+    : dirty
+      ? (
+          <>
+            Draft: <span className="font-medium">{draftValue || 'Not set'}</span>. Saved now:{' '}
+            <span className="font-medium">{persistedValue || 'Not set'}</span>. Save writes the
+            persisted config used for future runs.
+          </>
+        )
+      : (
+          <>Runtime matches the saved config. Changes here apply to future runs after you save.</>
+        )
+
   return (
     <div className={cn('space-y-2 rounded-xl border border-border bg-muted/30 p-3', className)}>
       <div className="flex items-start justify-between gap-2">
@@ -279,20 +303,40 @@ export function SettingFieldShell({
           <div className="text-sm font-medium">{label}</div>
           <div className="text-xs text-muted-foreground">{description}</div>
         </div>
-        {overridden ? (
-          <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-amber-900 dark:bg-amber-900 dark:text-amber-100">
-            Env override
+        <div className="flex flex-wrap justify-end gap-1.5">
+          <span
+            className={cn(
+              'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide',
+              overridden
+                ? 'bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-100'
+                : 'bg-primary/12 text-primary'
+            )}
+          >
+            {overridden ? 'Runtime override' : 'Future runs'}
           </span>
-        ) : null}
+          {dirty ? (
+            <span className="shrink-0 rounded-full border border-border bg-background/80 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-foreground">
+              Unsaved
+            </span>
+          ) : null}
+          {overridden ? (
+            <span className="shrink-0 rounded-full border border-amber-200 bg-background/80 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-amber-900 dark:border-amber-800 dark:text-amber-100">
+              Read only
+            </span>
+          ) : null}
+        </div>
       </div>
       {children}
-      {overridden ? (
-        <p className="text-xs text-amber-900">
-          Saved: <span className="font-medium">{persistedValue}</span>. Runtime:{' '}
-          <span className="font-medium">{effectiveValue}</span>. Source:{' '}
-          {(overrideSource ?? []).join(', ')}
-        </p>
-      ) : null}
+      <p
+        className={cn(
+          'rounded-lg border px-2.5 py-2 text-xs leading-relaxed',
+          overridden
+            ? 'border-amber-200/80 bg-amber-50/80 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100'
+            : 'border-border/80 bg-background/70 text-muted-foreground'
+        )}
+      >
+        {statusLine}
+      </p>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   )

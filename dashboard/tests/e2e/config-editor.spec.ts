@@ -131,9 +131,10 @@ test("settings page shows persisted vs runtime override state", async ({ page })
 
   await page.goto("/settings");
 
-  await expect(page.getByRole("heading", { name: "Config editor" })).toBeVisible();
-  await expect(page.getByText("Runtime environment overrides stay in effect until those env vars change.")).toBeVisible();
-  await expect(page.getByText("Saved: markdown. Runtime: json. Source: CC_DEEP_RESEARCH_FORMAT")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+  await expect(page.getByText("Manage the saved defaults used for future runs")).toBeVisible();
+  await expect(page.getByText("Runtime currently uses json. Saved config remains markdown. Source: CC_DEEP_RESEARCH_FORMAT.")).toBeVisible();
+  await expect(page.getByRole("combobox").filter({ has: page.locator('option[value="markdown"]') }).first()).toBeDisabled();
   await expect(page.getByText("OpenRouter API key")).toBeVisible();
 });
 
@@ -165,9 +166,24 @@ test("settings page surfaces save validation errors", async ({ page }) => {
 
   await page.goto("/settings");
   await page.locator('input[value="./reports"]').fill("/root/forbidden");
-  await page.getByRole("button", { name: "Save config" }).click();
+  await page.getByRole("button", { name: "Save settings" }).click();
 
   await expect(page.getByText("Save directory must be a writable path.")).toBeVisible();
+});
+
+test("settings page resets unsaved draft changes", async ({ page }) => {
+  await mockSettingsApis(page, makeConfigResponse());
+
+  await page.goto("/settings");
+
+  const reportDir = page.locator('input[value="./reports"]');
+  await reportDir.fill("./draft-reports");
+  await expect(page.getByText("Draft: ./draft-reports. Saved now: ./reports. Save writes the persisted config used for future runs.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Reset draft" }).click();
+
+  await expect(reportDir).toHaveValue("./reports");
+  await expect(page.getByText("Reset 1 unsaved change back to the persisted config. Runtime overrides stay locked until their environment values change.")).toBeVisible();
 });
 
 test("settings page saves config updates and supports secret replace/clear flows", async ({
@@ -228,18 +244,18 @@ test("settings page saves config updates and supports secret replace/clear flows
   await page.goto("/settings");
 
   await page.locator('input[value="./reports"]').fill("./custom-reports");
-  await page.getByRole("button", { name: "Save config" }).click();
-  await expect(page.getByText("Configuration saved.")).toBeVisible();
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.getByText("Saved 1 setting to the persisted config. Future runs will use the updated values.")).toBeVisible();
 
   const secretRow = page.locator("div").filter({ hasText: "llm.openrouter.api_key" }).first();
-  await secretRow.getByRole("button", { name: "Replace" }).click();
+  await secretRow.getByRole("button", { name: "Replace", exact: true }).click();
   await page.getByPlaceholder("Enter a replacement value").fill("sk-new");
   await page.getByRole("button", { name: "Save secret" }).click();
-  await expect(page.getByText("OpenRouter API key updated. Applies to new runs.")).toBeVisible();
+  await expect(page.getByText("OpenRouter API key was updated in the persisted config. Future runs will use it.")).toBeVisible();
 
-  await secretRow.getByRole("button", { name: "Clear" }).click();
+  await secretRow.getByRole("button", { name: "Clear", exact: true }).click();
   await page.getByRole("button", { name: "Clear secret" }).click();
-  await expect(page.getByText("OpenRouter API key cleared. Applies to new runs.")).toBeVisible();
+  await expect(page.getByText("OpenRouter API key was removed from the persisted config. Future runs will no longer load it from saved settings.")).toBeVisible();
 
   expect(patchBodies[0]["output.save_dir"]).toBe("./custom-reports");
   expect(patchBodies[1]["llm.openrouter.api_key"]).toEqual({
