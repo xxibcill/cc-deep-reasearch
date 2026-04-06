@@ -79,6 +79,7 @@ export default function PipelineDetailPage() {
   const selectPipeline = useContentGen((state) => state.selectPipeline)
   const stopPipeline = useContentGen((state) => state.stopPipeline)
   const approveQC = useContentGen((state) => state.approveQC)
+  const updatePipelineContext = useContentGen((state) => state.updatePipelineContext)
   const pipelineContext = useContentGen((state) => state.pipelineContext)
   const pipelines = useContentGen((state) => state.pipelines)
   const error = useContentGen((state) => state.error)
@@ -140,6 +141,9 @@ export default function PipelineDetailPage() {
                 ? data.stage_status
                 : 'completed',
           }))
+          if (data.context) {
+            updatePipelineContext(data.context as PipelineContext)
+          }
         } else if (data.type === 'pipeline_stage_failed' && typeof data.stage_index === 'number') {
           const stageIndex = data.stage_index
           setStageStates((previous) => ({
@@ -168,7 +172,7 @@ export default function PipelineDetailPage() {
       ws.close()
       wsRef.current = null
     }
-  }, [pipelineId, selectPipeline])
+  }, [pipelineId, selectPipeline, updatePipelineContext])
 
   const getStageStatus = (stageIndex: number): StageState => {
     const explicitState = stageStates[stageIndex]
