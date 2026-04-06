@@ -163,8 +163,8 @@ Defaults:
 
 The home page in [`dashboard/src/app/page.tsx`](../dashboard/src/app/page.tsx) does two things:
 
-- renders the start form on the left
-- loads recent sessions on first mount and renders them on the right
+- renders the launch console on the right with preset-driven research start controls
+- loads recent sessions on first mount and renders triaged session groups beneath the control-room summary
 - links to the dedicated settings page at `/settings`
 
 ### Settings Page
@@ -173,9 +173,17 @@ The settings page in [`dashboard/src/app/settings/page.tsx`](../dashboard/src/ap
 
 It combines:
 
-- the config editor in [`dashboard/src/components/config-editor.tsx`](../dashboard/src/components/config-editor.tsx)
+- the sectioned settings editor in [`dashboard/src/components/config-editor.tsx`](../dashboard/src/components/config-editor.tsx)
 - masked secret controls in [`dashboard/src/components/config-secrets-panel.tsx`](../dashboard/src/components/config-secrets-panel.tsx)
 - search-cache controls in [`dashboard/src/components/search-cache-panel.tsx`](../dashboard/src/components/search-cache-panel.tsx)
+
+The editor is organized around operator concerns instead of backend structure:
+
+- research defaults
+- execution and output
+- model routing
+- secrets
+- runtime override status
 
 The config API returns both persisted and effective values:
 
@@ -185,10 +193,16 @@ The config API returns both persisted and effective values:
 
 This matters operationally because saving config does not mutate in-flight runs and does not override active environment variables. The UI makes overridden fields read-only and shows both saved and runtime values side by side.
 
-Secret handling is separate from normal settings:
+The settings UI now makes that impact explicit in three places:
+
+- each editable field calls out that saves affect future runs only
+- each overridden field explains why it is read-only and which env var is currently winning
+- the save/reset panel states exactly what reset clears and what save persists
+
+Secret handling uses the same saved-versus-runtime framing as normal settings:
 
 - secrets are never returned in plain text
-- the UI shows configured/present state instead of echoing values
+- the UI shows saved presence, runtime presence, and override state instead of echoing values
 - operators can explicitly replace or clear persisted secrets
 - clearing a secret requires confirmation
 
@@ -301,19 +315,21 @@ The form in [`dashboard/src/components/start-research-form.tsx`](../dashboard/sr
 
 User workflow:
 
-1. enter a research question
-2. choose depth:
-   - `quick`
-   - `standard`
-   - `deep`
-3. optionally force a minimum source count
-4. optionally open `Advanced Settings (Agent Prompts)` and add prompt prefixes for:
+1. pick a launch preset:
+   - `Quick factual check`
+   - `Standard research pass`
+   - `Deep investigation`
+2. enter a research question
+3. optionally open `Research Plan Details` to adjust:
+   - `depth`
+   - `min_sources`
+4. optionally open `Operator Prompt Overrides` and add prompt prefixes for:
    - `analyzer`
    - `deep_analyzer`
    - `report_quality_evaluator`
 5. click `Start Research`
 
-The form sends `POST /api/research-runs` and, on success, navigates to `/session/<run_id>`.
+The form sends `POST /api/research-runs` and, on success, navigates to `/session/<run_id>/monitor`.
 
 Prompt override behavior:
 
@@ -326,23 +342,39 @@ Prompt override behavior:
 
 The session list shows cards backed by `GET /api/sessions`.
 
+The list is grouped for operator triage:
+
+- `Running`
+- `Needs Attention`
+- `Report Ready`
+- `Archived`
+- `Recent History`
+
 Each card shows:
 
 - session identifier prefix
-- current status
+- current status and triage cue
 - total sources
 - last event timestamp
 - `Live` badge if the backend marks the session as active
 
-Use the list to jump directly into a historical or active session view.
+The list also supports:
+
+- compare mode with two-slot selection (`A` baseline and `B` comparison)
+- archive, restore, and delete actions
+- direct links into the session workspace
+
+Use the list to jump directly into a historical or active session view, or to stage a side-by-side comparison at `/compare?a=<session_a>&b=<session_b>`.
 
 ### Session Page
 
-The session page in [`dashboard/src/app/session/[id]/page.tsx`](../dashboard/src/app/session/[id]/page.tsx) renders:
+Session routes now share a single workspace frame with breadcrumb navigation and three view tabs:
 
-- `RunStatusSummary`
-- `SessionReport`
-- `SessionDetails`
+- `/session/[id]` for `Session Overview`
+- `/session/[id]/monitor` for `Telemetry Monitor`
+- `/session/[id]/report` for `Session Report`
+
+The frame resolves either a session id or a run id, keeps status badges visible in the header, and exposes stable workspace navigation across overview, monitor, and report views.
 
 ### Run Status Summary
 
@@ -379,8 +411,6 @@ Available render modes:
 - JSON
 - HTML
 
-Current rendering behavior:
-
 ### Prompt Configuration In Session Monitor
 
 The telemetry monitor in [`dashboard/src/app/session/[id]/monitor/page.tsx`](../dashboard/src/app/session/[id]/monitor/page.tsx) includes a dedicated `Prompts` detail tab.
@@ -396,7 +426,7 @@ This panel is intentionally separate from the LLM reasoning panel:
 - `Prompts` shows configured run inputs
 - `LLM` shows runtime prompt previews and completions emitted through telemetry
 
-- Markdown is shown as preformatted text, not with a full markdown renderer
+- Markdown is rendered through `react-markdown`
 - JSON is pretty-printed
 - HTML is inserted directly for display
 
