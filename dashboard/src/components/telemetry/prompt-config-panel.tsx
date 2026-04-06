@@ -33,8 +33,8 @@ export function PromptConfigurationPanel({
   }
 
   return (
-    <Card className="h-full">
-      <CardHeader>
+      <Card className="h-full">
+      <CardHeader className="border-b border-border/60">
         <CardTitle className="flex items-center gap-2">
           <FileText className="h-5 w-5" />
           Prompt Configuration
@@ -58,7 +58,7 @@ export function PromptConfigurationPanel({
                 {override.prompt_prefix && (
                   <div className="space-y-1">
                     <span className="text-xs text-muted-foreground">Prompt Prefix:</span>
-                    <pre className="overflow-auto rounded-lg bg-slate-100 p-2 text-xs text-slate-800 dark:bg-slate-900 dark:text-slate-200 max-h-32">
+                    <pre className="max-h-32 overflow-auto rounded-lg border border-border/70 bg-background p-2 text-xs text-foreground">
                       {override.prompt_prefix}
                     </pre>
                   </div>
@@ -66,7 +66,7 @@ export function PromptConfigurationPanel({
                 {override.system_prompt && (
                   <div className="space-y-1">
                     <span className="text-xs text-muted-foreground">System Prompt Override:</span>
-                    <pre className="overflow-auto rounded-lg bg-slate-100 p-2 text-xs text-slate-800 dark:bg-slate-900 dark:text-slate-200 max-h-32">
+                    <pre className="max-h-32 overflow-auto rounded-lg border border-border/70 bg-background p-2 text-xs text-foreground">
                       {override.system_prompt}
                     </pre>
                   </div>

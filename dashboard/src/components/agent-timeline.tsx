@@ -3,14 +3,14 @@
 import { AgentExecution, TelemetryEvent } from '@/types/telemetry';
 
 const STATUS_CLASS: Record<string, string> = {
-  completed: 'bg-emerald-500',
-  success: 'bg-emerald-500',
-  running: 'bg-blue-500',
-  started: 'bg-blue-500',
-  failed: 'bg-rose-500',
-  error: 'bg-rose-500',
-  timeout: 'bg-amber-500',
-  unknown: 'bg-slate-400',
+  completed: 'bg-success',
+  success: 'bg-success',
+  running: 'bg-primary',
+  started: 'bg-primary',
+  failed: 'bg-error',
+  error: 'bg-error',
+  timeout: 'bg-warning',
+  unknown: 'bg-muted-foreground',
 };
 
 function percent(value: number, min: number, max: number): number {
@@ -45,7 +45,7 @@ export function AgentTimeline({
         const representativeEvent = lane.eventIds.at(-1);
 
         return (
-          <div key={lane.id} className="rounded-xl border bg-card p-4">
+          <div key={lane.id} className="rounded-xl border border-border/70 bg-surface/56 p-4">
             <div className="mb-3 flex items-center justify-between gap-4">
               <div>
                 <div className="text-sm font-semibold">{lane.agentName}</div>
@@ -54,14 +54,14 @@ export function AgentTimeline({
                 </div>
               </div>
               <button
-                className="text-xs font-medium text-blue-700 hover:underline"
+                className="text-xs font-medium text-primary hover:underline"
                 onClick={() => onSelectEvent(representativeEvent ? eventIndex.get(representativeEvent) ?? null : null)}
                 type="button"
               >
                 Inspect lane
               </button>
             </div>
-            <div className="relative h-16 rounded-lg bg-slate-100">
+            <div className="relative h-16 rounded-lg border border-border/60 bg-surface-raised/72">
               <div
                 className={`absolute top-5 h-6 rounded-full ${STATUS_CLASS[lane.status] ?? STATUS_CLASS.unknown}`}
                 style={{ left: `${laneStart}%`, width: `${width}%` }}
@@ -74,8 +74,8 @@ export function AgentTimeline({
                   style={{ left: `${percent(marker.timestamp, minStart, maxEnd)}%` }}
                   type="button"
                 >
-                  <span className="block h-3 w-3 rounded-full bg-slate-900" />
-                  <span className="mt-1 block max-w-[7rem] truncate text-[10px] text-slate-600">{marker.label}</span>
+                  <span className="block h-3 w-3 rounded-full bg-primary" />
+                  <span className="mt-1 block max-w-[7rem] truncate text-[10px] text-muted-foreground">{marker.label}</span>
                 </button>
               ))}
             </div>

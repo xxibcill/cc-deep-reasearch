@@ -1,5 +1,6 @@
 import dynamic from 'next/dynamic';
 import { useDeferredValue, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Activity, FileText, List, Network, Zap } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -31,6 +32,7 @@ import type {
   Failure,
   ApiTelemetryEvent,
   SessionPromptMetadata,
+  OperatorInsightAction,
 } from '@/types/telemetry';
 
 const WorkflowGraph = dynamic(
@@ -222,6 +224,7 @@ export function SessionDetails({
   derivedOutputs,
   promptMetadata,
 }: SessionDetailsProps) {
+  const router = useRouter();
   const [detailTab, setDetailTab] = useState<DetailTab>('inspect');
   const [decisionGraphFilters, setDecisionGraphFilters] = useState<DecisionGraphFilters>(
     EMPTY_DECISION_GRAPH_FILTERS
@@ -264,10 +267,48 @@ export function SessionDetails({
     [decisionGraphFilters]
   );
   const [filtersOpen, setFiltersOpen] = useState(() => activeFilters.length > 0);
+  const hasDecisionGraph = Boolean(derivedOutputs?.decisionGraph.nodes.length);
   const insights = useMemo(
     () => deriveOperatorInsights(deferredEvents, derived, Boolean(derivedOutputs?.narrative?.length)),
     [deferredEvents, derived, derivedOutputs]
   );
+  const focusInsightEvent = (eventId?: string | null) => {
+    if (!eventId) {
+      return;
+    }
+    const event = eventIndex.get(eventId);
+    if (event) {
+      onSelectEvent(event);
+    }
+  };
+  const handleInsightAction = (action: OperatorInsightAction) => {
+    focusInsightEvent(action.eventId);
+
+    switch (action.actionType) {
+      case 'inspect_tool_failures':
+        setDetailTab('tools');
+        break;
+      case 'review_llm_reasoning':
+        setDetailTab('llm');
+        break;
+      case 'open_report':
+        router.push(`/session/${sessionId}/report`);
+        break;
+      case 'view_phases':
+        onViewModeChange('graph');
+        break;
+      case 'view_decisions':
+        if (hasDecisionGraph) {
+          onViewModeChange('decision_graph');
+        } else {
+          setDetailTab('derived');
+        }
+        break;
+      case 'compare_runs':
+        router.push('/compare');
+        break;
+    }
+  };
   const detailTabs = [
     { value: 'inspect', label: 'Inspect', icon: List },
     { value: 'tools', label: 'Tools', icon: Zap },
@@ -279,7 +320,7 @@ export function SessionDetails({
   return (
     <div className="space-y-5">
       <Card className="overflow-hidden">
-        <CardHeader className="border-b bg-[linear-gradient(135deg,rgba(15,23,42,0.04),rgba(14,165,233,0.10))]">
+        <CardHeader className="border-b border-border/60 bg-surface-raised/45">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
@@ -292,7 +333,7 @@ export function SessionDetails({
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
+              <span className="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
                 View
               </span>
               <ViewModeSelector currentMode={viewMode} onViewModeChange={onViewModeChange} />
@@ -300,31 +341,31 @@ export function SessionDetails({
           </div>
         </CardHeader>
         <CardContent className="space-y-5 p-5">
-          <OperatorInsightsPanel insights={insights} />
+          <OperatorInsightsPanel insights={insights} onAction={handleInsightAction} />
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             <StatsCard
               icon={Activity}
               label="Agents"
               value={agentEvents.length}
-              accentClass="text-sky-600"
+              accentClass="text-primary"
             />
             <StatsCard
               icon={Zap}
               label="Tool Calls"
               value={toolEvents.length}
-              accentClass="text-amber-600"
+              accentClass="text-warning"
             />
             <StatsCard
               icon={Network}
               label="LLM Calls"
               value={llmEvents.length}
-              accentClass="text-emerald-600"
+              accentClass="text-success"
             />
             <StatsCard
               icon={List}
               label="Total Events"
               value={filteredEvents.length}
-              accentClass="text-slate-700"
+              accentClass="text-foreground"
               prominence="primary"
             />
           </div>
@@ -521,7 +562,7 @@ export function SessionDetails({
                     decisions={derivedOutputs.decisions}
                     degradations={derivedOutputs.degradations}
                     failures={derivedOutputs.failures}
-                    hasDecisionGraph={derivedOutputs.decisionGraph.nodes.length > 0}
+                    hasDecisionGraph={hasDecisionGraph}
                     onOpenDecisionGraph={() => onViewModeChange('decision_graph')}
                     onSelectEvent={(eventId) => {
                       const event = eventIndex.get(eventId);

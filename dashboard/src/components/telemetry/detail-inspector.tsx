@@ -24,7 +24,7 @@ export function DetailInspector({
       </CardHeader>
       <CardContent className="space-y-4">
         {toolExecution && (
-          <div className="space-y-3 rounded-xl border p-4">
+          <div className="space-y-3 rounded-xl border border-border/70 bg-surface/50 p-4">
             <div className="flex items-center justify-between gap-3">
               <div className="font-semibold">{toolExecution.toolName}</div>
               <Badge variant={statusAccent(toolExecution.status)}>{toolExecution.status}</Badge>
@@ -32,13 +32,13 @@ export function DetailInspector({
             <div className="text-xs text-muted-foreground">
               {toolExecution.agentId} &bull; {toolExecution.duration} ms &bull; {toolExecution.phase ?? 'No phase'}
             </div>
-            <pre className="overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100">
+            <pre className="overflow-auto rounded-lg border border-border/70 bg-background p-3 text-xs text-foreground">
               {JSON.stringify(toolExecution.request.parameters, null, 2)}
             </pre>
           </div>
         )}
         {reasoning && (
-          <div className="space-y-3 rounded-xl border p-4">
+          <div className="space-y-3 rounded-xl border border-border/70 bg-surface/50 p-4">
             <div className="flex items-center justify-between gap-3">
               <div className="font-semibold">{reasoning.operation}</div>
               <Badge variant={statusAccent(reasoning.status)}>{reasoning.status}</Badge>
@@ -47,17 +47,17 @@ export function DetailInspector({
               {reasoning.provider}/{reasoning.transport} &bull; {reasoning.model} &bull; {reasoning.totalTokens} tokens &bull; {reasoning.latency} ms
             </div>
             <div className="grid gap-3 md:grid-cols-2">
-              <pre className="overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100">
+              <pre className="overflow-auto rounded-lg border border-border/70 bg-background p-3 text-xs text-foreground">
                 {reasoning.prompt || 'No prompt preview captured.'}
               </pre>
-              <pre className="overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100">
+              <pre className="overflow-auto rounded-lg border border-border/70 bg-background p-3 text-xs text-foreground">
                 {reasoning.response || 'No response preview captured.'}
               </pre>
             </div>
           </div>
         )}
         {event && (
-          <div className="space-y-3 rounded-xl border p-4">
+          <div className="space-y-3 rounded-xl border border-border/70 bg-surface/50 p-4">
             <div className="flex items-center justify-between gap-3">
               <div className="font-semibold">{event.name}</div>
               <Badge variant={statusAccent(event.status)}>{event.status}</Badge>
@@ -65,7 +65,7 @@ export function DetailInspector({
             <div className="text-xs text-muted-foreground">
               {event.eventType} &bull; {event.category} &bull; {event.agentId ?? 'system'}
             </div>
-            <pre className="overflow-auto rounded-lg bg-slate-100 p-3 text-xs text-slate-800 dark:bg-slate-900 dark:text-slate-200">
+            <pre className="overflow-auto rounded-lg border border-border/70 bg-background p-3 text-xs text-foreground">
               {JSON.stringify(event.metadata, null, 2)}
             </pre>
           </div>

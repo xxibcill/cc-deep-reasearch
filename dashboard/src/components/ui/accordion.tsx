@@ -73,6 +73,7 @@ const AccordionTrigger = React.forwardRef<HTMLButtonElement, AccordionTriggerPro
     return (
       <button
         ref={ref}
+        type="button"
         className={cn(
           'flex flex-1 items-center justify-between px-4 py-3.5 text-left font-display text-[0.88rem] font-semibold uppercase tracking-[0.14em] transition-all hover:text-foreground [&[data-state=open]>svg]:rotate-180',
           !isOpen && 'text-muted-foreground',

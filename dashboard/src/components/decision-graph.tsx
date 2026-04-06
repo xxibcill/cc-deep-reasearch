@@ -272,7 +272,7 @@ export function DecisionGraph({
           Explicit telemetry link
         </div>
         <div className="flex items-center gap-2">
-          <span className="h-0.5 w-8 rounded-full border-t-2 border-dashed border-slate-500" />
+          <span className="h-0.5 w-8 rounded-full border-t-2 border-dashed border-border" />
           Inferred domain link
         </div>
       </div>
