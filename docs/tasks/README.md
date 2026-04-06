@@ -21,6 +21,16 @@ This directory breaks the dashboard upgrade into small, ordered tasks that a sma
 7. [07-launch-flow-presets-and-templates.md](./07-launch-flow-presets-and-templates.md)
 8. [08-session-history-triage-and-compare.md](./08-session-history-triage-and-compare.md)
 9. [09-regression-tests-and-doc-refresh.md](./09-regression-tests-and-doc-refresh.md)
+10. [10-settings-runtime-clarity.md](./10-settings-runtime-clarity.md)
+11. [11-search-cache-operations.md](./11-search-cache-operations.md)
+12. [12-saved-filters-and-views.md](./12-saved-filters-and-views.md)
+13. [13-live-run-stream-resilience.md](./13-live-run-stream-resilience.md)
+14. [14-telemetry-performance-at-scale.md](./14-telemetry-performance-at-scale.md)
+15. [15-decision-graph-usability.md](./15-decision-graph-usability.md)
+16. [16-cross-session-analysis.md](./16-cross-session-analysis.md)
+17. [17-notifications-and-completion-feedback.md](./17-notifications-and-completion-feedback.md)
+18. [18-research-to-content-studio-bridge.md](./18-research-to-content-studio-bridge.md)
+19. [19-design-system-extraction-and-hardening.md](./19-design-system-extraction-and-hardening.md)
 
 ## Intended Outcome
 
@@ -30,4 +40,6 @@ After all tasks are complete, the dashboard should:
 - behave like a unified operator workspace instead of several loosely related pages
 - make active runs, failures, and completed artifacts easier to triage
 - provide higher-level summaries instead of forcing operators into raw telemetry first
+- support repeatable operator workflows through saved views, resilient live monitoring, and better cross-session analysis
+- connect research sessions more clearly to downstream publishing and content-generation work
 - have updated tests and docs that match the new UI structure
