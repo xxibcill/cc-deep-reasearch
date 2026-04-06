@@ -30,6 +30,28 @@ export interface TelemetryEvent {
   metadata: TelemetryMetadata;
 }
 
+export type LiveStreamPhase =
+  | 'idle'
+  | 'connecting'
+  | 'live'
+  | 'reconnecting'
+  | 'historical'
+  | 'failed';
+
+export interface LiveStreamStatus {
+  phase: LiveStreamPhase;
+  connected: boolean;
+  reconnectAttempt: number;
+  maxReconnectAttempts: number;
+  nextRetryAt: string | null;
+  lastMessageAt: string | null;
+  lastEventAt: string | null;
+  lastHistoryAt: string | null;
+  lastDisconnectAt: string | null;
+  failureReason: string | null;
+  canReconnect: boolean;
+}
+
 export type TelemetryStatus =
   | 'pending'
   | 'scheduled'

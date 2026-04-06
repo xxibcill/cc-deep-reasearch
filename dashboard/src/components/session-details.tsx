@@ -1,5 +1,5 @@
 import dynamic from 'next/dynamic';
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Activity, FileText, List, Network, Zap } from 'lucide-react';
 
@@ -20,10 +20,12 @@ import { PromptConfigurationPanel } from '@/components/telemetry/prompt-config-p
 import { StatsCard } from '@/components/telemetry/stats-card';
 import { StatusBadge, ViewModeSelector } from '@/components/telemetry/telemetry-header';
 import useDashboardStore from '@/hooks/useDashboard';
+import { areEventFiltersEqual, sanitizeTelemetryFilters } from '@/lib/saved-views';
 import { filterEvents, deriveTelemetryState, deriveOperatorInsights } from '@/lib/telemetry-transformers';
 import type {
   TelemetryEvent,
   ViewMode,
+  LiveStreamStatus,
   CriticalPath,
   DecisionGraph,
   StateChange,
@@ -58,7 +60,7 @@ const LLMReasoningPanel = dynamic(
 
 interface SessionDetailsProps {
   sessionId: string;
-  connected: boolean;
+  liveStreamStatus: LiveStreamStatus;
   events: TelemetryEvent[];
   selectedEvent: TelemetryEvent | null;
   viewMode: ViewMode;
@@ -215,7 +217,7 @@ function filterDecisionGraph(
 
 export function SessionDetails({
   sessionId,
-  connected,
+  liveStreamStatus,
   events,
   selectedEvent,
   viewMode,
@@ -229,10 +231,14 @@ export function SessionDetails({
   const [decisionGraphFilters, setDecisionGraphFilters] = useState<DecisionGraphFilters>(
     EMPTY_DECISION_GRAPH_FILTERS
   );
-  const filters = useDashboardStore((state) => state.filters);
+  const storedFilters = useDashboardStore((state) => state.filters);
   const setFilters = useDashboardStore((state) => state.setFilters);
   const deferredEvents = useDeferredValue(events);
   const derived = useMemo(() => deriveTelemetryState(deferredEvents), [deferredEvents]);
+  const filters = useMemo(
+    () => sanitizeTelemetryFilters(storedFilters, derived),
+    [derived, storedFilters]
+  );
   const [selectedToolId, setSelectedToolId] = useState<string | null>(null);
   const [selectedReasoningId, setSelectedReasoningId] = useState<string | null>(null);
   const eventIndex = useMemo(
@@ -272,6 +278,14 @@ export function SessionDetails({
     () => deriveOperatorInsights(deferredEvents, derived, Boolean(derivedOutputs?.narrative?.length)),
     [deferredEvents, derived, derivedOutputs]
   );
+
+  useEffect(() => {
+    if (areEventFiltersEqual(storedFilters, filters)) {
+      return;
+    }
+    setFilters(filters);
+  }, [filters, setFilters, storedFilters]);
+
   const focusInsightEvent = (eventId?: string | null) => {
     if (!eventId) {
       return;
@@ -325,11 +339,20 @@ export function SessionDetails({
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <CardTitle>Telemetry Explorer</CardTitle>
-                <StatusBadge connected={connected} eventCount={deferredEvents.length} />
+                <StatusBadge liveStreamStatus={liveStreamStatus} eventCount={deferredEvents.length} />
               </div>
               <p className="text-sm text-muted-foreground">
                 <span className="font-mono text-xs text-foreground">{sessionId}</span> —{' '}
                 {deferredEvents.length} events buffered.
+                {liveStreamStatus.phase === 'live'
+                  ? ' Streaming live updates.'
+                  : liveStreamStatus.phase === 'reconnecting'
+                    ? ' Showing buffered events while the live stream reconnects.'
+                    : liveStreamStatus.phase === 'historical'
+                      ? ' Viewing stored session history only.'
+                      : liveStreamStatus.phase === 'failed'
+                        ? ' Live stream unavailable; using the latest buffered snapshot.'
+                        : ''}
               </p>
             </div>
             <div className="flex items-center gap-3">

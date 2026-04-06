@@ -5,12 +5,37 @@ import {
   EventFilter,
   ViewMode,
   SessionListQueryState,
+  LiveStreamStatus,
 } from '@/types/telemetry';
 
-const defaultSessionListQuery: SessionListQueryState = {
+export const DEFAULT_SESSION_LIST_QUERY: SessionListQueryState = {
   search: '',
   status: '',
   activeOnly: false,
+};
+
+export const DEFAULT_EVENT_FILTERS: EventFilter = {
+  phase: [],
+  agent: [],
+  tool: [],
+  provider: [],
+  status: [],
+  eventTypes: [],
+  timeRange: null,
+};
+
+export const DEFAULT_LIVE_STREAM_STATUS: LiveStreamStatus = {
+  phase: 'idle',
+  connected: false,
+  reconnectAttempt: 0,
+  maxReconnectAttempts: 5,
+  nextRetryAt: null,
+  lastMessageAt: null,
+  lastEventAt: null,
+  lastHistoryAt: null,
+  lastDisconnectAt: null,
+  failureReason: null,
+  canReconnect: false,
 };
 
 interface DashboardState {
@@ -46,11 +71,13 @@ interface DashboardState {
 
   events: TelemetryEvent[];
   connected: boolean;
+  liveStreamStatus: LiveStreamStatus;
   selectedEvent: TelemetryEvent | null;
   replaceEvents: (events: TelemetryEvent[]) => void;
   appendEvent: (event: TelemetryEvent) => void;
   appendEvents: (events: TelemetryEvent[]) => void;
   setConnected: (connected: boolean) => void;
+  setLiveStreamStatus: (status: Partial<LiveStreamStatus>) => void;
   setSelectedEvent: (event: TelemetryEvent | null) => void;
   resetSessionState: () => void;
 
@@ -119,6 +146,7 @@ const useDashboardStore = create<DashboardState>((set) => ({
             sessionId: id,
             events: [],
             connected: false,
+            liveStreamStatus: DEFAULT_LIVE_STREAM_STATUS,
             selectedEvent: null,
           }
   ),
@@ -127,7 +155,7 @@ const useDashboardStore = create<DashboardState>((set) => ({
   sessionsLoadingMore: false,
   sessionsTotal: 0,
   sessionsNextCursor: null,
-  sessionListQuery: defaultSessionListQuery,
+  sessionListQuery: DEFAULT_SESSION_LIST_QUERY,
   setSessions: (sessions, options) =>
     set((state) => {
       const nextSessions = options?.append ? mergeSessions(state.sessions, sessions) : sessions;
@@ -209,6 +237,7 @@ const useDashboardStore = create<DashboardState>((set) => ({
 
   events: [],
   connected: false,
+  liveStreamStatus: DEFAULT_LIVE_STREAM_STATUS,
   selectedEvent: null,
   replaceEvents: (events) => set({ events: sortEvents(events) }),
   appendEvent: (event) =>
@@ -221,24 +250,25 @@ const useDashboardStore = create<DashboardState>((set) => ({
   appendEvents: (events) =>
     set((state) => ({ events: mergeEvents(state.events, events) })),
   setConnected: (connected) => set({ connected }),
+  setLiveStreamStatus: (status) =>
+    set((state) => ({
+      liveStreamStatus: { ...state.liveStreamStatus, ...status },
+      connected:
+        Object.prototype.hasOwnProperty.call(status, 'connected')
+          ? Boolean(status.connected)
+          : state.connected,
+    })),
   setSelectedEvent: (selectedEvent) => set({ selectedEvent }),
   resetSessionState: () =>
     set({
       sessionId: null,
       events: [],
       connected: false,
+      liveStreamStatus: DEFAULT_LIVE_STREAM_STATUS,
       selectedEvent: null,
       viewMode: 'graph',
     }),
-  filters: {
-    phase: [],
-    agent: [],
-    tool: [],
-    provider: [],
-    status: [],
-    eventTypes: [],
-    timeRange: null,
-  },
+  filters: DEFAULT_EVENT_FILTERS,
   setFilters: (filters) => set((state) => ({
     filters: { ...state.filters, ...filters }
   })),
