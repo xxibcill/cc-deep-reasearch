@@ -4,7 +4,10 @@ import {
   ApiTelemetryEvent,
   AgentExecution,
   EventFilter,
+  InsightStatus,
+  InsightCategory,
   LLMReasoning,
+  OperatorInsight,
   ServerMessage,
   Session,
   TelemetryEvent,
@@ -54,6 +57,186 @@ function asApiTelemetryEvent(value: Record<string, unknown>): ApiTelemetryEvent 
 function asTimestamp(value: string): number {
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+const STALL_THRESHOLD_MS = 120000;
+const SLOW_THRESHOLD_MS = 30000;
+
+export function deriveOperatorInsights(
+  events: TelemetryEvent[],
+  derived: TelemetryDerivedState,
+  hasReport: boolean = false
+): OperatorInsight[] {
+  const insights: OperatorInsight[] = [];
+  const sortedEvents = [...events].sort((left, right) => {
+    if (left.sequenceNumber !== right.sequenceNumber) {
+      return left.sequenceNumber - right.sequenceNumber;
+    }
+    return left.timestamp.localeCompare(right.timestamp);
+  });
+
+  const phases = derived.phases;
+  const hasFailures = derived.toolExecutions.some((t) => t.status === 'failed' || t.status === 'error');
+  const hasLLMErrors = derived.llmReasoning.some(
+    (l) => l.status === 'failed' || l.status === 'error' || l.status === 'timeout'
+  );
+  const failedPhases = new Set<string>();
+  const failedAgents = new Set<string>();
+  const toolFailures: ToolExecution[] = [];
+
+  for (const tool of derived.toolExecutions) {
+    if (tool.status === 'failed' || tool.status === 'error') {
+      failedAgents.add(tool.agentId);
+      if (tool.phase) {
+        failedPhases.add(tool.phase);
+      }
+      toolFailures.push(tool);
+    }
+  }
+
+  const activePhases = phases.filter(
+    (phase) => !sortedEvents.some((e) => e.category === 'phase' && e.name === phase && (e.status === 'completed' || e.status === 'failed'))
+  );
+  const completedPhases = phases.filter(
+    (phase) => sortedEvents.some((e) => e.category === 'phase' && e.name === phase && e.status === 'completed')
+  );
+
+  const lastEvent = sortedEvents.at(-1);
+  const now = Date.now();
+  const lastEventTime = lastEvent ? asTimestamp(lastEvent.timestamp) : 0;
+  const isStalled = lastEvent && lastEvent.status !== 'completed' && lastEvent.status !== 'failed' && (now - lastEventTime) > STALL_THRESHOLD_MS;
+  const allPhasesCompleted = phases.length > 0 && phases.every((phase) =>
+    sortedEvents.some((e) => e.category === 'phase' && e.name === phase && e.status === 'completed')
+  );
+
+  if (hasFailures || hasLLMErrors) {
+    const allFailures = [...derived.toolExecutions.filter((t) => t.status === 'failed' || t.status === 'error')];
+    if (allFailures.length > 0) {
+      const phaseList = Array.from(failedPhases);
+      insights.push({
+        id: 'insight-failures',
+        status: 'error',
+        category: 'failure',
+        title: allFailures.length === 1 ? '1 tool failure detected' : `${allFailures.length} tool failures detected`,
+        description: phaseList.length > 0
+          ? `Failures occurred in phase${phaseList.length === 1 ? '' : 's'}: ${phaseList.join(', ')}`
+          : 'Review the tool execution details for more information.',
+        actions: [
+          { label: 'Inspect tool failures', actionType: 'inspect_tool_failures' },
+        ],
+        eventId: allFailures[0].eventId,
+        phase: phaseList[0] ?? null,
+      });
+    }
+
+    if (hasLLMErrors) {
+      const errorLLMs = derived.llmReasoning.filter((l) => l.status === 'failed' || l.status === 'error' || l.status === 'timeout');
+      insights.push({
+        id: 'insight-llm-failures',
+        status: 'error',
+        category: 'failure',
+        title: errorLLMs.length === 1 ? '1 LLM call failed' : `${errorLLMs.length} LLM calls failed`,
+        description: 'One or more LLM calls failed or timed out. Review the LLM reasoning for details.',
+        actions: [
+          { label: 'Review LLM reasoning', actionType: 'review_llm_reasoning' },
+        ],
+        eventId: errorLLMs[0]?.requestEventId ?? null,
+      });
+    }
+  }
+
+  if (!hasFailures && !hasLLMErrors && allPhasesCompleted) {
+    if (hasReport) {
+      insights.push({
+        id: 'insight-complete',
+        status: 'healthy',
+        category: 'health',
+        title: 'Run completed successfully',
+        description: `All ${phases.length} phase${phases.length === 1 ? '' : 's'} completed. Report is available.`,
+        actions: [
+          { label: 'Open report', actionType: 'open_report' },
+        ],
+      });
+    } else {
+      insights.push({
+        id: 'insight-complete-no-report',
+        status: 'warning',
+        category: 'blocker',
+        title: 'Run complete, report not available',
+        description: 'All phases completed but report generation may be blocked.',
+        actions: [
+          { label: 'View phases', actionType: 'view_phases' },
+        ],
+      });
+    }
+  }
+
+  if (!hasFailures && !hasLLMErrors && !allPhasesCompleted && activePhases.length > 0) {
+    if (isStalled) {
+      insights.push({
+        id: 'insight-stalled',
+        status: 'warning',
+        category: 'performance',
+        title: 'Run appears stalled',
+        description: `No events received in the last ${Math.round(STALL_THRESHOLD_MS / 1000)} seconds. The session may be hung.`,
+        actions: [
+          { label: 'Inspect tool failures', actionType: 'inspect_tool_failures' },
+          { label: 'Review LLM reasoning', actionType: 'review_llm_reasoning' },
+        ],
+      });
+    } else {
+      insights.push({
+        id: 'insight-active',
+        status: 'healthy',
+        category: 'health',
+        title: 'Run is active and healthy',
+        description: `${activePhases.join(' → ')} in progress...`,
+        actions: [],
+      });
+    }
+  }
+
+  if (sortedEvents.length === 0) {
+    insights.push({
+      id: 'insight-empty',
+      status: 'unknown',
+      category: 'health',
+      title: 'No events received',
+      description: 'Waiting for telemetry events to arrive.',
+      actions: [],
+    });
+  }
+
+  const slowTools = derived.toolExecutions.filter((t) => (t.duration ?? 0) > SLOW_THRESHOLD_MS && t.status !== 'failed' && t.status !== 'error');
+  if (slowTools.length > 0 && !hasFailures) {
+    insights.push({
+      id: 'insight-slow',
+      status: 'warning',
+      category: 'performance',
+      title: slowTools.length === 1 ? 'Slow tool detected' : `${slowTools.length} slow tools detected`,
+      description: `Some tools exceeded ${Math.round(SLOW_THRESHOLD_MS / 1000)}s duration. Check performance analysis.`,
+      actions: [
+        { label: 'View decisions', actionType: 'view_decisions' },
+      ],
+      eventId: slowTools[0].eventId,
+      phase: slowTools[0].phase ?? null,
+    });
+  }
+
+  if (insights.length === 0) {
+    insights.push({
+      id: 'insight-unknown',
+      status: 'unknown',
+      category: 'health',
+      title: 'Session state unclear',
+      description: 'Unable to determine session status from available telemetry.',
+      actions: [
+        { label: 'Compare runs', actionType: 'compare_runs' },
+      ],
+    });
+  }
+
+  return insights;
 }
 
 function toStatus(value: string): TelemetryStatus {

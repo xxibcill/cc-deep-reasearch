@@ -602,6 +602,31 @@ export type WebSocketClientMessage =
   | { type: 'ping' };
 
 // =============================================================================
+// Operator Insights Types (Task 006)
+// =============================================================================
+
+export type InsightStatus = 'healthy' | 'warning' | 'error' | 'unknown';
+
+export type InsightCategory = 'health' | 'performance' | 'failure' | 'blocker';
+
+export interface OperatorInsightAction {
+  label: string;
+  actionType: 'inspect_tool_failures' | 'review_llm_reasoning' | 'open_report' | 'view_phases' | 'view_decisions' | 'compare_runs';
+  eventId?: string | null;
+}
+
+export interface OperatorInsight {
+  id: string;
+  status: InsightStatus;
+  category: InsightCategory;
+  title: string;
+  description: string;
+  actions: OperatorInsightAction[];
+  eventId?: string | null;
+  phase?: string | null;
+}
+
+// =============================================================================
 // Trace Bundle Types (Task 003)
 // =============================================================================
 
