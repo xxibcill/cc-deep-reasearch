@@ -1,19 +1,20 @@
 import { SlidersHorizontal } from 'lucide-react';
 
+import { SavedViewControls } from '@/components/saved-view-controls';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CollapsiblePanel } from '@/components/ui/collapsible-panel';
 import { Select } from '@/components/ui/select';
+import { DEFAULT_EVENT_FILTERS } from '@/hooks/useDashboard';
+import {
+  areEventFiltersEqual,
+  sanitizeTelemetryFilters,
+  sanitizeTelemetryFilterShape,
+} from '@/lib/saved-views';
 import type { EventFilter } from '@/types/telemetry';
 
-export const EMPTY_FILTERS: Partial<EventFilter> = {
-  agent: [],
-  phase: [],
-  tool: [],
-  provider: [],
-  status: [],
-  eventTypes: [],
-};
+export const EMPTY_FILTERS: EventFilter = DEFAULT_EVENT_FILTERS;
+const TELEMETRY_VIEW_STORAGE_KEY = 'ccdr.dashboard.saved-telemetry-views';
 
 export function getActiveFilters(filters: EventFilter): Array<{ label: string; value: string }> {
   return [
@@ -95,8 +96,24 @@ export function FilterPanel({
         </div>
       }
     >
+      <SavedViewControls
+        storageKey={TELEMETRY_VIEW_STORAGE_KEY}
+        title="Saved Views"
+        description="Store reusable telemetry presets for phases, agents, providers, or failure sweeps."
+        itemLabel="telemetry view"
+        testIdPrefix="telemetry-view"
+        selectLabel="Saved telemetry view"
+        inputLabel="View name"
+        emptyState="No saved telemetry views yet."
+        currentValue={filters}
+        sanitizeStoredValue={sanitizeTelemetryFilterShape}
+        sanitizeForSave={(value) => sanitizeTelemetryFilters(value, derived)}
+        sanitizeForApply={(value) => sanitizeTelemetryFilters(value, derived)}
+        isEqual={areEventFiltersEqual}
+        onApply={onFiltersChange}
+      />
       {activeFilters.length > 0 ? (
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="mb-4 mt-4 flex flex-wrap gap-2">
           {activeFilters.map((filter) => (
             <Badge key={filter.label} variant="outline" className="bg-surface-raised/80 text-[11px]">
               {filter.label}: {filter.value}
@@ -104,12 +121,13 @@ export function FilterPanel({
           ))}
         </div>
       ) : null}
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <Select
           label="Agent"
           value={filters.agent[0] ?? ''}
           options={derived.agents}
           onChange={(value) => onFiltersChange({ agent: value ? [value] : [] })}
+          testId="telemetry-filter-agent"
           className="h-9 bg-surface-raised/72"
           labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-muted-foreground"
         />
@@ -118,6 +136,7 @@ export function FilterPanel({
           value={filters.phase[0] ?? ''}
           options={derived.phases}
           onChange={(value) => onFiltersChange({ phase: value ? [value] : [] })}
+          testId="telemetry-filter-phase"
           className="h-9 bg-surface-raised/72"
           labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-muted-foreground"
         />
@@ -126,6 +145,7 @@ export function FilterPanel({
           value={filters.tool[0] ?? ''}
           options={derived.tools}
           onChange={(value) => onFiltersChange({ tool: value ? [value] : [] })}
+          testId="telemetry-filter-tool"
           className="h-9 bg-surface-raised/72"
           labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-muted-foreground"
         />
@@ -134,6 +154,7 @@ export function FilterPanel({
           value={filters.provider[0] ?? ''}
           options={derived.providers}
           onChange={(value) => onFiltersChange({ provider: value ? [value] : [] })}
+          testId="telemetry-filter-provider"
           className="h-9 bg-surface-raised/72"
           labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-muted-foreground"
         />
@@ -142,6 +163,7 @@ export function FilterPanel({
           value={filters.status[0] ?? ''}
           options={derived.statuses}
           onChange={(value) => onFiltersChange({ status: value ? [value] : [] })}
+          testId="telemetry-filter-status"
           className="h-9 bg-surface-raised/72"
           labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-muted-foreground"
         />
@@ -150,6 +172,7 @@ export function FilterPanel({
           value={filters.eventTypes[0] ?? ''}
           options={derived.eventTypes}
           onChange={(value) => onFiltersChange({ eventTypes: value ? [value] : [] })}
+          testId="telemetry-filter-event-type"
           className="h-9 bg-surface-raised/72"
           labelClassName="min-w-0 gap-1 text-[11px] tracking-[0.18em] text-muted-foreground"
         />

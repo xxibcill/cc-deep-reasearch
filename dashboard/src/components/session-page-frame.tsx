@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useRef } from 'react';
 import { FileText, Radar, ScrollText, TimerReset } from 'lucide-react';
 
 import { RunStatusSummary } from '@/components/run-status-summary';
@@ -10,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Breadcrumb } from '@/components/ui/breadcrumb';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardTitle } from '@/components/ui/card';
+import { useNotifications } from '@/components/ui/notification-center';
 import { useSessionRoute } from '@/hooks/useSessionRoute';
 import { runStatusBadgeVariant } from '@/lib/session-route';
 import { cn } from '@/lib/utils';
@@ -102,6 +104,7 @@ export function SessionPageFrame({
   description,
   children,
 }: SessionPageFrameProps) {
+  const { notify } = useNotifications();
   const {
     isRunRoute,
     resolvedSessionId,
@@ -112,8 +115,60 @@ export function SessionPageFrame({
     setRunStatus,
     handleRunStatusLoaded,
   } = useSessionRoute(routeId);
+  const previousRunStatusRef = useRef<ResearchRunStatus | null>(null);
 
   const showRunStatus = isRunRoute && !resolvedSessionId;
+
+  useEffect(() => {
+    const previousStatus = previousRunStatusRef.current;
+    previousRunStatusRef.current = runStatus;
+
+    if (!isRunRoute || !runStatus || !previousStatus || previousStatus === runStatus) {
+      return;
+    }
+
+    if (previousStatus !== 'queued' && previousStatus !== 'running') {
+      return;
+    }
+
+    if (!resolvedSessionId) {
+      return;
+    }
+
+    if (runStatus === 'completed') {
+      notify({
+        variant: 'success',
+        title: 'Run completed',
+        description: `Session ${resolvedSessionId} finished successfully and is ready for follow-up review.`,
+        actions: [
+          { label: 'Open monitor', href: `/session/${resolvedSessionId}/monitor` },
+          { label: 'Open report', href: `/session/${resolvedSessionId}/report` },
+        ],
+      });
+      return;
+    }
+
+    if (runStatus === 'failed') {
+      notify({
+        variant: 'destructive',
+        persistent: true,
+        title: 'Run failed',
+        description: 'The run ended in failure. Review the monitor and session history before retrying.',
+        actions: [{ label: 'Open monitor', href: `/session/${resolvedSessionId}/monitor` }],
+      });
+      return;
+    }
+
+    if (runStatus === 'cancelled') {
+      notify({
+        variant: 'warning',
+        persistent: true,
+        title: 'Run cancelled',
+        description: 'The run stopped before completion. Historical telemetry remains available for review.',
+        actions: [{ label: 'Open monitor', href: `/session/${resolvedSessionId}/monitor` }],
+      });
+    }
+  }, [isRunRoute, notify, resolvedSessionId, runStatus]);
 
   return (
     <div className="mx-auto max-w-content space-y-5 px-page-x py-page-y">

@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { CheckboxRow, SettingFieldShell } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
+import { useNotifications } from '@/components/ui/notification-center';
 import {
   getApiErrorMessage,
   getConfig,
@@ -275,6 +276,7 @@ function pluralize(count: number, singular: string, plural = `${singular}s`): st
 }
 
 export function ConfigEditor() {
+  const { notify } = useNotifications();
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -411,11 +413,22 @@ export function ConfigEditor() {
               : ''),
         });
       });
+      notify({
+        variant: 'success',
+        title: 'Settings saved',
+        description: `Saved ${changedFieldPaths.length} ${pluralize(changedFieldPaths.length, 'setting')} for future runs.`,
+      });
     } catch (error) {
       const details = getConfigUpdateErrorDetails(error);
       setBanner({
         variant: 'destructive',
         title: 'Save failed',
+        description: details.message,
+      });
+      notify({
+        variant: 'destructive',
+        persistent: true,
+        title: 'Settings save failed',
         description: details.message,
       });
 

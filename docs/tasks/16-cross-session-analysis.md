@@ -1,5 +1,7 @@
 # Task 16: Expand Cross-Session Analysis Beyond Basic Compare
 
+Status: Done
+
 ## Goal
 
 Make comparison more useful by surfacing patterns across sessions, not just raw pairwise deltas.
