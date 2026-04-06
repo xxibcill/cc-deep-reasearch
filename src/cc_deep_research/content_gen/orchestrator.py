@@ -21,6 +21,7 @@ from cc_deep_research.content_gen.models import (
     ScoringOutput,
     ScriptingContext,
     ScriptVersion,
+    StageTraceMetadata,
     StrategyMemory,
 )
 
@@ -260,6 +261,7 @@ class ContentGenOrchestrator:
                 input_summary=input_summary,
                 output_summary=skip_reason,
                 decision_summary=f"Skipped: {skip_reason}",
+                metadata=self._build_trace_metadata(idx, ctx),
             )
             ctx.stage_traces.append(trace)
             if stage_completed_callback:
@@ -291,6 +293,7 @@ class ContentGenOrchestrator:
                 input_summary=input_summary,
                 output_summary=output_summary,
                 warnings=warnings,
+                metadata=self._build_trace_metadata(idx, ctx),
             )
             ctx.stage_traces.append(trace)
             if stage_completed_callback:
@@ -313,6 +316,7 @@ class ContentGenOrchestrator:
             input_summary=input_summary,
             output_summary=output_summary,
             warnings=warnings,
+            metadata=self._build_trace_metadata(idx, ctx),
         )
         ctx.stage_traces.append(trace)
         if stage_completed_callback:
@@ -535,6 +539,56 @@ class ContentGenOrchestrator:
                 return f"idea_id={ctx.publish_item.idea_id}, platform={ctx.publish_item.platform}"
             return "not_created"
         return ""
+
+    def _build_trace_metadata(self, idx: int, ctx: PipelineContext) -> StageTraceMetadata:
+        """Build structured metadata for a pipeline stage trace."""
+        stage = PIPELINE_STAGES[idx]
+        meta = StageTraceMetadata()
+
+        if stage == "build_backlog":
+            if ctx.backlog:
+                meta.is_degraded = ctx.backlog.is_degraded
+                meta.degradation_reason = ctx.backlog.degradation_reason
+        elif stage == "score_ideas":
+            if ctx.scoring:
+                meta.selected_idea_id = ctx.scoring.selected_idea_id or ""
+                meta.shortlist_count = len(ctx.scoring.shortlist)
+                meta.is_degraded = ctx.scoring.is_degraded
+                meta.degradation_reason = ctx.scoring.degradation_reason
+        elif stage == "generate_angles":
+            if ctx.angles:
+                meta.selected_angle_id = ctx.angles.selected_angle_id or ""
+                meta.option_count = len(ctx.angles.angle_options)
+        elif stage == "build_research_pack":
+            if ctx.research_pack:
+                meta.fact_count = len(ctx.research_pack.key_facts)
+                meta.proof_count = len(ctx.research_pack.proof_points)
+        elif stage == "run_scripting":
+            if ctx.scripting:
+                if ctx.scripting.step_traces:
+                    meta.step_count = len(ctx.scripting.step_traces)
+                    meta.llm_call_count = sum(
+                        len(st.llm_calls) for st in ctx.scripting.step_traces
+                    )
+                if ctx.scripting.qc:
+                    meta.final_word_count = ctx.scripting.qc.final_script.split().__len__()
+        elif stage == "visual_translation":
+            if ctx.visual_plan:
+                meta.beats_count = len(ctx.visual_plan.visual_plan)
+        elif stage == "packaging":
+            if ctx.packaging:
+                meta.platforms_count = len(ctx.packaging.platform_packages)
+        elif stage == "human_qc":
+            if ctx.qc_gate:
+                meta.approved = ctx.qc_gate.approved_for_publish
+
+        if ctx.iteration_state:
+            meta.current_iteration = ctx.iteration_state.current_iteration
+            if ctx.iteration_state.quality_history:
+                meta.latest_quality_score = ctx.iteration_state.quality_history[-1].overall_quality_score
+            meta.should_rerun_research = ctx.iteration_state.should_rerun_research
+
+        return meta
 
     # ------------------------------------------------------------------
     # Individual stage runners

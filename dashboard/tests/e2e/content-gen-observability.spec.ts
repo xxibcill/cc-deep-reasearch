@@ -281,6 +281,7 @@ function makePipelineDetailResponse(): PipelineDetailResponse {
         output_summary: "strategy loaded",
         warnings: [],
         decision_summary: "",
+        metadata: {},
       },
       {
         stage_index: 1,
@@ -294,6 +295,7 @@ function makePipelineDetailResponse(): PipelineDetailResponse {
         output_summary: "goal, audience, proof requirements captured",
         warnings: [],
         decision_summary: "Narrowed the brief around operator trust instead of generic launch advice.",
+        metadata: {},
       },
       {
         stage_index: 2,
@@ -307,6 +309,7 @@ function makePipelineDetailResponse(): PipelineDetailResponse {
         output_summary: "items=3 rejected=1",
         warnings: ["1 low-confidence source left in backlog for manual verification."],
         decision_summary: "",
+        metadata: {},
       },
       {
         stage_index: 3,
@@ -320,6 +323,7 @@ function makePipelineDetailResponse(): PipelineDetailResponse {
         output_summary: "produce=2 hold=1 kill=0",
         warnings: [],
         decision_summary: "Selected idea-selected for the clearest authority-to-action path.",
+        metadata: {},
       },
       {
         stage_index: 4,
@@ -333,6 +337,7 @@ function makePipelineDetailResponse(): PipelineDetailResponse {
         output_summary: "angles=2 selected=angle-selected",
         warnings: [],
         decision_summary: "Selected the operator-trust framing for stronger specificity.",
+        metadata: {},
       },
       {
         stage_index: 5,
@@ -346,6 +351,7 @@ function makePipelineDetailResponse(): PipelineDetailResponse {
         output_summary: "research pack reused from cache",
         warnings: [],
         decision_summary: "Skipped: research pack reused from cached brief",
+        metadata: {},
       },
       {
         stage_index: 6,
@@ -359,6 +365,7 @@ function makePipelineDetailResponse(): PipelineDetailResponse {
         output_summary: "script drafted and QC'd",
         warnings: [],
         decision_summary: "",
+        metadata: {},
       },
     ],
   };

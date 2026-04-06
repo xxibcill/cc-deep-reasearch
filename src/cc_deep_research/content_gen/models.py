@@ -573,6 +573,32 @@ class PerformanceAnalysis(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class StageTraceMetadata(BaseModel):
+    """Structured metadata for pipeline stage traces.
+
+    Provides typed fields for data that would otherwise be embedded
+    in prose strings, enabling better UI rendering and filtering.
+    """
+
+    selected_idea_id: str = ""
+    selected_angle_id: str = ""
+    shortlist_count: int = 0
+    option_count: int = 0
+    is_degraded: bool = False
+    degradation_reason: str = ""
+    fact_count: int = 0
+    proof_count: int = 0
+    step_count: int = 0
+    llm_call_count: int = 0
+    final_word_count: int = 0
+    current_iteration: int = 0
+    latest_quality_score: float = 0.0
+    should_rerun_research: bool = False
+    beats_count: int = 0
+    platforms_count: int = 0
+    approved: bool = False
+
+
 class PipelineStageTrace(BaseModel):
     """Trace record for one completed pipeline stage."""
 
@@ -587,6 +613,7 @@ class PipelineStageTrace(BaseModel):
     output_summary: str = ""
     warnings: list[str] = Field(default_factory=list)
     decision_summary: str = ""
+    metadata: StageTraceMetadata = Field(default_factory=StageTraceMetadata)
 
 
 # ---------------------------------------------------------------------------
