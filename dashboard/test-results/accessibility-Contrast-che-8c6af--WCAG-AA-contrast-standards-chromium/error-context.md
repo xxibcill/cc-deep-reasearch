@@ -1,0 +1,80 @@
+# Page snapshot
+
+```yaml
+- generic [active]:
+  - alert [ref=e1]
+  - dialog "Server Error" [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - navigation [ref=e8]:
+          - button "previous" [disabled] [ref=e9]:
+            - img "previous" [ref=e10]
+          - button "next" [disabled] [ref=e12]:
+            - img "next" [ref=e13]
+          - generic [ref=e15]: 1 of 1 unhandled error
+        - heading "Server Error" [level=1] [ref=e16]
+        - paragraph [ref=e17]: "TypeError: __webpack_modules__[moduleId] is not a function"
+        - generic [ref=e18]: This error happened while generating the page. Any console logs will be displayed in the terminal window.
+      - generic [ref=e19]:
+        - heading "Call Stack" [level=2] [ref=e20]
+        - generic [ref=e21]:
+          - heading "__webpack_require__" [level=3] [ref=e22]
+          - generic [ref=e24]: file:///Users/jjae/Documents/guthib/cc-deep-research/dashboard/.next/server/webpack-runtime.js (33:42)
+        - generic [ref=e25]:
+          - heading "<unknown>" [level=3] [ref=e26]
+          - generic [ref=e28]: file:///Users/jjae/Documents/guthib/cc-deep-research/dashboard/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js (35:103108)
+        - generic [ref=e29]:
+          - heading "eo" [level=3] [ref=e30]
+          - generic [ref=e32]: file:///Users/jjae/Documents/guthib/cc-deep-research/dashboard/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js (35:103293)
+        - generic [ref=e33]:
+          - heading "<unknown>" [level=3] [ref=e34]
+          - generic [ref=e36]: file:///Users/jjae/Documents/guthib/cc-deep-research/dashboard/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js (35:105726)
+        - generic [ref=e37]:
+          - heading "Object._fromJSON" [level=3] [ref=e38]
+          - generic [ref=e40]: file:///Users/jjae/Documents/guthib/cc-deep-research/dashboard/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js (35:106078)
+        - generic [ref=e41]:
+          - heading "JSON.parse" [level=3] [ref=e42]
+          - generic [ref=e44]: <anonymous>
+        - generic [ref=e45]:
+          - heading "eu" [level=3] [ref=e46]
+          - generic [ref=e48]: file:///Users/jjae/Documents/guthib/cc-deep-research/dashboard/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js (35:103787)
+        - generic [ref=e49]:
+          - heading "en" [level=3] [ref=e50]
+          - generic [ref=e52]: file:///Users/jjae/Documents/guthib/cc-deep-research/dashboard/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js (35:102855)
+        - generic [ref=e53]:
+          - heading "G" [level=3] [ref=e54]
+          - generic [ref=e56]: file:///Users/jjae/Documents/guthib/cc-deep-research/dashboard/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js (35:101847)
+        - generic [ref=e57]:
+          - heading "ak" [level=3] [ref=e58]
+          - generic [ref=e60]: file:///Users/jjae/Documents/guthib/cc-deep-research/dashboard/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js (35:46824)
+        - generic [ref=e61]:
+          - heading "av" [level=3] [ref=e62]
+          - generic [ref=e64]: file:///Users/jjae/Documents/guthib/cc-deep-research/dashboard/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js (35:7809)
+        - generic [ref=e65]:
+          - heading "<unknown>" [level=3] [ref=e66]
+          - generic [ref=e68]: file:///Users/jjae/Documents/guthib/cc-deep-research/dashboard/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js (35:12972)
+        - generic [ref=e69]:
+          - heading "aw" [level=3] [ref=e70]
+          - generic [ref=e72]: file:///Users/jjae/Documents/guthib/cc-deep-research/dashboard/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js (35:13009)
+        - generic [ref=e73]:
+          - heading "ak" [level=3] [ref=e74]
+          - generic [ref=e76]: file:///Users/jjae/Documents/guthib/cc-deep-research/dashboard/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js (35:46552)
+        - generic [ref=e77]:
+          - heading "<unknown>" [level=3] [ref=e78]
+          - generic [ref=e80]: file:///Users/jjae/Documents/guthib/cc-deep-research/dashboard/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js (35:55430)
+        - generic [ref=e81]:
+          - heading "<unknown>" [level=3] [ref=e82]
+          - generic [ref=e84]: file:///Users/jjae/Documents/guthib/cc-deep-research/dashboard/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js (35:56107)
+        - generic [ref=e85]:
+          - heading "aD" [level=3] [ref=e86]
+          - generic [ref=e88]: file:///Users/jjae/Documents/guthib/cc-deep-research/dashboard/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js (35:56115)
+        - generic [ref=e89]:
+          - heading "Timeout._onTimeout" [level=3] [ref=e90]
+          - generic [ref=e92]: file:///Users/jjae/Documents/guthib/cc-deep-research/dashboard/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js (35:4293)
+        - generic [ref=e93]:
+          - heading "listOnTimeout" [level=3] [ref=e94]
+          - generic [ref=e96]: node:internal/timers (605:17)
+        - generic [ref=e97]:
+          - heading "process.processTimers" [level=3] [ref=e98]
+          - generic [ref=e100]: node:internal/timers (541:7)
+```
