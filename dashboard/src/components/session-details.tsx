@@ -14,11 +14,12 @@ import { EventDetailsModal } from '@/components/telemetry/event-details-modal';
 import { EventTable } from '@/components/telemetry/event-table';
 import { DetailInspector } from '@/components/telemetry/detail-inspector';
 import { FilterPanel, getActiveFilters } from '@/components/telemetry/filter-panel';
+import { OperatorInsightsPanel } from '@/components/telemetry/operator-insights-panel';
 import { PromptConfigurationPanel } from '@/components/telemetry/prompt-config-panel';
 import { StatsCard } from '@/components/telemetry/stats-card';
 import { StatusBadge, ViewModeSelector } from '@/components/telemetry/telemetry-header';
 import useDashboardStore from '@/hooks/useDashboard';
-import { filterEvents, deriveTelemetryState } from '@/lib/telemetry-transformers';
+import { filterEvents, deriveTelemetryState, deriveOperatorInsights } from '@/lib/telemetry-transformers';
 import type {
   TelemetryEvent,
   ViewMode,
@@ -263,6 +264,10 @@ export function SessionDetails({
     [decisionGraphFilters]
   );
   const [filtersOpen, setFiltersOpen] = useState(() => activeFilters.length > 0);
+  const insights = useMemo(
+    () => deriveOperatorInsights(deferredEvents, derived, Boolean(derivedOutputs?.narrative?.length)),
+    [deferredEvents, derived, derivedOutputs]
+  );
   const detailTabs = [
     { value: 'inspect', label: 'Inspect', icon: List },
     { value: 'tools', label: 'Tools', icon: Zap },
@@ -295,6 +300,7 @@ export function SessionDetails({
           </div>
         </CardHeader>
         <CardContent className="space-y-5 p-5">
+          <OperatorInsightsPanel insights={insights} />
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             <StatsCard
               icon={Activity}
