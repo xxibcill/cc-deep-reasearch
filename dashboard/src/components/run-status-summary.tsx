@@ -202,6 +202,11 @@ export function RunStatusSummary({
 
   const stopRequested = status.stop_requested === true;
   const showStopAction = isActiveStatus(status.status);
+  const liveMonitorMessage = status.session_id
+    ? isActiveStatus(status.status)
+      ? 'The monitor will keep buffered telemetry visible if the live stream drops and will retry automatically while the run is still active.'
+      : 'This run is no longer active. Monitor pages will load historical telemetry only, without expecting a live stream.'
+    : 'A monitor session will become available after the backend allocates a session ID.';
 
   return (
     <Card className="overflow-hidden">
@@ -270,6 +275,23 @@ export function RunStatusSummary({
             value={status.completed_at ? formatTimestamp(status.completed_at) : 'In progress'}
           />
         </div>
+
+        <Alert
+          className="flex items-start gap-3"
+          variant={isActiveStatus(status.status) ? 'info' : 'default'}
+        >
+          <Loader2
+            className={`mt-0.5 h-5 w-5 shrink-0 ${
+              isActiveStatus(status.status) ? 'animate-spin' : ''
+            }`}
+          />
+          <div className="space-y-1">
+            <AlertTitle>
+              {isActiveStatus(status.status) ? 'Live monitor expectation' : 'Historical monitor mode'}
+            </AlertTitle>
+            <AlertDescription>{liveMonitorMessage}</AlertDescription>
+          </div>
+        </Alert>
 
         {stopRequested && isActiveStatus(status.status) ? (
           <Alert className="flex items-start gap-3" variant="warning">

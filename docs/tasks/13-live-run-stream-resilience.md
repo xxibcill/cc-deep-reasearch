@@ -1,5 +1,7 @@
 # Task 13: Harden Live Run Streaming And Reconnection Behavior
 
+Status: Done
+
 ## Goal
 
 Make live session monitoring resilient when WebSocket connections are interrupted, delayed, or partially stale.
