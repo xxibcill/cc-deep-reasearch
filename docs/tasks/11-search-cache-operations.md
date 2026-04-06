@@ -1,5 +1,7 @@
 # Task 11: Improve Search Cache Operations And Observability
 
+Status: Done
+
 ## Goal
 
 Make search-cache tooling feel like a useful operational feature instead of a secondary maintenance panel.
