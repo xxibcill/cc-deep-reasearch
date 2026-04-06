@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { FileText, Radar, ScrollText, TimerReset } from 'lucide-react';
 
 import { RunStatusSummary } from '@/components/run-status-summary';
@@ -8,7 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Breadcrumb } from '@/components/ui/breadcrumb';
 import { buttonVariants } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardTitle } from '@/components/ui/card';
 import { useSessionRoute } from '@/hooks/useSessionRoute';
 import { runStatusBadgeVariant } from '@/lib/session-route';
 import { cn } from '@/lib/utils';
@@ -34,7 +35,7 @@ const viewMeta: Record<
 > = {
   details: {
     icon: ScrollText,
-    label: 'Details',
+    label: 'Overview',
     href: (sessionId) => `/session/${sessionId}`,
   },
   monitor: {
@@ -48,6 +49,51 @@ const viewMeta: Record<
     href: (sessionId) => `/session/${sessionId}/report`,
   },
 };
+
+function WorkspaceNav({
+  sessionId,
+  currentView,
+}: {
+  sessionId: string;
+  currentView: SessionView;
+}) {
+  const pathname = usePathname();
+
+  return (
+    <nav
+      aria-label="Session workspace views"
+      className="flex items-center gap-1 rounded-[0.85rem] border border-border/60 bg-muted/40 p-1"
+    >
+      {(Object.entries(viewMeta) as Array<[SessionView, (typeof viewMeta)[SessionView]]>).map(
+        ([key, item]) => {
+          const Icon = item.icon;
+          const isActive = pathname === item.href(sessionId);
+
+          return (
+            <Link
+              key={key}
+              href={item.href(sessionId)}
+              className={cn(
+                buttonVariants({
+                  variant: 'ghost',
+                  size: 'sm',
+                }),
+                'gap-2 px-3 py-1.5 text-sm font-medium transition-all',
+                isActive
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+              aria-current={isActive ? 'page' : undefined}
+            >
+              <Icon className="h-4 w-4" />
+              {item.label}
+            </Link>
+          );
+        }
+      )}
+    </nav>
+  );
+}
 
 export function SessionPageFrame({
   routeId,
@@ -67,17 +113,11 @@ export function SessionPageFrame({
     handleRunStatusLoaded,
   } = useSessionRoute(routeId);
 
-  return (
-    <div className="mx-auto max-w-content space-y-6 px-page-x py-page-y">
-      <Breadcrumb
-        items={[
-          { label: 'Research', href: '/' },
-          { label: resolvedSessionId ? `Session ${resolvedSessionId.slice(0, 8)}` : 'Session', href: resolvedSessionId ? `/session/${resolvedSessionId}` : undefined },
-          { label: viewMeta[view].label },
-        ]}
-      />
+  const showRunStatus = isRunRoute && !resolvedSessionId;
 
-      {isRunRoute ? (
+  return (
+    <div className="mx-auto max-w-content space-y-5 px-page-x py-page-y">
+      {showRunStatus ? (
         <RunStatusSummary
           runId={routeId}
           onSessionIdResolved={setResolvedSessionId}
@@ -86,87 +126,89 @@ export function SessionPageFrame({
         />
       ) : null}
 
-      {!resolvedSessionId ? (
+      {!resolvedSessionId && !showRunStatus ? (
         <Card className="border-dashed">
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            Waiting for the backend to allocate a session ID before the session workspace can load.
+          <CardContent className="flex min-h-[180px] items-center justify-center py-10">
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-foreground" />
+              <span>Loading session workspace...</span>
+            </div>
           </CardContent>
         </Card>
       ) : (
         <>
-          <section className="panel-shell overflow-hidden rounded-[1.45rem]">
-            <div className="grid gap-6 p-6 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
-              <div className="space-y-4">
-                <p className="eyebrow">Session workspace</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  {(() => {
-                    const Icon = viewMeta[view].icon;
-                    return (
-                      <CardTitle className="flex items-center gap-3 text-[2.6rem]">
-                        <Icon className="h-6 w-6 text-primary" />
-                        {title}
-                      </CardTitle>
-                    );
-                  })()}
-                  <Badge variant={runStatusBadgeVariant(runStatus)}>{runStatus ?? 'loading'}</Badge>
-                  {sessionSummary?.hasReport ? <Badge variant="success">Report ready</Badge> : null}
+          <Breadcrumb
+            items={[
+              { label: 'Research', href: '/' },
+              {
+                label: resolvedSessionId
+                  ? `Session ${resolvedSessionId.slice(0, 8)}`
+                  : 'Session',
+                href: resolvedSessionId ? `/session/${resolvedSessionId}` : undefined,
+              },
+              { label: viewMeta[view].label },
+            ]}
+          />
+
+          <section className="rounded-[1.35rem] border border-border/75 bg-gradient-to-b from-background to-muted/20 shadow-sm">
+            <div className="flex flex-col gap-5 border-b border-border/60 px-6 py-5">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-3">
+                    {(() => {
+                      const Icon = viewMeta[view].icon;
+                      return (
+                        <CardTitle className="flex items-center gap-2.5 text-2xl font-semibold tracking-tight">
+                          <Icon className="h-5 w-5 text-primary" />
+                          {title}
+                        </CardTitle>
+                      );
+                    })()}
+                    <Badge variant={runStatusBadgeVariant(runStatus)} className="px-2.5 py-0.5">
+                      {runStatus ?? 'loading'}
+                    </Badge>
+                    {sessionSummary?.hasReport ? (
+                      <Badge variant="success" className="px-2.5 py-0.5">
+                        Report ready
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                    {description}
+                  </p>
                 </div>
-                <p className="max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
-                <p className="font-mono text-[0.74rem] uppercase tracking-[0.18em] text-muted-foreground">
-                  Session <span className="text-foreground">{resolvedSessionId}</span>
-                </p>
+
+                <div className="flex flex-col items-start gap-3 xl:items-end">
+                  {resolvedSessionId && (
+                    <WorkspaceNav sessionId={resolvedSessionId} currentView={view} />
+                  )}
+                  {resolvedSessionId && (
+                    <p className="font-mono text-xs tracking-wider text-muted-foreground">
+                      ID: <span className="text-foreground">{resolvedSessionId}</span>
+                    </p>
+                  )}
+                </div>
               </div>
-
-              <nav
-                aria-label="Session workspace routes"
-                className="grid gap-2 rounded-[1.1rem] border border-border/75 bg-surface/72 p-2 sm:grid-cols-3"
-              >
-                {(Object.entries(viewMeta) as Array<[SessionView, (typeof viewMeta)[SessionView]]>).map(
-                  ([key, item]) => {
-                    const Icon = item.icon;
-                    const active = key === view;
-
-                    return (
-                      <Link
-                        key={key}
-                        href={item.href(resolvedSessionId)}
-                        className={cn(
-                          buttonVariants({
-                            variant: active ? 'default' : 'ghost',
-                            size: 'sm',
-                          }),
-                          'justify-start px-4',
-                          !active ? 'text-muted-foreground' : undefined
-                        )}
-                        aria-current={active ? 'page' : undefined}
-                      >
-                        <Icon className="h-4 w-4" />
-                        {item.label}
-                      </Link>
-                    );
-                  }
-                )}
-              </nav>
             </div>
 
             {sessionError ? (
-              <div className="border-t border-border/70 p-4">
+              <div className="border-t border-border/60 px-6 py-4">
                 <Alert className="flex items-start gap-3" variant="warning">
                   <TimerReset className="mt-0.5 h-4 w-4 shrink-0" />
                   <div className="space-y-1">
-                    <AlertTitle>Session route is still resolving</AlertTitle>
+                    <AlertTitle>Session resolving</AlertTitle>
                     <AlertDescription>{sessionError}</AlertDescription>
                   </div>
                 </Alert>
               </div>
             ) : null}
-          </section>
 
-          {children({
-            sessionId: resolvedSessionId,
-            runStatus,
-            sessionSummary,
-          })}
+            <div className="p-6">
+              {resolvedSessionId
+                ? children({ sessionId: resolvedSessionId, runStatus, sessionSummary })
+                : null}
+            </div>
+          </section>
         </>
       )}
     </div>
