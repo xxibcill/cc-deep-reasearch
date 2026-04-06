@@ -85,9 +85,19 @@ Phase 2 - Extended lifecycle management:
 - Aligned the dashboard pipeline view and client types with backend shortlist/degraded-state fields so operators can inspect selection rationale and stage health directly
 - Added fixture-backed content-generation smoke coverage plus router/API regressions for live stage events and completed browser-started runs
 
+#### Content-Gen Dashboard Detail Upgrade (7 tasks)
+
+- Refactored the pipeline detail screen around stage-specific panels so each pipeline stage can render and evolve independently without a large page-level switch
+- Expanded ideation and downstream stage views to surface full backlog, scoring, angle, research, packaging, publish, QC, and performance-analysis detail already present in `PipelineContext`
+- Integrated the reusable scripting process inspector into the pipeline detail page alongside final-script metadata such as execution mode, pass count, hook rationale, and word count
+- Added live pipeline-context propagation through stage-completion, skip, and failure WebSocket events so active runs progressively refresh stage detail without manual refetching
+- Enriched backend/frontend stage-trace metadata and decision summaries with structured operator signals including selected artifacts, proof/fact counts, cache reuse, scripting counts, warnings, and rerun-research state
+- Expanded backend and Playwright regression coverage for richer detail rendering, live context refresh, and stage-event payloads
+- Updated operator-facing docs for the pipeline detail page, live monitoring behavior, and stage-trace visibility
+
 ### Removed
 
-- Removed completed task-planning documents, including the content-generation pipeline upgrade task docs, from `docs/tasks/` after consolidating their delivered work into this changelog
+- Removed completed task-planning documents from `docs/tasks/` after consolidating their delivered work into this changelog, including the dashboard-detail upgrade task pack
 
 ## [0.1.0] - 2026-03-11
 

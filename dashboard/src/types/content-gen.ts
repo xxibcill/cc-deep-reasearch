@@ -542,6 +542,7 @@ export interface StageTraceMetadata {
   degradation_reason?: string;
   fact_count?: number;
   proof_count?: number;
+  cache_reused?: boolean;
   step_count?: number;
   llm_call_count?: number;
   final_word_count?: number;

@@ -174,9 +174,10 @@ def register_content_gen_routes(
                     )
                 )
 
-            def _stage_completed(stage_idx: int, status: str, detail: str) -> None:
+            def _stage_completed(stage_idx: int, status: str, detail: str, stage_ctx) -> None:
                 # Update job registry with latest context after each stage
-                job_registry.update_context(job.pipeline_id, ctx)
+                job_registry.update_context(job.pipeline_id, stage_ctx)
+                serialized_context = json.loads(stage_ctx.model_dump_json())
 
                 if status == "failed":
                     asyncio.get_running_loop().create_task(
@@ -187,6 +188,7 @@ def register_content_gen_routes(
                                 "stage_index": stage_idx,
                                 "stage_label": PIPELINE_STAGE_LABELS.get(PIPELINE_STAGES[stage_idx], ""),
                                 "error": detail,
+                                "context": serialized_context,
                                 "timestamp": datetime.now(UTC).isoformat(),
                             },
                         )
@@ -200,6 +202,7 @@ def register_content_gen_routes(
                                 "stage_index": stage_idx,
                                 "stage_label": PIPELINE_STAGE_LABELS.get(PIPELINE_STAGES[stage_idx], ""),
                                 "reason": detail,
+                                "context": serialized_context,
                                 "timestamp": datetime.now(UTC).isoformat(),
                             },
                         )
@@ -213,7 +216,7 @@ def register_content_gen_routes(
                                 "stage_index": stage_idx,
                                 "stage_status": status,
                                 "stage_detail": detail,
-                                "context": json.loads(ctx.model_dump_json()),
+                                "context": serialized_context,
                                 "timestamp": datetime.now(UTC).isoformat(),
                             },
                         )
@@ -327,9 +330,10 @@ def register_content_gen_routes(
                     )
                 )
 
-            def _stage_completed(stage_idx: int, status: str, detail: str) -> None:
+            def _stage_completed(stage_idx: int, status: str, detail: str, stage_ctx) -> None:
                 # Update job registry with latest context after each stage
-                job_registry.update_context(new_job.pipeline_id, result_ctx)
+                job_registry.update_context(new_job.pipeline_id, stage_ctx)
+                serialized_context = json.loads(stage_ctx.model_dump_json())
 
                 if status == "failed":
                     asyncio.get_running_loop().create_task(
@@ -340,6 +344,7 @@ def register_content_gen_routes(
                                 "stage_index": stage_idx,
                                 "stage_label": PIPELINE_STAGE_LABELS.get(PIPELINE_STAGES[stage_idx], ""),
                                 "error": detail,
+                                "context": serialized_context,
                                 "timestamp": datetime.now(UTC).isoformat(),
                             },
                         )
@@ -353,6 +358,7 @@ def register_content_gen_routes(
                                 "stage_index": stage_idx,
                                 "stage_label": PIPELINE_STAGE_LABELS.get(PIPELINE_STAGES[stage_idx], ""),
                                 "reason": detail,
+                                "context": serialized_context,
                                 "timestamp": datetime.now(UTC).isoformat(),
                             },
                         )
@@ -366,7 +372,7 @@ def register_content_gen_routes(
                                 "stage_index": stage_idx,
                                 "stage_status": status,
                                 "stage_detail": detail,
-                                "context": json.loads(result_ctx.model_dump_json()),
+                                "context": serialized_context,
                                 "timestamp": datetime.now(UTC).isoformat(),
                             },
                         )

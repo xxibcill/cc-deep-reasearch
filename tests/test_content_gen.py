@@ -563,19 +563,20 @@ async def test_stage_completed_callback_emits_for_skipped_stage() -> None:
         )()
 
     orch = ContentGenOrchestrator(FakeConfig())
-    recorded_events: list[tuple[int, str, str]] = []
+    recorded_events: list[tuple[int, str, str, PipelineContext]] = []
 
-    def on_stage_completed(stage_idx: int, status: str, detail: str) -> None:
-        recorded_events.append((stage_idx, status, detail))
+    def on_stage_completed(stage_idx: int, status: str, detail: str, stage_ctx: PipelineContext) -> None:
+        recorded_events.append((stage_idx, status, detail, stage_ctx))
 
     ctx = PipelineContext(theme="test")
     await orch._run_stage(3, ctx, None, stage_completed_callback=on_stage_completed)
 
     assert len(recorded_events) == 1
-    idx, status, detail = recorded_events[0]
+    idx, status, detail, stage_ctx = recorded_events[0]
     assert idx == 3
     assert status == "skipped"
     assert "backlog missing" in detail
+    assert stage_ctx.stage_traces[-1].status == "skipped"
 
 
 @pytest.mark.asyncio
@@ -661,19 +662,20 @@ async def test_stage_completed_callback_emits_after_stage() -> None:
         )()
 
     orch = ContentGenOrchestrator(FakeConfig())
-    recorded_events: list[tuple[int, str, str]] = []
+    recorded_events: list[tuple[int, str, str, PipelineContext]] = []
 
-    def on_stage_completed(stage_idx: int, status: str, detail: str) -> None:
-        recorded_events.append((stage_idx, status, detail))
+    def on_stage_completed(stage_idx: int, status: str, detail: str, stage_ctx: PipelineContext) -> None:
+        recorded_events.append((stage_idx, status, detail, stage_ctx))
 
     ctx = PipelineContext(theme="test")
     await orch._run_stage(0, ctx, None, stage_completed_callback=on_stage_completed)
 
     assert len(recorded_events) == 1
-    idx, status, detail = recorded_events[0]
+    idx, status, detail, stage_ctx = recorded_events[0]
     assert idx == 0
     assert status == "completed"
     assert detail == ""
+    assert stage_ctx.stage_traces[-1].status == "completed"
 
 
 @pytest.mark.asyncio
@@ -850,6 +852,20 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
     assert ctx.publish_item.idea_id == selected_idea_id
     assert [trace.stage_name for trace in ctx.stage_traces] == PIPELINE_STAGES
     assert all(trace.status == "completed" for trace in ctx.stage_traces)
+
+    score_trace = next(trace for trace in ctx.stage_traces if trace.stage_name == "score_ideas")
+    assert score_trace.decision_summary == fixture["scoring"]["selection_reasoning"]
+    assert score_trace.metadata.selected_idea_id == selected_idea_id
+    assert score_trace.metadata.shortlist_count == len(fixture["scoring"]["shortlist"])
+
+    angle_trace = next(trace for trace in ctx.stage_traces if trace.stage_name == "generate_angles")
+    assert angle_trace.decision_summary == fixture["angles"]["selection_reasoning"]
+    assert angle_trace.metadata.selected_angle_id == fixture["angles"]["selected_angle_id"]
+
+    research_trace = next(trace for trace in ctx.stage_traces if trace.stage_name == "build_research_pack")
+    assert research_trace.decision_summary == fixture["research_pack"]["research_stop_reason"]
+    assert research_trace.metadata.fact_count == len(fixture["research_pack"]["key_facts"])
+    assert research_trace.metadata.proof_count == len(fixture["research_pack"]["proof_points"])
 
 
 # ---------------------------------------------------------------------------
