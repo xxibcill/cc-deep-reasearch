@@ -88,11 +88,11 @@ function WaitingCard({
   body: string;
 }) {
   return (
-    <Card className="border-dashed border-slate-300/90 shadow-sm">
+    <Card className="border-dashed border-border/70 shadow-sm">
       <CardContent className="flex min-h-[360px] flex-col items-center justify-center gap-4">
-        <Icon className={Icon === Loader2 ? 'h-8 w-8 animate-spin text-slate-500' : 'h-8 w-8 text-slate-500'} />
+        <Icon className={Icon === Loader2 ? 'h-8 w-8 animate-spin text-muted-foreground' : 'h-8 w-8 text-muted-foreground'} />
         <div className="space-y-1 text-center">
-          <p className="text-lg font-medium text-slate-900">{title}</p>
+          <p className="text-lg font-medium text-foreground">{title}</p>
           <p className="text-sm text-muted-foreground">{body}</p>
         </div>
       </CardContent>
@@ -220,11 +220,11 @@ export function SessionReport({ sessionId, runStatus, hasReport }: SessionReport
 
   if (hasReport === false) {
     return (
-      <Card className="border-dashed border-slate-300/90 shadow-sm">
+      <Card className="border-dashed border-border/70 shadow-sm">
         <CardContent className="flex min-h-[360px] flex-col items-center justify-center gap-4">
           <Alert className="flex min-h-[300px] items-center justify-center" variant="default">
             <div className="flex max-w-lg flex-col items-center gap-4 text-center">
-              <FileText className="h-8 w-8 text-slate-400" />
+              <FileText className="h-8 w-8 text-muted-foreground" />
               <div className="space-y-2">
                 <AlertTitle className="text-base">No report artifact available</AlertTitle>
                 <AlertDescription>
@@ -239,13 +239,13 @@ export function SessionReport({ sessionId, runStatus, hasReport }: SessionReport
   }
 
   return (
-    <Card className="overflow-hidden border-slate-200/80 shadow-sm">
+    <Card className="overflow-hidden border-border shadow-sm">
       <CardHeader className="gap-4 border-b bg-[linear-gradient(135deg,rgba(15,23,42,0.04),rgba(56,189,248,0.12))]">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
               <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5 text-sky-700" />
+                <FileText className="h-5 w-5 text-primary" />
                 Report Workspace
               </CardTitle>
               <Badge variant="secondary">{formatLabel(selectedFormat)}</Badge>
@@ -279,7 +279,7 @@ export function SessionReport({ sessionId, runStatus, hasReport }: SessionReport
         {loadingFormat === selectedFormat && !selectedReport ? (
           <Alert className="flex min-h-[300px] items-center justify-center border-dashed" variant="default">
             <div className="flex flex-col items-center gap-4 text-center">
-              <Loader2 className="h-7 w-7 animate-spin text-slate-500" />
+              <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
               <AlertDescription>
                 Loading {formatLabel(selectedFormat).toLowerCase()} report…
               </AlertDescription>
@@ -300,7 +300,7 @@ export function SessionReport({ sessionId, runStatus, hasReport }: SessionReport
         {!selectedReport && !error && loadingFormat !== selectedFormat ? (
           <Alert className="flex min-h-[300px] items-center justify-center border-dashed" variant="default">
             <div className="flex max-w-lg flex-col items-center gap-3 text-center">
-              <FileText className="h-8 w-8 text-slate-400" />
+              <FileText className="h-8 w-8 text-muted-foreground" />
               <div className="space-y-1">
                 <AlertTitle>No report available</AlertTitle>
                 <AlertDescription>

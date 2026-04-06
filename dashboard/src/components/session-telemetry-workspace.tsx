@@ -105,12 +105,12 @@ export function SessionTelemetryWorkspace({ sessionId }: { sessionId: string }) 
   return (
     <div className="space-y-4">
       {error ? (
-        <Card className="bg-amber-50/70">
+        <Card className="border-warning/30 bg-warning-muted/30">
           <CardContent className="flex items-start gap-3 p-4">
-            <Radar className="mt-0.5 h-5 w-5 text-amber-600" />
+            <Radar className="mt-0.5 h-5 w-5 text-warning" />
             <div className="space-y-1">
-              <p className="text-sm font-medium text-amber-900">Partial telemetry data</p>
-              <p className="text-sm text-amber-800">{error}</p>
+              <p className="text-sm font-medium text-foreground">Partial telemetry data</p>
+              <p className="text-sm text-muted-foreground">{error}</p>
             </div>
           </CardContent>
         </Card>

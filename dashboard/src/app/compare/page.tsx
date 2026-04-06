@@ -20,12 +20,12 @@ function ComparePageContent() {
   if (error) {
     return (
       <div className="flex min-h-96 items-center justify-center">
-        <div className="max-w-md rounded-lg border border-amber-200 bg-amber-50 p-6">
+        <div className="max-w-md rounded-lg border border-warning/30 bg-warning-muted/30 p-6">
           <div className="flex items-start gap-3">
-            <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" />
+            <AlertCircle className="mt-0.5 h-5 w-5 text-warning" />
             <div>
-              <p className="font-medium text-amber-800">Invalid comparison</p>
-              <p className="text-sm text-amber-700">{error}</p>
+              <p className="font-medium text-foreground">Invalid comparison</p>
+              <p className="text-sm text-muted-foreground">{error}</p>
             </div>
           </div>
         </div>
@@ -40,7 +40,7 @@ export default function ComparePage() {
   return (
     <Suspense fallback={
       <div className="flex min-h-96 items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-primary" />
       </div>
     }>
       <ComparePageContent />

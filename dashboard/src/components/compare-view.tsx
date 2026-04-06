@@ -48,7 +48,7 @@ function MetricValue({ label, value, delta, formatter }: MetricValueProps) {
 function SessionCard({
   session,
   title,
-  borderColor = 'border-slate-200',
+  borderColor = 'border-border',
 }: {
   session: Session | null;
   title: string;
@@ -56,7 +56,7 @@ function SessionCard({
 }) {
   if (!session) {
     return (
-      <div className={`rounded-lg border ${borderColor} border-dashed bg-slate-50 p-5`}>
+      <div className={`rounded-lg border ${borderColor} border-dashed bg-surface-raised p-5`}>
         <h3 className="mb-3 text-base font-semibold">{title}</h3>
         <div className="flex min-h-48 items-center justify-center text-muted-foreground">
           <div className="text-center">
@@ -69,13 +69,13 @@ function SessionCard({
   }
 
   return (
-    <div className={`rounded-lg border ${borderColor} bg-white p-5`}>
+    <div className={`rounded-lg border ${borderColor} bg-card p-5`}>
       <h3 className="mb-3 text-base font-semibold">{title}</h3>
       <div className="space-y-3">
         <div>
           <Link
             href={`/session/${session.sessionId}`}
-            className="text-base font-semibold text-blue-600 hover:underline"
+            className="text-base font-semibold text-primary hover:underline"
           >
             {session.label}
           </Link>
@@ -118,17 +118,17 @@ function SessionCard({
 
         <div className="flex flex-wrap gap-1.5 text-xs">
           <span className={`rounded-full px-2 py-0.5 ${
-            session.active ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+            session.active ? 'border border-success/30 bg-success-muted/30 text-success' : 'border border-border bg-surface-raised text-muted-foreground'
           }`}>
             {session.active ? 'Active' : 'Inactive'}
           </span>
           <span className={`rounded-full px-2 py-0.5 ${
-            session.hasSessionPayload ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+            session.hasSessionPayload ? 'border border-success/30 bg-success-muted/30 text-success' : 'border border-border bg-surface-raised text-muted-foreground'
           }`}>
             Payload {session.hasSessionPayload ? 'Available' : 'Missing'}
           </span>
           <span className={`rounded-full px-2 py-0.5 ${
-            session.hasReport ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+            session.hasReport ? 'border border-success/30 bg-success-muted/30 text-success' : 'border border-border bg-surface-raised text-muted-foreground'
           }`}>
             Report {session.hasReport ? 'Available' : 'Unavailable'}
           </span>
@@ -143,7 +143,7 @@ function DeltaColumn({ pair }: { pair: SessionPair }) {
 
   return (
     <div className="flex min-h-[320px] items-center justify-center">
-      <div className="w-full space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-5">
+      <div className="w-full space-y-4 rounded-lg border border-border bg-surface-raised p-5">
         <h4 className="text-center text-sm font-semibold text-muted-foreground">Deltas (B - A)</h4>
 
         <div className="space-y-3">
@@ -174,7 +174,7 @@ function DeltaColumn({ pair }: { pair: SessionPair }) {
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Changes</p>
               <ul className="mt-1.5 space-y-1 text-sm">
                 {deltas.degradedReasonDelta.map((reason, idx) => (
-                  <li key={idx} className="text-amber-600">{reason}</li>
+                  <li key={idx} className="text-warning">{reason}</li>
                 ))}
               </ul>
             </div>
@@ -227,19 +227,19 @@ export function CompareView({ sessionIdA, sessionIdB }: CompareViewProps) {
   if (loading) {
     return (
       <div className="flex min-h-96 items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-primary" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-6">
+      <div className="rounded-lg border border-destructive/30 bg-destructive-muted/30 p-6">
         <div className="flex items-start gap-3">
-          <AlertCircle className="mt-0.5 h-5 w-5 text-red-600" />
+          <AlertCircle className="mt-0.5 h-5 w-5 text-destructive" />
           <div>
-            <p className="font-medium text-red-800">Failed to load sessions</p>
-            <p className="text-sm text-red-700">{error}</p>
+            <p className="font-medium text-foreground">Failed to load sessions</p>
+            <p className="text-sm text-muted-foreground">{error}</p>
           </div>
         </div>
       </div>
@@ -264,9 +264,9 @@ export function CompareView({ sessionIdA, sessionIdB }: CompareViewProps) {
       </header>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <SessionCard session={sessionA} title="Session A" borderColor="border-blue-200" />
+        <SessionCard session={sessionA} title="Session A" borderColor="border-primary/30" />
         <DeltaColumn pair={pair} />
-        <SessionCard session={sessionB} title="Session B" borderColor="border-purple-200" />
+        <SessionCard session={sessionB} title="Session B" borderColor="border-accent/30" />
       </div>
 
       <footer className="flex justify-center gap-3 border-t pt-4">
