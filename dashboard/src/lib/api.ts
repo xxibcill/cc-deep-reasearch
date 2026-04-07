@@ -184,6 +184,16 @@ export async function getSession(sessionId: string): Promise<{ session: Session 
   return { session: normalizeSession(response.data.session) };
 }
 
+export async function getSessionPromptMetadata(
+  sessionId: string
+): Promise<SessionPromptMetadata | undefined> {
+  const response = await apiClient.get<SessionDetailResponse>(`/sessions/${sessionId}`, {
+    params: { include_derived: false },
+    timeout: SESSION_DETAIL_TIMEOUT_MS,
+  });
+  return normalizePromptMetadata(response.data.summary);
+}
+
 export interface SessionDetailResult {
   session: Session;
   events: TelemetryEvent[];
