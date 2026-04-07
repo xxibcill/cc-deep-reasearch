@@ -12,6 +12,7 @@ from cc_deep_research.models import SearchMode, SearchOptions, SearchResult, Sea
 from cc_deep_research.models.search import QueryFamily, ResearchDepth
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.orchestration.session_state import OrchestratorSessionState
+from cc_deep_research.orchestration.resilience import ParallelCollectionTimeoutError
 from cc_deep_research.orchestration.source_collection import (
     SourceAggregationService,
     SourceCollectionService,
@@ -543,6 +544,126 @@ class TestProviderFactoryIntegration:
 
         assert captured == [("tavily", 2)]
         assert len(sources) == 2
+
+    @pytest.mark.asyncio
+    async def test_parallel_strategy_raises_timeout_error_when_all_tasks_timeout(
+        self,
+        monkeypatch,
+    ) -> None:
+        """Parallel collection should surface a single timeout failure when every task times out."""
+        config = Config()
+        config.tavily.api_keys = ["test-key"]
+        monitor = ResearchMonitor(enabled=False)
+        session_state = OrchestratorSessionState(configured_providers=["tavily"])
+
+        def fake_build_search_provider(
+            current_config: Config,
+            provider_spec: ProviderSpec,
+            *,
+            max_results_override: int | None = None,
+            config_path=None,
+        ) -> SearchProvider | None:
+            del max_results_override, config_path
+            assert current_config is config
+            assert provider_spec.provider_name == "tavily"
+            return FixtureSearchProvider(name="tavily")
+
+        async def fake_execute_multiple_tasks(self, tasks, timeout=120.0):
+            del self
+            return [
+                {
+                    "task_id": task["task_id"],
+                    "query": task["query"],
+                    "status": "timeout",
+                    "error": f"Execution timed out after {timeout}s",
+                    "sources": [],
+                    "source_count": 0,
+                }
+                for task in tasks
+            ]
+
+        monkeypatch.setattr(
+            "cc_deep_research.orchestration.source_collection_parallel.build_search_provider",
+            fake_build_search_provider,
+        )
+        monkeypatch.setattr(
+            "cc_deep_research.agents.researcher.ResearcherAgent.execute_multiple_tasks",
+            fake_execute_multiple_tasks,
+        )
+
+        strategy = ParallelSourceCollectionStrategy(
+            config=config,
+            monitor=monitor,
+            session_state=session_state,
+            num_researchers=2,
+            hydrate_sources=lambda sources, _depth: asyncio.sleep(0, result=sources),
+            aggregate_sources=lambda sources: sources,
+        )
+
+        with pytest.raises(ParallelCollectionTimeoutError):
+            await strategy.collect(
+                agent_pool=object(),
+                query_families=[
+                    QueryFamily(query="query one", family="baseline", intent_tags=["baseline"]),
+                    QueryFamily(query="query two", family="baseline", intent_tags=["baseline"]),
+                ],
+                depth=ResearchDepth.DEEP,
+                min_sources=4,
+            )
+
+        timeout_policy_event = next(
+            event
+            for event in monitor._telemetry_events
+            if event["event_type"] == "decision.made"
+            and event["metadata"]["decision_type"] == "timeout_policy"
+        )
+        assert timeout_policy_event["metadata"]["inputs"]["scope"] == "parallel_collection.researcher_task"
+
+    @pytest.mark.asyncio
+    async def test_source_collection_service_falls_back_to_sequential_after_parallel_timeout(
+        self,
+    ) -> None:
+        """Parallel timeout should fall back to the sequential collector when enabled."""
+        config = Config()
+        config.search_team.fallback_to_sequential = True
+        monitor = ResearchMonitor(enabled=False)
+        session_state = OrchestratorSessionState(configured_providers=["tavily"], monitor=monitor)
+        collection = SourceCollectionService(
+            config=config,
+            monitor=monitor,
+            session_state=session_state,
+            num_researchers=2,
+        )
+
+        async def fake_parallel_collect(**kwargs):
+            del kwargs
+            raise ParallelCollectionTimeoutError("parallel researchers timed out")
+
+        async def fake_sequential_collect(**kwargs):
+            del kwargs
+            return expected
+
+        expected = [build_search_result_item("sequential-fallback")]
+        collection._parallel.collect = fake_parallel_collect
+        collection._sequential.collect = fake_sequential_collect
+
+        sources = await collection.collect_with_fallback(
+            collector=object(),
+            agent_pool=object(),
+            query_families=[QueryFamily(query="query one", family="baseline", intent_tags=["baseline"])],
+            depth=ResearchDepth.STANDARD,
+            min_sources=3,
+            prefer_parallel=True,
+        )
+
+        assert sources == expected
+        fallback_event = next(
+            event
+            for event in monitor._telemetry_events
+            if event["event_type"] == "decision.made"
+            and event["metadata"]["decision_type"] == "collection_fallback"
+        )
+        assert fallback_event["metadata"]["chosen_option"] == "sequential"
 
 
 class TestSourceCollectorDegradation:

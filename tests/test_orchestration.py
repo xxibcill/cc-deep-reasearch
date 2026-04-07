@@ -10,8 +10,10 @@ from cc_deep_research.config import Config
 from cc_deep_research.models import (
     AnalysisFinding,
     AnalysisResult,
+    ResearchPlan,
     QueryFamily,
     ResearchDepth,
+    ResearchSubtask,
     StrategyPlan,
     StrategyResult,
     ValidationResult,
@@ -23,6 +25,7 @@ from cc_deep_research.orchestration.phases import PhaseRunner
 from cc_deep_research.orchestration.planning import ResearchPlanningService
 from cc_deep_research.orchestration.session_builder import SessionBuilder
 from cc_deep_research.orchestration.session_state import OrchestratorSessionState
+from cc_deep_research.orchestration.task_dispatcher import TaskDispatcher
 from cc_deep_research.prompts import PromptRegistry
 
 
@@ -185,6 +188,93 @@ class TestResearchPlanningService:
             "primary-source",
             "expert-analysis",
         ]
+
+
+class TestTaskDispatcherRetryPolicy:
+    @pytest.mark.asyncio
+    async def test_dispatcher_retries_timeout_once_and_succeeds(self) -> None:
+        monitor = ResearchMonitor(enabled=False)
+        dispatcher = TaskDispatcher(monitor=monitor)
+        attempts = 0
+
+        async def flaky_handler(**_: object) -> dict[str, object]:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise TimeoutError("search timed out")
+            return {"sources": [], "findings": [], "result": "ok"}
+
+        dispatcher.register_handler("search", flaky_handler)
+        plan = ResearchPlan(
+            plan_id="plan-1",
+            query="market structure",
+            summary="retry test",
+            subtasks=[
+                ResearchSubtask(
+                    id="task-1",
+                    title="Collect evidence",
+                    description="Collect evidence",
+                    task_type="search",
+                    max_retries=1,
+                )
+            ],
+            execution_order=[["task-1"]],
+        )
+
+        results = await dispatcher.dispatch_plan(plan)
+
+        assert attempts == 2
+        assert results["task-1"].success is True
+        retry_event = next(
+            event
+            for event in monitor._telemetry_events
+            if event["event_type"] == "decision.made"
+            and event["metadata"]["decision_type"] == "retry"
+        )
+        assert retry_event["metadata"]["chosen_option"] == "retry"
+        assert retry_event["metadata"]["inputs"]["attempt"] == 1
+
+    @pytest.mark.asyncio
+    async def test_dispatcher_stops_after_retry_limit(self) -> None:
+        monitor = ResearchMonitor(enabled=False)
+        dispatcher = TaskDispatcher(monitor=monitor)
+        attempts = 0
+
+        async def always_fails(**_: object) -> dict[str, object]:
+            nonlocal attempts
+            attempts += 1
+            raise TimeoutError("search timed out")
+
+        dispatcher.register_handler("search", always_fails)
+        plan = ResearchPlan(
+            plan_id="plan-2",
+            query="market structure",
+            summary="retry exhaustion test",
+            subtasks=[
+                ResearchSubtask(
+                    id="task-1",
+                    title="Collect evidence",
+                    description="Collect evidence",
+                    task_type="search",
+                    max_retries=1,
+                )
+            ],
+            execution_order=[["task-1"]],
+        )
+
+        results = await dispatcher.dispatch_plan(plan)
+
+        assert attempts == 2
+        assert results["task-1"].success is False
+        assert plan.get_subtask("task-1").status == "failed"
+        retry_events = [
+            event
+            for event in monitor._telemetry_events
+            if event["event_type"] == "decision.made"
+            and event["metadata"]["decision_type"] == "retry"
+        ]
+        assert retry_events[-1]["metadata"]["chosen_option"] == "stop"
+        assert retry_events[-1]["reason_code"] == "retry_exhausted"
 
 
 def _make_analysis() -> AnalysisResult:
