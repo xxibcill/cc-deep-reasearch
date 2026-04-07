@@ -52,6 +52,7 @@ from cc_deep_research.research_runs.session_purge import SessionPurgeService
 from cc_deep_research.search_cache import SearchCacheStore
 from cc_deep_research.session_store import SessionStore
 from cc_deep_research.telemetry import (
+    _load_dashboard_connection,
     get_default_dashboard_db_path,
     get_default_telemetry_dir,
     query_checkpoint_detail,
@@ -2236,6 +2237,229 @@ async def list_research_themes() -> JSONResponse:
     """
     themes = _get_research_theme_list()
     return JSONResponse(content={"themes": themes, "total": len(themes)})
+
+
+def _query_analytics_data(
+    db_path: Path | None = None,
+    days_back: int = 30,
+) -> dict[str, Any]:
+    """Query aggregate analytics data from the telemetry database.
+
+    Args:
+        db_path: Path to the DuckDB database.
+        days_back: Number of days to look back for analytics.
+
+    Returns:
+        Dict containing aggregate analytics metrics.
+    """
+    from cc_deep_research.telemetry import get_default_dashboard_db_path
+
+    database_path = db_path or get_default_dashboard_db_path()
+    if not database_path.exists():
+        return {
+            "summary": {
+                "total_runs": 0,
+                "completed_runs": 0,
+                "failed_runs": 0,
+                "interrupted_runs": 0,
+                "avg_duration_ms": 0,
+                "avg_sources": 0,
+                "report_availability_rate": 0,
+            },
+            "status_counts": [],
+            "duration_by_status": [],
+            "sources_trend": [],
+            "daily_volume": [],
+            "depth_distribution": [],
+        }
+
+    conn = _load_dashboard_connection(database_path)
+
+    summary = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS total_runs,
+            SUM(CASE WHEN status IN ('completed', 'success') THEN 1 ELSE 0 END) AS completed_runs,
+            SUM(CASE WHEN status IN ('failed', 'error') THEN 1 ELSE 0 END) AS failed_runs,
+            SUM(CASE WHEN status IN ('interrupted', 'cancelled') THEN 1 ELSE 0 END) AS interrupted_runs,
+            COALESCE(AVG(CASE WHEN status IN ('completed', 'success') THEN total_time_ms ELSE NULL END), 0) AS avg_duration_ms,
+            COALESCE(AVG(total_sources), 0) AS avg_sources
+        FROM telemetry_sessions
+        WHERE created_at >= now() - interval '1 day' * ?
+        """,
+        [days_back],
+    ).fetchone()
+
+    report_count = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM telemetry_sessions
+        WHERE created_at >= now() - interval '1 day' * ?
+        AND summary_json->>'has_report' = 'true'
+        """,
+        [days_back],
+    ).fetchone()[0] or 0
+
+    total_with_report = summary[0] if summary else 0
+    report_rate = (report_count / total_with_report * 100) if total_with_report > 0 else 0.0
+
+    status_counts = conn.execute(
+        """
+        SELECT
+            COALESCE(status, 'unknown') AS status,
+            COUNT(*) AS count
+        FROM telemetry_sessions
+        WHERE created_at >= now() - interval '1 day' * ?
+        GROUP BY status
+        ORDER BY count DESC
+        """,
+        [days_back],
+    ).fetchall()
+
+    duration_by_status = conn.execute(
+        """
+        SELECT
+            COALESCE(status, 'unknown') AS status,
+            COALESCE(AVG(total_time_ms), 0) AS avg_duration_ms,
+            MIN(total_time_ms) AS min_duration_ms,
+            MAX(total_time_ms) AS max_duration_ms,
+            COUNT(*) AS count
+        FROM telemetry_sessions
+        WHERE created_at >= now() - interval '1 day' * ?
+        AND total_time_ms IS NOT NULL
+        GROUP BY status
+        ORDER BY count DESC
+        """,
+        [days_back],
+    ).fetchall()
+
+    sources_trend = conn.execute(
+        """
+        SELECT
+            DATE_TRUNC('day', created_at) AS day,
+            COUNT(*) AS run_count,
+            COALESCE(AVG(total_sources), 0) AS avg_sources,
+            SUM(total_sources) AS total_sources
+        FROM telemetry_sessions
+        WHERE created_at >= now() - interval '1 day' * ?
+        GROUP BY DATE_TRUNC('day', created_at)
+        ORDER BY day DESC
+        """,
+        [days_back],
+    ).fetchall()
+
+    daily_volume = conn.execute(
+        """
+        SELECT
+            DATE_TRUNC('day', created_at) AS day,
+            COUNT(*) AS total_runs,
+            SUM(CASE WHEN status IN ('completed', 'success') THEN 1 ELSE 0 END) AS completed,
+            SUM(CASE WHEN status IN ('failed', 'error') THEN 1 ELSE 0 END) AS failed,
+            SUM(CASE WHEN status IN ('interrupted', 'cancelled') THEN 1 ELSE 0 END) AS interrupted
+        FROM telemetry_sessions
+        WHERE created_at >= now() - interval '1 day' * ?
+        GROUP BY DATE_TRUNC('day', created_at)
+        ORDER BY day DESC
+        """,
+        [days_back],
+    ).fetchall()
+
+    depth_dist = conn.execute(
+        """
+        SELECT
+            COALESCE(summary_json->>'$.depth', 'unknown') AS depth,
+            COUNT(*) AS count,
+            COALESCE(AVG(total_time_ms), 0) AS avg_duration_ms
+        FROM telemetry_sessions
+        WHERE created_at >= now() - interval '1 day' * ?
+        GROUP BY depth
+        ORDER BY count DESC
+        """,
+        [days_back],
+    ).fetchall()
+
+    conn.close()
+
+    session_store = SessionStore()
+    saved_sessions = session_store.list_sessions()
+    archived_count = len(session_store.get_archived_session_ids())
+    active_count = sum(1 for s in saved_sessions if not s.get("archived", False))
+
+    return {
+        "summary": {
+            "total_runs": summary[0] if summary else 0,
+            "completed_runs": summary[1] if summary else 0,
+            "failed_runs": summary[2] if summary else 0,
+            "interrupted_runs": summary[3] if summary else 0,
+            "avg_duration_ms": float(summary[4]) if summary else 0.0,
+            "avg_sources": float(summary[5]) if summary else 0.0,
+            "report_availability_rate": round(report_rate, 1),
+            "archived_sessions": archived_count,
+            "active_sessions": active_count,
+        },
+        "status_counts": [
+            {"status": str(row[0]), "count": int(row[1])} for row in status_counts
+        ],
+        "duration_by_status": [
+            {
+                "status": str(row[0]),
+                "avg_duration_ms": float(row[1]) if row[1] else 0.0,
+                "min_duration_ms": int(row[2]) if row[2] else 0,
+                "max_duration_ms": int(row[3]) if row[3] else 0,
+                "count": int(row[4]),
+            }
+            for row in duration_by_status
+        ],
+        "sources_trend": [
+            {
+                "day": _serialize_timestamp(row[0]),
+                "run_count": int(row[1]),
+                "avg_sources": float(row[2]) if row[2] else 0.0,
+                "total_sources": int(row[3]) if row[3] else 0,
+            }
+            for row in sources_trend
+        ],
+        "daily_volume": [
+            {
+                "day": _serialize_timestamp(row[0]),
+                "total_runs": int(row[1]),
+                "completed": int(row[2]),
+                "failed": int(row[3]),
+                "interrupted": int(row[4]),
+            }
+            for row in daily_volume
+        ],
+        "depth_distribution": [
+            {
+                "depth": str(row[0]),
+                "count": int(row[1]),
+                "avg_duration_ms": float(row[2]) if row[2] else 0.0,
+            }
+            for row in depth_dist
+        ],
+    }
+
+
+@app.get("/api/analytics")
+async def get_analytics(
+    days_back: int = Query(default=30, ge=1, le=365, description="Days of history to analyze"),
+) -> JSONResponse:
+    """Get aggregate analytics data for operational insights.
+
+    Args:
+        days_back: Number of days to look back for analytics.
+
+    Returns:
+        JSON response with aggregate analytics metrics including:
+        - Summary totals (runs, completion rate, average duration)
+        - Status distribution counts
+        - Duration metrics by status
+        - Sources trend over time
+        - Daily volume breakdown
+        - Depth distribution
+    """
+    analytics = _query_analytics_data(days_back=days_back)
+    return JSONResponse(content=analytics)
 
 
 def start_server(
