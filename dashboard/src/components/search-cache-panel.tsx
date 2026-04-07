@@ -318,17 +318,23 @@ export function SearchCachePanel() {
       return;
     }
 
+    const entryToDelete = pendingDeleteEntry;
     setActiveAction('delete');
     setActionError(null);
     setActionMessage(null);
 
     try {
-      const response = await deleteSearchCacheEntry(pendingDeleteEntry.cache_key);
+      const response = await deleteSearchCacheEntry(entryToDelete.cache_key);
       setActionMessage(
         response.deleted
-          ? `Removed cache entry for "${pendingDeleteEntry.normalized_query}".`
-          : `No cache entry was removed for "${pendingDeleteEntry.normalized_query}".`
+          ? `Removed cache entry for "${entryToDelete.normalized_query}".`
+          : `No cache entry was removed for "${entryToDelete.normalized_query}".`
       );
+      if (response.deleted) {
+        setEntries((current) =>
+          current.filter((entry) => entry.cache_key !== entryToDelete.cache_key)
+        );
+      }
       setPendingDeleteEntry(null);
       await refreshPanel();
     } catch (err) {

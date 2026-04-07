@@ -19,7 +19,7 @@ import {
   X,
 } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 type NotificationVariant = 'success' | 'info' | 'warning' | 'destructive';
@@ -54,6 +54,18 @@ interface NotificationContextValue {
 const NotificationContext = createContext<NotificationContextValue | null>(null);
 
 const DEFAULT_DURATION_MS = 4500;
+const PENDING_NOTIFICATION_STORAGE_KEY = 'ccdr.pending-notification';
+
+export function storePendingNotification(notification: NotificationInput) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.sessionStorage.setItem(
+    PENDING_NOTIFICATION_STORAGE_KEY,
+    JSON.stringify(notification)
+  );
+}
 
 function notificationIcon(variant: NotificationVariant) {
   switch (variant) {
@@ -108,10 +120,13 @@ function NotificationCard({
             <div className="flex flex-wrap gap-2 pt-1">
               {notification.actions.map((action) =>
                 action.href ? (
-                  <Link key={`${notification.id}-${action.label}`} href={action.href} className="inline-flex">
-                    <Button size="sm" variant="outline">
-                      {action.label}
-                    </Button>
+                  <Link
+                    key={`${notification.id}-${action.label}`}
+                    href={action.href}
+                    role="button"
+                    className={buttonVariants({ size: 'sm', variant: 'outline' })}
+                  >
+                    {action.label}
                   </Link>
                 ) : (
                   <Button
@@ -194,6 +209,26 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     },
     [dismiss]
   );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const raw = window.sessionStorage.getItem(PENDING_NOTIFICATION_STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+
+    try {
+      const pending = JSON.parse(raw) as NotificationInput;
+      notify(pending);
+    } catch (error) {
+      console.warn('Failed to restore pending notification.', error);
+    } finally {
+      window.sessionStorage.removeItem(PENDING_NOTIFICATION_STORAGE_KEY);
+    }
+  }, [notify]);
 
   useEffect(() => {
     const activeTimeouts = timeoutMap.current
