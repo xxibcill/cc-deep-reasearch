@@ -109,6 +109,7 @@ export interface SessionListQueryState {
   search: string;
   status: string;
   activeOnly: boolean;
+  archivedOnly: boolean;
 }
 
 export interface Session {

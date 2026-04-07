@@ -1086,6 +1086,123 @@ def register_routes(app: FastAPI) -> None:
         response = service.delete_sessions(request)
         return JSONResponse(content=response.model_dump(mode="json"))
 
+    @app.get("/api/sessions/purge-summary")
+    async def get_purge_summary() -> JSONResponse:
+        """Return summary of sessions that could be purged.
+
+        Provides operators with a clear view of:
+        - archived sessions (safe to purge)
+        - sessions with no artifacts (may be safe to purge)
+        - active sessions (protected from purge)
+
+        Returns:
+            JSON response with purge-ready session counts and recommendations.
+        """
+        telemetry_dir = get_default_telemetry_dir()
+        session_store = SessionStore()
+
+        archived_ids = session_store.get_archived_session_ids()
+        all_saved = session_store.list_sessions()
+
+        archived_sessions = []
+        no_artifacts_sessions = []
+        active_session_ids: set[str] = set()
+
+        live_sessions = query_live_sessions(base_dir=telemetry_dir)
+        for session in live_sessions:
+            if session.get("active"):
+                active_session_ids.add(session.get("session_id", ""))
+
+        for saved in all_saved:
+            session_id = saved.get("session_id", "")
+            is_archived = session_id in archived_ids or saved.get("archived", False)
+            has_payload = saved.get("has_session_payload", False)
+            has_report = saved.get("has_report", False)
+
+            if session_id in active_session_ids:
+                continue
+
+            if is_archived:
+                archived_sessions.append({
+                    "session_id": session_id,
+                    "has_payload": has_payload,
+                    "has_report": has_report,
+                    "completed_at": saved.get("completed_at"),
+                })
+            elif not has_payload and not has_report:
+                no_artifacts_sessions.append({
+                    "session_id": session_id,
+                    "completed_at": saved.get("completed_at"),
+                })
+
+        recommendations = []
+        if archived_sessions:
+            recommendations.append({
+                "category": "archived",
+                "description": f"{len(archived_sessions)} archived session(s) are safe to purge",
+                "action": "bulk-purge-archived",
+                "count": len(archived_sessions),
+            })
+        if no_artifacts_sessions:
+            recommendations.append({
+                "category": "no-artifacts",
+                "description": f"{len(no_artifacts_sessions)} session(s) have no payload or report",
+                "action": "review-no-artifacts",
+                "count": len(no_artifacts_sessions),
+            })
+
+        return JSONResponse(content={
+            "archived_sessions_count": len(archived_sessions),
+            "no_artifacts_count": len(no_artifacts_sessions),
+            "active_count": len(active_session_ids),
+            "recommendations": recommendations,
+        })
+
+    @app.post("/api/sessions/purge-archived")
+    async def purge_archived_sessions(
+        dry_run: bool = Query(default=True, description="If true, only return what would be deleted"),
+        force: bool = Query(default=False, description="Delete even if sessions are active"),
+    ) -> JSONResponse:
+        """Purge all archived sessions.
+
+        Args:
+            dry_run: If true, simulate deletion without actually deleting.
+            force: If true, delete even if some sessions are active.
+
+        Returns:
+            JSON response with results of purge operation.
+        """
+        session_store = SessionStore()
+        service = SessionPurgeService()
+
+        archived_ids = list(session_store.get_archived_session_ids())
+
+        if dry_run:
+            return JSONResponse(content={
+                "dry_run": True,
+                "would_delete": len(archived_ids),
+                "session_ids": archived_ids,
+                "message": f"Would delete {len(archived_ids)} archived session(s)",
+            })
+
+        if not archived_ids:
+            return JSONResponse(content={
+                "deleted": 0,
+                "session_ids": [],
+                "message": "No archived sessions to purge",
+            })
+
+        request = BulkSessionDeleteRequest(session_ids=archived_ids, force=force)
+        response = service.delete_sessions(request)
+
+        return JSONResponse(content={
+            "dry_run": False,
+            "deleted": response.summary.deleted_count,
+            "failed": response.summary.failed_count,
+            "session_ids": archived_ids,
+            "results": response.model_dump(mode="json"),
+        })
+
     @app.post("/api/sessions/{session_id}/archive")
     async def archive_session(session_id: str) -> JSONResponse:
         """Archive a session, hiding it from the default session list.

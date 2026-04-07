@@ -461,6 +461,42 @@ export async function restoreSession(sessionId: string): Promise<ArchiveSessionR
   }
 }
 
+export interface SessionPurgeSummary {
+  archived_sessions_count: number;
+  no_artifacts_count: number;
+  active_count: number;
+  recommendations: Array<{
+    category: string;
+    description: string;
+    action: string;
+    count: number;
+  }>;
+}
+
+export interface PurgeArchivedResult {
+  dry_run: boolean;
+  deleted?: number;
+  would_delete?: number;
+  session_ids: string[];
+  message: string;
+  results?: unknown;
+}
+
+export async function getSessionPurgeSummary(): Promise<SessionPurgeSummary> {
+  const response = await apiClient.get<SessionPurgeSummary>('/sessions/purge-summary');
+  return response.data;
+}
+
+export async function purgeArchivedSessions(
+  dryRun: boolean = true,
+  force: boolean = false
+): Promise<PurgeArchivedResult> {
+  const response = await apiClient.post<PurgeArchivedResult>('/sessions/purge-archived', null, {
+    params: { dry_run: dryRun, force },
+  });
+  return response.data;
+}
+
 export interface TraceBundleOptions {
   includePayload?: boolean;
   includeReport?: boolean;
