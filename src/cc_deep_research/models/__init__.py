@@ -50,6 +50,12 @@ from .search import (
     SearchResult,
     SearchResultItem,
 )
+from .metadata import (
+    AnalysisMetadataContract,
+    IterationHistoryEntryContract,
+    StrategyMetadataContract,
+    ValidationMetadataContract,
+)
 from .session import (
     DeepAnalysisStatus,
     ProviderStatus,
@@ -72,6 +78,7 @@ from .support import APIKey, SearchMode
 
 __all__ = [
     "APIKey",
+    "AnalysisMetadataContract",
     "AnalysisFinding",
     "AnalysisGap",
     "AnalysisResult",
@@ -87,6 +94,7 @@ __all__ = [
     "CrossReferenceClaim",
     "DeepAnalysisStatus",
     "EvidenceType",
+    "IterationHistoryEntryContract",
     "IterationHistoryRecord",
     "LLMPlanModel",
     "LLMProviderType",
@@ -122,9 +130,11 @@ __all__ = [
     "SourceType",
     "StepInputRef",
     "StepOutputRef",
+    "StrategyMetadataContract",
     "StrategyPlan",
     "StrategyResult",
     "TaskExecutionResult",
+    "ValidationMetadataContract",
     "ValidationResult",
     "normalize_session_metadata",
 ]
