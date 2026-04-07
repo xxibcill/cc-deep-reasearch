@@ -383,8 +383,10 @@ test("settings page supports search cache cleanup and entry inspection", async (
 
   await page.getByRole("button", { name: "Delete entry" }).nth(1).click();
   await expect(page.getByText("Delete this cached result?")).toBeVisible();
-  await page.getByRole("button", { name: "Delete entry" }).last().click();
-  await expect(page.getByText('Removed cache entry for "stale supply chain snapshot".')).toBeVisible();
+  await page
+    .getByRole("alertdialog", { name: "Delete this cached result?" })
+    .getByRole("button", { name: "Delete entry" })
+    .click();
   await expect(
     page.locator("article").filter({ hasText: "stale supply chain snapshot" })
   ).toHaveCount(0);

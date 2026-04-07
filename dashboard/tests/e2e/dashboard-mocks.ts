@@ -283,12 +283,162 @@ function buildReport(session: MockSession) {
   };
 }
 
+function buildThemesResponse() {
+  return {
+    themes: [
+      {
+        theme: "general",
+        display_name: "General Research",
+        description: "Balanced default workflow for broad investigations.",
+        source: "builtin",
+      },
+      {
+        theme: "market_research",
+        display_name: "Market Research",
+        description: "Bias collection and synthesis toward market signals and competitive context.",
+        source: "builtin",
+      },
+    ],
+    total: 2,
+  };
+}
+
+function buildPurgeSummary(sessions: MockSession[]) {
+  const archivedSessions = sessions.filter((session) => session.archived);
+  const noArtifactSessions = sessions.filter(
+    (session) => !session.active && !session.archived && !session.has_report && !session.has_session_payload
+  );
+  const activeSessions = sessions.filter((session) => session.active);
+
+  return {
+    archived_sessions_count: archivedSessions.length,
+    no_artifacts_count: noArtifactSessions.length,
+    active_count: activeSessions.length,
+    recommendations: archivedSessions.length > 0
+      ? [
+          {
+            category: "archived",
+            description: `${archivedSessions.length} archived session(s) are safe to purge`,
+            action: "bulk-purge-archived",
+            count: archivedSessions.length,
+          },
+        ]
+      : [],
+  };
+}
+
+function buildSessionArtifacts(session: MockSession) {
+  return {
+    session_id: session.session_id,
+    available: {
+      session_payload: {
+        present: session.has_session_payload,
+      },
+      reports: {
+        present: session.has_report,
+        formats: session.has_report ? ["markdown", "json", "html"] : [],
+      },
+      trace_bundle: {
+        present: true,
+      },
+      checkpoints: {
+        present: false,
+        count: 0,
+        resume_available: false,
+      },
+    },
+    missing: {
+      reports: session.has_report ? null : { reason: "No report artifact was generated for this session." },
+      checkpoints: { reason: "No checkpoints available for this mock session." },
+    },
+    provenance: {},
+  };
+}
+
+function buildAnalytics(sessions: MockSession[]) {
+  const terminal = sessions.filter((session) => !session.active);
+  const completed = terminal.filter((session) => session.status === "completed");
+  const failed = terminal.filter((session) => session.status === "failed");
+  const interrupted = terminal.filter((session) => session.status === "interrupted" || session.status === "cancelled");
+  const totalDuration = completed.reduce((sum, session) => sum + (session.total_time_ms ?? 0), 0);
+  const totalSources = terminal.reduce((sum, session) => sum + session.total_sources, 0);
+
+  return {
+    summary: {
+      total_runs: sessions.length,
+      completed_runs: completed.length,
+      failed_runs: failed.length,
+      interrupted_runs: interrupted.length,
+      avg_duration_ms: completed.length > 0 ? totalDuration / completed.length : 0,
+      avg_sources: terminal.length > 0 ? totalSources / terminal.length : 0,
+      report_availability_rate: terminal.length > 0 ? Math.round((completed.filter((session) => session.has_report).length / terminal.length) * 100) : 0,
+      archived_sessions: sessions.filter((session) => session.archived).length,
+      active_sessions: sessions.filter((session) => session.active).length,
+    },
+    status_counts: [
+      ...new Map(sessions.map((session) => [session.status, sessions.filter((candidate) => candidate.status === session.status).length])).entries(),
+    ].map(([status, count]) => ({ status, count })),
+    duration_by_status: ["completed", "failed", "running"]
+      .map((status) => {
+        const items = sessions.filter((session) => session.status === status && session.total_time_ms != null);
+        if (items.length === 0) {
+          return null;
+        }
+        const durations = items.map((session) => session.total_time_ms as number);
+        return {
+          status,
+          avg_duration_ms: durations.reduce((sum, value) => sum + value, 0) / durations.length,
+          min_duration_ms: Math.min(...durations),
+          max_duration_ms: Math.max(...durations),
+          count: items.length,
+        };
+      })
+      .filter(Boolean),
+    sources_trend: sessions.slice(0, 7).map((session) => ({
+      day: session.created_at,
+      run_count: 1,
+      avg_sources: session.total_sources,
+      total_sources: session.total_sources,
+    })),
+    daily_volume: sessions.slice(0, 7).map((session) => ({
+      day: session.created_at,
+      total_runs: 1,
+      completed: session.status === "completed" ? 1 : 0,
+      failed: session.status === "failed" ? 1 : 0,
+      interrupted: session.status === "interrupted" || session.status === "cancelled" ? 1 : 0,
+    })),
+    depth_distribution: ["quick", "standard", "deep"]
+      .map((depth) => {
+        const items = sessions.filter((session) => session.depth === depth);
+        if (items.length === 0) {
+          return null;
+        }
+        const durations = items.map((session) => session.total_time_ms ?? 0);
+        return {
+          depth,
+          count: items.length,
+          avg_duration_ms: durations.reduce((sum, value) => sum + value, 0) / items.length,
+        };
+      })
+      .filter(Boolean),
+  };
+}
+
 export async function mockDashboardApis(page: Page, options: MockOptions = {}) {
   let sessions = [...(options.sessions ?? mockSessions)];
 
   await page.route("**/api/sessions**", async (route) => {
     const url = new URL(route.request().url());
     const pathName = url.pathname;
+
+    if (pathName.endsWith("/api/sessions/purge-summary")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(buildPurgeSummary(sessions)),
+      });
+      return;
+    }
 
     const archiveMatch = pathName.match(/\/api\/sessions\/([^/]+)\/archive$/);
     if (archiveMatch) {
@@ -321,6 +471,34 @@ export async function mockDashboardApis(page: Page, options: MockOptions = {}) {
         body: JSON.stringify({
           session_id: restoreMatch[1],
           archived: false,
+        }),
+      });
+      return;
+    }
+
+    const artifactsMatch = pathName.match(/\/api\/sessions\/([^/]+)\/artifacts$/);
+    if (artifactsMatch) {
+      const session = getSession(artifactsMatch[1], sessions);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(buildSessionArtifacts(session)),
+      });
+      return;
+    }
+
+    const bundleMatch = pathName.match(/\/api\/sessions\/([^/]+)\/bundle$/);
+    if (bundleMatch) {
+      const session = getSession(bundleMatch[1], sessions);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          session_id: session.session_id,
+          label: session.label,
+          report_included: session.has_report,
+          payload_included: session.has_session_payload,
+          artifacts: [],
         }),
       });
       return;
@@ -398,6 +576,22 @@ export async function mockDashboardApis(page: Page, options: MockOptions = {}) {
     }
 
     await route.fallback();
+  });
+
+  await page.route("**/api/themes", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(buildThemesResponse()),
+    });
+  });
+
+  await page.route("**/api/analytics**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(buildAnalytics(sessions)),
+    });
   });
 }
 
