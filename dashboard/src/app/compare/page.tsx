@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation'
 import { AlertCircle, ArrowLeft } from 'lucide-react'
 
 import { CompareView } from '@/components/compare-view'
-import { Button } from '@/components/ui/button'
+import { buttonVariants } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 function ComparePageContent() {
@@ -43,11 +43,9 @@ function ComparePageContent() {
               Return to the research archive, enable compare mode, and pick one baseline session
               plus one comparison session.
             </p>
-            <Link href="/" className="inline-flex">
-              <Button variant="outline">
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Back to Sessions
-              </Button>
+            <Link href="/" className={buttonVariants({ variant: 'outline' })}>
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Sessions
             </Link>
           </CardContent>
         </Card>

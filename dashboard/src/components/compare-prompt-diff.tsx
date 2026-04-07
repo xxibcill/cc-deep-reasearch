@@ -182,6 +182,12 @@ export function PromptDiffCard({
 }
 
 function PromptDiffItemRow({ item }: { item: PromptDiffItem }) {
+  const unchangedUsesOverride = Boolean(
+    item.sessionAOverrides?.prompt_prefix ||
+      item.sessionAOverrides?.system_prompt ||
+      item.sessionBOverrides?.prompt_prefix ||
+      item.sessionBOverrides?.system_prompt
+  );
   const statusIcon = {
     added: <Check className="h-3.5 w-3.5 text-success" />,
     removed: <X className="h-3.5 w-3.5 text-warning" />,
@@ -254,7 +260,9 @@ function PromptDiffItemRow({ item }: { item: PromptDiffItem }) {
       
       {item.status === 'unchanged' && (
         <p className="text-xs text-muted-foreground">
-          Using default prompts in both sessions
+          {unchangedUsesOverride
+            ? 'Identical override configuration in both sessions'
+            : 'Using default prompts in both sessions'}
         </p>
       )}
     </div>

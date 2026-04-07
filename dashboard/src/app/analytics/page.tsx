@@ -1,12 +1,15 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { BarChart3, Calendar, CheckCircle2, Clock, FileText, TrendingDown, TrendingUp, XCircle } from 'lucide-react';
+import { ArrowRight, BarChart3, Calendar, CheckCircle2, Clock, FileText, TrendingDown, TrendingUp, XCircle } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
+import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MetricCard } from '@/components/ui/metric-card';
-import { getAnalytics, getApiErrorMessage, type AnalyticsResponse } from '@/lib/api';
+import { getAnalytics, getApiErrorMessage, getSessions, type AnalyticsResponse } from '@/lib/api';
+import type { Session } from '@/types/telemetry';
 
 const DAYS_OPTIONS = [
   { value: 7, label: '7 days' },
@@ -18,6 +21,7 @@ const DAYS_OPTIONS = [
 export default function AnalyticsPage() {
   const [daysBack, setDaysBack] = useState(30);
   const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
+  const [recentSessions, setRecentSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,11 +33,15 @@ export default function AnalyticsPage() {
       setError(null);
 
       try {
-        const data = await getAnalytics(daysBack);
+        const [data, recent] = await Promise.all([
+          getAnalytics(daysBack),
+          getSessions({ limit: 24 }),
+        ]);
         if (!mounted) {
           return;
         }
         setAnalytics(data);
+        setRecentSessions(recent.sessions);
       } catch (err) {
         console.error('Failed to load analytics:', err);
         if (mounted) {
@@ -86,6 +94,16 @@ export default function AnalyticsPage() {
   };
 
   const summary = analytics?.summary;
+  const cutoff = Date.now() - daysBack * 24 * 60 * 60 * 1000;
+  const contributingSessions = recentSessions.filter((session) => {
+    const anchor = session.createdAt ?? session.lastEventAt ?? session.completedAt;
+    if (!anchor) {
+      return false;
+    }
+
+    const timestamp = new Date(anchor).getTime();
+    return Number.isFinite(timestamp) && timestamp >= cutoff;
+  });
 
   return (
     <div className="mx-auto max-w-content px-page-x py-page-y">
@@ -115,6 +133,14 @@ export default function AnalyticsPage() {
               ))}
             </select>
           </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <Badge variant="outline">Trends across the last {daysBack} days</Badge>
+          <Link href="/" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+            Open research archive
+            <ArrowRight className="ml-2 h-3.5 w-3.5" />
+          </Link>
         </div>
 
         {error && (
@@ -364,6 +390,47 @@ export default function AnalyticsPage() {
                 </CardContent>
               </Card>
             )}
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Recent sessions behind these metrics</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {contributingSessions.length > 0 ? (
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      Drill back into recent sessions from the selected window to validate any aggregate trend before acting on it.
+                    </p>
+                    <div className="grid gap-3">
+                      {contributingSessions.slice(0, 6).map((session) => (
+                        <Link
+                          key={session.sessionId}
+                          href={`/session/${session.sessionId}`}
+                          className="flex flex-wrap items-center justify-between gap-3 rounded-[1rem] border border-border/70 bg-surface/58 px-4 py-3 transition-colors hover:bg-surface-raised/70"
+                        >
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium text-foreground">{session.label}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {session.status} • {session.depth ?? 'standard'} depth •{' '}
+                              {session.totalSources} sources
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {session.hasReport ? <Badge variant="success">Report</Badge> : null}
+                            {session.archived ? <Badge variant="outline">Archived</Badge> : null}
+                            <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No recent sessions were found for the selected window.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
 
             {analytics &&
               analytics.status_counts.length === 0 &&

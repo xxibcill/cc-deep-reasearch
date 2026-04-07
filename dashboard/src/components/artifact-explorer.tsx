@@ -18,13 +18,13 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { HelpCallout } from '@/components/ui/help-callout';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { getSessionArtifacts, getApiErrorMessage } from '@/lib/api';
+import { getSessionArtifacts, getApiErrorMessage, type SessionArtifactsResponse } from '@/lib/api';
 import { useNotifications } from '@/components/ui/notification-center';
 import type {
   ResearchRunStatus,
   Session,
-  SessionArtifactsResponse,
 } from '@/types/telemetry';
 
 interface ArtifactExplorerProps {
@@ -303,70 +303,73 @@ export function ArtifactExplorer({
   };
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Package className="h-5 w-5 text-primary" />
-            <CardTitle className="text-base">Artifact Explorer</CardTitle>
-          </div>
-          <ArtifactSummary artifacts={artifactItems} />
-        </div>
-        <CardDescription className="mt-1">
-          View all available artifacts and their provenance for this session
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {isActive && (
-          <div className="mb-4 rounded-lg border border-warning/25 bg-warning-muted/20 p-3">
-            <div className="flex items-center gap-2 text-sm text-warning">
-              <Info className="h-4 w-4" />
-              <span>
-                Research is still {runStatus}. More artifacts may become available once complete.
-              </span>
+    <div className="space-y-4">
+      <HelpCallout
+        id="artifact-explorer"
+        title="Artifacts and trace bundles"
+        content="Reports are final outputs, payloads keep raw research data, and trace bundles package telemetry plus optional artifacts for offline debugging or sharing."
+      />
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Package className="h-5 w-5 text-primary" />
+              <CardTitle className="text-base">Artifact Explorer</CardTitle>
             </div>
+            <ArtifactSummary artifacts={artifactItems} />
           </div>
-        )}
-
-        {isTerminal && !artifactItems.some((a) => a.present) && (
-          <div className="mb-4 rounded-lg border border-destructive/25 bg-destructive-muted/20 p-3">
-            <div className="flex items-center gap-2 text-sm text-destructive">
-              <XCircle className="h-4 w-4" />
-              <span>
-                Run {runStatus}. No artifacts available for inspection.
-              </span>
+          <CardDescription className="mt-1">
+            View all available artifacts and their provenance for this session
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isActive && (
+            <div className="mb-4 rounded-lg border border-warning/25 bg-warning-muted/20 p-3">
+              <div className="flex items-center gap-2 text-sm text-warning">
+                <Info className="h-4 w-4" />
+                <span>
+                  Research is still {runStatus}. More artifacts may become available once complete.
+                </span>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        <ScrollArea className="pr-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            {artifactItems.map((artifact) => (
-              <ArtifactCard
-                key={artifact.key}
-                artifact={
-                  artifact.key === 'trace_bundle'
-                    ? { ...artifact, present: true }
-                    : artifact
-                }
-                onExport={
-                  artifact.key === 'trace_bundle' && artifact.present
-                    ? handleExportBundle
-                    : undefined
-                }
-              />
-            ))}
-          </div>
-        </ScrollArea>
+          {isTerminal && !artifactItems.some((a) => a.present) && (
+            <div className="mb-4 rounded-lg border border-destructive/25 bg-destructive-muted/20 p-3">
+              <div className="flex items-center gap-2 text-sm text-destructive">
+                <XCircle className="h-4 w-4" />
+                <span>
+                  Run {runStatus}. No artifacts available for inspection.
+                </span>
+              </div>
+            </div>
+          )}
 
-        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4 text-xs text-muted-foreground">
-          <Info className="h-3.5 w-3.5" />
-          <span className="font-medium">Provenance guide:</span>
-          <span>Direct = generated during run</span>
-          <span className="text-border">•</span>
-          <span>Derived = computed from raw data</span>
-        </div>
-      </CardContent>
-    </Card>
+          <ScrollArea className="pr-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {artifactItems.map((artifact) => (
+                <ArtifactCard
+                  key={artifact.key}
+                  artifact={artifact}
+                  onExport={
+                    artifact.key === 'trace_bundle' && artifact.present
+                      ? handleExportBundle
+                      : undefined
+                  }
+                />
+              ))}
+            </div>
+          </ScrollArea>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4 text-xs text-muted-foreground">
+            <Info className="h-3.5 w-3.5" />
+            <span className="font-medium">Provenance guide:</span>
+            <span>Direct = generated during run</span>
+            <span className="text-border">•</span>
+            <span>Derived = computed from raw data</span>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
