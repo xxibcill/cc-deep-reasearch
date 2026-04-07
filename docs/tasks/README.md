@@ -12,17 +12,9 @@ This directory breaks the dashboard upgrade into small, ordered tasks that a sma
 
 ## Task Order
 
-Tasks `01` through `10` are complete and summarized in [`CHANGELOG.md`](../../CHANGELOG.md).
+Tasks `01` through `19` are complete and summarized in [`CHANGELOG.md`](../../CHANGELOG.md).
 
-1. [11-search-cache-operations.md](./11-search-cache-operations.md)
-2. [12-saved-filters-and-views.md](./12-saved-filters-and-views.md)
-3. [13-live-run-stream-resilience.md](./13-live-run-stream-resilience.md)
-4. [14-telemetry-performance-at-scale.md](./14-telemetry-performance-at-scale.md)
-5. [15-decision-graph-usability.md](./15-decision-graph-usability.md)
-6. [16-cross-session-analysis.md](./16-cross-session-analysis.md)
-7. [17-notifications-and-completion-feedback.md](./17-notifications-and-completion-feedback.md)
-8. [18-research-to-content-studio-bridge.md](./18-research-to-content-studio-bridge.md)
-9. [19-design-system-extraction-and-hardening.md](./19-design-system-extraction-and-hardening.md)
+The next planned dashboard task number is `20`.
 
 ## Intended Outcome
 
@@ -34,4 +26,6 @@ After all tasks are complete, the dashboard should:
 - provide higher-level summaries instead of forcing operators into raw telemetry first
 - support repeatable operator workflows through saved views, resilient live monitoring, and better cross-session analysis
 - connect research sessions more clearly to downstream publishing and content-generation work
+- expose bundles, artifacts, benchmarks, and historical analytics as first-class operator tools
+- become easier to learn and faster to operate through keyboard workflows and contextual help
 - have updated tests and docs that match the new UI structure

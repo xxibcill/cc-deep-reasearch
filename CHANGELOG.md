@@ -108,10 +108,23 @@ Phase 2 - Extended lifecycle management:
 - Expanded backend and Playwright regression coverage for richer detail rendering, live context refresh, and stage-event payloads
 - Updated operator-facing docs for the pipeline detail page, live monitoring behavior, and stage-trace visibility
 
+#### Dashboard Operator Workflow Refinements (9 tasks)
+
+- Improved search-cache operations with clearer health framing, lower-risk destructive-action messaging, and stronger cache-state guidance for operators
+- Added lightweight saved views for session-list and telemetry filters so frequent dashboard workflows can be reapplied without rebuilding state each time
+- Hardened live monitoring with clearer connected, reconnecting, historical-only, and failed-stream states plus safer event buffering during reconnect
+- Improved telemetry workspace responsiveness for larger sessions through targeted performance work on heavy event and graph views
+- Made the decision graph easier to interpret with clearer affordances for explicit versus inferred links, higher-signal graph framing, and tighter inspector flow
+- Expanded cross-session comparison beyond raw pairwise deltas with more actionable summaries and stronger baseline-selection workflows
+- Added a more coherent dashboard notification model for long-running, destructive, and settings-related actions, including clearer completion and failure feedback
+- Strengthened the bridge from research sessions into content-studio workflows so report-ready research outputs lead more naturally into downstream content work
+- Extracted and hardened reusable dashboard design-system patterns to reduce visual drift and make future operator-surface work easier to extend
+
 ### Removed
 
 - Removed completed dashboard-upgrade planning documents `docs/tasks/01-dashboard-visual-foundation.md` through `docs/tasks/10-settings-runtime-clarity.md` after consolidating their delivered work into this changelog
 - Removed previously completed task-planning documents from `docs/tasks/` after consolidating their delivered work into this changelog, including the dashboard-detail upgrade task pack
+- Removed completed dashboard-upgrade planning documents `docs/tasks/11-search-cache-operations.md` through `docs/tasks/19-design-system-extraction-and-hardening.md` after consolidating their delivered work into this changelog
 
 ## [0.1.0] - 2026-03-11
 
