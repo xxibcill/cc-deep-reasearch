@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { Page } from "@playwright/test";
 
-type MockSession = {
+export type MockSession = {
   session_id: string;
   label: string;
   created_at: string;
