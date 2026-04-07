@@ -30,6 +30,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { HelpCallout } from '@/components/ui/help-callout'
 import { PromptDiffCard } from './compare-prompt-diff'
 
 interface MetricValueProps {
@@ -552,6 +553,11 @@ export function CompareView({ sessionIdA, sessionIdB }: CompareViewProps) {
 
   return (
     <div className="space-y-5">
+      <HelpCallout
+        id="compare-mode"
+        title="Compare mode"
+        content="Select two sessions to see deltas in duration, sources, events, and failures. The baseline context panel suggests which past run to compare against."
+      />
       <Card className="overflow-hidden">
         <CardHeader className="gap-4 border-b border-border/70">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
