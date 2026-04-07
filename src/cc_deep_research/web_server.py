@@ -1438,6 +1438,100 @@ def register_routes(app: FastAPI) -> None:
 
         return JSONResponse(content=bundle)
 
+    @app.get("/api/sessions/{session_id}/artifacts")
+    async def get_session_artifacts(session_id: str) -> JSONResponse:
+        """Get artifact inventory with provenance metadata for a session.
+
+        Provides a single view of all available artifacts with provenance info:
+        - Which artifacts are generated directly
+        - Which are derived or transformed
+        - Which are missing because the run failed or ended early
+
+        Args:
+            session_id: The session ID.
+
+        Returns:
+            JSON response with artifact inventory including provenance status.
+        """
+        store = SessionStore()
+        session = store.load_session(session_id)
+
+        if session is None:
+            return JSONResponse(
+                content={"error": f"Session not found: {session_id}"},
+                status_code=404,
+            )
+
+        artifacts: dict[str, Any] = {
+            "session_id": session_id,
+            "provenance": {},
+            "available": {},
+            "missing": {},
+        }
+
+        has_report = bool(session.metadata.get("analysis"))
+        has_payload = True
+
+        artifacts["available"]["session_payload"] = {
+            "present": has_payload,
+            "provenance": "direct",
+            "description": "Full research session data including sources and collected content",
+        }
+
+        if has_report:
+            report_formats = []
+            for fmt in [ResearchOutputFormat.MARKDOWN, ResearchOutputFormat.JSON, ResearchOutputFormat.HTML]:
+                if store.load_report(session_id, fmt) is not None:
+                    report_formats.append(fmt.value)
+                else:
+                    path = store._report_path(session_id, fmt)
+                    if path.exists():
+                        report_formats.append(fmt.value)
+
+            artifacts["available"]["reports"] = {
+                "present": True,
+                "provenance": "derived",
+                "formats": report_formats,
+                "description": "Generated research report in various formats",
+            }
+            del artifacts["missing"]
+        else:
+            artifacts["missing"]["reports"] = {
+                "present": False,
+                "provenance": "derived",
+                "reason": "Run did not complete or analysis data is not available",
+                "description": "Research report generated from analysis data",
+            }
+
+        artifacts["available"]["trace_bundle"] = {
+            "present": True,
+            "provenance": "derived",
+            "description": "Portable trace bundle with telemetry events and derived outputs",
+        }
+
+        telemetry_dir = get_default_telemetry_dir()
+        checkpoint_manifest = query_session_checkpoints(session_id, base_dir=telemetry_dir)
+        has_checkpoints = len(checkpoint_manifest.get("checkpoints", [])) > 0
+
+        if has_checkpoints:
+            artifacts["available"]["checkpoints"] = {
+                "present": True,
+                "provenance": "derived",
+                "count": len(checkpoint_manifest.get("checkpoints", [])),
+                "latest_checkpoint_id": checkpoint_manifest.get("latest_checkpoint_id"),
+                "resume_available": checkpoint_manifest.get("latest_resume_safe_checkpoint_id") is not None,
+                "description": "Session checkpoints for potential resume",
+            }
+        else:
+            artifacts["missing"]["checkpoints"] = {
+                "present": False,
+                "provenance": "derived",
+                "reason": "No checkpoints were captured during this session",
+                "description": "Session checkpoints for potential resume",
+            }
+
+        return JSONResponse(content=artifacts)
+
     @app.get("/api/sessions/{session_id}/checkpoints")
     async def get_session_checkpoints(session_id: str) -> JSONResponse:
         """Get checkpoint inventory for a session.

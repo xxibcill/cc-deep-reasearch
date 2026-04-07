@@ -1,8 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import { ArrowRight, Archive, CheckCircle2, Clock3, Database, FileText, Home, Radar, Search, XCircle } from 'lucide-react';
 
+import { ArtifactExplorer } from '@/components/artifact-explorer';
 import { ResearchContentActions } from '@/components/research-content-actions';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -280,32 +282,35 @@ function NextActions({
       <p className="text-xs uppercase tracking-wide text-muted-foreground">What to do next</p>
       <div className="flex flex-col gap-2">
         {isActive && (
-          <Link href={`/session/${sessionId}/monitor`}>
-            <Button variant="outline" size="sm" className="w-full justify-start">
-              <Radar className="mr-2 h-4 w-4" />
-              Inspect live telemetry
-              <ArrowRight className="ml-auto h-3 w-3" />
-            </Button>
+          <Link
+            href={`/session/${sessionId}/monitor`}
+            className={buttonVariants({ variant: 'outline', size: 'sm', className: 'w-full justify-start' })}
+          >
+            <Radar className="mr-2 h-4 w-4" />
+            Inspect live telemetry
+            <ArrowRight className="ml-auto h-3 w-3" />
           </Link>
         )}
 
         {hasReport && (
-          <Link href={`/session/${sessionId}/report`}>
-            <Button variant="outline" size="sm" className="w-full justify-start">
-              <FileText className="mr-2 h-4 w-4" />
-              Open research report
-              <ArrowRight className="ml-auto h-3 w-3" />
-            </Button>
+          <Link
+            href={`/session/${sessionId}/report`}
+            className={buttonVariants({ variant: 'outline', size: 'sm', className: 'w-full justify-start' })}
+          >
+            <FileText className="mr-2 h-4 w-4" />
+            Open research report
+            <ArrowRight className="ml-auto h-3 w-3" />
           </Link>
         )}
 
         {isTerminal && !isArchived && (
-          <Link href="/">
-            <Button variant="default" size="sm" className="w-full justify-start">
-              <Home className="mr-2 h-4 w-4" />
-              Return to control room
-              <ArrowRight className="ml-auto h-3 w-3" />
-            </Button>
+          <Link
+            href="/"
+            className={buttonVariants({ variant: 'default', size: 'sm', className: 'w-full justify-start' })}
+          >
+            <Home className="mr-2 h-4 w-4" />
+            Return to control room
+            <ArrowRight className="ml-auto h-3 w-3" />
           </Link>
         )}
       </div>
@@ -365,6 +370,8 @@ function ContentStudioHandoff({
 }
 
 export function SessionOverview({ sessionId, runStatus, sessionSummary }: SessionOverviewProps) {
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_280px]">
       <div className="space-y-6">
@@ -383,6 +390,13 @@ export function SessionOverview({ sessionId, runStatus, sessionSummary }: Sessio
           />
           <TechnicalFacts sessionId={sessionId} session={sessionSummary} />
         </div>
+
+        <ArtifactExplorer
+          sessionId={sessionId}
+          runStatus={runStatus}
+          sessionSummary={sessionSummary}
+          onOpenBundleExport={() => setIsExportDialogOpen(true)}
+        />
       </div>
 
       <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">
