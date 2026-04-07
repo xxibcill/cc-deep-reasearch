@@ -11,6 +11,7 @@ from cc_deep_research.models.search import QueryFamily, ResearchDepth, SearchRes
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.orchestration.session_state import OrchestratorSessionState
 
+from .resilience import ParallelCollectionError, ParallelCollectionTimeoutError, build_parallel_collection_policy
 from .source_collection_parallel import ParallelSourceCollectionStrategy, _emit_agent_lifecycle
 from .source_collection_sequential import SequentialSourceCollectionStrategy
 
@@ -100,6 +101,7 @@ class SourceContentHydrator:
         self._config = config
         self._monitor = monitor
         self._content_cache: dict[str, str] = {}
+        self._timeouts = build_parallel_collection_policy(config).timeouts
 
     async def fetch_content_for_top_sources(
         self,
@@ -153,16 +155,20 @@ class SourceContentHydrator:
             name="mcp.web_reader",
             status="started",
             parent_event_id=current_parent,
-            metadata={"url": url},
+            metadata={
+                "url": url,
+                "timeout_seconds": self._timeouts.content_fetch_timeout_seconds,
+            },
         )
 
         try:
             from mcp__web_reader__webReader import webReader  # type: ignore[import-not-found]
 
             start_time = time.time()
+            timeout_seconds = self._timeouts.content_fetch_timeout_seconds
             result = webReader(
                 url=url,
-                timeout=15,
+                timeout=timeout_seconds,
                 return_format="markdown",
                 retain_images=False,
             )
@@ -178,13 +184,18 @@ class SourceContentHydrator:
                     status="completed",
                     duration_ms=duration_ms,
                     parent_event_id=tool_event_id,
-                    metadata={"url": url, "content_length": len(content)},
+                    metadata={
+                        "url": url,
+                        "content_length": len(content),
+                        "timeout_seconds": timeout_seconds,
+                    },
                 )
                 self._monitor.record_tool_call(
                     tool_name="mcp.web_reader",
                     status="success",
                     duration_ms=duration_ms,
                     url=url,
+                    timeout_seconds=timeout_seconds,
                 )
                 return content
 
@@ -197,13 +208,18 @@ class SourceContentHydrator:
                     status="completed",
                     duration_ms=duration_ms,
                     parent_event_id=tool_event_id,
-                    metadata={"url": url, "content_length": len(result)},
+                    metadata={
+                        "url": url,
+                        "content_length": len(result),
+                        "timeout_seconds": timeout_seconds,
+                    },
                 )
                 self._monitor.record_tool_call(
                     tool_name="mcp.web_reader",
                     status="success",
                     duration_ms=duration_ms,
                     url=url,
+                    timeout_seconds=timeout_seconds,
                 )
                 return result
 
@@ -214,7 +230,11 @@ class SourceContentHydrator:
                 status="failed",
                 duration_ms=duration_ms,
                 parent_event_id=tool_event_id,
-                metadata={"url": url, "error": "No content returned"},
+                metadata={
+                    "url": url,
+                    "error": "No content returned",
+                    "timeout_seconds": timeout_seconds,
+                },
             )
             self._monitor.record_tool_call(
                 tool_name="mcp.web_reader",
@@ -222,6 +242,7 @@ class SourceContentHydrator:
                 duration_ms=duration_ms,
                 url=url,
                 error="No content returned",
+                timeout_seconds=timeout_seconds,
             )
             return None
         except ImportError:
@@ -266,6 +287,7 @@ class SourceCollectionService:
         session_state: OrchestratorSessionState,
         num_researchers: int,
     ) -> None:
+        self._config = config
         self._monitor = monitor
         self._session_state = session_state
         self._aggregation = SourceAggregationService(monitor=monitor)
@@ -297,6 +319,7 @@ class SourceCollectionService:
         prefer_parallel: bool,
     ) -> list[SearchResultItem]:
         """Collect sources, falling back to sequential mode when parallel fails."""
+        policy = build_parallel_collection_policy(self._config)
         if prefer_parallel and agent_pool is not None:
             try:
                 return await self.parallel_research(
@@ -305,9 +328,21 @@ class SourceCollectionService:
                     depth=depth,
                     min_sources=min_sources,
                 )
-            except Exception as exc:
+            except (ParallelCollectionError, ParallelCollectionTimeoutError) as exc:
+                if not policy.fallback_to_sequential:
+                    raise
                 self._monitor.log(f"Parallel execution failed: {exc}")
                 self._monitor.log("Falling back to sequential mode")
+                self._monitor.emit_decision_made(
+                    decision_type="collection_fallback",
+                    reason_code="fallback",
+                    chosen_option="sequential",
+                    inputs={
+                        "requested_mode": "parallel",
+                        "fallback_enabled": policy.fallback_to_sequential,
+                        "error": str(exc),
+                    },
+                )
                 self._session_state.note_execution_degradation(
                     f"Parallel source collection fell back to sequential mode: {exc}"
                 )

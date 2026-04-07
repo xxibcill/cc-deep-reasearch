@@ -28,6 +28,8 @@ from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.prompts import PromptRegistry
 from cc_deep_research.teams import AgentSpec, LocalResearchTeam, TeamConfig
 
+from .resilience import build_orchestration_timeout_policy
+
 
 @dataclass(slots=True)
 class OrchestratorRuntimeState:
@@ -126,6 +128,7 @@ class OrchestratorRuntime:
 
     def _build_team_config(self) -> TeamConfig:
         """Describe the local specialist roster exposed by the runtime."""
+        timeout_policy = build_orchestration_timeout_policy(self._config)
         return TeamConfig(
             team_name="local-research-runtime",
             team_description="Local orchestrator-managed specialist roster.",
@@ -173,7 +176,7 @@ class OrchestratorRuntime:
                     model=self._config.research_agent.model,
                 ),
             ],
-            timeout_seconds=self._config.search_team.timeout_seconds,
+            timeout_seconds=int(timeout_policy.team_timeout_seconds),
             parallel_execution=self._parallel_mode,
         )
 
@@ -208,10 +211,11 @@ class OrchestratorRuntime:
         if not self._parallel_mode:
             return None
 
+        timeout_policy = build_orchestration_timeout_policy(self._config)
         agent_pool = LocalAgentPool(
             num_agents=self._num_researchers,
             config=self._config,
-            timeout=float(self._config.search_team.researcher_timeout),
+            timeout=timeout_policy.researcher_timeout_seconds,
         )
         await agent_pool.initialize()
         return agent_pool
