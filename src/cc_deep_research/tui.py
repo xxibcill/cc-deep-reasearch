@@ -34,7 +34,7 @@ class ResearchRunView:
     depth: str
     output_format: str
     providers: list[str]
-    team_mode: str
+    execution_mode: str
     monitor_enabled: bool
 
 
@@ -117,7 +117,7 @@ class TerminalUI:
         details.add_row("Depth", view.depth)
         details.add_row("Providers", ", ".join(view.providers) or "none")
         details.add_row("Output", view.output_format)
-        details.add_row("Mode", view.team_mode)
+        details.add_row("Mode", view.execution_mode)
         details.add_row("Monitor", "enabled" if view.monitor_enabled else "disabled")
 
         self._console.print(

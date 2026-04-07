@@ -60,25 +60,29 @@ def register_research_commands(cli: click.Group) -> None:
     @click.option(
         "--no-team",
         is_flag=True,
-        help="Run source collection sequentially instead of using parallel researchers",
+        help="Run source collection sequentially instead of using parallel local tasks",
     )
     @click.option(
         "--team-size",
         "team_size",
         type=int,
         default=None,
-        help="Override default team size",
+        help="Override local roster metadata size (compatibility setting)",
     )
     @click.option("--progress", is_flag=True, default=True, help="Show progress indicators")
     @click.option("--quiet", is_flag=True, help="Suppress output")
     @click.option("--verbose", is_flag=True, help="Show detailed output")
     @click.option("--monitor", is_flag=True, help="Show internal workflow monitoring information")
-    @click.option("--parallel-mode", is_flag=True, help="Enable parallel researcher execution")
+    @click.option(
+        "--parallel-mode",
+        is_flag=True,
+        help="Force parallel local source collection for this run",
+    )
     @click.option(
         "--num-researchers",
         type=int,
         default=None,
-        help="Number of parallel researchers (1-8)",
+        help="Number of parallel local collection tasks (1-8)",
     )
     @click.option("--show-timeline", is_flag=True, help="Show execution timeline for parallel mode")
     @click.option("--pdf", is_flag=True, help="Generate PDF output in addition to markdown")
@@ -186,14 +190,14 @@ def register_research_commands(cli: click.Group) -> None:
             config = prepared_run.config
 
             if not quiet:
-                team_mode = describe_execution_mode(config, request.parallel_mode)
+                execution_mode = describe_execution_mode(config, request.parallel_mode)
                 ui.show_research_header(
                     ResearchRunView(
                         query=query,
                         depth=depth,
                         output_format=output_format,
                         providers=config.search.providers,
-                        team_mode=team_mode,
+                        execution_mode=execution_mode,
                         monitor_enabled=monitor,
                     )
                 )
