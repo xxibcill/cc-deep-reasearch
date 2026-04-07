@@ -1,6 +1,18 @@
-"""Prompt templates for the human QC gate stage."""
+"""Prompt templates for the human QC gate stage.
+
+Contract Version: 1.0.0
+
+Parser expectations:
+- review output: Expects "QC Review:" section with check results,
+  "Weakest parts:" numbered list, "Final Script:" section
+
+When editing prompts, ensure output format remains compatible with
+the parser in agents/qc.py.
+"""
 
 from __future__ import annotations
+
+CONTRACT_VERSION = "1.0.0"
 
 GLOBAL_RULES = """\
 You are performing quality control on a short-form video package inside a modular workflow.

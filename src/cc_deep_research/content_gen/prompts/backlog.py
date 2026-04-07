@@ -1,4 +1,24 @@
-"""Prompt templates for the backlog builder and idea scorer."""
+"""Prompt templates for the backlog builder and idea scorer.
+
+Contract Version: 1.0.0
+
+Parser expectations:
+- build_backlog output: Uses `---` as block delimiter, expects fields:
+  category, idea, audience, problem, source, why_now, potential_hook,
+  content_type, evidence, risk_level
+  Also expects trailing sections: "Total ideas:", "Rejected ideas:",
+  "Rejection reasons:"
+- score_ideas output: Uses `---` as block delimiter, expects fields:
+  idea_id, relevance, novelty, authority_fit, production_ease,
+  evidence_strength, hook_strength, repurposing, total_score,
+  recommendation (produce_now|hold|kill), reason
+  Also expects trailing sections: "shortlist:", "selected_idea_id:",
+  "selection_reasoning:"
+
+When editing prompts, ensure output format remains compatible with
+the parser functions in agents/backlog.py (_parse_backlog_items,
+_parse_scores, _derive_selection).
+"""
 
 from __future__ import annotations
 
@@ -7,6 +27,8 @@ from cc_deep_research.content_gen.models import (
     OpportunityBrief,
     StrategyMemory,
 )
+
+CONTRACT_VERSION = "1.0.0"
 
 GLOBAL_RULES = """\
 You are generating short-form video content ideas inside a modular workflow.

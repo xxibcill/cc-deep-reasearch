@@ -1,8 +1,24 @@
-"""Prompt templates for the research pack builder."""
+"""Prompt templates for the research pack builder.
+
+Contract Version: 1.0.0
+
+Parser expectations:
+- synthesis output: Expects section headers in order:
+  audience_insights, competitor_observations, key_facts, proof_points,
+  examples, case_studies, gaps_to_exploit, assets_needed,
+  claims_requiring_verification, unsafe_or_uncertain_claims,
+  research_stop_reason
+  Each section uses list format with "- " prefix.
+
+When editing prompts, ensure output format remains compatible with
+the parser in agents/research_pack.py.
+"""
 
 from __future__ import annotations
 
 from cc_deep_research.content_gen.models import AngleOption, BacklogItem
+
+CONTRACT_VERSION = "1.0.0"
 
 GLOBAL_RULES = """\
 You are building a compact research pack for a short-form video inside a modular workflow.

@@ -2,6 +2,31 @@
 
 This document describes the full content-generation system as it is currently implemented in `cc-deep-research`. It covers the architecture, the stage-by-stage flow, the CLI entrypoints, the saved artifacts, and the places where the intended product workflow is ahead of the shipped code.
 
+## Contract Versioning
+
+Each stage has an explicit contract defined in its prompt module. The contract includes:
+- A `CONTRACT_VERSION` constant (e.g., "1.0.0")
+- Parser expectations documented in the module docstring
+- Expected output format for LLM responses
+
+When editing prompts, check the contract docstring to ensure the parser remains compatible:
+
+| Stage | Prompt Module | Contract Version |
+|-------|--------------|------------------|
+| Backlog build/score | `prompts/backlog.py` | 1.0.0 |
+| Angle generation | `prompts/angle.py` | 1.0.0 |
+| Research pack | `prompts/research_pack.py` | 1.0.0 |
+| Scripting (all 10 steps) | `prompts/scripting.py` | 1.0.0 |
+| Visual translation | `prompts/visual.py` | 1.0.0 |
+| Packaging | `prompts/packaging.py` | 1.0.0 |
+| QC review | `prompts/qc.py` | 1.0.0 |
+| Data models | `models.py` | 1.0.0 |
+
+The models in `models.py` define the Python types that result from parsing LLM output. Major changes to prompt output formats should be accompanied by:
+1. Bumping the `CONTRACT_VERSION` in the prompt module
+2. Updating the parser in the corresponding agent
+3. Verifying tests pass with `uv run pytest tests/test_content_gen.py tests/test_iterative_loop.py -v`
+
 ## Scope
 
 The content-generation subsystem is separate from the research-report pipeline. It lives under [`src/cc_deep_research/content_gen/`](../src/cc_deep_research/content_gen/) and is focused on short-form video creation:

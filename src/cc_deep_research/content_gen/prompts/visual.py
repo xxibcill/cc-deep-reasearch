@@ -1,8 +1,23 @@
-"""Prompt templates for the visual translation stage."""
+"""Prompt templates for the visual translation stage.
+
+Contract Version: 1.0.0
+
+Parser expectations:
+- translate output: Uses `---` as block delimiter for each beat,
+  expects fields: beat, spoken_line, visual, shot_type, a_roll, b_roll,
+  on_screen_text, overlay_or_graphic, prop_or_asset, transition,
+  retention_function
+  Also expects "visual_refresh_check:" section at the end.
+
+When editing prompts, ensure output format remains compatible with
+the parser in agents/visual.py.
+"""
 
 from __future__ import annotations
 
 from cc_deep_research.content_gen.models import ScriptStructure, ScriptVersion
+
+CONTRACT_VERSION = "1.0.0"
 
 GLOBAL_RULES = """\
 You are creating a visual plan for a short-form video inside a modular workflow.

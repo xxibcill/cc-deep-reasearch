@@ -1,8 +1,22 @@
-"""Prompt templates for the angle generator."""
+"""Prompt templates for the angle generator.
+
+Contract Version: 1.0.0
+
+Parser expectations:
+- generate output: Uses `---` as block delimiter, expects fields:
+  angle_id, target_audience, viewer_problem, core_promise, primary_takeaway,
+  lens, format, tone, cta, why_this_version_should_exist
+  Also expects trailing sections: "Best angle_id:", "Selection reasoning:"
+
+When editing prompts, ensure output format remains compatible with
+the parser in agents/angle.py.
+"""
 
 from __future__ import annotations
 
 from cc_deep_research.content_gen.models import BacklogItem, StrategyMemory
+
+CONTRACT_VERSION = "1.0.0"
 
 GLOBAL_RULES = """\
 You are generating editorial angles for short-form video inside a modular workflow.

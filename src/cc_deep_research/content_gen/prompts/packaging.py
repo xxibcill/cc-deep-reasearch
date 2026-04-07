@@ -1,4 +1,15 @@
-"""Prompt templates for the packaging generator stage."""
+"""Prompt templates for the packaging generator stage.
+
+Contract Version: 1.0.0
+
+Parser expectations:
+- generate output: Expects "Platform:" header, then per-platform blocks
+  with fields: primary_hook, alternate_hooks (list), cover_text, caption,
+  keywords (list), hashtags (list), pinned_comment, cta, version_notes
+
+When editing prompts, ensure output format remains compatible with
+the parser in agents/packaging.py.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +18,8 @@ from cc_deep_research.content_gen.models import (
     ScriptVersion,
     StrategyMemory,
 )
+
+CONTRACT_VERSION = "1.0.0"
 
 GLOBAL_RULES = """\
 You are generating platform packaging for a short-form video inside a modular workflow.
