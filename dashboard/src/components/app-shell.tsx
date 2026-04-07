@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Activity, FlaskConical, Settings, FileVideo } from 'lucide-react';
+import { Activity, FlaskConical, Settings, FileVideo, Trophy } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { NotificationProvider } from '@/components/ui/notification-center';
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { href: '/', label: 'Research', icon: FlaskConical },
+  { href: '/benchmark', label: 'Benchmark', icon: Trophy },
   { href: '/content-gen', label: 'Content Studio', icon: FileVideo },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
@@ -52,7 +53,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
                 <nav
                   aria-label="Primary"
-                  className="grid gap-2 rounded-[1.2rem] border border-border/70 bg-surface/70 p-2 sm:grid-cols-3"
+                  className="grid gap-2 rounded-[1.2rem] border border-border/70 bg-surface/70 p-2 sm:grid-cols-4"
                 >
                   {navItems.map(({ href, label, icon: Icon }) => {
                     const active = isActive(href);
@@ -74,7 +75,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                             {label}
                           </p>
                           <p className="truncate text-xs text-muted-foreground">
-                            {href === '/' ? 'Sessions and live runs' : href === '/content-gen' ? 'Production workflows' : 'Runtime controls'}
+                            {href === '/' ? 'Sessions and live runs' : href === '/benchmark' ? 'Evaluation results' : href === '/content-gen' ? 'Production workflows' : 'Runtime controls'}
                           </p>
                         </div>
                       </Link>

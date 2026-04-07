@@ -512,3 +512,105 @@ export async function clearSearchCache(): Promise<SearchCacheClearResponse> {
   const response = await apiClient.delete<SearchCacheClearResponse>('/search-cache');
   return response.data;
 }
+
+export interface BenchmarkCorpus {
+  version: string;
+  description: string;
+  cases: BenchmarkCase[];
+}
+
+export interface BenchmarkCase {
+  case_id: string;
+  query: string;
+  category: string;
+  rationale: string;
+  date_sensitive: boolean;
+  tags: string[];
+}
+
+export interface BenchmarkRun {
+  run_id: string;
+  path: string;
+  corpus_version?: string;
+  generated_at?: string;
+  configuration?: Record<string, unknown>;
+  total_cases?: number;
+  average_validation_score?: number | null;
+  average_latency_ms?: number | null;
+}
+
+export interface BenchmarkRunReport {
+  harness_version: string;
+  corpus_version: string;
+  generated_at: string;
+  configuration: Record<string, unknown>;
+  scorecard: BenchmarkScorecard;
+  cases: BenchmarkCaseReport[];
+}
+
+export interface BenchmarkScorecard {
+  total_cases: number;
+  average_source_count: number;
+  average_unique_domains: number;
+  average_source_type_diversity: number;
+  average_iteration_count: number;
+  average_latency_ms: number;
+  average_validation_score: number | null;
+  date_sensitive_cases: number;
+  stop_reasons: Record<string, number>;
+  categories: Record<string, number>;
+}
+
+export interface BenchmarkCaseReport {
+  case_id: string;
+  query: string;
+  category: string;
+  rationale: string;
+  date_sensitive: boolean;
+  tags: string[];
+  metrics: {
+    source_count: number;
+    unique_domains: number;
+    source_type_diversity: number;
+    iteration_count: number;
+    latency_ms: number;
+    validation_score: number | null;
+  };
+  session_id?: string;
+  configured_depth: string;
+  stop_reason: string;
+  validation_issues: string[];
+  failure_modes: string[];
+  source_domains: string[];
+  source_types: string[];
+}
+
+export interface BenchmarkRunsResponse {
+  runs: BenchmarkRun[];
+  total: number;
+}
+
+export async function getBenchmarkCorpus(): Promise<BenchmarkCorpus> {
+  const response = await apiClient.get<BenchmarkCorpus>('/benchmarks/corpus');
+  return response.data;
+}
+
+export async function listBenchmarkRuns(): Promise<BenchmarkRunsResponse> {
+  const response = await apiClient.get<BenchmarkRunsResponse>('/benchmarks/runs');
+  return response.data;
+}
+
+export async function getBenchmarkRun(runId: string): Promise<BenchmarkRunReport> {
+  const response = await apiClient.get<BenchmarkRunReport>(`/benchmarks/runs/${runId}`);
+  return response.data;
+}
+
+export async function getBenchmarkCaseReport(
+  runId: string,
+  caseId: string
+): Promise<BenchmarkCaseReport> {
+  const response = await apiClient.get<BenchmarkCaseReport>(
+    `/benchmarks/runs/${runId}/cases/${caseId}`
+  );
+  return response.data;
+}
