@@ -12,9 +12,9 @@ This directory breaks the dashboard upgrade into small, ordered tasks that a sma
 
 ## Task Order
 
-Tasks `01` through `19` are complete and summarized in [`CHANGELOG.md`](../../CHANGELOG.md).
+Tasks `01` through `29` are complete and summarized in [`CHANGELOG.md`](../../CHANGELOG.md).
 
-The next planned dashboard task number is `20`.
+No pending dashboard task files remain in this directory.
 
 ## Intended Outcome
 
