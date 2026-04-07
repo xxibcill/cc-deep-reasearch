@@ -271,6 +271,18 @@ class TestCLIFixtureSmoke:
         assert "--claude-only" in result.output
         assert "--no-team" in result.output
 
+    def test_cli_research_help_clarifies_local_execution_semantics(self) -> None:
+        """Verify help text describes local sequential and parallel behavior accurately."""
+        runner = CliRunner()
+        result = runner.invoke(main, ["research", "--help"])
+
+        assert result.exit_code == 0
+        normalized_output = " ".join(result.output.split())
+        assert "sequentially instead of using parallel local tasks" in normalized_output
+        assert "local roster metadata size (compatibility setting)" in normalized_output
+        assert "Force parallel local source collection for this run" in normalized_output
+        assert "Number of parallel local collection tasks (1-8)" in normalized_output
+
     def test_cli_research_accepts_min_sources(self) -> None:
         """Verify --sources option is accepted."""
         runner = CliRunner()

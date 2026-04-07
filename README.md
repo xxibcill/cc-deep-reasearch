@@ -8,7 +8,7 @@ Current codebase version: `0.1.0`
 
 - Multi-stage research workflow (strategy, query expansion, source collection, analysis, validation, reporting)
 - Depth modes: `quick`, `standard`, `deep` (default)
-- Parallel local researcher-task execution with optional timeline view
+- Parallel local source-collection tasks with optional timeline view
 - Source quality scoring and cross-reference analysis
 - Session persistence with list/show/export/delete commands
 - Telemetry ingestion to DuckDB and Streamlit dashboard
@@ -76,7 +76,7 @@ cc-deep-research research --format json "Topic" > result.json
 # HTML output
 cc-deep-research research --format html -o reports/topic.html "Topic"
 
-# Disable team mode (sequential)
+# Force sequential source collection
 cc-deep-research research --no-team "Topic"
 
 # Parallel controls
@@ -102,8 +102,8 @@ cc-deep-research markdown-to-pdf reports/topic.md
 - `--no-cross-ref`
 - `--tavily-only`
 - `--claude-only` (accepted but no Claude search provider is implemented yet)
-- `--no-team`
-- `--team-size INTEGER`
+- `--no-team` (force sequential local source collection)
+- `--team-size INTEGER` (override compatibility metadata only)
 - `--progress`
 - `--quiet`
 - `--verbose`
@@ -121,6 +121,8 @@ Telemetry files are written under:
 - `~/.config/cc-deep-research/telemetry/<session_id>/summary.json`
 
 Telemetry persistence is enabled for normal `research` runs. `--monitor` only turns on console monitoring output.
+
+`--no-team` only disables parallel local source collection. The run still goes through the same local orchestrator and specialist components.
 
 Recommended operator workflow:
 
@@ -190,7 +192,7 @@ What works well right now:
 How good it is today:
 
 - good for understanding what each agent did and when it did it
-- good for debugging parallel researcher execution and route selection
+- good for debugging parallel local task execution and route selection
 - weaker if you want rich per-agent narrative logs, stdout-style transcripts, or a complete "agent journal" in one place
 
 How it can improve:

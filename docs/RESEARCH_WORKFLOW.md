@@ -1,6 +1,6 @@
 # Research Workflow Design
 
-This document explains how the research workflow in `cc-deep-research` is designed, how the runtime moves through each phase, which modules own each responsibility, and where the current implementation diverges from the broader multi-agent design described in comments and CLI help.
+This document explains how the research workflow in `cc-deep-research` is designed, how the runtime moves through each phase, which modules own each responsibility, and where the current implementation diverges from the broader multi-agent direction still visible in some internal naming.
 
 ## Purpose
 
@@ -24,10 +24,10 @@ The main runtime path for a CLI research run is:
 
 1. CLI parses flags and loads configuration.
 2. CLI builds a `TeamResearchOrchestrator`.
-3. Orchestrator initializes local agent objects and optional parallel coordination primitives.
+3. Orchestrator initializes local workflow components and optional parallel coordination primitives.
 4. Lead agent derives a strategy from the query and depth.
 5. Query expander produces search variations when depth requires it.
-6. Source collector or parallel researchers gather results from providers.
+6. Source collector or parallel local collection tasks gather results from providers.
 7. Results are deduplicated and top-ranked sources are enriched with fetched page content.
 8. Analyzer produces findings, themes, cross-reference output, and gaps.
 9. Deep mode adds a second analysis layer with multi-pass synthesis.
@@ -42,7 +42,7 @@ The main runtime path for a CLI research run is:
 flowchart TD
     A["CLI research command"] --> B["load_config()"]
     B --> C["TeamResearchOrchestrator.execute_research()"]
-    C --> D["Initialize agents and optional parallel coordination"]
+    C --> D["Initialize local workflow components and optional parallel coordination"]
     D --> E["ResearchLeadAgent.analyze_query()"]
     E --> F["QueryExpanderAgent.expand_query()"]
     F --> G{"Parallel mode?"}
@@ -72,7 +72,7 @@ The stable public workflow entry point is [`src/cc_deep_research/orchestrator.py
 
 - phase ordering
 - monitor events
-- team and agent initialization
+- runtime initialization for local workflow components
 - sequential versus parallel source collection
 - iterative follow-up passes
 - session assembly
@@ -108,7 +108,7 @@ The `research` command controls the workflow through flags such as:
 
 Important implementation detail:
 
-- `--no-team` forces sequential source collection. It does not switch to a separate non-agent pipeline.
+- `--no-team` forces sequential source collection. It does not switch to a separate non-agent pipeline or disable the local specialist components.
 - Parallel behavior is driven by `parallel_mode` and `config.search_team.parallel_execution`.
 
 ## Configuration That Shapes the Workflow
@@ -133,8 +133,8 @@ The most relevant settings are:
 - `research.ai_integration_method`: `heuristic`, `api`, or `hybrid`
 - routed LLM analysis is configured through `llm.route_defaults` and provider-specific `llm.*` settings
 - `search_team.parallel_execution`: default parallel collection mode
-- `search_team.num_researchers`: number of parallel tasks
-- `search_team.researcher_timeout`: timeout per parallel researcher
+- `search_team.num_researchers`: number of parallel local collection tasks
+- `search_team.researcher_timeout`: timeout per parallel local collection task
 
 ## Data Model
 
@@ -696,7 +696,7 @@ The project uses agent-oriented naming, but the current architecture is mixed. T
 | `ValidatorAgent` | Quality gate and loop trigger | Real |
 | `ReporterAgent` | Final report assembly | Real |
 | `LocalResearchTeam` | Local lifecycle metadata wrapper | Real, local-only scaffolding |
-| `LocalAgentPool` | Track local parallel researcher-task state | Real, local-only scaffolding |
+| `LocalAgentPool` | Track local parallel collection-task state | Real, local-only scaffolding |
 | `LocalMessageBus` | Local async coordination queue | Real, local-only scaffolding |
 
 ## Design Principles Visible in the Code

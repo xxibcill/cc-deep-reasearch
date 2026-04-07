@@ -248,8 +248,8 @@ research_agent:
 search_team:
   enabled: true # Retained for compatibility with existing config
   team_size: 4 # Describes local specialist roster metadata
-  parallel_execution: true # Run source collection in parallel
-  timeout_seconds: 300 # Parallel-task timeout (30-600 seconds)
+  parallel_execution: true # Run source collection in parallel local tasks
+  timeout_seconds: 300 # Local parallel-task timeout (30-600 seconds)
   fallback_to_sequential: true # Fall back to sequential on error
 
 # Output Configuration
@@ -317,8 +317,8 @@ cc-deep-research config init --force
 | `research_agent.max_turns`         | `10`                  | Max conversation turns                    |
 | `search_team.enabled`              | `true`                | Compatibility flag for the local runtime  |
 | `search_team.team_size`            | `4`                   | Specialist roster metadata size           |
-| `search_team.parallel_execution`   | `true`                | Parallel source collection                |
-| `search_team.timeout_seconds`      | `300`                 | Parallel-task timeout                     |
+| `search_team.parallel_execution`   | `true`                | Parallel local source collection          |
+| `search_team.timeout_seconds`      | `300`                 | Local parallel-task timeout               |
 | `output.format`                    | `"markdown"`          | Output format                             |
 | `output.auto_save`                 | `true`                | Auto-save reports                         |
 | `output.save_dir`                  | `"./reports"`         | Save directory                            |
@@ -495,10 +495,10 @@ cc-deep-research research [QUERY] [OPTIONS]
 | `--no-cross-ref`    |       | flag   | false         | Disable cross-reference analysis                                         |
 | `--tavily-only`     |       | flag   | false         | Use only Tavily provider                                                 |
 | `--claude-only`     |       | flag   | false         | Select only the `claude` provider (currently emits provider warnings)    |
-| `--no-team`         |       | flag   | false         | Run source collection sequentially instead of using parallel researchers |
-| `--team-size`       |       | int    | (from config) | Override default team size                                               |
-| `--parallel-mode`   |       | flag   | false         | Force parallel researcher execution for this run                         |
-| `--num-researchers` |       | int    | (from config) | Override the number of parallel researchers (1-8)                        |
+| `--no-team`         |       | flag   | false         | Run source collection sequentially instead of using parallel local tasks |
+| `--team-size`       |       | int    | (from config) | Override local roster metadata size (compatibility only)                 |
+| `--parallel-mode`   |       | flag   | false         | Force parallel local source collection for this run                      |
+| `--num-researchers` |       | int    | (from config) | Override the number of parallel local collection tasks (1-8)             |
 | `--progress`        |       | flag   | true          | Show progress indicators                                                 |
 | `--quiet`           |       | flag   | false         | Suppress output                                                          |
 | `--verbose`         |       | flag   | false         | Show detailed output                                                     |
@@ -566,7 +566,7 @@ cc-deep-research config set tavily.api_keys key1,key2,key3
 # Change search mode
 cc-deep-research config set search.mode hybrid_parallel
 
-# Adjust team size
+# Adjust local roster metadata size
 cc-deep-research config set search_team.team_size 6
 
 # Disable cross-reference analysis
@@ -917,7 +917,9 @@ cc-deep-research research --claude-only "Claude search only"
 
 #### `--no-team`
 
-Run source collection sequentially instead of using parallel local researcher tasks.
+Run source collection sequentially instead of using parallel local tasks.
+
+This only changes how source collection is scheduled. The rest of the run still uses the same local orchestrator and specialist components.
 
 **Use when:**
 
@@ -933,7 +935,7 @@ cc-deep-research research --no-team "Simple question"
 
 #### `--team-size`
 
-Override the configured specialist roster size metadata.
+Override the configured local roster size metadata. This is a compatibility setting and does not create remote workers.
 
 **Values:** Integer between 2-8
 
@@ -945,7 +947,7 @@ cc-deep-research research --team-size 6 "Complex topic"
 
 #### `--parallel-mode`
 
-Force parallel researcher execution for this run when you want to override the configured mode.
+Force parallel local source collection for this run when you want to override the configured mode.
 
 **Example:**
 
@@ -955,7 +957,7 @@ cc-deep-research research --parallel-mode "Complex topic"
 
 #### `--num-researchers`
 
-Override the number of parallel researchers used during source collection.
+Override the number of parallel local collection tasks used during source collection.
 
 **Values:** Integer between 1-8
 
@@ -1293,8 +1295,8 @@ Configure local pipeline and parallel collection behavior:
 search_team:
   enabled: true # Compatibility flag
   team_size: 4 # Specialist roster metadata
-  parallel_execution: true # Run agents in parallel
-  timeout_seconds: 300 # Team timeout (30-600 seconds)
+  parallel_execution: true # Run source collection in parallel local tasks
+  timeout_seconds: 300 # Local source-collection timeout (30-600 seconds)
   fallback_to_sequential: true # Fall back on error
 ```
 
@@ -1574,15 +1576,15 @@ cc-deep-research research --format json "Climate data" | \
   python analyze_data.py
 ```
 
-### Team Configuration Examples
+### Parallel Collection Configuration Examples
 
-**Small team for quick queries:**
+**Smaller local roster metadata for quick queries:**
 
 ```bash
 cc-deep-research research --team-size 2 --no-cross-ref "Quick lookup"
 ```
 
-**Large team for comprehensive research:**
+**Larger local roster metadata for comprehensive research:**
 
 ```bash
 cc-deep-research research --team-size 8 --sources 50 --depth deep \
@@ -1680,7 +1682,7 @@ Use the dashboard to answer:
 
 - what phase is running now
 - what happened most recently
-- which agent is active
+- which local component or researcher task is active
 - recent routed LLM telemetry and fallback activity
 
 Useful dashboard command options:
@@ -1795,7 +1797,7 @@ cc-deep-research config set research.ai_integration_method heuristic
 
 The dashboard will still show the failure or fallback events in the live session view.
 
-#### Issue: "Agent team errors"
+#### Issue: "Parallel collection errors"
 
 **Problem:** Parallel source collection encounters errors during execution.
 
@@ -1808,7 +1810,7 @@ cc-deep-research research --no-team "Your query"
 # Use verbose output for debugging
 cc-deep-research research --verbose --monitor "Your query"
 
-# Reduce team size
+# Reduce local roster metadata size
 cc-deep-research research --team-size 2 "Your query"
 ```
 
