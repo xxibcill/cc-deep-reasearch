@@ -23,6 +23,39 @@ test("home page exposes the control-room structure and launch presets", async ({
   await expect(page.getByRole("heading", { name: "Archived" })).toBeVisible();
 });
 
+test("keyboard shortcuts navigate quickly and stay out of text inputs", async ({ page }) => {
+  await setupTestPage(page, { customSessions: mockSessions });
+
+  await page.goto("/session/research-report-003");
+
+  await expect(page.getByRole("button", { name: /Palette · GH home · \/ search/i })).toBeVisible();
+  await page.getByRole("button", { name: /Palette · GH home · \/ search/i }).click();
+  await expect(page.getByPlaceholder("Search commands...")).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await page.keyboard.press("g");
+  await page.keyboard.press("m");
+  await expect(page).toHaveURL(/\/session\/research-report-003\/monitor$/);
+
+  await page.keyboard.press("g");
+  await page.keyboard.press("r");
+  await expect(page).toHaveURL(/\/session\/research-report-003\/report$/);
+
+  await page.goto("/");
+
+  const queryField = page.getByLabel("Research Query");
+  await queryField.focus();
+  await queryField.press("/");
+  await expect(queryField).toBeFocused();
+  await expect(page.locator("[data-session-search]")).not.toBeFocused();
+
+  await queryField.evaluate((element) => {
+    (element as HTMLTextAreaElement).blur();
+  });
+  await page.keyboard.press("/");
+  await expect(page.locator("[data-session-search]")).toBeFocused();
+});
+
 test("launch form submits preset-derived options and prompt overrides", async ({ page }) => {
   await mockDashboardApis(page);
 
