@@ -290,7 +290,7 @@ export default function ContentGenPage() {
 
         {error && (
           <Alert variant="destructive">
-            <AlertTitle>Content studio error</AlertTitle>
+            <AlertTitle>Studio load error</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}

@@ -145,56 +145,63 @@ export default function HomePage() {
                 />
               </>
             ) : (
-              <div className="grid gap-3 md:grid-cols-3">
-                <MetricCard
-                  description="Active research runs"
-                  icon={Play}
-                  label="Running now"
-                  tone="primary"
-                  value={loading ? '...' : activeSessions.length}
+              <div className="space-y-4">
+                <HelpCallout
+                  id="home-workflow"
+                  title="Main workflow"
+                  content="Launch from Research, inspect live runs in Monitor, use Compare to measure changes across sessions, and move report-ready work into Content Studio when downstream production starts."
                 />
+                <div className="grid gap-3 md:grid-cols-3">
+                  <MetricCard
+                    description="Active research runs"
+                    icon={Play}
+                    label="Running now"
+                    tone="primary"
+                    value={loading ? '...' : activeSessions.length}
+                  />
 
-                <MetricCard
-                  description="Failed or interrupted"
-                  icon={AlertCircle}
-                  label="Needs attention"
-                  tone="warning"
-                  value={loading ? '...' : failedSessions.length}
-                />
+                  <MetricCard
+                    description="Failed or interrupted"
+                    icon={AlertCircle}
+                    label="Needs attention"
+                    tone="warning"
+                    value={loading ? '...' : failedSessions.length}
+                  />
 
-                <MetricCard
-                  description={
-                    featuredReadySession
-                      ? 'Ready for review and downstream content work.'
-                      : 'Ready for review'
-                  }
-                  icon={Radar}
-                  label="Reports ready"
-                  tone="success"
-                  value={loading ? '...' : readySessions.length}
-                >
-                  {featuredReadySession ? (
-                    <div className="space-y-3">
-                      <div className="space-y-1">
-                        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                          Suggested handoff
-                        </p>
-                        <p className="text-sm leading-6 text-foreground">
-                          {featuredReadySession.label}
-                        </p>
+                  <MetricCard
+                    description={
+                      featuredReadySession
+                        ? 'Ready for review and downstream content work.'
+                        : 'Ready for review'
+                    }
+                    icon={Radar}
+                    label="Reports ready"
+                    tone="success"
+                    value={loading ? '...' : readySessions.length}
+                  >
+                    {featuredReadySession ? (
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                            Suggested handoff
+                          </p>
+                          <p className="text-sm leading-6 text-foreground">
+                            {featuredReadySession.label}
+                          </p>
+                        </div>
+                        <ResearchContentActions
+                          payload={buildResearchContentBridgePayloadFromSession(
+                            featuredReadySession.sessionId,
+                            featuredReadySession,
+                            'home'
+                          )}
+                          primaryIntent="pipeline"
+                          size="sm"
+                        />
                       </div>
-                      <ResearchContentActions
-                        payload={buildResearchContentBridgePayloadFromSession(
-                          featuredReadySession.sessionId,
-                          featuredReadySession,
-                          'home'
-                        )}
-                        primaryIntent="pipeline"
-                        size="sm"
-                      />
-                    </div>
-                  ) : null}
-                </MetricCard>
+                    ) : null}
+                  </MetricCard>
+                </div>
               </div>
             )}
           </div>

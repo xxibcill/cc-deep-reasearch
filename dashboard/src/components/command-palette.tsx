@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { 
   Search, 
   Home, 
@@ -9,10 +9,18 @@ import {
   Film, 
   GitCompare, 
   Terminal,
-  X
+  X,
+  BarChart3,
+  Trophy,
+  ScrollText,
+  Radar,
+  FileText
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import useDashboardStore from '@/hooks/useDashboard';
+
+const PALETTE_OPEN_EVENT = 'ccdr.command-palette.open';
+const SEQUENCE_TIMEOUT_MS = 900;
 
 interface CommandItem {
   id: string;
@@ -23,16 +31,67 @@ interface CommandItem {
   action: () => void;
 }
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return (
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.isContentEditable ||
+    Boolean(target.closest('[contenteditable="true"]'))
+  );
+}
+
 export function CommandPalette() {
   const router = useRouter();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const sequenceRef = useRef('');
+  const sequenceTimerRef = useRef<number | null>(null);
 
   const sessions = useDashboardStore((state) => state.sessions);
-  const setSessionListQuery = useDashboardStore((state) => state.setSessionListQuery);
+  const activeSessionMatch = pathname.match(/^\/session\/([^/]+)(?:\/(monitor|report))?$/);
+  const activeSessionId = activeSessionMatch?.[1] ?? null;
+
+  const clearSequence = useCallback(() => {
+    sequenceRef.current = '';
+    if (sequenceTimerRef.current !== null) {
+      window.clearTimeout(sequenceTimerRef.current);
+      sequenceTimerRef.current = null;
+    }
+  }, []);
+
+  const restartSequenceTimer = useCallback(() => {
+    if (sequenceTimerRef.current !== null) {
+      window.clearTimeout(sequenceTimerRef.current);
+    }
+    sequenceTimerRef.current = window.setTimeout(() => {
+      sequenceRef.current = '';
+      sequenceTimerRef.current = null;
+    }, SEQUENCE_TIMEOUT_MS);
+  }, []);
+
+  const focusSessionSearch = useCallback(() => {
+    const searchInput = document.querySelector('[data-session-search]') as HTMLInputElement | null;
+    if (searchInput) {
+      searchInput.focus();
+      searchInput.select();
+      return;
+    }
+
+    router.push('/');
+    window.setTimeout(() => {
+      const homeSearch = document.querySelector('[data-session-search]') as HTMLInputElement | null;
+      homeSearch?.focus();
+      homeSearch?.select();
+    }, 100);
+  }, [router]);
 
   const commands: CommandItem[] = [
     {
@@ -44,17 +103,31 @@ export function CommandPalette() {
       action: () => {
         router.push('/');
         setOpen(false);
+        clearSequence();
+      },
+    },
+    {
+      id: 'analytics',
+      label: 'Go to Analytics',
+      description: 'Review aggregate operational trends',
+      icon: BarChart3,
+      shortcut: 'G A',
+      action: () => {
+        router.push('/analytics');
+        setOpen(false);
+        clearSequence();
       },
     },
     {
       id: 'benchmark',
       label: 'Go to Benchmark',
       description: 'View evaluation results',
-      icon: Terminal,
+      icon: Trophy,
       shortcut: 'G B',
       action: () => {
         router.push('/benchmark');
         setOpen(false);
+        clearSequence();
       },
     },
     {
@@ -66,6 +139,7 @@ export function CommandPalette() {
       action: () => {
         router.push('/content-gen');
         setOpen(false);
+        clearSequence();
       },
     },
     {
@@ -77,6 +151,7 @@ export function CommandPalette() {
       action: () => {
         router.push('/settings');
         setOpen(false);
+        clearSequence();
       },
     },
     {
@@ -88,6 +163,7 @@ export function CommandPalette() {
       action: () => {
         router.push('/compare');
         setOpen(false);
+        clearSequence();
       },
     },
     {
@@ -98,18 +174,50 @@ export function CommandPalette() {
       shortcut: '/',
       action: () => {
         setOpen(false);
-        const searchInput = document.querySelector('[data-session-search]') as HTMLInputElement;
-        if (searchInput) {
-          searchInput.focus();
-        } else {
-          router.push('/');
-          setTimeout(() => {
-            const input = document.querySelector('[data-session-search]') as HTMLInputElement;
-            input?.focus();
-          }, 100);
-        }
+        focusSessionSearch();
+        clearSequence();
       },
     },
+    ...(activeSessionId
+      ? [
+          {
+            id: 'session-overview',
+            label: 'Switch to Overview',
+            description: 'Open the session summary workspace',
+            icon: ScrollText,
+            shortcut: 'G O',
+            action: () => {
+              router.push(`/session/${activeSessionId}`);
+              setOpen(false);
+              clearSequence();
+            },
+          },
+          {
+            id: 'session-monitor',
+            label: 'Switch to Monitor',
+            description: 'Open the live telemetry workspace',
+            icon: Radar,
+            shortcut: 'G M',
+            action: () => {
+              router.push(`/session/${activeSessionId}/monitor`);
+              setOpen(false);
+              clearSequence();
+            },
+          },
+          {
+            id: 'session-report',
+            label: 'Switch to Report',
+            description: 'Open the report workspace for this session',
+            icon: FileText,
+            shortcut: 'G R',
+            action: () => {
+              router.push(`/session/${activeSessionId}/report`);
+              setOpen(false);
+              clearSequence();
+            },
+          },
+        ]
+      : []),
     ...sessions.slice(0, 8).map((session) => ({
       id: `session-${session.sessionId}`,
       label: session.label || `Session ${session.sessionId.slice(0, 8)}`,
@@ -118,6 +226,7 @@ export function CommandPalette() {
       action: () => {
         router.push(`/session/${session.sessionId}`);
         setOpen(false);
+        clearSequence();
       },
     })),
   ];
@@ -136,21 +245,73 @@ export function CommandPalette() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target;
+      const editingOutsidePalette = isEditableTarget(target) && target !== inputRef.current;
+
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
+        clearSequence();
         setOpen((prev) => !prev);
+        return;
       }
+
+      if (!open && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+        if (e.key === '/' && !isEditableTarget(target)) {
+          e.preventDefault();
+          focusSessionSearch();
+          clearSequence();
+          return;
+        }
+
+        if (!editingOutsidePalette) {
+          const key = e.key.toLowerCase();
+          const currentSequence = sequenceRef.current;
+
+          if (key === 'g') {
+            sequenceRef.current = 'g';
+            restartSequenceTimer();
+            return;
+          }
+
+          if (currentSequence === 'g') {
+            const commandByShortcutKey: Record<string, () => void> = {
+              h: () => router.push('/'),
+              a: () => router.push('/analytics'),
+              b: () => router.push('/benchmark'),
+              c: () => router.push('/content-gen'),
+              s: () => router.push('/settings'),
+              v: () => router.push('/compare'),
+            };
+
+            if (activeSessionId) {
+              commandByShortcutKey.o = () => router.push(`/session/${activeSessionId}`);
+              commandByShortcutKey.m = () => router.push(`/session/${activeSessionId}/monitor`);
+              commandByShortcutKey.r = () => router.push(`/session/${activeSessionId}/report`);
+            }
+
+            const action = commandByShortcutKey[key];
+            if (action) {
+              e.preventDefault();
+              action();
+              clearSequence();
+              return;
+            }
+
+            clearSequence();
+          }
+        }
+      }
+
       if (!open) return;
 
       if (e.key === 'Escape') {
         e.preventDefault();
         setOpen(false);
+        clearSequence();
         return;
       }
 
-      const target = e.target as HTMLElement;
-      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
-      if (isInput) return;
+      if (editingOutsidePalette) return;
 
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -166,13 +327,35 @@ export function CommandPalette() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, filteredCommands, selectedIndex]);
+  }, [
+    activeSessionId,
+    clearSequence,
+    filteredCommands,
+    focusSessionSearch,
+    open,
+    restartSequenceTimer,
+    router,
+    selectedIndex,
+  ]);
 
   useEffect(() => {
     if (open && inputRef.current) {
       inputRef.current.focus();
     }
   }, [open]);
+
+  useEffect(() => {
+    const handleOpenEvent = () => {
+      setOpen(true);
+    };
+
+    window.addEventListener(PALETTE_OPEN_EVENT, handleOpenEvent);
+    return () => {
+      window.removeEventListener(PALETTE_OPEN_EVENT, handleOpenEvent);
+    };
+  }, []);
+
+  useEffect(() => () => clearSequence(), [clearSequence]);
 
   useEffect(() => {
     if (listRef.current) {
@@ -257,8 +440,8 @@ export function CommandPalette() {
           )}
         </div>
 
-        <div className="flex items-center justify-between border-t border-border/70 px-4 py-2.5 text-[0.7rem] text-muted-foreground">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-2 border-t border-border/70 px-4 py-2.5 text-[0.7rem] text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-3">
             <span className="flex items-center gap-1">
               <kbd className="rounded border border-border/50 bg-background px-1.5 py-0.5">↑↓</kbd>
               navigate
@@ -272,7 +455,12 @@ export function CommandPalette() {
               close
             </span>
           </div>
-          <span className="opacity-60">Cmd+K to open</span>
+          <div className="flex flex-wrap items-center gap-3 opacity-80">
+            <span>Cmd/Ctrl+K open</span>
+            <span>G then H/A/B/C/S/V navigate</span>
+            {activeSessionId ? <span>G then O/M/R switch tabs</span> : null}
+            <span>/ focus session search</span>
+          </div>
         </div>
       </div>
     </div>
@@ -296,14 +484,14 @@ export function KeyboardHint() {
 
   return (
     <button
-      onClick={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))}
+      onClick={() => window.dispatchEvent(new Event(PALETTE_OPEN_EVENT))}
       className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full border border-border/70 bg-popover/95 px-3 py-2 text-xs text-muted-foreground shadow-lg backdrop-blur-sm transition-opacity hover:bg-surface-raised/75 hover:text-foreground"
     >
       <span className="flex items-center gap-1">
         <kbd className="rounded border border-border/50 bg-background px-1.5 py-0.5 font-medium">⌘</kbd>
         <kbd className="rounded border border-border/50 bg-background px-1.5 py-0.5 font-medium">K</kbd>
       </span>
-      <span className="text-[0.7rem]">Command palette</span>
+      <span className="text-[0.7rem]">Palette · GH home · / search</span>
     </button>
   );
 }
