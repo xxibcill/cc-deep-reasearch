@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { Play, FileText, ArrowRight } from 'lucide-react'
+import { Play, FileText, ArrowRight, Link2, X } from 'lucide-react'
 import useContentGen from '@/hooks/useContentGen'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -22,11 +23,22 @@ import { ScriptsPanel } from '@/components/content-gen/scripts-panel'
 import { StrategyEditor } from '@/components/content-gen/strategy-editor'
 import { PublishQueuePanel } from '@/components/content-gen/publish-queue-panel'
 import { OverviewSidebar } from '@/components/content-gen/overview-sidebar'
+import { EmptyState } from '@/components/ui/empty-state'
 import {
   createEmptyQuickScriptFields,
   parseQuickScriptPrompt,
   type QuickScriptFields,
 } from '@/lib/quick-script'
+import {
+  buildPipelineThemeFromResearch,
+  buildQuickScriptFieldsFromResearch,
+  buildResearchContentBridgeFromSearchParams,
+  clearResearchContentBridge,
+  formatResearchBridgeSource,
+  parseContentStudioIntent,
+  readResearchContentBridge,
+  type ResearchContentBridgePayload,
+} from '@/lib/research-content-bridge'
 import { TOTAL_PIPELINE_STAGES } from '@/types/content-gen'
 
 export default function ContentGenPage() {
@@ -42,6 +54,8 @@ export default function ContentGenPage() {
 
   const [newPipelineOpen, setNewPipelineOpen] = useState(false)
   const [quickScriptOpen, setQuickScriptOpen] = useState(false)
+  const [researchBridge, setResearchBridge] = useState<ResearchContentBridgePayload | null>(null)
+  const [pipelineInitialTheme, setPipelineInitialTheme] = useState('')
   const [quickScriptInitialValues, setQuickScriptInitialValues] = useState<QuickScriptFields>(() =>
     createEmptyQuickScriptFields(),
   )
@@ -49,6 +63,43 @@ export default function ContentGenPage() {
   useEffect(() => {
     void loadAll()
   }, [loadAll])
+
+  useEffect(() => {
+    const sourceSessionId = searchParams.get('sourceSession')
+    const sourceBridge = sourceSessionId
+      ? readResearchContentBridge(sourceSessionId) ?? buildResearchContentBridgeFromSearchParams(searchParams)
+      : null
+
+    setResearchBridge(sourceBridge)
+    setPipelineInitialTheme(sourceBridge ? buildPipelineThemeFromResearch(sourceBridge) : '')
+    setQuickScriptInitialValues(
+      sourceBridge
+        ? {
+            ...createEmptyQuickScriptFields(),
+            ...buildQuickScriptFieldsFromResearch(sourceBridge),
+          }
+        : createEmptyQuickScriptFields(),
+    )
+
+    const intent = parseContentStudioIntent(searchParams.get('intent'))
+
+    if (intent === 'pipeline') {
+      setNewPipelineOpen(true)
+    }
+
+    if (intent === 'quick-script') {
+      setQuickScriptOpen(true)
+    }
+
+    if (!intent) {
+      return
+    }
+
+    const nextParams = new URLSearchParams(searchParams.toString())
+    nextParams.delete('intent')
+    const nextHref = nextParams.toString() ? `/content-gen?${nextParams}` : '/content-gen'
+    router.replace(nextHref)
+  }, [router, searchParams])
 
   const activePipelines = pipelines.filter((p) => p.status === 'running' || p.status === 'queued')
   const pastPipelines = pipelines.filter(
@@ -71,6 +122,21 @@ export default function ContentGenPage() {
   const openQuickScriptFromHistory = (rawIdea: string) => {
     setQuickScriptInitialValues(parseQuickScriptPrompt(rawIdea))
     setQuickScriptOpen(true)
+  }
+
+  const dismissResearchBridge = () => {
+    clearResearchContentBridge()
+    setResearchBridge(null)
+    setPipelineInitialTheme('')
+    setQuickScriptInitialValues(createEmptyQuickScriptFields())
+
+    const nextParams = new URLSearchParams(searchParams.toString())
+    nextParams.delete('sourceSession')
+    nextParams.delete('sourceLabel')
+    nextParams.delete('source')
+    nextParams.delete('reportReady')
+    const nextHref = nextParams.toString() ? `/content-gen?${nextParams}` : '/content-gen'
+    router.replace(nextHref)
   }
 
   const renderPipelineList = ({
@@ -134,14 +200,70 @@ export default function ContentGenPage() {
   const renderOverview = () => (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
       <div className="space-y-6">
+        {researchBridge ? (
+          <Card className="overflow-hidden rounded-[1.35rem] border-primary/25">
+            <CardHeader className="gap-4 border-b border-border/70 bg-[linear-gradient(135deg,rgba(217,130,60,0.16),rgba(13,44,45,0.08))]">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="success">Research attached</Badge>
+                    <Badge variant="outline">{formatResearchBridgeSource(researchBridge.source)}</Badge>
+                    <Badge variant="outline" className="font-mono text-[0.7rem]">
+                      {researchBridge.sessionId.slice(0, 8)}
+                    </Badge>
+                  </div>
+                  <div className="space-y-2">
+                    <CardTitle className="text-[2rem]">Research is ready for downstream work</CardTitle>
+                    <p className="text-sm leading-6 text-muted-foreground">
+                      {researchBridge.sessionLabel} is attached to this studio session. Launch a
+                      pipeline for a full production pass or open a quick script for a faster reuse
+                      loop.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <Button
+                      type="button"
+                      onClick={() => setNewPipelineOpen(true)}
+                      className="gap-2 bg-warning text-background hover:bg-warning/90"
+                    >
+                      <Play className="h-4 w-4" />
+                      Start from Research
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => setQuickScriptOpen(true)} className="gap-2">
+                      <FileText className="h-4 w-4" />
+                      Open Research Script
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2 lg:items-end">
+                  <Link
+                    href={`/session/${researchBridge.sessionId}`}
+                    className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <Link2 className="h-3.5 w-3.5" />
+                    Open source session
+                  </Link>
+                  <Button type="button" variant="ghost" size="sm" onClick={dismissResearchBridge}>
+                    <X className="h-3.5 w-3.5" />
+                    Clear handoff
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+          </Card>
+        ) : null}
+
         <Card className="overflow-hidden rounded-[1.35rem]">
           <CardHeader className="gap-5 border-b border-border/70 bg-[linear-gradient(135deg,rgba(217,130,60,0.16),rgba(13,44,45,0.08))]">
             <p className="eyebrow">Entry points</p>
             <div className="space-y-2">
-              <CardTitle className="text-[2.3rem]">Start from a strong entry point</CardTitle>
+              <CardTitle className="text-[2.3rem]">
+                {researchBridge ? 'Start from attached research' : 'Start from a strong entry point'}
+              </CardTitle>
               <p className="text-sm text-muted-foreground">
-                Launch a full pipeline when you need the end-to-end workflow, or open a quick
-                script when you want to iterate on a single idea immediately.
+                {researchBridge
+                  ? 'The launch controls below are prepped for the imported session, but you can still overwrite everything and run the studio independently.'
+                  : 'Launch a full pipeline when you need the end-to-end workflow, or open a quick script when you want to iterate on a single idea immediately.'}
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -156,7 +278,7 @@ export default function ContentGenPage() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={openQuickScriptBlank}
+                onClick={researchBridge ? () => setQuickScriptOpen(true) : openQuickScriptBlank}
                 className="gap-2"
               >
                 <FileText className="h-4 w-4" />
@@ -192,14 +314,11 @@ export default function ContentGenPage() {
         )}
 
         {activePipelines.length === 0 && pastPipelines.length === 0 && (
-          <Card className="rounded-[1.3rem] border-dashed">
-            <CardContent className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-              <div className="space-y-1">
-                <p className="text-base font-medium text-foreground">No pipelines yet</p>
-                <p className="text-sm text-muted-foreground">
-                  Start a full production run or open a quick script to seed the workspace.
-                </p>
-              </div>
+          <EmptyState
+            icon={Play}
+            title="No pipelines yet"
+            description="Start a full production run or open a quick script to seed the workspace."
+            action={
               <Button
                 type="button"
                 variant="ghost"
@@ -209,12 +328,12 @@ export default function ContentGenPage() {
                 Start your first pipeline
                 <ArrowRight className="h-3.5 w-3.5" />
               </Button>
-            </CardContent>
-          </Card>
+            }
+          />
         )}
       </div>
 
-      <OverviewSidebar onTabChange={handleTabChange} />
+      <OverviewSidebar onTabChange={handleTabChange} researchBridge={researchBridge} />
     </div>
   )
 
@@ -249,11 +368,14 @@ export default function ContentGenPage() {
           <DialogHeader>
             <DialogTitle>New Pipeline</DialogTitle>
             <DialogDescription>
-              Set the theme and launch a new end-to-end content generation run.
+              {researchBridge
+                ? `Seeded from ${researchBridge.sessionLabel}. Adjust the theme or stage range before launching the run.`
+                : 'Set the theme and launch a new end-to-end content generation run.'}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <StartPipelineForm
+              initialTheme={pipelineInitialTheme}
               onSuccess={(pipelineId) => {
                 setNewPipelineOpen(false)
                 router.push(`/content-gen/pipeline/${pipelineId}`)
@@ -268,8 +390,9 @@ export default function ContentGenPage() {
           <DialogHeader>
             <DialogTitle>Quick Script</DialogTitle>
             <DialogDescription>
-              Capture a single idea, generate copy quickly, and feed the result back into the
-              broader studio workflow.
+              {researchBridge
+                ? `Seeded from ${researchBridge.sessionLabel}. The imported research notes are editable before you generate copy.`
+                : 'Capture a single idea, generate copy quickly, and feed the result back into the broader studio workflow.'}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>

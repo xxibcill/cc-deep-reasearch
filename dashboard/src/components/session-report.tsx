@@ -1,24 +1,32 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { AlertCircle, FileJson, FileText, Globe, Loader2 } from 'lucide-react';
 
+import { ResearchContentActions } from '@/components/research-content-actions';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs } from '@/components/ui/tabs';
 import { getApiErrorMessage, getSessionReport } from '@/lib/api';
+import {
+  buildResearchContentBridgePayloadFromSession,
+  withResearchReportContent,
+} from '@/lib/research-content-bridge';
 import type {
   ResearchOutputFormat,
   ResearchRunStatus,
+  Session,
   SessionReportResponse,
 } from '@/types/telemetry';
 
 interface SessionReportProps {
   sessionId: string;
   runStatus: ResearchRunStatus | null;
+  sessionSummary: Session | null;
   hasReport?: boolean;
 }
 
@@ -128,13 +136,32 @@ function ReportStateAlert({
   );
 }
 
-export function SessionReport({ sessionId, runStatus, hasReport }: SessionReportProps) {
+export function SessionReport({
+  sessionId,
+  runStatus,
+  sessionSummary,
+  hasReport,
+}: SessionReportProps) {
   const [selectedFormat, setSelectedFormat] = useState<ResearchOutputFormat>('markdown');
   const [reportsByFormat, setReportsByFormat] = useState<ReportCache>({});
   const [loadingFormat, setLoadingFormat] = useState<ResearchOutputFormat | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const selectedReport = reportsByFormat[selectedFormat] ?? null;
+  const transferReport = reportsByFormat.markdown ?? selectedReport;
+  const bridgePayload = withResearchReportContent(
+    buildResearchContentBridgePayloadFromSession(
+      sessionId,
+      sessionSummary,
+      'session-report'
+    ),
+    transferReport
+      ? {
+          format: transferReport.format,
+          content: transferReport.content,
+        }
+      : null
+  );
 
   useEffect(() => {
     setSelectedFormat('markdown');
@@ -262,6 +289,7 @@ export function SessionReport({ sessionId, runStatus, hasReport }: SessionReport
               <Badge variant="outline" className="font-mono text-[0.7rem]">
                 {sessionId.slice(0, 8)}
               </Badge>
+              {transferReport ? <Badge variant="success">Ready for content studio</Badge> : null}
             </div>
           </div>
 
@@ -279,6 +307,25 @@ export function SessionReport({ sessionId, runStatus, hasReport }: SessionReport
               Formats load on demand; switching tabs stays fast after first fetch.
             </p>
           </div>
+        </div>
+
+        <div className="flex flex-col gap-4 rounded-[1rem] border border-border/70 bg-background/45 p-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-2">
+            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+              Downstream handoff
+            </p>
+            <p className="text-sm leading-6 text-foreground">
+              Move this research into Content Studio with the current session context
+              {transferReport ? ' and report notes attached.' : '.'}
+            </p>
+            <Link
+              href={`/session/${sessionId}`}
+              className="text-xs text-muted-foreground underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
+            >
+              Back to session overview
+            </Link>
+          </div>
+          <ResearchContentActions payload={bridgePayload} primaryIntent="quick-script" />
         </div>
       </CardHeader>
 

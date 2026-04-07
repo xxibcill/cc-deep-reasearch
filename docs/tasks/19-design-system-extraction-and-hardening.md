@@ -1,5 +1,7 @@
 # Task 19: Extract And Harden The Dashboard Design System
 
+Status: Done
+
 ## Goal
 
 Consolidate repeated dashboard patterns into a more intentional design-system layer so future work is faster and less likely to reintroduce visual drift.

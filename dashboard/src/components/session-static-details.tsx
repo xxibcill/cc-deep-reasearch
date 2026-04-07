@@ -3,9 +3,12 @@
 import Link from 'next/link';
 import { ArrowRight, Archive, CheckCircle2, Clock3, Database, FileText, Home, Radar, Search, XCircle } from 'lucide-react';
 
+import { ResearchContentActions } from '@/components/research-content-actions';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { MetricCard } from '@/components/ui/metric-card';
+import { buildResearchContentBridgePayloadFromSession } from '@/lib/research-content-bridge';
 import type { ResearchRunStatus, Session } from '@/types/telemetry';
 
 interface SessionOverviewProps {
@@ -150,31 +153,14 @@ function SessionIdentity({
 function ActivitySnapshot({ session }: { session: Session | null }) {
   return (
     <div className="grid gap-3 md:grid-cols-3">
-      <div className="rounded-2xl border border-border bg-surface-raised p-4">
-        <div className="flex items-center gap-2">
-          <Search className="h-4 w-4 text-muted-foreground" />
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Sources</p>
-        </div>
-        <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">{session?.totalSources ?? 0}</p>
-      </div>
-
-      <div className="rounded-2xl border border-border bg-surface-raised p-4">
-        <div className="flex items-center gap-2">
-          <Clock3 className="h-4 w-4 text-muted-foreground" />
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Events</p>
-        </div>
-        <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">{session?.eventCount ?? 0}</p>
-      </div>
-
-      <div className="rounded-2xl border border-border bg-surface-raised p-4">
-        <div className="flex items-center gap-2">
-          <Clock3 className="h-4 w-4 text-muted-foreground" />
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Duration</p>
-        </div>
-        <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
-          {formatDuration(session?.totalTimeMs ?? null)}
-        </p>
-      </div>
+      <MetricCard compact icon={Search} label="Sources" value={session?.totalSources ?? 0} />
+      <MetricCard compact icon={Clock3} label="Events" value={session?.eventCount ?? 0} />
+      <MetricCard
+        compact
+        icon={Clock3}
+        label="Duration"
+        value={formatDuration(session?.totalTimeMs ?? null)}
+      />
     </div>
   );
 }
@@ -327,6 +313,57 @@ function NextActions({
   );
 }
 
+function ContentStudioHandoff({
+  sessionId,
+  runStatus,
+  session,
+}: {
+  sessionId: string;
+  runStatus: ResearchRunStatus | null;
+  session: Session | null;
+}) {
+  const bridgePayload = buildResearchContentBridgePayloadFromSession(
+    sessionId,
+    session,
+    'session-overview'
+  );
+  const readyForContent = runStatus === 'completed' && Boolean(session?.hasReport);
+
+  return (
+    <Card className="xl:rounded-2xl">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Content Studio Handoff</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={readyForContent ? 'success' : 'secondary'}>
+              {readyForContent ? 'Report-ready source' : 'Research still upstream'}
+            </Badge>
+            <Badge variant="outline" className="font-mono text-[0.7rem]">
+              {sessionId.slice(0, 8)}
+            </Badge>
+          </div>
+          <p className="text-sm leading-6 text-muted-foreground">
+            {readyForContent
+              ? 'Carry this session into a pipeline or quick script without losing the research context.'
+              : 'Finish the research run and generate a report before sending it into downstream content workflows.'}
+          </p>
+        </div>
+
+        {readyForContent ? (
+          <ResearchContentActions
+            payload={bridgePayload}
+            className="w-full"
+            orientation="column"
+            primaryIntent="pipeline"
+          />
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function SessionOverview({ sessionId, runStatus, sessionSummary }: SessionOverviewProps) {
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_280px]">
@@ -362,6 +399,11 @@ export function SessionOverview({ sessionId, runStatus, sessionSummary }: Sessio
             />
           </CardContent>
         </Card>
+        <ContentStudioHandoff
+          session={sessionSummary}
+          sessionId={sessionId}
+          runStatus={runStatus}
+        />
       </aside>
     </div>
   );

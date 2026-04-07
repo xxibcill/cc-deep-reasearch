@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -15,15 +15,26 @@ import {
   TOTAL_PIPELINE_STAGES,
 } from '@/types/content-gen'
 
-export function StartPipelineForm({ onSuccess }: { onSuccess?: (pipelineId: string) => void } = {}) {
+export function StartPipelineForm({
+  onSuccess,
+  initialTheme,
+}: {
+  onSuccess?: (pipelineId: string) => void
+  initialTheme?: string
+} = {}) {
   const router = useRouter()
-  const [theme, setTheme] = useState('')
+  const [theme, setTheme] = useState(initialTheme ?? '')
   const [fromStage, setFromStage] = useState(0)
   const [toStage, setToStage] = useState(TOTAL_PIPELINE_STAGES - 1)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const hasInvalidRange = fromStage > toStage
+
+  useEffect(() => {
+    setTheme(initialTheme ?? '')
+    setError(null)
+  }, [initialTheme])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

@@ -1,16 +1,24 @@
 'use client'
 
+import Link from 'next/link'
 import { Clock3, FileText, Lightbulb } from 'lucide-react'
+
+import { ResearchContentActions } from '@/components/research-content-actions'
 import useContentGen from '@/hooks/useContentGen'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  formatResearchBridgeSource,
+  type ResearchContentBridgePayload,
+} from '@/lib/research-content-bridge'
 
 interface OverviewSidebarProps {
   onTabChange: (tab: string) => void
+  researchBridge: ResearchContentBridgePayload | null
 }
 
-export function OverviewSidebar({ onTabChange }: OverviewSidebarProps) {
+export function OverviewSidebar({ onTabChange, researchBridge }: OverviewSidebarProps) {
   const strategy = useContentGen((s) => s.strategy)
   const scripts = useContentGen((s) => s.scripts)
   const publishQueue = useContentGen((s) => s.publishQueue)
@@ -21,6 +29,56 @@ export function OverviewSidebar({ onTabChange }: OverviewSidebarProps) {
 
   return (
     <div className="space-y-4">
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between space-y-0">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-wider text-muted-foreground">
+              <FileText className="h-3.5 w-3.5" />
+              Research Handoff
+            </div>
+            <CardTitle className="text-base">
+              {researchBridge ? 'Attached research source' : 'Bring research downstream'}
+            </CardTitle>
+          </div>
+          {researchBridge ? (
+            <Badge variant={researchBridge.hasReport ? 'success' : 'secondary'}>
+              {researchBridge.hasReport ? 'Report ready' : 'Context only'}
+            </Badge>
+          ) : null}
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {researchBridge ? (
+            <>
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground/90">
+                  {researchBridge.sessionLabel}
+                </p>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Imported from {formatResearchBridgeSource(researchBridge.source)}. Use this
+                  session to seed a full pipeline or a quicker script pass.
+                </p>
+              </div>
+              <ResearchContentActions
+                payload={researchBridge}
+                orientation="column"
+                primaryIntent="quick-script"
+              />
+              <Link
+                href={`/session/${researchBridge.sessionId}`}
+                className="text-xs text-muted-foreground underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
+              >
+                Open source session
+              </Link>
+            </>
+          ) : (
+            <p className="text-xs leading-5 text-muted-foreground">
+              Report-ready research sessions can send operators here directly. The content studio
+              still works independently when you want to start from a blank brief.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader className="flex flex-row items-start justify-between space-y-0">
           <div className="space-y-1">

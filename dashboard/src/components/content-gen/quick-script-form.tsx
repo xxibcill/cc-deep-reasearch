@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 
 import { QuickScriptResultPanel } from '@/components/content-gen/quick-script-result-panel'
@@ -55,6 +55,15 @@ export function QuickScriptForm({ onSuccess, initialValues }: QuickScriptFormPro
   const isValid = fields.raw_idea.trim().length > 0
   const markdownValue = buildQuickScriptMarkdown(fields)
   const showCustomIterations = runMode === 'iterative'
+
+  useEffect(() => {
+    setFields(mergeQuickScriptFields(initialValues))
+    setResult(null)
+    setError(null)
+    setProgress(null)
+    setMarkdownDraft('')
+    setMarkdownStatus(null)
+  }, [initialValues])
 
   const handleRun = async (e: React.FormEvent) => {
     e.preventDefault()

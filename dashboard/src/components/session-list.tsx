@@ -23,7 +23,8 @@ import { AlertDialog } from '@/components/ui/alert-dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
 import { SkeletonSessionCard } from '@/components/ui/skeleton';
 import { getErrorGuidance } from '@/lib/error-messages';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -31,6 +32,7 @@ import { Input } from '@/components/ui/input';
 import { useNotifications } from '@/components/ui/notification-center';
 import { Select } from '@/components/ui/select';
 import { SavedViewControls } from '@/components/saved-view-controls';
+import { ResearchContentActions } from '@/components/research-content-actions';
 import useDashboardStore, { DEFAULT_SESSION_LIST_QUERY } from '@/hooks/useDashboard';
 import {
   archiveSession,
@@ -39,6 +41,7 @@ import {
   getApiErrorMessage,
   restoreSession,
 } from '@/lib/api';
+import { buildResearchContentBridgePayloadFromSession } from '@/lib/research-content-bridge';
 import { suggestBaselineSessions } from '@/lib/compare-utils';
 import {
   areSessionListQueriesEqual,
@@ -466,6 +469,17 @@ function SessionCard({
             <ArrowUpRight className="h-3.5 w-3.5" />
             Open workspace
           </Link>
+          {session.hasReport && !session.active && !isArchived ? (
+            <ResearchContentActions
+              payload={buildResearchContentBridgePayloadFromSession(
+                session.sessionId,
+                session,
+                'home'
+              )}
+              orientation="column"
+              primaryIntent="pipeline"
+            />
+          ) : null}
           {!session.active && !isArchived && onArchive ? (
             <Button
               variant="outline"
@@ -658,35 +672,6 @@ function ErrorState({ error, onRetry }: { error: string; onRetry?: () => void })
         </div>
       </div>
     </Alert>
-  );
-}
-
-function EmptyState({
-  filtered,
-  onClearFilters,
-}: {
-  filtered: boolean;
-  onClearFilters: () => void;
-}) {
-  return (
-    <Card className="rounded-[1.25rem] py-12">
-      <CardContent className="text-center">
-        <Network className="mx-auto mb-4 h-16 w-16 text-muted-foreground" />
-        <CardTitle className="text-[2rem] text-muted-foreground">
-          {filtered ? 'No sessions match the current filters' : 'No sessions available'}
-        </CardTitle>
-        <p className="mt-2 text-muted-foreground">
-          {filtered
-            ? 'Try broadening the search or filters.'
-            : 'Start a research session to begin monitoring.'}
-        </p>
-        {filtered ? (
-          <Button className="mt-4" type="button" variant="outline" onClick={onClearFilters}>
-            Clear Filters
-          </Button>
-        ) : null}
-      </CardContent>
-    </Card>
   );
 }
 
@@ -1239,8 +1224,24 @@ export function SessionList({
           <ErrorState error={error} onRetry={onRetry} />
         ) : sessions.length === 0 ? (
           <EmptyState
-            filtered={filtered}
-            onClearFilters={() => setSessionListQuery(DEFAULT_SESSION_LIST_QUERY)}
+            icon={Network}
+            title={filtered ? 'No sessions match the current filters' : 'No sessions available'}
+            description={
+              filtered
+                ? 'Try broadening the search or filters.'
+                : 'Start a research session to begin monitoring.'
+            }
+            action={
+              filtered ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setSessionListQuery(DEFAULT_SESSION_LIST_QUERY)}
+                >
+                  Clear Filters
+                </Button>
+              ) : undefined
+            }
           />
         ) : (
           <>
