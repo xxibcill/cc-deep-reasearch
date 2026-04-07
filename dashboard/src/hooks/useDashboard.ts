@@ -12,6 +12,7 @@ export const DEFAULT_SESSION_LIST_QUERY: SessionListQueryState = {
   search: '',
   status: '',
   activeOnly: false,
+  archivedOnly: false,
 };
 
 export const DEFAULT_EVENT_FILTERS: EventFilter = {

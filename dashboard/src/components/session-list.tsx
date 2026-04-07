@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   Activity,
@@ -16,6 +16,8 @@ import {
   Search,
   Trash2,
   CheckCircle2,
+  ShieldAlert,
+  Sparkles,
 } from 'lucide-react';
 
 import { BulkSessionDeleteResponse, Session, SessionListQueryState } from '@/types/telemetry';
@@ -39,6 +41,8 @@ import {
   bulkDeleteSessions,
   deleteSession,
   getApiErrorMessage,
+  getSessionPurgeSummary,
+  purgeArchivedSessions,
   restoreSession,
 } from '@/lib/api';
 import { buildResearchContentBridgePayloadFromSession } from '@/lib/research-content-bridge';
@@ -123,6 +127,27 @@ function buildFilterSummary(query: SessionListQueryState): string {
   }
 
   return parts.length > 0 ? parts.join(' • ') : 'all visible sessions';
+}
+
+function matchesVisibleSession(session: Session, query: SessionListQueryState): boolean {
+  if (query.activeOnly && !session.active) {
+    return false;
+  }
+  if (query.archivedOnly && !session.archived) {
+    return false;
+  }
+  if (query.status && session.status !== query.status) {
+    return false;
+  }
+
+  const search = query.search.trim().toLowerCase();
+  if (!search) {
+    return true;
+  }
+
+  return [session.sessionId, session.label, session.query ?? ''].some((value) =>
+    value.toLowerCase().includes(search)
+  );
 }
 
 function buildBulkFailureSummary(
@@ -561,7 +586,8 @@ function SessionFilters() {
   const hasFilters =
     normalizedQuery.search.trim().length > 0
     || normalizedQuery.status.length > 0
-    || normalizedQuery.activeOnly;
+    || normalizedQuery.activeOnly
+    || normalizedQuery.archivedOnly;
 
   return (
     <div className="rounded-[1.2rem] border border-border/80 bg-surface/68 p-4 shadow-card">
@@ -601,7 +627,7 @@ function SessionFilters() {
           onApply={(value) => setSessionListQuery(value)}
         />
       </div>
-      <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_12rem_12rem]">
+      <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_12rem_12rem_12rem]">
         <label className="min-w-0">
           <span className="mb-1.5 block text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
             Search
@@ -623,19 +649,33 @@ function SessionFilters() {
           value={query.status}
           options={sessionStatusOptions}
           onChange={(value) => setSessionListQuery({ status: value })}
+          emptyLabel="All"
+          className="h-11 bg-surface/72"
         />
         <div className="flex min-w-[11rem] flex-col gap-1.5">
           <span className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            Activity
+            Lifecycle
           </span>
-          <Button
-            type="button"
-            size="default"
-            variant={query.activeOnly ? 'default' : 'outline'}
-            onClick={() => setSessionListQuery({ activeOnly: !query.activeOnly })}
-          >
-            {query.activeOnly ? 'Active Only' : 'All Sessions'}
-          </Button>
+          <div className="flex gap-1">
+            <Button
+              type="button"
+              size="sm"
+              variant={query.activeOnly ? 'default' : 'outline'}
+              onClick={() => setSessionListQuery({ activeOnly: !query.activeOnly, archivedOnly: false })}
+              title="Show only active sessions"
+            >
+              <Play className="h-3 w-3" />
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={query.archivedOnly ? 'default' : 'outline'}
+              onClick={() => setSessionListQuery({ archivedOnly: !query.archivedOnly, activeOnly: false })}
+              title="Show only archived sessions"
+            >
+              <Archive className="h-3 w-3" />
+            </Button>
+          </div>
         </div>
       </div>
     </div>
@@ -695,6 +735,15 @@ export function SessionList({
     forceDelete: false,
   });
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [purgeSummary, setPurgeSummary] = useState<{
+    archived_sessions_count: number;
+    no_artifacts_count: number;
+    active_count: number;
+    recommendations: Array<{ category: string; description: string; action: string; count: number }>;
+  } | null>(null);
+  const [purgeLoading, setPurgeLoading] = useState(false);
+  const [showPurgeDialog, setShowPurgeDialog] = useState(false);
+  const [purgeDryRun, setPurgeDryRun] = useState(true);
   const query = useDashboardStore((state) => state.sessionListQuery);
   const selectedSessionIds = useDashboardStore((state) => state.selectedSessionIds);
   const toggleSessionSelection = useDashboardStore((state) => state.toggleSessionSelection);
@@ -710,7 +759,50 @@ export function SessionList({
   const toggleCompareSessionId = useDashboardStore((state) => state.toggleCompareSessionId);
   const clearCompareSessionIds = useDashboardStore((state) => state.clearCompareSessionIds);
   const filtered =
-    query.search.trim().length > 0 || query.status.length > 0 || query.activeOnly;
+    query.search.trim().length > 0 || query.status.length > 0 || query.activeOnly || query.archivedOnly;
+
+  useEffect(() => {
+    async function loadPurgeSummary() {
+      try {
+        const summary = await getSessionPurgeSummary();
+        setPurgeSummary(summary);
+      } catch {
+        setPurgeSummary(null);
+      }
+    }
+    loadPurgeSummary();
+  }, []);
+
+  const handlePurgeClick = async (dryRun: boolean) => {
+    setPurgeLoading(true);
+    try {
+      const result = await purgeArchivedSessions(dryRun, false);
+      if (dryRun) {
+        notify({
+          variant: 'info',
+          title: 'Purge Preview',
+          description: result.message,
+        });
+      } else {
+        notify({
+          variant: 'success',
+          title: 'Purge Complete',
+          description: `Deleted ${result.deleted} archived session(s)`,
+        });
+        refreshSessions();
+      }
+    } catch (requestError) {
+      notify({
+        variant: 'destructive',
+        persistent: true,
+        title: 'Purge Failed',
+        description: getApiErrorMessage(requestError, 'Failed to purge archived sessions'),
+      });
+    } finally {
+      setPurgeLoading(false);
+      setShowPurgeDialog(false);
+    }
+  };
 
   const compareSessionIdSet = new Set(compareSessionIds.filter(Boolean) as string[]);
   const canViewComparison = compareSessionIdSet.size === 2;
@@ -746,8 +838,9 @@ export function SessionList({
     suggestedBaseline.session.sessionId !== sessionA &&
     suggestedBaseline.confidence !== 'low';
 
+  const visibleSessions = sessions.filter((session) => matchesVisibleSession(session, query));
   const selectedSessionIdSet = new Set(selectedSessionIds);
-  const selectableSessions = sessions.filter((session) => !session.active);
+  const selectableSessions = visibleSessions.filter((session) => !session.active);
   const selectedSessions = selectableSessions.filter((session) =>
     selectedSessionIdSet.has(session.sessionId)
   );
@@ -1053,7 +1146,7 @@ export function SessionList({
     );
   };
 
-  const sessionGroups = categorizeSessions(sessions);
+  const sessionGroups = categorizeSessions(visibleSessions);
 
   return (
     <>
@@ -1068,10 +1161,26 @@ export function SessionList({
               <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
                 {compareMode
                   ? 'Pick a baseline and one comparison session. The list locks after two selections.'
-                  : `${sessions.length} of ${total} sessions`}
+                  : `${visibleSessions.length} of ${total} sessions`}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
+              {!compareMode && purgeSummary && (purgeSummary.archived_sessions_count > 0 || purgeSummary.no_artifacts_count > 0) ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowPurgeDialog(true)}
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Lifecycle
+                  {purgeSummary.archived_sessions_count > 0 && (
+                    <Badge variant="warning" className="ml-1 px-1.5 py-0">
+                      {purgeSummary.archived_sessions_count}
+                    </Badge>
+                  )}
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 size="sm"
@@ -1180,12 +1289,14 @@ export function SessionList({
                 </Button>
               ) : null}
               {canViewComparison ? (
-                <Link href={`/compare?a=${sessionA}&b=${sessionB}`} className="inline-flex">
-                  <Button type="button" variant="default">
-                    <GitCompare className="mr-2 h-4 w-4" />
-                    View Comparison
-                  </Button>
-                </Link>
+                <Button
+                  type="button"
+                  variant="default"
+                  onClick={() => window.location.assign(`/compare?a=${sessionA}&b=${sessionB}`)}
+                >
+                  <GitCompare className="h-4 w-4" />
+                  View Comparison
+                </Button>
               ) : null}
               {compareSessionIdSet.size > 0 ? (
                 <Button type="button" variant="outline" onClick={clearCompareSessionIds}>
@@ -1222,7 +1333,7 @@ export function SessionList({
           <LoadingState />
         ) : error ? (
           <ErrorState error={error} onRetry={onRetry} />
-        ) : sessions.length === 0 ? (
+        ) : visibleSessions.length === 0 ? (
           <EmptyState
             icon={Network}
             title={filtered ? 'No sessions match the current filters' : 'No sessions available'}
@@ -1315,6 +1426,87 @@ export function SessionList({
         onConfirm={handleDeleteConfirm}
         loading={deleteDialog.deleting}
         loadingLabel={deleteDialog.mode === 'bulk' ? 'Deleting Sessions...' : 'Deleting Session...'}
+      />
+
+      <AlertDialog
+        open={showPurgeDialog}
+        onOpenChange={setShowPurgeDialog}
+        title="Session Lifecycle"
+        description={
+          <div className="space-y-4">
+            <p>Manage archived sessions and storage cleanup.</p>
+            
+            {purgeSummary && (
+              <div className="space-y-3">
+                <div className="rounded-[0.8rem] border border-border/70 bg-surface/50 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <ShieldAlert className="h-4 w-4 text-warning" />
+                      <span className="text-sm font-medium">Active Sessions</span>
+                    </span>
+                    <Badge variant="info">{purgeSummary.active_count}</Badge>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <Archive className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-medium">Archived</span>
+                    </span>
+                    <Badge variant="warning">{purgeSummary.archived_sessions_count}</Badge>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <Activity className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-medium">No Artifacts</span>
+                    </span>
+                    <Badge variant="outline">{purgeSummary.no_artifacts_count}</Badge>
+                  </div>
+                </div>
+
+                {purgeSummary.recommendations.length > 0 && (
+                  <div className="rounded-[0.8rem] border border-primary/20 bg-surface/30 p-4">
+                    <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground mb-2">
+                      Recommendations
+                    </p>
+                    <ul className="space-y-2">
+                      {purgeSummary.recommendations.map((rec, idx) => (
+                        <li key={idx} className="flex items-center gap-2 text-sm">
+                          <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
+                          <span>{rec.description}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-3 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handlePurgeClick(true)}
+                disabled={purgeLoading || !purgeSummary?.archived_sessions_count}
+              >
+                Preview Purge
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => handlePurgeClick(false)}
+                disabled={purgeLoading || !purgeSummary?.archived_sessions_count}
+              >
+                {purgeLoading ? 'Purging...' : 'Purge All Archived'}
+              </Button>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Active sessions are always protected from purge. This action cannot be undone.
+            </p>
+          </div>
+        }
+        confirmLabel=""
+        cancelLabel="Close"
+        onConfirm={() => {}}
       />
     </>
   );
