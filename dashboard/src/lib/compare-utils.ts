@@ -347,7 +347,14 @@ export function buildCompareNarrative(pair: SessionPair): CompareNarrative {
             }
 
   const sourceInsight: CompareInsight =
-    deltas.sourceCountDelta === 0
+    deltas.sourceCountDelta == null
+      ? {
+          title: 'Evidence breadth',
+          summary: 'Source coverage is unavailable.',
+          detail: 'At least one session is missing source-count data, so breadth could not be compared.',
+          tone: 'neutral',
+        }
+      : deltas.sourceCountDelta === 0
       ? {
           title: 'Evidence breadth',
           summary: 'Source coverage stayed flat.',
@@ -501,7 +508,7 @@ export function suggestBaselineSessions(
   const candidates = sessions
     .filter((session) => session.sessionId !== target.sessionId)
     .filter(isSuccessfulSession)
-    .map((session) => {
+    .map((session): BaselineSuggestion => {
       const queryMatch =
         normalizedTargetQuery.length > 0 && normalizeText(session.query) === normalizedTargetQuery
       const labelExact = normalizeText(session.label) === normalizedTargetLabel

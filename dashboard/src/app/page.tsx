@@ -1,13 +1,16 @@
 'use client';
 
 import { useDeferredValue, useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle2, Play, Radar, Zap } from 'lucide-react';
+import { AlertCircle, Play, Radar } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { MetricCard } from '@/components/ui/metric-card';
+import { ResearchContentActions } from '@/components/research-content-actions';
 import { SessionList } from '@/components/session-list';
 import { StartResearchForm } from '@/components/start-research-form';
 import { getApiErrorMessage, getSessions } from '@/lib/api';
+import { buildResearchContentBridgePayloadFromSession } from '@/lib/research-content-bridge';
 import useDashboardStore from '@/hooks/useDashboard';
 
 const SESSION_PAGE_SIZE = 24;
@@ -27,6 +30,7 @@ export default function HomePage() {
   const activeSessions = sessions.filter((s) => s.active);
   const failedSessions = sessions.filter((s) => !s.active && (s.status === 'failed' || s.status === 'interrupted'));
   const readySessions = sessions.filter((s) => s.hasReport && !s.active);
+  const featuredReadySession = readySessions[0] ?? null;
   const hasNoSessions = total === 0 && !loading;
 
   useEffect(() => {
@@ -128,38 +132,55 @@ export default function HomePage() {
               </div>
             ) : (
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="group rounded-[1rem] border border-primary/20 bg-primary/[0.03] p-4 shadow-card transition-colors hover:border-primary/35 hover:bg-primary/[0.05]">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="eyebrow">Running now</p>
-                    <Play className="h-4 w-4 text-primary" />
-                  </div>
-                  <p className="mt-4 font-display text-[2.8rem] font-semibold leading-none tabular-nums text-foreground">
-                    {loading ? '...' : activeSessions.length}
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">Active research runs</p>
-                </div>
+                <MetricCard
+                  description="Active research runs"
+                  icon={Play}
+                  label="Running now"
+                  tone="primary"
+                  value={loading ? '...' : activeSessions.length}
+                />
 
-                <div className="group rounded-[1rem] border border-warning/20 bg-warning/[0.03] p-4 shadow-card transition-colors hover:border-warning/35 hover:bg-warning/[0.05]">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="eyebrow">Needs attention</p>
-                    <AlertCircle className="h-4 w-4 text-warning" />
-                  </div>
-                  <p className="mt-4 font-display text-[2.8rem] font-semibold leading-none tabular-nums text-foreground">
-                    {loading ? '...' : failedSessions.length}
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">Failed or interrupted</p>
-                </div>
+                <MetricCard
+                  description="Failed or interrupted"
+                  icon={AlertCircle}
+                  label="Needs attention"
+                  tone="warning"
+                  value={loading ? '...' : failedSessions.length}
+                />
 
-                <div className="group rounded-[1rem] border border-success/20 bg-success/[0.03] p-4 shadow-card transition-colors hover:border-success/35 hover:bg-success/[0.05]">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="eyebrow">Reports ready</p>
-                    <Radar className="h-4 w-4 text-success" />
-                  </div>
-                  <p className="mt-4 font-display text-[2.8rem] font-semibold leading-none tabular-nums text-foreground">
-                    {loading ? '...' : readySessions.length}
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">Ready for review</p>
-                </div>
+                <MetricCard
+                  description={
+                    featuredReadySession
+                      ? 'Ready for review and downstream content work.'
+                      : 'Ready for review'
+                  }
+                  icon={Radar}
+                  label="Reports ready"
+                  tone="success"
+                  value={loading ? '...' : readySessions.length}
+                >
+                  {featuredReadySession ? (
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                          Suggested handoff
+                        </p>
+                        <p className="text-sm leading-6 text-foreground">
+                          {featuredReadySession.label}
+                        </p>
+                      </div>
+                      <ResearchContentActions
+                        payload={buildResearchContentBridgePayloadFromSession(
+                          featuredReadySession.sessionId,
+                          featuredReadySession,
+                          'home'
+                        )}
+                        primaryIntent="pipeline"
+                        size="sm"
+                      />
+                    </div>
+                  ) : null}
+                </MetricCard>
               </div>
             )}
           </div>
