@@ -120,11 +120,25 @@ Phase 2 - Extended lifecycle management:
 - Strengthened the bridge from research sessions into content-studio workflows so report-ready research outputs lead more naturally into downstream content work
 - Extracted and hardened reusable dashboard design-system patterns to reduce visual drift and make future operator-surface work easier to extend
 
+#### Dashboard Operator Enablement Expansion (10 tasks)
+
+- Added a session-workspace trace-bundle export flow with explicit bundle-scope options so operators can download portable session bundles directly from the dashboard
+- Exposed benchmark corpus metadata and recent benchmark outputs in a dedicated dashboard surface so evaluation workflows no longer depend on CLI-only access
+- Added research-theme and workflow-preset selection to the launch flow while preserving a simple auto-detect default path for operators who do not need manual control
+- Improved session lifecycle and retention controls with clearer archived-versus-purgeable framing, safer cleanup affordances, and stronger destructive-action guidance
+- Added an artifact explorer with provenance-oriented summaries so operators can see which session artifacts exist, how they were produced, and which expected outputs are missing
+- Expanded prompt-override inspection into a prompt experiment audit surface with clearer applied-defaults visibility and easier cross-run prompt-diff analysis
+- Added a command palette and discoverable keyboard shortcuts for high-value dashboard navigation and workspace actions without breaking form input or confirmations
+- Introduced lightweight onboarding and contextual help across high-density operator surfaces so first-time users can learn the workflow without slowing experienced users down
+- Added a historical analytics dashboard with aggregate operational metrics, trend views, and drill-down paths back into session history for system-level monitoring
+- Formalized a dashboard fixture and scenario library so Playwright and related regression tests can target named operator states consistently as the UI grows
+
 ### Removed
 
 - Removed completed dashboard-upgrade planning documents `docs/tasks/01-dashboard-visual-foundation.md` through `docs/tasks/10-settings-runtime-clarity.md` after consolidating their delivered work into this changelog
 - Removed previously completed task-planning documents from `docs/tasks/` after consolidating their delivered work into this changelog, including the dashboard-detail upgrade task pack
 - Removed completed dashboard-upgrade planning documents `docs/tasks/11-search-cache-operations.md` through `docs/tasks/19-design-system-extraction-and-hardening.md` after consolidating their delivered work into this changelog
+- Removed completed dashboard-upgrade planning documents `docs/tasks/20-trace-bundle-export-workspace.md` through `docs/tasks/29-dashboard-fixture-and-scenario-library.md` after consolidating their delivered work into this changelog
 
 ## [0.1.0] - 2026-03-11
 
