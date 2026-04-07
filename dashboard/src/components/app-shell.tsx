@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { Activity, FlaskConical, Settings, FileVideo, Trophy } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { NotificationProvider } from '@/components/ui/notification-center';
+import { CommandPalette, KeyboardHint } from '@/components/command-palette';
 import { cn } from '@/lib/utils';
 
 const navItems = [
@@ -28,6 +29,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <NotificationProvider>
       <>
+        <CommandPalette />
+        <KeyboardHint />
         <header className="sticky top-0 z-50 border-b border-border/70 bg-background/82 backdrop-blur-xl">
           <div className="mx-auto max-w-content px-page-x">
             <div className="flex flex-col gap-4 py-4 lg:flex-row lg:items-end lg:justify-between">

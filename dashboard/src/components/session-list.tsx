@@ -641,6 +641,7 @@ function SessionFilters() {
               placeholder="Query, label, or session ID"
               className="pl-9"
               aria-label="Search sessions"
+              data-session-search
             />
           </div>
         </label>
