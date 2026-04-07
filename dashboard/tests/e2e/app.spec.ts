@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
 import { mockDashboardApis, mockSessions } from "./dashboard-mocks";
+import { SCENARIOS, getScenario } from "./scenarios";
+import { setupTestPage } from "./test-fixtures";
 
 test("home page exposes the control-room structure and launch presets", async ({ page }) => {
   await mockDashboardApis(page);
@@ -334,11 +336,11 @@ test("session archive and delete actions emit operator feedback", async ({ page 
   await page.getByRole("button", { name: "Delete Session" }).click();
 
   await expect(page.getByText("Session deleted")).toBeVisible();
-  await expect(page.locator("article").filter({ hasText: "Telemetry Dry Run" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Telemetry Dry Run" })).toHaveCount(0);
 });
 
 test("home page shows the empty state when no sessions are available", async ({ page }) => {
-  await mockDashboardApis(page, { sessions: [] });
+  await setupTestPage(page, { customSessions: [] });
 
   await page.goto("/");
 
@@ -351,24 +353,25 @@ test("session list saved views persist, apply, and delete across reloads", async
 
   await page.goto("/");
 
-  await page.getByLabel("Status").selectOption("failed");
+  const activityFilter = page.getByRole("button", { name: "All Sessions" });
+  await activityFilter.click();
 
-  await expect(page.getByRole("heading", { name: "Broken Reuters Fact Check" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Live NVIDIA Supply Chain Watch" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Stablecoin Banking Landscape" })).not.toBeVisible();
 
   await page.getByTestId("session-view-save-current").click();
-  await page.getByTestId("session-view-name").fill("Failures only");
+  await page.getByTestId("session-view-name").fill("Active only");
   await page.getByTestId("session-view-save").click();
 
-  await page.getByLabel("Status").selectOption("");
+  await page.getByRole("button", { name: "Active Only" }).click();
   await expect(page.getByRole("heading", { name: "Stablecoin Banking Landscape" })).toBeVisible();
 
   await page.reload();
-  await page.getByTestId("session-view-select").selectOption("Failures only");
+  await page.getByTestId("session-view-select").selectOption("Active only");
   await page.getByTestId("session-view-apply").click();
 
-  await expect(page.getByLabel("Status")).toHaveValue("failed");
-  await expect(page.getByRole("heading", { name: "Broken Reuters Fact Check" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Active Only" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Live NVIDIA Supply Chain Watch" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Stablecoin Banking Landscape" })).not.toBeVisible();
 
   await page.getByTestId("session-view-delete").click();
@@ -378,7 +381,7 @@ test("session list saved views persist, apply, and delete across reloads", async
     .getByTestId("session-view-select")
     .locator("option")
     .allTextContents();
-  expect(sessionViewOptions).not.toContain("Failures only");
+  expect(sessionViewOptions).not.toContain("Active only");
 });
 
 test("telemetry saved views sanitize stale filters and persist valid presets", async ({ page }) => {
@@ -436,6 +439,7 @@ test("telemetry saved views sanitize stale filters and persist valid presets", a
   ).toBeVisible();
 
   await page.reload();
+  await expect(page.getByText("Telemetry Explorer")).toBeVisible();
   await page.getByRole("button", { name: /Filters/ }).click();
   await page.getByTestId("telemetry-view-select").selectOption("Analyzer sweep");
   await page.getByTestId("telemetry-view-apply").click();
@@ -454,7 +458,7 @@ test("telemetry saved views sanitize stale filters and persist valid presets", a
 });
 
 test("compare route shows a clear error state for invalid selections", async ({ page }) => {
-  await mockDashboardApis(page, { sessions: mockSessions });
+  await setupTestPage(page, { customSessions: mockSessions });
 
   await page.goto("/compare?a=research-report-003&b=research-report-003");
 

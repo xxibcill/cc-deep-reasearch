@@ -926,3 +926,69 @@ If a feature or bug is unclear, identify which layer owns it first. That usually
 - browser-first monitoring summary: [`docs/REALTIME_MONITORING.md`](REALTIME_MONITORING.md)
 - telemetry storage and analytics: [`docs/TELEMETRY.md`](TELEMETRY.md)
 - CLI usage and workflows: [`docs/USAGE.md`](USAGE.md)
+
+## Test Scenario Library
+
+The dashboard E2E tests use a formal scenario library to ensure consistent, reusable test data. The library is located in [`dashboard/tests/e2e/scenarios.ts`](../dashboard/tests/e2e/scenarios.ts) and [`dashboard/tests/e2e/test-fixtures.ts`](../dashboard/tests/e2e/test-fixtures.ts).
+
+### Available Scenarios
+
+| Scenario Name | Description | Tags |
+|---------------|-------------|------|
+| `healthyCompletedRun` | Completed research with full report and all telemetry | `completed`, `healthy`, `report` |
+| `liveActiveRun` | Actively running session receiving live events | `running`, `live`, `active` |
+| `failedRunWithPartialTelemetry` | Failed session with some telemetry before failure | `failed`, `partial`, `error` |
+| `completedRunWithoutReport` | Completed session that collected data but no report | `completed`, `no-report`, `telemetry` |
+| `sessionWithPromptOverrides` | Session where prompt templates were overridden | `completed`, `prompts`, `overrides` |
+| `sessionWithLargeEventVolume` | High event count session for stress testing | `completed`, `high-volume`, `stress` |
+| `mixedStateDashboard` | Multiple sessions in various states for list testing | `mixed`, `dashboard`, `list` |
+
+### Using Scenarios in Tests
+
+Import and use the scenario helpers:
+
+```typescript
+import { SCENARIOS, getScenario, getScenariosByTag } from "./scenarios";
+import { setupTestPage, setupDashboardWithActiveRun } from "./test-fixtures";
+
+// Use a named scenario
+test("my test", async ({ page }) => {
+  await setupTestPage(page, { scenario: "liveActiveRun" });
+  // test code...
+});
+
+// Use a custom scenario
+test("custom test", async ({ page }) => {
+  await setupTestPage(page, { 
+    customSessions: getScenario("mixedStateDashboard").sessions 
+  });
+  // test code...
+});
+
+// Helper for common setups
+test("active run test", async ({ page }) => {
+  await setupDashboardWithActiveRun(page);
+  // test code...
+});
+```
+
+### Querying Scenarios
+
+```typescript
+// Get all scenarios
+const all = getAllScenarios();
+
+// Filter by tag
+const running = getScenariosByTag("running");
+
+// Get session IDs from a scenario
+const ids = getScenarioSessionIds(SCENARIOS.healthyCompletedRun);
+```
+
+### Adding New Scenarios
+
+When adding new test coverage for advanced states:
+
+1. Define the scenario in `scenarios.ts` following the existing pattern
+2. Add descriptive tags for filtering
+3. Use the scenario in tests via the fixture helpers
