@@ -1,4 +1,13 @@
-"""Data models for the content generation workflow."""
+"""Data models for the content generation workflow.
+
+Contract Version: 1.0.0
+
+This module defines the data contracts for each pipeline stage. Each model
+represents the expected output format from its corresponding agent.
+
+When updating prompts, ensure the corresponding parser remains compatible
+with the model's fields. Major format changes should bump the CONTRACT_VERSION.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +15,8 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
+
+CONTRACT_VERSION = "1.0.0"
 
 
 class CoreInputs(BaseModel):

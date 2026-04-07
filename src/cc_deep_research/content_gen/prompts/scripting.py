@@ -1,4 +1,22 @@
-"""Prompt templates for the 10-step scripting pipeline."""
+"""Prompt templates for the 10-step scripting pipeline.
+
+Contract Version: 1.0.0
+
+Parser expectations for each step:
+- Step 1 (define_core_inputs): Expects "Topic:", "Outcome:", "Audience:" fields
+- Step 2 (define_angle): Expects "Angle:", "Content Type:", "Core Tension:", "Why it works:" fields
+- Step 3 (choose_structure): Expects "Chosen Structure:", "Why it fits:", "Beat List:" fields
+- Step 4 (define_beat_intents): Expects numbered list with "beat_name: intent" format
+- Step 5 (generate_hooks): Expects numbered hooks with "Best Hook:", "Why it is strongest:" fields
+- Step 6 (draft_script): Expects script content with "Hook:", "Body:", "Payoff:", "CTA:" fields
+- Step 7 (add_retention_mechanics): Expects "Revised Script:" section with retention markers
+- Step 8 (tighten): Expects "Tightened Script:", "Word count:" fields
+- Step 9 (add_visual_notes): Expects "[Beat]: Line... [Visual]" format with stage directions
+- Step 10 (run_qc): Expects "QC Review:" section, "Weakest parts:" list, "Final Script:" section
+
+When editing prompts, ensure output format remains compatible with
+the parser in agents/scripting.py (_parse_step1_output, etc.).
+"""
 
 from __future__ import annotations
 
@@ -10,6 +28,7 @@ from cc_deep_research.content_gen.models import (
     ScriptVersion,
 )
 
+CONTRACT_VERSION = "1.0.0"
 
 def _render_research_context(research_context: str) -> str:
     if not research_context.strip():
