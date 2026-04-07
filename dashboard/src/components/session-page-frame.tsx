@@ -2,8 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef } from 'react';
-import { FileText, Radar, ScrollText, TimerReset } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { FileArchive, FileText, Radar, ScrollText, TimerReset } from 'lucide-react';
 
 import { RunStatusSummary } from '@/components/run-status-summary';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -16,6 +16,7 @@ import { useSessionRoute } from '@/hooks/useSessionRoute';
 import { runStatusBadgeVariant } from '@/lib/session-route';
 import { cn } from '@/lib/utils';
 import type { ResearchRunStatus, Session } from '@/types/telemetry';
+import { TraceBundleExportDialog } from '@/components/trace-bundle-export-dialog';
 
 type SessionView = 'details' | 'monitor' | 'report';
 
@@ -116,6 +117,7 @@ export function SessionPageFrame({
     handleRunStatusLoaded,
   } = useSessionRoute(routeId);
   const previousRunStatusRef = useRef<ResearchRunStatus | null>(null);
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
 
   const showRunStatus = isRunRoute && !resolvedSessionId;
 
@@ -238,6 +240,19 @@ export function SessionPageFrame({
                     <WorkspaceNav sessionId={resolvedSessionId} currentView={view} />
                   )}
                   {resolvedSessionId && (
+                    <button
+                      type="button"
+                      onClick={() => setIsExportDialogOpen(true)}
+                      className={buttonVariants({
+                        variant: 'outline',
+                        size: 'sm',
+                      })}
+                    >
+                      <FileArchive className="mr-2 h-4 w-4" />
+                      Export Bundle
+                    </button>
+                  )}
+                  {resolvedSessionId && (
                     <p className="font-mono text-xs tracking-wider text-muted-foreground">
                       ID: <span className="text-foreground">{resolvedSessionId}</span>
                     </p>
@@ -265,6 +280,15 @@ export function SessionPageFrame({
             </div>
           </section>
         </>
+      )}
+
+      {resolvedSessionId && (
+        <TraceBundleExportDialog
+          sessionId={resolvedSessionId}
+          hasReport={sessionSummary?.hasReport ?? false}
+          open={isExportDialogOpen}
+          onOpenChange={setIsExportDialogOpen}
+        />
       )}
     </div>
   );
