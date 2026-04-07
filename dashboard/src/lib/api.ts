@@ -516,6 +516,33 @@ export async function getSessionBundle(
   return { bundle: response.data };
 }
 
+export interface SessionArtifactInfo {
+  present: boolean;
+  provenance: 'direct' | 'derived';
+  description: string;
+  formats?: string[];
+  count?: number;
+  latest_checkpoint_id?: string | null;
+  resume_available?: boolean;
+  reason?: string;
+}
+
+export interface SessionArtifactsResponse {
+  session_id: string;
+  provenance: Record<string, unknown>;
+  available: Record<string, SessionArtifactInfo>;
+  missing?: Record<string, Omit<SessionArtifactInfo, 'present'> & { reason: string }>;
+}
+
+export async function getSessionArtifacts(
+  sessionId: string
+): Promise<SessionArtifactsResponse> {
+  const response = await apiClient.get<SessionArtifactsResponse>(
+    `/sessions/${sessionId}/artifacts`
+  );
+  return response.data;
+}
+
 // Search Cache API helpers
 
 export async function getSearchCacheEntries(
