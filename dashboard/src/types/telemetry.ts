@@ -304,6 +304,7 @@ export interface ResearchRunRequest {
   num_researchers?: number | null;
   realtime_enabled?: boolean;
   pdf_enabled?: boolean;
+  theme?: string | null;
   agent_prompt_overrides?: Record<string, AgentPromptOverride>;
 }
 

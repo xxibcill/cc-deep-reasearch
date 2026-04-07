@@ -1998,6 +1998,35 @@ def register_routes(app: FastAPI) -> None:
         return JSONResponse(content=case_report)
 
 
+def _get_research_theme_list() -> list[dict[str, str]]:
+    """Return list of available research themes with metadata."""
+    from cc_deep_research.themes import get_theme_registry
+
+    registry = get_theme_registry()
+    theme_info = registry.list_theme_info()
+
+    return [
+        {
+            "theme": item["theme"],
+            "display_name": item["display_name"],
+            "description": item["description"],
+            "source": item["source"],
+        }
+        for item in theme_info
+    ]
+
+
+@app.get("/api/themes")
+async def list_research_themes() -> JSONResponse:
+    """List available research themes for the dashboard.
+
+    Returns:
+        JSON response with list of themes including display names and descriptions.
+    """
+    themes = _get_research_theme_list()
+    return JSONResponse(content={"themes": themes, "total": len(themes)})
+
+
 def start_server(
     host: str = "localhost",
     port: int = 8000,

@@ -614,3 +614,20 @@ export async function getBenchmarkCaseReport(
   );
   return response.data;
 }
+
+export interface ResearchThemeInfo {
+  theme: string;
+  display_name: string;
+  description: string;
+  source: 'builtin' | 'custom';
+}
+
+export interface ThemesListResponse {
+  themes: ResearchThemeInfo[];
+  total: number;
+}
+
+export async function listResearchThemes(): Promise<ThemesListResponse> {
+  const response = await apiClient.get<ThemesListResponse>('/themes');
+  return response.data;
+}

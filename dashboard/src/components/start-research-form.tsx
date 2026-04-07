@@ -1,9 +1,8 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Radar, RotateCcw, SearchCheck, Telescope } from 'lucide-react'
-import { startResearchRun } from '@/lib/api'
+import { useState, useEffect } from 'react'
+import { Radar, RotateCcw, SearchCheck, Telescope, Sparkles } from 'lucide-react'
+import { startResearchRun, listResearchThemes, getApiErrorMessage } from '@/lib/api'
 import type { ResearchRunRequest, AgentPromptOverride } from '@/types/telemetry'
 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
@@ -13,7 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NativeSelect } from '@/components/ui/native-select'
-import { useNotifications } from '@/components/ui/notification-center'
+import { storePendingNotification, useNotifications } from '@/components/ui/notification-center'
 import { Textarea } from '@/components/ui/textarea'
 
 type ResearchDepth = 'quick' | 'standard' | 'deep'
@@ -24,6 +23,7 @@ interface FormData {
   presetId: LaunchPresetId
   depth: ResearchDepth
   minSources: string
+  theme: string | null
 }
 
 interface LaunchPreset {
@@ -86,13 +86,13 @@ const DEFAULT_PRESET = LAUNCH_PRESETS[1]
 const MAX_QUERY_LENGTH = 2000
 
 export function StartResearchForm() {
-  const router = useRouter()
   const { notify } = useNotifications()
   const [formData, setFormData] = useState<FormData>({
     query: '',
     presetId: DEFAULT_PRESET.id,
     depth: DEFAULT_PRESET.depth,
     minSources: DEFAULT_PRESET.minSources,
+    theme: null,
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -105,6 +105,30 @@ export function StartResearchForm() {
     deep_analyzer: '',
     report_quality_evaluator: '',
   })
+  const [themes, setThemes] = useState<{ theme: string; display_name: string; description: string }[]>([])
+  const [themesLoading, setThemesLoading] = useState(true)
+
+  useEffect(() => {
+    let mounted = true
+    const loadThemes = async () => {
+      try {
+        const data = await listResearchThemes()
+        if (mounted) {
+          setThemes(data.themes)
+        }
+      } catch (err) {
+        console.error('Failed to load themes:', err)
+      } finally {
+        if (mounted) {
+          setThemesLoading(false)
+        }
+      }
+    }
+    void loadThemes()
+    return () => {
+      mounted = false
+    }
+  }, [])
 
   const handlePromptPrefixChange = (agentId: string, value: string) => {
     setPromptPrefixes((prev) => ({
@@ -183,13 +207,15 @@ export function StartResearchForm() {
         depth: formData.depth,
         min_sources: formData.minSources ? parseInt(formData.minSources, 10) : null,
         realtime_enabled: true,
+        theme: formData.theme,
         agent_prompt_overrides: buildPromptOverrides(),
       }
 
       const response = await startResearchRun(request)
       const monitorHref = `/session/${response.run_id}/monitor`
-      notify({
+      storePendingNotification({
         variant: 'success',
+        durationMs: 10000,
         title: response.status === 'queued' ? 'Run queued' : 'Run started',
         description: `Opened monitor for ${response.run_id}. The dashboard will keep polling until the run settles.`,
         actions: [
@@ -199,7 +225,7 @@ export function StartResearchForm() {
           },
         ],
       })
-      router.push(monitorHref)
+      window.location.assign(monitorHref)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to start research run'
       setError(null)
@@ -219,6 +245,7 @@ export function StartResearchForm() {
       presetId: DEFAULT_PRESET.id,
       depth: DEFAULT_PRESET.depth,
       minSources: DEFAULT_PRESET.minSources,
+      theme: null,
     })
     setPromptPrefixes({
       analyzer: '',
@@ -380,6 +407,33 @@ export function StartResearchForm() {
                   ) : (
                     <p className="text-xs text-muted-foreground">
                       Leave blank to let the backend decide the source floor automatically.
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="theme">Research Theme</Label>
+                  <NativeSelect
+                    id="theme"
+                    value={formData.theme ?? ''}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        theme: e.target.value || null,
+                      }))
+                    }
+                    disabled={isSubmitting || themesLoading}
+                  >
+                    <option value="">Auto-detect from query</option>
+                    {themes.map((t) => (
+                      <option key={t.theme} value={t.theme}>
+                        {t.display_name}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                  {formData.theme && (
+                    <p className="text-xs text-muted-foreground">
+                      Theme: {themes.find((t) => t.theme === formData.theme)?.description}
                     </p>
                   )}
                 </div>
