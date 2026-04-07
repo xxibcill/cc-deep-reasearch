@@ -12,7 +12,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 
-import { getSession, getSessions } from '@/lib/api'
+import { getSession, getSessions, getSessionPromptMetadata } from '@/lib/api'
 import {
   buildCompareNarrative,
   computeCompareDeltas,
@@ -25,11 +25,12 @@ import {
   type BaselineFit,
   type SessionPair,
 } from '@/lib/compare-utils'
-import { Session } from '@/types/telemetry'
+import { Session, SessionPromptMetadata } from '@/types/telemetry'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { PromptDiffCard } from './compare-prompt-diff'
 
 interface MetricValueProps {
   label: string
@@ -371,10 +372,11 @@ function DeltaColumn({
                       <p className="text-sm font-medium text-foreground">{step.title}</p>
                       <p className="mt-1 text-sm leading-6 text-muted-foreground">{step.detail}</p>
                     </div>
-                    <Link href={step.href} className="inline-flex">
-                      <Button size="sm" variant="outline">
-                        Open
-                      </Button>
+                    <Link
+                      href={step.href}
+                      className={buttonVariants({ size: 'sm', variant: 'outline' })}
+                    >
+                      Open
                     </Link>
                   </div>
                 </div>
@@ -419,6 +421,8 @@ interface CompareViewProps {
 export function CompareView({ sessionIdA, sessionIdB }: CompareViewProps) {
   const [sessionA, setSessionA] = useState<Session | null>(null)
   const [sessionB, setSessionB] = useState<Session | null>(null)
+  const [sessionAPromptMetadata, setSessionAPromptMetadata] = useState<SessionPromptMetadata | undefined>()
+  const [sessionBPromptMetadata, setSessionBPromptMetadata] = useState<SessionPromptMetadata | undefined>()
   const [recentSessions, setRecentSessions] = useState<Session[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -441,6 +445,17 @@ export function CompareView({ sessionIdA, sessionIdB }: CompareViewProps) {
 
         setSessionA(resultA.value.session)
         setSessionB(resultB.value.session)
+
+        const [promptA, promptB] = await Promise.allSettled([
+          getSessionPromptMetadata(sessionIdA),
+          getSessionPromptMetadata(sessionIdB),
+        ])
+        if (promptA.status === 'fulfilled') {
+          setSessionAPromptMetadata(promptA.value)
+        }
+        if (promptB.status === 'fulfilled') {
+          setSessionBPromptMetadata(promptB.value)
+        }
 
         if (recentResult.status === 'fulfilled') {
           setRecentSessions(recentResult.value.sessions)
@@ -477,9 +492,47 @@ export function CompareView({ sessionIdA, sessionIdB }: CompareViewProps) {
 
   if (loading) {
     return (
-      <div className="flex min-h-96 items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-primary" />
-      </div>
+      <Card className="overflow-hidden">
+        <CardHeader className="gap-4 border-b border-border/70">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="info">Compare route</Badge>
+            <Badge variant="outline">Loading comparison</Badge>
+          </div>
+          <div>
+            <CardTitle className="text-[1.75rem]">Session Comparison</CardTitle>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+              Loading the baseline, comparison session, and recent-run context.
+            </p>
+          </div>
+        </CardHeader>
+        <CardContent className="flex min-h-72 items-center justify-center pt-6">
+          <div className="w-full space-y-6">
+            <div className="flex justify-center">
+              <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-primary" />
+            </div>
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(24rem,1.05fr)_minmax(0,1fr)]">
+              <Card className="border-dashed border-border/60 bg-surface/45">
+                <CardHeader>
+                  <CardTitle className="text-base">Session A · Baseline</CardTitle>
+                </CardHeader>
+              </Card>
+              <Card className="border-dashed border-border/60 bg-surface/45">
+                <CardHeader>
+                  <CardTitle className="text-base">Operator summary</CardTitle>
+                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                    Material changes
+                  </p>
+                </CardHeader>
+              </Card>
+              <Card className="border-dashed border-border/60 bg-surface/45">
+                <CardHeader>
+                  <CardTitle className="text-base">Session B · Comparison</CardTitle>
+                </CardHeader>
+              </Card>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     )
   }
 
@@ -520,11 +573,12 @@ export function CompareView({ sessionIdA, sessionIdB }: CompareViewProps) {
                 </p>
               </div>
             </div>
-            <Link href="/">
-              <Button variant="outline" size="sm">
-                <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-                Back to Sessions
-              </Button>
+            <Link
+              href="/"
+              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            >
+              <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+              Back to Sessions
             </Link>
           </div>
         </CardHeader>
@@ -540,18 +594,29 @@ export function CompareView({ sessionIdA, sessionIdB }: CompareViewProps) {
         <SessionCard session={sessionB} title="Session B · Comparison" />
       </div>
 
+      {(sessionAPromptMetadata || sessionBPromptMetadata) && (
+        <PromptDiffCard
+          sessionA={sessionAPromptMetadata}
+          sessionB={sessionBPromptMetadata}
+          sessionALabel={sessionA?.label || 'Session A'}
+          sessionBLabel={sessionB?.label || 'Session B'}
+        />
+      )}
+
       <footer className="flex flex-wrap justify-center gap-3 border-t border-border/70 pt-4">
-        <Link href={`/session/${sessionIdA}`}>
-          <Button variant="outline" size="sm">
-            <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-            View Session A Details
-          </Button>
+        <Link
+          href={`/session/${sessionIdA}`}
+          className={buttonVariants({ variant: 'outline', size: 'sm' })}
+        >
+          <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+          View Session A Details
         </Link>
-        <Link href={`/session/${sessionIdB}`}>
-          <Button variant="outline" size="sm">
-            View Session B Details
-            <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-          </Button>
+        <Link
+          href={`/session/${sessionIdB}`}
+          className={buttonVariants({ variant: 'outline', size: 'sm' })}
+        >
+          View Session B Details
+          <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
         </Link>
       </footer>
     </div>
