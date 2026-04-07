@@ -1,6 +1,6 @@
-# Dashboard Upgrade Task Set
+# Task Set Index
 
-This directory breaks the dashboard upgrade into small, ordered tasks that a smaller agent can execute one at a time.
+This directory holds small, ordered task sets that a smaller agent can execute one at a time.
 
 ## Working Rules
 
@@ -14,18 +14,14 @@ This directory breaks the dashboard upgrade into small, ordered tasks that a sma
 
 Tasks `01` through `29` are complete and summarized in [`CHANGELOG.md`](../../CHANGELOG.md).
 
-No pending dashboard task files remain in this directory.
+Current pending task set:
+
+- [`80_20_necessary_work_task_set.md`](80_20_necessary_work_task_set.md): ordered maintenance and hardening tasks for the "necessary 80%" side of the project
 
 ## Intended Outcome
 
-After all tasks are complete, the dashboard should:
+Each task set should:
 
-- feel visually consistent across home, session, report, compare, and settings surfaces
-- behave like a unified operator workspace instead of several loosely related pages
-- make active runs, failures, and completed artifacts easier to triage
-- provide higher-level summaries instead of forcing operators into raw telemetry first
-- support repeatable operator workflows through saved views, resilient live monitoring, and better cross-session analysis
-- connect research sessions more clearly to downstream publishing and content-generation work
-- expose bundles, artifacts, benchmarks, and historical analytics as first-class operator tools
-- become easier to learn and faster to operate through keyboard workflows and contextual help
-- have updated tests and docs that match the new UI structure
+- break work into implementation-ready units with clear scope
+- make acceptance criteria and validation commands explicit
+- let a smaller agent complete one task at a time without broad repo context
