@@ -282,8 +282,37 @@ export async function getSessionEvents(
 export async function startResearchRun(
   request: ResearchRunRequest
 ): Promise<StartResearchRunResponse> {
-  const response = await apiClient.post<StartResearchRunResponse>('/research-runs', request);
-  return response.data;
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const response = await fetch(`${dashboardRuntimeConfig.apiBaseUrl}/research-runs`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+      signal: controller.signal,
+    });
+
+    const payload = (await response.json()) as StartResearchRunResponse & {
+      error?: string;
+      detail?: string;
+    };
+
+    if (!response.ok) {
+      throw new Error(payload.error || payload.detail || 'Failed to start research run.');
+    }
+
+    return payload;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('POST /research-runs timed out after 10s while waiting for the dashboard backend.');
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 }
 
 export async function getResearchRunStatus(runId: string): Promise<ResearchRunStatusResponse> {
@@ -432,8 +461,20 @@ export async function restoreSession(sessionId: string): Promise<ArchiveSessionR
   }
 }
 
-export async function getSessionBundle(sessionId: string): Promise<{ bundle: TraceBundle }> {
+export interface TraceBundleOptions {
+  includePayload?: boolean;
+  includeReport?: boolean;
+}
+
+export async function getSessionBundle(
+  sessionId: string,
+  options: TraceBundleOptions = {}
+): Promise<{ bundle: TraceBundle }> {
   const response = await apiClient.get<TraceBundle>(`/sessions/${sessionId}/bundle`, {
+    params: {
+      include_payload: options.includePayload ?? false,
+      include_report: options.includeReport ?? false,
+    },
     timeout: SESSION_BUNDLE_TIMEOUT_MS,
   });
   return { bundle: response.data };
