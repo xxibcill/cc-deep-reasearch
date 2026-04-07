@@ -5,6 +5,7 @@ import { AlertCircle, Play, Radar } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { HelpCallout, OnboardingCard } from '@/components/ui/help-callout';
 import { MetricCard } from '@/components/ui/metric-card';
 import { ResearchContentActions } from '@/components/research-content-actions';
 import { SessionList } from '@/components/session-list';
@@ -127,9 +128,22 @@ export default function HomePage() {
             </div>
 
             {hasNoSessions ? (
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="info">No sessions yet</Badge>
-              </div>
+              <>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="info">No sessions yet</Badge>
+                </div>
+                <OnboardingCard
+                  id="first-session"
+                  title="Start your first research"
+                  description="Launch your first research session to begin monitoring runs, tracing agent behavior, and building your archive."
+                  steps={[
+                    { label: "Enter a research question", description: "Use the form on the right to describe what you want to learn." },
+                    { label: "Choose depth", description: "Quick for facts, Standard for overviews, Deep for thorough analysis." },
+                    { label: "Monitor progress", description: "Watch the live telemetry stream as agents collect and analyze sources." },
+                    { label: "Review the report", description: "When complete, read the generated report or send to Content Studio." },
+                  ]}
+                />
+              </>
             ) : (
               <div className="grid gap-3 md:grid-cols-3">
                 <MetricCard

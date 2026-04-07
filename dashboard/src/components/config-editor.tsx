@@ -5,6 +5,7 @@ import { startTransition, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { ConfigSecretsPanel } from '@/components/config-secrets-panel';
+import { HelpCallout } from '@/components/ui/help-callout';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -465,6 +466,11 @@ export function ConfigEditor() {
 
   return (
     <div className="space-y-5">
+      <HelpCallout
+        id="settings-overrides"
+        title="Runtime overrides"
+        content="Fields marked as runtime overrides are locked because environment values take priority. Save changes to persisted config for future runs."
+      />
       <header className="rounded-2xl border border-border bg-card/95 p-6 shadow-sm">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-2">

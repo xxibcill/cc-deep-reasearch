@@ -7,6 +7,7 @@ import useDashboardStore from '@/hooks/useDashboard';
 import { getApiErrorMessage, getSessionDetail, type SessionDetailResult } from '@/lib/api';
 import { isTerminalStatus } from '@/lib/session-route';
 import { useWebSocket } from '@/lib/websocket';
+import { HelpCallout } from '@/components/ui/help-callout';
 import { SessionDetails } from '@/components/session-details';
 import { getStatusBadgeMeta } from '@/components/telemetry/telemetry-header';
 import { Badge } from '@/components/ui/badge';
@@ -292,6 +293,11 @@ export function SessionTelemetryWorkspace({
 
   return (
     <div className="space-y-4">
+      <HelpCallout
+        id="telemetry-monitor"
+        title="Telemetry monitor"
+        content="Watch live events as they happen: agent calls, tool executions, reasoning traces, and derived outputs. Click any event to inspect the payload."
+      />
       {liveStreamStatus.phase !== 'live' ? (
         <Card
           className={
