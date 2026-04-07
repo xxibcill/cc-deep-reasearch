@@ -231,3 +231,74 @@ def test_prepare_builds_prompt_registry_from_request_overrides() -> None:
         "prompt_prefix": "Prioritize primary sources.",
         "system_prompt": None,
     }
+
+
+def test_run_preserves_missing_provider_configuration_metadata() -> None:
+    """Requested providers that cannot initialize should still surface degraded session metadata."""
+    captured: dict[str, object] = {}
+    provider_warning = (
+        "Provider 'claude' is selected but no Claude search provider is implemented yet."
+    )
+    session = _sample_session("provider config").model_copy(
+        update={
+            "metadata": {
+                "providers": {
+                    "configured": ["claude"],
+                    "available": [],
+                    "warnings": [provider_warning],
+                },
+                "execution": {
+                    "parallel_requested": False,
+                    "parallel_used": False,
+                    "degraded": True,
+                    "degraded_reasons": [provider_warning],
+                },
+            }
+        },
+        deep=True,
+    )
+
+    class StubOrchestrator:
+        def __init__(self, **kwargs) -> None:
+            captured["orchestrator_config"] = kwargs["config"]
+
+        async def execute_research(self, **_kwargs) -> ResearchSession:
+            return session
+
+    def output_materializer(**kwargs) -> ResearchRunResult:
+        captured["materialize_config"] = kwargs["config"]
+        return ResearchRunResult(
+            session=kwargs["session"],
+            report=ResearchRunReport(
+                format=ResearchOutputFormat.MARKDOWN,
+                content="# Report",
+                path=Path("report.md"),
+                media_type="text/markdown",
+            ),
+        )
+
+    service = ResearchRunService(
+        config_loader=lambda: Config(),
+        orchestrator_factory=StubOrchestrator,
+        output_materializer=output_materializer,
+    )
+
+    result = service.run(
+        ResearchRunRequest(
+            query="provider config",
+            depth=ResearchDepth.STANDARD,
+            search_providers=["claude"],
+        ),
+        execution_adapter=AsyncioResearchRunExecutionAdapter(),
+    )
+
+    orchestrator_config = captured["orchestrator_config"]
+    assert isinstance(orchestrator_config, Config)
+    assert orchestrator_config.search.providers == ["claude"]
+    materialize_config = captured["materialize_config"]
+    assert isinstance(materialize_config, Config)
+    assert materialize_config.search.providers == ["claude"]
+    assert result.session.metadata["providers"]["status"] == "unavailable"
+    assert result.session.metadata["providers"]["warnings"] == [provider_warning]
+    assert result.session.metadata["execution"]["degraded"] is True
+    assert result.session.metadata["execution"]["degraded_reasons"] == [provider_warning]

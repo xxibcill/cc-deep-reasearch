@@ -328,7 +328,7 @@ class SourceCollectionService:
                     depth=depth,
                     min_sources=min_sources,
                 )
-            except (ParallelCollectionError, ParallelCollectionTimeoutError) as exc:
+            except Exception as exc:
                 if not policy.fallback_to_sequential:
                     raise
                 self._monitor.log(f"Parallel execution failed: {exc}")
@@ -341,6 +341,7 @@ class SourceCollectionService:
                         "requested_mode": "parallel",
                         "fallback_enabled": policy.fallback_to_sequential,
                         "error": str(exc),
+                        "error_type": type(exc).__name__,
                     },
                 )
                 self._session_state.note_execution_degradation(

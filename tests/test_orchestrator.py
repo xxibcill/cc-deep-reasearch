@@ -274,6 +274,20 @@ class FakeAnalyzerAgent:
         return _make_analysis(source_count=len(sources))
 
 
+class FakePartialAnalyzerAgent(FakeAnalyzerAgent):
+    """Analysis fixture that returns a sparse but valid payload."""
+
+    def analyze_sources(self, sources: list[SearchResultItem], query: str) -> AnalysisResult:
+        self.calls.append((list(sources), query))
+        return AnalysisResult(
+            key_findings=["This is a simple string finding without structured fields"],
+            themes=["incomplete theme"],
+            gaps=["Simple string gap without structured fields"],
+            source_count=len(sources),
+            analysis_method="basic_keyword",
+        )
+
+
 class FakeDeepAnalyzerAgent:
     """Deep-analysis fixture that marks the deep phase complete."""
 
@@ -436,7 +450,7 @@ class TestTeamResearchOrchestrator:
         assert "[markdown|json|html]" in result.output
         assert "--no-team" in result.output
         assert "Run source collection sequentially instead of" in result.output
-        assert "using parallel researchers" in result.output
+        assert "using parallel local tasks" in result.output
 
     def test_no_team_override_forces_sequential_collection(self) -> None:
         assert _resolve_parallel_mode_override(no_team=True, parallel_mode=False) is False
@@ -1103,6 +1117,40 @@ class TestTeamResearchOrchestrator:
             "query conflicting evidence rebuttal",
             "query methodology criticism response",
         ]
+
+    @pytest.mark.asyncio
+    async def test_execute_research_preserves_partial_analysis_results_in_metadata(self) -> None:
+        config = Config()
+        config.search.providers = ["tavily"]
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        collector = FakeCollectorAgent(
+            available=["tavily"],
+            warnings=[],
+            results_by_query={
+                "test query": _make_sources("partial-analysis", 2),
+            },
+        )
+        _install_fake_team(
+            orchestrator,
+            collector=collector,
+            analyzer=FakePartialAnalyzerAgent(),
+        )
+
+        session = await orchestrator.execute_research(
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            min_sources=1,
+        )
+
+        assert session.metadata["analysis"]["key_findings"] == [
+            "This is a simple string finding without structured fields"
+        ]
+        assert session.metadata["analysis"]["gaps"] == [
+            "Simple string gap without structured fields"
+        ]
+        assert session.metadata["analysis"]["analysis_method"] == "basic_keyword"
+        assert session.metadata["validation"]["is_valid"] is True
 
 
 class TestQueryExpanderAgent:
