@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
 
@@ -16,6 +17,12 @@ from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from cc_deep_research.benchmark import (
+    BenchmarkCorpus,
+    BenchmarkRunReport,
+    default_benchmark_corpus_path,
+    load_benchmark_corpus,
+)
 from cc_deep_research.config import (
     ConfigOverrideError,
     ConfigPatchError,
@@ -1847,6 +1854,148 @@ def register_routes(app: FastAPI) -> None:
                 "message": f"Cleared {cleared} entries from cache",
             }
         )
+
+    @app.get("/api/benchmarks/corpus")
+    async def get_benchmark_corpus() -> JSONResponse:
+        """Get the benchmark corpus metadata.
+
+        Returns:
+            JSON response with benchmark corpus information including version and cases.
+        """
+        try:
+            corpus = load_benchmark_corpus()
+        except Exception as e:
+            return JSONResponse(
+                content={"error": f"Failed to load benchmark corpus: {str(e)}"},
+                status_code=500,
+            )
+
+        return JSONResponse(content=corpus.model_dump(mode="json"))
+
+    def _get_benchmark_runs_dir() -> Path:
+        """Return the default benchmark runs directory."""
+        return Path("benchmark_runs")
+
+    def _list_benchmark_runs() -> list[dict[str, Any]]:
+        """List available benchmark runs from the filesystem."""
+        runs_dir = _get_benchmark_runs_dir()
+        runs: list[dict[str, Any]] = []
+
+        if not runs_dir.exists():
+            return runs
+
+        for run_path in sorted(runs_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+            if not run_path.is_dir():
+                continue
+
+            manifest_path = run_path / "manifest.json"
+            scorecard_path = run_path / "scorecard.json"
+
+            run_info: dict[str, Any] = {
+                "run_id": run_path.name,
+                "path": str(run_path),
+            }
+
+            if manifest_path.exists():
+                try:
+                    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    run_info["corpus_version"] = manifest.get("corpus_version")
+                    run_info["generated_at"] = manifest.get("generated_at")
+                    run_info["configuration"] = manifest.get("configuration", {})
+                except Exception:
+                    pass
+
+            if scorecard_path.exists():
+                try:
+                    scorecard = json.loads(scorecard_path.read_text(encoding="utf-8"))
+                    run_info["total_cases"] = scorecard.get("total_cases", 0)
+                    run_info["average_validation_score"] = scorecard.get("average_validation_score")
+                    run_info["average_latency_ms"] = scorecard.get("average_latency_ms")
+                except Exception:
+                    pass
+
+            runs.append(run_info)
+
+        return runs
+
+    @app.get("/api/benchmarks/runs")
+    async def list_benchmark_runs() -> JSONResponse:
+        """List available benchmark runs.
+
+        Returns:
+            JSON response with list of benchmark runs with their metadata.
+        """
+        runs = _list_benchmark_runs()
+        return JSONResponse(content={
+            "runs": runs,
+            "total": len(runs),
+        })
+
+    @app.get("/api/benchmarks/runs/{run_id}")
+    async def get_benchmark_run(run_id: str) -> JSONResponse:
+        """Get details for a specific benchmark run.
+
+        Args:
+            run_id: The benchmark run identifier (directory name).
+
+        Returns:
+            JSON response with benchmark run details including scorecard and case reports.
+        """
+        runs_dir = _get_benchmark_runs_dir()
+        run_path = runs_dir / run_id
+
+        if not run_path.exists():
+            return JSONResponse(
+                content={"error": f"Benchmark run not found: {run_id}"},
+                status_code=404,
+            )
+
+        manifest_path = run_path / "manifest.json"
+        if not manifest_path.exists():
+            return JSONResponse(
+                content={"error": "Invalid benchmark run: manifest.json not found"},
+                status_code=404,
+            )
+
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            return JSONResponse(
+                content={"error": f"Failed to read benchmark run: {str(e)}"},
+                status_code=500,
+            )
+
+        return JSONResponse(content=manifest)
+
+    @app.get("/api/benchmarks/runs/{run_id}/cases/{case_id}")
+    async def get_benchmark_case_report(run_id: str, case_id: str) -> JSONResponse:
+        """Get the report for a specific benchmark case.
+
+        Args:
+            run_id: The benchmark run identifier.
+            case_id: The benchmark case identifier.
+
+        Returns:
+            JSON response with benchmark case report details.
+        """
+        runs_dir = _get_benchmark_runs_dir()
+        case_path = runs_dir / run_id / "cases" / f"{case_id}.json"
+
+        if not case_path.exists():
+            return JSONResponse(
+                content={"error": f"Benchmark case not found: {case_id}"},
+                status_code=404,
+            )
+
+        try:
+            case_report = json.loads(case_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            return JSONResponse(
+                content={"error": f"Failed to read case report: {str(e)}"},
+                status_code=500,
+            )
+
+        return JSONResponse(content=case_report)
 
 
 def start_server(
