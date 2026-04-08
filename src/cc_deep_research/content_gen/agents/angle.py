@@ -21,6 +21,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 AGENT_ID = "content_gen_angle"
+_ANGLE_REQUIRED_FIELDS = (
+    "target_audience",
+    "viewer_problem",
+    "core_promise",
+    "primary_takeaway",
+)
 
 _ANGLE_FIELDS = [
     "target_audience",
@@ -70,6 +76,12 @@ class AngleAgent:
         text = await self._call_llm(system, user, temperature=0.6)
 
         options = _parse_angle_options(text)
+        if not options:
+            msg = (
+                "Angle parsing failed: missing at least one complete angle option "
+                "with audience, problem, promise, and takeaway."
+            )
+            raise ValueError(msg)
         best_id = _extract_field(text, "Best angle_id")
         reasoning = _extract_field(text, "Selection reasoning")
 
@@ -106,7 +118,10 @@ def _parse_angle_options(text: str) -> list[AngleOption]:
             val = _extract_field(block_text, field)
             if val:
                 data[field] = val
-        # Only add if we got at least a core_promise or target_audience
-        if data.get("core_promise") or data.get("target_audience"):
+        if _is_complete_angle_option(data):
             options.append(AngleOption(**data))
     return options
+
+
+def _is_complete_angle_option(data: dict[str, str]) -> bool:
+    return all(data.get(field) for field in _ANGLE_REQUIRED_FIELDS)

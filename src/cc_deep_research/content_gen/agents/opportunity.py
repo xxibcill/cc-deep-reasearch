@@ -19,6 +19,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 AGENT_ID = "content_gen_opportunity"
+_REQUIRED_BRIEF_FIELDS = (
+    ("Goal", "goal"),
+    ("Primary audience segment", "primary_audience_segment"),
+    ("Content objective", "content_objective"),
+)
 
 
 class OpportunityPlanningAgent:
@@ -101,7 +106,7 @@ def _parse_opportunity_brief(text: str, fallback_theme: str) -> OpportunityBrief
     hypotheses = _extract_list_section(text, "Research hypotheses")
     success_criteria = _extract_list_section(text, "Success criteria")
 
-    return OpportunityBrief(
+    brief = OpportunityBrief(
         theme=theme,
         goal=goal,
         primary_audience_segment=primary_segment,
@@ -116,3 +121,24 @@ def _parse_opportunity_brief(text: str, fallback_theme: str) -> OpportunityBrief
         research_hypotheses=hypotheses,
         success_criteria=success_criteria,
     )
+    _validate_opportunity_brief(brief)
+    return brief
+
+
+def _validate_opportunity_brief(brief: OpportunityBrief) -> None:
+    for label, field_name in _REQUIRED_BRIEF_FIELDS:
+        value = getattr(brief, field_name)
+        if value:
+            continue
+        msg = (
+            "Opportunity brief parsing failed: "
+            f"missing required field '{label}'."
+        )
+        raise ValueError(msg)
+
+    if not brief.problem_statements:
+        msg = (
+            "Opportunity brief parsing failed: "
+            "missing required field 'Problem statements'."
+        )
+        raise ValueError(msg)

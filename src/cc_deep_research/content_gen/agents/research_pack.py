@@ -147,6 +147,11 @@ _LIST_FIELDS = [
 
 
 def _parse_research_pack(text: str, idea_id: str, angle_id: str) -> ResearchPack:
+    """Parse research sections.
+
+    This stage is intentionally tolerant: downstream scripting can continue
+    with a partial pack, and later iterations may rerun research to fill gaps.
+    """
     data: dict = {"idea_id": idea_id, "angle_id": angle_id}
     for field in _LIST_FIELDS:
         data[field] = _extract_list(text, field)

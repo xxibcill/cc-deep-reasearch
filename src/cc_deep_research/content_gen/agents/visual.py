@@ -62,6 +62,15 @@ class VisualAgent:
 
         plan = _parse_beat_visuals(text)
         refresh = _extract_field(text, "visual_refresh_check")
+        if not plan:
+            msg = (
+                "Visual plan parsing failed: missing at least one complete beat "
+                "with 'beat' and 'visual'."
+            )
+            raise ValueError(msg)
+        if not refresh:
+            msg = "Visual plan parsing failed: missing required field 'visual_refresh_check'."
+            raise ValueError(msg)
 
         return VisualPlanOutput(
             idea_id=idea_id,
@@ -110,6 +119,6 @@ def _parse_beat_visuals(text: str) -> list[BeatVisual]:
             val = _extract_field(block_text, field)
             if val:
                 data[field] = val
-        if data.get("beat") or data.get("spoken_line"):
+        if data.get("beat") and data.get("visual"):
             visuals.append(BeatVisual(**data))
     return visuals

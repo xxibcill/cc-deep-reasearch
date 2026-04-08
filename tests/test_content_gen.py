@@ -8,7 +8,8 @@ import pytest
 from click.testing import CliRunner
 
 from cc_deep_research.cli import main
-from cc_deep_research.content_gen.agents.angle import _parse_angle_options
+from cc_deep_research.content_gen.agents.angle import AngleAgent, _parse_angle_options
+from cc_deep_research.content_gen.agents.opportunity import OpportunityPlanningAgent
 from cc_deep_research.content_gen.agents.backlog import (
     BacklogAgent,
     _derive_selection,
@@ -16,10 +17,11 @@ from cc_deep_research.content_gen.agents.backlog import (
     _parse_scores,
     _validate_scores,
 )
-from cc_deep_research.content_gen.agents.packaging import _parse_platform_packages
-from cc_deep_research.content_gen.agents.qc import _parse_qc_gate
+from cc_deep_research.content_gen.agents.packaging import PackagingAgent, _parse_platform_packages
+from cc_deep_research.content_gen.agents.qc import QCAgent, _parse_qc_gate
 from cc_deep_research.content_gen.agents.research_pack import _parse_research_pack
 from cc_deep_research.content_gen.agents.scripting import _STEP_HANDLERS, ScriptingAgent
+from cc_deep_research.content_gen.agents.visual import VisualAgent
 from cc_deep_research.content_gen.models import (
     PIPELINE_STAGES,
     SCRIPTING_STEPS,
@@ -95,6 +97,81 @@ class _FakeBacklogAgent(BacklogAgent):
         user_prompt: str,
         *,
         temperature: float = 0.5,
+    ) -> str:
+        del system_prompt, user_prompt, temperature
+        return self._response
+
+
+class _FakeOpportunityAgent(OpportunityPlanningAgent):
+    def __init__(self, response: str) -> None:
+        self._response = response
+
+    async def _call_llm(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        temperature: float = 0.5,
+    ) -> str:
+        del system_prompt, user_prompt, temperature
+        return self._response
+
+
+class _FakeAngleAgent(AngleAgent):
+    def __init__(self, response: str) -> None:
+        self._response = response
+
+    async def _call_llm(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        temperature: float = 0.5,
+    ) -> str:
+        del system_prompt, user_prompt, temperature
+        return self._response
+
+
+class _FakeVisualAgent(VisualAgent):
+    def __init__(self, response: str) -> None:
+        self._response = response
+
+    async def _call_llm(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        temperature: float = 0.3,
+    ) -> str:
+        del system_prompt, user_prompt, temperature
+        return self._response
+
+
+class _FakePackagingAgent(PackagingAgent):
+    def __init__(self, response: str) -> None:
+        self._response = response
+
+    async def _call_llm(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        temperature: float = 0.5,
+    ) -> str:
+        del system_prompt, user_prompt, temperature
+        return self._response
+
+
+class _FakeQCAgent(QCAgent):
+    def __init__(self, response: str) -> None:
+        self._response = response
+
+    async def _call_llm(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        temperature: float = 0.2,
     ) -> str:
         del system_prompt, user_prompt, temperature
         return self._response
@@ -418,6 +495,13 @@ def test_skipped_stage_recorded_when_prerequisites_missing() -> None:
     prereqs_met, reason = orch._check_prerequisites(4, ctx)
     assert not prereqs_met
     assert "scoring/selected idea missing" in reason
+
+    ctx.backlog = BacklogOutput(items=[BacklogItem(idea_id="id1", idea="Idea 1")])
+    ctx.selected_idea_id = "id1"
+    ctx.angles = AngleOutput(angle_options=[])
+    prereqs_met, reason = orch._check_prerequisites(5, ctx)
+    assert not prereqs_met
+    assert "selected angle missing" in reason
 
 
 @pytest.mark.asyncio
@@ -1871,14 +1955,20 @@ def test_angle_golden_fixture_happy_path_parses_multiple_options() -> None:
     assert result[1].format == "tactical explainer"
 
 
-def test_angle_golden_fixture_sparse_output_keeps_partial_option() -> None:
-    """Sparse angle output should keep usable fields without inventing the rest."""
+def test_angle_golden_fixture_sparse_output_drops_incomplete_option() -> None:
+    """Sparse angle output should drop incomplete options instead of fabricating them."""
     result = _parse_angle_options(load_text_fixture("content_gen_angle_sparse.txt"))
 
-    assert len(result) == 1
-    assert result[0].target_audience == "B2B startup marketers"
-    assert result[0].core_promise == "Show the missing anchor on pricing pages"
-    assert result[0].viewer_problem == ""
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_angle_agent_raises_when_no_complete_options_parse() -> None:
+    """Angle generation should fail fast when the response lacks a usable option."""
+    agent = _FakeAngleAgent(load_text_fixture("content_gen_angle_sparse.txt"))
+
+    with pytest.raises(ValueError, match="complete angle option"):
+        await agent.generate(BacklogItem(idea="Idea"), StrategyMemory())
 
 
 def test_research_pack_golden_fixture_happy_path_parses_sections() -> None:
@@ -1918,6 +2008,25 @@ def test_research_pack_golden_fixture_sparse_output_defaults_missing_sections() 
     ]
     assert result.competitor_observations == []
     assert result.claims_requiring_verification == ["Any statement about exact conversion lift"]
+
+
+@pytest.mark.asyncio
+async def test_visual_agent_raises_without_visual_refresh_check() -> None:
+    """Visual translation should fail fast when the required summary field is missing."""
+    agent = _FakeVisualAgent(
+        """---
+beat: Hook
+spoken_line: Buyers compare price before features.
+visual: Pricing page with the anchor tier highlighted
+---
+"""
+    )
+
+    with pytest.raises(ValueError, match="visual_refresh_check"):
+        await agent.translate(
+            ScriptVersion(content="Script", word_count=1),
+            ScriptStructure(chosen_structure="Reveal", beat_list=["Hook"]),
+        )
 
 
 @pytest.mark.asyncio
@@ -1999,6 +2108,26 @@ def test_packaging_golden_fixture_sparse_output_ignores_incomplete_blocks() -> N
     assert result[0].keywords == []
 
 
+@pytest.mark.asyncio
+async def test_packaging_agent_raises_when_no_usable_platform_package_parses() -> None:
+    """Packaging should fail fast when every platform block is incomplete."""
+    agent = _FakePackagingAgent(
+        """---
+platform: tiktok
+primary_hook: Strong hook
+version_notes: Missing caption should invalidate the block
+---
+"""
+    )
+
+    with pytest.raises(ValueError, match="usable platform block"):
+        await agent.generate(
+            ScriptVersion(content="Script", word_count=1),
+            AngleOption(core_promise="Promise", target_audience="Audience"),
+            ["tiktok"],
+        )
+
+
 def test_qc_golden_fixture_happy_path_parses_issue_lists() -> None:
     """QC fixtures should keep actionable review items stable."""
     result = _parse_qc_gate(load_text_fixture("content_gen_qc_happy.txt"))
@@ -2019,6 +2148,15 @@ def test_qc_golden_fixture_sparse_output_defaults_missing_lists() -> None:
     assert result.hook_strength == "adequate"
     assert result.clarity_issues == []
     assert result.must_fix_items == ["Add a concrete proof point before publish"]
+
+
+@pytest.mark.asyncio
+async def test_qc_agent_raises_when_hook_strength_missing() -> None:
+    """Human QC should fail fast on blank review shells."""
+    agent = _FakeQCAgent("must_fix_items:\n- Tighten the hook")
+
+    with pytest.raises(ValueError, match="hook_strength"):
+        await agent.review(script="Script")
 
 
 def test_parse_backlog_items_handles_partial_items() -> None:
@@ -2284,11 +2422,34 @@ Success criteria:
 
 
 def test_opportunity_brief_parsing_uses_fallback_theme() -> None:
-    """Parser should fall back to the provided theme when LLM omits it."""
+    """Parser should fall back to the provided theme when core fields are still present."""
     from cc_deep_research.content_gen.agents.opportunity import _parse_opportunity_brief
 
-    brief = _parse_opportunity_brief("Goal: something\n", "fallback theme")
+    brief = _parse_opportunity_brief(
+        """Goal: something
+Primary audience segment: startup marketers
+Problem statements:
+- Pricing pages hide the comparison buyers make first
+Content objective: show the fix
+""",
+        "fallback theme",
+    )
     assert brief.theme == "fallback theme"
+
+
+@pytest.mark.asyncio
+async def test_opportunity_agent_raises_when_core_fields_are_missing() -> None:
+    """Opportunity planning should fail fast when the brief is too sparse to guide downstream stages."""
+    agent = _FakeOpportunityAgent(
+        """Goal: something
+Problem statements:
+- The audience misses the core comparison point
+Content objective: show the fix
+"""
+    )
+
+    with pytest.raises(ValueError, match="Primary audience segment"):
+        await agent.plan("fallback theme", StrategyMemory())
 
 
 def test_opportunity_prompt_user_includes_strategy_fields() -> None:

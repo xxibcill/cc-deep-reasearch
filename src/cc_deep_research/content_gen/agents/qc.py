@@ -62,7 +62,11 @@ class QCAgent:
         )
         text = await self._call_llm(system, user, temperature=0.2)
 
-        return _parse_qc_gate(text)
+        gate = _parse_qc_gate(text)
+        if not gate.hook_strength:
+            msg = "Human QC parsing failed: missing required field 'hook_strength'."
+            raise ValueError(msg)
+        return gate
 
 
 # ---------------------------------------------------------------------------
