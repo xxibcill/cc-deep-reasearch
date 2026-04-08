@@ -7,16 +7,294 @@ represents the expected output format from its corresponding agent.
 
 When updating prompts, ensure the corresponding parser remains compatible
 with the model's fields. Major format changes should bump the CONTRACT_VERSION.
+The canonical inventory of prompt/parser contracts lives in
+``CONTENT_GEN_STAGE_CONTRACTS`` below.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
 CONTRACT_VERSION = "1.0.0"
+
+
+@dataclass(frozen=True, slots=True)
+class ContentGenStageContract:
+    """Canonical prompt/parser contract for one prompt-backed stage."""
+
+    stage_name: str
+    prompt_module: str
+    contract_version: str
+    parser_location: str
+    output_model: str
+    format_notes: str
+    required_fields: tuple[str, ...] = ()
+    expected_sections: tuple[str, ...] = ()
+    failure_mode: Literal["fail_fast", "tolerant", "human_gated"] = "fail_fast"
+
+
+CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
+    "plan_opportunity": ContentGenStageContract(
+        stage_name="plan_opportunity",
+        prompt_module="prompts/opportunity.py",
+        contract_version="1.0.0",
+        parser_location="agents/opportunity.py::_parse_opportunity_brief",
+        output_model="OpportunityBrief",
+        format_notes="Header-based scalar fields plus '-' list sections.",
+        required_fields=(
+            "Goal",
+            "Primary audience segment",
+            "Problem statements",
+            "Content objective",
+        ),
+        expected_sections=(
+            "Theme",
+            "Secondary audience segments",
+            "Proof requirements",
+            "Platform constraints",
+            "Risk constraints",
+            "Freshness rationale",
+            "Sub-angles",
+            "Research hypotheses",
+            "Success criteria",
+        ),
+        failure_mode="fail_fast",
+    ),
+    "build_backlog": ContentGenStageContract(
+        stage_name="build_backlog",
+        prompt_module="prompts/backlog.py",
+        contract_version="1.0.0",
+        parser_location="agents/backlog.py::_parse_backlog_items",
+        output_model="BacklogOutput",
+        format_notes="Repeated '---' blocks with field_name: value pairs.",
+        required_fields=("idea",),
+        expected_sections=(
+            "category",
+            "audience",
+            "problem",
+            "source",
+            "why_now",
+            "potential_hook",
+            "content_type",
+            "evidence",
+            "risk_level",
+            "Rejected ideas",
+            "Rejection reasons",
+        ),
+        failure_mode="tolerant",
+    ),
+    "score_ideas": ContentGenStageContract(
+        stage_name="score_ideas",
+        prompt_module="prompts/backlog.py",
+        contract_version="1.0.0",
+        parser_location="agents/backlog.py::_parse_scores + _derive_selection",
+        output_model="ScoringOutput",
+        format_notes="Repeated '---' score blocks followed by shortlist summary fields.",
+        required_fields=("idea_id",),
+        expected_sections=(
+            "relevance",
+            "novelty",
+            "authority_fit",
+            "production_ease",
+            "evidence_strength",
+            "hook_strength",
+            "repurposing",
+            "total_score",
+            "recommendation",
+            "reason",
+            "shortlist",
+            "selected_idea_id",
+            "selection_reasoning",
+        ),
+        failure_mode="tolerant",
+    ),
+    "generate_angles": ContentGenStageContract(
+        stage_name="generate_angles",
+        prompt_module="prompts/angle.py",
+        contract_version="1.0.0",
+        parser_location="agents/angle.py::_parse_angle_options",
+        output_model="AngleOutput",
+        format_notes="Repeated '---' blocks plus trailing best-angle summary fields.",
+        required_fields=(
+            "target_audience",
+            "viewer_problem",
+            "core_promise",
+            "primary_takeaway",
+        ),
+        expected_sections=(
+            "lens",
+            "format",
+            "tone",
+            "cta",
+            "why_this_version_should_exist",
+            "Best angle_id",
+            "Selection reasoning",
+        ),
+        failure_mode="fail_fast",
+    ),
+    "build_research_pack": ContentGenStageContract(
+        stage_name="build_research_pack",
+        prompt_module="prompts/research_pack.py",
+        contract_version="1.0.0",
+        parser_location="agents/research_pack.py::_parse_research_pack",
+        output_model="ResearchPack",
+        format_notes="Named list sections with a trailing research_stop_reason field.",
+        required_fields=(),
+        expected_sections=(
+            "audience_insights",
+            "competitor_observations",
+            "key_facts",
+            "proof_points",
+            "examples",
+            "case_studies",
+            "gaps_to_exploit",
+            "assets_needed",
+            "claims_requiring_verification",
+            "unsafe_or_uncertain_claims",
+            "research_stop_reason",
+        ),
+        failure_mode="tolerant",
+    ),
+    "run_scripting": ContentGenStageContract(
+        stage_name="run_scripting",
+        prompt_module="prompts/scripting.py",
+        contract_version="1.0.0",
+        parser_location="agents/scripting.py::_STEP_HANDLERS and _extract_* helpers",
+        output_model="ScriptingContext",
+        format_notes="Ten step-specific text contracts; some steps require exact headers, later drafting steps accept freeform script bodies.",
+        required_fields=(
+            "Step 1: Topic/Outcome/Audience",
+            "Step 2: Angle/Content Type/Core Tension",
+            "Step 3: Chosen Structure/Beat List",
+            "Step 4: at least one beat intent",
+            "Step 5: Best Hook",
+            "Step 6: non-empty draft",
+        ),
+        expected_sections=(
+            "Step 7: Revised Script",
+            "Step 8: Tightened Script",
+            "Step 9: optional visual note annotations",
+            "Step 10: QC checks, Weakest parts, Final Script",
+        ),
+        failure_mode="fail_fast",
+    ),
+    "visual_translation": ContentGenStageContract(
+        stage_name="visual_translation",
+        prompt_module="prompts/visual.py",
+        contract_version="1.0.0",
+        parser_location="agents/visual.py::_parse_beat_visuals",
+        output_model="VisualPlanOutput",
+        format_notes="Repeated '---' beat blocks plus a trailing visual_refresh_check field.",
+        required_fields=("beat", "visual", "visual_refresh_check"),
+        expected_sections=(
+            "spoken_line",
+            "shot_type",
+            "a_roll",
+            "b_roll",
+            "on_screen_text",
+            "overlay_or_graphic",
+            "prop_or_asset",
+            "transition",
+            "retention_function",
+        ),
+        failure_mode="fail_fast",
+    ),
+    "production_brief": ContentGenStageContract(
+        stage_name="production_brief",
+        prompt_module="prompts/production.py",
+        contract_version="1.0.0",
+        parser_location="agents/production.py::_parse_production_brief",
+        output_model="ProductionBrief",
+        format_notes="Scalar checklist fields plus '-' list sections for production prep.",
+        required_fields=(),
+        expected_sections=(
+            "location",
+            "setup",
+            "wardrobe",
+            "props",
+            "assets_to_prepare",
+            "audio_checks",
+            "battery_checks",
+            "storage_checks",
+            "pickup_lines_to_capture",
+            "backup_plan",
+        ),
+        failure_mode="tolerant",
+    ),
+    "packaging": ContentGenStageContract(
+        stage_name="packaging",
+        prompt_module="prompts/packaging.py",
+        contract_version="1.0.0",
+        parser_location="agents/packaging.py::_parse_platform_packages",
+        output_model="PackagingOutput",
+        format_notes="Repeated '---' platform blocks with scalar fields and '-' list sections.",
+        required_fields=("platform", "primary_hook", "caption"),
+        expected_sections=(
+            "alternate_hooks",
+            "cover_text",
+            "keywords",
+            "hashtags",
+            "pinned_comment",
+            "cta",
+            "version_notes",
+        ),
+        failure_mode="fail_fast",
+    ),
+    "human_qc": ContentGenStageContract(
+        stage_name="human_qc",
+        prompt_module="prompts/qc.py",
+        contract_version="1.0.0",
+        parser_location="agents/qc.py::_parse_qc_gate",
+        output_model="HumanQCGate",
+        format_notes="Named issue buckets with '-' lists; AI review never sets approval to true.",
+        required_fields=("hook_strength",),
+        expected_sections=(
+            "clarity_issues",
+            "factual_issues",
+            "visual_issues",
+            "audio_issues",
+            "caption_issues",
+            "must_fix_items",
+        ),
+        failure_mode="human_gated",
+    ),
+    "publish_queue": ContentGenStageContract(
+        stage_name="publish_queue",
+        prompt_module="prompts/publish.py",
+        contract_version="1.0.0",
+        parser_location="agents/publish.py::PublishAgent.schedule",
+        output_model="PublishItem",
+        format_notes="Two scalar fields parsed from each platform-specific publish response.",
+        required_fields=(),
+        expected_sections=("publish_datetime", "first_30_minute_engagement_plan"),
+        failure_mode="tolerant",
+    ),
+    "performance_analysis": ContentGenStageContract(
+        stage_name="performance_analysis",
+        prompt_module="prompts/performance.py",
+        contract_version="1.0.0",
+        parser_location="agents/performance.py::_parse_performance",
+        output_model="PerformanceAnalysis",
+        format_notes="Named diagnostic sections with '-' lists plus scalar summary fields.",
+        required_fields=(),
+        expected_sections=(
+            "what_worked",
+            "what_failed",
+            "audience_signals",
+            "dropoff_hypotheses",
+            "hook_diagnosis",
+            "lesson",
+            "next_test",
+            "follow_up_ideas",
+            "backlog_updates",
+        ),
+        failure_mode="tolerant",
+    ),
+}
 
 
 class CoreInputs(BaseModel):

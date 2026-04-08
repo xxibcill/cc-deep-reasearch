@@ -1,6 +1,20 @@
-"""Prompt templates for the publish queue stage."""
+"""Prompt templates for the publish queue stage.
+
+Contract Version: 1.0.0
+
+Parser expectations:
+- publish output: Expects scalar fields "publish_datetime:" and
+  "first_30_minute_engagement_plan:"
+- this parser is intentionally tolerant and will return blank strings
+  if either field is omitted
+
+When editing prompts, ensure output format remains compatible with
+the parser in agents/publish.py.
+"""
 
 from __future__ import annotations
+
+CONTRACT_VERSION = "1.0.0"
 
 GLOBAL_RULES = """\
 You are creating a publish queue entry for a short-form video inside a modular workflow.

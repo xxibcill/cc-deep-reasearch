@@ -6,7 +6,9 @@ Parser expectations:
 - generate output: Uses `---` as block delimiter, expects fields:
   angle_id, target_audience, viewer_problem, core_promise, primary_takeaway,
   lens, format, tone, cta, why_this_version_should_exist
-  Also expects trailing sections: "Best angle_id:", "Selection reasoning:"
+  A block is kept only when it includes target_audience, viewer_problem,
+  core_promise, and primary_takeaway. The parser also reads the trailing
+  summary fields "Best angle_id:" and "Selection reasoning:".
 
 When editing prompts, ensure output format remains compatible with
 the parser in agents/angle.py.

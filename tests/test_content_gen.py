@@ -23,6 +23,7 @@ from cc_deep_research.content_gen.agents.research_pack import _parse_research_pa
 from cc_deep_research.content_gen.agents.scripting import _STEP_HANDLERS, ScriptingAgent
 from cc_deep_research.content_gen.agents.visual import VisualAgent
 from cc_deep_research.content_gen.models import (
+    CONTENT_GEN_STAGE_CONTRACTS,
     PIPELINE_STAGES,
     SCRIPTING_STEPS,
     AngleDefinition,
@@ -53,7 +54,17 @@ from cc_deep_research.content_gen.models import (
     StrategyMemory,
 )
 from cc_deep_research.content_gen.orchestrator import _format_research_context
+from cc_deep_research.content_gen.prompts import angle as angle_prompts
+from cc_deep_research.content_gen.prompts import backlog as backlog_prompts
+from cc_deep_research.content_gen.prompts import opportunity as opportunity_prompts
+from cc_deep_research.content_gen.prompts import packaging as packaging_prompts
+from cc_deep_research.content_gen.prompts import performance as performance_prompts
+from cc_deep_research.content_gen.prompts import production as production_prompts
+from cc_deep_research.content_gen.prompts import publish as publish_prompts
+from cc_deep_research.content_gen.prompts import qc as qc_prompts
+from cc_deep_research.content_gen.prompts import research_pack as research_pack_prompts
 from cc_deep_research.content_gen.prompts import scripting as scripting_prompts
+from cc_deep_research.content_gen.prompts import visual as visual_prompts
 from cc_deep_research.content_gen.prompts.backlog import build_backlog_user
 from cc_deep_research.llm.base import LLMProviderType, LLMResponse, LLMTransportType
 from tests.helpers.fixture_loader import load_content_gen_pipeline_smoke, load_text_fixture
@@ -195,6 +206,44 @@ def test_dispatch_table_covers_all_steps() -> None:
 def test_pipeline_stages_count() -> None:
     """The pipeline should have 13 stages (0-12)."""
     assert len(PIPELINE_STAGES) == 13
+
+
+def test_content_gen_stage_contract_registry_covers_core_prompt_stages() -> None:
+    """Core prompt-backed stages should have explicit contract entries."""
+    expected_modules = {
+        "plan_opportunity": opportunity_prompts,
+        "build_backlog": backlog_prompts,
+        "score_ideas": backlog_prompts,
+        "generate_angles": angle_prompts,
+        "build_research_pack": research_pack_prompts,
+        "run_scripting": scripting_prompts,
+        "visual_translation": visual_prompts,
+        "production_brief": production_prompts,
+        "packaging": packaging_prompts,
+        "human_qc": qc_prompts,
+        "publish_queue": publish_prompts,
+        "performance_analysis": performance_prompts,
+    }
+
+    assert expected_modules.keys() <= CONTENT_GEN_STAGE_CONTRACTS.keys()
+
+    for stage_name, module in expected_modules.items():
+        contract = CONTENT_GEN_STAGE_CONTRACTS[stage_name]
+        module_name = module.__name__.rsplit(".", maxsplit=1)[-1]
+
+        assert contract.prompt_module == f"prompts/{module_name}.py"
+        assert contract.contract_version == module.CONTRACT_VERSION
+        assert contract.parser_location
+        assert contract.output_model
+        assert contract.format_notes
+        assert contract.required_fields or contract.expected_sections
+
+
+def test_content_gen_stage_contract_registry_documents_parser_behavior() -> None:
+    """Registry entries should describe the intended parser strictness."""
+    assert CONTENT_GEN_STAGE_CONTRACTS["generate_angles"].failure_mode == "fail_fast"
+    assert CONTENT_GEN_STAGE_CONTRACTS["build_research_pack"].failure_mode == "tolerant"
+    assert CONTENT_GEN_STAGE_CONTRACTS["human_qc"].failure_mode == "human_gated"
 
 
 def test_pipeline_context_default_values() -> None:

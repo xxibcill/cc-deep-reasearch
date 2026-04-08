@@ -3,9 +3,11 @@
 Contract Version: 1.0.0
 
 Parser expectations:
-- generate output: Expects "Platform:" header, then per-platform blocks
-  with fields: primary_hook, alternate_hooks (list), cover_text, caption,
-  keywords (list), hashtags (list), pinned_comment, cta, version_notes
+- generate output: Expects repeated `---` blocks with fields:
+  platform, primary_hook, alternate_hooks (list), cover_text, caption,
+  keywords (list), hashtags (list), pinned_comment, cta, version_notes.
+  A block is kept only when `platform`, `primary_hook`, and `caption`
+  are present.
 
 When editing prompts, ensure output format remains compatible with
 the parser in agents/packaging.py.

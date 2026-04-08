@@ -1,6 +1,23 @@
-"""Prompt templates for the production brief stage."""
+"""Prompt templates for the production brief stage.
+
+Contract Version: 1.0.0
+
+Parser expectations:
+- production output: Expects scalar fields location, setup, wardrobe,
+  and backup_plan
+- list sections are parsed from "-" or "* " items under:
+  props, assets_to_prepare, audio_checks, battery_checks,
+  storage_checks, pickup_lines_to_capture
+- this parser is intentionally tolerant and returns sparse fields when
+  sections are omitted
+
+When editing prompts, ensure output format remains compatible with
+the parser in agents/production.py.
+"""
 
 from __future__ import annotations
+
+CONTRACT_VERSION = "1.0.0"
 
 PRODUCTION_SYSTEM = """\
 You are creating a production brief for a short-form video inside a modular workflow.

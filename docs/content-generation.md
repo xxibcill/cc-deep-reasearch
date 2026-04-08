@@ -4,28 +4,40 @@ This document describes the full content-generation system as it is currently im
 
 ## Contract Versioning
 
-Each stage has an explicit contract defined in its prompt module. The contract includes:
+The canonical inventory for prompt-output contracts lives in
+[`CONTENT_GEN_STAGE_CONTRACTS`](../src/cc_deep_research/content_gen/models.py) in
+[`src/cc_deep_research/content_gen/models.py`](../src/cc_deep_research/content_gen/models.py).
+Each prompt-backed stage also carries a prompt-module `CONTRACT_VERSION`.
+
+Each contract includes:
 - A `CONTRACT_VERSION` constant (e.g., "1.0.0")
-- Parser expectations documented in the module docstring
+- Parser expectations documented in the prompt module docstring
+- A shared registry entry naming the parser location, output model, expected sections, and failure mode
 - Expected output format for LLM responses
 
-When editing prompts, check the contract docstring to ensure the parser remains compatible:
+When editing prompts, update the prompt docstring and the shared registry together so the parser remains compatible:
 
-| Stage | Prompt Module | Contract Version |
-|-------|--------------|------------------|
-| Backlog build/score | `prompts/backlog.py` | 1.0.0 |
-| Angle generation | `prompts/angle.py` | 1.0.0 |
-| Research pack | `prompts/research_pack.py` | 1.0.0 |
-| Scripting (all 10 steps) | `prompts/scripting.py` | 1.0.0 |
-| Visual translation | `prompts/visual.py` | 1.0.0 |
-| Packaging | `prompts/packaging.py` | 1.0.0 |
-| QC review | `prompts/qc.py` | 1.0.0 |
-| Data models | `models.py` | 1.0.0 |
+| Stage | Prompt Module | Contract Version | Failure Mode |
+|-------|--------------|------------------|--------------|
+| Opportunity planning | `prompts/opportunity.py` | 1.0.0 | fail-fast |
+| Backlog build | `prompts/backlog.py` | 1.0.0 | tolerant/degraded |
+| Idea scoring | `prompts/backlog.py` | 1.0.0 | tolerant/degraded |
+| Angle generation | `prompts/angle.py` | 1.0.0 | fail-fast |
+| Research pack | `prompts/research_pack.py` | 1.0.0 | tolerant |
+| Scripting (all 10 steps) | `prompts/scripting.py` | 1.0.0 | mostly fail-fast |
+| Visual translation | `prompts/visual.py` | 1.0.0 | fail-fast |
+| Production brief | `prompts/production.py` | 1.0.0 | tolerant |
+| Packaging | `prompts/packaging.py` | 1.0.0 | fail-fast |
+| QC review | `prompts/qc.py` | 1.0.0 | human-gated |
+| Publish queue | `prompts/publish.py` | 1.0.0 | tolerant |
+| Performance analysis | `prompts/performance.py` | 1.0.0 | tolerant |
+| Shared registry/models | `models.py` | 1.0.0 | n/a |
 
 The models in `models.py` define the Python types that result from parsing LLM output. Major changes to prompt output formats should be accompanied by:
 1. Bumping the `CONTRACT_VERSION` in the prompt module
-2. Updating the parser in the corresponding agent
-3. Verifying tests pass with `uv run pytest tests/test_content_gen.py tests/test_iterative_loop.py -v`
+2. Updating `CONTENT_GEN_STAGE_CONTRACTS` in `models.py`
+3. Updating the parser in the corresponding agent
+4. Verifying tests pass with `uv run pytest tests/test_content_gen.py tests/test_iterative_loop.py -v`
 
 ## Scope
 
@@ -77,6 +89,7 @@ Every content stage follows the same pattern:
 That design keeps the implementation simple, but it has consequences:
 
 - the prompt format is part of the parsing contract
+- the canonical contract inventory is `CONTENT_GEN_STAGE_CONTRACTS` in `models.py`
 - most stages depend on delimiter blocks like `---` and `field_name: value`
 - if prompt wording changes, the parser may also need to change
 - empty or malformed LLM output can degrade into partial or blank models

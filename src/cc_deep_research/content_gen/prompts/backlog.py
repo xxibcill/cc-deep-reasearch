@@ -3,17 +3,17 @@
 Contract Version: 1.0.0
 
 Parser expectations:
-- build_backlog output: Uses `---` as block delimiter, expects fields:
-  category, idea, audience, problem, source, why_now, potential_hook,
-  content_type, evidence, risk_level
-  Also expects trailing sections: "Total ideas:", "Rejected ideas:",
-  "Rejection reasons:"
+- build_backlog output: Uses `---` as block delimiter. The parser keeps a
+  block only when it can extract `idea`. Other parsed fields are optional:
+  category, audience, problem, source, why_now, potential_hook,
+  content_type, evidence, risk_level. It also reads "Rejected ideas:" and
+  "Rejection reasons:" summary fields.
 - score_ideas output: Uses `---` as block delimiter, expects fields:
   idea_id, relevance, novelty, authority_fit, production_ease,
   evidence_strength, hook_strength, repurposing, total_score,
-  recommendation (produce_now|hold|kill), reason
-  Also expects trailing sections: "shortlist:", "selected_idea_id:",
-  "selection_reasoning:"
+  recommendation, reason. The parser requires `idea_id`, clamps invalid
+  scores into the 1-5 range, defaults invalid recommendations to `hold`,
+  and optionally reads the trailing shortlist summary fields.
 
 When editing prompts, ensure output format remains compatible with
 the parser functions in agents/backlog.py (_parse_backlog_items,

@@ -1,6 +1,21 @@
-"""Prompt templates for the performance analyst stage."""
+"""Prompt templates for the performance analyst stage.
+
+Contract Version: 1.0.0
+
+Parser expectations:
+- performance output: Expects list sections named what_worked,
+  what_failed, audience_signals, dropoff_hypotheses,
+  follow_up_ideas, and backlog_updates
+- scalar summary fields are read from hook_diagnosis, lesson, and next_test
+- this parser is intentionally tolerant and leaves omitted sections empty
+
+When editing prompts, ensure output format remains compatible with
+the parser in agents/performance.py.
+"""
 
 from __future__ import annotations
+
+CONTRACT_VERSION = "1.0.0"
 
 GLOBAL_RULES = """\
 You are analyzing the performance of a published short-form video.
