@@ -8,12 +8,17 @@ import pytest
 from click.testing import CliRunner
 
 from cc_deep_research.cli import main
+from cc_deep_research.content_gen.agents.angle import _parse_angle_options
 from cc_deep_research.content_gen.agents.backlog import (
+    BacklogAgent,
     _derive_selection,
     _parse_backlog_items,
     _parse_scores,
     _validate_scores,
 )
+from cc_deep_research.content_gen.agents.packaging import _parse_platform_packages
+from cc_deep_research.content_gen.agents.qc import _parse_qc_gate
+from cc_deep_research.content_gen.agents.research_pack import _parse_research_pack
 from cc_deep_research.content_gen.agents.scripting import _STEP_HANDLERS, ScriptingAgent
 from cc_deep_research.content_gen.models import (
     PIPELINE_STAGES,
@@ -49,7 +54,7 @@ from cc_deep_research.content_gen.orchestrator import _format_research_context
 from cc_deep_research.content_gen.prompts import scripting as scripting_prompts
 from cc_deep_research.content_gen.prompts.backlog import build_backlog_user
 from cc_deep_research.llm.base import LLMProviderType, LLMResponse, LLMTransportType
-from tests.helpers.fixture_loader import load_content_gen_pipeline_smoke
+from tests.helpers.fixture_loader import load_content_gen_pipeline_smoke, load_text_fixture
 
 
 class _FakeScriptingAgent(ScriptingAgent):
@@ -78,6 +83,21 @@ class _FakeScriptingAgent(ScriptingAgent):
             latency_ms=123,
             finish_reason="stop",
         )
+
+
+class _FakeBacklogAgent(BacklogAgent):
+    def __init__(self, response: str) -> None:
+        self._response = response
+
+    async def _call_llm(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        temperature: float = 0.5,
+    ) -> str:
+        del system_prompt, user_prompt, temperature
+        return self._response
 
 
 # ---------------------------------------------------------------------------
@@ -1805,6 +1825,200 @@ selection_reasoning: Better fit for the first production slot
     assert selected_idea_id == "id2"
     assert selection_reasoning == "Better fit for the first production slot"
     assert runner_up_idea_ids == ["id1"]
+
+
+@pytest.mark.asyncio
+async def test_backlog_golden_fixture_happy_path_parses_items_and_metadata() -> None:
+    """Fixture-backed backlog output should parse into stable structured items."""
+    agent = _FakeBacklogAgent(load_text_fixture("content_gen_backlog_happy.txt"))
+
+    result = await agent.build_backlog("pricing", StrategyMemory())
+
+    assert len(result.items) == 2
+    assert result.items[0].idea == "The 10-minute weekly finance review that stops founder cash surprises"
+    assert result.items[1].content_type == "contrarian breakdown"
+    assert result.rejected_count == 2
+    assert result.rejection_reasons == [
+        "Too broad for a single short-form video",
+        "Needed claims we could not verify quickly",
+    ]
+    assert result.is_degraded is False
+
+
+@pytest.mark.asyncio
+async def test_backlog_golden_fixture_malformed_output_marks_stage_degraded() -> None:
+    """Malformed backlog output should degrade cleanly instead of fabricating ideas."""
+    agent = _FakeBacklogAgent(load_text_fixture("content_gen_backlog_malformed.txt"))
+
+    result = await agent.build_backlog("pricing", StrategyMemory())
+
+    assert result.items == []
+    assert result.rejected_count == 1
+    assert result.rejection_reasons == ["Missing a concrete idea statement"]
+    assert result.is_degraded is True
+    assert result.degradation_reason == "zero valid ideas parsed from LLM response"
+
+
+def test_angle_golden_fixture_happy_path_parses_multiple_options() -> None:
+    """Angle fixtures should keep editorial fields stable across parser changes."""
+    result = _parse_angle_options(load_text_fixture("content_gen_angle_happy.txt"))
+
+    assert len(result) == 2
+    assert result[0].viewer_problem == (
+        "They keep polishing copy while buyers still compare only price"
+    )
+    assert result[0].cta == "Audit your highest-priced plan against the decoy effect"
+    assert result[1].format == "tactical explainer"
+
+
+def test_angle_golden_fixture_sparse_output_keeps_partial_option() -> None:
+    """Sparse angle output should keep usable fields without inventing the rest."""
+    result = _parse_angle_options(load_text_fixture("content_gen_angle_sparse.txt"))
+
+    assert len(result) == 1
+    assert result[0].target_audience == "B2B startup marketers"
+    assert result[0].core_promise == "Show the missing anchor on pricing pages"
+    assert result[0].viewer_problem == ""
+
+
+def test_research_pack_golden_fixture_happy_path_parses_sections() -> None:
+    """Research-pack fixtures should populate evidence sections predictably."""
+    result = _parse_research_pack(
+        load_text_fixture("content_gen_research_pack_happy.txt"),
+        "idea-1",
+        "angle-1",
+    )
+
+    assert result.idea_id == "idea-1"
+    assert result.angle_id == "angle-1"
+    assert len(result.audience_insights) == 2
+    assert len(result.proof_points) == 2
+    assert result.assets_needed == [
+        "Screenshot of a three-tier pricing page",
+        "Simple annotated mock showing anchor placement",
+    ]
+    assert result.research_stop_reason == (
+        "Enough evidence to build a practical teardown without hard performance claims"
+    )
+
+
+def test_research_pack_golden_fixture_sparse_output_defaults_missing_sections() -> None:
+    """Sparse research output should preserve what exists and leave the rest empty."""
+    result = _parse_research_pack(
+        load_text_fixture("content_gen_research_pack_sparse.txt"),
+        "idea-2",
+        "angle-2",
+    )
+
+    assert result.audience_insights == [
+        "Founders skim pricing pages and miss how buyers compare tiers"
+    ]
+    assert result.proof_points == [
+        "Anchoring affects perceived value before full feature evaluation"
+    ]
+    assert result.competitor_observations == []
+    assert result.claims_requiring_verification == ["Any statement about exact conversion lift"]
+
+
+@pytest.mark.asyncio
+async def test_scripting_golden_fixture_happy_path_parses_structure_step() -> None:
+    """Representative scripting output should parse a valid structure and beat list."""
+    agent = _FakeScriptingAgent(load_text_fixture("content_gen_scripting_choose_structure_happy.txt"))
+    ctx = ScriptingContext(
+        raw_idea="pricing teardown",
+        core_inputs=CoreInputs(
+            topic="Pricing anchors",
+            outcome="Help viewers spot weak price framing",
+            audience="B2B startup marketers",
+        ),
+        angle=AngleDefinition(
+            angle="Most pricing pages hide the comparison buyers make first",
+            content_type="Contrarian breakdown",
+            core_tension="Teams optimize copy while buyers optimize for anchors",
+        ),
+    )
+
+    result = await agent.choose_structure(ctx)
+
+    assert result.structure is not None
+    assert result.structure.chosen_structure == "Contrarian reveal"
+    assert result.structure.beat_list == [
+        "Hook: Call out the pricing mistake buyers spot first",
+        "False assumption: Teams think more features justify a higher tier",
+        "Reframe: Buyers compare anchors before they compare details",
+        "Proof: Show the decoy-tier example",
+        "CTA: Rewrite one pricing card today",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_scripting_golden_fixture_malformed_structure_raises() -> None:
+    """Malformed scripting output should fail the structure step instead of silently passing."""
+    agent = _FakeScriptingAgent(
+        load_text_fixture("content_gen_scripting_choose_structure_malformed.txt")
+    )
+    ctx = ScriptingContext(
+        raw_idea="pricing teardown",
+        core_inputs=CoreInputs(
+            topic="Pricing anchors",
+            outcome="Help viewers spot weak price framing",
+            audience="B2B startup marketers",
+        ),
+        angle=AngleDefinition(
+            angle="Most pricing pages hide the comparison buyers make first",
+            content_type="Contrarian breakdown",
+            core_tension="Teams optimize copy while buyers optimize for anchors",
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Beat List"):
+        await agent.choose_structure(ctx)
+
+
+def test_packaging_golden_fixture_happy_path_parses_platform_packages() -> None:
+    """Packaging fixtures should keep per-platform outputs stable."""
+    result = _parse_platform_packages(load_text_fixture("content_gen_packaging_happy.txt"))
+
+    assert len(result) == 2
+    assert result[0].platform == "tiktok"
+    assert result[0].alternate_hooks == [
+        "Your pricing page is answering the wrong question",
+        "Buyers compare anchors before they compare features",
+    ]
+    assert result[1].platform == "linkedin"
+    assert result[1].hashtags == ["#b2bmarketing", "#pricing"]
+
+
+def test_packaging_golden_fixture_sparse_output_ignores_incomplete_blocks() -> None:
+    """Sparse packaging output should ignore blocks missing the platform key."""
+    result = _parse_platform_packages(load_text_fixture("content_gen_packaging_sparse.txt"))
+
+    assert len(result) == 1
+    assert result[0].platform == "linkedin"
+    assert result[0].alternate_hooks == []
+    assert result[0].keywords == []
+
+
+def test_qc_golden_fixture_happy_path_parses_issue_lists() -> None:
+    """QC fixtures should keep actionable review items stable."""
+    result = _parse_qc_gate(load_text_fixture("content_gen_qc_happy.txt"))
+
+    assert result.hook_strength == "strong"
+    assert result.clarity_issues == ["The payoff line could land one beat earlier"]
+    assert result.must_fix_items == [
+        "Confirm the screenshot can be shown on camera",
+        'Replace the vague "works better" claim with a concrete explanation',
+    ]
+    assert result.approved_for_publish is False
+
+
+def test_qc_golden_fixture_sparse_output_defaults_missing_lists() -> None:
+    """Sparse QC output should leave omitted issue buckets empty."""
+    result = _parse_qc_gate(load_text_fixture("content_gen_qc_sparse.txt"))
+
+    assert result.hook_strength == "adequate"
+    assert result.clarity_issues == []
+    assert result.must_fix_items == ["Add a concrete proof point before publish"]
 
 
 def test_parse_backlog_items_handles_partial_items() -> None:

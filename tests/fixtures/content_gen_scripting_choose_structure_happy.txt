@@ -1,0 +1,9 @@
+Chosen Structure: Contrarian reveal
+Why this structure fits: It starts with the familiar mistake, then flips it with a concrete pricing example.
+
+Beat List:
+1. Hook: Call out the pricing mistake buyers spot first
+2. False assumption: Teams think more features justify a higher tier
+3. Reframe: Buyers compare anchors before they compare details
+4. Proof: Show the decoy-tier example
+5. CTA: Rewrite one pricing card today
