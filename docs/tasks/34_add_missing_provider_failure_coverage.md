@@ -1,5 +1,7 @@
 # Task 34: Add Missing Provider Failure Coverage
 
+**Status: Done**
+
 ## Goal
 
 Harden the system against empty, malformed, or unavailable provider responses.

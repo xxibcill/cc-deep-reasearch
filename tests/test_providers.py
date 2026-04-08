@@ -720,6 +720,65 @@ class TestSourceCollectorDegradation:
             "All initialized providers failed for query 'test query'. Continuing with an empty result set from: provider_a, provider_b."
         ]
 
+    @pytest.mark.asyncio
+    async def test_collect_sources_degrades_cleanly_on_auth_rate_limit_and_timeout_failures(
+        self,
+    ) -> None:
+        """Provider auth, rate-limit, and timeout failures should not crash collection."""
+        config = Config()
+        collector = SourceCollectorAgent(config)
+        collector._providers = [
+            MockSearchProvider(
+                name="provider_auth",
+                should_fail=True,
+                fail_with=AuthenticationError("invalid key", "provider_auth", "test query"),
+            ),
+            MockSearchProvider(
+                name="provider_rate_limit",
+                should_fail=True,
+                fail_with=RateLimitError(
+                    "rate limited",
+                    "provider_rate_limit",
+                    "test query",
+                    retry_after=30,
+                ),
+            ),
+            MockSearchProvider(
+                name="provider_timeout",
+                should_fail=True,
+                fail_with=NetworkError("request timed out", "provider_timeout", "test query"),
+            ),
+        ]
+
+        sources = await collector.collect_sources("test query", SearchOptions(max_results=2))
+
+        assert sources == []
+        assert collector.get_provider_warnings() == [
+            "All initialized providers failed for query 'test query'. Continuing with an empty result set from: provider_auth, provider_rate_limit, provider_timeout."
+        ]
+
+    @pytest.mark.asyncio
+    async def test_collect_sources_treats_empty_valid_results_as_success(self) -> None:
+        """An empty but valid provider response should avoid the all-failed degradation path."""
+        config = Config()
+        collector = SourceCollectorAgent(config)
+        collector._providers = [
+            FixtureSearchProvider(
+                name="provider_empty",
+                results_by_query={"test query": []},
+            ),
+            MockSearchProvider(
+                name="provider_timeout",
+                should_fail=True,
+                fail_with=NetworkError("request timed out", "provider_timeout", "test query"),
+            ),
+        ]
+
+        sources = await collector.collect_sources("test query", SearchOptions(max_results=2))
+
+        assert sources == []
+        assert collector.get_provider_warnings() == []
+
 
 class TestSourceProvenanceAggregation:
     """Tests for provenance preservation during aggregation."""

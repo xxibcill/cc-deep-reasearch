@@ -169,6 +169,31 @@ class TestTavilySearchProvider:
         await provider.close()
 
     @pytest.mark.asyncio
+    async def test_search_handles_empty_results_with_metadata(
+        self,
+        provider: TavilySearchProvider,
+    ) -> None:
+        """Empty but valid responses should preserve response metadata."""
+        mock_transport = httpx.MockTransport(
+            lambda _: httpx.Response(
+                200,
+                json={"results": [], "response_id": "empty-response", "images": []},
+            )
+        )
+        provider._client = httpx.AsyncClient(transport=mock_transport)
+
+        result = await provider.search("test")
+
+        assert result.results == []
+        assert result.metadata == {
+            "response_id": "empty-response",
+            "images": [],
+            "strategy": "advanced",
+        }
+
+        await provider.close()
+
+    @pytest.mark.asyncio
     async def test_authentication_error(self, provider: TavilySearchProvider) -> None:
         """Test handling of authentication error (401)."""
         mock_transport = httpx.MockTransport(
@@ -184,6 +209,33 @@ class TestTavilySearchProvider:
 
         assert "Invalid API key" in str(exc_info.value)
         assert exc_info.value.provider == "tavily"
+
+        await provider.close()
+
+    @pytest.mark.asyncio
+    async def test_authentication_error_does_not_rotate_to_next_key(self) -> None:
+        """Authentication failures should not rotate through the key pool."""
+        key_manager = KeyRotationManager(
+            api_keys=["test-key-1", "test-key-2"],
+            requests_limit=5,
+            disable_duration_minutes=60,
+        )
+        requested_keys: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content.decode())
+            requested_keys.append(payload["api_key"])
+            return httpx.Response(401, json={"message": "Invalid API key"})
+
+        provider = TavilySearchProvider(key_manager=key_manager)
+        provider._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+        with pytest.raises(AuthenticationError):
+            await provider.search("test")
+
+        assert requested_keys == ["test-key-1"]
+        status = key_manager.get_key_status()
+        assert all(item["disabled"] is False for item in status)
 
         await provider.close()
 
