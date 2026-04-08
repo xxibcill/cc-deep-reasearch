@@ -181,3 +181,71 @@ uv run pytest tests/test_llm_analysis_client.py tests/test_models.py tests/test_
 ```
 
 Expected runtime: **~30-60 seconds** with zero provider costs.
+
+---
+
+## Dashboard Preflight
+
+Before modifying dashboard code, run these checks to validate the frontend:
+
+### 1. Dashboard Build Validation
+
+**Command:**
+```bash
+cd dashboard && npm run build
+```
+
+**Covers:**
+- Next.js build success
+- TypeScript compilation
+- Static page generation
+- No broken imports or missing dependencies
+
+**Time cost:** ~30-60 seconds
+
+**Run before:** Any dashboard code change, especially after adding dependencies or modifying pages
+
+---
+
+### 2. Dashboard Smoke Tests
+
+**Command:**
+```bash
+cd dashboard && npm run test:e2e -- --grep "home page exposes|App loads"
+```
+
+**Covers:**
+- Dashboard app loads without crash
+- Core pages render correctly
+- Navigation works
+- Fixtures and mocks function properly
+
+**Time cost:** ~30-60 seconds
+
+**Run before:** Any dashboard UI change, component modification, or page routing update
+
+---
+
+## Combined One-Liner (Python + Dashboard)
+
+For full preflight including dashboard:
+
+```bash
+uv run pytest tests/test_llm_analysis_client.py tests/test_models.py tests/test_reporter.py tests/test_tavily_provider.py tests/test_providers.py tests/test_orchestrator.py tests/test_orchestration.py tests/test_cli_research.py tests/test_research_run_service.py -v --tb=short && cd dashboard && npm run build && npm run test:e2e -- --grep "home page exposes|App loads"
+```
+
+Expected runtime: **~60-120 seconds** with zero provider costs.
+
+---
+
+## Quick Start: Essential Preflight Only
+
+For rapid iteration when you only need to verify core functionality:
+
+```bash
+# Python core (fastest)
+uv run pytest tests/test_orchestrator.py tests/test_orchestration.py -v
+
+# Or combined minimal
+uv run pytest tests/test_llm_analysis_client.py tests/test_models.py tests/test_reporter.py tests/test_tavily_provider.py tests/test_providers.py tests/test_orchestrator.py tests/test_orchestration.py -v --tb=short
+```
