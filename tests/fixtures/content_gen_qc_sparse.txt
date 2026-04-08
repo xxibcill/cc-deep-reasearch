@@ -1,0 +1,3 @@
+hook_strength: adequate
+must_fix_items:
+- Add a concrete proof point before publish
