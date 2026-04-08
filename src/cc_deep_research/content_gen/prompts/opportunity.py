@@ -1,8 +1,27 @@
-"""Prompt templates for the opportunity planning stage."""
+"""Prompt templates for the opportunity planning stage.
+
+Contract Version: 1.0.0
+
+Parser expectations:
+- plan output: Expects exact scalar headers "Theme:", "Goal:",
+  "Primary audience segment:", "Content objective:", and
+  "Freshness rationale:"
+- list sections are parsed from "-" items under:
+  Secondary audience segments, Problem statements, Proof requirements,
+  Platform constraints, Risk constraints, Sub-angles,
+  Research hypotheses, Success criteria
+- the parser fails fast when Goal, Primary audience segment,
+  Problem statements, or Content objective are missing
+
+When editing prompts, ensure output format remains compatible with
+the parser in agents/opportunity.py.
+"""
 
 from __future__ import annotations
 
 from cc_deep_research.content_gen.models import StrategyMemory
+
+CONTRACT_VERSION = "1.0.0"
 
 GLOBAL_RULES = """\
 You are planning a short-form content opportunity inside a modular workflow.

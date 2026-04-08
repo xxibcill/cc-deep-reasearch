@@ -7,7 +7,8 @@ Parser expectations:
   expects fields: beat, spoken_line, visual, shot_type, a_roll, b_roll,
   on_screen_text, overlay_or_graphic, prop_or_asset, transition,
   retention_function
-  Also expects "visual_refresh_check:" section at the end.
+  The parser keeps a block only when it includes both `beat` and `visual`,
+  and it also requires a trailing "visual_refresh_check:" field.
 
 When editing prompts, ensure output format remains compatible with
 the parser in agents/visual.py.

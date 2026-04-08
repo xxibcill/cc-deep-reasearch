@@ -3,8 +3,10 @@
 Contract Version: 1.0.0
 
 Parser expectations:
-- review output: Expects "QC Review:" section with check results,
-  "Weakest parts:" numbered list, "Final Script:" section
+- review output: Expects `hook_strength:` plus issue buckets named
+  clarity_issues, factual_issues, visual_issues, audio_issues,
+  caption_issues, and must_fix_items. Each issue bucket is parsed as a
+  "- " or "* " list. `approved_for_publish` is never parsed from model output.
 
 When editing prompts, ensure output format remains compatible with
 the parser in agents/qc.py.

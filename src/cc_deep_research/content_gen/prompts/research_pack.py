@@ -3,12 +3,13 @@
 Contract Version: 1.0.0
 
 Parser expectations:
-- synthesis output: Expects section headers in order:
+- synthesis output: Expects named section headers:
   audience_insights, competitor_observations, key_facts, proof_points,
   examples, case_studies, gaps_to_exploit, assets_needed,
   claims_requiring_verification, unsafe_or_uncertain_claims,
   research_stop_reason
-  Each section uses list format with "- " prefix.
+  List sections use "- " or "* " items. Missing sections stay empty on
+  purpose because this parser is intentionally tolerant.
 
 When editing prompts, ensure output format remains compatible with
 the parser in agents/research_pack.py.
