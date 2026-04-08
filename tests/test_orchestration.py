@@ -498,6 +498,66 @@ class TestSourceCollectionService:
         assert fallback_event["metadata"]["chosen_option"] == "sequential"
         assert fallback_event["metadata"]["inputs"]["error_type"] == "ParallelCollectionError"
 
+    @pytest.mark.asyncio
+    async def test_collect_sources_records_provider_failure_degradation_metadata(self) -> None:
+        """Provider failure warnings should flow into stable session degradation metadata."""
+        config = Config()
+        monitor = ResearchMonitor(enabled=False)
+        session_state = OrchestratorSessionState(configured_providers=["tavily"], monitor=monitor)
+        session_state.reset(["tavily"])
+        collection = SourceCollectionService(
+            config=config,
+            monitor=monitor,
+            session_state=session_state,
+            num_researchers=2,
+        )
+
+        class FailureAwareCollector:
+            async def initialize_providers(self) -> None:
+                return None
+
+            def get_provider_warnings(self) -> list[str]:
+                return ["All initialized providers failed for query 'market structure'."]
+
+            def get_available_providers(self) -> list[str]:
+                return ["tavily"]
+
+            async def collect_sources(
+                self,
+                query: str,
+                options,
+                *,
+                query_family: QueryFamily,
+            ) -> list[SearchResultItem]:
+                del query, options, query_family
+                return []
+
+            async def collect_multiple_queries(
+                self,
+                queries: list[str],
+                options,
+                *,
+                query_families: list[QueryFamily],
+            ) -> list[SearchResultItem]:
+                del queries, options, query_families
+                return []
+
+        sources = await collection.collect_sources(
+            collector=FailureAwareCollector(),
+            query_families=[
+                QueryFamily(query="market structure", family="baseline", intent_tags=["baseline"])
+            ],
+            depth=ResearchDepth.STANDARD,
+        )
+
+        assert sources == []
+        assert session_state.provider_metadata["warnings"] == [
+            "All initialized providers failed for query 'market structure'."
+        ]
+        assert session_state.execution_degradations == [
+            "All initialized providers failed for query 'market structure'."
+        ]
+
 
 class TestAnalysisWorkflow:
     @pytest.mark.asyncio
@@ -846,3 +906,68 @@ class TestResearchExecutionService:
             event for event in monitor._telemetry_events if event["event_type"] == "session.finished"
         ]
         assert session_finished[-1]["status"] == "failed"
+
+    @pytest.mark.asyncio
+    async def test_execute_marks_completed_for_empty_but_valid_provider_results(self, tmp_path) -> None:
+        config = Config()
+        monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+        phase_runner = PhaseRunner(monitor=monitor)
+        service = ResearchExecutionService(
+            config=config,
+            monitor=monitor,
+            phase_runner=phase_runner,
+            session_builder=SessionBuilder(),
+            configured_providers=lambda: ["tavily"],
+            parallel_mode=False,
+            num_researchers=2,
+        )
+        strategy = _make_strategy("market structure", ResearchDepth.STANDARD, 3)
+        query_families = [
+            QueryFamily(query="market structure", family="baseline", intent_tags=["baseline"])
+        ]
+        analysis = _make_analysis()
+        validation = _make_validation()
+        sources: list[SearchResultItem] = []
+
+        hooks = ResearchExecutionHooks(
+            reset_session_state=MagicMock(),
+            initialize_team=AsyncMock(),
+            analyze_strategy=AsyncMock(return_value=strategy),
+            expand_queries=AsyncMock(return_value=query_families),
+            normalize_query_families=MagicMock(return_value=query_families),
+            collect_sources=AsyncMock(return_value=sources),
+            run_analysis_workflow=AsyncMock(return_value=(analysis, validation, sources, [])),
+            build_metadata=MagicMock(
+                return_value={
+                    "providers": {
+                        "configured": ["tavily"],
+                        "available": ["tavily"],
+                        "warnings": ["Provider returned an empty but valid result set"],
+                    },
+                    "execution": {
+                        "parallel_requested": False,
+                        "degraded": True,
+                        "degraded_reasons": ["Provider returned an empty but valid result set"],
+                    },
+                }
+            ),
+            log_session_summary=MagicMock(),
+            shutdown_team=AsyncMock(),
+        )
+
+        session = await service.execute(
+            query="market structure",
+            depth=ResearchDepth.STANDARD,
+            min_sources=2,
+            phase_hook=None,
+            hooks=hooks,
+        )
+
+        assert session.metadata["execution"]["degraded"] is True
+        assert session.metadata["providers"]["status"] == "degraded"
+        session_finished = [
+            event for event in monitor._telemetry_events if event["event_type"] == "session.finished"
+        ]
+        assert session_finished[-1]["status"] == "completed"
+        session_complete = monitor.get_checkpoints_by_phase("session_complete")[0]
+        assert session_complete["output_ref"]["status"] == "completed"
