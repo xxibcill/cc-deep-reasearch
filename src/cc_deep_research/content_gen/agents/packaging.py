@@ -64,6 +64,12 @@ class PackagingAgent:
         text = await self._call_llm(system, user, temperature=0.6)
 
         packages = _parse_platform_packages(text)
+        if not packages:
+            msg = (
+                "Packaging parsing failed: missing at least one usable platform block "
+                "with 'platform', 'primary_hook', and 'caption'."
+            )
+            raise ValueError(msg)
         return PackagingOutput(idea_id=idea_id, platform_packages=packages)
 
 
@@ -126,6 +132,6 @@ def _parse_platform_packages(text: str) -> list[PlatformPackage]:
                 data[field] = val
         for field in _LIST_FIELDS:
             data[field] = _extract_list(block_text, field)
-        if data.get("platform"):
+        if data.get("platform") and data.get("primary_hook") and data.get("caption"):
             packages.append(PlatformPackage(**data))
     return packages

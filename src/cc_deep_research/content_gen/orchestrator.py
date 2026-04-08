@@ -192,9 +192,13 @@ class ContentGenOrchestrator:
                 return False, "backlog/angles missing"
             if _resolve_selected_item(ctx) is None:
                 return False, "selected idea not found"
+            if _resolve_selected_angle(ctx) is None:
+                return False, "selected angle missing"
         if stage == "run_scripting":
             if ctx.backlog is None or ctx.angles is None:
                 return False, "backlog/angles missing"
+            if _resolve_selected_angle(ctx) is None:
+                return False, "selected angle missing"
         if stage == "visual_translation":
             if ctx.scripting is None:
                 return False, "scripting missing"
@@ -207,6 +211,8 @@ class ContentGenOrchestrator:
         if stage == "packaging":
             if ctx.scripting is None or ctx.angles is None:
                 return False, "scripting/angles missing"
+            if _resolve_selected_angle(ctx) is None:
+                return False, "selected angle missing"
             source = ""
             if ctx.scripting.qc:
                 source = ctx.scripting.qc.final_script
@@ -229,8 +235,13 @@ class ContentGenOrchestrator:
             if not source:
                 return False, "script empty"
         if stage == "publish_queue":
-            if ctx.packaging is None or ctx.qc_gate is None or not ctx.qc_gate.approved_for_publish:
-                return False, "packaging/qc_gate missing or not approved"
+            if (
+                ctx.packaging is None
+                or not ctx.packaging.platform_packages
+                or ctx.qc_gate is None
+                or not ctx.qc_gate.approved_for_publish
+            ):
+                return False, "packaging empty, qc_gate missing, or not approved"
         return True, ""
 
     async def _run_stage(

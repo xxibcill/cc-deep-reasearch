@@ -352,6 +352,8 @@ Pipeline behavior:
 
 - if `selected_angle_id` is present, the pipeline uses it
 - otherwise it falls back to the first angle option
+- angle parsing is now fail-fast for blank or incomplete options; at least one option must include
+  `target_audience`, `viewer_problem`, `core_promise`, and `primary_takeaway`
 
 ### Stage 5: Research Pack Builder
 
@@ -392,6 +394,8 @@ Important implementation details:
 - query generation is heuristic and intentionally small
 - one built-in query template is still hard-coded to `content trends 2025`, which is stale and should be treated as technical debt
 - the stored research pack is compact by design and not a citation-grade source graph
+- this parser is intentionally tolerant: missing sections stay empty because scripting can continue with
+  partial research and iterative reruns can add missing evidence later
 
 ### Stage 6: Scripting Pipeline
 
@@ -472,6 +476,8 @@ Guardrail:
 
 - this stage requires both a script and a structure
 - if either is missing, the standalone orchestrator call raises a `ValueError`
+- the parser also fails fast if it cannot recover at least one complete beat visual or the
+  required `visual_refresh_check`
 
 ### Stage 8: Production Brief
 
@@ -520,6 +526,8 @@ Input behavior:
 
 - the CLI accepts either a scripting context or a full pipeline context
 - helper functions extract the best available final script and angle information
+- parsing is intentionally tolerant per block, but the stage fails if no usable platform package
+  survives parsing
 
 ### Stage 10: Human QC Gate
 
@@ -551,6 +559,8 @@ Current behavior:
 
 - `qc review` runs a fresh review from the saved context
 - `qc approve` mutates the saved context JSON by flipping `approved_for_publish` to `True`
+- missing issue buckets are tolerated and default to empty lists, but `hook_strength` is required
+  so a blank QC review does not silently pass through the pipeline
 
 ### Stage 11: Publish Queue
 
