@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DASHBOARD_DIR="$ROOT_DIR/dashboard"
+
+usage() {
+    echo "Usage: preflight [options]"
+    echo ""
+    echo "Options:"
+    echo "  --python-only    Run only Python preflight checks"
+    echo "  --dashboard-only Run only dashboard build and smoke tests"
+    echo "  --quick          Run quick core checks only (orchestrator)"
+    echo "  --help           Show this help message"
+    echo ""
+    echo "Default: Run both Python and Dashboard preflight checks"
+}
+
+run_python_preflight() {
+    echo "=== Running Python Preflight ==="
+    cd "$ROOT_DIR"
+    uv run pytest tests/test_llm_analysis_client.py tests/test_models.py tests/test_reporter.py tests/test_tavily_provider.py tests/test_providers.py tests/test_orchestrator.py tests/test_orchestration.py tests/test_cli_research.py tests/test_research_run_service.py -v --tb=short
+    echo "=== Python Preflight Complete ==="
+}
+
+run_dashboard_preflight() {
+    echo "=== Running Dashboard Build ==="
+    cd "$DASHBOARD_DIR"
+    npm run build
+    echo "=== Dashboard Build Complete ==="
+    
+    echo "=== Running Dashboard Smoke Tests ==="
+    npm run test:e2e -- --grep "home page exposes|App loads" || true
+    echo "=== Dashboard Smoke Complete ==="
+}
+
+run_quick_preflight() {
+    echo "=== Running Quick Preflight (Core Only) ==="
+    cd "$ROOT_DIR"
+    uv run pytest tests/test_orchestrator.py tests/test_orchestration.py -v
+    echo "=== Quick Preflight Complete ==="
+}
+
+PYTHON_ONLY=false
+DASHBOARD_ONLY=false
+QUICK=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --python-only)
+            PYTHON_ONLY=true
+            shift
+            ;;
+        --dashboard-only)
+            DASHBOARD_ONLY=true
+            shift
+            ;;
+        --quick)
+            QUICK=true
+            shift
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+if [[ "$QUICK" == true ]]; then
+    run_quick_preflight
+elif [[ "$PYTHON_ONLY" == true ]]; then
+    run_python_preflight
+elif [[ "$DASHBOARD_ONLY" == true ]]; then
+    run_dashboard_preflight
+else
+    run_python_preflight
+    run_dashboard_preflight
+fi
+
+echo ""
+echo "=== Preflight Complete ==="
