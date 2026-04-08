@@ -52,8 +52,13 @@ Available top-level commands and groups:
 - `markdown-to-pdf` - Convert an existing markdown file into a styled PDF report
 - `benchmark` - Run the versioned benchmark corpus (`run`)
 - `config` - Manage configuration (`show`, `set`, `init`)
-- `session` - Manage persisted sessions (`list`, `show`, `export`, `delete`)
+- `session` - Manage persisted sessions (`list`, `show`, `export`, `delete`, `audit`, `bundle`, `checkpoints`, `reconcile`)
 - `telemetry` - Ingest telemetry and launch dashboard (`ingest`, `dashboard`)
+- `dashboard` - Start the real-time monitoring dashboard server
+- `detect-theme` - Detect the research theme for a query
+- `list-themes` - List all available research themes
+- `content-gen` - Content generation workflow for short-form video
+- `anthropic` - Anthropic API commands
 
 ## Research Examples
 
@@ -112,6 +117,9 @@ cc-deep-research markdown-to-pdf reports/topic.md
 - `--num-researchers INTEGER`
 - `--show-timeline`
 - `--pdf`
+- `--enable-realtime`
+- `--workflow [staged|planner]` (research workflow to use)
+- `--theme [general|resources|trip_planning|due_diligence|market_research|business_ideas|content_creation]` (research theme for tailored workflow)
 
 ## Telemetry Dashboard
 

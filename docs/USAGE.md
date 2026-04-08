@@ -506,6 +506,8 @@ cc-deep-research research [QUERY] [OPTIONS]
 | `--show-timeline`   |       | flag   | false         | Show the execution timeline after a parallel run                         |
 | `--pdf`             |       | flag   | false         | Generate PDF output in addition to the selected report format            |
 | `--enable-realtime` |       | flag   | false         | Enable the shared real-time event router used by dashboard-backed runs   |
+| `--workflow`        |       | choice | `staged`      | Research workflow (`staged` or `planner`)                                |
+| `--theme`           |       | choice | (auto-detect) | Research theme for tailored workflow                                    |
 
 **Examples:**
 
@@ -715,6 +717,78 @@ cc-deep-research dashboard [OPTIONS]
 cc-deep-research dashboard --host localhost --port 8000
 ```
 
+### `cc-deep-research detect-theme`
+
+Detect the research theme for a query to determine the appropriate workflow.
+
+**Usage:**
+
+```bash
+cc-deep-research detect-theme [OPTIONS] QUERY
+```
+
+**Example:**
+
+```bash
+cc-deep-research detect-theme "Best restaurants in Tokyo"
+```
+
+### `cc-deep-research list-themes`
+
+List all available research themes.
+
+**Usage:**
+
+```bash
+cc-deep-research list-themes
+```
+
+### `cc-deep-research benchmark`
+
+Run the versioned benchmark corpus.
+
+**Usage:**
+
+```bash
+cc-deep-research benchmark [OPTIONS] COMMAND [ARGS]...
+```
+
+**Subcommands:**
+
+| Command  | Purpose                                      |
+| -------- | ------------------------------------------- |
+| `run`    | Execute the whole benchmark corpus         |
+
+**Options for `benchmark run`:**
+
+| Option         | Type    | Default              | Description                        |
+| -------------- | ------- | -------------------- | ---------------------------------- |
+| `--corpus-path`| path    | (default corpus)     | Benchmark corpus JSON path        |
+| `--output-dir` | path    | `benchmark_runs/latest` | Directory for benchmark outputs  |
+| `--depth`      | choice  | `standard`           | Research depth for all cases     |
+| `--sources`    | int     | (from config)        | Minimum sources override         |
+| `--monitor`    | flag    | false                | Enable monitor output             |
+
+**Example:**
+
+```bash
+cc-deep-research benchmark run --depth deep --output-dir benchmark_runs/2024
+```
+
+### `cc-deep-research anthropic`
+
+Commands for working with the Anthropic API.
+
+**Usage:**
+
+```bash
+cc-deep-research anthropic [OPTIONS] COMMAND [ARGS]...
+```
+
+**Subcommands:**
+
+Use `cc-deep-research anthropic --help` to see available subcommands.
+
 ### `cc-deep-research session`
 
 Manage saved research sessions produced by completed runs.
@@ -727,6 +801,10 @@ Manage saved research sessions produced by completed runs.
 | `session show SESSION_ID`                 | Show one saved session                      |
 | `session export SESSION_ID --output PATH` | Export a session as markdown, JSON, or HTML |
 | `session delete SESSION_ID`               | Delete a saved session                      |
+| `session audit`                           | Show audit log of session operations        |
+| `session bundle SESSION_ID`               | Export a session as a portable trace bundle  |
+| `session checkpoints SESSION_ID`         | Manage session checkpoints for resume       |
+| `session reconcile`                       | Detect drift between sessions and telemetry|
 
 **Examples:**
 
@@ -1417,10 +1495,12 @@ research:
 4. Performs additional searches (up to max_iterations)
 5. Aggregates all findings
 
-**Disable for speed:**
+**Disable iterative search:**
+
+Use the config command to disable iterative search:
 
 ```bash
-cc-deep-research research --no-iterative "Quick topic"
+cc-deep-research config set research.enable_iterative_search false
 ```
 
 ### Source Quality Scoring
