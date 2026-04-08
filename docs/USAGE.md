@@ -42,7 +42,7 @@ CC Deep Research is a command-line tool for staged web research. The current run
 | **Quality Scoring**                                              | Evaluates sources by credibility, relevance, freshness, diversity               |
 | **Cross-Reference Analysis**                                     | Identifies consensus points and contradictions                                  |
 | **Multiple Formats**                                             | Markdown, JSON, and HTML output options                                         |
-| **API Key Rotation** - Automatic failover with multiple API keys |
+| **API Key Rotation**                                             | Automatic failover with multiple API keys                                       |
 | **Progress Monitoring**                                          | Browser-based live monitoring, terminal monitor output, and telemetry analytics |
 
 ### Architecture Overview
@@ -192,6 +192,18 @@ export TAVILY_API_KEYS=your_api_key_here
 # Multiple API keys (comma-separated, for rotation)
 export TAVILY_API_KEYS=key1,key2,key3
 
+# Optional: OpenRouter single-key or multi-key configuration
+export OPENROUTER_API_KEY=your_openrouter_key
+export OPENROUTER_API_KEYS=key1,key2,key3
+
+# Optional: Cerebras single-key or multi-key configuration
+export CEREBRAS_API_KEY=your_cerebras_key
+export CEREBRAS_API_KEYS=key1,key2,key3
+
+# Optional: Anthropic single-key or multi-key configuration
+export ANTHROPIC_API_KEY=your_anthropic_key
+export ANTHROPIC_API_KEYS=key1,key2,key3
+
 # Optional: Override default research depth
 export CC_DEEP_RESEARCH_DEPTH=deep
 
@@ -204,6 +216,8 @@ export NO_COLOR=1
 # Optional: Specify custom config file location
 export CC_DEEP_RESEARCH_CONFIG=/path/to/config.yaml
 ```
+
+At CLI startup the project also loads a `.env` file from the repository root, if present, without overriding environment variables that are already set in your shell.
 
 ### Configuration File Structure
 
@@ -477,7 +491,7 @@ Execute a research query and generate a report.
 **Usage:**
 
 ```bash
-cc-deep-research research [QUERY] [OPTIONS]
+cc-deep-research research [OPTIONS] QUERY
 ```
 
 **Required Argument:**
@@ -507,7 +521,7 @@ cc-deep-research research [QUERY] [OPTIONS]
 | `--pdf`             |       | flag   | false         | Generate PDF output in addition to the selected report format            |
 | `--enable-realtime` |       | flag   | false         | Enable the shared real-time event router used by dashboard-backed runs   |
 | `--workflow`        |       | choice | `staged`      | Research workflow (`staged` or `planner`)                                |
-| `--theme`           |       | choice | (auto-detect) | Research theme for tailored workflow                                    |
+| `--theme`           |       | choice | (auto-detect) | Research theme for tailored workflow                                     |
 
 **Examples:**
 
@@ -545,7 +559,7 @@ Set a configuration value.
 **Usage:**
 
 ```bash
-cc-deep-research config set [KEY] [VALUE] [OPTIONS]
+cc-deep-research config set [OPTIONS] KEY VALUE
 ```
 
 **Required Arguments:**
@@ -600,17 +614,7 @@ cc-deep-research config show [OPTIONS]
 cc-deep-research config show
 ```
 
-**Output:**
-
-```
-Current configuration:
-  Search providers: tavily, claude
-  Search mode: hybrid_parallel
-  Search depth: deep
-  Tavily API keys: 3 configured
-  Output format: markdown
-  Output directory: ./reports
-```
+The command renders a table with the current effective values for keys such as `search.providers`, `search.mode`, `search.depth`, `tavily.api_keys`, `tavily.max_results`, `search_team.enabled`, `search_team.team_size`, `output.format`, `output.save_dir`, and whether the config file exists.
 
 ### `cc-deep-research config init`
 
@@ -692,6 +696,8 @@ cc-deep-research telemetry dashboard [OPTIONS]
 ```bash
 cc-deep-research telemetry dashboard --port 8501 --refresh-seconds 5 --tail-limit 200
 ```
+
+This command launches the Streamlit analytics UI. It is separate from the browser-based operator console started with `cc-deep-research dashboard` plus the frontend in [`dashboard/`](../dashboard).
 
 ### `cc-deep-research dashboard`
 
@@ -802,9 +808,9 @@ Manage saved research sessions produced by completed runs.
 | `session export SESSION_ID --output PATH` | Export a session as markdown, JSON, or HTML |
 | `session delete SESSION_ID`               | Delete a saved session                      |
 | `session audit`                           | Show audit log of session operations        |
-| `session bundle SESSION_ID`               | Export a session as a portable trace bundle  |
-| `session checkpoints SESSION_ID`         | Manage session checkpoints for resume       |
-| `session reconcile`                       | Detect drift between sessions and telemetry|
+| `session bundle SESSION_ID`               | Export a session as a portable trace bundle |
+| `session checkpoints`                     | Manage session checkpoints for resume       |
+| `session reconcile`                       | Detect drift between sessions and telemetry |
 
 **Examples:**
 
@@ -827,26 +833,28 @@ cc-deep-research session delete SESSION_ID
 When you delete a session, the following data is permanently removed:
 
 - Session file (`~/.config/cc-deep-research/sessions/{session_id}.json`)
-- Telemetry directory (`~/.config/cc-deep-research/telemetry/{session_id}/`)
-- Historical analytics records in DuckDB
+- Session summary (`~/.config/cc-deep-research/sessions/{session_id}.summary.json`)
+- Saved report artifacts for that session (`.md`, `.html`, `.json`)
 
-**Active session protection:**
+The CLI command does not remove telemetry directories or DuckDB analytics records.
 
-If the session is currently running (active), the delete command will fail by default. Use the `--force` flag to override:
+**CLI `--force` behavior:**
+
+For `cc-deep-research session delete`, `--force` only skips the confirmation prompt:
 
 ```bash
 cc-deep-research session delete research-abc123 --force
 ```
 
-**Dashboard deletion:**
+**Dashboard and API deletion:**
 
 You can also delete sessions from the browser dashboard:
 - From the session list: click the delete button on a session card
 - From the session page: use the delete action in the session details
 
-The dashboard delete API (`DELETE /api/sessions/{session_id}`) removes the same data and supports the same `force` query parameter.
+The dashboard delete API (`DELETE /api/sessions/{session_id}`) removes the session file, telemetry directory, and DuckDB records. It returns an active-session conflict unless you pass `force=true`.
 
-**Limitation:** No bulk delete is available - sessions must be deleted one at a time.
+For bulk deletion through the backend, use `POST /api/sessions/bulk-delete`.
 
 ---
 

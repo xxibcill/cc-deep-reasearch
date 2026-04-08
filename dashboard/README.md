@@ -94,11 +94,11 @@ The dashboard connects to the CC Deep Research backend:
 
 ## Backend Setup
 
-To use the dashboard with real-time monitoring:
+`npm run dev` already starts both the backend API and the frontend dashboard. If you want to run the backend separately, use the real CLI command and current flags:
 
 1. Start the backend server:
    \`\`\`bash
-   cc-deep-research dashboard --enable-realtime --dashboard-port 8000
+   cc-deep-research dashboard --host localhost --port 8000
    \`\`\`
 
 2. Run a research query with real-time enabled:

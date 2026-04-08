@@ -42,7 +42,7 @@ cc-deep-research research "What are the latest developments in quantum computing
 ## Command Overview
 
 ```bash
-cc-deep-research [COMMAND]
+cc-deep-research [OPTIONS] COMMAND [ARGS]...
 ```
 
 Available top-level commands and groups:
@@ -148,6 +148,16 @@ cc-deep-research telemetry dashboard --port 8501 --refresh-seconds 5 --tail-limi
 cc-deep-research telemetry ingest
 ```
 
+For the browser-based operator console, use the Next.js dashboard in [`dashboard/`](dashboard):
+
+```bash
+cd dashboard
+npm install
+npm run dev
+```
+
+That launcher starts the FastAPI backend on `http://localhost:8000` and the frontend on `http://localhost:3000`. If you only want the backend API, run `cc-deep-research dashboard --host localhost --port 8000`.
+
 The dashboard now reads active `events.jsonl` sessions directly, so you can inspect:
 
 - the current phase of an in-flight run
@@ -250,6 +260,8 @@ cc-deep-research session export <session_id> -o exported.md --format markdown
 cc-deep-research session delete <session_id>
 ```
 
+`session delete` removes the saved session record, saved summary, and saved report artifacts from the local session store. To purge telemetry directories and DuckDB analytics records as well, use the browser dashboard delete flow or the backend session-delete API.
+
 ## Configuration
 
 Configuration file path:
@@ -263,6 +275,19 @@ cc-deep-research config init
 cc-deep-research config show
 cc-deep-research config set tavily.api_keys key1,key2,key3
 ```
+
+Common environment-variable overrides:
+
+- `TAVILY_API_KEYS`
+- `CC_DEEP_RESEARCH_CONFIG`
+- `CC_DEEP_RESEARCH_DEPTH`
+- `CC_DEEP_RESEARCH_FORMAT`
+- `NO_COLOR`
+- `OPENROUTER_API_KEY` or `OPENROUTER_API_KEYS`
+- `CEREBRAS_API_KEY` or `CEREBRAS_API_KEYS`
+- `ANTHROPIC_API_KEY` or `ANTHROPIC_API_KEYS`
+
+The CLI also loads a project-root `.env` file at startup without overwriting env vars that are already set in your shell.
 
 Default highlights from current code:
 
@@ -293,6 +318,13 @@ Configure LLM routing in `~/.config/cc-deep-research/config.yaml`:
 
 ```yaml
 llm:
+  # Anthropic configuration
+  anthropic:
+    enabled: false
+    api_key: "${ANTHROPIC_API_KEY}"
+    model: "claude-sonnet-4-6"
+    base_url: "https://api.anthropic.com"
+
   # OpenRouter configuration
   openrouter:
     enabled: false
@@ -322,6 +354,8 @@ llm:
     reporter: "anthropic"       # Default route for report-generation helpers
     default: "anthropic"
 ```
+
+The provider sections above can also be populated from env vars. The runtime accepts both single-key and comma-separated multi-key forms for OpenRouter, Cerebras, and Anthropic.
 
 ### Mixed-Route Sessions
 
