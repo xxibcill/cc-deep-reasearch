@@ -133,12 +133,46 @@ Phase 2 - Extended lifecycle management:
 - Added a historical analytics dashboard with aggregate operational metrics, trend views, and drill-down paths back into session history for system-level monitoring
 - Formalized a dashboard fixture and scenario library so Playwright and related regression tests can target named operator states consistently as the UI grows
 
+#### Session Metadata and Type Safety (8 tasks)
+
+- Documented the exact metadata shape produced by the research pipeline today with required versus optional field calls-outs
+- Replaced ambiguous metadata dictionaries with explicit `TypedDict` contracts for strategy, analysis, validation, and iteration history metadata
+- Pinned the metadata contract with tests for quick, standard, and deep runs plus degraded execution paths
+- Clarified runtime naming and `--no-team` semantics to accurately reflect local execution versus distributed ambitions
+
+#### Provider and Orchestration Hardening (6 tasks)
+
+- Added tests for provider auth failure, timeout, rate-limit behavior, and empty but valid results with graceful fallback metadata
+- Centralized retry and timeout behavior in orchestration with consistent telemetry recording
+- Strengthened orchestrator failure-path tests covering sequential fallback, partial analysis, validation loops, and missing provider configuration
+
+#### Content Generation Hardening (6 tasks)
+
+- Defined explicit output contract expectations for each content-gen stage with versioned parsing assumptions
+- Added golden fixtures for backlog, angle, research-pack, scripting, packaging, and QC stages covering both happy-path and malformed inputs
+- Tightened fail-fast behavior so missing required fields on high-value stages cause clear errors rather than silent propagation
+
+#### CI/CD and Dashboard Reliability (8 tasks)
+
+- Added Python preflight CI workflow with lint, type check, and pytest subsets running on PRs and pushes
+- Added dashboard CI workflow enforcing `npm run lint` and `npm run build` with mocked `@smoke` Playwright checks
+- Stabilized dashboard smoke tests against mocked data for home, session, compare, and config surfaces
+- Added WebSocket resilience tests verifying dashboard usability under connection failures, reconnects, and partial event streams
+- Expanded mocked accessibility and contrast coverage across Research, Monitor, Compare, and Analytics surfaces with `npm run test:a11y` wired into CI and local preflight
+
+#### Documentation and Release Hygiene (4 tasks)
+
+- Removed drift between docs and CLI by aligning `README.md`, `docs/USAGE.md`, and `docs/README.md` with actual command registration and flags
+- Extended release docs with complete repeatable validation flow including Python and dashboard checks, changelog, version bump, and tag steps
+- Consolidated Python preflight, dashboard build, and essential smoke tests into one canonical `./scripts/preflight` command avoiding live API calls
+
 ### Removed
 
 - Removed completed dashboard-upgrade planning documents `docs/tasks/01-dashboard-visual-foundation.md` through `docs/tasks/10-settings-runtime-clarity.md` after consolidating their delivered work into this changelog
 - Removed previously completed task-planning documents from `docs/tasks/` after consolidating their delivered work into this changelog, including the dashboard-detail upgrade task pack
 - Removed completed dashboard-upgrade planning documents `docs/tasks/11-search-cache-operations.md` through `docs/tasks/19-design-system-extraction-and-hardening.md` after consolidating their delivered work into this changelog
 - Removed completed dashboard-upgrade planning documents `docs/tasks/20-trace-bundle-export-workspace.md` through `docs/tasks/29-dashboard-fixture-and-scenario-library.md` after consolidating their delivered work into this changelog
+- Removed completed "necessary 80%" task-pack planning documents `docs/tasks/30_snapshot_session_metadata_contract.md` through `docs/tasks/47_add_canonical_necessary_80_preflight.md` and `docs/tasks/80_20_necessary_work_task_set.md` after consolidating their delivered work into this changelog
 
 ## [0.1.0] - 2026-03-11
 
