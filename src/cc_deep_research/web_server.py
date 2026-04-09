@@ -2209,6 +2209,37 @@ def register_routes(app: FastAPI) -> None:
 
         return JSONResponse(content=case_report)
 
+    @app.get("/api/themes")
+    async def list_research_themes() -> JSONResponse:
+        """List available research themes for the dashboard.
+
+        Returns:
+            JSON response with list of themes including display names and descriptions.
+        """
+        themes = _get_research_theme_list()
+        return JSONResponse(content={"themes": themes, "total": len(themes)})
+
+    @app.get("/api/analytics")
+    async def get_analytics(
+        days_back: int = Query(default=30, ge=1, le=365, description="Days of history to analyze"),
+    ) -> JSONResponse:
+        """Get aggregate analytics data for operational insights.
+
+        Args:
+            days_back: Number of days to look back for analytics.
+
+        Returns:
+            JSON response with aggregate analytics metrics including:
+            - Summary totals (runs, completion rate, average duration)
+            - Status distribution counts
+            - Duration metrics by status
+            - Sources trend over time
+            - Daily volume breakdown
+            - Depth distribution
+        """
+        analytics = _query_analytics_data(days_back=days_back)
+        return JSONResponse(content=analytics)
+
 
 def _get_research_theme_list() -> list[dict[str, str]]:
     """Return list of available research themes with metadata."""
@@ -2226,17 +2257,6 @@ def _get_research_theme_list() -> list[dict[str, str]]:
         }
         for item in theme_info
     ]
-
-
-@app.get("/api/themes")
-async def list_research_themes() -> JSONResponse:
-    """List available research themes for the dashboard.
-
-    Returns:
-        JSON response with list of themes including display names and descriptions.
-    """
-    themes = _get_research_theme_list()
-    return JSONResponse(content={"themes": themes, "total": len(themes)})
 
 
 def _query_analytics_data(
@@ -2438,28 +2458,6 @@ def _query_analytics_data(
             for row in depth_dist
         ],
     }
-
-
-@app.get("/api/analytics")
-async def get_analytics(
-    days_back: int = Query(default=30, ge=1, le=365, description="Days of history to analyze"),
-) -> JSONResponse:
-    """Get aggregate analytics data for operational insights.
-
-    Args:
-        days_back: Number of days to look back for analytics.
-
-    Returns:
-        JSON response with aggregate analytics metrics including:
-        - Summary totals (runs, completion rate, average duration)
-        - Status distribution counts
-        - Duration metrics by status
-        - Sources trend over time
-        - Daily volume breakdown
-        - Depth distribution
-    """
-    analytics = _query_analytics_data(days_back=days_back)
-    return JSONResponse(content=analytics)
 
 
 def start_server(
