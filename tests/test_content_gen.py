@@ -8,6 +8,7 @@ import pytest
 from click.testing import CliRunner
 
 from cc_deep_research.cli import main
+from cc_deep_research.content_gen.agents.argument_map import ArgumentMapAgent, _parse_argument_map
 from cc_deep_research.content_gen.agents.angle import AngleAgent, _parse_angle_options
 from cc_deep_research.content_gen.agents.opportunity import OpportunityPlanningAgent
 from cc_deep_research.content_gen.agents.backlog import (
@@ -26,6 +27,7 @@ from cc_deep_research.content_gen.models import (
     CONTENT_GEN_STAGE_CONTRACTS,
     PIPELINE_STAGES,
     SCRIPTING_STEPS,
+    ArgumentMap,
     AngleDefinition,
     AngleOutput,
     AngleOption,
@@ -63,6 +65,7 @@ from cc_deep_research.content_gen.models import (
     StrategyMemory,
 )
 from cc_deep_research.content_gen.orchestrator import _format_research_context
+from cc_deep_research.content_gen.prompts import argument_map as argument_map_prompts
 from cc_deep_research.content_gen.prompts import angle as angle_prompts
 from cc_deep_research.content_gen.prompts import backlog as backlog_prompts
 from cc_deep_research.content_gen.prompts import opportunity as opportunity_prompts
@@ -153,6 +156,21 @@ class _FakeAngleAgent(AngleAgent):
         return self._response
 
 
+class _FakeArgumentMapAgent(ArgumentMapAgent):
+    def __init__(self, response: str) -> None:
+        self._response = response
+
+    async def _call_llm(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        temperature: float = 0.3,
+    ) -> str:
+        del system_prompt, user_prompt, temperature
+        return self._response
+
+
 class _FakeVisualAgent(VisualAgent):
     def __init__(self, response: str) -> None:
         self._response = response
@@ -226,6 +244,7 @@ def test_content_gen_stage_contract_registry_covers_core_prompt_stages() -> None
         "score_ideas": backlog_prompts,
         "generate_angles": angle_prompts,
         "build_research_pack": research_pack_prompts,
+        "build_argument_map": argument_map_prompts,
         "run_scripting": scripting_prompts,
         "visual_translation": visual_prompts,
         "production_brief": production_prompts,
@@ -253,6 +272,7 @@ def test_content_gen_stage_contract_registry_documents_parser_behavior() -> None
     """Registry entries should describe the intended parser strictness."""
     assert CONTENT_GEN_STAGE_CONTRACTS["generate_angles"].failure_mode == "fail_fast"
     assert CONTENT_GEN_STAGE_CONTRACTS["build_research_pack"].failure_mode == "tolerant"
+    assert CONTENT_GEN_STAGE_CONTRACTS["build_argument_map"].failure_mode == "fail_fast"
     assert CONTENT_GEN_STAGE_CONTRACTS["human_qc"].failure_mode == "human_gated"
 
 
@@ -269,6 +289,16 @@ def test_pipeline_context_default_values() -> None:
     assert ctx.scripting is None
     assert ctx.qc_gate is None
     assert ctx.current_stage == 0
+
+
+def test_argument_map_model_defaults_do_not_break_empty_instantiation() -> None:
+    """ArgumentMap should allow empty defaults so untouched pipeline context stays valid."""
+    result = ArgumentMap()
+
+    assert result.thesis == ""
+    assert result.proof_anchors == []
+    assert result.safe_claims == []
+    assert result.beat_claim_plan == []
 
 
 def test_pipeline_context_roundtrip() -> None:
@@ -2224,6 +2254,147 @@ def test_research_pack_golden_fixture_sparse_output_defaults_missing_sections() 
     assert result.findings[0].source_ids == ["src_01"]
     assert result.claims[0].source_ids == ["src_02"]
     assert result.uncertainty_flags[0].severity == ResearchSeverity.MEDIUM
+
+
+def test_argument_map_parser_happy_path_parses_cross_referenced_sections() -> None:
+    """Argument map output should preserve IDs and beat references."""
+    result = _parse_argument_map(
+        """thesis: Buyers decide whether your premium tier feels justified before they read the feature grid
+audience_belief_to_challenge: Better feature copy is the main lever on pricing conversion
+core_mechanism: Buyers anchor on tier comparison order and only then interpret features through that frame
+
+proof_anchors:
+---
+proof_id: proof_1
+summary: Buyers compare tier contrast before reading every feature line
+source_ids: src_01, src_02
+usage_note: Use this to reframe why copy tweaks underperform
+---
+proof_id: proof_2
+summary: Decoy tiers change perceived value by making one option feel like the sensible middle
+source_ids: src_03
+usage_note: Use as the concrete example beat
+
+counterarguments:
+---
+counterargument_id: counter_1
+counterargument: Sophisticated buyers still evaluate features in detail
+response: They do, but only after the initial anchor has shaped which features feel worth comparing
+response_proof_ids: proof_1
+
+safe_claims:
+---
+claim_id: claim_1
+claim: Pricing order changes what buyers notice first
+supporting_proof_ids: proof_1
+note: Keep it qualitative, not numeric
+---
+claim_id: claim_2
+claim: A decoy tier can make a target plan feel more reasonable
+supporting_proof_ids: proof_2
+note: Use as a mechanism explanation
+
+unsafe_claims:
+---
+claim_id: claim_unsafe_1
+claim: Reordering tiers lifts conversion by 23 percent
+supporting_proof_ids: proof_2
+note: Exact lift is unverified in the provided research
+
+beat_claim_plan:
+---
+beat_id: beat_1
+beat_name: Hook
+goal: Challenge the idea that copy is the first pricing lever to fix
+claim_ids: claim_1
+proof_anchor_ids: proof_1
+counterargument_ids:
+transition_note: Move from surface copy talk into buyer comparison behavior
+---
+beat_id: beat_2
+beat_name: Proof
+goal: Show the decoy effect example
+claim_ids: claim_2
+proof_anchor_ids: proof_2
+counterargument_ids: counter_1
+transition_note: Close by turning the insight into an audit action
+""",
+        "idea-1",
+        "angle-1",
+    )
+
+    assert result.idea_id == "idea-1"
+    assert result.angle_id == "angle-1"
+    assert result.thesis.startswith("Buyers decide whether your premium tier feels justified")
+    assert len(result.proof_anchors) == 2
+    assert result.safe_claims[0].supporting_proof_ids == ["proof_1"]
+    assert result.unsafe_claims[0].claim_id == "claim_unsafe_1"
+    assert result.counterarguments[0].response_proof_ids == ["proof_1"]
+    assert result.beat_claim_plan[1].counterargument_ids == ["counter_1"]
+
+
+def test_argument_map_parser_rejects_unknown_references() -> None:
+    """Cross-reference mistakes should raise a useful parsing error."""
+    with pytest.raises(ValueError, match="unknown identifiers: proof_missing"):
+        _parse_argument_map(
+            """thesis: Anchors beat copy tweaks
+audience_belief_to_challenge: Better copy always fixes pricing
+core_mechanism: Buyers compare options before parsing the full message
+
+proof_anchors:
+---
+proof_id: proof_1
+summary: Buyers compare tiers quickly
+source_ids: src_01
+usage_note: Use in the reframe
+
+safe_claims:
+---
+claim_id: claim_1
+claim: Tier order changes what buyers notice first
+supporting_proof_ids: proof_missing
+note: Directional only
+
+unsafe_claims:
+
+beat_claim_plan:
+---    
+beat_id: beat_1
+beat_name: Hook
+goal: Set up the false belief
+claim_ids: claim_1
+proof_anchor_ids: proof_1
+counterargument_ids:
+transition_note: Move into the mechanism
+""",
+            "idea-2",
+            "angle-2",
+        )
+
+
+@pytest.mark.asyncio
+async def test_argument_map_agent_build_fails_fast_without_proof_anchors() -> None:
+    """Agent should reject malformed output instead of returning an empty argument map."""
+    agent = _FakeArgumentMapAgent(
+        """thesis: Anchors matter more than copy
+audience_belief_to_challenge: More feature detail fixes pricing pages
+core_mechanism: Buyers judge the frame before the details
+
+safe_claims:
+---
+claim_id: claim_1
+claim: Buyers compare the order of tiers first
+supporting_proof_ids:
+note: Directional only
+"""
+    )
+
+    with pytest.raises(ValueError, match="missing at least one proof anchor"):
+        await agent.build(
+            BacklogItem(idea_id="idea-9", idea="pricing psychology"),
+            AngleOption(angle_id="angle-9", core_promise="Explain why anchors beat copy"),
+            ResearchPack(),
+        )
 
 
 @pytest.mark.asyncio

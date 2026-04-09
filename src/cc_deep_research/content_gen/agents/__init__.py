@@ -1,5 +1,6 @@
 """Content generation agents."""
 
+from cc_deep_research.content_gen.agents.argument_map import ArgumentMapAgent
 from cc_deep_research.content_gen.agents.angle import AngleAgent
 from cc_deep_research.content_gen.agents.backlog import BacklogAgent
 from cc_deep_research.content_gen.agents.opportunity import OpportunityPlanningAgent
@@ -14,6 +15,7 @@ from cc_deep_research.content_gen.agents.scripting import ScriptingAgent
 from cc_deep_research.content_gen.agents.visual import VisualAgent
 
 __all__ = [
+    "ArgumentMapAgent",
     "AngleAgent",
     "BacklogAgent",
     "OpportunityPlanningAgent",
