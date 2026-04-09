@@ -1,6 +1,6 @@
 """Data models for the content generation workflow.
 
-Contract Version: 1.0.0
+Contract Version: 1.1.0
 
 This module defines the data contracts for each pipeline stage. Each model
 represents the expected output format from its corresponding agent.
@@ -14,12 +14,15 @@ The canonical inventory of prompt/parser contracts lives in
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-CONTRACT_VERSION = "1.0.0"
+from cc_deep_research.models.search import QueryProvenance
+
+CONTRACT_VERSION = "1.1.0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,22 +142,21 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "build_research_pack": ContentGenStageContract(
         stage_name="build_research_pack",
         prompt_module="prompts/research_pack.py",
-        contract_version="1.0.0",
+        contract_version="1.1.0",
         parser_location="agents/research_pack.py::_parse_research_pack",
         output_model="ResearchPack",
-        format_notes="Named list sections with a trailing research_stop_reason field.",
+        format_notes=(
+            "Structured findings/claims/flag blocks reference source_ids from the "
+            "prompt-provided source catalog; the model retains backward-compatible "
+            "legacy list views for downstream consumers."
+        ),
         required_fields=(),
         expected_sections=(
-            "audience_insights",
-            "competitor_observations",
-            "key_facts",
-            "proof_points",
-            "examples",
-            "case_studies",
-            "gaps_to_exploit",
+            "findings",
+            "claims",
+            "counterpoints",
+            "uncertainty_flags",
             "assets_needed",
-            "claims_requiring_verification",
-            "unsafe_or_uncertain_claims",
             "research_stop_reason",
         ),
         failure_mode="tolerant",
@@ -488,6 +490,27 @@ class ContentExample(BaseModel):
     metrics_snapshot: dict[str, Any] = Field(default_factory=dict)
 
 
+class ExpertFramework(BaseModel):
+    """Reusable lens or framework that signals creator expertise."""
+
+    name: str = ""
+    summary: str = ""
+
+
+class ContrarianBelief(BaseModel):
+    """A viewpoint that challenges common but weak industry advice."""
+
+    belief: str = ""
+    rationale: str = ""
+
+
+class ProofRule(BaseModel):
+    """A durable rule for how evidence should be used in content."""
+
+    rule: str = ""
+    rationale: str = ""
+
+
 class StrategyMemory(BaseModel):
     """Persistent strategy memory (spec stage 0).
 
@@ -503,8 +526,43 @@ class StrategyMemory(BaseModel):
     platforms: list[str] = Field(default_factory=list)
     forbidden_claims: list[str] = Field(default_factory=list)
     proof_standards: list[str] = Field(default_factory=list)
+    signature_frameworks: list[ExpertFramework] = Field(default_factory=list)
+    contrarian_beliefs: list[ContrarianBelief] = Field(default_factory=list)
+    proof_rules: list[ProofRule] = Field(default_factory=list)
+    banned_tropes: list[str] = Field(default_factory=list)
+    expertise_edge: str = ""
     past_winners: list[ContentExample] = Field(default_factory=list)
     past_losers: list[ContentExample] = Field(default_factory=list)
+
+    @field_validator("signature_frameworks", mode="before")
+    @classmethod
+    def _coerce_signature_frameworks(cls, value: Any) -> Any:
+        if not isinstance(value, list):
+            return value
+        return [
+            item if not isinstance(item, str) else {"name": item}
+            for item in value
+        ]
+
+    @field_validator("contrarian_beliefs", mode="before")
+    @classmethod
+    def _coerce_contrarian_beliefs(cls, value: Any) -> Any:
+        if not isinstance(value, list):
+            return value
+        return [
+            item if not isinstance(item, str) else {"belief": item}
+            for item in value
+        ]
+
+    @field_validator("proof_rules", mode="before")
+    @classmethod
+    def _coerce_proof_rules(cls, value: Any) -> Any:
+        if not isinstance(value, list):
+            return value
+        return [
+            item if not isinstance(item, str) else {"rule": item}
+            for item in value
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -532,6 +590,9 @@ class OpportunityBrief(BaseModel):
     sub_angles: list[str] = Field(default_factory=list)
     research_hypotheses: list[str] = Field(default_factory=list)
     success_criteria: list[str] = Field(default_factory=list)
+    expert_take: str = ""
+    non_obvious_claims_to_test: list[str] = Field(default_factory=list)
+    genericity_risks: list[str] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -558,6 +619,9 @@ class BacklogItem(BaseModel):
     latest_score: int | None = None
     latest_recommendation: str = ""
     selection_reasoning: str = ""
+    expertise_reason: str = ""
+    genericity_risk: str = ""
+    proof_gap_note: str = ""
     source_theme: str = ""
     source_pipeline_id: str = ""
     created_at: str = ""
@@ -645,11 +709,136 @@ class AngleOutput(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class ResearchConfidence(StrEnum):
+    """Coarse confidence bucket for research evidence."""
+
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    UNKNOWN = "unknown"
+
+
+class ResearchFindingType(StrEnum):
+    """Structured qualitative finding categories."""
+
+    AUDIENCE_INSIGHT = "audience_insight"
+    COMPETITOR_OBSERVATION = "competitor_observation"
+    EXAMPLE = "example"
+    CASE_STUDY = "case_study"
+    GAP_TO_EXPLOIT = "gap_to_exploit"
+
+
+class ResearchClaimType(StrEnum):
+    """Structured claim categories for downstream scripting."""
+
+    KEY_FACT = "key_fact"
+    PROOF_POINT = "proof_point"
+
+
+class ResearchFlagType(StrEnum):
+    """Risk or uncertainty flag categories."""
+
+    VERIFICATION_REQUIRED = "verification_required"
+    UNSAFE_OR_UNCERTAIN = "unsafe_or_uncertain"
+
+
+class ResearchSeverity(StrEnum):
+    """Severity bucket for research risks."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class ResearchSource(BaseModel):
+    """Normalized source record retained from search retrieval."""
+
+    source_id: str = Field(default_factory=lambda: f"src_{uuid4().hex[:8]}")
+    url: str = ""
+    title: str = ""
+    provider: str = ""
+    query: str = ""
+    query_family: str = "baseline"
+    intent_tags: list[str] = Field(default_factory=list)
+    published_date: str | None = None
+    snippet: str = ""
+    query_provenance: list[QueryProvenance] = Field(default_factory=list)
+    source_metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _sync_query_provenance(self) -> ResearchSource:
+        if not self.query_provenance and self.query:
+            self.query_provenance = [
+                QueryProvenance(
+                    query=self.query,
+                    family=self.query_family or "baseline",
+                    intent_tags=list(self.intent_tags),
+                )
+            ]
+        elif self.query_provenance:
+            first_entry = self.query_provenance[0]
+            if not self.query:
+                self.query = first_entry.query
+            if not self.query_family:
+                self.query_family = first_entry.family
+            if not self.intent_tags:
+                self.intent_tags = list(first_entry.intent_tags)
+        return self
+
+
+class ResearchFinding(BaseModel):
+    """Qualitative observation that can still be tied back to sources."""
+
+    finding_id: str = Field(default_factory=lambda: f"finding_{uuid4().hex[:8]}")
+    finding_type: ResearchFindingType = ResearchFindingType.AUDIENCE_INSIGHT
+    summary: str = ""
+    source_ids: list[str] = Field(default_factory=list)
+    confidence: ResearchConfidence = ResearchConfidence.UNKNOWN
+    evidence_note: str = ""
+
+
+class ResearchClaim(BaseModel):
+    """Concrete claim that should later be mapped into beats and proofs."""
+
+    claim_id: str = Field(default_factory=lambda: f"claim_{uuid4().hex[:8]}")
+    claim_type: ResearchClaimType = ResearchClaimType.KEY_FACT
+    claim: str = ""
+    source_ids: list[str] = Field(default_factory=list)
+    confidence: ResearchConfidence = ResearchConfidence.UNKNOWN
+    mechanism: str = ""
+
+
+class ResearchCounterpoint(BaseModel):
+    """Counterevidence or caveat that keeps the script intellectually honest."""
+
+    counterpoint_id: str = Field(default_factory=lambda: f"counter_{uuid4().hex[:8]}")
+    summary: str = ""
+    why_it_matters: str = ""
+    source_ids: list[str] = Field(default_factory=list)
+    confidence: ResearchConfidence = ResearchConfidence.UNKNOWN
+
+
+class ResearchUncertaintyFlag(BaseModel):
+    """Claim-level uncertainty that should constrain scripting and QC."""
+
+    flag_id: str = Field(default_factory=lambda: f"flag_{uuid4().hex[:8]}")
+    flag_type: ResearchFlagType = ResearchFlagType.VERIFICATION_REQUIRED
+    claim: str = ""
+    reason: str = ""
+    severity: ResearchSeverity = ResearchSeverity.MEDIUM
+    source_ids: list[str] = Field(default_factory=list)
+
+
 class ResearchPack(BaseModel):
     """Compact research pack (spec stage 4)."""
 
     idea_id: str = ""
     angle_id: str = ""
+    supporting_sources: list[ResearchSource] = Field(default_factory=list)
+    findings: list[ResearchFinding] = Field(default_factory=list)
+    claims: list[ResearchClaim] = Field(default_factory=list)
+    counterpoints: list[ResearchCounterpoint] = Field(default_factory=list)
+    uncertainty_flags: list[ResearchUncertaintyFlag] = Field(default_factory=list)
     audience_insights: list[str] = Field(default_factory=list)
     competitor_observations: list[str] = Field(default_factory=list)
     key_facts: list[str] = Field(default_factory=list)
@@ -661,6 +850,163 @@ class ResearchPack(BaseModel):
     claims_requiring_verification: list[str] = Field(default_factory=list)
     unsafe_or_uncertain_claims: list[str] = Field(default_factory=list)
     research_stop_reason: str = ""
+
+    @model_validator(mode="after")
+    def _sync_structured_and_legacy_views(self) -> ResearchPack:
+        self.supporting_sources = _dedupe_research_sources(self.supporting_sources)
+
+        has_structured_records = any(
+            (
+                self.findings,
+                self.claims,
+                self.counterpoints,
+                self.uncertainty_flags,
+            )
+        )
+        if not has_structured_records:
+            self.findings = _legacy_findings_from_research_pack(self)
+            self.claims = _legacy_claims_from_research_pack(self)
+            self.uncertainty_flags = _legacy_uncertainty_flags_from_research_pack(self)
+
+        if self.findings or self.claims or self.uncertainty_flags:
+            self.audience_insights = _summaries_for_finding_type(
+                self.findings,
+                ResearchFindingType.AUDIENCE_INSIGHT,
+            )
+            self.competitor_observations = _summaries_for_finding_type(
+                self.findings,
+                ResearchFindingType.COMPETITOR_OBSERVATION,
+            )
+            self.examples = _summaries_for_finding_type(
+                self.findings,
+                ResearchFindingType.EXAMPLE,
+            )
+            self.case_studies = _summaries_for_finding_type(
+                self.findings,
+                ResearchFindingType.CASE_STUDY,
+            )
+            self.gaps_to_exploit = _summaries_for_finding_type(
+                self.findings,
+                ResearchFindingType.GAP_TO_EXPLOIT,
+            )
+            self.key_facts = _summaries_for_claim_type(
+                self.claims,
+                ResearchClaimType.KEY_FACT,
+            )
+            self.proof_points = _summaries_for_claim_type(
+                self.claims,
+                ResearchClaimType.PROOF_POINT,
+            )
+            self.claims_requiring_verification = _claims_for_flag_type(
+                self.uncertainty_flags,
+                ResearchFlagType.VERIFICATION_REQUIRED,
+            )
+            self.unsafe_or_uncertain_claims = _claims_for_flag_type(
+                self.uncertainty_flags,
+                ResearchFlagType.UNSAFE_OR_UNCERTAIN,
+            )
+        return self
+
+
+def _dedupe_research_sources(sources: list[ResearchSource]) -> list[ResearchSource]:
+    deduped: list[ResearchSource] = []
+    seen: set[tuple[str, str]] = set()
+    for source in sources:
+        key = (source.source_id, source.url)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(source)
+    return deduped
+
+
+def _summaries_for_finding_type(
+    findings: list[ResearchFinding],
+    finding_type: ResearchFindingType,
+) -> list[str]:
+    return [finding.summary for finding in findings if finding.finding_type == finding_type and finding.summary]
+
+
+def _summaries_for_claim_type(
+    claims: list[ResearchClaim],
+    claim_type: ResearchClaimType,
+) -> list[str]:
+    return [claim.claim for claim in claims if claim.claim_type == claim_type and claim.claim]
+
+
+def _claims_for_flag_type(
+    flags: list[ResearchUncertaintyFlag],
+    flag_type: ResearchFlagType,
+) -> list[str]:
+    return [flag.claim for flag in flags if flag.flag_type == flag_type and flag.claim]
+
+
+def _legacy_findings_from_research_pack(research_pack: ResearchPack) -> list[ResearchFinding]:
+    findings: list[ResearchFinding] = []
+    legacy_sections = (
+        (ResearchFindingType.AUDIENCE_INSIGHT, research_pack.audience_insights),
+        (ResearchFindingType.COMPETITOR_OBSERVATION, research_pack.competitor_observations),
+        (ResearchFindingType.EXAMPLE, research_pack.examples),
+        (ResearchFindingType.CASE_STUDY, research_pack.case_studies),
+        (ResearchFindingType.GAP_TO_EXPLOIT, research_pack.gaps_to_exploit),
+    )
+    for finding_type, entries in legacy_sections:
+        for summary in entries:
+            if summary:
+                findings.append(
+                    ResearchFinding(
+                        finding_type=finding_type,
+                        summary=summary,
+                    )
+                )
+    return findings
+
+
+def _legacy_claims_from_research_pack(research_pack: ResearchPack) -> list[ResearchClaim]:
+    claims: list[ResearchClaim] = []
+    legacy_sections = (
+        (ResearchClaimType.KEY_FACT, research_pack.key_facts),
+        (ResearchClaimType.PROOF_POINT, research_pack.proof_points),
+    )
+    for claim_type, entries in legacy_sections:
+        for claim in entries:
+            if claim:
+                claims.append(
+                    ResearchClaim(
+                        claim_type=claim_type,
+                        claim=claim,
+                    )
+                )
+    return claims
+
+
+def _legacy_uncertainty_flags_from_research_pack(
+    research_pack: ResearchPack,
+) -> list[ResearchUncertaintyFlag]:
+    flags: list[ResearchUncertaintyFlag] = []
+    legacy_sections = (
+        (
+            ResearchFlagType.VERIFICATION_REQUIRED,
+            ResearchSeverity.MEDIUM,
+            research_pack.claims_requiring_verification,
+        ),
+        (
+            ResearchFlagType.UNSAFE_OR_UNCERTAIN,
+            ResearchSeverity.HIGH,
+            research_pack.unsafe_or_uncertain_claims,
+        ),
+    )
+    for flag_type, severity, entries in legacy_sections:
+        for claim in entries:
+            if claim:
+                flags.append(
+                    ResearchUncertaintyFlag(
+                        flag_type=flag_type,
+                        claim=claim,
+                        severity=severity,
+                    )
+                )
+    return flags
 
 
 # ---------------------------------------------------------------------------

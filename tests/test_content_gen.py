@@ -19,7 +19,7 @@ from cc_deep_research.content_gen.agents.backlog import (
 )
 from cc_deep_research.content_gen.agents.packaging import PackagingAgent, _parse_platform_packages
 from cc_deep_research.content_gen.agents.qc import QCAgent, _parse_qc_gate
-from cc_deep_research.content_gen.agents.research_pack import _parse_research_pack
+from cc_deep_research.content_gen.agents.research_pack import ResearchPackAgent, _parse_research_pack
 from cc_deep_research.content_gen.agents.scripting import _STEP_HANDLERS, ScriptingAgent
 from cc_deep_research.content_gen.agents.visual import VisualAgent
 from cc_deep_research.content_gen.models import (
@@ -33,7 +33,9 @@ from cc_deep_research.content_gen.models import (
     BacklogOutput,
     BeatIntent,
     BeatIntentMap,
+    ContrarianBelief,
     CoreInputs,
+    ExpertFramework,
     HookSet,
     HumanQCGate,
     IdeaScores,
@@ -43,9 +45,16 @@ from cc_deep_research.content_gen.models import (
     PipelineContext,
     PipelineStageTrace,
     PlatformPackage,
+    ProofRule,
     PublishItem,
     QCResult,
+    ResearchClaimType,
+    ResearchConfidence,
+    ResearchFindingType,
+    ResearchFlagType,
     ResearchPack,
+    ResearchSeverity,
+    ResearchSource,
     SavedScriptRun,
     ScoringOutput,
     ScriptingContext,
@@ -67,6 +76,7 @@ from cc_deep_research.content_gen.prompts import scripting as scripting_prompts
 from cc_deep_research.content_gen.prompts import visual as visual_prompts
 from cc_deep_research.content_gen.prompts.backlog import build_backlog_user
 from cc_deep_research.llm.base import LLMProviderType, LLMResponse, LLMTransportType
+from cc_deep_research.models import QueryProvenance, SearchResult, SearchResultItem
 from tests.helpers.fixture_loader import load_content_gen_pipeline_smoke, load_text_fixture
 
 
@@ -285,6 +295,29 @@ def test_pipeline_context_roundtrip() -> None:
     assert restored.runner_up_idea_ids == ["idea-1"]
     assert len(restored.backlog.items) == 1
     assert restored.backlog.items[0].idea == "test idea"
+
+
+def test_strategy_memory_coerces_expert_fields_from_string_lists() -> None:
+    """String-based config input should coerce into the new expert strategy models."""
+    strategy = StrategyMemory(
+        signature_frameworks=["Jobs to be done"],
+        contrarian_beliefs=["Most buyers compare tier contrast before feature depth"],
+        proof_rules=["Prefer first-party examples over vague performance claims"],
+    )
+
+    assert strategy.signature_frameworks == [ExpertFramework(name="Jobs to be done", summary="")]
+    assert strategy.contrarian_beliefs == [
+        ContrarianBelief(
+            belief="Most buyers compare tier contrast before feature depth",
+            rationale="",
+        )
+    ]
+    assert strategy.proof_rules == [
+        ProofRule(
+            rule="Prefer first-party examples over vague performance claims",
+            rationale="",
+        )
+    ]
 
 
 def test_pipeline_stage_trace_defaults() -> None:
@@ -1512,6 +1545,77 @@ def test_format_research_context_includes_audience_insights_and_examples() -> No
     assert "Case 1" in formatted
 
 
+def test_research_pack_derives_legacy_views_from_structured_records() -> None:
+    """Structured research records should populate the old string-list summaries."""
+    research = ResearchPack(
+        supporting_sources=[
+            ResearchSource(
+                source_id="src_01",
+                url="https://example.com/pricing",
+                title="Pricing teardown",
+                query="pricing psychology",
+                query_family="evidence",
+            )
+        ],
+        findings=[
+            {
+                "finding_type": "audience_insight",
+                "summary": "Buyers compare tiers before reading long feature lists",
+                "source_ids": ["src_01"],
+                "confidence": "high",
+            },
+            {
+                "finding_type": "example",
+                "summary": "A three-tier page can frame the premium tier first",
+                "source_ids": ["src_01"],
+                "confidence": "medium",
+            },
+        ],
+        claims=[
+            {
+                "claim_type": "key_fact",
+                "claim": "Anchoring shapes willingness to pay before detailed evaluation",
+                "source_ids": ["src_01"],
+                "confidence": "high",
+            },
+            {
+                "claim_type": "proof_point",
+                "claim": "Order and framing influence perceived value",
+                "source_ids": ["src_01"],
+                "confidence": "high",
+            },
+        ],
+        uncertainty_flags=[
+            {
+                "flag_type": "verification_required",
+                "claim": "Any exact conversion-lift percentage",
+                "reason": "We only have directional support",
+                "severity": "medium",
+                "source_ids": ["src_01"],
+            }
+        ],
+    )
+
+    assert research.audience_insights == [
+        "Buyers compare tiers before reading long feature lists"
+    ]
+    assert research.examples == [
+        "A three-tier page can frame the premium tier first"
+    ]
+    assert research.key_facts == [
+        "Anchoring shapes willingness to pay before detailed evaluation"
+    ]
+    assert research.proof_points == [
+        "Order and framing influence perceived value"
+    ]
+    assert research.claims_requiring_verification == [
+        "Any exact conversion-lift percentage"
+    ]
+    assert research.supporting_sources[0].query_provenance == [
+        QueryProvenance(query="pricing psychology", family="evidence", intent_tags=[])
+    ]
+
+
 def test_step6_prompt_requires_single_hook_and_single_cta() -> None:
     """Drafting prompt should explicitly enforce a single hook and CTA."""
     assert "Use exactly one hook line and exactly one CTA line" in scripting_prompts.STEP6_SYSTEM
@@ -2085,6 +2189,13 @@ def test_research_pack_golden_fixture_happy_path_parses_sections() -> None:
     assert result.angle_id == "angle-1"
     assert len(result.audience_insights) == 2
     assert len(result.proof_points) == 2
+    assert len(result.findings) == 6
+    assert len(result.claims) == 4
+    assert len(result.counterpoints) == 1
+    assert len(result.uncertainty_flags) == 2
+    assert result.findings[0].finding_type == ResearchFindingType.AUDIENCE_INSIGHT
+    assert result.claims[0].claim_type == ResearchClaimType.KEY_FACT
+    assert result.claims[0].confidence == ResearchConfidence.HIGH
     assert result.assets_needed == [
         "Screenshot of a three-tier pricing page",
         "Simple annotated mock showing anchor placement",
@@ -2110,6 +2221,98 @@ def test_research_pack_golden_fixture_sparse_output_defaults_missing_sections() 
     ]
     assert result.competitor_observations == []
     assert result.claims_requiring_verification == ["Any statement about exact conversion lift"]
+    assert result.findings[0].source_ids == ["src_01"]
+    assert result.claims[0].source_ids == ["src_02"]
+    assert result.uncertainty_flags[0].severity == ResearchSeverity.MEDIUM
+
+
+@pytest.mark.asyncio
+async def test_research_pack_agent_build_retains_source_provenance() -> None:
+    """Search provenance should survive into the research pack and the synthesis prompt."""
+
+    class FakeProvider:
+        async def search(self, query: str, options: SearchResult) -> SearchResult:
+            del options
+            return SearchResult(
+                query=query,
+                provider="fake-search",
+                results=[
+                    SearchResultItem(
+                        url="https://example.com/pricing",
+                        title="Pricing psychology teardown",
+                        snippet="Buyers compare tiers quickly before reading everything.",
+                        source_metadata={"published_date": "2026-03-01"},
+                    )
+                ],
+            )
+
+    class FakeConfig:
+        content_gen = type("ContentGen", (), {"research_max_queries": 1})()
+        llm = type("LLM", (), {})()
+
+    class FakeResearchAgent(ResearchPackAgent):
+        def __init__(self) -> None:
+            self._config = FakeConfig()
+            self.last_user_prompt = ""
+
+        async def _call_llm(
+            self,
+            system_prompt: str,
+            user_prompt: str,
+            *,
+            temperature: float = 0.3,
+        ) -> str:
+            del system_prompt, temperature
+            self.last_user_prompt = user_prompt
+            return """findings:
+---
+finding_type: audience_insight
+summary: Buyers compare tiers before reading every feature
+source_ids: src_01
+confidence: high
+evidence_note: Strong match for the selected angle
+---
+
+claims:
+---
+claim_type: proof_point
+claim: Tier order shapes perceived value before detailed evaluation
+source_ids: src_01
+confidence: medium
+mechanism: Comparison happens before full checklist reading
+---
+
+uncertainty_flags:
+---
+flag_type: verification_required
+claim: Any exact percentage lift from reordering pricing cards
+reason: The source is directional, not causal proof
+severity: medium
+source_ids: src_01
+---
+
+assets_needed:
+- Pricing page screenshot
+
+research_stop_reason: Enough support for a qualitative teardown"""
+
+        def _get_providers(self) -> list:
+            return [FakeProvider()]
+
+    agent = FakeResearchAgent()
+    result = await agent.build(
+        BacklogItem(idea="pricing psychology", audience="B2B SaaS founders"),
+        AngleOption(core_promise="Show why tier order changes perceived value"),
+        max_queries=1,
+    )
+
+    assert "[src_01]" in agent.last_user_prompt
+    assert "query_family: audience_problem" in agent.last_user_prompt
+    assert result.supporting_sources[0].url == "https://example.com/pricing"
+    assert result.supporting_sources[0].query_family == "audience_problem"
+    assert result.findings[0].source_ids == ["src_01"]
+    assert result.claims[0].source_ids == ["src_01"]
+    assert result.uncertainty_flags[0].source_ids == ["src_01"]
 
 
 @pytest.mark.asyncio

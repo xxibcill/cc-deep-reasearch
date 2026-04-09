@@ -1,5 +1,7 @@
 # Task 02: Replace Flat Research Pack Lists With Structured Evidence
 
+Status: Done
+
 Goal:
 Upgrade the research pack contract from loose string lists to typed evidence records that downstream stages can reason over.
 
@@ -30,4 +32,3 @@ Validation:
 Out of scope:
 - Search query expansion
 - Orchestrator stage wiring
-

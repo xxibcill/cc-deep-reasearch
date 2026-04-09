@@ -1,27 +1,103 @@
-audience_insights:
-- Buyers want a fast way to compare tiers without reading feature grids line by line
-- Pricing anxiety spikes when the premium tier looks expensive before its context is clear
-competitor_observations:
-- Many SaaS pages list the middle tier first, which weakens anchor contrast
-- Strong performers explain the upgrade trigger before they explain every feature
-key_facts:
-- Anchoring changes perceived value when the higher-price option is framed first
-- Buyers compare relative differences more than absolute feature counts
-proof_points:
-- The decoy effect is strongest when one tier makes the target tier feel more reasonable
-- Order and framing influence willingness to pay before detailed evaluation
-examples:
-- A pricing page that surfaces the premium tier outcome before the checklist
-- A teardown showing how reordered plan cards changed demo quality
-case_studies:
-- A SaaS founder reduced discount requests after clarifying plan contrast
-gaps_to_exploit:
-- Few creators explain pricing psychology with concrete page examples
+findings:
+---
+finding_type: audience_insight
+summary: Buyers want a fast way to compare tiers without reading feature grids line by line
+source_ids: src_01, src_02
+confidence: high
+evidence_note: Matches the selected short-form teardown angle
+---
+---
+finding_type: audience_insight
+summary: Pricing anxiety spikes when the premium tier looks expensive before its context is clear
+source_ids: src_02
+confidence: medium
+evidence_note: Strong directional support
+---
+---
+finding_type: competitor_observation
+summary: Strong performers explain the upgrade trigger before they explain every feature
+source_ids: src_03
+confidence: medium
+evidence_note: Useful contrast with weaker competitor patterns
+---
+---
+finding_type: example
+summary: A pricing page that surfaces the premium tier outcome before the checklist
+source_ids: src_04
+confidence: medium
+evidence_note: Concrete visual example for the script
+---
+---
+finding_type: case_study
+summary: A SaaS founder reduced discount requests after clarifying plan contrast
+source_ids: src_05
+confidence: low
+evidence_note: Anecdotal but directionally useful
+---
+---
+finding_type: gap_to_exploit
+summary: Few creators explain pricing psychology with concrete page examples
+source_ids: src_03, src_04
+confidence: high
+evidence_note: Clear whitespace in current creator content
+---
+
+claims:
+---
+claim_type: key_fact
+claim: Anchoring changes perceived value when the higher-price option is framed first
+source_ids: src_01
+confidence: high
+mechanism: Buyers compare relative value before they inspect every feature
+---
+---
+claim_type: key_fact
+claim: Buyers compare relative differences more than absolute feature counts
+source_ids: src_01, src_02
+confidence: medium
+mechanism: Relative contrast simplifies fast evaluation
+---
+---
+claim_type: proof_point
+claim: The decoy effect is strongest when one tier makes the target tier feel more reasonable
+source_ids: src_01
+confidence: high
+mechanism: The comparison set changes what feels expensive
+---
+---
+claim_type: proof_point
+claim: Order and framing influence willingness to pay before detailed evaluation
+source_ids: src_02, src_03
+confidence: high
+mechanism: The first comparison anchors the rest of the page
+---
+
+counterpoints:
+---
+summary: Pricing psychology alone does not guarantee better conversion if plan positioning is unclear
+why_it_matters: The script should avoid overclaiming impact from one page change
+source_ids: src_05
+confidence: medium
+---
+
 assets_needed:
 - Screenshot of a three-tier pricing page
 - Simple annotated mock showing anchor placement
-claims_requiring_verification:
-- Any quantified lift claim tied to pricing page changes
-unsafe_or_uncertain_claims:
-- Do not imply anchoring guarantees revenue growth
+
+uncertainty_flags:
+---
+flag_type: verification_required
+claim: Any quantified lift claim tied to pricing page changes
+reason: The available evidence is directional and context-sensitive
+severity: medium
+source_ids: src_05
+---
+---
+flag_type: unsafe_or_uncertain
+claim: Do not imply anchoring guarantees revenue growth
+reason: The current source mix does not justify universal causal claims
+severity: high
+source_ids: src_05
+---
+
 research_stop_reason: Enough evidence to build a practical teardown without hard performance claims
