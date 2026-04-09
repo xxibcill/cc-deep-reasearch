@@ -1,6 +1,6 @@
 """Data models for the content generation workflow.
 
-Contract Version: 1.2.0
+Contract Version: 1.3.0
 
 This module defines the data contracts for each pipeline stage. Each model
 represents the expected output format from its corresponding agent.
@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from cc_deep_research.models.search import QueryProvenance
 
-CONTRACT_VERSION = "1.2.0"
+CONTRACT_VERSION = "1.3.0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,10 +189,14 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "run_scripting": ContentGenStageContract(
         stage_name="run_scripting",
         prompt_module="prompts/scripting.py",
-        contract_version="1.0.0",
+        contract_version="1.1.0",
         parser_location="agents/scripting.py::_STEP_HANDLERS and _extract_* helpers",
         output_model="ScriptingContext",
-        format_notes="Ten step-specific text contracts; some steps require exact headers, later drafting steps accept freeform script bodies.",
+        format_notes=(
+            "Ten step-specific text contracts; step 4 accepts either legacy "
+            "'beat: intent' lines or grounded beat blocks with claim/proof ids, "
+            "and later drafting steps accept freeform script bodies."
+        ),
         required_fields=(
             "Step 1: Topic/Outcome/Audience",
             "Step 2: Angle/Content Type/Core Tension",
@@ -352,8 +356,13 @@ class ScriptStructure(BaseModel):
 class BeatIntent(BaseModel):
     """Single beat with name and intent."""
 
+    beat_id: str = ""
     beat_name: str
     intent: str
+    claim_ids: list[str] = Field(default_factory=list)
+    proof_anchor_ids: list[str] = Field(default_factory=list)
+    counterargument_ids: list[str] = Field(default_factory=list)
+    transition_note: str = ""
 
 
 class BeatIntentMap(BaseModel):
@@ -439,6 +448,7 @@ class ScriptingContext(BaseModel):
     research_context: str = ""
     tone: str = ""
     cta: str = ""
+    argument_map: ArgumentMap | None = None
     core_inputs: CoreInputs | None = None
     angle: AngleDefinition | None = None
     structure: ScriptStructure | None = None
@@ -1391,6 +1401,8 @@ class StageTraceMetadata(BaseModel):
     degradation_reason: str = ""
     fact_count: int = 0
     proof_count: int = 0
+    claim_count: int = 0
+    unsafe_claim_count: int = 0
     cache_reused: bool = False
     step_count: int = 0
     llm_call_count: int = 0
@@ -1426,7 +1438,7 @@ class PipelineStageTrace(BaseModel):
 
 
 class PipelineContext(BaseModel):
-    """Accumulated state through the full 12-stage content pipeline.
+    """Accumulated state through the full 14-stage content pipeline.
 
     Each stage enriches the context with its output. Stages can be
     run independently by loading a previously saved context. The
@@ -1448,6 +1460,7 @@ class PipelineContext(BaseModel):
     runner_up_idea_ids: list[str] = Field(default_factory=list)
     angles: AngleOutput | None = None
     research_pack: ResearchPack | None = None
+    argument_map: ArgumentMap | None = None
     scripting: ScriptingContext | None = None
     visual_plan: VisualPlanOutput | None = None
     production_brief: ProductionBrief | None = None
@@ -1471,6 +1484,7 @@ PIPELINE_STAGES: list[str] = [
     "score_ideas",
     "generate_angles",
     "build_research_pack",
+    "build_argument_map",
     "run_scripting",
     "visual_translation",
     "production_brief",
@@ -1487,6 +1501,7 @@ PIPELINE_STAGE_LABELS: dict[str, str] = {
     "score_ideas": "Scoring ideas",
     "generate_angles": "Generating angles",
     "build_research_pack": "Building research pack",
+    "build_argument_map": "Building argument map",
     "run_scripting": "Running scripting pipeline",
     "visual_translation": "Translating to visuals",
     "production_brief": "Building production brief",

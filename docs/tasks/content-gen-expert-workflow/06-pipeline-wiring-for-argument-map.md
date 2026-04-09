@@ -1,5 +1,7 @@
 # Task 06: Insert Argument Map Into The Pipeline
 
+Status: Done
+
 Goal:
 Wire the new argument-map stage into the content pipeline and stage tracing.
 
@@ -31,4 +33,3 @@ Validation:
 Out of scope:
 - Scripting changes that consume the argument map
 - Dashboard UI work
-

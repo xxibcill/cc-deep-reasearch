@@ -1,5 +1,7 @@
 # Task 07: Ground Scripting In Argument Map And Proof Links
 
+Status: Done
+
 Goal:
 Make scripting consume explicit claims and proof anchors instead of a flattened research text blob.
 
@@ -31,4 +33,3 @@ Validation:
 Out of scope:
 - Evaluator scoring changes
 - Search query redesign
-
