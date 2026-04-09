@@ -12,8 +12,8 @@ Automate the existing preflight checks so reliability does not depend on manual 
 
 ## Primary Files
 
-- `.github/workflows/`
-- `docs/PREFLIGHT.md`
+- `.github/workflows/preflight.yml` - added lint and type check steps
+- `scripts/preflight` - added ruff check and mypy to python preflight
 
 ## Acceptance Criteria
 
@@ -22,7 +22,7 @@ Automate the existing preflight checks so reliability does not depend on manual 
 
 ## Status
 
-- [x] Done - added `preflight.yml` GitHub Actions workflow matching `docs/PREFLIGHT.md`, validated with 275 tests passing
+- [x] Done - added `preflight.yml` GitHub Actions workflow with lint + type check + pytest subsets, updated `scripts/preflight` to match. Validation: 275 tests passing (1 pre-existing failure unrelated to scope)
 
 ## Validation
 

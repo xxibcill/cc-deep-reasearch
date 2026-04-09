@@ -4,9 +4,10 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DASHBOARD_DIR="$ROOT_DIR/dashboard"
+SCRIPT_NAME="$(basename "$0")"
 
 usage() {
-    echo "Usage: preflight [options]"
+    echo "Usage: $SCRIPT_NAME [options]"
     echo ""
     echo "Options:"
     echo "  --python-only    Run only Python preflight checks"
@@ -14,32 +15,43 @@ usage() {
     echo "  --quick          Run quick core checks only (orchestrator)"
     echo "  --help           Show this help message"
     echo ""
-    echo "Default: Run both Python and Dashboard preflight checks"
+    echo "Default: Run the canonical maintenance preflight"
+}
+
+fail() {
+    echo "Error: $*" >&2
+    exit 1
+}
+
+log_section() {
+    echo "=== $1 ==="
 }
 
 run_python_preflight() {
-    echo "=== Running Python Preflight ==="
+    log_section "Running Python Preflight"
     cd "$ROOT_DIR"
+    uv run ruff check src/ tests/
+    uv run mypy src/
     uv run pytest tests/test_llm_analysis_client.py tests/test_models.py tests/test_reporter.py tests/test_tavily_provider.py tests/test_providers.py tests/test_orchestrator.py tests/test_orchestration.py tests/test_cli_research.py tests/test_research_run_service.py -v --tb=short
-    echo "=== Python Preflight Complete ==="
+    log_section "Python Preflight Complete"
 }
 
 run_dashboard_preflight() {
-    echo "=== Running Dashboard Build ==="
+    log_section "Running Dashboard Build"
     cd "$DASHBOARD_DIR"
     npm run build
-    echo "=== Dashboard Build Complete ==="
-    
-    echo "=== Running Dashboard Smoke Tests ==="
-    npm run test:e2e -- --grep "home page exposes|App loads" || true
-    echo "=== Dashboard Smoke Complete ==="
+    log_section "Dashboard Build Complete"
+
+    log_section "Running Dashboard Smoke Tests"
+    npm run test:e2e:smoke
+    log_section "Dashboard Smoke Complete"
 }
 
 run_quick_preflight() {
-    echo "=== Running Quick Preflight (Core Only) ==="
+    log_section "Running Quick Preflight (Core Only)"
     cd "$ROOT_DIR"
     uv run pytest tests/test_orchestrator.py tests/test_orchestration.py -v
-    echo "=== Quick Preflight Complete ==="
+    log_section "Quick Preflight Complete"
 }
 
 PYTHON_ONLY=false
@@ -72,6 +84,14 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if [[ "$PYTHON_ONLY" == true && "$DASHBOARD_ONLY" == true ]]; then
+    fail "--python-only and --dashboard-only cannot be combined"
+fi
+
+if [[ "$QUICK" == true && ("$PYTHON_ONLY" == true || "$DASHBOARD_ONLY" == true) ]]; then
+    fail "--quick cannot be combined with other modes"
+fi
+
 if [[ "$QUICK" == true ]]; then
     run_quick_preflight
 elif [[ "$PYTHON_ONLY" == true ]]; then
@@ -84,4 +104,4 @@ else
 fi
 
 echo ""
-echo "=== Preflight Complete ==="
+log_section "Preflight Complete"
