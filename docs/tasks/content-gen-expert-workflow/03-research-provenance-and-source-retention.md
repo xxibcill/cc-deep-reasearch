@@ -1,5 +1,7 @@
 # Task 03: Preserve Retrieval Provenance In Research Output
 
+Status: Done
+
 Goal:
 Stop collapsing search results into anonymous snippets. The research stage should retain enough source metadata to support expert claims.
 
@@ -29,4 +31,3 @@ Validation:
 Out of scope:
 - New argument-map stage
 - Search query family redesign
-

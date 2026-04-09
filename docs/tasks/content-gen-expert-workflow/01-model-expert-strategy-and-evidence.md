@@ -1,5 +1,7 @@
 # Task 01: Add Expert Strategy And Evidence Models
 
+Status: Done
+
 Goal:
 Extend the content-gen data contracts so later stages can express expertise, proof rules, and non-generic positioning.
 
@@ -30,4 +32,3 @@ Out of scope:
 - Research pack redesign
 - New pipeline stages
 - Prompt contract changes
-

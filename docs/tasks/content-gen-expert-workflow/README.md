@@ -10,9 +10,9 @@ Working rules:
 - Update tests for the files you touch when the task explicitly asks for it.
 
 Recommended order:
-1. `01-model-expert-strategy-and-evidence.md`
-2. `02-research-pack-structured-evidence.md`
-3. `03-research-provenance-and-source-retention.md`
+1. `01-model-expert-strategy-and-evidence.md` - Done
+2. `02-research-pack-structured-evidence.md` - Done
+3. `03-research-provenance-and-source-retention.md` - Done
 4. `04-argument-map-models-and-prompt.md`
 5. `05-argument-map-agent-and-parsing.md`
 6. `06-pipeline-wiring-for-argument-map.md`
@@ -36,4 +36,3 @@ Definition of "more expert" for this project:
 - Clear separation between supported claims and uncertain claims
 - Better mechanism-level reasoning in scripts
 - Less generic phrasing and fewer interchangeable takes
-
