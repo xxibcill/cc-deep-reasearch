@@ -47,7 +47,7 @@ def register_session_commands(cli: click.Group) -> None:
             archived_ids = store.get_archived_session_ids()
             all_sessions = store.list_sessions(limit=None)
             sessions = [s for s in all_sessions if s.get("session_id") in archived_ids]
-            sessions = sessions[offset:offset + limit] if limit else sessions[offset:]
+            sessions = sessions[offset : offset + limit] if limit else sessions[offset:]
         else:
             sessions = store.list_sessions(limit=limit, offset=offset)
         if not sessions:
@@ -151,7 +151,9 @@ def register_session_commands(cli: click.Group) -> None:
             raise click.Abort()
 
     @session.command("reconcile")
-    @click.option("--dry-run", is_flag=True, help="Show what would be cleaned up without making changes")
+    @click.option(
+        "--dry-run", is_flag=True, help="Show what would be cleaned up without making changes"
+    )
     @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
     def session_reconcile(dry_run: bool, as_json: bool) -> None:
         """Detect drift between saved sessions, telemetry, and DuckDB."""
@@ -244,6 +246,7 @@ def register_session_commands(cli: click.Group) -> None:
                     line = line.strip()
                     if line:
                         import json as json_module
+
                         entries.append(json_module.loads(line))
         except Exception as e:
             click.echo(f"Error reading audit log: {e}", err=True)
@@ -254,6 +257,7 @@ def register_session_commands(cli: click.Group) -> None:
 
         if as_json:
             import json as json_module
+
             click.echo(json_module.dumps(entries, indent=2))
             return
 
@@ -350,10 +354,7 @@ def register_session_commands(cli: click.Group) -> None:
         checkpoints_list_data = manifest.get("checkpoints", [])
 
         if phase:
-            checkpoints_list_data = [
-                cp for cp in checkpoints_list_data
-                if cp.get("phase") == phase
-            ]
+            checkpoints_list_data = [cp for cp in checkpoints_list_data if cp.get("phase") == phase]
 
         if not checkpoints_list_data:
             click.echo(f"No checkpoints found for session '{session_id}'.")
@@ -361,6 +362,7 @@ def register_session_commands(cli: click.Group) -> None:
 
         if as_json:
             import json as json_module
+
             click.echo(json_module.dumps(manifest, indent=2))
             return
 
@@ -402,11 +404,14 @@ def register_session_commands(cli: click.Group) -> None:
             raise click.Abort()
 
         if lineage:
-            lineage_data = query_checkpoint_lineage(session_id, checkpoint_id, base_dir=telemetry_dir)
+            lineage_data = query_checkpoint_lineage(
+                session_id, checkpoint_id, base_dir=telemetry_dir
+            )
             checkpoint["lineage"] = [cp.get("checkpoint_id") for cp in lineage_data]
 
         if as_json:
             import json as json_module
+
             click.echo(json_module.dumps(checkpoint, indent=2, default=str))
             return
 
@@ -475,7 +480,10 @@ def register_session_commands(cli: click.Group) -> None:
         if checkpoint_id is None:
             checkpoint = query_latest_resumable_checkpoint(session_id, base_dir=telemetry_dir)
             if checkpoint is None:
-                click.echo(f"Error: No resumable checkpoint available for session '{session_id}'.", err=True)
+                click.echo(
+                    f"Error: No resumable checkpoint available for session '{session_id}'.",
+                    err=True,
+                )
                 raise click.Abort()
             checkpoint_id = checkpoint["checkpoint_id"]
         else:
@@ -484,7 +492,9 @@ def register_session_commands(cli: click.Group) -> None:
                 click.echo(f"Error: Checkpoint '{checkpoint_id}' not found.", err=True)
                 raise click.Abort()
             if not checkpoint.get("resume_safe"):
-                click.echo(f"Error: Checkpoint '{checkpoint_id}' is not safe to resume from.", err=True)
+                click.echo(
+                    f"Error: Checkpoint '{checkpoint_id}' is not safe to resume from.", err=True
+                )
                 raise click.Abort()
 
         lineage = query_checkpoint_lineage(session_id, checkpoint_id, base_dir=telemetry_dir)
@@ -501,6 +511,7 @@ def register_session_commands(cli: click.Group) -> None:
 
         if as_json:
             import json as json_module
+
             click.echo(json_module.dumps(result, indent=2))
             return
 
@@ -517,7 +528,9 @@ def register_session_commands(cli: click.Group) -> None:
             for key in input_ref.keys():
                 click.echo(f"  - {key}")
 
-        click.echo("\nNote: Use the API endpoint POST /api/sessions/{session_id}/resume to execute resume.")
+        click.echo(
+            "\nNote: Use the API endpoint POST /api/sessions/{session_id}/resume to execute resume."
+        )
 
     @checkpoints.command("rerun")
     @click.argument("session_id", required=True)
@@ -552,6 +565,7 @@ def register_session_commands(cli: click.Group) -> None:
 
         if as_json:
             import json as json_module
+
             click.echo(json_module.dumps(result, indent=2))
             return
 
@@ -583,7 +597,9 @@ def register_session_commands(cli: click.Group) -> None:
                 else:
                     click.echo(f"  {key}: {value}")
 
-        click.echo("\nNote: Use the API endpoint POST /api/sessions/{session_id}/rerun-step to execute rerun.")
+        click.echo(
+            "\nNote: Use the API endpoint POST /api/sessions/{session_id}/rerun-step to execute rerun."
+        )
 
 
 __all__ = ["register_session_commands"]

@@ -478,6 +478,53 @@ class ResearchMonitor:
             },
         )
 
+    def record_timeout_policy(
+        self,
+        *,
+        scope: str,
+        timeout_seconds: float,
+        actor_id: str | None = None,
+        **metadata: Any,
+    ) -> str:
+        """Record the timeout policy used for a scoped orchestration step."""
+        return self.emit_decision_made(
+            decision_type="timeout_policy",
+            reason_code="timeout_policy",
+            chosen_option=f"{timeout_seconds:.3f}s",
+            inputs={
+                "scope": scope,
+                "timeout_seconds": timeout_seconds,
+                **metadata,
+            },
+            actor_id=actor_id,
+        )
+
+    def record_retry_decision(
+        self,
+        *,
+        task_id: str,
+        attempt: int,
+        max_attempts: int,
+        should_retry: bool,
+        reason_code: str,
+        actor_id: str | None = None,
+        **metadata: Any,
+    ) -> str:
+        """Record the retry decision made after a task failure."""
+        return self.emit_decision_made(
+            decision_type="retry",
+            reason_code=reason_code,
+            chosen_option="retry" if should_retry else "stop",
+            inputs={
+                "task_id": task_id,
+                "attempt": attempt,
+                "max_attempts": max_attempts,
+                "should_retry": should_retry,
+                **metadata,
+            },
+            actor_id=actor_id,
+        )
+
     def section(self, name: str) -> None:
         """Start a new section with a header."""
         if not self._enabled:

@@ -1,0 +1,8 @@
+---
+primary_hook: This block has no platform and should be ignored
+caption: Missing the required platform field
+---
+platform: linkedin
+primary_hook: Price objections often mean your anchor is invisible
+caption: Teams fix copy before they fix comparison framing.
+version_notes: Short text-post teaser

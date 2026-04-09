@@ -22,6 +22,7 @@ from .live import (
     query_session_checkpoints,
 )
 from .query import (
+    _load_dashboard_connection,
     query_dashboard_data,
     query_event_tree,
     query_events_by_parent,
@@ -31,6 +32,7 @@ from .query import (
 )
 
 __all__ = [
+    "_load_dashboard_connection",
     "delete_session_from_duckdb",
     "delete_telemetry_session",
     "get_default_dashboard_db_path",
