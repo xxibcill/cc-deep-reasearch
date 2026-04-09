@@ -1,5 +1,9 @@
 # Task 47: Add One Canonical Local "Necessary 80%" Preflight
 
+## Status
+
+- [x] Done - made `./scripts/preflight` the canonical maintenance preflight, aligned it with the mocked dashboard smoke alias, documented the one-command workflow in `docs/PREFLIGHT.md`, and validated the full sequence locally without live API calls.
+
 ## Goal
 
 Give contributors one command sequence that covers the maintenance-critical checks before merging.
