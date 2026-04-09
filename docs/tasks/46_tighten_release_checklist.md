@@ -1,5 +1,7 @@
 # Task 46: Tighten the Release Checklist
 
+**Status: Done**
+
 ## Goal
 
 Make releases repeatable and less dependent on tribal knowledge.
