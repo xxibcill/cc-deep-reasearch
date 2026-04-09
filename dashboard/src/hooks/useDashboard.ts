@@ -5,13 +5,41 @@ import {
   EventFilter,
   ViewMode,
   SessionListQueryState,
+  LiveStreamStatus,
 } from '@/types/telemetry';
 
-const defaultSessionListQuery: SessionListQueryState = {
+export const DEFAULT_SESSION_LIST_QUERY: SessionListQueryState = {
   search: '',
   status: '',
   activeOnly: false,
+  archivedOnly: false,
 };
+
+export const DEFAULT_EVENT_FILTERS: EventFilter = {
+  phase: [],
+  agent: [],
+  tool: [],
+  provider: [],
+  status: [],
+  eventTypes: [],
+  timeRange: null,
+};
+
+export const DEFAULT_LIVE_STREAM_STATUS: LiveStreamStatus = {
+  phase: 'idle',
+  connected: false,
+  reconnectAttempt: 0,
+  maxReconnectAttempts: 5,
+  nextRetryAt: null,
+  lastMessageAt: null,
+  lastEventAt: null,
+  lastHistoryAt: null,
+  lastDisconnectAt: null,
+  failureReason: null,
+  canReconnect: false,
+};
+
+export const MAX_BUFFERED_EVENTS = 4000;
 
 interface DashboardState {
   sessionId: string | null;
@@ -46,11 +74,14 @@ interface DashboardState {
 
   events: TelemetryEvent[];
   connected: boolean;
+  liveStreamStatus: LiveStreamStatus;
   selectedEvent: TelemetryEvent | null;
   replaceEvents: (events: TelemetryEvent[]) => void;
   appendEvent: (event: TelemetryEvent) => void;
   appendEvents: (events: TelemetryEvent[]) => void;
+  appendBufferedEvents: (events: TelemetryEvent[]) => void;
   setConnected: (connected: boolean) => void;
+  setLiveStreamStatus: (status: Partial<LiveStreamStatus>) => void;
   setSelectedEvent: (event: TelemetryEvent | null) => void;
   resetSessionState: () => void;
 
@@ -78,12 +109,17 @@ function sortEvents(events: TelemetryEvent[]): TelemetryEvent[] {
   });
 }
 
-function mergeEvents(existing: TelemetryEvent[], incoming: TelemetryEvent[]): TelemetryEvent[] {
+function mergeEvents(
+  existing: TelemetryEvent[],
+  incoming: TelemetryEvent[],
+  options?: { limit?: number }
+): TelemetryEvent[] {
   const byId = new Map(existing.map((event) => [event.eventId, event]));
   for (const event of incoming) {
     byId.set(event.eventId, event);
   }
-  return sortEvents(Array.from(byId.values())).slice(-4000);
+  const merged = sortEvents(Array.from(byId.values()));
+  return typeof options?.limit === 'number' ? merged.slice(-options.limit) : merged;
 }
 
 function mergeSessions(existing: Session[], incoming: Session[]): Session[] {
@@ -119,6 +155,7 @@ const useDashboardStore = create<DashboardState>((set) => ({
             sessionId: id,
             events: [],
             connected: false,
+            liveStreamStatus: DEFAULT_LIVE_STREAM_STATUS,
             selectedEvent: null,
           }
   ),
@@ -127,7 +164,7 @@ const useDashboardStore = create<DashboardState>((set) => ({
   sessionsLoadingMore: false,
   sessionsTotal: 0,
   sessionsNextCursor: null,
-  sessionListQuery: defaultSessionListQuery,
+  sessionListQuery: DEFAULT_SESSION_LIST_QUERY,
   setSessions: (sessions, options) =>
     set((state) => {
       const nextSessions = options?.append ? mergeSessions(state.sessions, sessions) : sessions;
@@ -209,6 +246,7 @@ const useDashboardStore = create<DashboardState>((set) => ({
 
   events: [],
   connected: false,
+  liveStreamStatus: DEFAULT_LIVE_STREAM_STATUS,
   selectedEvent: null,
   replaceEvents: (events) => set({ events: sortEvents(events) }),
   appendEvent: (event) =>
@@ -216,29 +254,40 @@ const useDashboardStore = create<DashboardState>((set) => ({
       if (state.events.some((existing) => existing.eventId === event.eventId)) {
         return {};
       }
-      return { events: mergeEvents(state.events, [event]) };
+      return {
+        events: mergeEvents(state.events, [event], {
+          limit: MAX_BUFFERED_EVENTS,
+        }),
+      };
     }),
   appendEvents: (events) =>
     set((state) => ({ events: mergeEvents(state.events, events) })),
+  appendBufferedEvents: (events) =>
+    set((state) => ({
+      events: mergeEvents(state.events, events, {
+        limit: MAX_BUFFERED_EVENTS,
+      }),
+    })),
   setConnected: (connected) => set({ connected }),
+  setLiveStreamStatus: (status) =>
+    set((state) => ({
+      liveStreamStatus: { ...state.liveStreamStatus, ...status },
+      connected:
+        Object.prototype.hasOwnProperty.call(status, 'connected')
+          ? Boolean(status.connected)
+          : state.connected,
+    })),
   setSelectedEvent: (selectedEvent) => set({ selectedEvent }),
   resetSessionState: () =>
     set({
       sessionId: null,
       events: [],
       connected: false,
+      liveStreamStatus: DEFAULT_LIVE_STREAM_STATUS,
       selectedEvent: null,
       viewMode: 'graph',
     }),
-  filters: {
-    phase: [],
-    agent: [],
-    tool: [],
-    provider: [],
-    status: [],
-    eventTypes: [],
-    timeRange: null,
-  },
+  filters: DEFAULT_EVENT_FILTERS,
   setFilters: (filters) => set((state) => ({
     filters: { ...state.filters, ...filters }
   })),
