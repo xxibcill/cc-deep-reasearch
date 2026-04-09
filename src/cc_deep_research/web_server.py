@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -223,10 +224,11 @@ def create_app(
         pipeline_jobs=PipelineRunJobRegistry(),
     )
 
-    # Configure CORS
+    # Configure CORS - allow localhost for development, use environment variable in production
+    cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:8080").split(",")
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # In production, restrict to specific origins
+        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -858,7 +860,7 @@ def register_routes(app: FastAPI) -> None:
 
         session_store = SessionStore()
         saved_sessions = session_store.list_sessions()
-        archived_session_ids = session_store.get_archived_session_ids() if archived_only else set()
+        archived_session_ids = session_store.get_archived_session_ids()
         saved_by_id = {s["session_id"]: s for s in saved_sessions}
 
         sessions_by_id: dict[str, dict[str, Any]] = {}
@@ -953,7 +955,7 @@ def register_routes(app: FastAPI) -> None:
             s
             for s in sessions
             if archived_only
-            == (s.get("archived") or session_store.is_session_archived(s.get("session_id", "")))
+            == (s.get("archived") or s.get("session_id", "") in archived_session_ids)
         ]
 
         def sort_key(s: dict[str, Any]) -> Any:
@@ -1066,8 +1068,7 @@ def register_routes(app: FastAPI) -> None:
                 "latest_resume_safe_checkpoint_id": checkpoint_manifest.get(
                     "latest_resume_safe_checkpoint_id"
                 ),
-                "resume_available": checkpoint_manifest.get("latest_resume_safe_checkpoint_id")
-                is not None,
+                "resume_available": checkpoint_manifest.get("latest_resume_safe_checkpoint_id") is not None,
             }
 
         return JSONResponse(content=response_content)
@@ -1566,8 +1567,7 @@ def register_routes(app: FastAPI) -> None:
                 "provenance": "derived",
                 "count": len(checkpoint_manifest.get("checkpoints", [])),
                 "latest_checkpoint_id": checkpoint_manifest.get("latest_checkpoint_id"),
-                "resume_available": checkpoint_manifest.get("latest_resume_safe_checkpoint_id")
-                is not None,
+                "resume_available": checkpoint_manifest.get("latest_resume_safe_checkpoint_id") is not None,
                 "description": "Session checkpoints for potential resume",
             }
         else:
@@ -1756,14 +1756,13 @@ def register_routes(app: FastAPI) -> None:
                 status_code=409,
             )
 
-        # Note: Actual rerun execution would require reconstructing inputs
-        # and executing the step. This endpoint validates and prepares for rerun.
+        # Rerun execution is not yet implemented - return pending status
         result = RerunStepResult(
-            success=True,
+            success=False,
             session_id=session_id,
             checkpoint_id=checkpoint_id,
-            output_match=None,  # Would be determined after actual rerun
-            message=f"Checkpoint {checkpoint_id} is ready for rerun. Input refs: {checkpoint.get('input_ref')}",
+            output_match=None,
+            message=f"Rerun execution is not yet implemented. Checkpoint {checkpoint_id} is valid and ready. Input refs: {checkpoint.get('input_ref')}",
         )
 
         return JSONResponse(content=result.model_dump(mode="json"))
@@ -2139,7 +2138,7 @@ def register_routes(app: FastAPI) -> None:
 
     def _get_benchmark_runs_dir() -> Path:
         """Return the default benchmark runs directory."""
-        return Path("benchmark_runs")
+        return Path(os.environ.get("BENCHMARK_RUNS_DIR", "benchmark_runs"))
 
     def _list_benchmark_runs() -> list[dict[str, Any]]:
         """List available benchmark runs from the filesystem."""

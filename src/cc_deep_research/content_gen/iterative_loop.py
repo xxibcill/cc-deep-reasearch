@@ -29,6 +29,21 @@ class LoopConfig:
     quality_threshold: float = 0.75
     convergence_threshold: float = 0.05
 
+    def validate(self) -> None:
+        """Validate configuration bounds.
+
+        Raises:
+            ValueError: If any configuration value is out of valid range.
+        """
+        if not isinstance(self.max_iterations, int) or self.max_iterations < 1:
+            raise ValueError(f"max_iterations must be >= 1, got {self.max_iterations}")
+        if self.max_iterations > 10:
+            raise ValueError(f"max_iterations must be <= 10, got {self.max_iterations}")
+        if not (0.0 <= self.quality_threshold <= 1.0):
+            raise ValueError(f"quality_threshold must be between 0.0 and 1.0, got {self.quality_threshold}")
+        if not (0.0 <= self.convergence_threshold <= 0.5):
+            raise ValueError(f"convergence_threshold must be between 0.0 and 0.5, got {self.convergence_threshold}")
+
 
 @dataclass
 class LoopResult(Generic[T]):
@@ -67,6 +82,7 @@ async def run_evaluation_loop(
     Returns:
         LoopResult with the final artifact and full iteration state history.
     """
+    config.validate()
     iter_state = IterationState(max_iterations=config.max_iterations)
     previous_feedback = ""
     artifact: T | None = None
