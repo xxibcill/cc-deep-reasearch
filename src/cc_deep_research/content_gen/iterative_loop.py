@@ -106,6 +106,8 @@ def should_stop(
     config: LoopConfig,
 ) -> bool:
     """Decide whether to stop iterating."""
+    if quality_eval.has_blocking_claim_issues and iter_state.current_iteration < iter_state.max_iterations:
+        return False
     if quality_eval.passes_threshold:
         return True
     if iter_state.current_iteration >= iter_state.max_iterations:
@@ -121,12 +123,21 @@ def should_stop(
 def format_feedback(quality_eval: QualityEvaluation) -> str:
     """Format evaluation into a feedback string for the next iteration."""
     parts: list[str] = []
+    if quality_eval.unsupported_claims:
+        parts.append("Unsupported claims to remove, qualify, or prove:")
+        parts.extend(f"- {claim}" for claim in quality_eval.unsupported_claims)
+    if quality_eval.evidence_actions_required:
+        parts.append("Evidence actions required:")
+        parts.extend(f"- {action}" for action in quality_eval.evidence_actions_required)
     if quality_eval.critical_issues:
         parts.append("Critical issues:")
         parts.extend(f"- {i}" for i in quality_eval.critical_issues)
     if quality_eval.improvement_suggestions:
         parts.append("Improvement suggestions:")
         parts.extend(f"- {s}" for s in quality_eval.improvement_suggestions)
+    if quality_eval.research_gaps_identified:
+        parts.append("Research gaps identified:")
+        parts.extend(f"- {gap}" for gap in quality_eval.research_gaps_identified)
     if quality_eval.rationale:
         parts.append(f"Rationale: {quality_eval.rationale}")
     return "\n".join(parts)

@@ -17,8 +17,8 @@ Recommended order:
 5. `05-argument-map-agent-and-parsing.md` - Done
 6. `06-pipeline-wiring-for-argument-map.md` - Done
 7. `07-scripting-grounding-with-proof-links.md` - Done
-8. `08-quality-evaluator-expert-metrics.md`
-9. `09-qc-claim-safety-review.md`
+8. `08-quality-evaluator-expert-metrics.md` - Done
+9. `09-qc-claim-safety-review.md` - Done
 10. `10-search-query-families-and-freshness.md`
 11. `11-tests-and-contract-docs.md`
 12. `12-workflow-resume-and-idea-bypass.md`
