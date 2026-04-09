@@ -319,12 +319,12 @@ export function StartResearchForm() {
 
         <Alert variant="info" className="rounded-[1rem]">
           <AlertDescription className="space-y-1">
-            <p className="font-medium text-foreground">{selectedPreset.label}</p>
-            <p>
+            <div className="font-medium text-foreground">{selectedPreset.label}</div>
+            <div>
               Default plan: <span className="capitalize">{selectedPreset.depth}</span> depth with a{' '}
               {selectedPreset.minSources}-source floor.
               {presetTuned ? ' Research plan details have been customized from the preset.' : ''}
-            </p>
+            </div>
           </AlertDescription>
         </Alert>
       </div>

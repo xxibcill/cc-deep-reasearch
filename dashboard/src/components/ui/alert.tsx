@@ -36,6 +36,6 @@ export function AlertTitle({ className, ...props }: React.HTMLAttributes<HTMLHea
 export function AlertDescription({
   className,
   ...props
-}: React.HTMLAttributes<HTMLParagraphElement>) {
-  return <p className={cn('text-sm leading-relaxed opacity-90', className)} {...props} />
+}: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('text-sm leading-relaxed opacity-90', className)} {...props} />
 }
