@@ -30,6 +30,14 @@ def load_fixture(fixture_name: str) -> dict[str, Any]:
         return json.load(f)  # type: ignore[no-any-return]
 
 
+def load_text_fixture(fixture_name: str) -> str:
+    """Load a text fixture file by name."""
+    fixture_path = FIXTURES_DIR / fixture_name
+    if not fixture_path.exists():
+        raise FileNotFoundError(f"Fixture not found: {fixture_name}")
+    return fixture_path.read_text(encoding="utf-8")
+
+
 def load_tavily_search_healthy() -> dict[str, Any]:
     """Load the healthy Tavily search response fixture."""
     return load_fixture("tavily_search_healthy")
@@ -55,21 +63,30 @@ def load_analysis_cross_reference() -> dict[str, Any]:
     return load_fixture("analysis_cross_reference")
 
 
+def load_content_gen_pipeline_smoke() -> dict[str, Any]:
+    """Load the fixture-backed content-gen pipeline smoke payload."""
+    return load_fixture("content_gen_pipeline_smoke")
+
+
 def list_fixtures() -> list[str]:
     """List all available fixture files.
 
     Returns:
         List of fixture file names.
     """
-    return sorted(f.name for f in FIXTURES_DIR.glob("*.json"))
+    return sorted(
+        f.name for f in FIXTURES_DIR.iterdir() if f.is_file() and f.suffix in {".json", ".txt"}
+    )
 
 
 __all__ = [
     "load_fixture",
+    "load_text_fixture",
     "load_tavily_search_healthy",
     "load_tavily_search_malformed",
     "load_analysis_healthy",
     "load_analysis_malformed",
     "load_analysis_cross_reference",
+    "load_content_gen_pipeline_smoke",
     "list_fixtures",
 ]
