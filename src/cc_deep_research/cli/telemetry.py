@@ -44,9 +44,7 @@ def register_telemetry_commands(cli: click.Group) -> None:
             )
         except RuntimeError as error:
             raise click.ClickException(str(error)) from error
-        click.echo(
-            f"Ingested {result['sessions']} session summaries and {result['events']} events"
-        )
+        click.echo(f"Ingested {result['sessions']} session summaries and {result['events']} events")
 
     @telemetry.command("dashboard")
     @click.option(

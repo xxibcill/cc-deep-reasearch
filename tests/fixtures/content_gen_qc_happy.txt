@@ -1,0 +1,14 @@
+hook_strength: strong
+clarity_issues:
+- The payoff line could land one beat earlier
+factual_issues:
+- Verify that the example pricing page is a public asset
+visual_issues:
+- Add a clearer plan-card zoom when the premium tier is introduced
+audio_issues:
+- Tighten the pause before the CTA
+caption_issues:
+- Remove one repeated phrase from the second sentence
+must_fix_items:
+- Confirm the screenshot can be shown on camera
+- Replace the vague "works better" claim with a concrete explanation

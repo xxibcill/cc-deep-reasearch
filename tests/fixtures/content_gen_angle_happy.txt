@@ -1,0 +1,20 @@
+---
+target_audience: B2B startup marketers revising pricing pages
+viewer_problem: They keep polishing copy while buyers still compare only price
+core_promise: Show the framing change that makes a higher tier feel justified
+primary_takeaway: Anchors shape perceived value before feature details matter
+lens: buyer psychology teardown
+format: contrarian breakdown
+tone: sharp but practical
+cta: Audit your highest-priced plan against the decoy effect
+why_this_version_should_exist: It turns abstract pricing theory into a concrete page review
+---
+target_audience: SaaS founders with discount-heavy sales cycles
+viewer_problem: Discounts are masking weak positioning
+core_promise: Explain how to tell when a pricing objection is really a packaging objection
+primary_takeaway: Repeated discounting usually means the offer ladder is unclear
+lens: sales pattern diagnosis
+format: tactical explainer
+tone: direct and diagnostic
+cta: Pull three lost-call notes and tag the objection pattern
+why_this_version_should_exist: It links pricing strategy to day-to-day deal review
