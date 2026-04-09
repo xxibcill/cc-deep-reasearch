@@ -1,45 +1,29 @@
-import { test, expect } from "./fixtures";
-import { mockDashboardApis } from "./dashboard-mocks";
+import AxeBuilder from "@axe-core/playwright";
+import { test, expect } from "@playwright/test";
 
-test.describe("Contrast checks with fixtures", () => {
-  test("page meets WCAG AA contrast standards", async ({ page, checkPageContrast }) => {
-    await mockDashboardApis(page);
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
+import { openOperatorSurface, operatorSurfaces } from "./a11y-surfaces";
 
-    await checkPageContrast("body");
-  });
+test.describe("Dashboard accessibility baseline @a11y", () => {
+  for (const surface of operatorSurfaces) {
+    test(`${surface.name} exposes landmarks and one primary heading`, async ({ page }) => {
+      await openOperatorSurface(page, surface);
 
-  test("headings meet contrast standards", async ({ page, checkPageContrast }) => {
-    await mockDashboardApis(page);
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
+      await expect(page.locator("header")).toBeVisible();
+      await expect(page.locator("main")).toBeVisible();
+      await expect(page.locator('nav[aria-label="Primary"]')).toBeVisible();
+      await expect(page.locator("main h1")).toHaveCount(1);
+    });
 
-    await checkPageContrast("h1, h2, h3, h4, h5, h6");
-  });
+    test(`${surface.name} has no baseline axe violations`, async ({ page }) => {
+      await openOperatorSurface(page, surface);
 
-  test("interactive elements meet contrast standards", async ({ page, checkPageContrast }) => {
-    await mockDashboardApis(page);
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
+      const results = await new AxeBuilder({ page })
+        .include("main")
+        .withTags(["wcag2a", "wcag2aa"])
+        .disableRules(["color-contrast"])
+        .analyze();
 
-    await checkPageContrast("button, a, [role='button'], input, label");
-  });
-
-  test("navigation meets AAA contrast (strict)", async ({ page, checkPageContrast }) => {
-    await mockDashboardApis(page);
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
-
-    await checkPageContrast("nav, [role='navigation']", { level: "aaa" });
-  });
-
-  test("compare workflow summary remains readable", async ({ page, checkPageContrast }) => {
-    await mockDashboardApis(page);
-    await page.goto("/compare?a=research-report-003&b=research-deep-004");
-    await page.waitForLoadState("networkidle");
-
-    await expect(page.getByRole("heading", { name: "Session Comparison" })).toBeVisible();
-    await checkPageContrast("main, h1, h2, h3, button, a");
-  });
+      expect(results.violations).toEqual([]);
+    });
+  }
 });

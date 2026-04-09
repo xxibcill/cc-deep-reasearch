@@ -11,7 +11,7 @@ usage() {
     echo ""
     echo "Options:"
     echo "  --python-only    Run only Python preflight checks"
-    echo "  --dashboard-only Run only dashboard build and smoke tests"
+    echo "  --dashboard-only Run only dashboard build, smoke tests, and accessibility checks"
     echo "  --quick          Run quick core checks only (orchestrator)"
     echo "  --help           Show this help message"
     echo ""
@@ -43,6 +43,10 @@ run_dashboard_preflight() {
     log_section "Running Dashboard Smoke Tests"
     npm run test:e2e:smoke
     log_section "Dashboard Smoke Complete"
+
+    log_section "Running Dashboard Accessibility Baseline"
+    npm run test:a11y
+    log_section "Dashboard Accessibility Complete"
 }
 
 run_quick_preflight() {

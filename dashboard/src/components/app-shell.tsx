@@ -32,6 +32,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <>
         <CommandPalette />
         <KeyboardHint />
+        <Link
+          href="#main-content"
+          className="sr-only fixed left-4 top-4 z-[60] rounded-md bg-background px-3 py-2 text-sm font-medium text-foreground shadow-lg focus:not-sr-only focus:outline-none focus:ring-2 focus:ring-ring"
+        >
+          Skip to main content
+        </Link>
         <header className="sticky top-0 z-50 border-b border-border/70 bg-background/82 backdrop-blur-xl">
           <div className="mx-auto max-w-content px-page-x">
             <div className="flex flex-col gap-4 py-4 lg:flex-row lg:items-end lg:justify-between">
@@ -90,7 +96,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </header>
-        {children}
+        <main id="main-content">{children}</main>
       </>
     </NotificationProvider>
   );

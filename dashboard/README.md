@@ -63,6 +63,22 @@ NEXT_PUBLIC_CC_WS_BASE_URL=ws://localhost:8000/ws
 npm run build
 \`\`\`
 
+## Testing
+
+Run the mocked dashboard smoke checks:
+
+\`\`\`bash
+npm run test:e2e:smoke
+\`\`\`
+
+Run the accessibility regression baseline used by CI and local preflight:
+
+\`\`\`bash
+npm run test:a11y
+\`\`\`
+
+The accessibility baseline runs mocked Playwright coverage in Chromium against the primary operator surfaces: Research, Monitor, Compare, and Analytics.
+
 ## Technology Stack
 
 - **Next.js 14**: React framework with App Router

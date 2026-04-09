@@ -121,7 +121,12 @@ export default function AnalyticsPage() {
 
           <div className="flex items-center gap-2 rounded-full border border-border/70 bg-surface/75 px-4 py-2 text-sm shadow-card">
             <Calendar className="h-4 w-4 text-muted-foreground" />
+            <label htmlFor="analytics-range" className="sr-only">
+              Analytics time window
+            </label>
             <select
+              id="analytics-range"
+              aria-label="Analytics time window"
               value={daysBack}
               onChange={(e) => setDaysBack(Number(e.target.value))}
               className="bg-transparent text-foreground focus:outline-none"

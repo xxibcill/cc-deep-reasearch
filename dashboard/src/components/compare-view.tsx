@@ -500,7 +500,7 @@ export function CompareView({ sessionIdA, sessionIdB }: CompareViewProps) {
             <Badge variant="outline">Loading comparison</Badge>
           </div>
           <div>
-            <CardTitle className="text-[1.75rem]">Session Comparison</CardTitle>
+            <CardTitle as="h1" className="text-[1.75rem]">Session Comparison</CardTitle>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
               Loading the baseline, comparison session, and recent-run context.
             </p>
@@ -571,7 +571,7 @@ export function CompareView({ sessionIdA, sessionIdB }: CompareViewProps) {
                 </Badge>
               </div>
               <div>
-                <CardTitle className="text-[1.75rem]">Session Comparison</CardTitle>
+                <CardTitle as="h1" className="text-[1.75rem]">Session Comparison</CardTitle>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
                   Compare a baseline session against a second run without decoding raw telemetry by
                   hand first. This view now scores the baseline context, summarizes likely impact,
