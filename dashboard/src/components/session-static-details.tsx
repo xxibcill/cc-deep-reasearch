@@ -1,13 +1,18 @@
 'use client';
 
-import { Activity, CalendarClock, Clock3, FileText, HardDrive, Search } from 'lucide-react';
+import Link from 'next/link';
+import { useState } from 'react';
+import { ArrowRight, Archive, CheckCircle2, Clock3, Database, FileText, Home, Radar, Search, XCircle } from 'lucide-react';
 
+import { ResearchContentActions } from '@/components/research-content-actions';
 import { Badge } from '@/components/ui/badge';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { runStatusBadgeVariant } from '@/lib/session-route';
+import { MetricCard } from '@/components/ui/metric-card';
+import { buildResearchContentBridgePayloadFromSession } from '@/lib/research-content-bridge';
 import type { ResearchRunStatus, Session } from '@/types/telemetry';
 
-interface SessionStaticDetailsProps {
+interface SessionOverviewProps {
   sessionId: string;
   runStatus: ResearchRunStatus | null;
   sessionSummary: Session | null;
@@ -40,176 +45,373 @@ function formatDuration(totalTimeMs: number | null): string {
 
 function formatDepth(depth: string | null): string {
   if (!depth) {
-    return 'Unknown';
+    return 'Standard';
   }
 
   return depth.charAt(0).toUpperCase() + depth.slice(1);
 }
 
-function MetricCard({
-  title,
-  value,
-  icon: Icon,
+function StatusIndicator({ status }: { status: ResearchRunStatus | null }) {
+  const statusConfig: Record<string, { icon: typeof CheckCircle2; label: string; description: string }> = {
+    running: {
+      icon: Radar,
+      label: 'Running',
+      description: 'Research is actively collecting sources and analyzing findings.',
+    },
+    completed: {
+      icon: CheckCircle2,
+      label: 'Completed',
+      description: 'Research finished successfully. A report is available.',
+    },
+    failed: {
+      icon: XCircle,
+      label: 'Failed',
+      description: 'Research encountered an error and could not complete.',
+    },
+    cancelled: {
+      icon: XCircle,
+      label: 'Cancelled',
+      description: 'Research was stopped before completion.',
+    },
+    queued: {
+      icon: Clock3,
+      label: 'Queued',
+      description: 'Research is waiting to start.',
+    },
+  };
+
+  const config = statusConfig[status ?? ''];
+  const Icon = config?.icon ?? Clock3;
+
+  return (
+    <div className="flex items-start gap-3 rounded-2xl border border-border bg-surface-raised p-4">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-background">
+        <Icon className="h-5 w-5 text-foreground" />
+      </div>
+      <div className="space-y-1">
+        <p className="font-medium text-foreground">{config?.label ?? 'Loading...'}</p>
+        <p className="text-sm text-muted-foreground">{config?.description ?? 'Loading session status...'}</p>
+      </div>
+    </div>
+  );
+}
+
+function QueryDisplay({ query }: { query: string | null }) {
+  if (!query) {
+    return (
+      <div className="rounded-2xl border border-dashed border-border p-6 text-center">
+        <p className="text-sm text-muted-foreground">No query was captured for this session.</p>
+      </div>
+    );
+  }
+
+  const displayQuery = query.length > 500 ? query.slice(0, 500) + '...' : query;
+  const isTruncated = query.length > 500;
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">Research query</p>
+      <div className="rounded-2xl border border-border bg-surface-raised p-4">
+        <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{displayQuery}</p>
+        {isTruncated && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Query truncated. View full query in technical details below.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SessionIdentity({
+  label,
+  sessionId,
 }: {
-  title: string;
-  value: string | number;
-  icon: typeof Activity;
+  label: string | null;
+  sessionId: string;
 }) {
   return (
-    <Card className="border-slate-200/80 shadow-sm">
-      <CardContent className="flex items-center gap-3 p-4">
-        <div className="rounded-xl bg-slate-100 p-2 text-slate-700">
-          <Icon className="h-4 w-4" />
+    <div className="space-y-3 rounded-2xl border border-border bg-surface-raised p-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="outline">Session brief</Badge>
+        <span className="font-mono text-[0.72rem] uppercase tracking-[0.14em] text-muted-foreground">
+          {sessionId.slice(0, 8)}
+        </span>
+      </div>
+      <div className="space-y-1">
+        <p className="text-[1.2rem] font-semibold leading-tight text-foreground">
+          {label ?? 'Untitled session'}
+        </p>
+        <p className="text-sm leading-6 text-muted-foreground">
+          Primary operator summary for this run before drilling into telemetry, artifacts, or
+          technical details.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ActivitySnapshot({ session }: { session: Session | null }) {
+  return (
+    <div className="grid gap-3 md:grid-cols-3">
+      <MetricCard compact icon={Search} label="Sources" value={session?.totalSources ?? 0} />
+      <MetricCard compact icon={Clock3} label="Events" value={session?.eventCount ?? 0} />
+      <MetricCard
+        compact
+        icon={Clock3}
+        label="Duration"
+        value={formatDuration(session?.totalTimeMs ?? null)}
+      />
+    </div>
+  );
+}
+
+function ArtifactsSection({
+  session,
+  sessionId,
+  runStatus,
+}: {
+  session: Session | null;
+  sessionId: string;
+  runStatus: ResearchRunStatus | null;
+}) {
+  const hasReport = session?.hasReport ?? false;
+  const hasPayload = session?.hasSessionPayload ?? false;
+  const isActive = session?.active ?? runStatus === 'running';
+  const isArchived = session?.archived ?? false;
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">Artifacts</p>
+      <div className="flex flex-wrap gap-2">
+        {hasReport ? (
+          <Link
+            href={`/session/${sessionId}/report`}
+            className={buttonVariants({
+              variant: 'outline',
+              size: 'sm',
+            })}
+          >
+            <FileText className="mr-2 h-4 w-4" />
+            View Report
+            <ArrowRight className="ml-2 h-3 w-3" />
+          </Link>
+        ) : isActive ? (
+          <Badge variant="secondary">Report pending</Badge>
+        ) : (
+          <Badge variant="outline">No report available</Badge>
+        )}
+
+        {hasPayload ? (
+          <Badge variant="success">
+            <Database className="mr-1 h-3 w-3" />
+            Payload saved
+          </Badge>
+        ) : (
+          <Badge variant="secondary">No payload</Badge>
+        )}
+
+        {isArchived ? (
+          <Badge variant="warning">
+            <Archive className="mr-1 h-3 w-3" />
+            Archived
+          </Badge>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function TechnicalFacts({
+  sessionId,
+  session,
+}: {
+  sessionId: string;
+  session: Session | null;
+}) {
+  return (
+    <div className="space-y-3">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">Technical details</p>
+      <dl className="grid gap-2 text-sm">
+        <div className="flex justify-between">
+          <dt className="text-muted-foreground">Session ID</dt>
+          <dd className="font-mono text-foreground">{sessionId.slice(0, 8)}</dd>
         </div>
-        <div>
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">{title}</p>
-          <p className="text-lg font-semibold text-slate-900">{value}</p>
+        <div className="flex justify-between">
+          <dt className="text-muted-foreground">Depth</dt>
+          <dd className="text-foreground">{formatDepth(session?.depth ?? null)}</dd>
         </div>
+        <div className="flex justify-between">
+          <dt className="text-muted-foreground">Created</dt>
+          <dd className="text-foreground">{formatTimestamp(session?.createdAt ?? null)}</dd>
+        </div>
+        <div className="flex justify-between">
+          <dt className="text-muted-foreground">Completed</dt>
+          <dd className="text-foreground">{formatTimestamp(session?.completedAt ?? null)}</dd>
+        </div>
+        {session?.query && session.query.length > 500 && (
+          <div className="mt-2 border-t border-border pt-2">
+            <dt className="mb-1 text-muted-foreground">Full query</dt>
+            <dd className="max-h-32 overflow-y-auto rounded-lg bg-surface-raised p-2 text-xs font-mono text-foreground">
+              {session.query}
+            </dd>
+          </div>
+        )}
+      </dl>
+    </div>
+  );
+}
+
+function NextActions({
+  sessionId,
+  runStatus,
+  hasReport,
+  isArchived,
+}: {
+  sessionId: string;
+  runStatus: ResearchRunStatus | null;
+  hasReport: boolean;
+  isArchived: boolean;
+}) {
+  const isActive = runStatus === 'running';
+  const isTerminal = runStatus === 'completed' || runStatus === 'failed' || runStatus === 'cancelled';
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">What to do next</p>
+      <div className="flex flex-col gap-2">
+        {isActive && (
+          <Link
+            href={`/session/${sessionId}/monitor`}
+            className={buttonVariants({ variant: 'outline', size: 'sm', className: 'w-full justify-start' })}
+          >
+            <Radar className="mr-2 h-4 w-4" />
+            Inspect live telemetry
+            <ArrowRight className="ml-auto h-3 w-3" />
+          </Link>
+        )}
+
+        {hasReport && (
+          <Link
+            href={`/session/${sessionId}/report`}
+            className={buttonVariants({ variant: 'outline', size: 'sm', className: 'w-full justify-start' })}
+          >
+            <FileText className="mr-2 h-4 w-4" />
+            Open research report
+            <ArrowRight className="ml-auto h-3 w-3" />
+          </Link>
+        )}
+
+        {isTerminal && !isArchived && (
+          <Link
+            href="/"
+            className={buttonVariants({ variant: 'default', size: 'sm', className: 'w-full justify-start' })}
+          >
+            <Home className="mr-2 h-4 w-4" />
+            Return to control room
+            <ArrowRight className="ml-auto h-3 w-3" />
+          </Link>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ContentStudioHandoff({
+  sessionId,
+  runStatus,
+  session,
+}: {
+  sessionId: string;
+  runStatus: ResearchRunStatus | null;
+  session: Session | null;
+}) {
+  const bridgePayload = buildResearchContentBridgePayloadFromSession(
+    sessionId,
+    session,
+    'session-overview'
+  );
+  const readyForContent = runStatus === 'completed' && Boolean(session?.hasReport);
+
+  return (
+    <Card className="xl:rounded-2xl">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Content Studio Handoff</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={readyForContent ? 'success' : 'secondary'}>
+              {readyForContent ? 'Report-ready source' : 'Research still upstream'}
+            </Badge>
+            <Badge variant="outline" className="font-mono text-[0.7rem]">
+              {sessionId.slice(0, 8)}
+            </Badge>
+          </div>
+          <p className="text-sm leading-6 text-muted-foreground">
+            {readyForContent
+              ? 'Carry this session into a pipeline or quick script without losing the research context.'
+              : 'Finish the research run and generate a report before sending it into downstream content workflows.'}
+          </p>
+        </div>
+
+        {readyForContent ? (
+          <ResearchContentActions
+            payload={bridgePayload}
+            className="w-full"
+            orientation="column"
+            primaryIntent="pipeline"
+          />
+        ) : null}
       </CardContent>
     </Card>
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-start justify-between gap-4 border-b border-slate-100 py-3 last:border-b-0 last:pb-0 first:pt-0">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="text-right text-sm font-medium text-slate-900">{value}</span>
-    </div>
-  );
-}
+export function SessionOverview({ sessionId, runStatus, sessionSummary }: SessionOverviewProps) {
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
 
-export function SessionStaticDetails({
-  sessionId,
-  runStatus,
-  sessionSummary,
-}: SessionStaticDetailsProps) {
   return (
-    <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          title="Status"
-          value={runStatus ?? sessionSummary?.status ?? 'loading'}
-          icon={Activity}
-        />
-        <MetricCard
-          title="Sources"
-          value={sessionSummary?.totalSources ?? 0}
-          icon={Search}
-        />
-        <MetricCard
-          title="Events"
-          value={sessionSummary?.eventCount ?? 0}
-          icon={Clock3}
-        />
-        <MetricCard
-          title="Duration"
-          value={formatDuration(sessionSummary?.totalTimeMs ?? null)}
-          icon={CalendarClock}
-        />
+    <div className="grid gap-6 xl:grid-cols-[1fr_280px]">
+      <div className="space-y-6">
+        <StatusIndicator status={runStatus} />
+        <SessionIdentity label={sessionSummary?.label ?? null} sessionId={sessionId} />
+
+        <QueryDisplay query={sessionSummary?.query ?? null} />
+
+        <ActivitySnapshot session={sessionSummary} />
+
+        <div className="grid gap-6 md:grid-cols-2">
+          <ArtifactsSection
+            session={sessionSummary}
+            sessionId={sessionId}
+            runStatus={runStatus}
+          />
+          <TechnicalFacts sessionId={sessionId} session={sessionSummary} />
+        </div>
+
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_360px]">
-        <Card className="border-slate-200/80 shadow-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Search className="h-5 w-5 text-sky-700" />
-              Session Summary
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
-                  {sessionSummary?.label ?? sessionId}
-                </h2>
-                <Badge variant={runStatusBadgeVariant(runStatus)}>{runStatus ?? 'loading'}</Badge>
-                {sessionSummary?.active ? <Badge variant="success">Live</Badge> : null}
-                {sessionSummary?.archived ? <Badge variant="warning">Archived</Badge> : null}
-              </div>
-              <p className="text-xs font-mono text-muted-foreground">{sessionId}</p>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Query</p>
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-900">
-                {sessionSummary?.query ?? 'No query metadata was captured for this session.'}
-              </p>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-2xl border border-slate-200 p-4">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Execution</p>
-                <div className="mt-3 space-y-1.5 text-sm text-slate-900">
-                  <p>Depth: {formatDepth(sessionSummary?.depth ?? null)}</p>
-                  <p>Created: {formatTimestamp(sessionSummary?.createdAt ?? null)}</p>
-                  <p>Last event: {formatTimestamp(sessionSummary?.lastEventAt ?? null)}</p>
-                  <p>Completed: {formatTimestamp(sessionSummary?.completedAt ?? null)}</p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 p-4">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Artifacts</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Badge variant={sessionSummary?.hasSessionPayload ? 'success' : 'secondary'}>
-                    Payload {sessionSummary?.hasSessionPayload ? 'available' : 'missing'}
-                  </Badge>
-                  <Badge variant={sessionSummary?.hasReport ? 'success' : 'secondary'}>
-                    Report {sessionSummary?.hasReport ? 'available' : 'unavailable'}
-                  </Badge>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-slate-200/80 shadow-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <HardDrive className="h-5 w-5 text-slate-700" />
-              Session Facts
-            </CardTitle>
+      <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">
+        <Card className="xl:rounded-2xl">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Next Actions</CardTitle>
           </CardHeader>
           <CardContent>
-            <DetailRow label="Session ID" value={sessionId} />
-            <DetailRow label="Label" value={sessionSummary?.label ?? 'Unknown'} />
-            <DetailRow label="Status" value={runStatus ?? sessionSummary?.status ?? 'loading'} />
-            <DetailRow label="Sources" value={String(sessionSummary?.totalSources ?? 0)} />
-            <DetailRow label="Events" value={String(sessionSummary?.eventCount ?? 0)} />
-            <DetailRow
-              label="Report"
-              value={sessionSummary?.hasReport ? 'Available' : 'Unavailable'}
-            />
-            <DetailRow
-              label="Payload"
-              value={sessionSummary?.hasSessionPayload ? 'Available' : 'Missing'}
-            />
-            <DetailRow
-              label="Runtime"
-              value={formatDuration(sessionSummary?.totalTimeMs ?? null)}
-            />
-            <DetailRow
-              label="Archived"
-              value={sessionSummary?.archived ? 'Yes' : 'No'}
+            <NextActions
+              sessionId={sessionId}
+              runStatus={runStatus}
+              hasReport={sessionSummary?.hasReport ?? false}
+              isArchived={sessionSummary?.archived ?? false}
             />
           </CardContent>
         </Card>
-      </div>
-
-      {!sessionSummary?.hasReport ? (
-        <Card className="border-dashed border-slate-300/90 shadow-sm">
-          <CardContent className="flex items-start gap-3 p-5">
-            <FileText className="mt-0.5 h-5 w-5 text-slate-500" />
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-slate-900">Report route is conditional</p>
-              <p className="text-sm text-muted-foreground">
-                Open <span className="font-mono">/session/{sessionId}/report</span> after the run
-                completes and a report artifact is available.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
+        <ContentStudioHandoff
+          session={sessionSummary}
+          sessionId={sessionId}
+          runStatus={runStatus}
+        />
+      </aside>
     </div>
   );
 }

@@ -182,11 +182,14 @@ test("decision graph renders and routes node selection into the inspector", asyn
   await expect(page.getByText("Telemetry Explorer")).toBeVisible();
   await page.getByLabel("Decision Graph").click();
 
-  await expect(page.getByText("Decision Graph")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Decision Graph" })).toBeVisible();
+  await expect(page.getByText("Read the graph fast")).toBeVisible();
   await expect(page.locator('[data-edge-inferred="true"]')).toHaveCount(1);
 
   await page.getByTestId("decision-graph-node-decision-route-decision").click();
 
+  await expect(page.getByText("Selected:")).toBeVisible();
+  await expect(page.getByText("Explicit telemetry context.")).toBeVisible();
   await expect(page.locator("pre").last()).toContainText('"eventId": "route-decision"');
   await expect(page.locator("pre").last()).toContainText('"decision_type": "routing"');
 });
