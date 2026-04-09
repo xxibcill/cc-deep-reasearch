@@ -266,7 +266,7 @@ async function mockSettingsApis(
   });
 }
 
-test("settings page shows persisted vs runtime override state", async ({ page }) => {
+test("settings page shows persisted vs runtime override state @smoke", async ({ page }) => {
   await mockSettingsApis(
     page,
     makeConfigResponse({
