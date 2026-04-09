@@ -47,7 +47,7 @@ def register_session_commands(cli: click.Group) -> None:
             archived_ids = store.get_archived_session_ids()
             all_sessions = store.list_sessions(limit=None)
             sessions = [s for s in all_sessions if s.get("session_id") in archived_ids]
-            sessions = sessions[offset : offset + limit] if limit else sessions[offset:]
+            sessions = sessions[offset :offset + limit] if limit else sessions[offset:]
         else:
             sessions = store.list_sessions(limit=limit, offset=offset)
         if not sessions:

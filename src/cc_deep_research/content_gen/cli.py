@@ -754,12 +754,6 @@ def register_content_gen_commands(cli: click.Group) -> None:
     @click.option("--idea", default=None, help="Skip backlog; start scripting with this idea")
     @click.option("--from-stage", type=int, default=None, help="Resume from stage (0-11)")
     @click.option("--to-stage", type=int, default=None, help="Stop after this stage")
-    @click.option(
-        "--from-file",
-        type=click.Path(exists=True),
-        default=None,
-        help="Resume from saved PipelineContext",
-    )
     @click.option("-o", "--output", type=click.Path(), default=None)
     @click.option("--save-context", is_flag=True, help="Save pipeline context as JSON")
     @click.option("--quiet", is_flag=True, help="Only show final result")
@@ -768,7 +762,6 @@ def register_content_gen_commands(cli: click.Group) -> None:
         idea: str | None,
         from_stage: int | None,
         to_stage: int | None,
-        from_file: str | None,  # noqa: ARG001
         output: str | None,
         save_context: bool,
         quiet: bool,

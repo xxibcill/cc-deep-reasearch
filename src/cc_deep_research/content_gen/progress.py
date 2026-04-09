@@ -55,9 +55,16 @@ class PipelineRunJob:
 class PipelineRunJobRegistry:
     """Process-local registry for browser-started content-gen pipeline runs."""
 
-    def __init__(self) -> None:
+    DEFAULT_MAX_COMPLETED_JOBS = 50
+
+    def __init__(
+        self,
+        *,
+        max_completed_jobs: int | None = None,
+    ) -> None:
         self._jobs: dict[str, PipelineRunJob] = {}
         self._lock = threading.Lock()
+        self._max_completed_jobs = max_completed_jobs or self.DEFAULT_MAX_COMPLETED_JOBS
 
     def create_job(
         self,
@@ -68,6 +75,7 @@ class PipelineRunJobRegistry:
         pipeline_id: str | None = None,
     ) -> PipelineRunJob:
         """Create and store a queued job entry."""
+        self.cleanup_old_jobs()
         job = PipelineRunJob(
             pipeline_id=pipeline_id or self._generate_pipeline_id(),
             theme=theme,
@@ -193,6 +201,33 @@ class PipelineRunJobRegistry:
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+
+    def cleanup_old_jobs(self) -> int:
+        """Remove oldest completed/failed jobs exceeding max retention.
+
+        Returns:
+            Number of jobs removed.
+        """
+        if self._max_completed_jobs <= 0:
+            return 0
+
+        with self._lock:
+            completed = [
+                (pid, job)
+                for pid, job in self._jobs.items()
+                if not job.is_active and job.completed_at is not None
+            ]
+            completed.sort(key=lambda x: x[1].completed_at or datetime.min)
+
+            excess = len(completed) - self._max_completed_jobs
+            if excess <= 0:
+                return 0
+
+            removed = 0
+            for pid, _ in completed[:excess]:
+                del self._jobs[pid]
+                removed += 1
+            return removed
 
     def _require_job(self, pipeline_id: str) -> PipelineRunJob:
         """Load a known job or raise a keyed error."""
