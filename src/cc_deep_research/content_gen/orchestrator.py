@@ -175,6 +175,8 @@ class ContentGenOrchestrator:
         *,
         from_stage: int = 0,
         to_stage: int | None = None,
+        initial_context: PipelineContext | None = None,
+        bypass_ideation: bool = False,
         progress_callback: Callable[[int, str], None] | None = None,
         stage_completed_callback: Callable[[int, str, str, PipelineContext], None] | None = None,
     ) -> PipelineContext:
@@ -185,18 +187,36 @@ class ContentGenOrchestrator:
           2. Stages 5-11 (content) — iterative loop with quality evaluation
           3. Stages 12-13 (publish) — run once after loop exits
         """
-        ctx = PipelineContext(
-            theme=theme,
-            created_at=datetime.now(tz=UTC).isoformat(),
-            iteration_state=IterationState(
-                max_iterations=self._config.content_gen.max_iterations,
-            ),
-        )
+        if initial_context is None:
+            ctx = PipelineContext(
+                theme=theme,
+                created_at=datetime.now(tz=UTC).isoformat(),
+                iteration_state=IterationState(
+                    max_iterations=self._config.content_gen.max_iterations,
+                ),
+            )
+        else:
+            ctx = initial_context.model_copy(deep=True)
+            if theme and not ctx.theme:
+                ctx.theme = theme
+            if not ctx.created_at:
+                ctx.created_at = datetime.now(tz=UTC).isoformat()
+            if ctx.iteration_state is None:
+                ctx.iteration_state = IterationState(
+                    max_iterations=self._config.content_gen.max_iterations,
+                )
         end = to_stage if to_stage is not None else len(PIPELINE_STAGES) - 1
 
         # Phase 1: Ideation stages (0-4) — run once
-        for idx in range(from_stage, min(5, end + 1)):
-            ctx = await self._run_stage(idx, ctx, progress_callback, stage_completed_callback)
+        if bypass_ideation:
+            if from_stage == 0 and end >= 0:
+                ctx = await self._run_stage(0, ctx, progress_callback, stage_completed_callback)
+            ideation_start = max(from_stage, 4)
+            for idx in range(ideation_start, min(5, end + 1)):
+                ctx = await self._run_stage(idx, ctx, progress_callback, stage_completed_callback)
+        else:
+            for idx in range(from_stage, min(5, end + 1)):
+                ctx = await self._run_stage(idx, ctx, progress_callback, stage_completed_callback)
 
         # Phase 2: Content stages (5-11) — iterative or single-pass
         if self._config.content_gen.enable_iterative_mode and end >= 7 and from_stage <= 6:
@@ -210,6 +230,27 @@ class ContentGenOrchestrator:
             ctx = await self._run_stage(idx, ctx, progress_callback, stage_completed_callback)
 
         return ctx
+
+    def validate_resume_context(
+        self,
+        *,
+        from_stage: int,
+        ctx: PipelineContext,
+        bypass_ideation: bool = False,
+    ) -> str | None:
+        """Return a user-facing validation error when a resume request cannot run."""
+        if bypass_ideation and 1 <= from_stage <= 3:
+            return (
+                "--idea bypasses stages 1-3; use --from-stage 0 to reload strategy "
+                "or resume from stage 4 or later."
+            )
+        if from_stage == 0:
+            return None
+        prereqs_met, reason = self._check_prerequisites(from_stage, ctx)
+        if prereqs_met:
+            return None
+        label = PIPELINE_STAGE_LABELS.get(PIPELINE_STAGES[from_stage], PIPELINE_STAGES[from_stage])
+        return f"Cannot resume from stage {from_stage} ({label}): {reason}"
 
     def _check_prerequisites(self, idx: int, ctx: PipelineContext) -> tuple[bool, str]:
         """Check if prerequisites for a stage are met. Returns (met, reason_if_not)."""

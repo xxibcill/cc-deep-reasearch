@@ -763,7 +763,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
     @content_gen.command()
     @click.option("--theme", default=None, help="Theme for backlog generation")
     @click.option("--idea", default=None, help="Skip backlog; start scripting with this idea")
-    @click.option("--from-stage", type=int, default=None, help="Resume from stage (0-11)")
+    @click.option("--from-stage", type=int, default=None, help="Resume from stage (0-13)")
     @click.option("--to-stage", type=int, default=None, help="Stop after this stage")
     @click.option(
         "--from-file",
@@ -779,7 +779,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
         idea: str | None,
         from_stage: int | None,
         to_stage: int | None,
-        from_file: str | None,  # noqa: ARG001
+        from_file: str | None,
         output: str | None,
         save_context: bool,
         quiet: bool,
@@ -787,11 +787,72 @@ def register_content_gen_commands(cli: click.Group) -> None:
         """Run the full content generation pipeline."""
         config = load_config()
 
-        from cc_deep_research.content_gen.models import PIPELINE_STAGES
+        from cc_deep_research.content_gen.models import (
+            PIPELINE_STAGES,
+            BacklogItem,
+            BacklogOutput,
+            PipelineContext,
+            ScoringOutput,
+        )
 
-        start = from_stage or 0
+        ctx: PipelineContext | None = None
+        bypass_ideation = False
+
+        if from_file:
+            ctx = PipelineContext.model_validate_json(Path(from_file).read_text())
+            if theme and ctx.theme and theme != ctx.theme:
+                msg = "--theme does not match the saved context in --from-file"
+                raise click.UsageError(msg)
+            if idea:
+                selected_item = None
+                if ctx.backlog is not None:
+                    selected_idea_id = ctx.selected_idea_id or (ctx.scoring.selected_idea_id if ctx.scoring else "")
+                    selected_item = next(
+                        (item for item in ctx.backlog.items if item.idea_id == selected_idea_id),
+                        None,
+                    )
+                saved_idea = selected_item.idea if selected_item is not None else ctx.theme
+                if idea != saved_idea:
+                    msg = "--idea does not match the saved context in --from-file"
+                    raise click.UsageError(msg)
+            theme = theme or ctx.theme
+        elif idea:
+            seeded_item = BacklogItem(
+                idea=idea,
+                source="direct_idea",
+                source_theme=theme or idea,
+                status="selected",
+            )
+            ctx = PipelineContext(
+                theme=theme or idea,
+                backlog=BacklogOutput(items=[seeded_item]),
+                scoring=ScoringOutput(
+                    produce_now=[seeded_item.idea_id],
+                    shortlist=[seeded_item.idea_id],
+                    selected_idea_id=seeded_item.idea_id,
+                    selection_reasoning="Seeded directly from --idea.",
+                ),
+                shortlist=[seeded_item.idea_id],
+                selected_idea_id=seeded_item.idea_id,
+                selection_reasoning="Seeded directly from --idea.",
+            )
+            bypass_ideation = True
+        elif not theme:
+            msg = "--theme, --idea, or --from-file is required"
+            raise click.UsageError(msg)
+
+        start = from_stage if from_stage is not None else 0
+        if from_file and from_stage is None and ctx is not None:
+            start = ctx.current_stage + 1
+            if start >= len(PIPELINE_STAGES):
+                msg = "Saved context is already at the final stage; pass --from-stage to rerun a stage."
+                raise click.UsageError(msg)
+
         if not 0 <= start < len(PIPELINE_STAGES):
             msg = f"--from-stage must be between 0 and {len(PIPELINE_STAGES) - 1}"
+            raise click.UsageError(msg)
+        if to_stage is not None and to_stage < start:
+            msg = "--to-stage must be greater than or equal to --from-stage"
             raise click.UsageError(msg)
 
         def progress(idx: int, label: str) -> None:
@@ -802,11 +863,21 @@ def register_content_gen_commands(cli: click.Group) -> None:
             from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
 
             orch = ContentGenOrchestrator(config)
+            if ctx is not None:
+                resume_error = orch.validate_resume_context(
+                    from_stage=start,
+                    ctx=ctx,
+                    bypass_ideation=bypass_ideation,
+                )
+                if resume_error:
+                    raise click.UsageError(resume_error)
             t = theme or idea or "general"
             return await orch.run_full_pipeline(
                 t,
                 from_stage=start,
                 to_stage=to_stage,
+                initial_context=ctx,
+                bypass_ideation=bypass_ideation,
                 progress_callback=progress,
             )
 

@@ -1268,6 +1268,174 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
     assert argument_map_trace.metadata.claim_count == len(fixture["argument_map"]["safe_claims"])
 
 
+@pytest.mark.asyncio
+async def test_full_pipeline_resume_uses_initial_context_for_late_stage() -> None:
+    """Later-stage resume should run against the saved pipeline context, not a blank one."""
+    from cc_deep_research.content_gen.orchestrator import (
+        _PIPELINE_HANDLERS,
+        ContentGenOrchestrator,
+    )
+
+    class FakeConfig:
+        content_gen = type(
+            "ContentGen",
+            (),
+            {
+                "max_iterations": 1,
+                "quality_threshold": 0.7,
+                "convergence_threshold": 0.1,
+                "enable_iterative_mode": False,
+                "scoring_threshold_produce": 3.5,
+                "default_platforms": ["tiktok"],
+            },
+        )()
+
+        llm = type(
+            "LLM",
+            (),
+            {
+                "anthropic": type("C", (), {"enabled": True, "api_key": "test"})(),
+            },
+        )()
+
+    orch = ContentGenOrchestrator(FakeConfig())
+    seen: dict[str, PipelineContext] = {}
+
+    async def packaging_stage(
+        _orch: ContentGenOrchestrator, ctx: PipelineContext
+    ) -> PipelineContext:
+        seen["ctx"] = ctx
+        ctx.packaging = PackagingOutput(
+            platform_packages=[PlatformPackage(platform="tiktok", primary_hook="Hook")]
+        )
+        return ctx
+
+    original_packaging_stage = _PIPELINE_HANDLERS[10]
+    _PIPELINE_HANDLERS[10] = packaging_stage
+
+    try:
+        saved_ctx = PipelineContext(
+            theme="saved theme",
+            angles=AngleOutput(
+                idea_id="idea-1",
+                angle_options=[AngleOption(angle_id="angle-1", core_promise="Angle")],
+                selected_angle_id="angle-1",
+            ),
+            scripting=ScriptingContext(
+                raw_idea="saved idea",
+                qc=QCResult(checks=[], weakest_parts=[], final_script="Saved final script"),
+            ),
+        )
+
+        result = await orch.run_full_pipeline(
+            "saved theme",
+            from_stage=10,
+            to_stage=10,
+            initial_context=saved_ctx,
+        )
+    finally:
+        _PIPELINE_HANDLERS[10] = original_packaging_stage
+
+    assert seen["ctx"].scripting is not None
+    assert seen["ctx"].scripting.qc is not None
+    assert seen["ctx"].scripting.qc.final_script == "Saved final script"
+    assert result.packaging is not None
+    assert result.stage_traces[-1].status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_full_pipeline_direct_idea_bypasses_ideation_stages() -> None:
+    """Direct-idea mode should skip backlog-generation stages and jump into angles."""
+    from cc_deep_research.content_gen.orchestrator import (
+        _PIPELINE_HANDLERS,
+        ContentGenOrchestrator,
+    )
+
+    class FakeConfig:
+        content_gen = type(
+            "ContentGen",
+            (),
+            {
+                "max_iterations": 1,
+                "quality_threshold": 0.7,
+                "convergence_threshold": 0.1,
+                "enable_iterative_mode": False,
+                "scoring_threshold_produce": 3.5,
+                "default_platforms": ["tiktok"],
+            },
+        )()
+
+        llm = type(
+            "LLM",
+            (),
+            {
+                "anthropic": type("C", (), {"enabled": True, "api_key": "test"})(),
+            },
+        )()
+
+    orch = ContentGenOrchestrator(FakeConfig())
+    executed: list[int] = []
+
+    async def record_load_strategy(
+        _orch: ContentGenOrchestrator, ctx: PipelineContext
+    ) -> PipelineContext:
+        executed.append(0)
+        return ctx
+
+    async def forbidden_stage(
+        _orch: ContentGenOrchestrator, ctx: PipelineContext
+    ) -> PipelineContext:
+        raise AssertionError("Ideation bypass should not execute stages 1-3")
+
+    async def record_generate_angles(
+        _orch: ContentGenOrchestrator, ctx: PipelineContext
+    ) -> PipelineContext:
+        executed.append(4)
+        ctx.angles = AngleOutput(
+            idea_id=ctx.selected_idea_id,
+            angle_options=[AngleOption(angle_id="angle-1", core_promise="Angle")],
+            selected_angle_id="angle-1",
+        )
+        return ctx
+
+    originals = _PIPELINE_HANDLERS[0:5]
+    _PIPELINE_HANDLERS[0] = record_load_strategy
+    _PIPELINE_HANDLERS[1] = forbidden_stage
+    _PIPELINE_HANDLERS[2] = forbidden_stage
+    _PIPELINE_HANDLERS[3] = forbidden_stage
+    _PIPELINE_HANDLERS[4] = record_generate_angles
+
+    try:
+        seeded_item = BacklogItem(idea_id="idea-1", idea="Direct idea")
+        seeded_ctx = PipelineContext(
+            theme="Direct idea",
+            backlog=BacklogOutput(items=[seeded_item]),
+            scoring=ScoringOutput(
+                produce_now=["idea-1"],
+                shortlist=["idea-1"],
+                selected_idea_id="idea-1",
+                selection_reasoning="Seeded directly from --idea.",
+            ),
+            shortlist=["idea-1"],
+            selected_idea_id="idea-1",
+            selection_reasoning="Seeded directly from --idea.",
+        )
+
+        result = await orch.run_full_pipeline(
+            "Direct idea",
+            from_stage=0,
+            to_stage=4,
+            initial_context=seeded_ctx,
+            bypass_ideation=True,
+        )
+    finally:
+        _PIPELINE_HANDLERS[0:5] = originals
+
+    assert executed == [0, 4]
+    assert result.angles is not None
+    assert result.angles.selected_angle_id == "angle-1"
+
+
 # ---------------------------------------------------------------------------
 # New model defaults
 # ---------------------------------------------------------------------------
@@ -2295,6 +2463,181 @@ def test_cli_pipeline_rejects_invalid_from_stage() -> None:
 
     assert result.exit_code != 0
     assert "--from-stage must be between 0 and" in result.output
+
+
+def test_cli_pipeline_from_file_loads_saved_context(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Pipeline resume should load and forward the saved PipelineContext."""
+
+    class FakeOrchestrator:
+        def __init__(self, _config) -> None:
+            pass
+
+        def validate_resume_context(
+            self,
+            *,
+            from_stage: int,
+            ctx: PipelineContext,
+            bypass_ideation: bool = False,
+        ) -> str | None:
+            assert from_stage == 10
+            assert bypass_ideation is False
+            assert ctx.scripting is not None
+            assert ctx.scripting.qc is not None
+            assert ctx.scripting.qc.final_script == "Saved final script"
+            return None
+
+        async def run_full_pipeline(
+            self,
+            theme: str,
+            *,
+            from_stage: int = 0,
+            to_stage: int | None = None,
+            initial_context: PipelineContext | None = None,
+            bypass_ideation: bool = False,
+            progress_callback=None,
+            stage_completed_callback=None,
+        ) -> PipelineContext:
+            del to_stage, progress_callback, stage_completed_callback
+            assert theme == "saved theme"
+            assert from_stage == 10
+            assert bypass_ideation is False
+            assert initial_context is not None
+            assert initial_context.scripting is not None
+            initial_context.current_stage = 10
+            initial_context.packaging = PackagingOutput(
+                platform_packages=[PlatformPackage(platform="tiktok", primary_hook="Hook")]
+            )
+            return initial_context
+
+    monkeypatch.setattr(
+        "cc_deep_research.content_gen.orchestrator.ContentGenOrchestrator",
+        FakeOrchestrator,
+    )
+
+    context_path = tmp_path / "pipeline.json"
+    context_path.write_text(
+        PipelineContext(
+            theme="saved theme",
+            current_stage=9,
+            angles=AngleOutput(
+                idea_id="idea-1",
+                angle_options=[AngleOption(angle_id="angle-1", core_promise="Angle")],
+                selected_angle_id="angle-1",
+            ),
+            scripting=ScriptingContext(
+                raw_idea="saved idea",
+                qc=QCResult(checks=[], weakest_parts=[], final_script="Saved final script"),
+            ),
+        ).model_dump_json()
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "content-gen",
+            "pipeline",
+            "--from-file",
+            str(context_path),
+            "--quiet",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert result.output == ""
+
+
+def test_cli_pipeline_idea_seeds_direct_bypass_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pipeline --idea should seed a direct-idea context instead of acting like a theme."""
+
+    class FakeOrchestrator:
+        def __init__(self, _config) -> None:
+            pass
+
+        def validate_resume_context(
+            self,
+            *,
+            from_stage: int,
+            ctx: PipelineContext,
+            bypass_ideation: bool = False,
+        ) -> str | None:
+            assert from_stage == 0
+            assert bypass_ideation is True
+            assert ctx.backlog is not None
+            assert len(ctx.backlog.items) == 1
+            assert ctx.backlog.items[0].idea == "Direct seed"
+            assert ctx.selected_idea_id == ctx.backlog.items[0].idea_id
+            assert ctx.scoring is not None
+            assert ctx.scoring.selected_idea_id == ctx.backlog.items[0].idea_id
+            return None
+
+        async def run_full_pipeline(
+            self,
+            theme: str,
+            *,
+            from_stage: int = 0,
+            to_stage: int | None = None,
+            initial_context: PipelineContext | None = None,
+            bypass_ideation: bool = False,
+            progress_callback=None,
+            stage_completed_callback=None,
+        ) -> PipelineContext:
+            del to_stage, progress_callback, stage_completed_callback
+            assert theme == "Direct seed"
+            assert from_stage == 0
+            assert bypass_ideation is True
+            assert initial_context is not None
+            assert initial_context.backlog is not None
+            assert initial_context.backlog.items[0].source == "direct_idea"
+            assert initial_context.scoring is not None
+            assert initial_context.scoring.selection_reasoning == "Seeded directly from --idea."
+            return initial_context
+
+    monkeypatch.setattr(
+        "cc_deep_research.content_gen.orchestrator.ContentGenOrchestrator",
+        FakeOrchestrator,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "content-gen",
+            "pipeline",
+            "--idea",
+            "Direct seed",
+            "--quiet",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert result.output == ""
+
+
+def test_cli_pipeline_direct_idea_rejects_invalid_resume_stage() -> None:
+    """Direct-idea mode should fail fast when the requested stage needs missing prior context."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        main,
+        [
+            "content-gen",
+            "pipeline",
+            "--idea",
+            "Direct seed",
+            "--from-stage",
+            "5",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Cannot resume from stage 5" in result.output
+    assert "backlog/angles missing" in result.output
 
 
 def test_cli_requires_idea_without_from_file() -> None:
