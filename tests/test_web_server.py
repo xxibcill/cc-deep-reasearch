@@ -4,12 +4,25 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 import time
 from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 
+from cc_deep_research.config import Config
+from cc_deep_research.content_gen.models import (
+    IterationState,
+    PipelineContext,
+    PipelineStageTrace,
+    QCResult,
+    QualityEvaluation,
+    SavedScriptRun,
+    ScriptingContext,
+    ScriptingLLMCallTrace,
+    ScriptingStepTrace,
+)
 from cc_deep_research.event_router import EventRouter
 from cc_deep_research.models import ResearchDepth, ResearchSession
 from cc_deep_research.monitoring import ResearchMonitor
@@ -99,6 +112,591 @@ def test_job_registry_can_mark_run_cancelled() -> None:
     assert job.stop_requested is True
     assert job.status == ResearchRunStatus.CANCELLED
     assert job.completed_at is not None
+
+
+def test_run_scripting_endpoint_can_force_single_pass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The dashboard should be able to disable iterative scripting for one run."""
+    config = Config()
+    config.content_gen.enable_iterative_mode = True
+    monkeypatch.setattr("cc_deep_research.content_gen.router.load_config", lambda: config)
+
+    class FakeStore:
+        def save(
+            self,
+            ctx: ScriptingContext,
+            *,
+            execution_mode: str = "single_pass",
+            iterations=None,
+        ) -> SavedScriptRun:
+            del execution_mode, iterations
+            return SavedScriptRun(
+                run_id="run-123",
+                saved_at="2026-03-30T00:00:00+00:00",
+                raw_idea=ctx.raw_idea,
+                word_count=2,
+                script_path="/tmp/script.txt",
+                context_path="/tmp/context.json",
+            )
+
+        @staticmethod
+        def _extract_script(ctx: ScriptingContext) -> str:
+            return ctx.qc.final_script if ctx.qc else ""
+
+    class FakeOrchestrator:
+        def __init__(self, _config: Config) -> None:
+            self.single_pass_calls = 0
+
+        async def run_scripting(
+            self,
+            raw_idea: str,
+            progress_callback=None,
+            *,
+            llm_route=None,
+        ) -> ScriptingContext:
+            del progress_callback
+            self.single_pass_calls += 1
+            assert llm_route == "openrouter"
+            return ScriptingContext(
+                raw_idea=raw_idea,
+                qc=QCResult(checks=[], weakest_parts=[], final_script="Single pass script"),
+                step_traces=[
+                    ScriptingStepTrace(
+                        step_index=0,
+                        step_name="define_core_inputs",
+                        step_label="Defining core inputs",
+                        iteration=1,
+                        llm_calls=[
+                            ScriptingLLMCallTrace(
+                                call_index=1,
+                                temperature=0.3,
+                                system_prompt="system",
+                                user_prompt="user",
+                                raw_response="response",
+                                provider="anthropic",
+                                model="claude-test",
+                                transport="anthropic_api",
+                            )
+                        ],
+                        parsed_output={"topic": "Topic"},
+                    )
+                ],
+            )
+
+        async def run_scripting_iterative(self, raw_idea: str, progress_callback=None, max_iterations=None):
+            del raw_idea, progress_callback, max_iterations
+            raise AssertionError("Iterative path should not run")
+
+    monkeypatch.setattr("cc_deep_research.content_gen.router.ScriptingStore", FakeStore)
+    monkeypatch.setattr(
+        "cc_deep_research.content_gen.orchestrator.ContentGenOrchestrator",
+        FakeOrchestrator,
+    )
+
+    client = TestClient(create_app())
+    response = client.post(
+        "/api/content-gen/scripting",
+        json={"idea": "test idea", "iterative_mode": False, "llm_route": "openrouter"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["script"] == "Single pass script"
+    assert payload["execution_mode"] == "single_pass"
+    assert "iterations" not in payload
+    assert payload["context"]["step_traces"] == [
+        {
+            "step_index": 0,
+            "step_name": "define_core_inputs",
+            "step_label": "Defining core inputs",
+            "iteration": 1,
+            "llm_calls": [
+                {
+                    "call_index": 1,
+                    "temperature": 0.3,
+                    "system_prompt": "system",
+                    "user_prompt": "user",
+                    "raw_response": "response",
+                    "provider": "anthropic",
+                    "model": "claude-test",
+                    "transport": "anthropic_api",
+                    "latency_ms": 0,
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "finish_reason": None,
+                }
+            ],
+            "parsed_output": {"topic": "Topic"},
+        }
+    ]
+
+
+def test_run_scripting_endpoint_accepts_iteration_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The dashboard should be able to opt into iterative scripting with a custom pass cap."""
+    config = Config()
+    config.content_gen.enable_iterative_mode = False
+    monkeypatch.setattr("cc_deep_research.content_gen.router.load_config", lambda: config)
+
+    class FakeStore:
+        def save(
+            self,
+            ctx: ScriptingContext,
+            *,
+            execution_mode: str = "single_pass",
+            iterations=None,
+        ) -> SavedScriptRun:
+            del execution_mode, iterations
+            return SavedScriptRun(
+                run_id="run-123",
+                saved_at="2026-03-30T00:00:00+00:00",
+                raw_idea=ctx.raw_idea,
+                word_count=2,
+                script_path="/tmp/script.txt",
+                context_path="/tmp/context.json",
+            )
+
+        @staticmethod
+        def _extract_script(ctx: ScriptingContext) -> str:
+            return ctx.qc.final_script if ctx.qc else ""
+
+    class FakeOrchestrator:
+        def __init__(self, _config: Config) -> None:
+            pass
+
+        async def run_scripting(self, raw_idea: str, progress_callback=None) -> ScriptingContext:
+            del raw_idea, progress_callback
+            raise AssertionError("Single-pass path should not run")
+
+        async def run_scripting_iterative(
+            self,
+            raw_idea: str,
+            progress_callback=None,
+            max_iterations=None,
+            *,
+            llm_route=None,
+        ) -> tuple[ScriptingContext, IterationState]:
+            del progress_callback
+            assert raw_idea == "test idea"
+            assert max_iterations == 4
+            assert llm_route == "cerebras"
+            return (
+                ScriptingContext(
+                    raw_idea=raw_idea,
+                    qc=QCResult(checks=[], weakest_parts=[], final_script="Iterative script"),
+                ),
+                IterationState(
+                    current_iteration=3,
+                    max_iterations=4,
+                    quality_history=[
+                        QualityEvaluation(
+                            iteration_number=1,
+                            overall_quality_score=0.55,
+                            passes_threshold=False,
+                        ),
+                        QualityEvaluation(
+                            iteration_number=2,
+                            overall_quality_score=0.68,
+                            passes_threshold=False,
+                        ),
+                        QualityEvaluation(
+                            iteration_number=3,
+                            overall_quality_score=0.81,
+                            passes_threshold=True,
+                        ),
+                    ],
+                    is_converged=True,
+                    convergence_reason="Threshold reached",
+                ),
+            )
+
+    monkeypatch.setattr("cc_deep_research.content_gen.router.ScriptingStore", FakeStore)
+    monkeypatch.setattr(
+        "cc_deep_research.content_gen.orchestrator.ContentGenOrchestrator",
+        FakeOrchestrator,
+    )
+
+    client = TestClient(create_app())
+    response = client.post(
+        "/api/content-gen/scripting",
+        json={
+            "idea": "test idea",
+            "iterative_mode": True,
+            "max_iterations": 4,
+            "llm_route": "cerebras",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["script"] == "Iterative script"
+    assert payload["execution_mode"] == "iterative"
+    assert payload["iterations"] == {
+        "count": 3,
+        "max_iterations": 4,
+        "converged": True,
+        "quality_history": [
+            {"iteration": 1, "score": 0.55, "passes": False},
+            {"iteration": 2, "score": 0.68, "passes": False},
+            {"iteration": 3, "score": 0.81, "passes": True},
+        ],
+    }
+
+
+def test_get_saved_script_returns_full_saved_result(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """Saved Quick Script history should return the persisted full result payload."""
+    result_path = tmp_path / "result.json"
+    result_path.write_text(
+        json.dumps(
+            {
+                "run_id": "run-123",
+                "raw_idea": "test idea",
+                "script": "Saved script",
+                "word_count": 2,
+                "context": {
+                    "raw_idea": "test idea",
+                    "research_context": "",
+                    "tone": "",
+                    "cta": "",
+                    "core_inputs": None,
+                    "angle": None,
+                    "structure": None,
+                    "beat_intents": None,
+                    "hooks": None,
+                    "draft": None,
+                    "retention_revised": None,
+                    "tightened": None,
+                    "annotated_script": None,
+                    "visual_notes": None,
+                    "qc": {"checks": [], "weakest_parts": [], "final_script": "Saved script"},
+                    "step_traces": [],
+                },
+                "execution_mode": "iterative",
+                "iterations": {
+                    "count": 2,
+                    "max_iterations": 4,
+                    "converged": True,
+                    "quality_history": [
+                        {"iteration": 1, "score": 0.61, "passes": False},
+                        {"iteration": 2, "score": 0.82, "passes": True},
+                    ],
+                },
+            }
+        )
+    )
+
+    class FakeStore:
+        def get(self, run_id: str) -> SavedScriptRun | None:
+            assert run_id == "run-123"
+            return SavedScriptRun(
+                run_id="run-123",
+                saved_at="2026-03-30T00:00:00+00:00",
+                raw_idea="test idea",
+                word_count=2,
+                script_path=str(tmp_path / "script.txt"),
+                context_path=str(tmp_path / "context.json"),
+                result_path=str(result_path),
+                execution_mode="iterative",
+            )
+
+    monkeypatch.setattr("cc_deep_research.content_gen.router.ScriptingStore", FakeStore)
+
+    client = TestClient(create_app())
+    response = client.get("/api/content-gen/scripts/run-123")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run_id"] == "run-123"
+    assert payload["script"] == "Saved script"
+    assert payload["execution_mode"] == "iterative"
+    assert payload["iterations"]["quality_history"] == [
+        {"iteration": 1, "score": 0.61, "passes": False},
+        {"iteration": 2, "score": 0.82, "passes": True},
+    ]
+
+
+def test_content_gen_pipeline_websocket_streams_live_stage_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Browser-started pipeline runs should stream per-stage progress live."""
+    config = Config()
+    monkeypatch.setattr("cc_deep_research.content_gen.router.load_config", lambda: config)
+    allow_run = threading.Event()
+
+    class FakeOrchestrator:
+        def __init__(self, _config: Config) -> None:
+            pass
+
+        async def run_full_pipeline(
+            self,
+            theme: str,
+            *,
+            from_stage: int = 0,
+            to_stage: int | None = None,
+            progress_callback=None,
+            stage_completed_callback=None,
+        ) -> PipelineContext:
+            assert theme == "pricing anchors"
+            assert from_stage == 0
+            assert to_stage == 2
+
+            while not allow_run.is_set():
+                await asyncio.sleep(0.001)
+
+            if progress_callback is not None:
+                progress_callback(0, "Loading strategy memory")
+            await asyncio.sleep(0)
+            if stage_completed_callback is not None:
+                stage_completed_callback(
+                    0,
+                    "completed",
+                    "",
+                    PipelineContext(
+                        theme=theme,
+                        current_stage=0,
+                        selected_idea_id="idea-alpha",
+                        stage_traces=[
+                            PipelineStageTrace(
+                                stage_index=0,
+                                stage_name="load_strategy",
+                                stage_label="Loading strategy memory",
+                            ),
+                        ],
+                    ),
+                )
+            await asyncio.sleep(0)
+            if progress_callback is not None:
+                progress_callback(1, "Planning opportunity brief")
+            await asyncio.sleep(0)
+            if stage_completed_callback is not None:
+                stage_completed_callback(
+                    1,
+                    "skipped",
+                    "already planned",
+                    PipelineContext(
+                        theme=theme,
+                        current_stage=1,
+                        selected_idea_id="idea-beta",
+                        stage_traces=[
+                            PipelineStageTrace(
+                                stage_index=0,
+                                stage_name="load_strategy",
+                                stage_label="Loading strategy memory",
+                            ),
+                            PipelineStageTrace(
+                                stage_index=1,
+                                stage_name="plan_opportunity",
+                                stage_label="Planning opportunity brief",
+                                status="skipped",
+                                output_summary="already planned",
+                                decision_summary="Skipped: already planned",
+                            ),
+                        ],
+                    ),
+                )
+            await asyncio.sleep(0)
+
+            return PipelineContext(
+                theme=theme,
+                current_stage=1,
+                selected_idea_id="idea-beta",
+                stage_traces=[
+                    PipelineStageTrace(
+                        stage_index=0,
+                        stage_name="load_strategy",
+                        stage_label="Loading strategy memory",
+                    ),
+                    PipelineStageTrace(
+                        stage_index=1,
+                        stage_name="plan_opportunity",
+                        stage_label="Planning opportunity brief",
+                        status="skipped",
+                        output_summary="already planned",
+                    ),
+                ],
+            )
+
+    monkeypatch.setattr(
+        "cc_deep_research.content_gen.orchestrator.ContentGenOrchestrator",
+        FakeOrchestrator,
+    )
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/api/content-gen/pipelines",
+            json={"theme": "pricing anchors", "from_stage": 0, "to_stage": 2},
+        )
+
+        assert response.status_code == 202
+        pipeline_id = response.json()["pipeline_id"]
+
+        with client.websocket_connect(f"/ws/content-gen/pipeline/{pipeline_id}") as websocket:
+            initial = websocket.receive_json()
+            assert initial["type"] == "pipeline_status"
+            assert initial["pipeline_id"] == pipeline_id
+            assert initial["status"] in {"queued", "running"}
+
+            allow_run.set()
+
+            started = websocket.receive_json()
+            completed = websocket.receive_json()
+            started_second = websocket.receive_json()
+            skipped = websocket.receive_json()
+            finished = websocket.receive_json()
+
+        assert started == {
+            "type": "pipeline_stage_started",
+            "stage_index": 0,
+            "stage_label": "Loading strategy memory",
+            "timestamp": started["timestamp"],
+        }
+        assert completed == {
+            "type": "pipeline_stage_completed",
+            "stage_index": 0,
+            "stage_status": "completed",
+            "stage_detail": "",
+            "context": completed["context"],
+            "timestamp": completed["timestamp"],
+        }
+        assert completed["context"]["current_stage"] == 0
+        assert completed["context"]["selected_idea_id"] == "idea-alpha"
+        assert started_second == {
+            "type": "pipeline_stage_started",
+            "stage_index": 1,
+            "stage_label": "Planning opportunity brief",
+            "timestamp": started_second["timestamp"],
+        }
+        assert skipped == {
+            "type": "pipeline_stage_skipped",
+            "stage_index": 1,
+            "stage_label": "Planning opportunity brief",
+            "reason": "already planned",
+            "context": skipped["context"],
+            "timestamp": skipped["timestamp"],
+        }
+        assert skipped["context"]["current_stage"] == 1
+        assert skipped["context"]["selected_idea_id"] == "idea-beta"
+        assert finished["type"] == "pipeline_completed"
+        assert finished["current_stage"] == 1
+
+        status_response = client.get(f"/api/content-gen/pipelines/{pipeline_id}")
+        assert status_response.status_code == 200
+        payload = status_response.json()
+        assert payload["status"] == "completed"
+        assert payload["current_stage"] == 1
+        assert payload["context"]["selected_idea_id"] == "idea-beta"
+
+
+def test_content_gen_pipeline_websocket_streams_failed_stage_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stage failures should emit both the failed-stage event and terminal pipeline error."""
+    config = Config()
+    monkeypatch.setattr("cc_deep_research.content_gen.router.load_config", lambda: config)
+    allow_run = threading.Event()
+
+    class FakeOrchestrator:
+        def __init__(self, _config: Config) -> None:
+            pass
+
+        async def run_full_pipeline(
+            self,
+            theme: str,
+            *,
+            from_stage: int = 0,
+            to_stage: int | None = None,
+            progress_callback=None,
+            stage_completed_callback=None,
+        ) -> PipelineContext:
+            assert theme == "pricing anchors"
+            assert from_stage == 0
+            assert to_stage == 3
+
+            while not allow_run.is_set():
+                await asyncio.sleep(0.001)
+
+            if progress_callback is not None:
+                progress_callback(3, "Scoring ideas")
+            await asyncio.sleep(0)
+            if stage_completed_callback is not None:
+                stage_completed_callback(
+                    3,
+                    "failed",
+                    "Malformed scoring response",
+                    PipelineContext(
+                        theme=theme,
+                        current_stage=3,
+                        stage_traces=[
+                            PipelineStageTrace(
+                                stage_index=3,
+                                stage_name="score_ideas",
+                                stage_label="Scoring ideas",
+                                status="failed",
+                                output_summary="Malformed scoring response",
+                                decision_summary="Stage failed: Malformed scoring response",
+                            ),
+                        ],
+                    ),
+                )
+            await asyncio.sleep(0)
+            raise ValueError("Malformed scoring response")
+
+    monkeypatch.setattr(
+        "cc_deep_research.content_gen.orchestrator.ContentGenOrchestrator",
+        FakeOrchestrator,
+    )
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/api/content-gen/pipelines",
+            json={"theme": "pricing anchors", "from_stage": 0, "to_stage": 3},
+        )
+
+        assert response.status_code == 202
+        pipeline_id = response.json()["pipeline_id"]
+
+        with client.websocket_connect(f"/ws/content-gen/pipeline/{pipeline_id}") as websocket:
+            initial = websocket.receive_json()
+            assert initial["type"] == "pipeline_status"
+            assert initial["pipeline_id"] == pipeline_id
+
+            allow_run.set()
+
+            started = websocket.receive_json()
+            failed = websocket.receive_json()
+            pipeline_error = websocket.receive_json()
+
+        assert started == {
+            "type": "pipeline_stage_started",
+            "stage_index": 3,
+            "stage_label": "Scoring ideas",
+            "timestamp": started["timestamp"],
+        }
+        assert failed == {
+            "type": "pipeline_stage_failed",
+            "stage_index": 3,
+            "stage_label": "Scoring ideas",
+            "error": "Malformed scoring response",
+            "context": failed["context"],
+            "timestamp": failed["timestamp"],
+        }
+        assert failed["context"]["current_stage"] == 3
+        assert pipeline_error == {
+            "type": "pipeline_error",
+            "error": "Malformed scoring response",
+            "timestamp": pipeline_error["timestamp"],
+        }
+
+        status_response = client.get(f"/api/content-gen/pipelines/{pipeline_id}")
+        assert status_response.status_code == 200
+        payload = status_response.json()
+        assert payload["status"] == "failed"
+        assert payload["error"] == "Malformed scoring response"
 
 
 def test_stop_research_run_cancels_active_run_and_interrupts_session(
@@ -306,6 +904,8 @@ def test_patch_config_clears_secret_fields(
 ) -> None:
     """The config patch endpoint should support explicit secret clear actions."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEYS", raising=False)
     config_dir = tmp_path / "xdg" / "cc-deep-research"
     config_dir.mkdir(parents=True)
     (config_dir / "config.yaml").write_text(

@@ -1,0 +1,11 @@
+---
+category: evergreen
+audience: Founders
+problem: Vague workflow issues
+---
+source: Unstructured brainstorm notes
+why_now: Maybe relevant this quarter
+
+Rejected ideas: 1
+Rejection reasons:
+- Missing a concrete idea statement

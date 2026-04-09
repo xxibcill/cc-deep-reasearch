@@ -33,14 +33,27 @@ class WebSocketConnection:
         import json
 
         try:
-            await self._websocket.send(json.dumps(data))
+            if hasattr(self._websocket, "send_json"):
+                await self._websocket.send_json(data)
+            elif hasattr(self._websocket, "send_text"):
+                await self._websocket.send_text(json.dumps(data))
+            else:
+                await self._websocket.send(json.dumps(data))
         except Exception:
             # Connection likely closed
             self._closed = True
 
     def is_connected(self) -> bool:
         """Check if connection is still active."""
-        return not self._closed and not self._websocket.closed
+        closed = getattr(self._websocket, "closed", False)
+        client_state = getattr(self._websocket, "client_state", None)
+        application_state = getattr(self._websocket, "application_state", None)
+        return (
+            not self._closed
+            and not closed
+            and getattr(client_state, "name", None) != "DISCONNECTED"
+            and getattr(application_state, "name", None) != "DISCONNECTED"
+        )
 
     async def close(self) -> None:
         """Close the WebSocket connection."""

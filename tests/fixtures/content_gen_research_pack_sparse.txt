@@ -1,0 +1,7 @@
+audience_insights:
+- Founders skim pricing pages and miss how buyers compare tiers
+proof_points:
+- Anchoring affects perceived value before full feature evaluation
+claims_requiring_verification:
+- Any statement about exact conversion lift
+research_stop_reason: Search coverage was thin, so keep the script qualitative
