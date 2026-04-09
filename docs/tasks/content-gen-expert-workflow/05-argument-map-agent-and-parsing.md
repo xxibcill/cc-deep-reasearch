@@ -1,5 +1,7 @@
 # Task 05: Implement Argument Map Agent
 
+Status: Done
+
 Goal:
 Add the agent that turns a selected idea, selected angle, and structured research pack into an `ArgumentMap`.
 
@@ -28,4 +30,3 @@ Validation:
 Out of scope:
 - Pipeline stage list changes
 - Scripting prompt changes
-

@@ -1,5 +1,7 @@
 # Task 04: Define Argument Map Contract
 
+Status: Done
+
 Goal:
 Create the data contract and prompt for the missing bridge between research and script writing.
 
@@ -30,4 +32,3 @@ Validation:
 Out of scope:
 - Agent implementation
 - Orchestrator wiring
-

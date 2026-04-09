@@ -1,6 +1,6 @@
 """Data models for the content generation workflow.
 
-Contract Version: 1.1.0
+Contract Version: 1.2.0
 
 This module defines the data contracts for each pipeline stage. Each model
 represents the expected output format from its corresponding agent.
@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from cc_deep_research.models.search import QueryProvenance
 
-CONTRACT_VERSION = "1.1.0"
+CONTRACT_VERSION = "1.2.0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,6 +160,31 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
             "research_stop_reason",
         ),
         failure_mode="tolerant",
+    ),
+    "build_argument_map": ContentGenStageContract(
+        stage_name="build_argument_map",
+        prompt_module="prompts/argument_map.py",
+        contract_version="1.0.0",
+        parser_location="agents/argument_map.py::_parse_argument_map",
+        output_model="ArgumentMap",
+        format_notes=(
+            "Scalar thesis fields followed by repeated '---' blocks for proof_anchors, "
+            "counterarguments, safe_claims, unsafe_claims, and beat_claim_plan. "
+            "Beat and claim records reference explicit proof_id/claim_id identifiers."
+        ),
+        required_fields=(
+            "thesis",
+            "audience_belief_to_challenge",
+            "core_mechanism",
+            "proof_anchors",
+        ),
+        expected_sections=(
+            "counterarguments",
+            "safe_claims",
+            "unsafe_claims",
+            "beat_claim_plan",
+        ),
+        failure_mode="fail_fast",
     ),
     "run_scripting": ContentGenStageContract(
         stage_name="run_scripting",
@@ -908,6 +933,121 @@ class ResearchPack(BaseModel):
         return self
 
 
+# ---------------------------------------------------------------------------
+# Pipeline stage 5: Argument map builder
+# ---------------------------------------------------------------------------
+
+
+class ArgumentProofAnchor(BaseModel):
+    """A piece of evidence or mechanism support that later beats can cite."""
+
+    proof_id: str = Field(default_factory=lambda: f"proof_{uuid4().hex[:8]}")
+    summary: str = ""
+    source_ids: list[str] = Field(default_factory=list)
+    usage_note: str = ""
+
+
+class ArgumentCounterargument(BaseModel):
+    """Credible pushback and the response the script should hold ready."""
+
+    counterargument_id: str = Field(default_factory=lambda: f"counter_{uuid4().hex[:8]}")
+    counterargument: str = ""
+    response: str = ""
+    response_proof_ids: list[str] = Field(default_factory=list)
+
+
+class ArgumentClaim(BaseModel):
+    """A claim candidate that can be safe to state or marked off-limits."""
+
+    claim_id: str = Field(default_factory=lambda: f"claim_{uuid4().hex[:8]}")
+    claim: str = ""
+    supporting_proof_ids: list[str] = Field(default_factory=list)
+    note: str = ""
+
+
+class ArgumentBeatClaim(BaseModel):
+    """Beat-level plan that ties the narrative to validated proof and claims."""
+
+    beat_id: str = Field(default_factory=lambda: f"beat_{uuid4().hex[:8]}")
+    beat_name: str = ""
+    goal: str = ""
+    claim_ids: list[str] = Field(default_factory=list)
+    proof_anchor_ids: list[str] = Field(default_factory=list)
+    counterargument_ids: list[str] = Field(default_factory=list)
+    transition_note: str = ""
+
+
+class ArgumentMap(BaseModel):
+    """Bridge artifact between research synthesis and script drafting."""
+
+    idea_id: str = ""
+    angle_id: str = ""
+    thesis: str = ""
+    audience_belief_to_challenge: str = ""
+    core_mechanism: str = ""
+    proof_anchors: list[ArgumentProofAnchor] = Field(default_factory=list)
+    counterarguments: list[ArgumentCounterargument] = Field(default_factory=list)
+    safe_claims: list[ArgumentClaim] = Field(default_factory=list)
+    unsafe_claims: list[ArgumentClaim] = Field(default_factory=list)
+    beat_claim_plan: list[ArgumentBeatClaim] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_references(self) -> ArgumentMap:
+        proof_ids = _ensure_unique_ids(
+            self.proof_anchors,
+            id_attr="proof_id",
+            label="proof_anchors",
+        )
+        counterargument_ids = _ensure_unique_ids(
+            self.counterarguments,
+            id_attr="counterargument_id",
+            label="counterarguments",
+        )
+        claim_ids = _ensure_unique_ids(
+            [*self.safe_claims, *self.unsafe_claims],
+            id_attr="claim_id",
+            label="claims",
+        )
+        _ensure_unique_ids(
+            self.beat_claim_plan,
+            id_attr="beat_id",
+            label="beat_claim_plan",
+        )
+
+        for claim in [*self.safe_claims, *self.unsafe_claims]:
+            _ensure_known_ids(
+                claim.supporting_proof_ids,
+                valid_ids=proof_ids,
+                label=f"claim '{claim.claim_id}' supporting_proof_ids",
+            )
+
+        for counterargument in self.counterarguments:
+            _ensure_known_ids(
+                counterargument.response_proof_ids,
+                valid_ids=proof_ids,
+                label=f"counterargument '{counterargument.counterargument_id}' response_proof_ids",
+            )
+
+        for beat in self.beat_claim_plan:
+            _ensure_known_ids(
+                beat.claim_ids,
+                valid_ids=claim_ids,
+                label=f"beat '{beat.beat_id}' claim_ids",
+            )
+            _ensure_known_ids(
+                beat.proof_anchor_ids,
+                valid_ids=proof_ids,
+                label=f"beat '{beat.beat_id}' proof_anchor_ids",
+            )
+            _ensure_known_ids(
+                beat.counterargument_ids,
+                valid_ids=counterargument_ids,
+                label=f"beat '{beat.beat_id}' counterargument_ids",
+            )
+
+        return self
+
+
 def _dedupe_research_sources(sources: list[ResearchSource]) -> list[ResearchSource]:
     deduped: list[ResearchSource] = []
     seen: set[tuple[str, str]] = set()
@@ -918,6 +1058,26 @@ def _dedupe_research_sources(sources: list[ResearchSource]) -> list[ResearchSour
         seen.add(key)
         deduped.append(source)
     return deduped
+
+
+def _ensure_unique_ids(items: list[BaseModel], *, id_attr: str, label: str) -> set[str]:
+    ids: set[str] = set()
+    for item in items:
+        item_id = str(getattr(item, id_attr, "")).strip()
+        if not item_id:
+            continue
+        if item_id in ids:
+            msg = f"{label} contains duplicate identifier '{item_id}'"
+            raise ValueError(msg)
+        ids.add(item_id)
+    return ids
+
+
+def _ensure_known_ids(referenced_ids: list[str], *, valid_ids: set[str], label: str) -> None:
+    unknown_ids = sorted({item_id for item_id in referenced_ids if item_id and item_id not in valid_ids})
+    if unknown_ids:
+        msg = f"{label} references unknown identifiers: {', '.join(unknown_ids)}"
+        raise ValueError(msg)
 
 
 def _summaries_for_finding_type(

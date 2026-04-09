@@ -13,8 +13,8 @@ Recommended order:
 1. `01-model-expert-strategy-and-evidence.md` - Done
 2. `02-research-pack-structured-evidence.md` - Done
 3. `03-research-provenance-and-source-retention.md` - Done
-4. `04-argument-map-models-and-prompt.md`
-5. `05-argument-map-agent-and-parsing.md`
+4. `04-argument-map-models-and-prompt.md` - Done
+5. `05-argument-map-agent-and-parsing.md` - Done
 6. `06-pipeline-wiring-for-argument-map.md`
 7. `07-scripting-grounding-with-proof-links.md`
 8. `08-quality-evaluator-expert-metrics.md`
