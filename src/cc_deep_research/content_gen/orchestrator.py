@@ -10,6 +10,9 @@ from typing import TYPE_CHECKING, Any
 from cc_deep_research.content_gen.models import (
     PIPELINE_STAGE_LABELS,
     PIPELINE_STAGES,
+    ArgumentMap,
+    BeatIntent,
+    BeatIntentMap,
     AngleDefinition,
     CoreInputs,
     IterationState,
@@ -20,6 +23,7 @@ from cc_deep_research.content_gen.models import (
     ResearchPack,
     ScoringOutput,
     ScriptingContext,
+    ScriptStructure,
     ScriptVersion,
     StageTraceMetadata,
     StrategyMemory,
@@ -80,6 +84,35 @@ def _resolve_selected_angle(ctx: PipelineContext) -> Any | None:
     return ctx.angles.angle_options[0] if ctx.angles.angle_options else None
 
 
+def _seed_structure_from_argument_map(argument_map: ArgumentMap | None) -> ScriptStructure | None:
+    if argument_map is None or not argument_map.beat_claim_plan:
+        return None
+    return ScriptStructure(
+        chosen_structure="Argument map guided flow",
+        why_it_fits="Derived directly from the evidence-backed beat claim plan.",
+        beat_list=[beat.beat_name for beat in argument_map.beat_claim_plan],
+    )
+
+
+def _seed_beat_intents_from_argument_map(argument_map: ArgumentMap | None) -> BeatIntentMap | None:
+    if argument_map is None or not argument_map.beat_claim_plan:
+        return None
+    return BeatIntentMap(
+        beats=[
+            BeatIntent(
+                beat_id=beat.beat_id,
+                beat_name=beat.beat_name,
+                intent=beat.goal,
+                claim_ids=list(beat.claim_ids),
+                proof_anchor_ids=list(beat.proof_anchor_ids),
+                counterargument_ids=list(beat.counterargument_ids),
+                transition_note=beat.transition_note,
+            )
+            for beat in argument_map.beat_claim_plan
+        ]
+    )
+
+
 class ContentGenOrchestrator:
     """Coordinate content generation modules.
 
@@ -97,6 +130,7 @@ class ContentGenOrchestrator:
         return self._agents[name]
 
     def _create_agent(self, name: str) -> Any:
+        from cc_deep_research.content_gen.agents.argument_map import ArgumentMapAgent
         from cc_deep_research.content_gen.agents.angle import AngleAgent
         from cc_deep_research.content_gen.agents.backlog import BacklogAgent
         from cc_deep_research.content_gen.agents.opportunity import OpportunityPlanningAgent
@@ -116,6 +150,7 @@ class ContentGenOrchestrator:
             "backlog": lambda: BacklogAgent(self._config),
             "angle": lambda: AngleAgent(self._config),
             "research": lambda: ResearchPackAgent(self._config),
+            "argument_map": lambda: ArgumentMapAgent(self._config),
             "visual": lambda: VisualAgent(self._config),
             "production": lambda: ProductionAgent(self._config),
             "packaging": lambda: PackagingAgent(self._config),
@@ -143,12 +178,12 @@ class ContentGenOrchestrator:
         progress_callback: Callable[[int, str], None] | None = None,
         stage_completed_callback: Callable[[int, str, str, PipelineContext], None] | None = None,
     ) -> PipelineContext:
-        """Run the full 13-stage content pipeline with iterative quality loop.
+        """Run the full 14-stage content pipeline with iterative quality loop.
 
         Phases:
           1. Stages 0-4 (ideation) — run once
-          2. Stages 5-10 (content) — iterative loop with quality evaluation
-          3. Stages 11-12 (publish) — run once after loop exits
+          2. Stages 5-11 (content) — iterative loop with quality evaluation
+          3. Stages 12-13 (publish) — run once after loop exits
         """
         ctx = PipelineContext(
             theme=theme,
@@ -163,15 +198,15 @@ class ContentGenOrchestrator:
         for idx in range(from_stage, min(5, end + 1)):
             ctx = await self._run_stage(idx, ctx, progress_callback, stage_completed_callback)
 
-        # Phase 2: Content stages (5-10) — iterative or single-pass
-        if self._config.content_gen.enable_iterative_mode and end >= 6 and from_stage <= 5:
+        # Phase 2: Content stages (5-11) — iterative or single-pass
+        if self._config.content_gen.enable_iterative_mode and end >= 7 and from_stage <= 6:
             ctx = await self._run_iterative_loop(ctx, progress_callback, end, stage_completed_callback)
         else:
-            for idx in range(max(5, from_stage), min(11, end + 1)):
+            for idx in range(max(5, from_stage), min(12, end + 1)):
                 ctx = await self._run_stage(idx, ctx, progress_callback, stage_completed_callback)
 
-        # Phase 3: Post-content stages (11-12) — run once
-        for idx in range(11, end + 1):
+        # Phase 3: Post-content stages (12-13) — run once
+        for idx in range(12, end + 1):
             ctx = await self._run_stage(idx, ctx, progress_callback, stage_completed_callback)
 
         return ctx
@@ -194,9 +229,20 @@ class ContentGenOrchestrator:
                 return False, "selected idea not found"
             if _resolve_selected_angle(ctx) is None:
                 return False, "selected angle missing"
-        if stage == "run_scripting":
+        if stage == "build_argument_map":
+            if ctx.research_pack is None:
+                return False, "research_pack missing"
             if ctx.backlog is None or ctx.angles is None:
                 return False, "backlog/angles missing"
+            if _resolve_selected_item(ctx) is None:
+                return False, "selected idea not found"
+            if _resolve_selected_angle(ctx) is None:
+                return False, "selected angle missing"
+        if stage == "run_scripting":
+            if ctx.backlog is None or ctx.angles is None or ctx.argument_map is None:
+                return False, "backlog/angles/argument_map missing"
+            if _resolve_selected_item(ctx) is None:
+                return False, "selected idea not found"
             if _resolve_selected_angle(ctx) is None:
                 return False, "selected angle missing"
         if stage == "visual_translation":
@@ -366,8 +412,8 @@ class ContentGenOrchestrator:
                 ctx = await self._run_stage(5, ctx, progress_callback, stage_completed_callback)
                 iter_state.should_rerun_research = False
 
-            # Run content stages 6-10
-            for idx in range(6, min(11, end_stage + 1)):
+            # Run content stages 6-11
+            for idx in range(6, min(12, end_stage + 1)):
                 ctx = await self._run_stage(idx, ctx, progress_callback, stage_completed_callback)
 
             # Evaluate quality
@@ -478,10 +524,20 @@ class ContentGenOrchestrator:
             if ctx.angles:
                 return f"idea_id={_resolve_selected_idea_id(ctx) or 'none'}"
             return "idea_id=none"
-        if stage == "run_scripting":
+        if stage == "build_argument_map":
             if ctx.research_pack:
-                return f"research_context={len(ctx.research_pack.key_facts)} facts"
-            return "research_context=empty"
+                return (
+                    f"research_claims={len(ctx.research_pack.claims)}, "
+                    f"proof_points={len(ctx.research_pack.proof_points)}"
+                )
+            return "research_pack=empty"
+        if stage == "run_scripting":
+            if ctx.argument_map:
+                return (
+                    f"beats={len(ctx.argument_map.beat_claim_plan)}, "
+                    f"safe_claims={len(ctx.argument_map.safe_claims)}"
+                )
+            return "argument_map=empty"
         if stage == "visual_translation":
             if ctx.scripting and ctx.scripting.tightened:
                 return f"script_words={ctx.scripting.tightened.word_count}"
@@ -529,6 +585,14 @@ class ContentGenOrchestrator:
         if stage == "build_research_pack":
             if ctx.research_pack:
                 return f"facts={len(ctx.research_pack.key_facts)}, proof={len(ctx.research_pack.proof_points)}"
+            return "empty"
+        if stage == "build_argument_map":
+            if ctx.argument_map:
+                return (
+                    f"proof={len(ctx.argument_map.proof_anchors)}, "
+                    f"claims={len(ctx.argument_map.safe_claims)}, "
+                    f"beats={len(ctx.argument_map.beat_claim_plan)}"
+                )
             return "empty"
         if stage == "run_scripting":
             if ctx.scripting and ctx.scripting.qc:
@@ -583,6 +647,14 @@ class ContentGenOrchestrator:
                 meta.fact_count = len(ctx.research_pack.key_facts)
                 meta.proof_count = len(ctx.research_pack.proof_points)
                 meta.cache_reused = "cache" in ctx.research_pack.research_stop_reason.lower()
+        elif stage == "build_argument_map":
+            if ctx.argument_map:
+                meta.selected_idea_id = ctx.argument_map.idea_id or _resolve_selected_idea_id(ctx)
+                meta.selected_angle_id = ctx.argument_map.angle_id or ""
+                meta.proof_count = len(ctx.argument_map.proof_anchors)
+                meta.claim_count = len(ctx.argument_map.safe_claims)
+                meta.unsafe_claim_count = len(ctx.argument_map.unsafe_claims)
+                meta.beats_count = len(ctx.argument_map.beat_claim_plan)
         elif stage == "run_scripting":
             if ctx.scripting:
                 meta.selected_idea_id = _resolve_selected_idea_id(ctx)
@@ -602,6 +674,10 @@ class ContentGenOrchestrator:
                     final_script = ctx.scripting.draft.content
                 if final_script:
                     meta.final_word_count = len(final_script.split())
+                if ctx.scripting.argument_map:
+                    meta.proof_count = len(ctx.scripting.argument_map.proof_anchors)
+                    meta.claim_count = len(ctx.scripting.argument_map.safe_claims)
+                    meta.beats_count = len(ctx.scripting.argument_map.beat_claim_plan)
         elif stage == "visual_translation":
             if ctx.visual_plan:
                 meta.selected_idea_id = ctx.visual_plan.idea_id or _resolve_selected_idea_id(ctx)
@@ -650,6 +726,10 @@ class ContentGenOrchestrator:
             warnings.append(
                 f"Human QC blocked publish until {len(ctx.qc_gate.must_fix_items)} must-fix item(s) are resolved."
             )
+        elif stage == "build_argument_map" and ctx.argument_map and ctx.argument_map.unsafe_claims:
+            warnings.append(
+                f"Argument map flagged {len(ctx.argument_map.unsafe_claims)} unsafe claim(s) to avoid in scripting."
+            )
 
         return warnings
 
@@ -673,6 +753,8 @@ class ContentGenOrchestrator:
             return ctx.angles.selection_reasoning
         if stage == "build_research_pack" and ctx.research_pack:
             return ctx.research_pack.research_stop_reason
+        if stage == "build_argument_map" and ctx.argument_map:
+            return ctx.argument_map.thesis
         if stage == "human_qc" and ctx.qc_gate:
             if ctx.qc_gate.approved_for_publish:
                 return "Human QC approved the package for publish."
@@ -720,6 +802,10 @@ class ContentGenOrchestrator:
     async def run_research(self, item: Any, angle: Any) -> Any:
         agent = self._get_agent("research")
         return await agent.build(item, angle)
+
+    async def run_argument_map(self, item: Any, angle: Any, research_pack: ResearchPack) -> Any:
+        agent = self._get_agent("argument_map")
+        return await agent.build(item, angle, research_pack)
 
     async def run_visual(
         self, scripting_ctx: ScriptingContext, *, idea_id: str = "", angle_id: str = ""
@@ -993,12 +1079,26 @@ async def _stage_build_research_pack(
     return ctx
 
 
+async def _stage_build_argument_map(
+    orch: ContentGenOrchestrator, ctx: PipelineContext
+) -> PipelineContext:
+    if ctx.research_pack is None or ctx.backlog is None or ctx.angles is None:
+        return ctx
+    item = _resolve_selected_item(ctx)
+    angle = _resolve_selected_angle(ctx)
+    if item is None or angle is None:
+        return ctx
+    agent = orch._get_agent("argument_map")
+    ctx.argument_map = await agent.build(item, angle, ctx.research_pack)
+    return ctx
+
+
 async def _stage_run_scripting(
     orch: ContentGenOrchestrator, ctx: PipelineContext
 ) -> PipelineContext:
     from cc_deep_research.content_gen.backlog_service import BacklogService
 
-    if ctx.backlog is None or ctx.angles is None:
+    if ctx.backlog is None or ctx.angles is None or ctx.argument_map is None:
         return ctx
     item = _resolve_selected_item(ctx)
     angle = _resolve_selected_angle(ctx)
@@ -1014,6 +1114,7 @@ async def _stage_run_scripting(
         research_context=research_context,
         tone=(angle.tone if angle else ""),
         cta=(angle.cta if angle else ""),
+        argument_map=ctx.argument_map,
         core_inputs=CoreInputs(
             topic=item.idea if item else raw_idea,
             outcome=(
@@ -1039,8 +1140,11 @@ async def _stage_run_scripting(
             ),
             why_it_works=(angle.why_this_version_should_exist if angle else ""),
         ),
+        structure=_seed_structure_from_argument_map(ctx.argument_map),
+        beat_intents=_seed_beat_intents_from_argument_map(ctx.argument_map),
     )
-    ctx.scripting = await agent.run_from_step(seeded_ctx, 3)
+    start_step = 5 if seeded_ctx.structure and seeded_ctx.beat_intents else 3
+    ctx.scripting = await agent.run_from_step(seeded_ctx, start_step)
     selected_idea_id = _resolve_selected_idea_id(ctx)
     if selected_idea_id:
         BacklogService(orch._config).mark_in_production(
@@ -1150,6 +1254,7 @@ _PIPELINE_HANDLERS = [
     _stage_score_ideas,
     _stage_generate_angles,
     _stage_build_research_pack,
+    _stage_build_argument_map,
     _stage_run_scripting,
     _stage_visual_translation,
     _stage_production_brief,

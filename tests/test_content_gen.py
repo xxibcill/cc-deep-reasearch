@@ -232,8 +232,8 @@ def test_dispatch_table_covers_all_steps() -> None:
 
 
 def test_pipeline_stages_count() -> None:
-    """The pipeline should have 13 stages (0-12)."""
-    assert len(PIPELINE_STAGES) == 13
+    """The pipeline should have 14 stages (0-13)."""
+    assert len(PIPELINE_STAGES) == 14
 
 
 def test_content_gen_stage_contract_registry_covers_core_prompt_stages() -> None:
@@ -306,6 +306,31 @@ def test_pipeline_context_roundtrip() -> None:
     ctx = PipelineContext(
         theme="test theme",
         strategy=StrategyMemory(niche="fitness", content_pillars=["strength"]),
+        argument_map=ArgumentMap(
+            thesis="The visible premium tier reframes the middle plan.",
+            proof_anchors=[
+                {
+                    "proof_id": "proof_1",
+                    "summary": "Buyers compare tier contrast before feature detail.",
+                }
+            ],
+            safe_claims=[
+                {
+                    "claim_id": "claim_1",
+                    "claim": "Tier framing changes what buyers notice first.",
+                    "supporting_proof_ids": ["proof_1"],
+                }
+            ],
+            beat_claim_plan=[
+                {
+                    "beat_id": "beat_1",
+                    "beat_name": "Hook",
+                    "goal": "Challenge the default pricing diagnosis.",
+                    "claim_ids": ["claim_1"],
+                    "proof_anchor_ids": ["proof_1"],
+                }
+            ],
+        ),
         backlog=BacklogOutput(items=[
             BacklogItem(idea="test idea", category="evergreen", audience="beginners"),
         ]),
@@ -319,6 +344,8 @@ def test_pipeline_context_roundtrip() -> None:
     assert restored.theme == "test theme"
     assert restored.strategy is not None
     assert restored.strategy.niche == "fitness"
+    assert restored.argument_map is not None
+    assert restored.argument_map.thesis == "The visible premium tier reframes the middle plan."
     assert restored.shortlist == ["idea-2", "idea-1"]
     assert restored.selected_idea_id == "idea-2"
     assert restored.selection_reasoning == "Better hook and clearer evidence fit."
@@ -752,6 +779,99 @@ async def test_build_research_pack_uses_pipeline_selected_idea() -> None:
 
 
 @pytest.mark.asyncio
+async def test_build_argument_map_uses_selected_context_and_research_pack() -> None:
+    """Argument map stage should use the selected idea, angle, and built research pack."""
+    from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator, _stage_build_argument_map
+
+    class FakeConfig:
+        content_gen = type(
+            "ContentGen",
+            (),
+            {
+                "max_iterations": 1,
+                "quality_threshold": 0.7,
+                "convergence_threshold": 0.1,
+                "enable_iterative_mode": False,
+                "scoring_threshold_produce": 3.5,
+                "default_platforms": ["tiktok"],
+            },
+        )()
+
+        llm = type(
+            "LLM",
+            (),
+            {
+                "anthropic": type("C", (), {"enabled": True, "api_key": "test"})(),
+            },
+        )()
+
+    class FakeArgumentMapBuilder:
+        def __init__(self) -> None:
+            self.seen_item_id = ""
+            self.seen_angle_id = ""
+            self.seen_research_idea_id = ""
+
+        async def build(
+            self,
+            item: BacklogItem,
+            angle: AngleOption,
+            research_pack: ResearchPack,
+        ) -> ArgumentMap:
+            self.seen_item_id = item.idea_id
+            self.seen_angle_id = angle.angle_id
+            self.seen_research_idea_id = research_pack.idea_id
+            return ArgumentMap(
+                idea_id=item.idea_id,
+                angle_id=angle.angle_id,
+                thesis="Anchor beats copy tweaks",
+                proof_anchors=[
+                    {
+                        "proof_id": "proof_1",
+                        "summary": "Buyers compare tiers first",
+                    }
+                ],
+            )
+
+    orch = ContentGenOrchestrator(FakeConfig())
+    fake_agent = FakeArgumentMapBuilder()
+    orch._agents["argument_map"] = fake_agent
+    ctx = PipelineContext(
+        theme="test",
+        backlog=BacklogOutput(
+            items=[
+                BacklogItem(idea_id="id1", idea="First idea"),
+                BacklogItem(idea_id="id2", idea="Second idea"),
+            ]
+        ),
+        scoring=ScoringOutput(
+            produce_now=["id1", "id2"],
+            shortlist=["id1", "id2"],
+            selected_idea_id="id1",
+        ),
+        selected_idea_id="id2",
+        angles=AngleOutput(
+            idea_id="id2",
+            angle_options=[AngleOption(angle_id="angle-2", core_promise="Angle for second idea")],
+            selected_angle_id="angle-2",
+        ),
+        research_pack=ResearchPack(
+            idea_id="id2",
+            angle_id="angle-2",
+            claims=[{"claim_id": "claim_1", "claim": "Anchors matter"}],
+        ),
+    )
+
+    ctx = await _stage_build_argument_map(orch, ctx)
+
+    assert fake_agent.seen_item_id == "id2"
+    assert fake_agent.seen_angle_id == "angle-2"
+    assert fake_agent.seen_research_idea_id == "id2"
+    assert ctx.argument_map is not None
+    assert ctx.argument_map.idea_id == "id2"
+    assert ctx.argument_map.angle_id == "angle-2"
+
+
+@pytest.mark.asyncio
 async def test_stage_completed_callback_emits_for_skipped_stage() -> None:
     """stage_completed_callback should be called for skipped stages."""
     from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
@@ -978,12 +1098,31 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
             assert feedback == ""
             return ResearchPack.model_validate(fixture["research_pack"])
 
+    class FakeArgumentMapAgent:
+        async def build(
+            self,
+            item: BacklogItem,
+            angle: AngleOption,
+            research_pack: ResearchPack,
+        ) -> ArgumentMap:
+            assert item.idea_id == selected_idea_id
+            assert angle.angle_id == fixture["angles"]["selected_angle_id"]
+            assert research_pack.idea_id == selected_idea_id
+            return ArgumentMap.model_validate(fixture["argument_map"])
+
     class FakeScriptingAgent:
         async def run_from_step(self, ctx: ScriptingContext, step: int) -> ScriptingContext:
-            assert step == 3
+            assert step == 5
             assert ctx.raw_idea == selected_idea["idea"]
+            assert ctx.argument_map is not None
+            assert ctx.argument_map.thesis == fixture["argument_map"]["thesis"]
             assert ctx.core_inputs is not None
             assert ctx.core_inputs.topic == selected_idea["idea"]
+            assert ctx.structure is not None
+            assert ctx.structure.beat_list == ["Hook", "Reframe", "Proof", "Close"]
+            assert ctx.beat_intents is not None
+            assert ctx.beat_intents.beats[0].claim_ids == ["claim_1"]
+            assert ctx.beat_intents.beats[2].proof_anchor_ids == ["proof_2"]
             assert "Anchors shape perceived value" in ctx.research_context
             return ScriptingContext.model_validate(fixture["scripting"])
 
@@ -1041,6 +1180,7 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
     orch._agents["backlog"] = FakeBacklogAgent()
     orch._agents["angle"] = FakeAngleAgent()
     orch._agents["research"] = FakeResearchAgent()
+    orch._agents["argument_map"] = FakeArgumentMapAgent()
     orch._agents["scripting"] = FakeScriptingAgent()
     orch._agents["visual"] = FakeVisualAgent()
     orch._agents["production"] = FakeProductionAgent()
@@ -1058,6 +1198,8 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
     assert ctx.selection_reasoning == fixture["scoring"]["selection_reasoning"]
     assert ctx.research_pack is not None
     assert ctx.research_pack.idea_id == selected_idea_id
+    assert ctx.argument_map is not None
+    assert ctx.argument_map.idea_id == selected_idea_id
     assert ctx.scripting is not None
     assert ctx.scripting.raw_idea == fixture["scripting"]["raw_idea"]
     assert ctx.packaging is not None
@@ -1082,6 +1224,11 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
     assert research_trace.decision_summary == fixture["research_pack"]["research_stop_reason"]
     assert research_trace.metadata.fact_count == len(fixture["research_pack"]["key_facts"])
     assert research_trace.metadata.proof_count == len(fixture["research_pack"]["proof_points"])
+
+    argument_map_trace = next(trace for trace in ctx.stage_traces if trace.stage_name == "build_argument_map")
+    assert argument_map_trace.decision_summary == fixture["argument_map"]["thesis"]
+    assert argument_map_trace.metadata.proof_count == len(fixture["argument_map"]["proof_anchors"])
+    assert argument_map_trace.metadata.claim_count == len(fixture["argument_map"]["safe_claims"])
 
 
 # ---------------------------------------------------------------------------
@@ -1390,6 +1537,137 @@ async def test_generate_hooks_requires_beat_intents() -> None:
 
     with pytest.raises(ValueError, match="beat_intents"):
         await agent.generate_hooks(ctx)
+
+
+def test_step6_prompt_uses_argument_map_as_primary_grounding() -> None:
+    """Draft prompt should expose beat-level claim and proof references from the argument map."""
+    prompt = scripting_prompts.step6_user(
+        CoreInputs(
+            topic="pricing anchors",
+            outcome="make the middle tier feel safer",
+            audience="SaaS founders",
+        ),
+        AngleDefinition(
+            angle="The premium tier is the anchor, not the hero",
+            content_type="Framework",
+            core_tension="buyers assume cheapest is safest",
+        ),
+        ScriptStructure(
+            chosen_structure="Argument map guided flow",
+            beat_list=["Hook", "Reframe", "Proof", "Close"],
+        ),
+        BeatIntentMap(
+            beats=[
+                BeatIntent(
+                    beat_id="beat_1",
+                    beat_name="Hook",
+                    intent="Challenge the cheapest-plan instinct",
+                    claim_ids=["claim_1"],
+                    proof_anchor_ids=["proof_1"],
+                    transition_note="Move into the mechanism",
+                )
+            ]
+        ),
+        "If buyers always choose cheapest, your anchor tier is broken",
+        argument_map=ArgumentMap(
+            thesis="The premium tier reframes the middle plan before feature details matter.",
+            proof_anchors=[
+                {
+                    "proof_id": "proof_1",
+                    "summary": "Buyers compare tier contrast before reading feature lists.",
+                    "usage_note": "Use for the reframe.",
+                }
+            ],
+            safe_claims=[
+                {
+                    "claim_id": "claim_1",
+                    "claim": "Tier framing changes what buyers notice first.",
+                    "supporting_proof_ids": ["proof_1"],
+                }
+            ],
+            unsafe_claims=[
+                {
+                    "claim_id": "claim_unsafe_1",
+                    "claim": "Reordering tiers lifts conversion by 23 percent.",
+                    "supporting_proof_ids": ["proof_1"],
+                }
+            ],
+            beat_claim_plan=[
+                {
+                    "beat_id": "beat_1",
+                    "beat_name": "Hook",
+                    "goal": "Challenge the default diagnosis",
+                    "claim_ids": ["claim_1"],
+                    "proof_anchor_ids": ["proof_1"],
+                    "transition_note": "Move into the mechanism",
+                }
+            ],
+        ),
+        research_context="Key facts:\n- fallback only",
+        tone="direct",
+        cta="Follow for more SaaS teardown lessons",
+    )
+
+    assert "Argument Map:" in prompt
+    assert "Safe claims:" in prompt
+    assert "Unsafe claims to avoid as facts:" in prompt
+    assert "claim_ids=claim_1" in prompt
+    assert "proof_ids=proof_1" in prompt
+    assert "Research Context:" in prompt
+
+
+@pytest.mark.asyncio
+async def test_define_beat_intents_parses_grounded_blocks() -> None:
+    """Step 4 should preserve beat-level claim and proof references when the prompt returns them."""
+    agent = _FakeScriptingAgent(
+        """---
+Beat Name: Hook
+Intent: Challenge the default pricing diagnosis
+Claim IDs: claim_1
+Proof Anchor IDs: proof_1
+Counterargument IDs:
+Transition Note: Move into the mechanism
+---
+Beat Name: Proof
+Intent: Show the concrete decoy example
+Claim IDs: claim_2
+Proof Anchor IDs: proof_2
+Counterargument IDs: counter_1
+Transition Note: Close with the audit action
+"""
+    )
+    ctx = ScriptingContext(
+        raw_idea="idea",
+        argument_map=ArgumentMap(
+            thesis="Anchors matter",
+            proof_anchors=[
+                {"proof_id": "proof_1", "summary": "Tier contrast shapes attention"},
+                {"proof_id": "proof_2", "summary": "Decoy tiers reframe value"},
+            ],
+            safe_claims=[
+                {"claim_id": "claim_1", "claim": "Tier order changes attention", "supporting_proof_ids": ["proof_1"]},
+                {"claim_id": "claim_2", "claim": "A decoy can make the middle plan feel safer", "supporting_proof_ids": ["proof_2"]},
+            ],
+            counterarguments=[
+                {"counterargument_id": "counter_1", "counterargument": "Sophisticated buyers compare everything"},
+            ],
+            beat_claim_plan=[
+                {"beat_id": "beat_1", "beat_name": "Hook", "goal": "Challenge the diagnosis", "claim_ids": ["claim_1"], "proof_anchor_ids": ["proof_1"]},
+                {"beat_id": "beat_2", "beat_name": "Proof", "goal": "Show the example", "claim_ids": ["claim_2"], "proof_anchor_ids": ["proof_2"], "counterargument_ids": ["counter_1"]},
+            ],
+        ),
+        core_inputs=CoreInputs(topic="Topic", outcome="Outcome", audience="Audience"),
+        angle=AngleDefinition(angle="Angle", content_type="Contrarian", core_tension="Tension"),
+        structure=ScriptStructure(chosen_structure="Structure", beat_list=["Hook", "Proof"]),
+    )
+
+    result = await agent.define_beat_intents(ctx)
+
+    assert result.beat_intents is not None
+    assert result.beat_intents.beats[0].claim_ids == ["claim_1"]
+    assert result.beat_intents.beats[0].proof_anchor_ids == ["proof_1"]
+    assert result.beat_intents.beats[1].counterargument_ids == ["counter_1"]
+    assert result.beat_intents.beats[1].transition_note == "Close with the audit action"
 
 
 # ---------------------------------------------------------------------------
@@ -2769,12 +3047,26 @@ def test_pipeline_includes_plan_opportunity_stage() -> None:
     assert PIPELINE_STAGES[2] == "build_backlog"
 
 
+def test_pipeline_includes_argument_map_between_research_and_scripting() -> None:
+    """build_argument_map should run after research and before scripting."""
+    assert PIPELINE_STAGES[5] == "build_research_pack"
+    assert PIPELINE_STAGES[6] == "build_argument_map"
+    assert PIPELINE_STAGES[7] == "run_scripting"
+
+
 def test_pipeline_stage_labels_include_plan_opportunity() -> None:
     """plan_opportunity should have a human-readable label."""
     from cc_deep_research.content_gen.models import PIPELINE_STAGE_LABELS
 
     assert "plan_opportunity" in PIPELINE_STAGE_LABELS
     assert PIPELINE_STAGE_LABELS["plan_opportunity"] == "Planning opportunity brief"
+
+
+def test_pipeline_stage_labels_include_argument_map() -> None:
+    """build_argument_map should have a human-readable label."""
+    from cc_deep_research.content_gen.models import PIPELINE_STAGE_LABELS
+
+    assert PIPELINE_STAGE_LABELS["build_argument_map"] == "Building argument map"
 
 
 def test_pipeline_context_stores_opportunity_brief() -> None:

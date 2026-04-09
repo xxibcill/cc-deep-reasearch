@@ -208,11 +208,249 @@
     ],
     "research_stop_reason": "Enough evidence gathered for a short educational script"
   },
+  "argument_map": {
+    "idea_id": "idea-beta",
+    "angle_id": "angle-beta",
+    "thesis": "The premium tier should frame the middle plan before buyers compare feature details.",
+    "audience_belief_to_challenge": "Better pricing copy is the first fix when buyers keep choosing cheapest.",
+    "core_mechanism": "Buyers anchor on plan contrast first and only then interpret feature differences through that frame.",
+    "proof_anchors": [
+      {
+        "proof_id": "proof_1",
+        "summary": "Anchors shape perceived value before a buyer compares feature details.",
+        "source_ids": [
+          "src_01"
+        ],
+        "usage_note": "Use to reframe why the top tier exists."
+      },
+      {
+        "proof_id": "proof_2",
+        "summary": "A premium decoy can make the middle plan feel safer instead of more expensive.",
+        "source_ids": [
+          "src_02"
+        ],
+        "usage_note": "Use as the concrete example beat."
+      }
+    ],
+    "counterarguments": [
+      {
+        "counterargument_id": "counter_1",
+        "counterargument": "Sophisticated buyers still compare features in detail.",
+        "response": "They do, but only after the anchor has shaped which comparison feels sensible.",
+        "response_proof_ids": [
+          "proof_1"
+        ]
+      }
+    ],
+    "safe_claims": [
+      {
+        "claim_id": "claim_1",
+        "claim": "Tier framing changes what buyers notice first.",
+        "supporting_proof_ids": [
+          "proof_1"
+        ],
+        "note": "Keep it qualitative."
+      },
+      {
+        "claim_id": "claim_2",
+        "claim": "A premium anchor can make the middle plan feel like the safer choice.",
+        "supporting_proof_ids": [
+          "proof_2"
+        ],
+        "note": "Use as the practical takeaway."
+      }
+    ],
+    "unsafe_claims": [
+      {
+        "claim_id": "claim_unsafe_1",
+        "claim": "A premium anchor always increases conversion.",
+        "supporting_proof_ids": [
+          "proof_2"
+        ],
+        "note": "Not supported as a universal fact."
+      }
+    ],
+    "beat_claim_plan": [
+      {
+        "beat_id": "beat_1",
+        "beat_name": "Hook",
+        "goal": "Challenge the idea that the cheapest plan wins because your copy is weak.",
+        "claim_ids": [
+          "claim_1"
+        ],
+        "proof_anchor_ids": [
+          "proof_1"
+        ],
+        "counterargument_ids": [],
+        "transition_note": "Move from the false diagnosis into the anchor mechanism."
+      },
+      {
+        "beat_id": "beat_2",
+        "beat_name": "Reframe",
+        "goal": "Explain that the premium tier exists to frame the middle option.",
+        "claim_ids": [
+          "claim_1"
+        ],
+        "proof_anchor_ids": [
+          "proof_1"
+        ],
+        "counterargument_ids": [],
+        "transition_note": "Set up one concrete pricing-page example."
+      },
+      {
+        "beat_id": "beat_3",
+        "beat_name": "Proof",
+        "goal": "Show the premium-anchor example and answer the obvious objection.",
+        "claim_ids": [
+          "claim_2"
+        ],
+        "proof_anchor_ids": [
+          "proof_2"
+        ],
+        "counterargument_ids": [
+          "counter_1"
+        ],
+        "transition_note": "Turn the example into an operator rule."
+      },
+      {
+        "beat_id": "beat_4",
+        "beat_name": "Close",
+        "goal": "Give the actionable audit rule and land the CTA.",
+        "claim_ids": [
+          "claim_2"
+        ],
+        "proof_anchor_ids": [
+          "proof_2"
+        ],
+        "counterargument_ids": [],
+        "transition_note": "Close cleanly."
+      }
+    ]
+  },
   "scripting": {
     "raw_idea": "Use pricing anchors so your middle plan feels like the safe choice",
     "research_context": "Key facts:\\n- Anchors shape perceived value\\nProof points:\\n- Premium tiers reframe the middle plan",
     "tone": "direct",
     "cta": "Follow for more SaaS teardown lessons",
+    "argument_map": {
+      "idea_id": "idea-beta",
+      "angle_id": "angle-beta",
+      "thesis": "The premium tier should frame the middle plan before buyers compare feature details.",
+      "audience_belief_to_challenge": "Better pricing copy is the first fix when buyers keep choosing cheapest.",
+      "core_mechanism": "Buyers anchor on plan contrast first and only then interpret feature differences through that frame.",
+      "proof_anchors": [
+        {
+          "proof_id": "proof_1",
+          "summary": "Anchors shape perceived value before a buyer compares feature details.",
+          "source_ids": [
+            "src_01"
+          ],
+          "usage_note": "Use to reframe why the top tier exists."
+        },
+        {
+          "proof_id": "proof_2",
+          "summary": "A premium decoy can make the middle plan feel safer instead of more expensive.",
+          "source_ids": [
+            "src_02"
+          ],
+          "usage_note": "Use as the concrete example beat."
+        }
+      ],
+      "counterarguments": [
+        {
+          "counterargument_id": "counter_1",
+          "counterargument": "Sophisticated buyers still compare features in detail.",
+          "response": "They do, but only after the anchor has shaped which comparison feels sensible.",
+          "response_proof_ids": [
+            "proof_1"
+          ]
+        }
+      ],
+      "safe_claims": [
+        {
+          "claim_id": "claim_1",
+          "claim": "Tier framing changes what buyers notice first.",
+          "supporting_proof_ids": [
+            "proof_1"
+          ],
+          "note": "Keep it qualitative."
+        },
+        {
+          "claim_id": "claim_2",
+          "claim": "A premium anchor can make the middle plan feel like the safer choice.",
+          "supporting_proof_ids": [
+            "proof_2"
+          ],
+          "note": "Use as the practical takeaway."
+        }
+      ],
+      "unsafe_claims": [
+        {
+          "claim_id": "claim_unsafe_1",
+          "claim": "A premium anchor always increases conversion.",
+          "supporting_proof_ids": [
+            "proof_2"
+          ],
+          "note": "Not supported as a universal fact."
+        }
+      ],
+      "beat_claim_plan": [
+        {
+          "beat_id": "beat_1",
+          "beat_name": "Hook",
+          "goal": "Challenge the idea that the cheapest plan wins because your copy is weak.",
+          "claim_ids": [
+            "claim_1"
+          ],
+          "proof_anchor_ids": [
+            "proof_1"
+          ],
+          "counterargument_ids": [],
+          "transition_note": "Move from the false diagnosis into the anchor mechanism."
+        },
+        {
+          "beat_id": "beat_2",
+          "beat_name": "Reframe",
+          "goal": "Explain that the premium tier exists to frame the middle option.",
+          "claim_ids": [
+            "claim_1"
+          ],
+          "proof_anchor_ids": [
+            "proof_1"
+          ],
+          "counterargument_ids": [],
+          "transition_note": "Set up one concrete pricing-page example."
+        },
+        {
+          "beat_id": "beat_3",
+          "beat_name": "Proof",
+          "goal": "Show the premium-anchor example and answer the obvious objection.",
+          "claim_ids": [
+            "claim_2"
+          ],
+          "proof_anchor_ids": [
+            "proof_2"
+          ],
+          "counterargument_ids": [
+            "counter_1"
+          ],
+          "transition_note": "Turn the example into an operator rule."
+        },
+        {
+          "beat_id": "beat_4",
+          "beat_name": "Close",
+          "goal": "Give the actionable audit rule and land the CTA.",
+          "claim_ids": [
+            "claim_2"
+          ],
+          "proof_anchor_ids": [
+            "proof_2"
+          ],
+          "counterargument_ids": [],
+          "transition_note": "Close cleanly."
+        }
+      ]
+    },
     "core_inputs": {
       "topic": "pricing anchors",
       "outcome": "make the middle tier feel safer",
@@ -225,25 +463,70 @@
       "why_it_works": "It gives a concrete mental model"
     },
     "structure": {
-      "chosen_structure": "Problem -> Example -> Fix -> CTA",
-      "why_it_fits": "Works for short educational breakdowns",
+      "chosen_structure": "Argument map guided flow",
+      "why_it_fits": "Uses the evidence-backed beat plan directly.",
       "beat_list": [
         "Hook",
-        "Problem",
-        "Example",
-        "Fix",
-        "CTA"
+        "Reframe",
+        "Proof",
+        "Close"
       ]
     },
     "beat_intents": {
       "beats": [
         {
+          "beat_id": "beat_1",
           "beat_name": "Hook",
-          "intent": "Create immediate tension"
+          "intent": "Challenge the idea that the cheapest plan wins because your copy is weak.",
+          "claim_ids": [
+            "claim_1"
+          ],
+          "proof_anchor_ids": [
+            "proof_1"
+          ],
+          "counterargument_ids": [],
+          "transition_note": "Move from the false diagnosis into the anchor mechanism."
         },
         {
-          "beat_name": "Fix",
-          "intent": "Give a practical anchor rule"
+          "beat_id": "beat_2",
+          "beat_name": "Reframe",
+          "intent": "Explain that the premium tier exists to frame the middle option.",
+          "claim_ids": [
+            "claim_1"
+          ],
+          "proof_anchor_ids": [
+            "proof_1"
+          ],
+          "counterargument_ids": [],
+          "transition_note": "Set up one concrete pricing-page example."
+        },
+        {
+          "beat_id": "beat_3",
+          "beat_name": "Proof",
+          "intent": "Show the premium-anchor example and answer the obvious objection.",
+          "claim_ids": [
+            "claim_2"
+          ],
+          "proof_anchor_ids": [
+            "proof_2"
+          ],
+          "counterargument_ids": [
+            "counter_1"
+          ],
+          "transition_note": "Turn the example into an operator rule."
+        },
+        {
+          "beat_id": "beat_4",
+          "beat_name": "Close",
+          "intent": "Give the actionable audit rule and land the CTA.",
+          "claim_ids": [
+            "claim_2"
+          ],
+          "proof_anchor_ids": [
+            "proof_2"
+          ],
+          "counterargument_ids": [],
+          "transition_note": "Close cleanly."
         }
       ]
     },
