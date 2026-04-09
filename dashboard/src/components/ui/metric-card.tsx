@@ -6,9 +6,9 @@ type MetricCardTone = 'neutral' | 'primary' | 'warning' | 'success'
 
 const toneClasses: Record<MetricCardTone, string> = {
   neutral: 'border-border bg-surface-raised/55',
-  primary: 'border-primary/20 bg-primary/[0.03] hover:border-primary/35 hover:bg-primary/[0.05]',
-  warning: 'border-warning/20 bg-warning/[0.03] hover:border-warning/35 hover:bg-warning/[0.05]',
-  success: 'border-success/20 bg-success/[0.03] hover:border-success/35 hover:bg-success/[0.05]',
+  primary: 'border-primary/25 bg-surface-raised/70 hover:border-primary/40 hover:bg-surface-raised/85',
+  warning: 'border-warning/30 bg-warning-muted/70 hover:border-warning/45 hover:bg-warning-muted/85',
+  success: 'border-success/30 bg-success-muted/70 hover:border-success/45 hover:bg-success-muted/85',
 }
 
 const iconClasses: Record<MetricCardTone, string> = {

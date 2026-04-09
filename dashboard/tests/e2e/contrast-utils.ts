@@ -1,4 +1,4 @@
-import { Page, Locator } from "@playwright/test";
+import { Page } from "@playwright/test";
 
 interface ContrastResult {
   element: string;
@@ -20,6 +20,7 @@ export async function checkContrast(
 ): Promise<ContrastResult[]> {
   return page.locator(selector).evaluateAll((elements) => {
     type RgbColor = [number, number, number];
+    type ParsedColor = { rgb: RgbColor; alpha: number };
 
     function getLuminance(r: number, g: number, b: number): number {
       const [rs, gs, bs] = [r, g, b].map((c) => {
@@ -37,7 +38,19 @@ export async function checkContrast(
       return (lighter + 0.05) / (darker + 0.05);
     }
 
-    function parseColor(color: string): { rgb: RgbColor; alpha: number } | null {
+    function parseColor(color: string): ParsedColor | null {
+      const hexMatch = color.match(/^#([0-9a-f]{6})$/i);
+      if (hexMatch) {
+        return {
+          rgb: [
+            parseInt(hexMatch[1].slice(0, 2), 16),
+            parseInt(hexMatch[1].slice(2, 4), 16),
+            parseInt(hexMatch[1].slice(4, 6), 16),
+          ],
+          alpha: 1,
+        };
+      }
+
       const rgbMatch = color.match(
         /rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/
       );
@@ -50,17 +63,43 @@ export async function checkContrast(
       return null;
     }
 
-    function resolveBackground(element: HTMLElement): string {
+    function blendColors(foreground: ParsedColor, background: ParsedColor): ParsedColor {
+      const alpha = foreground.alpha + background.alpha * (1 - foreground.alpha);
+      if (alpha <= 0) {
+        return { rgb: [255, 255, 255], alpha: 0 };
+      }
+
+      const rgb = foreground.rgb.map((channel, index) => {
+        const blended =
+          (channel * foreground.alpha
+            + background.rgb[index] * background.alpha * (1 - foreground.alpha))
+          / alpha;
+        return Math.round(blended);
+      }) as RgbColor;
+
+      return { rgb, alpha };
+    }
+
+    function resolveBackground(element: HTMLElement): ParsedColor {
+      const layers: ParsedColor[] = [];
       let current: HTMLElement | null = element;
       while (current) {
-        const backgroundColor = window.getComputedStyle(current).backgroundColor;
-        const parsed = parseColor(backgroundColor);
+        const parsed = parseColor(window.getComputedStyle(current).backgroundColor);
         if (parsed && parsed.alpha > 0) {
-          return backgroundColor;
+          layers.push(parsed);
         }
         current = current.parentElement;
       }
-      return window.getComputedStyle(document.body).backgroundColor;
+
+      const pageBackground =
+        parseColor(window.getComputedStyle(document.documentElement).backgroundColor)
+        ?? parseColor(window.getComputedStyle(document.body).backgroundColor)
+        ?? { rgb: [255, 255, 255], alpha: 1 };
+
+      return layers.reduceRight(
+        (composite, layer) => blendColors(layer, composite),
+        pageBackground
+      );
     }
 
     function getVisibleText(element: HTMLElement): string {
@@ -118,20 +157,19 @@ export async function checkContrast(
       const foreground = computed.color;
       const background = resolveBackground(node);
       const fg = parseColor(foreground);
-      const bg = parseColor(background);
 
-      if (!fg || !bg) {
+      if (!fg) {
         return [];
       }
 
-      const ratio = getContrastRatio(fg.rgb, bg.rgb);
+      const ratio = getContrastRatio(fg.rgb, background.rgb);
       const fontSize = parseFloat(computed.fontSize);
       const isLargeText = fontSize >= 18 || (fontSize >= 14 && parseInt(computed.fontWeight) >= 700);
 
       return [{
         element: `<${node.tagName.toLowerCase()}> "${text.substring(0, 50)}..."`,
         foreground,
-        background,
+        background: `rgb(${background.rgb.join(", ")})`,
         ratio: Math.round(ratio * 100) / 100,
         passes: {
           aa: isLargeText ? ratio >= 3 : ratio >= 4.5,

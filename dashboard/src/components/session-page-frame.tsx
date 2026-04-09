@@ -215,7 +215,10 @@ export function SessionPageFrame({
                     {(() => {
                       const Icon = viewMeta[view].icon;
                       return (
-                        <CardTitle className="flex items-center gap-2.5 text-2xl font-semibold tracking-tight">
+                        <CardTitle
+                          as="h1"
+                          className="flex items-center gap-2.5 text-2xl font-semibold tracking-tight"
+                        >
                           <Icon className="h-5 w-5 text-primary" />
                           {title}
                         </CardTitle>

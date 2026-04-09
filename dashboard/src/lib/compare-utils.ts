@@ -227,10 +227,10 @@ export function formatCountDelta(count: number | null): string {
 }
 
 export function getDeltaColor(value: number | null): string {
-  if (value === null) return 'text-gray-600'
-  if (value > 0) return 'text-red-600'
-  if (value < 0) return 'text-green-600'
-  return 'text-gray-600'
+  if (value === null) return 'text-muted-foreground'
+  if (value > 0) return 'text-red-500'
+  if (value < 0) return 'text-emerald-400'
+  return 'text-muted-foreground'
 }
 
 function buildNextSteps(pair: SessionPair, deltas: CompareDeltas): CompareNextStep[] {
