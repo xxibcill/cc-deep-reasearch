@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   AlertCircle,
   Ban,
@@ -11,14 +11,17 @@ import {
   XCircle,
 } from 'lucide-react';
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useNotifications } from '@/components/ui/notification-center';
 import {
   getApiErrorMessage,
   getResearchRunStatus,
   stopResearchRun,
 } from '@/lib/api';
+import { runStatusBadgeVariant } from '@/lib/session-route';
 import type { ResearchRunStatus, ResearchRunStatusResponse } from '@/types/telemetry';
 
 interface RunStatusSummaryProps {
@@ -31,36 +34,17 @@ interface RunStatusSummaryProps {
 function statusIcon(status: ResearchRunStatus) {
   switch (status) {
     case 'queued':
-      return <Clock className="h-5 w-5 text-gray-600" />;
+      return <Clock className="h-5 w-5 text-muted-foreground" />;
     case 'running':
-      return <Loader2 className="h-5 w-5 animate-spin text-blue-500" />;
+      return <Loader2 className="h-5 w-5 animate-spin text-primary" />;
     case 'completed':
-      return <CheckCircle className="h-5 w-5 text-green-500" />;
+      return <CheckCircle className="h-5 w-5 text-success" />;
     case 'failed':
-      return <XCircle className="h-5 w-5 text-red-500" />;
+      return <XCircle className="h-5 w-5 text-error" />;
     case 'cancelled':
-      return <Ban className="h-5 w-5 text-amber-500" />;
+      return <Ban className="h-5 w-5 text-warning" />;
     default:
-      return <AlertCircle className="h-5 w-5 text-gray-600" />;
-  }
-}
-
-function statusBadgeVariant(
-  status: ResearchRunStatus
-): 'default' | 'secondary' | 'success' | 'destructive' | 'warning' {
-  switch (status) {
-    case 'queued':
-      return 'secondary';
-    case 'running':
-      return 'default';
-    case 'completed':
-      return 'success';
-    case 'failed':
-      return 'destructive';
-    case 'cancelled':
-      return 'warning';
-    default:
-      return 'secondary';
+      return <AlertCircle className="h-5 w-5 text-muted-foreground" />;
   }
 }
 
@@ -93,42 +77,60 @@ function isActiveStatus(status: ResearchRunStatus): boolean {
   return status === 'queued' || status === 'running';
 }
 
+function DetailItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-2">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-1 text-sm font-medium text-foreground">{value}</p>
+    </div>
+  );
+}
+
 export function RunStatusSummary({
   runId,
   onSessionIdResolved,
   onStatusChange,
   onStatusLoaded,
 }: RunStatusSummaryProps) {
+  const { notify } = useNotifications();
   const [status, setStatus] = useState<ResearchRunStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stopError, setStopError] = useState<string | null>(null);
   const [stopping, setStopping] = useState(false);
 
+  const fetchStatus = useCallback(async () => {
+    const response = await getResearchRunStatus(runId);
+
+    setStatus(response);
+    setError(null);
+
+    if (onStatusChange) {
+      onStatusChange(response.status);
+    }
+    if (response.session_id && onSessionIdResolved) {
+      onSessionIdResolved(response.session_id);
+    }
+    if (onStatusLoaded) {
+      onStatusLoaded(response);
+    }
+    if (!isActiveStatus(response.status)) {
+      setStopping(false);
+    }
+
+    return response;
+  }, [onSessionIdResolved, onStatusChange, onStatusLoaded, runId]);
+
   useEffect(() => {
     let mounted = true;
     let intervalId: NodeJS.Timeout | null = null;
 
-    const fetchStatus = async () => {
+    const pollStatus = async () => {
       try {
-        const response = await getResearchRunStatus(runId);
+        const response = await fetchStatus();
         if (!mounted) {
           return;
-        }
-
-        setStatus(response);
-        setError(null);
-
-        if (onStatusChange) {
-          onStatusChange(response.status);
-        }
-        if (response.session_id && onSessionIdResolved) {
-          onSessionIdResolved(response.session_id);
-        }
-        if (onStatusLoaded) {
-          onStatusLoaded(response);
-        }
-        if (!isActiveStatus(response.status)) {
-          setStopping(false);
         }
         if (!isActiveStatus(response.status) && intervalId) {
           clearInterval(intervalId);
@@ -141,8 +143,8 @@ export function RunStatusSummary({
       }
     };
 
-    void fetchStatus();
-    intervalId = setInterval(fetchStatus, 2000);
+    void pollStatus();
+    intervalId = setInterval(pollStatus, 2000);
 
     return () => {
       mounted = false;
@@ -150,7 +152,7 @@ export function RunStatusSummary({
         clearInterval(intervalId);
       }
     };
-  }, [runId, onSessionIdResolved, onStatusChange, onStatusLoaded]);
+  }, [fetchStatus]);
 
   const handleStop = async () => {
     setStopError(null);
@@ -171,23 +173,46 @@ export function RunStatusSummary({
       if (response.status === 'cancelled') {
         setStopping(false);
       }
+      notify({
+        variant: 'warning',
+        title: response.status === 'cancelled' ? 'Run cancelled' : 'Stop requested',
+        description:
+          response.status === 'cancelled'
+            ? 'The backend confirmed cancellation for this run.'
+            : 'The backend is stopping the run and will update the status when cleanup finishes.',
+      });
     } catch (requestError) {
-      setStopError(getApiErrorMessage(requestError, 'Failed to stop run'));
+      const message = getApiErrorMessage(requestError, 'Failed to stop run');
+      setStopError(message);
+      notify({
+        variant: 'destructive',
+        persistent: true,
+        title: 'Stop failed',
+        description: message,
+        actions: [
+          {
+            label: 'Retry status',
+            onClick: () => {
+              void fetchStatus();
+            },
+          },
+        ],
+      });
       setStopping(false);
     }
   };
 
   if (error) {
     return (
-      <Card className="border-red-200 bg-red-50">
+      <Card>
         <CardContent className="p-4">
-          <div className="flex items-center gap-3">
-            <AlertCircle className="h-5 w-5 text-red-500" />
-            <div>
-              <p className="font-medium text-red-800">Failed to load run status</p>
-              <p className="text-sm text-red-600">{error}</p>
+          <Alert className="flex items-start gap-3" variant="destructive">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div className="space-y-1">
+              <AlertTitle>Failed to load run status</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
             </div>
-          </div>
+          </Alert>
         </CardContent>
       </Card>
     );
@@ -197,10 +222,10 @@ export function RunStatusSummary({
     return (
       <Card>
         <CardContent className="p-4">
-          <div className="flex items-center gap-3">
-            <Loader2 className="h-5 w-5 animate-spin text-gray-600" />
-            <span className="text-muted-foreground">Loading run status...</span>
-          </div>
+          <Alert className="flex items-center gap-3" variant="default">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <AlertDescription>Loading run status...</AlertDescription>
+          </Alert>
         </CardContent>
       </Card>
     );
@@ -208,48 +233,49 @@ export function RunStatusSummary({
 
   const stopRequested = status.stop_requested === true;
   const showStopAction = isActiveStatus(status.status);
+  const liveMonitorMessage = status.session_id
+    ? isActiveStatus(status.status)
+      ? 'The monitor will keep buffered telemetry visible if the live stream drops and will retry automatically while the run is still active.'
+      : 'This run is no longer active. Monitor pages will load historical telemetry only, without expecting a live stream.'
+    : 'A monitor session will become available after the backend allocates a session ID.';
 
   return (
-    <Card>
-      <CardContent className="space-y-4 p-4">
+    <Card className="overflow-hidden">
+      <CardHeader className="gap-4 border-b bg-[linear-gradient(135deg,rgba(15,23,42,0.04),rgba(56,189,248,0.10))]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex items-center gap-3">
-            {statusIcon(status.status)}
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-medium capitalize">{status.status}</span>
-                <Badge variant={statusBadgeVariant(status.status)}>{status.status}</Badge>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Run ID: <code className="text-xs">{status.run_id}</code>
-              </p>
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <CardTitle className="flex items-center gap-2">
+                {statusIcon(status.status)}
+                Run Status
+              </CardTitle>
+              <Badge variant={runStatusBadgeVariant(status.status)}>{status.status}</Badge>
+              {stopRequested && isActiveStatus(status.status) ? (
+                <Badge variant="warning">Stop Requested</Badge>
+              ) : null}
             </div>
+            <p className="text-sm text-muted-foreground">
+              Run <span className="font-mono text-xs text-foreground">{status.run_id}</span>
+              {status.session_id ? (
+                <>
+                  {' '}
+                  is attached to session{' '}
+                  <span className="font-mono text-xs text-foreground">{status.session_id}</span>.
+                </>
+              ) : (
+                '. Waiting for session allocation.'
+              )}
+            </p>
           </div>
 
           <div className="flex flex-col gap-3 lg:items-end">
-            <div className="text-sm lg:text-right">
-              {status.session_id ? (
-                <p>
-                  <span className="text-muted-foreground">Session: </span>
-                  <code className="text-xs">{status.session_id}</code>
-                </p>
-              ) : null}
-              {status.started_at ? (
-                <p>
-                  <span className="text-muted-foreground">Duration: </span>
-                  {formatDuration(status.started_at, status.completed_at)}
-                </p>
-              ) : null}
-              {status.completed_at ? (
-                <p>
-                  <span className="text-muted-foreground">Completed: </span>
-                  {formatTimestamp(status.completed_at)}
-                </p>
-              ) : null}
-            </div>
-
             {showStopAction ? (
-              <Button type="button" variant="outline" onClick={handleStop} disabled={stopping || stopRequested}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleStop}
+                disabled={stopping || stopRequested}
+              >
                 {stopping || stopRequested ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -265,48 +291,96 @@ export function RunStatusSummary({
             ) : null}
           </div>
         </div>
+      </CardHeader>
+
+      <CardContent className="space-y-4 p-5">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <DetailItem label="Run ID" value={status.run_id} />
+          <DetailItem label="Session" value={status.session_id ?? 'Pending'} />
+          <DetailItem
+            label="Duration"
+            value={status.started_at ? formatDuration(status.started_at, status.completed_at) : '-'}
+          />
+          <DetailItem
+            label="Completed"
+            value={status.completed_at ? formatTimestamp(status.completed_at) : 'In progress'}
+          />
+        </div>
+
+        <Alert
+          className="flex items-start gap-3"
+          variant={isActiveStatus(status.status) ? 'info' : 'default'}
+        >
+          <Loader2
+            className={`mt-0.5 h-5 w-5 shrink-0 ${
+              isActiveStatus(status.status) ? 'animate-spin' : ''
+            }`}
+          />
+          <div className="space-y-1">
+            <AlertTitle>
+              {isActiveStatus(status.status) ? 'Live monitor expectation' : 'Historical monitor mode'}
+            </AlertTitle>
+            <AlertDescription>{liveMonitorMessage}</AlertDescription>
+          </div>
+        </Alert>
 
         {stopRequested && isActiveStatus(status.status) ? (
-          <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
-            <p className="text-sm font-medium text-amber-800">Stop requested</p>
-            <p className="text-sm text-amber-700">
-              Waiting for the backend to confirm cancellation and close the session cleanly.
-            </p>
-          </div>
+          <Alert className="flex items-start gap-3" variant="warning">
+            <Clock className="mt-0.5 h-5 w-5 shrink-0" />
+            <div className="space-y-1">
+              <AlertTitle>Stop requested</AlertTitle>
+              <AlertDescription>
+                Waiting for the backend to confirm cancellation and close the session cleanly.
+              </AlertDescription>
+            </div>
+          </Alert>
         ) : null}
 
         {stopError ? (
-          <div className="rounded-md border border-red-200 bg-red-50 p-3">
-            <p className="text-sm font-medium text-red-800">Stop failed</p>
-            <p className="text-sm text-red-600">{stopError}</p>
-          </div>
+          <Alert className="flex items-start gap-3" variant="destructive">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div className="space-y-1">
+              <AlertTitle>Stop failed</AlertTitle>
+              <AlertDescription>{stopError}</AlertDescription>
+            </div>
+          </Alert>
         ) : null}
 
         {status.error && status.status !== 'cancelled' ? (
-          <div className="rounded-md border border-red-200 bg-red-50 p-3">
-            <p className="text-sm font-medium text-red-800">Error</p>
-            <p className="text-sm text-red-600">{status.error}</p>
-          </div>
+          <Alert className="flex items-start gap-3" variant="destructive">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div className="space-y-1">
+              <AlertTitle>Run error</AlertTitle>
+              <AlertDescription>{status.error}</AlertDescription>
+            </div>
+          </Alert>
         ) : null}
 
         {status.status === 'cancelled' ? (
-          <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
-            <p className="text-sm font-medium text-amber-800">Run cancelled</p>
-            <p className="text-sm text-amber-700">
-              {status.error ||
-                'The in-progress run was stopped. Historical session artifacts remain available for follow-on actions.'}
-            </p>
-          </div>
+          <Alert className="flex items-start gap-3" variant="warning">
+            <Ban className="mt-0.5 h-5 w-5 shrink-0" />
+            <div className="space-y-1">
+              <AlertTitle>Run cancelled</AlertTitle>
+              <AlertDescription>
+                {status.error ||
+                  'The in-progress run was stopped. Historical session artifacts remain available for follow-on actions.'}
+              </AlertDescription>
+            </div>
+          </Alert>
         ) : null}
 
         {status.result ? (
-          <div className="rounded-md border border-green-200 bg-green-50 p-3">
-            <p className="text-sm font-medium text-green-800">Result</p>
-            <p className="text-sm text-green-600">Session ID: {status.result.session_id}</p>
-            <p className="text-sm text-green-600">
-              Report: {status.result.report_path ?? 'Generated in memory'}
-            </p>
-          </div>
+          <Alert className="flex items-start gap-3" variant="success">
+            <CheckCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div className="space-y-1">
+              <AlertTitle>Result available</AlertTitle>
+              <AlertDescription>
+                Session ID: {status.result.session_id}
+                <br />
+                Report: {status.result.report_path ?? 'Generated in memory'}
+              </AlertDescription>
+            </div>
+          </Alert>
         ) : null}
       </CardContent>
     </Card>
