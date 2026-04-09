@@ -12,13 +12,13 @@ Give contributors one command sequence that covers the maintenance-critical chec
 ## Primary Files
 
 - `docs/PREFLIGHT.md`
-- optional helper script under `scripts/`
+- `scripts/preflight`
 
 ## Acceptance Criteria
 
-- contributors have one obvious maintenance-focused preflight path
-- the commands avoid live API calls
+- [x] contributors have one obvious maintenance-focused preflight path
+- [x] the commands avoid live API calls
 
 ## Validation
 
-- run the documented command sequence locally
+- [x] run the documented command sequence locally
