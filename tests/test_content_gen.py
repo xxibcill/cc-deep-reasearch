@@ -20,6 +20,7 @@ from cc_deep_research.content_gen.agents.backlog import (
 )
 from cc_deep_research.content_gen.agents.packaging import PackagingAgent, _parse_platform_packages
 from cc_deep_research.content_gen.agents.qc import QCAgent, _parse_qc_gate
+from cc_deep_research.content_gen.agents.quality_evaluator import _parse_quality_evaluation
 from cc_deep_research.content_gen.agents.research_pack import ResearchPackAgent, _parse_research_pack
 from cc_deep_research.content_gen.agents.scripting import _STEP_HANDLERS, ScriptingAgent
 from cc_deep_research.content_gen.agents.visual import VisualAgent
@@ -204,6 +205,7 @@ class _FakePackagingAgent(PackagingAgent):
 class _FakeQCAgent(QCAgent):
     def __init__(self, response: str) -> None:
         self._response = response
+        self.last_user_prompt = ""
 
     async def _call_llm(
         self,
@@ -212,7 +214,8 @@ class _FakeQCAgent(QCAgent):
         *,
         temperature: float = 0.2,
     ) -> str:
-        del system_prompt, user_prompt, temperature
+        del system_prompt, temperature
+        self.last_user_prompt = user_prompt
         return self._response
 
 
@@ -1161,10 +1164,16 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
             script: str,
             visual_summary: str,
             packaging_summary: str,
+            research_summary: str = "",
+            argument_map_summary: str = "",
         ) -> HumanQCGate:
             assert "anchor tier is broken" in script
             assert "Hook: Highlight the cheapest plan selection on a pricing page" in visual_summary
             assert "tiktok: If buyers always choose cheapest, your anchor tier is broken" in packaging_summary
+            assert "Supported claims:" in research_summary
+            assert "Claims requiring verification:" in research_summary
+            assert "Safe claims:" in argument_map_summary
+            assert "Claims to qualify or avoid:" in argument_map_summary
             return HumanQCGate.model_validate(fixture["qc_gate"])
 
     class FakePublishAgent:
@@ -2888,9 +2897,20 @@ def test_qc_golden_fixture_happy_path_parses_issue_lists() -> None:
 
     assert result.hook_strength == "strong"
     assert result.clarity_issues == ["The payoff line could land one beat earlier"]
+    assert result.unsupported_claims == [
+        'Saying the pricing page "always" lifts conversion is not supported by the research provided'
+    ]
+    assert result.risky_claims == [
+        "The script implies a guaranteed revenue lift, which creates trust and legal risk"
+    ]
+    assert result.required_fact_checks == [
+        "Confirm the featured pricing page screenshot is cleared for reuse",
+        "Verify the on-screen revenue example matches the underlying case study",
+    ]
     assert result.must_fix_items == [
         "Confirm the screenshot can be shown on camera",
         'Replace the vague "works better" claim with a concrete explanation',
+        "Resolve risky claim before publish: The script implies a guaranteed revenue lift, which creates trust and legal risk",
     ]
     assert result.approved_for_publish is False
 
@@ -2901,7 +2921,127 @@ def test_qc_golden_fixture_sparse_output_defaults_missing_lists() -> None:
 
     assert result.hook_strength == "adequate"
     assert result.clarity_issues == []
+    assert result.unsupported_claims == ["The claim about a 40% lift is unsupported"]
+    assert result.risky_claims == []
     assert result.must_fix_items == ["Add a concrete proof point before publish"]
+
+
+def test_qc_parser_tracks_claim_safety_buckets() -> None:
+    """QC parser should keep unsupported, risky, and fact-check buckets distinct."""
+    result = _parse_qc_gate(
+        """hook_strength: weak
+unsupported_claims:
+- The script says churn drops by 35% without a source
+risky_claims:
+- The claim promises guaranteed compliance
+required_fact_checks:
+- Verify the legal team approved the compliance wording
+must_fix_items:
+- Remove the made-up churn statistic
+"""
+    )
+
+    assert result.unsupported_claims == ["The script says churn drops by 35% without a source"]
+    assert result.risky_claims == ["The claim promises guaranteed compliance"]
+    assert result.required_fact_checks == [
+        "Verify the legal team approved the compliance wording"
+    ]
+    assert "Remove the made-up churn statistic" in result.must_fix_items
+    assert (
+        "Resolve risky claim before publish: The claim promises guaranteed compliance"
+        in result.must_fix_items
+    )
+
+
+def test_quality_evaluator_parser_reads_expert_metrics() -> None:
+    """Quality evaluation parsing should preserve expert metrics and evidence actions."""
+    result = _parse_quality_evaluation(
+        """overall_quality_score: 0.84
+passes_threshold: true
+evidence_coverage: 0.88
+claim_safety: 0.91
+originality: 0.79
+precision: 0.82
+expertise_density: 0.76
+critical_issues:
+- The proof payoff still lands slightly late
+unsupported_claims:
+- None
+evidence_actions_required:
+- Add the cited benchmark before the second beat
+improvement_suggestions:
+- Cut the generic transition phrase
+research_gaps_identified:
+- Confirm whether the benchmark is still current this quarter
+rationale: Strong expert framing with one missing proof link.
+""".replace("- None\n", ""),
+        iteration_number=2,
+    )
+
+    assert result.overall_quality_score == pytest.approx(0.84)
+    assert result.passes_threshold is True
+    assert result.evidence_coverage == pytest.approx(0.88)
+    assert result.claim_safety == pytest.approx(0.91)
+    assert result.originality == pytest.approx(0.79)
+    assert result.precision == pytest.approx(0.82)
+    assert result.expertise_density == pytest.approx(0.76)
+    assert result.evidence_actions_required == [
+        "Add the cited benchmark before the second beat"
+    ]
+    assert result.research_gaps_identified == [
+        "Confirm whether the benchmark is still current this quarter"
+    ]
+
+
+def test_quality_evaluator_parser_defaults_malformed_scores_and_blocks_unsupported_claims() -> None:
+    """Malformed numeric fields should fail safely and unsupported claims should block passing."""
+    result = _parse_quality_evaluation(
+        """overall_quality_score: excellent
+passes_threshold: true
+evidence_coverage: n/a
+claim_safety: ??
+originality: 1.4
+precision: -0.2
+expertise_density: 0.65
+unsupported_claims:
+- The script claims a guaranteed ROI without support
+rationale: Needs proof.
+""",
+        iteration_number=1,
+    )
+
+    assert result.overall_quality_score == 0.0
+    assert result.evidence_coverage == 0.0
+    assert result.claim_safety == 0.0
+    assert result.originality == 1.0
+    assert result.precision == 0.0
+    assert result.expertise_density == pytest.approx(0.65)
+    assert result.passes_threshold is False
+    assert result.unsupported_claims == ["The script claims a guaranteed ROI without support"]
+
+
+@pytest.mark.asyncio
+async def test_qc_agent_includes_research_and_argument_map_context() -> None:
+    """QC review prompt should include research and argument-map summaries when provided."""
+    agent = _FakeQCAgent(
+        """hook_strength: adequate
+unsupported_claims:
+- The script overstates the benchmark
+must_fix_items:
+- Qualify the benchmark claim
+"""
+    )
+
+    await agent.review(
+        script="Script",
+        research_summary="Supported claims:\n- Benchmarks show a directional lift",
+        argument_map_summary="Claims to qualify or avoid:\n- Guaranteed lift",
+    )
+
+    assert "Research summary:" in agent.last_user_prompt
+    assert "Supported claims:" in agent.last_user_prompt
+    assert "Argument map summary:" in agent.last_user_prompt
+    assert "Claims to qualify or avoid:" in agent.last_user_prompt
 
 
 @pytest.mark.asyncio

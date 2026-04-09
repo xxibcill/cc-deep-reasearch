@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from cc_deep_research.content_gen.models import (
     AngleOutput,
+    ArgumentMap,
     PackagingOutput,
     QualityEvaluation,
     ResearchPack,
@@ -57,6 +58,7 @@ class QualityEvaluatorAgent:
         visual_plan: VisualPlanOutput | None = None,
         packaging: PackagingOutput | None = None,
         research_pack: ResearchPack | None = None,
+        argument_map: ArgumentMap | None = None,
         angle: AngleOutput | None = None,
         iteration_number: int = 1,
         quality_threshold: float = 0.75,
@@ -69,6 +71,7 @@ class QualityEvaluatorAgent:
             visual_summary=_summarize_visual(visual_plan),
             packaging_summary=_summarize_packaging(packaging),
             research_summary=_summarize_research(research_pack),
+            argument_map_summary=_summarize_argument_map(argument_map),
             angle_summary=_summarize_angle(angle),
             iteration_number=iteration_number,
             quality_threshold=quality_threshold,
@@ -125,11 +128,51 @@ def _summarize_research(research_pack: ResearchPack | None) -> str:
     if not research_pack:
         return ""
     parts = []
-    if research_pack.key_facts:
-        parts.append(f"Key facts: {len(research_pack.key_facts)}")
-    if research_pack.proof_points:
-        parts.append(f"Proof points: {len(research_pack.proof_points)}")
-    return "\n".join(parts) if parts else ""
+    if research_pack.claims:
+        supported_claims = [claim.claim for claim in research_pack.claims[:4] if claim.claim]
+        if supported_claims:
+            parts.append("Supported claims:\n- " + "\n- ".join(supported_claims))
+    else:
+        if research_pack.key_facts:
+            parts.append("Key facts:\n- " + "\n- ".join(research_pack.key_facts[:3]))
+        if research_pack.proof_points:
+            parts.append("Proof points:\n- " + "\n- ".join(research_pack.proof_points[:3]))
+    if research_pack.claims_requiring_verification:
+        parts.append(
+            "Needs verification:\n- "
+            + "\n- ".join(research_pack.claims_requiring_verification[:3])
+        )
+    if research_pack.unsafe_or_uncertain_claims:
+        parts.append(
+            "Unsafe or uncertain claims:\n- "
+            + "\n- ".join(research_pack.unsafe_or_uncertain_claims[:3])
+        )
+    return "\n\n".join(parts)
+
+
+def _summarize_argument_map(argument_map: ArgumentMap | None) -> str:
+    if not argument_map:
+        return ""
+    parts = []
+    if argument_map.thesis:
+        parts.append(f"Thesis: {argument_map.thesis}")
+    if argument_map.core_mechanism:
+        parts.append(f"Core mechanism: {argument_map.core_mechanism}")
+    if argument_map.safe_claims:
+        safe_claims = [claim.claim for claim in argument_map.safe_claims[:4] if claim.claim]
+        if safe_claims:
+            parts.append("Safe claims:\n- " + "\n- ".join(safe_claims))
+    if argument_map.unsafe_claims:
+        unsafe_claims = [claim.claim for claim in argument_map.unsafe_claims[:3] if claim.claim]
+        if unsafe_claims:
+            parts.append("Claims to avoid or qualify:\n- " + "\n- ".join(unsafe_claims))
+    if argument_map.proof_anchors:
+        proof_anchors = [
+            anchor.summary for anchor in argument_map.proof_anchors[:4] if anchor.summary
+        ]
+        if proof_anchors:
+            parts.append("Proof anchors:\n- " + "\n- ".join(proof_anchors))
+    return "\n\n".join(part for part in parts if part)
 
 
 def _summarize_angle(angle: AngleOutput | None) -> str:
@@ -148,7 +191,7 @@ def _summarize_angle(angle: AngleOutput | None) -> str:
 
 
 def _extract_score(text: str, field_name: str) -> float:
-    pattern = rf"{re.escape(field_name)}:\s*([\d.]+)"
+    pattern = rf"{re.escape(field_name)}:\s*([-+]?\d*\.?\d+)"
     match = re.search(pattern, text, re.IGNORECASE)
     if match:
         try:
@@ -196,15 +239,19 @@ def _extract_list(text: str, header: str) -> list[str]:
 
 
 def _parse_quality_evaluation(text: str, iteration_number: int) -> QualityEvaluation:
+    unsupported_claims = _extract_list(text, "unsupported_claims")
+    parsed_passes_threshold = _extract_bool(text, "passes_threshold")
     return QualityEvaluation(
         overall_quality_score=_extract_score(text, "overall_quality_score"),
-        passes_threshold=_extract_bool(text, "passes_threshold"),
-        hook_quality=_extract_score(text, "hook_quality"),
-        content_clarity=_extract_score(text, "content_clarity"),
-        factual_accuracy=_extract_score(text, "factual_accuracy"),
-        audience_alignment=_extract_score(text, "audience_alignment"),
-        production_readiness=_extract_score(text, "production_readiness"),
+        passes_threshold=parsed_passes_threshold and not unsupported_claims,
+        evidence_coverage=_extract_score(text, "evidence_coverage"),
+        claim_safety=_extract_score(text, "claim_safety"),
+        originality=_extract_score(text, "originality"),
+        precision=_extract_score(text, "precision"),
+        expertise_density=_extract_score(text, "expertise_density"),
         critical_issues=_extract_list(text, "critical_issues"),
+        unsupported_claims=unsupported_claims,
+        evidence_actions_required=_extract_list(text, "evidence_actions_required"),
         improvement_suggestions=_extract_list(text, "improvement_suggestions"),
         research_gaps_identified=_extract_list(text, "research_gaps_identified"),
         rationale=_extract_field(text, "rationale"),

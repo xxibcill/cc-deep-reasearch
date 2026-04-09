@@ -10,10 +10,10 @@ from typing import TYPE_CHECKING, Any
 from cc_deep_research.content_gen.models import (
     PIPELINE_STAGE_LABELS,
     PIPELINE_STAGES,
+    AngleDefinition,
     ArgumentMap,
     BeatIntent,
     BeatIntentMap,
-    AngleDefinition,
     CoreInputs,
     IterationState,
     OpportunityBrief,
@@ -130,8 +130,8 @@ class ContentGenOrchestrator:
         return self._agents[name]
 
     def _create_agent(self, name: str) -> Any:
-        from cc_deep_research.content_gen.agents.argument_map import ArgumentMapAgent
         from cc_deep_research.content_gen.agents.angle import AngleAgent
+        from cc_deep_research.content_gen.agents.argument_map import ArgumentMapAgent
         from cc_deep_research.content_gen.agents.backlog import BacklogAgent
         from cc_deep_research.content_gen.agents.opportunity import OpportunityPlanningAgent
         from cc_deep_research.content_gen.agents.packaging import PackagingAgent
@@ -452,6 +452,7 @@ class ContentGenOrchestrator:
             visual_plan=ctx.visual_plan,
             packaging=ctx.packaging,
             research_pack=ctx.research_pack,
+            argument_map=ctx.argument_map,
             angle=ctx.angles,
             iteration_number=iteration,
             quality_threshold=threshold,
@@ -463,6 +464,8 @@ class ContentGenOrchestrator:
         quality_eval: QualityEvaluation,
         iter_state: IterationState,
     ) -> bool:
+        if quality_eval.has_blocking_claim_issues and iter_state.current_iteration < iter_state.max_iterations:
+            return False
         if quality_eval.passes_threshold:
             return True
         if iter_state.current_iteration >= iter_state.max_iterations:
@@ -478,12 +481,21 @@ class ContentGenOrchestrator:
     @staticmethod
     def _format_feedback(quality_eval: QualityEvaluation) -> str:
         parts: list[str] = []
+        if quality_eval.unsupported_claims:
+            parts.append("Unsupported claims to remove, qualify, or prove:")
+            parts.extend(f"- {claim}" for claim in quality_eval.unsupported_claims)
+        if quality_eval.evidence_actions_required:
+            parts.append("Evidence actions required:")
+            parts.extend(f"- {action}" for action in quality_eval.evidence_actions_required)
         if quality_eval.critical_issues:
             parts.append("Critical issues:")
             parts.extend(f"- {i}" for i in quality_eval.critical_issues)
         if quality_eval.improvement_suggestions:
             parts.append("Improvement suggestions:")
             parts.extend(f"- {s}" for s in quality_eval.improvement_suggestions)
+        if quality_eval.research_gaps_identified:
+            parts.append("Research gaps identified:")
+            parts.extend(f"- {gap}" for gap in quality_eval.research_gaps_identified)
         if quality_eval.rationale:
             parts.append(f"Rationale: {quality_eval.rationale}")
         return "\n".join(parts)
@@ -493,12 +505,21 @@ class ContentGenOrchestrator:
         if not ctx.scripting:
             return
         feedback_lines = [f"Iteration {quality_eval.iteration_number} feedback:"]
+        if quality_eval.unsupported_claims:
+            feedback_lines.append("Unsupported claims to remove, qualify, or prove:")
+            feedback_lines.extend(f"- {claim}" for claim in quality_eval.unsupported_claims)
+        if quality_eval.evidence_actions_required:
+            feedback_lines.append("Evidence actions required:")
+            feedback_lines.extend(f"- {action}" for action in quality_eval.evidence_actions_required)
         if quality_eval.critical_issues:
             feedback_lines.append("Critical issues to fix:")
             feedback_lines.extend(f"- {i}" for i in quality_eval.critical_issues)
         if quality_eval.improvement_suggestions:
             feedback_lines.append("Improvement suggestions:")
             feedback_lines.extend(f"- {s}" for s in quality_eval.improvement_suggestions)
+        if quality_eval.research_gaps_identified:
+            feedback_lines.append("Research gaps identified:")
+            feedback_lines.extend(f"- {gap}" for gap in quality_eval.research_gaps_identified)
         feedback_text = "\n".join(feedback_lines)
         existing = ctx.scripting.research_context or ""
         ctx.scripting.research_context = f"{feedback_text}\n\n{existing}"
@@ -834,11 +855,21 @@ class ContentGenOrchestrator:
         return await agent.generate(script, angle, p, strategy=strategy, idea_id=idea_id)
 
     async def run_qc(
-        self, *, script: str, visual_summary: str = "", packaging_summary: str = ""
+        self,
+        *,
+        script: str,
+        visual_summary: str = "",
+        packaging_summary: str = "",
+        research_summary: str = "",
+        argument_map_summary: str = "",
     ) -> Any:
         agent = self._get_agent("qc")
         return await agent.review(
-            script=script, visual_summary=visual_summary, packaging_summary=packaging_summary
+            script=script,
+            visual_summary=visual_summary,
+            packaging_summary=packaging_summary,
+            research_summary=research_summary,
+            argument_map_summary=argument_map_summary,
         )
 
     async def run_publish(self, packaging: Any, *, idea_id: str = "") -> Any:
@@ -1219,9 +1250,15 @@ async def _stage_human_qc(orch: ContentGenOrchestrator, ctx: PipelineContext) ->
     if ctx.packaging:
         parts = [f"{p.platform}: {p.primary_hook}" for p in ctx.packaging.platform_packages]
         packaging_summary = "; ".join(parts)
+    research_summary = _format_qc_research_summary(ctx.research_pack)
+    argument_map_summary = _format_qc_argument_map_summary(ctx.argument_map)
     agent = orch._get_agent("qc")
     ctx.qc_gate = await agent.review(
-        script=script, visual_summary=visual_summary, packaging_summary=packaging_summary
+        script=script,
+        visual_summary=visual_summary,
+        packaging_summary=packaging_summary,
+        research_summary=research_summary,
+        argument_map_summary=argument_map_summary,
     )
     return ctx
 
@@ -1293,4 +1330,54 @@ def _format_research_context(research_pack: ResearchPack | None) -> str:
             + "\n- ".join(research_pack.unsafe_or_uncertain_claims[:3])
         )
 
+    return "\n\n".join(sections)
+
+
+def _format_qc_research_summary(research_pack: ResearchPack | None) -> str:
+    if research_pack is None:
+        return ""
+
+    sections: list[str] = []
+    if research_pack.claims:
+        sections.append(
+            "Supported claims:\n- "
+            + "\n- ".join(claim.claim for claim in research_pack.claims[:4] if claim.claim)
+        )
+    else:
+        if research_pack.key_facts:
+            sections.append("Key facts:\n- " + "\n- ".join(research_pack.key_facts[:3]))
+        if research_pack.proof_points:
+            sections.append("Proof points:\n- " + "\n- ".join(research_pack.proof_points[:3]))
+    if research_pack.claims_requiring_verification:
+        sections.append(
+            "Claims requiring verification:\n- "
+            + "\n- ".join(research_pack.claims_requiring_verification[:3])
+        )
+    if research_pack.unsafe_or_uncertain_claims:
+        sections.append(
+            "Unsafe or uncertain claims:\n- "
+            + "\n- ".join(research_pack.unsafe_or_uncertain_claims[:3])
+        )
+    return "\n\n".join(sections)
+
+
+def _format_qc_argument_map_summary(argument_map: ArgumentMap | None) -> str:
+    if argument_map is None:
+        return ""
+
+    sections: list[str] = []
+    if argument_map.thesis:
+        sections.append(f"Thesis: {argument_map.thesis}")
+    if argument_map.safe_claims:
+        safe_claims = [claim.claim for claim in argument_map.safe_claims[:4] if claim.claim]
+        if safe_claims:
+            sections.append("Safe claims:\n- " + "\n- ".join(safe_claims))
+    if argument_map.unsafe_claims:
+        unsafe_claims = [claim.claim for claim in argument_map.unsafe_claims[:3] if claim.claim]
+        if unsafe_claims:
+            sections.append("Claims to qualify or avoid:\n- " + "\n- ".join(unsafe_claims))
+    if argument_map.proof_anchors:
+        proof_anchors = [anchor.summary for anchor in argument_map.proof_anchors[:4] if anchor.summary]
+        if proof_anchors:
+            sections.append("Proof anchors:\n- " + "\n- ".join(proof_anchors))
     return "\n\n".join(sections)

@@ -278,7 +278,7 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "human_qc": ContentGenStageContract(
         stage_name="human_qc",
         prompt_module="prompts/qc.py",
-        contract_version="1.0.0",
+        contract_version="1.1.0",
         parser_location="agents/qc.py::_parse_qc_gate",
         output_model="HumanQCGate",
         format_notes="Named issue buckets with '-' lists; AI review never sets approval to true.",
@@ -289,6 +289,9 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
             "visual_issues",
             "audio_issues",
             "caption_issues",
+            "unsupported_claims",
+            "risky_claims",
+            "required_fact_checks",
             "must_fix_items",
         ),
         failure_mode="human_gated",
@@ -1275,6 +1278,9 @@ class HumanQCGate(BaseModel):
     visual_issues: list[str] = Field(default_factory=list)
     audio_issues: list[str] = Field(default_factory=list)
     caption_issues: list[str] = Field(default_factory=list)
+    unsupported_claims: list[str] = Field(default_factory=list)
+    risky_claims: list[str] = Field(default_factory=list)
+    required_fact_checks: list[str] = Field(default_factory=list)
     must_fix_items: list[str] = Field(default_factory=list)
     approved_for_publish: bool = False
 
@@ -1293,16 +1299,23 @@ class QualityEvaluation(BaseModel):
 
     overall_quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
     passes_threshold: bool = False
-    hook_quality: float = Field(default=0.0, ge=0.0, le=1.0)
-    content_clarity: float = Field(default=0.0, ge=0.0, le=1.0)
-    factual_accuracy: float = Field(default=0.0, ge=0.0, le=1.0)
-    audience_alignment: float = Field(default=0.0, ge=0.0, le=1.0)
-    production_readiness: float = Field(default=0.0, ge=0.0, le=1.0)
+    evidence_coverage: float = Field(default=0.0, ge=0.0, le=1.0)
+    claim_safety: float = Field(default=0.0, ge=0.0, le=1.0)
+    originality: float = Field(default=0.0, ge=0.0, le=1.0)
+    precision: float = Field(default=0.0, ge=0.0, le=1.0)
+    expertise_density: float = Field(default=0.0, ge=0.0, le=1.0)
     critical_issues: list[str] = Field(default_factory=list)
+    unsupported_claims: list[str] = Field(default_factory=list)
+    evidence_actions_required: list[str] = Field(default_factory=list)
     improvement_suggestions: list[str] = Field(default_factory=list)
     research_gaps_identified: list[str] = Field(default_factory=list)
     rationale: str = ""
     iteration_number: int = 1
+
+    @property
+    def has_blocking_claim_issues(self) -> bool:
+        """Return true when the script still contains unsupported or unsafe claims."""
+        return bool(self.unsupported_claims)
 
 
 class IterationState(BaseModel):
