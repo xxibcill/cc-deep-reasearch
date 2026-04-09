@@ -305,6 +305,12 @@ def register_content_gen_routes(
             return JSONResponse(status_code=400, content={"error": "No saved context to resume"})
 
         end = job.to_stage if job.to_stage is not None else len(PIPELINE_STAGES) - 1
+        from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
+
+        orch = ContentGenOrchestrator(config)
+        resume_error = orch.validate_resume_context(from_stage=request.from_stage, ctx=ctx)
+        if resume_error:
+            return JSONResponse(status_code=400, content={"error": resume_error})
 
         # Create a new job for the resumed run
         new_job = job_registry.create_job(
@@ -317,9 +323,6 @@ def register_content_gen_routes(
         job_registry.update_context(new_job.pipeline_id, ctx)
 
         async def _run() -> None:
-            from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
-
-            orch = ContentGenOrchestrator(config)
             job_registry.mark_running(new_job.pipeline_id)
 
             def _progress(stage_idx: int, label: str) -> None:
@@ -390,6 +393,7 @@ def register_content_gen_routes(
                     job.theme,
                     from_stage=request.from_stage,
                     to_stage=end,
+                    initial_context=ctx,
                     progress_callback=_progress,
                     stage_completed_callback=_stage_completed,
                 )

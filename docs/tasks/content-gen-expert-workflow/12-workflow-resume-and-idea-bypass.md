@@ -1,5 +1,7 @@
 # Task 12: Fix Pipeline Resume And Direct-Idea Workflow
 
+Status: Done
+
 Goal:
 Clean up the workflow mechanics that currently make the full pipeline awkward to operate.
 
@@ -28,4 +30,3 @@ Validation:
 Out of scope:
 - Multi-lane fanout
 - Dashboard changes
-
