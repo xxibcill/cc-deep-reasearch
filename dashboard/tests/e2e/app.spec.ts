@@ -4,7 +4,7 @@ import { mockDashboardApis, mockSessions } from "./dashboard-mocks";
 import { SCENARIOS, getScenario } from "./scenarios";
 import { setupTestPage } from "./test-fixtures";
 
-test("home page exposes the control-room structure and launch presets", async ({ page }) => {
+test("home page exposes the control-room structure and launch presets @smoke", async ({ page }) => {
   await mockDashboardApis(page);
 
   await page.goto("/");
