@@ -1,10 +1,9 @@
-'use client';
-
 import { useEffect, useState } from 'react';
 import { Bookmark, Save, Trash2 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import {
   SavedView,
@@ -136,6 +135,8 @@ export function SavedViewControls<T>({
           value={selectedName}
           options={views.map((view) => view.name)}
           onChange={setSelectedName}
+          emptyLabel="Choose view"
+          testId={`${testIdPrefix}-select`}
           className="h-9 bg-surface-raised/72"
           labelClassName="min-w-0 flex-1 gap-1 text-[11px] tracking-[0.18em] text-muted-foreground"
         />
@@ -180,12 +181,11 @@ export function SavedViewControls<T>({
             <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               {inputLabel}
             </span>
-            <input
-              type="text"
+            <Input
               value={draftName}
-              onChange={(event: React.ChangeEvent<HTMLInputElement>) => setDraftName(event.target.value)}
+              onChange={(event) => setDraftName(event.target.value)}
               placeholder="e.g. Active failures"
-              className="h-9 w-full rounded-md border bg-surface/80 px-3 text-sm text-foreground"
+              className="h-9 bg-surface/80"
               aria-label={inputLabel}
               data-testid={`${testIdPrefix}-name`}
             />

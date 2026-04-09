@@ -116,7 +116,7 @@ test("deriveOperatorInsights flags completed runs that are missing a report", as
 });
 
 test("deriveOperatorInsights detects stalled active runs", async () => {
-  const stalledTimestamp = new Date(Date.now() - 200_000).toISOString();
+  const stalledTimestamp = new Date(Date.now() - 121_000).toISOString();
   const events = [
     buildEvent(1, {
       timestamp: stalledTimestamp,

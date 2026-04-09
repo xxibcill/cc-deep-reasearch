@@ -1,6 +1,5 @@
 import * as React from 'react'
 
-import { useId } from 'react'
 import { cn } from '@/lib/utils'
 import { Label } from '@/components/ui/label'
 import { Checkbox, type CheckboxProps } from '@/components/ui/checkbox'
@@ -118,8 +117,7 @@ export function CheckboxRow({
   id,
   ...props
 }: CheckboxRowProps) {
-  const generatedId = useId()
-  const checkboxId = id || `checkbox-${generatedId}`
+  const checkboxId = id || `checkbox-${Math.random().toString(36).slice(2, 9)}`
   return (
     <div className={cn('flex items-start gap-3', className)}>
       <Checkbox id={checkboxId} className="mt-0.5" {...props} />

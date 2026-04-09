@@ -289,29 +289,39 @@ export async function getSessionEvents(
 
 // Research Run API helpers
 
-const RESEARCH_RUN_TIMEOUT_MS = 10000;
-
 export async function startResearchRun(
   request: ResearchRunRequest
 ): Promise<StartResearchRunResponse> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 10000);
+
   try {
-    const response = await apiClient.post<StartResearchRunResponse & {
-      error?: string;
-      detail?: string;
-    }>('/research-runs', request, {
-      timeout: RESEARCH_RUN_TIMEOUT_MS,
+    const response = await fetch(`${dashboardRuntimeConfig.apiBaseUrl}/research-runs`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+      signal: controller.signal,
     });
 
-    if (response.data.error || response.data.detail) {
-      throw new Error(response.data.error || response.data.detail || 'Failed to start research run.');
+    const payload = (await response.json()) as StartResearchRunResponse & {
+      error?: string;
+      detail?: string;
+    };
+
+    if (!response.ok) {
+      throw new Error(payload.error || payload.detail || 'Failed to start research run.');
     }
 
-    return response.data;
+    return payload;
   } catch (error) {
-    if (axios.isAxiosError(error) && error.code === 'ECONNABORTED') {
+    if (error instanceof DOMException && error.name === 'AbortError') {
       throw new Error('POST /research-runs timed out after 10s while waiting for the dashboard backend.');
     }
     throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
   }
 }
 

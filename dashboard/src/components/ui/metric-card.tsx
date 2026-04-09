@@ -1,4 +1,7 @@
+<<<<<<< HEAD
 import * as React from 'react'
+=======
+>>>>>>> 26dcdfe (feat(dashboard): Add dashboard framework upgrade and new UI components)
 import type { LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
@@ -19,18 +22,30 @@ const iconClasses: Record<MetricCardTone, string> = {
   success: 'text-success',
 }
 
+<<<<<<< HEAD
 interface MetricCardProps extends React.HTMLAttributes<HTMLDivElement> {
+=======
+interface MetricCardProps {
+>>>>>>> 26dcdfe (feat(dashboard): Add dashboard framework upgrade and new UI components)
   label: string
   value: React.ReactNode
   icon: LucideIcon
   description?: string
   tone?: MetricCardTone
   compact?: boolean
+<<<<<<< HEAD
+=======
+  className?: string
+>>>>>>> 26dcdfe (feat(dashboard): Add dashboard framework upgrade and new UI components)
   valueClassName?: string
   children?: React.ReactNode
 }
 
+<<<<<<< HEAD
 const MetricCard = React.forwardRef<HTMLDivElement, MetricCardProps>(({
+=======
+export function MetricCard({
+>>>>>>> 26dcdfe (feat(dashboard): Add dashboard framework upgrade and new UI components)
   label,
   value,
   icon: Icon,
@@ -40,17 +55,26 @@ const MetricCard = React.forwardRef<HTMLDivElement, MetricCardProps>(({
   className,
   valueClassName,
   children,
+<<<<<<< HEAD
   ...props
 }, ref) => {
   return (
     <div
       ref={ref}
+=======
+}: MetricCardProps) {
+  return (
+    <div
+>>>>>>> 26dcdfe (feat(dashboard): Add dashboard framework upgrade and new UI components)
       className={cn(
         'group rounded-[1rem] border p-4 shadow-card transition-colors',
         toneClasses[tone],
         className,
       )}
+<<<<<<< HEAD
       {...props}
+=======
+>>>>>>> 26dcdfe (feat(dashboard): Add dashboard framework upgrade and new UI components)
     >
       <div className="flex items-center justify-between gap-3">
         <p className="eyebrow">{label}</p>
@@ -77,7 +101,11 @@ const MetricCard = React.forwardRef<HTMLDivElement, MetricCardProps>(({
       ) : null}
     </div>
   )
+<<<<<<< HEAD
 })
 MetricCard.displayName = 'MetricCard'
 
 export { MetricCard }
+=======
+}
+>>>>>>> 26dcdfe (feat(dashboard): Add dashboard framework upgrade and new UI components)

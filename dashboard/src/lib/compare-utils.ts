@@ -632,4 +632,3 @@ export function describeBaselineFit(
     summary: `${topSuggestion.session.label} is a better same-query, same-label, or recent-success baseline for Session B.`,
   }
 }
-

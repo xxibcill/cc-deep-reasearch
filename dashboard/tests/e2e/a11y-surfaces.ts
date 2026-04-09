@@ -1,5 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 
+import { mockDashboardApis } from "./dashboard-mocks";
+
 export type OperatorSurface = {
   name: string;
   path: string;
@@ -30,6 +32,7 @@ export const operatorSurfaces: OperatorSurface[] = [
 ];
 
 export async function openOperatorSurface(page: Page, surface: OperatorSurface): Promise<void> {
+  await mockDashboardApis(page);
   await page.goto(surface.path);
   await page.waitForLoadState("networkidle");
   await expect(page.getByRole("heading", { name: surface.readyHeading })).toBeVisible();

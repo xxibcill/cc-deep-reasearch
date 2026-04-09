@@ -28,10 +28,7 @@ export const NativeSelect = React.forwardRef<
         onInput({
           target: element,
           currentTarget: element,
-          bubbles: true,
-          cancelable: false,
-          composed: true,
-        } as unknown as React.InputEvent<HTMLSelectElement>)
+        } as unknown as React.FormEvent<HTMLSelectElement>)
       }
     }
 
