@@ -19,8 +19,8 @@ Recommended order:
 7. `07-scripting-grounding-with-proof-links.md` - Done
 8. `08-quality-evaluator-expert-metrics.md` - Done
 9. `09-qc-claim-safety-review.md` - Done
-10. `10-search-query-families-and-freshness.md`
-11. `11-tests-and-contract-docs.md`
+10. `10-search-query-families-and-freshness.md` - Done
+11. `11-tests-and-contract-docs.md` - Done
 12. `12-workflow-resume-and-idea-bypass.md`
 13. `13-multi-lane-shortlist-fanout.md`
 

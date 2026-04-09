@@ -23,15 +23,16 @@ When editing prompts, update the prompt docstring and the shared registry togeth
 | Backlog build | `prompts/backlog.py` | 1.0.0 | tolerant/degraded |
 | Idea scoring | `prompts/backlog.py` | 1.0.0 | tolerant/degraded |
 | Angle generation | `prompts/angle.py` | 1.0.0 | fail-fast |
-| Research pack | `prompts/research_pack.py` | 1.0.0 | tolerant |
-| Scripting (all 10 steps) | `prompts/scripting.py` | 1.0.0 | mostly fail-fast |
+| Research pack | `prompts/research_pack.py` | 1.1.0 | tolerant |
+| Argument map | `prompts/argument_map.py` | 1.0.0 | fail-fast |
+| Scripting (all 10 steps) | `prompts/scripting.py` | 1.1.0 | mostly fail-fast |
 | Visual translation | `prompts/visual.py` | 1.0.0 | fail-fast |
 | Production brief | `prompts/production.py` | 1.0.0 | tolerant |
 | Packaging | `prompts/packaging.py` | 1.0.0 | fail-fast |
-| QC review | `prompts/qc.py` | 1.0.0 | human-gated |
+| QC review | `prompts/qc.py` | 1.1.0 | human-gated |
 | Publish queue | `prompts/publish.py` | 1.0.0 | tolerant |
 | Performance analysis | `prompts/performance.py` | 1.0.0 | tolerant |
-| Shared registry/models | `models.py` | 1.0.0 | n/a |
+| Shared registry/models | `models.py` | 1.3.0 | n/a |
 
 The models in `models.py` define the Python types that result from parsing LLM output. Major changes to prompt output formats should be accompanied by:
 1. Bumping the `CONTRACT_VERSION` in the prompt module
@@ -48,6 +49,7 @@ The content-generation subsystem is separate from the research-report pipeline. 
 - idea backlog generation and scoring
 - angle development
 - compact research-pack synthesis
+- argument-map planning
 - multi-step script generation
 - visual planning
 - production planning
@@ -101,7 +103,7 @@ The scripting agent is the strictest implementation. It validates missing fields
 The workflow revolves around two context objects:
 
 - [`PipelineContext`](../src/cc_deep_research/content_gen/models.py)
-  The top-level 13-stage pipeline state.
+  The top-level 14-stage pipeline state.
 - [`ScriptingContext`](../src/cc_deep_research/content_gen/models.py)
   The nested 10-step script-generation state machine.
 
@@ -113,6 +115,7 @@ Important stage models:
 - `ScoringOutput` and `IdeaScores`
 - `AngleOutput` and `AngleOption`
 - `ResearchPack`
+- `ArgumentMap`
 - `VisualPlanOutput`
 - `ProductionBrief`
 - `PackagingOutput` and `PlatformPackage`
@@ -154,7 +157,7 @@ This path is more mature than the rest of the full pipeline. It autosaves output
 
 ### 3. Full pipeline execution
 
-Run the 12-stage orchestrated flow:
+Run the 14-stage orchestrated flow:
 
 ```bash
 cc-deep-research content-gen pipeline --theme "..."
@@ -172,13 +175,14 @@ The implemented pipeline order is defined by `PIPELINE_STAGES` in [`src/cc_deep_
 4. `score_ideas`
 5. `generate_angles`
 6. `build_research_pack`
-7. `run_scripting`
-8. `visual_translation`
-9. `production_brief`
-10. `packaging`
-11. `human_qc`
-12. `publish_queue`
-13. `performance_analysis`
+7. `build_argument_map`
+8. `run_scripting`
+9. `visual_translation`
+10. `production_brief`
+11. `packaging`
+12. `human_qc`
+13. `publish_queue`
+14. `performance_analysis`
 
 Operationally, the flow looks like this:
 
@@ -191,6 +195,7 @@ strategy memory
   -> multiple angles
   -> one chosen angle
   -> research pack
+  -> argument map
   -> nested scripting pipeline
   -> visual plan
   -> production brief
@@ -382,10 +387,10 @@ Purpose:
 
 How it works:
 
-1. Build a small query set from the idea and angle.
+1. Build a small, purpose-driven query-family set from the idea and angle.
 2. Run those queries through the configured search providers.
 3. Convert snippets into a compact search context string.
-4. Ask the LLM to synthesize audience insights, proof points, gaps, and risk flags.
+4. Ask the LLM to synthesize structured findings, claims, counterpoints, and risk flags.
 
 Configuration:
 
@@ -404,13 +409,36 @@ cc-deep-research content-gen research \
 Important implementation details:
 
 - provider setup is shared with the research subsystem
-- query generation is heuristic and intentionally small
-- one built-in query template is still hard-coded to `content trends 2025`, which is stale and should be treated as technical debt
+- query generation is intentionally small, but the families are retrieval-oriented:
+  `proof`, `primary-source`, `competitor`, `contrarian`, `freshness`, and `practitioner-language`
+- freshness queries use the current calendar year instead of a stale pinned year
+- supporting sources retain source-level provenance including `query`, `query_family`, `intent_tags`,
+  and merged query history when duplicate URLs appear from multiple searches
 - the stored research pack is compact by design and not a citation-grade source graph
 - this parser is intentionally tolerant: missing sections stay empty because scripting can continue with
   partial research and iterative reruns can add missing evidence later
 
-### Stage 6: Scripting Pipeline
+### Stage 6: Argument Map Builder
+
+Implementation:
+
+- agent: [`ArgumentMapAgent`](../src/cc_deep_research/content_gen/agents/argument_map.py)
+- prompt: [`prompts/argument_map.py`](../src/cc_deep_research/content_gen/prompts/argument_map.py)
+- output model: `ArgumentMap`
+
+Purpose:
+
+- turn the selected idea, chosen angle, and structured research pack into a grounded narrative plan
+- separate safe claims from unsafe claims before drafting starts
+
+Behavior:
+
+- the parser is fail-fast and validates cross-references between `proof_id`, `claim_id`,
+  `counterargument_id`, and `beat_id`
+- each beat in `beat_claim_plan` can seed later scripting structure and beat-intent setup
+- the orchestrator records proof, claim, beat, and unsafe-claim counts into stage traces
+
+### Stage 7: Scripting Pipeline
 
 Implementation:
 
@@ -454,13 +482,16 @@ How the full pipeline uses it:
 - it seeds a `ScriptingContext` with:
   - `raw_idea`
   - `research_context`
+  - `argument_map`
   - precomputed `core_inputs`
   - precomputed `angle`
+  - `structure` seeded from the argument map when beats are available
+  - `beat_intents` seeded from the argument map when beats are available
 - then it resumes the scripting workflow from step `3`, which is `choose_structure`
 
 That means the full pipeline treats the earlier backlog, angle, and research stages as the upstream planning work for the scripting engine.
 
-### Stage 7: Visual Translation
+### Stage 8: Visual Translation
 
 Implementation:
 
@@ -492,7 +523,7 @@ Guardrail:
 - the parser also fails fast if it cannot recover at least one complete beat visual or the
   required `visual_refresh_check`
 
-### Stage 8: Production Brief
+### Stage 9: Production Brief
 
 Implementation:
 
@@ -511,7 +542,7 @@ CLI:
 cc-deep-research content-gen production --from-file visual.json -o production.json
 ```
 
-### Stage 9: Packaging
+### Stage 10: Packaging
 
 Implementation:
 
@@ -542,7 +573,7 @@ Input behavior:
 - parsing is intentionally tolerant per block, but the stage fails if no usable platform package
   survives parsing
 
-### Stage 10: Human QC Gate
+### Stage 11: Human QC Gate
 
 Implementation:
 
@@ -571,11 +602,12 @@ cc-deep-research content-gen qc approve --idea-id idea123 --from-file pipeline.c
 Current behavior:
 
 - `qc review` runs a fresh review from the saved context
+- when available, QC compares the script against both research-summary and argument-map summary context
 - `qc approve` mutates the saved context JSON by flipping `approved_for_publish` to `True`
 - missing issue buckets are tolerated and default to empty lists, but `hook_strength` is required
   so a blank QC review does not silently pass through the pipeline
 
-### Stage 11: Publish Queue
+### Stage 12: Publish Queue
 
 Implementation:
 
@@ -605,7 +637,7 @@ Important detail:
 - the standalone publish path persists every generated publish item
 - the full pipeline only stores the first generated `PublishItem` in `PipelineContext`
 
-### Stage 12: Performance Analysis
+### Stage 13: Performance Analysis
 
 Implementation:
 
@@ -775,8 +807,10 @@ The main automated coverage is in [`tests/test_content_gen.py`](../tests/test_co
 - model defaults
 - store round-trips
 - CLI wiring
-- parsing behavior for scripting
-- pipeline stage count and some guardrails
+- contract-registry consistency
+- parser behavior for research-pack, argument-map, scripting, evaluator, and QC outputs
+- pipeline stage count and stage-order guardrails
+- iterative quality-loop stop conditions and feedback formatting
 
 This is useful regression coverage, but it is not a full live integration suite for every agent against every provider.
 
@@ -829,7 +863,7 @@ This keeps the implementation simple, but it is closer to a single-lane prototyp
 
 The QC stage always produces `approved_for_publish = False`. The publish stage only runs if approval is already `True`.
 
-Because the current pipeline command does not reload saved context, the normal all-in-one flow does not reach stage 10 automatically.
+Because the current pipeline command does not reload saved context, the normal all-in-one flow does not reach `publish_queue` automatically.
 
 ### Backlog persistence is incomplete
 
@@ -843,9 +877,9 @@ The config schema includes storage path overrides, but the storage classes still
 
 `PublishAgent.schedule()` returns a list of publish items, one per platform. The full pipeline keeps only the first one in `PipelineContext.publish_item`.
 
-### Research-pack query templates are partly hard-coded
+### Research-pack query families are still intentionally narrow
 
-The search-query builder uses a fixed set of heuristics, including one year-specific query string that still references `2025`.
+The search-query builder now uses labeled retrieval families with current-year freshness logic, but it is still a small fixed plan rather than a dynamic fanout strategy.
 
 ## Extension Opportunities
 
@@ -857,7 +891,7 @@ The most obvious next improvements are:
 4. Persist backlog outputs automatically when operators request a managed workflow.
 5. Add stricter validation to non-scripting agents when LLM output is empty or malformed.
 6. Expand the pipeline context to retain all publish items, not only the first.
-7. Replace stale year-pinned research queries with relative or current-year logic.
+7. Expand retrieval planning beyond the fixed expert-query family set when broader fanout is needed.
 
 ## Source Map
 
