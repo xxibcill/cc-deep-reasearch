@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 import logging
 import re
 from typing import TYPE_CHECKING, Any
@@ -166,54 +167,116 @@ class ResearchPackAgent:
 
 
 def _build_search_queries(item: BacklogItem, angle: AngleOption) -> list[QueryFamily]:
+    subject = _first_non_empty(
+        angle.core_promise,
+        item.idea,
+        angle.primary_takeaway,
+        angle.viewer_problem,
+        item.problem,
+    )
+    audience = _first_non_empty(angle.target_audience, item.audience)
+    problem = _first_non_empty(angle.viewer_problem, item.problem)
+    if not subject:
+        return []
+
     query_plans: list[QueryFamily] = []
-    if item.idea:
-        query_plans.append(
-            QueryFamily(
-                query=f"{item.idea} {item.audience} pain points challenges",
-                family="audience_problem",
-                intent_tags=["audience", "problem"],
-            )
-        )
-        query_plans.append(
-            QueryFamily(
-                query=f"best {item.idea} short form videos",
-                family="competitor",
-                intent_tags=["competitor", "format"],
-            )
-        )
-        query_plans.append(
-            QueryFamily(
-                query=f"{item.idea} myths misconceptions",
-                family="counterposition",
-                intent_tags=["myth", "counterpoint"],
-            )
-        )
-    if angle.core_promise:
-        query_plans.append(
-            QueryFamily(
-                query=f"{angle.core_promise} evidence research",
-                family="evidence",
-                intent_tags=["evidence", "proof"],
-            )
-        )
-    if angle.viewer_problem:
-        query_plans.append(
-            QueryFamily(
-                query=f"{angle.viewer_problem} solutions",
-                family="solution",
-                intent_tags=["solution", "mechanism"],
-            )
-        )
-    if angle.target_audience:
-        query_plans.append(
-            QueryFamily(
-                query=f"{angle.target_audience} content trends 2025",
-                family="freshness",
-                intent_tags=["freshness", "trends"],
-            )
-        )
+    seen_queries: set[str] = set()
+
+    _append_query_plan(
+        query_plans,
+        seen_queries,
+        family="proof",
+        intent_tags=["proof", "evidence", "benchmark"],
+        query=_join_terms(subject, problem, "evidence study benchmark data"),
+    )
+    _append_query_plan(
+        query_plans,
+        seen_queries,
+        family="primary-source",
+        intent_tags=["primary_source", "official", "documentation"],
+        query=_join_terms(subject, "official report documentation transcript filing"),
+    )
+    _append_query_plan(
+        query_plans,
+        seen_queries,
+        family="competitor",
+        intent_tags=["competitor", "examples", "framing"],
+        query=_join_terms(subject, audience, "competitor example teardown case study"),
+    )
+    _append_query_plan(
+        query_plans,
+        seen_queries,
+        family="contrarian",
+        intent_tags=["counterevidence", "myth", "limitations"],
+        query=_join_terms(subject, "myth critique limitation counterexample"),
+    )
+    _append_query_plan(
+        query_plans,
+        seen_queries,
+        family="freshness",
+        intent_tags=["freshness", "latest", "trends"],
+        query=_join_terms(subject, audience, str(_current_calendar_year()), "latest trends update"),
+    )
+    _append_query_plan(
+        query_plans,
+        seen_queries,
+        family="practitioner-language",
+        intent_tags=["practitioner", "language", "workflow"],
+        query=_join_terms(audience, problem or subject, "practitioner playbook operator lessons"),
+    )
+
     return query_plans
+
+
+def _append_query_plan(
+    query_plans: list[QueryFamily],
+    seen_queries: set[str],
+    *,
+    family: str,
+    intent_tags: list[str],
+    query: str,
+) -> None:
+    normalized_query = " ".join(query.split())
+    if not normalized_query:
+        return
+    dedupe_key = normalized_query.casefold()
+    if dedupe_key in seen_queries:
+        return
+    seen_queries.add(dedupe_key)
+    query_plans.append(
+        QueryFamily(
+            query=normalized_query,
+            family=family,
+            intent_tags=intent_tags,
+        )
+    )
+
+
+def _join_terms(*parts: str) -> str:
+    cleaned_parts: list[str] = []
+    seen_parts: set[str] = set()
+    for part in parts:
+        normalized = " ".join(str(part).split()).strip()
+        if not normalized:
+            continue
+        dedupe_key = normalized.casefold()
+        if dedupe_key in seen_parts:
+            continue
+        seen_parts.add(dedupe_key)
+        cleaned_parts.append(normalized)
+    return " ".join(cleaned_parts)
+
+
+def _first_non_empty(*parts: str) -> str:
+    for part in parts:
+        normalized = " ".join(str(part).split()).strip()
+        if normalized:
+            return normalized
+    return ""
+
+
+def _current_calendar_year() -> int:
+    return datetime.now().year
 
 
 def _source_from_search_result(

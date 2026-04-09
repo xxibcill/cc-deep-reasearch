@@ -1,5 +1,7 @@
 # Task 10: Improve Search Query Families And Freshness Logic
 
+Status: Done
+
 Goal:
 Replace narrow heuristic searches with expert-oriented retrieval families and remove stale year-pinned logic.
 
@@ -27,4 +29,3 @@ Validation:
 Out of scope:
 - Research pack parser redesign
 - Pipeline fanout
-

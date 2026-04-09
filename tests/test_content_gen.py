@@ -8,6 +8,7 @@ import pytest
 from click.testing import CliRunner
 
 from cc_deep_research.cli import main
+from cc_deep_research.content_gen.agents import research_pack as research_pack_agent_module
 from cc_deep_research.content_gen.agents.argument_map import ArgumentMapAgent, _parse_argument_map
 from cc_deep_research.content_gen.agents.angle import AngleAgent, _parse_angle_options
 from cc_deep_research.content_gen.agents.opportunity import OpportunityPlanningAgent
@@ -21,7 +22,11 @@ from cc_deep_research.content_gen.agents.backlog import (
 from cc_deep_research.content_gen.agents.packaging import PackagingAgent, _parse_platform_packages
 from cc_deep_research.content_gen.agents.qc import QCAgent, _parse_qc_gate
 from cc_deep_research.content_gen.agents.quality_evaluator import _parse_quality_evaluation
-from cc_deep_research.content_gen.agents.research_pack import ResearchPackAgent, _parse_research_pack
+from cc_deep_research.content_gen.agents.research_pack import (
+    ResearchPackAgent,
+    _build_search_queries,
+    _parse_research_pack,
+)
 from cc_deep_research.content_gen.agents.scripting import _STEP_HANDLERS, ScriptingAgent
 from cc_deep_research.content_gen.agents.visual import VisualAgent
 from cc_deep_research.content_gen.models import (
@@ -277,6 +282,29 @@ def test_content_gen_stage_contract_registry_documents_parser_behavior() -> None
     assert CONTENT_GEN_STAGE_CONTRACTS["build_research_pack"].failure_mode == "tolerant"
     assert CONTENT_GEN_STAGE_CONTRACTS["build_argument_map"].failure_mode == "fail_fast"
     assert CONTENT_GEN_STAGE_CONTRACTS["human_qc"].failure_mode == "human_gated"
+
+
+def test_content_gen_stage_contract_registry_tracks_expert_workflow_shapes() -> None:
+    """Registry should document the expert-workflow contract additions."""
+    research_contract = CONTENT_GEN_STAGE_CONTRACTS["build_research_pack"]
+    argument_contract = CONTENT_GEN_STAGE_CONTRACTS["build_argument_map"]
+    scripting_contract = CONTENT_GEN_STAGE_CONTRACTS["run_scripting"]
+    qc_contract = CONTENT_GEN_STAGE_CONTRACTS["human_qc"]
+
+    assert research_contract.contract_version == "1.1.0"
+    assert "counterpoints" in research_contract.expected_sections
+    assert "uncertainty_flags" in research_contract.expected_sections
+
+    assert argument_contract.contract_version == "1.0.0"
+    assert "unsafe_claims" in argument_contract.expected_sections
+    assert "beat_claim_plan" in argument_contract.expected_sections
+
+    assert scripting_contract.contract_version == "1.1.0"
+    assert "Step 4: at least one beat intent" in scripting_contract.required_fields
+
+    assert qc_contract.contract_version == "1.1.0"
+    assert "unsupported_claims" in qc_contract.expected_sections
+    assert "required_fact_checks" in qc_contract.expected_sections
 
 
 def test_pipeline_context_default_values() -> None:
@@ -2494,6 +2522,37 @@ async def test_angle_agent_raises_when_no_complete_options_parse() -> None:
         await agent.generate(BacklogItem(idea="Idea"), StrategyMemory())
 
 
+def test_build_search_queries_uses_expert_families_and_current_year(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Search planning should use labeled retrieval families and avoid stale year pins."""
+    monkeypatch.setattr(research_pack_agent_module, "_current_calendar_year", lambda: 2031)
+
+    queries = _build_search_queries(
+        BacklogItem(
+            idea="pricing psychology",
+            audience="B2B SaaS founders",
+            problem="buyers do not compare plans the way teams expect",
+        ),
+        AngleOption(
+            target_audience="subscription software marketers",
+            viewer_problem="teams keep optimizing copy instead of comparison framing",
+            core_promise="Tier order changes what buyers notice first",
+            primary_takeaway="Fix the comparison before the checklist",
+        ),
+    )
+
+    assert [query.family for query in queries] == [
+        "proof",
+        "primary-source",
+        "competitor",
+        "contrarian",
+        "freshness",
+        "practitioner-language",
+    ]
+    assert queries[0].intent_tags == ["proof", "evidence", "benchmark"]
+    assert "2031" in queries[4].query
+    assert "2025" not in " ".join(query.query for query in queries)
+
+
 def test_research_pack_golden_fixture_happy_path_parses_sections() -> None:
     """Research-pack fixtures should populate evidence sections predictably."""
     result = _parse_research_pack(
@@ -2513,6 +2572,8 @@ def test_research_pack_golden_fixture_happy_path_parses_sections() -> None:
     assert result.findings[0].finding_type == ResearchFindingType.AUDIENCE_INSIGHT
     assert result.claims[0].claim_type == ResearchClaimType.KEY_FACT
     assert result.claims[0].confidence == ResearchConfidence.HIGH
+    assert result.counterpoints[0].source_ids == ["src_05"]
+    assert result.uncertainty_flags[1].flag_type == ResearchFlagType.UNSAFE_OR_UNCERTAIN
     assert result.assets_needed == [
         "Screenshot of a three-tier pricing page",
         "Simple annotated mock showing anchor placement",
@@ -2765,9 +2826,9 @@ research_stop_reason: Enough support for a qualitative teardown"""
     )
 
     assert "[src_01]" in agent.last_user_prompt
-    assert "query_family: audience_problem" in agent.last_user_prompt
+    assert "query_family: proof" in agent.last_user_prompt
     assert result.supporting_sources[0].url == "https://example.com/pricing"
-    assert result.supporting_sources[0].query_family == "audience_problem"
+    assert result.supporting_sources[0].query_family == "proof"
     assert result.findings[0].source_ids == ["src_01"]
     assert result.claims[0].source_ids == ["src_01"]
     assert result.uncertainty_flags[0].source_ids == ["src_01"]

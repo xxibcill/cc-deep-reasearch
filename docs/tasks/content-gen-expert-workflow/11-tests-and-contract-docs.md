@@ -1,5 +1,7 @@
 # Task 11: Finish Contract Docs And Regression Coverage
 
+Status: Done
+
 Goal:
 Close the loop on all prompt/parser contract changes and protect the new expert workflow with tests.
 
@@ -28,4 +30,3 @@ Validation:
 
 Out of scope:
 - Dashboard UX polish
-
