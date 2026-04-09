@@ -923,16 +923,26 @@ async def _stage_plan_opportunity(
 async def _stage_build_backlog(
     orch: ContentGenOrchestrator, ctx: PipelineContext
 ) -> PipelineContext:
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+
     agent = orch._get_agent("backlog")
     ctx.backlog = await agent.build_backlog(
         ctx.theme,
         ctx.strategy or StrategyMemory(),
         opportunity_brief=ctx.opportunity_brief,
     )
+    service = BacklogService(orch._config)
+    ctx.backlog = service.persist_generated(
+        ctx.backlog,
+        theme=ctx.theme,
+        source_pipeline_id=ctx.pipeline_id,
+    )
     return ctx
 
 
 async def _stage_score_ideas(orch: ContentGenOrchestrator, ctx: PipelineContext) -> PipelineContext:
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+
     if ctx.backlog is None:
         return ctx
     if not ctx.backlog.items:
@@ -950,6 +960,7 @@ async def _stage_score_ideas(orch: ContentGenOrchestrator, ctx: PipelineContext)
     ctx.selected_idea_id = ctx.scoring.selected_idea_id
     ctx.selection_reasoning = ctx.scoring.selection_reasoning
     ctx.runner_up_idea_ids = ctx.scoring.runner_up_idea_ids
+    BacklogService(orch._config).apply_scoring(ctx.scoring)
     return ctx
 
 
@@ -985,6 +996,8 @@ async def _stage_build_research_pack(
 async def _stage_run_scripting(
     orch: ContentGenOrchestrator, ctx: PipelineContext
 ) -> PipelineContext:
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+
     if ctx.backlog is None or ctx.angles is None:
         return ctx
     item = _resolve_selected_item(ctx)
@@ -1028,6 +1041,12 @@ async def _stage_run_scripting(
         ),
     )
     ctx.scripting = await agent.run_from_step(seeded_ctx, 3)
+    selected_idea_id = _resolve_selected_idea_id(ctx)
+    if selected_idea_id:
+        BacklogService(orch._config).mark_in_production(
+            selected_idea_id,
+            source_pipeline_id=ctx.pipeline_id,
+        )
     return ctx
 
 

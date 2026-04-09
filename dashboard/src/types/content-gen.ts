@@ -193,6 +193,14 @@ export interface BacklogItem {
   risk_level: RiskLevel | string;
   priority_score: number;
   status: BacklogItemStatus | string;
+  latest_score?: number | null;
+  latest_recommendation?: ScoreRecommendation | string;
+  selection_reasoning?: string;
+  source_theme?: string;
+  source_pipeline_id?: string;
+  created_at?: string;
+  updated_at?: string;
+  last_scored_at?: string;
 }
 
 export interface BacklogOutput {
@@ -645,6 +653,11 @@ export interface RunScriptingResponse {
 
 export interface UpdateStrategyRequest {
   patch: Record<string, unknown>;
+}
+
+export interface BacklogListResponse {
+  path: string;
+  items: BacklogItem[];
 }
 
 // =============================================================================

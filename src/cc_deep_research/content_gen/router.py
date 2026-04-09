@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from cc_deep_research.config import load_config
+from cc_deep_research.content_gen.backlog_service import BacklogService
 from cc_deep_research.content_gen.models import (
     PIPELINE_STAGE_LABELS,
     PIPELINE_STAGES,
@@ -67,6 +68,12 @@ class RunScriptingRequest(BaseModel):
 
 class UpdateStrategyRequest(BaseModel):
     """Request body for updating strategy memory."""
+
+    patch: dict[str, Any] = Field(default_factory=dict)
+
+
+class UpdateBacklogItemRequest(BaseModel):
+    """Request body for updating one backlog item."""
 
     patch: dict[str, Any] = Field(default_factory=dict)
 
@@ -515,6 +522,58 @@ def register_content_gen_routes(
             response.script = script_text
             response.word_count = len(script_text.split())
         return JSONResponse(content=json.loads(response.model_dump_json()))
+
+    # ------------------------------------------------------------------
+    # Backlog
+    # ------------------------------------------------------------------
+
+    @app.get("/api/content-gen/backlog")
+    async def list_backlog() -> JSONResponse:
+        config = load_config()
+        service = BacklogService(config)
+        backlog = service.load()
+        return JSONResponse(
+            content={
+                "path": str(service.path),
+                "items": [json.loads(item.model_dump_json()) for item in backlog.items],
+            }
+        )
+
+    @app.patch("/api/content-gen/backlog/{idea_id}")
+    async def update_backlog_item(idea_id: str, request: UpdateBacklogItemRequest) -> JSONResponse:
+        config = load_config()
+        service = BacklogService(config)
+        updated = service.update_item(idea_id, request.patch)
+        if updated is None:
+            return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
+        return JSONResponse(content=json.loads(updated.model_dump_json()))
+
+    @app.post("/api/content-gen/backlog/{idea_id}/select")
+    async def select_backlog_item(idea_id: str) -> JSONResponse:
+        config = load_config()
+        service = BacklogService(config)
+        selected = service.select_item(idea_id)
+        if selected is None:
+            return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
+        return JSONResponse(content=json.loads(selected.model_dump_json()))
+
+    @app.post("/api/content-gen/backlog/{idea_id}/archive")
+    async def archive_backlog_item(idea_id: str) -> JSONResponse:
+        config = load_config()
+        service = BacklogService(config)
+        archived = service.archive_item(idea_id)
+        if archived is None:
+            return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
+        return JSONResponse(content=json.loads(archived.model_dump_json()))
+
+    @app.delete("/api/content-gen/backlog/{idea_id}")
+    async def delete_backlog_item(idea_id: str) -> JSONResponse:
+        config = load_config()
+        service = BacklogService(config)
+        removed = service.delete_item(idea_id)
+        if not removed:
+            return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
+        return JSONResponse(content={"removed": 1})
 
     # ------------------------------------------------------------------
     # Strategy

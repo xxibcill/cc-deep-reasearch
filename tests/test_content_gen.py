@@ -1129,6 +1129,59 @@ def test_backlog_store_update_item(tmp_path: Path) -> None:
     assert updated.status == "selected"
 
 
+def test_backlog_service_persist_generated_uses_config_path(tmp_path: Path) -> None:
+    """BacklogService should honor configured path and persist metadata."""
+    from types import SimpleNamespace
+
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+
+    path = tmp_path / "custom-backlog.yaml"
+    config = SimpleNamespace(content_gen=SimpleNamespace(backlog_path=str(path)))
+    service = BacklogService(config)
+
+    backlog = BacklogOutput(items=[BacklogItem(idea_id="idea-1", idea="Test backlog item")])
+    persisted = service.persist_generated(backlog, theme="pricing")
+
+    assert service.path == path
+    assert persisted.items[0].source_theme == "pricing"
+    assert persisted.items[0].created_at
+    assert path.exists()
+
+
+def test_backlog_service_apply_scoring_marks_selected(tmp_path: Path) -> None:
+    """Applying scoring should attach score metadata and promote the selected item."""
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+    from cc_deep_research.content_gen.storage import BacklogStore
+
+    store = BacklogStore(tmp_path / "backlog.yaml")
+    service = BacklogService(store=store)
+    service.upsert_items(
+        [
+            BacklogItem(idea_id="idea-1", idea="First"),
+            BacklogItem(idea_id="idea-2", idea="Second", status="selected"),
+        ]
+    )
+
+    service.apply_scoring(
+        ScoringOutput(
+            scores=[
+                IdeaScores(idea_id="idea-1", total_score=31, recommendation="produce_now"),
+                IdeaScores(idea_id="idea-2", total_score=22, recommendation="hold"),
+            ],
+            selected_idea_id="idea-1",
+            selection_reasoning="Best fit",
+        )
+    )
+
+    loaded = store.load()
+    by_id = {item.idea_id: item for item in loaded.items}
+    assert by_id["idea-1"].status == "selected"
+    assert by_id["idea-1"].latest_score == 31
+    assert by_id["idea-1"].latest_recommendation == "produce_now"
+    assert by_id["idea-1"].selection_reasoning == "Best fit"
+    assert by_id["idea-2"].status == "backlog"
+
+
 def test_publish_queue_store_roundtrip(tmp_path: Path) -> None:
     """PublishQueueStore should persist and load correctly."""
     from cc_deep_research.content_gen.storage import PublishQueueStore
