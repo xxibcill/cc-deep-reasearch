@@ -2,7 +2,7 @@
 
 import { AgentExecution, TelemetryEvent } from '@/types/telemetry';
 
-export const MAX_VISIBLE_MARKERS_PER_LANE = 18;
+const MAX_VISIBLE_MARKERS_PER_LANE = 18;
 
 const STATUS_CLASS: Record<string, string> = {
   completed: 'bg-success',
@@ -30,6 +30,7 @@ function sampleMarkers(markers: AgentExecution['markers']) {
     };
   }
 
+<<<<<<< HEAD
   const firstTimestamp = markers[0]?.timestamp ?? 0;
   const lastTimestamp = markers[markers.length - 1]?.timestamp ?? 0;
   const timeRange = lastTimestamp - firstTimestamp;
@@ -86,6 +87,20 @@ function sampleMarkers(markers: AgentExecution['markers']) {
   return {
     markers: selectedMarkers,
     hiddenCount: markers.length - selectedMarkers.length,
+=======
+  const lastIndex = markers.length - 1;
+  const selectedIndexes = new Set<number>([0, lastIndex]);
+  const targetInteriorCount = MAX_VISIBLE_MARKERS_PER_LANE - 2;
+
+  for (let step = 1; step <= targetInteriorCount; step += 1) {
+    const index = Math.round((step * lastIndex) / (targetInteriorCount + 1));
+    selectedIndexes.add(index);
+  }
+
+  return {
+    markers: markers.filter((_, index) => selectedIndexes.has(index)),
+    hiddenCount: markers.length - selectedIndexes.size,
+>>>>>>> 26dcdfe (feat(dashboard): Add dashboard framework upgrade and new UI components)
   };
 }
 

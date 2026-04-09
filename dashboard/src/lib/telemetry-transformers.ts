@@ -50,23 +50,8 @@ function asMetadata(value: unknown): TelemetryMetadata {
   return isRecord(value) ? value : {};
 }
 
-function isValidApiTelemetryEvent(value: unknown): value is ApiTelemetryEvent {
-  if (!isRecord(value)) {
-    return false;
-  }
-  return (
-    typeof value.event_id === 'string' &&
-    typeof value.timestamp === 'string' &&
-    typeof value.session_id === 'string' &&
-    typeof value.event_type === 'string' &&
-    typeof value.category === 'string' &&
-    typeof value.name === 'string' &&
-    typeof value.status === 'string'
-  );
-}
-
-function asApiTelemetryEvent(value: Record<string, unknown>): ApiTelemetryEvent | null {
-  return isValidApiTelemetryEvent(value) ? value : null;
+function asApiTelemetryEvent(value: Record<string, unknown>): ApiTelemetryEvent {
+  return value as unknown as ApiTelemetryEvent;
 }
 
 function asTimestamp(value: string): number {
@@ -105,8 +90,8 @@ function getSortedEvents(events: TelemetryEvent[]): TelemetryEvent[] {
   });
 }
 
-export const STALL_THRESHOLD_MS = 120000;
-export const SLOW_THRESHOLD_MS = 30000;
+const STALL_THRESHOLD_MS = 120000;
+const SLOW_THRESHOLD_MS = 30000;
 
 export function deriveOperatorInsights(
   events: TelemetryEvent[],
@@ -502,20 +487,19 @@ function buildTimeline(events: TelemetryEvent[], phaseLookup: Map<string, string
 
     if (event.category === 'tool' || event.category === 'llm' || event.category === 'phase') {
       const key = agentId;
-      const existingMarkers = markersByAgent.get(key) ?? [];
-      const newMarker: AgentExecution['markers'][number] = {
+      const markers = markersByAgent.get(key) ?? [];
+      markers.push({
         id: event.eventId,
         label: event.name,
         timestamp: asTimestamp(event.timestamp),
         type: event.category === 'tool' ? 'tool' : event.category === 'llm' ? 'llm' : 'phase',
         status: toStatus(event.status),
         eventId: event.eventId,
-      };
-      const updatedMarkers = [...existingMarkers, newMarker];
-      markersByAgent.set(key, updatedMarkers);
+      });
+      markersByAgent.set(key, markers);
       const span = spans.get(key);
       if (span) {
-        span.markers = updatedMarkers;
+        span.markers = markers;
       }
     }
   }
@@ -823,20 +807,9 @@ export function normalizeServerMessage(message: ApiServerMessage | unknown): Ser
 
   return {
     type,
-    event: isRecord(message.event)
-      ? (() => {
-          const normalized = asApiTelemetryEvent(message.event);
-          return normalized ? normalizeEvent(normalized) : undefined;
-        })()
-      : undefined,
+    event: isRecord(message.event) ? normalizeEvent(asApiTelemetryEvent(message.event)) : undefined,
     events: Array.isArray(message.events)
-      ? message.events
-          .map((event) => {
-            if (!isRecord(event)) return null;
-            const normalized = asApiTelemetryEvent(event);
-            return normalized ? normalizeEvent(normalized) : null;
-          })
-          .filter((event): event is TelemetryEvent => event !== null)
+      ? message.events.filter(isRecord).map((event) => normalizeEvent(asApiTelemetryEvent(event)))
       : undefined,
     error: typeof message.error === 'string' ? message.error : undefined,
   };

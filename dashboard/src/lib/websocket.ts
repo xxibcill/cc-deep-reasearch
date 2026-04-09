@@ -1,70 +1,57 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
-import useDashboardStore from '@/hooks/useDashboard';
+import useDashboardStore, { DEFAULT_LIVE_STREAM_STATUS } from '@/hooks/useDashboard';
 import { dashboardRuntimeConfig } from '@/lib/runtime-config';
 import { normalizeEvent, normalizeServerMessage } from '@/lib/telemetry-transformers';
 import {
   ClientMessage,
-  LiveStreamPhase,
-  LiveStreamStatus,
   TelemetryEvent,
+  LiveStreamStatus,
   WSHistoryPageMessage,
   WSClientGetHistoryMessage,
   WebSocketServerMessage,
 } from '@/types/telemetry';
-
-const MAX_RECONNECT_ATTEMPTS = 5;
-const DEFAULT_HISTORY_LIMIT = 1000;
-
-function derivePhase(connected: boolean, reconnecting: boolean, hasEvents: boolean): LiveStreamPhase {
-  if (connected) return 'live';
-  if (reconnecting) return 'reconnecting';
-  if (hasEvents) return 'historical';
-  return 'idle';
-}
 
 interface UseWebSocketOptions {
   enabled?: boolean;
   historical?: boolean;
 }
 
+const MAX_RECONNECT_ATTEMPTS = DEFAULT_LIVE_STREAM_STATUS.maxReconnectAttempts;
+
+function toIsoTimestamp(timeMs: number = Date.now()): string {
+  return new Date(timeMs).toISOString();
+}
+
+function getReconnectDelay(attempt: number): number {
+  return Math.min(Math.pow(2, Math.max(attempt, 0)) * 1000, 30000);
+}
+
+function getCloseReason(event: CloseEvent): string {
+  const reason = event.reason.trim();
+  if (reason.length > 0) {
+    return reason;
+  }
+  return `Connection closed (code ${event.code})`;
+}
+
 export function useWebSocket(sessionId: string | null, options: UseWebSocketOptions = {}) {
   const { enabled = true, historical = false } = options;
   const connected = useDashboardStore((state) => state.connected);
   const events = useDashboardStore((state) => state.events);
+  const liveStreamStatus = useDashboardStore((state) => state.liveStreamStatus);
+  const appendBufferedEvents = useDashboardStore((state) => state.appendBufferedEvents);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const shouldReconnectRef = useRef(false);
+  const manualCloseRef = useRef(false);
   const eventBufferRef = useRef<TelemetryEvent[]>([]);
   const flushHandleRef = useRef<number | null>(null);
   const connectProbeInFlightRef = useRef(false);
-  const lastMessageAtRef = useRef<string | null>(null);
-  const lastEventAtRef = useRef<string | null>(null);
-  const lastHistoryAtRef = useRef<string | null>(null);
-  const lastDisconnectAtRef = useRef<string | null>(null);
-  const failureReasonRef = useRef<string | null>(null);
-  const parseErrorCountRef = useRef(0);
-  const paginationInFlightRef = useRef<Set<string>>(new Set());
+  const latestFailureReasonRef = useRef<string | null>(null);
 
-  const [reconnectAttempt, setReconnectAttempt] = useState(0);
-  const [nextRetryAt, setNextRetryAt] = useState<string | null>(null);
-  const [phase, setPhase] = useState<LiveStreamPhase>(historical ? 'historical' : 'idle');
-  const [paginationLoading, setPaginationLoading] = useState(false);
-
-  const liveStreamStatus: LiveStreamStatus = {
-    phase,
-    connected,
-    reconnectAttempt,
-    maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS,
-    nextRetryAt,
-    lastMessageAt: lastMessageAtRef.current,
-    lastEventAt: lastEventAtRef.current,
-    lastHistoryAt: lastHistoryAtRef.current,
-    lastDisconnectAt: lastDisconnectAtRef.current,
-    failureReason: failureReasonRef.current,
-    canReconnect: reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS,
-  };
+  const setLiveStreamStatus = useDashboardStore((state) => state.setLiveStreamStatus);
 
   const probeBackend = useCallback(async () => {
     if (!sessionId || connectProbeInFlightRef.current) {
@@ -98,8 +85,15 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
       return;
     }
     eventBufferRef.current = [];
-    useDashboardStore.getState().appendEvents(buffered);
-  }, []);
+    appendBufferedEvents(buffered);
+  }, [appendBufferedEvents]);
+
+  const updateLiveStreamStatus = useCallback(
+    (status: Partial<LiveStreamStatus>) => {
+      setLiveStreamStatus(status);
+    },
+    [setLiveStreamStatus]
+  );
 
   const scheduleFlush = useCallback(() => {
     if (flushHandleRef.current !== null) {
@@ -113,28 +107,71 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
       window.clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
-    setNextRetryAt(null);
   }, []);
 
-  const connect = useCallback(() => {
-    if (!sessionId) return;
+  const teardownSocket = useCallback(
+    (closeCode?: number, closeReason?: string) => {
+      const socket = wsRef.current;
+      if (!socket) {
+        return;
+      }
 
-    setPhase('connecting');
+      wsRef.current = null;
+      socket.onopen = null;
+      socket.onmessage = null;
+      socket.onerror = null;
+      socket.onclose = null;
+
+      if (
+        socket.readyState === WebSocket.OPEN
+        || socket.readyState === WebSocket.CONNECTING
+      ) {
+        manualCloseRef.current = true;
+        socket.close(closeCode, closeReason);
+      }
+    },
+    []
+  );
+
+  const connect = useCallback(() => {
+    if (!sessionId || !enabled || historical) {
+      return;
+    }
+
+    clearReconnectTimeout();
+    teardownSocket();
 
     const wsUrl = `${dashboardRuntimeConfig.websocketBaseUrl}/session/${sessionId}`;
+    const attempt = reconnectAttemptsRef.current;
     console.info(
-      `[dashboard] opening websocket sessionId=${sessionId} wsUrl=${wsUrl} reconnectAttempt=${reconnectAttemptsRef.current} pageOrigin=${window.location.origin} apiBaseUrl=${dashboardRuntimeConfig.apiBaseUrl}`
+      `[dashboard] opening websocket sessionId=${sessionId} wsUrl=${wsUrl} reconnectAttempt=${attempt} pageOrigin=${window.location.origin} apiBaseUrl=${dashboardRuntimeConfig.apiBaseUrl}`
     );
+    updateLiveStreamStatus({
+      phase: attempt > 0 ? 'reconnecting' : 'connecting',
+      connected: false,
+      reconnectAttempt: attempt,
+      maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS,
+      nextRetryAt: null,
+      failureReason: latestFailureReasonRef.current,
+      canReconnect: true,
+    });
+
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
+    manualCloseRef.current = false;
 
     ws.onopen = () => {
       console.info(`[dashboard] websocket connected sessionId=${sessionId} wsUrl=${wsUrl}`);
-      useDashboardStore.getState().setConnected(true);
       reconnectAttemptsRef.current = 0;
-      setReconnectAttempt(0);
-      failureReasonRef.current = null;
-      setPhase('live');
+      latestFailureReasonRef.current = null;
+      updateLiveStreamStatus({
+        phase: 'live',
+        connected: true,
+        reconnectAttempt: 0,
+        nextRetryAt: null,
+        failureReason: null,
+        canReconnect: true,
+      });
 
       const subscribeMessage: ClientMessage = {
         type: 'subscribe',
@@ -145,14 +182,12 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
       // Request history
       const historyMessage: WSClientGetHistoryMessage = {
         type: 'get_history',
-        limit: DEFAULT_HISTORY_LIMIT,
+        limit: 1000,
       };
       ws.send(JSON.stringify(historyMessage));
-      lastHistoryAtRef.current = new Date().toISOString();
     };
 
     ws.onmessage = (event) => {
-      lastMessageAtRef.current = new Date().toISOString();
       try {
         const parsed = JSON.parse(event.data);
         const message = normalizeServerMessage(parsed) as WebSocketServerMessage | null;
@@ -160,29 +195,42 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
           return;
         }
 
+        const receivedAt = toIsoTimestamp();
+        updateLiveStreamStatus({
+          lastMessageAt: receivedAt,
+          failureReason: null,
+        });
+
         if (message.type === 'event' && message.event) {
-          const normalizedEvent = normalizeEvent(message.event);
-          eventBufferRef.current.push(normalizedEvent);
-          lastEventAtRef.current = normalizedEvent.timestamp;
+          eventBufferRef.current.push(normalizeEvent(message.event));
+          updateLiveStreamStatus({
+            lastEventAt: receivedAt,
+            phase: 'live',
+            connected: true,
+          });
           scheduleFlush();
         } else if (message.type === 'history' && message.events) {
-          useDashboardStore.getState().replaceEvents(message.events.map(normalizeEvent));
-          lastHistoryAtRef.current = new Date().toISOString();
+          flushBufferedEvents();
+          appendBufferedEvents(message.events.map(normalizeEvent));
+          updateLiveStreamStatus({
+            lastHistoryAt: receivedAt,
+          });
         } else if (message.type === 'history_page') {
-          // Handle cursor-paginated history response
           const pageMessage = message as WSHistoryPageMessage;
-          useDashboardStore.getState().replaceEvents(pageMessage.events.map(normalizeEvent));
-          lastHistoryAtRef.current = new Date().toISOString();
+          flushBufferedEvents();
+          appendBufferedEvents(pageMessage.events.map(normalizeEvent));
+          updateLiveStreamStatus({
+            lastHistoryAt: receivedAt,
+          });
         } else if (message.type === 'error') {
           console.error('WebSocket error:', message.error);
-          failureReasonRef.current = message.error ?? 'Unknown error';
+          latestFailureReasonRef.current = message.error;
+          updateLiveStreamStatus({
+            failureReason: message.error,
+          });
         }
       } catch (error) {
-        parseErrorCountRef.current += 1;
-        console.error(
-          `[dashboard] failed to parse WebSocket message (count=${parseErrorCountRef.current}):`,
-          error
-        );
+        console.error('Failed to parse WebSocket message:', error);
       }
     };
 
@@ -192,57 +240,86 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
         error
       );
       void probeBackend();
-      useDashboardStore.getState().setConnected(false);
+      latestFailureReasonRef.current = 'Live stream connection failed.';
+      updateLiveStreamStatus({
+        connected: false,
+        failureReason: latestFailureReasonRef.current,
+      });
     };
 
     ws.onclose = (event) => {
-      lastDisconnectAtRef.current = new Date().toISOString();
       console.warn(
         `[dashboard] websocket closed sessionId=${sessionId} wsUrl=${wsUrl} code=${event.code} reason=${event.reason || '-'} wasClean=${event.wasClean} reconnectEnabled=${shouldReconnectRef.current}`
       );
       if (event.code === 1006) {
         void probeBackend();
-        failureReasonRef.current = 'Connection closed abnormally (code 1006)';
       }
-      useDashboardStore.getState().setConnected(false);
+      flushBufferedEvents();
+
+      if (manualCloseRef.current) {
+        manualCloseRef.current = false;
+        return;
+      }
+
+      const closedAt = toIsoTimestamp();
+      latestFailureReasonRef.current = latestFailureReasonRef.current ?? getCloseReason(event);
+      updateLiveStreamStatus({
+        connected: false,
+        lastDisconnectAt: closedAt,
+        failureReason: latestFailureReasonRef.current,
+      });
 
       if (!shouldReconnectRef.current) {
-        setPhase(events.length > 0 ? 'historical' : 'failed');
         return;
       }
 
       if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
-        const delay = Math.pow(2, reconnectAttemptsRef.current) * 1000;
-        const nextRetry = new Date(Date.now() + delay).toISOString();
-        setNextRetryAt(nextRetry);
+        const nextAttempt = reconnectAttemptsRef.current + 1;
+        const delay = getReconnectDelay(reconnectAttemptsRef.current);
+        const nextRetryAt = toIsoTimestamp(Date.now() + delay);
         console.info(
-          `[dashboard] scheduling websocket reconnect sessionId=${sessionId} wsUrl=${wsUrl} delayMs=${delay} nextAttempt=${reconnectAttemptsRef.current + 1}`
+          `[dashboard] scheduling websocket reconnect sessionId=${sessionId} wsUrl=${wsUrl} delayMs=${delay} nextAttempt=${nextAttempt}`
         );
+        updateLiveStreamStatus({
+          phase: 'reconnecting',
+          connected: false,
+          reconnectAttempt: nextAttempt,
+          nextRetryAt,
+          maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS,
+          canReconnect: true,
+        });
 
         reconnectTimeoutRef.current = window.setTimeout(() => {
-          reconnectAttemptsRef.current += 1;
-          setReconnectAttempt(reconnectAttemptsRef.current);
-          setPhase('reconnecting');
+          reconnectTimeoutRef.current = null;
+          reconnectAttemptsRef.current = nextAttempt;
           connect();
         }, delay);
-      } else {
-        failureReasonRef.current = `Max reconnection attempts (${MAX_RECONNECT_ATTEMPTS}) exceeded`;
-        setPhase('failed');
+        return;
       }
+
+      updateLiveStreamStatus({
+        phase: 'failed',
+        connected: false,
+        nextRetryAt: null,
+        reconnectAttempt: reconnectAttemptsRef.current,
+        maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS,
+        canReconnect: true,
+      });
     };
-  }, [scheduleFlush, sessionId, events.length, probeBackend]);
+  }, [
+    enabled,
+    appendBufferedEvents,
+    flushBufferedEvents,
+    historical,
+    probeBackend,
+    scheduleFlush,
+    sessionId,
+    clearReconnectTimeout,
+    teardownSocket,
+    updateLiveStreamStatus,
+  ]);
 
-  const reconnect = useCallback(() => {
-    if (!sessionId) return;
-    shouldReconnectRef.current = true;
-    reconnectAttemptsRef.current = 0;
-    setReconnectAttempt(0);
-    failureReasonRef.current = null;
-    clearReconnectTimeout();
-    connect();
-  }, [connect, clearReconnectTimeout, sessionId]);
-
-  const disconnect = useCallback(() => {
+  const disconnect = useCallback((resetStatus: boolean = false) => {
     shouldReconnectRef.current = false;
     clearReconnectTimeout();
     if (flushHandleRef.current !== null) {
@@ -250,30 +327,48 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
       flushHandleRef.current = null;
     }
     flushBufferedEvents();
+    latestFailureReasonRef.current = null;
 
-    if (wsRef.current) {
-      wsRef.current.onclose = null;
-      wsRef.current.close();
-      wsRef.current = null;
+    teardownSocket(1000, 'dashboard disconnect');
+    if (resetStatus) {
+      updateLiveStreamStatus(DEFAULT_LIVE_STREAM_STATUS);
+    } else {
+      updateLiveStreamStatus({
+        connected: false,
+        nextRetryAt: null,
+        canReconnect: false,
+      });
     }
-    useDashboardStore.getState().setConnected(false);
-  }, [clearReconnectTimeout, flushBufferedEvents]);
+  }, [clearReconnectTimeout, flushBufferedEvents, teardownSocket, updateLiveStreamStatus]);
+
+  const reconnect = useCallback(() => {
+    if (!sessionId || historical) {
+      return;
+    }
+
+    shouldReconnectRef.current = true;
+    reconnectAttemptsRef.current = 0;
+    clearReconnectTimeout();
+    latestFailureReasonRef.current = null;
+    updateLiveStreamStatus({
+      phase: 'reconnecting',
+      connected: false,
+      reconnectAttempt: 0,
+      maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS,
+      nextRetryAt: null,
+      failureReason: null,
+      canReconnect: true,
+    });
+    connect();
+  }, [clearReconnectTimeout, connect, historical, sessionId, updateLiveStreamStatus]);
 
   /**
    * Fetch more events using cursor-based pagination
    */
-  const fetchMoreEvents = useCallback((cursor: number | null, beforeCursor: number | null = null, limit: number = DEFAULT_HISTORY_LIMIT) => {
+  const fetchMoreEvents = useCallback((cursor: number | null, beforeCursor: number | null = null, limit: number = 1000) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       return;
     }
-
-    // Track in-flight pagination request to prevent duplicates
-    const paginationKey = `cursor:${cursor ?? 'null'}:before:${beforeCursor ?? 'null'}`;
-    if (paginationInFlightRef.current.has(paginationKey)) {
-      return;
-    }
-    paginationInFlightRef.current.add(paginationKey);
-    setPaginationLoading(true);
 
     const message: WSClientGetHistoryMessage = {
       type: 'get_history',
@@ -282,55 +377,60 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
       limit,
     };
     wsRef.current.send(JSON.stringify(message));
-
-    // Clean up after a timeout (fallback in case we don't receive a response)
-    window.setTimeout(() => {
-      paginationInFlightRef.current.delete(paginationKey);
-      setPaginationLoading(false);
-    }, 10000);
   }, []);
 
   /**
    * Fetch next page of events
    */
   const fetchNextPage = useCallback((nextCursor: number) => {
-    fetchMoreEvents(nextCursor, null, DEFAULT_HISTORY_LIMIT);
+    fetchMoreEvents(nextCursor, null, 1000);
   }, [fetchMoreEvents]);
 
   /**
    * Fetch previous page of events
    */
   const fetchPrevPage = useCallback((prevCursor: number) => {
-    fetchMoreEvents(null, prevCursor, DEFAULT_HISTORY_LIMIT);
+    fetchMoreEvents(null, prevCursor, 1000);
   }, [fetchMoreEvents]);
 
   useEffect(() => {
     useDashboardStore.getState().setSessionId(sessionId);
+  }, [sessionId]);
 
-    if (sessionId && enabled && !historical) {
+  useEffect(() => {
+    if (!sessionId) {
+      disconnect(true);
+    } else if (historical) {
+      disconnect();
+      updateLiveStreamStatus({
+        ...DEFAULT_LIVE_STREAM_STATUS,
+        phase: 'historical',
+        canReconnect: false,
+      });
+    } else if (enabled) {
       shouldReconnectRef.current = true;
       connect();
-    } else if (sessionId && historical) {
-      shouldReconnectRef.current = false;
-      setPhase('historical');
     } else {
       disconnect();
     }
 
     return () => {
       disconnect();
-      useDashboardStore.getState().resetSessionState();
     };
-  }, [connect, disconnect, sessionId, enabled, historical]);
+  }, [connect, disconnect, enabled, historical, sessionId, updateLiveStreamStatus]);
+
+  useEffect(() => () => {
+    disconnect(true);
+    useDashboardStore.getState().resetSessionState();
+  }, [disconnect]);
 
   return {
+    connected,
     events,
     liveStreamStatus,
-    reconnect,
-    connected,
     fetchMoreEvents,
     fetchNextPage,
     fetchPrevPage,
-    paginationLoading,
+    reconnect,
   };
 }

@@ -259,7 +259,7 @@ const useContentGen = create<ContentGenState>((set, get) => ({
       get().loadScripts(),
       get().loadPublishQueue(),
       get().loadStrategy(),
-    ])
+    ]);
   },
 
   reset: () => set(initialState),
