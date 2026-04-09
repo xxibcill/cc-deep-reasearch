@@ -118,15 +118,19 @@ def register_content_gen_commands(cli: click.Group) -> None:
         config = load_config()
 
         async def _run() -> None:
+            from cc_deep_research.content_gen.backlog_service import BacklogService
             from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
 
             orch = ContentGenOrchestrator(config)
+            service = BacklogService(config)
             click.echo(f'Building backlog for: "{theme}" ({count} ideas)...')
             result = await orch.run_backlog(theme, count=count)
+            result = service.persist_generated(result, theme=theme)
 
             click.echo(f"\nGenerated {len(result.items)} ideas, rejected {result.rejected_count}")
             for item in result.items:
                 click.echo(f"  [{item.category}] {item.idea}")
+            click.echo(f"\nBacklog store: {service.path}")
 
             if output:
                 Path(output).write_text(result.model_dump_json(indent=2))
@@ -143,10 +147,12 @@ def register_content_gen_commands(cli: click.Group) -> None:
         config = load_config()
 
         async def _run() -> None:
+            from cc_deep_research.content_gen.backlog_service import BacklogService
             from cc_deep_research.content_gen.models import BacklogOutput
             from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
 
             orch = ContentGenOrchestrator(config)
+            service = BacklogService(config)
             items = []
             if from_file:
                 data = BacklogOutput.model_validate_json(Path(from_file).read_text())
@@ -157,7 +163,9 @@ def register_content_gen_commands(cli: click.Group) -> None:
                 return
 
             click.echo(f"Scoring {len(items)} ideas...")
+            service.upsert_items(items)
             result = await orch.run_scoring(items)
+            service.apply_scoring(result)
 
             click.echo(f"\nProduce now ({len(result.produce_now)}):")
             for sid in result.produce_now[:select_top]:

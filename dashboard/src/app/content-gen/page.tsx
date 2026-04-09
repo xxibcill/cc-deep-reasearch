@@ -21,6 +21,7 @@ import { StartPipelineForm } from '@/components/content-gen/start-pipeline-form'
 import { QuickScriptForm } from '@/components/content-gen/quick-script-form'
 import { ScriptsPanel } from '@/components/content-gen/scripts-panel'
 import { StrategyEditor } from '@/components/content-gen/strategy-editor'
+import { BacklogPanel } from '@/components/content-gen/backlog-panel'
 import { PublishQueuePanel } from '@/components/content-gen/publish-queue-panel'
 import { OverviewSidebar } from '@/components/content-gen/overview-sidebar'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -47,8 +48,15 @@ export default function ContentGenPage() {
   const activeTab = searchParams.get('tab') || 'overview'
 
   const pipelines = useContentGen((s) => s.pipelines)
+  const backlog = useContentGen((s) => s.backlog)
+  const backlogPath = useContentGen((s) => s.backlogPath)
+  const backlogLoading = useContentGen((s) => s.backlogLoading)
   const publishQueue = useContentGen((s) => s.publishQueue)
   const loadAll = useContentGen((s) => s.loadAll)
+  const updateBacklogItem = useContentGen((s) => s.updateBacklogItem)
+  const selectBacklogItem = useContentGen((s) => s.selectBacklogItem)
+  const archiveBacklogItem = useContentGen((s) => s.archiveBacklogItem)
+  const deleteBacklogItem = useContentGen((s) => s.deleteBacklogItem)
   const removeFromQueue = useContentGen((s) => s.removeFromQueue)
   const error = useContentGen((s) => s.error)
 
@@ -354,6 +362,20 @@ export default function ContentGenPage() {
               <StrategyEditor />
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {activeTab === 'backlog' && (
+        <div className="w-full">
+          <BacklogPanel
+            items={backlog}
+            backlogPath={backlogPath}
+            loading={backlogLoading}
+            onUpdateStatus={updateBacklogItem}
+            onSelect={selectBacklogItem}
+            onArchive={archiveBacklogItem}
+            onDelete={deleteBacklogItem}
+          />
         </div>
       )}
 

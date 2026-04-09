@@ -20,9 +20,12 @@ interface OverviewSidebarProps {
 
 export function OverviewSidebar({ onTabChange, researchBridge }: OverviewSidebarProps) {
   const strategy = useContentGen((s) => s.strategy)
+  const backlog = useContentGen((s) => s.backlog)
   const scripts = useContentGen((s) => s.scripts)
   const publishQueue = useContentGen((s) => s.publishQueue)
 
+  const selectedCount = backlog.filter((i) => i.status === 'selected').length
+  const inProductionCount = backlog.filter((i) => i.status === 'in_production').length
   const recentScripts = scripts.slice(0, 5)
   const scheduledCount = publishQueue.filter((i) => i.status === 'scheduled').length
   const nextScheduled = publishQueue.find((i) => i.status === 'scheduled')
@@ -75,6 +78,41 @@ export function OverviewSidebar({ onTabChange, researchBridge }: OverviewSidebar
               Report-ready research sessions can send operators here directly. The content studio
               still works independently when you want to start from a blank brief.
             </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between space-y-0">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-wider text-muted-foreground">
+              <Lightbulb className="h-3.5 w-3.5" />
+              Backlog
+            </div>
+            <CardTitle className="text-base">Idea inventory</CardTitle>
+          </div>
+          <Button onClick={() => onTabChange('backlog')} size="sm" type="button" variant="ghost">
+            View all
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {backlog.length > 0 ? (
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="outline">{backlog.length} total</Badge>
+                <Badge variant={selectedCount > 0 ? 'success' : 'secondary'}>
+                  {selectedCount} selected
+                </Badge>
+                <Badge variant={inProductionCount > 0 ? 'warning' : 'secondary'}>
+                  {inProductionCount} in production
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Persisted across CLI runs and dashboard sessions.
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">No backlog has been persisted yet</p>
           )}
         </CardContent>
       </Card>

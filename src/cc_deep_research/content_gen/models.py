@@ -555,6 +555,14 @@ class BacklogItem(BaseModel):
     risk_level: str = "medium"  # low | medium | high
     priority_score: float = 0.0
     status: str = "backlog"  # backlog | selected | in_production | published | archived
+    latest_score: int | None = None
+    latest_recommendation: str = ""
+    selection_reasoning: str = ""
+    source_theme: str = ""
+    source_pipeline_id: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+    last_scored_at: str = ""
 
 
 class BacklogOutput(BaseModel):
