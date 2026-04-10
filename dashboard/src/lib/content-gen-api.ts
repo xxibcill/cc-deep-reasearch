@@ -52,6 +52,7 @@ function emptyPipelineContext(summary: PipelineRunSummary): PipelineContext {
 // ---------------------------------------------------------------------------
 
 const CONTENT_GEN_TIMEOUT_MS = 30000;
+/** Timeout for scripting operations (4 minutes). Script generation can be slow due to LLM inference. */
 const SCRIPTING_TIMEOUT_MS = 240000;
 
 const contentGenClient = axios.create({
