@@ -6,6 +6,7 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
+from cc_deep_research.content_gen.agents._llm_utils import call_agent_llm_text
 from cc_deep_research.content_gen.models import (
     BeatVisual,
     ScriptStructure,
@@ -40,13 +41,16 @@ class VisualAgent:
         *,
         temperature: float = 0.3,
     ) -> str:
-        response = await self._router.execute(
-            AGENT_ID,
-            user_prompt,
+        return await call_agent_llm_text(
+            router=self._router,
+            agent_id=AGENT_ID,
             system_prompt=system_prompt,
+            user_prompt=user_prompt,
             temperature=temperature,
+            workflow_name="visual translation workflow",
+            cli_command="content-gen visual",
+            logger=logger,
         )
-        return response.content
 
     async def translate(
         self,
