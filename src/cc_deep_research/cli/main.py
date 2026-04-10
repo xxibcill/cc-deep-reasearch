@@ -43,6 +43,6 @@ register_dashboard_command(main)
 register_session_commands(main)
 register_anthropic_commands(main)
 register_themes_commands(main)
-register_content_gen_commands(main)
+register_content_gen_commands(main)  # type: ignore[no-untyped-call]
 
 __all__ = ["Config", "ingest_telemetry_to_duckdb", "main", "subprocess"]

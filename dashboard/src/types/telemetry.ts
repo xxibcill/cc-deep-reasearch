@@ -30,6 +30,28 @@ export interface TelemetryEvent {
   metadata: TelemetryMetadata;
 }
 
+export type LiveStreamPhase =
+  | 'idle'
+  | 'connecting'
+  | 'live'
+  | 'reconnecting'
+  | 'historical'
+  | 'failed';
+
+export interface LiveStreamStatus {
+  phase: LiveStreamPhase;
+  connected: boolean;
+  reconnectAttempt: number;
+  maxReconnectAttempts: number;
+  nextRetryAt: string | null;
+  lastMessageAt: string | null;
+  lastEventAt: string | null;
+  lastHistoryAt: string | null;
+  lastDisconnectAt: string | null;
+  failureReason: string | null;
+  canReconnect: boolean;
+}
+
 export type TelemetryStatus =
   | 'pending'
   | 'scheduled'
@@ -87,6 +109,7 @@ export interface SessionListQueryState {
   search: string;
   status: string;
   activeOnly: boolean;
+  archivedOnly: boolean;
 }
 
 export interface Session {
@@ -228,12 +251,20 @@ export interface TelemetryDerivedState {
   timeline: AgentExecution[];
   toolExecutions: ToolExecution[];
   llmReasoning: LLMReasoning[];
+  phaseLookup: Map<string, string | null>;
+  eventIndex: Map<string, TelemetryEvent>;
   phases: string[];
   agents: string[];
   tools: string[];
   providers: string[];
   statuses: string[];
   eventTypes: string[];
+  categoryCounts: {
+    total: number;
+    agent: number;
+    tool: number;
+    llm: number;
+  };
 }
 
 export type EventFilter = {
@@ -274,6 +305,7 @@ export interface ResearchRunRequest {
   num_researchers?: number | null;
   realtime_enabled?: boolean;
   pdf_enabled?: boolean;
+  theme?: string | null;
   agent_prompt_overrides?: Record<string, AgentPromptOverride>;
 }
 
@@ -600,6 +632,31 @@ export type WebSocketClientMessage =
   | { type: 'unsubscribe'; sessionId: string }
   | WSClientGetHistoryMessage
   | { type: 'ping' };
+
+// =============================================================================
+// Operator Insights Types (Task 006)
+// =============================================================================
+
+export type InsightStatus = 'healthy' | 'warning' | 'error' | 'unknown';
+
+export type InsightCategory = 'health' | 'performance' | 'failure' | 'blocker';
+
+export interface OperatorInsightAction {
+  label: string;
+  actionType: 'inspect_tool_failures' | 'review_llm_reasoning' | 'open_report' | 'view_phases' | 'view_decisions' | 'compare_runs';
+  eventId?: string | null;
+}
+
+export interface OperatorInsight {
+  id: string;
+  status: InsightStatus;
+  category: InsightCategory;
+  title: string;
+  description: string;
+  actions: OperatorInsightAction[];
+  eventId?: string | null;
+  phase?: string | null;
+}
 
 // =============================================================================
 // Trace Bundle Types (Task 003)

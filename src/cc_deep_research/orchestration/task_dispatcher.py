@@ -110,6 +110,7 @@ class TaskDispatcher:
                     )
                     plan.update_subtask_status(task_id, "failed")
                 else:
+                    assert isinstance(result, TaskExecutionResult)
                     self._task_results[task_id] = result
                     if result.success:
                         plan.update_subtask_status(task_id, "completed")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import click
 
@@ -12,7 +12,12 @@ from cc_deep_research.config import load_config
 from cc_deep_research.content_gen.storage import ScriptingStore
 
 if TYPE_CHECKING:
-    from cc_deep_research.content_gen.models import PipelineContext, ScriptingContext
+    from cc_deep_research.content_gen.models import (
+        AngleOption,
+        PipelineContext,
+        ScriptingContext,
+        ScriptVersion,
+    )
 
 KNOWN_MODULES = frozenset(
     {
@@ -97,7 +102,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
             "forbidden_claims",
             "proof_standards",
         }
-        patch = {key: [v.strip() for v in value.split(",")]} if key in list_fields else {key: value}
+        patch = {key: [v.strip() for v in value.split(",")]} if key in list_fields else {key: value}  # type: ignore[dict-item]
         store.update(patch)
         click.echo(f"Updated {key} in {store.path}")
 
@@ -529,7 +534,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
         import json
 
         config = load_config()
-        metrics: dict = {}
+        metrics: dict[str, Any] = {}
         if metrics_file:
             metrics = json.loads(Path(metrics_file).read_text())
 
@@ -648,14 +653,14 @@ def register_content_gen_commands(cli: click.Group) -> None:
                 if config.content_gen.enable_iterative_mode and not no_iterate:
                     result_ctx, iter_state = await orch.run_scripting_iterative(
                         idea,
-                        progress_callback=progress,  # type: ignore[arg-type]
+                        progress_callback=progress,
                     )
                     if not quiet and iter_state.current_iteration > 1:
                         click.echo(f"\nCompleted in {iter_state.current_iteration} iterations")
                         if iter_state.is_converged:
                             click.echo(f"Convergence: {iter_state.convergence_reason}")
                     return result_ctx
-                return await orch.run_scripting(idea, progress_callback=progress)  # type: ignore[arg-type]
+                return await orch.run_scripting(idea, progress_callback=progress)
 
         try:
             result = asyncio.run(_run())

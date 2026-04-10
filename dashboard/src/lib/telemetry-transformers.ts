@@ -4,7 +4,10 @@ import {
   ApiTelemetryEvent,
   AgentExecution,
   EventFilter,
+  InsightStatus,
+  InsightCategory,
   LLMReasoning,
+  OperatorInsight,
   ServerMessage,
   Session,
   TelemetryEvent,
@@ -47,13 +50,258 @@ function asMetadata(value: unknown): TelemetryMetadata {
   return isRecord(value) ? value : {};
 }
 
-function asApiTelemetryEvent(value: Record<string, unknown>): ApiTelemetryEvent {
-  return value as unknown as ApiTelemetryEvent;
+function isValidApiTelemetryEvent(value: unknown): value is ApiTelemetryEvent {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.event_id === 'string' &&
+    typeof value.timestamp === 'string' &&
+    typeof value.session_id === 'string' &&
+    typeof value.event_type === 'string' &&
+    typeof value.category === 'string' &&
+    typeof value.name === 'string' &&
+    typeof value.status === 'string'
+  );
+}
+
+function asApiTelemetryEvent(value: Record<string, unknown>): ApiTelemetryEvent | null {
+  return isValidApiTelemetryEvent(value) ? value : null;
 }
 
 function asTimestamp(value: string): number {
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isSortedBySequenceAndTimestamp(events: TelemetryEvent[]): boolean {
+  for (let index = 1; index < events.length; index += 1) {
+    const previous = events[index - 1];
+    const current = events[index];
+    if (previous.sequenceNumber > current.sequenceNumber) {
+      return false;
+    }
+    if (
+      previous.sequenceNumber === current.sequenceNumber
+      && previous.timestamp.localeCompare(current.timestamp) > 0
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function getSortedEvents(events: TelemetryEvent[]): TelemetryEvent[] {
+  if (events.length < 2 || isSortedBySequenceAndTimestamp(events)) {
+    return events;
+  }
+
+  return [...events].sort((left, right) => {
+    if (left.sequenceNumber !== right.sequenceNumber) {
+      return left.sequenceNumber - right.sequenceNumber;
+    }
+    return left.timestamp.localeCompare(right.timestamp);
+  });
+}
+
+export const STALL_THRESHOLD_MS = 120000;
+export const SLOW_THRESHOLD_MS = 30000;
+
+export function deriveOperatorInsights(
+  events: TelemetryEvent[],
+  derived: TelemetryDerivedState,
+  hasReport: boolean = false
+): OperatorInsight[] {
+  const insights: OperatorInsight[] = [];
+  const sortedEvents = getSortedEvents(events);
+
+  const phases = derived.phases;
+  const toolFailures = derived.toolExecutions.filter(
+    (tool) => tool.status === 'failed' || tool.status === 'error'
+  );
+  const llmFailures = derived.llmReasoning.filter(
+    (item) => item.status === 'failed' || item.status === 'error' || item.status === 'timeout'
+  );
+  const failedPhases = Array.from(
+    new Set(
+      toolFailures
+        .map((tool) => tool.phase)
+        .filter((phase): phase is string => Boolean(phase))
+    )
+  );
+  const hasFailures = toolFailures.length > 0;
+  const hasLLMErrors = llmFailures.length > 0;
+
+  const activePhases = phases.filter(
+    (phase) =>
+      !sortedEvents.some(
+        (event) =>
+          event.category === 'phase'
+          && event.name === phase
+          && (event.status === 'completed' || event.status === 'failed')
+      )
+  );
+  const completedPhases = phases.filter(
+    (phase) =>
+      sortedEvents.some(
+        (event) =>
+          event.category === 'phase' && event.name === phase && event.status === 'completed'
+      )
+  );
+
+  const lastEvent = sortedEvents.at(-1);
+  const now = Date.now();
+  const lastEventTime = lastEvent ? asTimestamp(lastEvent.timestamp) : 0;
+  const isStalled = lastEvent && lastEvent.status !== 'completed' && lastEvent.status !== 'failed' && (now - lastEventTime) > STALL_THRESHOLD_MS;
+  const allPhasesCompleted =
+    phases.length > 0
+    && phases.every((phase) =>
+      sortedEvents.some(
+        (event) =>
+          event.category === 'phase' && event.name === phase && event.status === 'completed'
+      )
+    );
+
+  if (hasFailures || hasLLMErrors) {
+    if (toolFailures.length > 0) {
+      insights.push({
+        id: 'insight-failures',
+        status: 'error',
+        category: 'failure',
+        title:
+          toolFailures.length === 1
+            ? '1 tool failure detected'
+            : `${toolFailures.length} tool failures detected`,
+        description:
+          failedPhases.length > 0
+            ? `Failures occurred in phase${failedPhases.length === 1 ? '' : 's'}: ${failedPhases.join(', ')}.${hasReport ? '' : ' Report generation is blocked until the failing step is understood.'}`
+            : `One or more tool executions failed.${hasReport ? '' : ' Report generation is blocked until the failure path is reviewed.'}`,
+        actions: [
+          { label: 'Inspect tool failures', actionType: 'inspect_tool_failures' },
+          ...(!hasReport ? [{ label: 'Compare against a healthy run', actionType: 'compare_runs' as const }] : []),
+        ],
+        eventId: toolFailures[0].eventId,
+        phase: failedPhases[0] ?? null,
+      });
+    }
+
+    if (hasLLMErrors) {
+      insights.push({
+        id: 'insight-llm-failures',
+        status: 'error',
+        category: 'failure',
+        title:
+          llmFailures.length === 1 ? '1 LLM call failed' : `${llmFailures.length} LLM calls failed`,
+        description: hasReport
+          ? 'One or more LLM calls failed or timed out. Review the reasoning trace for the exact failure path.'
+          : 'One or more LLM calls failed or timed out, which can block report generation or leave the run incomplete.',
+        actions: [
+          { label: 'Review LLM reasoning', actionType: 'review_llm_reasoning' },
+        ],
+        eventId: llmFailures[0]?.requestEventId ?? null,
+      });
+    }
+  }
+
+  if (!hasFailures && !hasLLMErrors && allPhasesCompleted) {
+    if (hasReport) {
+      insights.push({
+        id: 'insight-complete',
+        status: 'healthy',
+        category: 'health',
+        title: 'Run completed successfully',
+        description: `All ${phases.length} phase${phases.length === 1 ? '' : 's'} completed. Report is available.`,
+        actions: [
+          { label: 'Open report', actionType: 'open_report' },
+        ],
+      });
+    } else {
+      insights.push({
+        id: 'insight-complete-no-report',
+        status: 'warning',
+        category: 'blocker',
+        title: 'Run complete, report not available',
+        description:
+          'All phases completed, but no report artifact is available yet. Review the phase flow before comparing against a previous successful run.',
+        actions: [
+          { label: 'View phases', actionType: 'view_phases' },
+          { label: 'Compare against a successful run', actionType: 'compare_runs' },
+        ],
+      });
+    }
+  }
+
+  if (!hasFailures && !hasLLMErrors && !allPhasesCompleted && activePhases.length > 0) {
+    if (isStalled) {
+      insights.push({
+        id: 'insight-stalled',
+        status: 'warning',
+        category: 'performance',
+        title: 'Run appears stalled',
+        description: `No events received in the last ${Math.round(STALL_THRESHOLD_MS / 1000)} seconds.${activePhases.length > 0 ? ` Active phase: ${activePhases.join(', ')}.` : ''} The session may be hung or waiting on an external dependency.`,
+        actions: [
+          { label: 'View phases', actionType: 'view_phases' },
+          { label: 'Review LLM reasoning', actionType: 'review_llm_reasoning' },
+        ],
+      });
+    } else {
+      insights.push({
+        id: 'insight-active',
+        status: 'healthy',
+        category: 'health',
+        title: 'Run is active and healthy',
+        description: `${activePhases.join(' → ')} in progress. ${completedPhases.length} of ${phases.length || activePhases.length} tracked phase${(phases.length || activePhases.length) === 1 ? '' : 's'} finished.`,
+        actions: [{ label: 'View phases', actionType: 'view_phases' }],
+      });
+    }
+  }
+
+  if (sortedEvents.length === 0) {
+    insights.push({
+      id: 'insight-empty',
+      status: 'unknown',
+      category: 'health',
+      title: 'No events received',
+      description: 'Waiting for telemetry events to arrive.',
+      actions: [],
+    });
+  }
+
+  const slowTools = derived.toolExecutions.filter((t) => (t.duration ?? 0) > SLOW_THRESHOLD_MS && t.status !== 'failed' && t.status !== 'error');
+  if (slowTools.length > 0 && !hasFailures) {
+    const slowestTool = slowTools.reduce((slowest, current) =>
+      current.duration > slowest.duration ? current : slowest
+    );
+    insights.push({
+      id: 'insight-slow',
+      status: 'warning',
+      category: 'performance',
+      title: slowTools.length === 1 ? 'Slow tool detected' : `${slowTools.length} slow tools detected`,
+      description: `${slowestTool.toolName} took ${Math.round(slowestTool.duration / 1000)}s.${slowestTool.phase ? ` Slowdown surfaced in ${slowestTool.phase}.` : ''}`,
+      actions: [
+        { label: 'Inspect slow tool activity', actionType: 'inspect_tool_failures' },
+        { label: 'View decisions', actionType: 'view_decisions' },
+      ],
+      eventId: slowestTool.eventId,
+      phase: slowestTool.phase ?? null,
+    });
+  }
+
+  if (insights.length === 0) {
+    insights.push({
+      id: 'insight-unknown',
+      status: 'unknown',
+      category: 'health',
+      title: 'Session state unclear',
+      description: 'Unable to determine session status from available telemetry.',
+      actions: [
+        { label: 'Compare runs', actionType: 'compare_runs' },
+      ],
+    });
+  }
+
+  return insights;
 }
 
 function toStatus(value: string): TelemetryStatus {
@@ -254,19 +502,20 @@ function buildTimeline(events: TelemetryEvent[], phaseLookup: Map<string, string
 
     if (event.category === 'tool' || event.category === 'llm' || event.category === 'phase') {
       const key = agentId;
-      const markers = markersByAgent.get(key) ?? [];
-      markers.push({
+      const existingMarkers = markersByAgent.get(key) ?? [];
+      const newMarker: AgentExecution['markers'][number] = {
         id: event.eventId,
         label: event.name,
         timestamp: asTimestamp(event.timestamp),
         type: event.category === 'tool' ? 'tool' : event.category === 'llm' ? 'llm' : 'phase',
         status: toStatus(event.status),
         eventId: event.eventId,
-      });
-      markersByAgent.set(key, markers);
+      };
+      const updatedMarkers = [...existingMarkers, newMarker];
+      markersByAgent.set(key, updatedMarkers);
       const span = spans.get(key);
       if (span) {
-        span.markers = markers;
+        span.markers = updatedMarkers;
       }
     }
   }
@@ -415,8 +664,11 @@ function buildLLMReasoning(
     .sort((left, right) => right.startTime - left.startTime);
 }
 
-export function filterEvents(events: TelemetryEvent[], filters: EventFilter): TelemetryEvent[] {
-  const phaseLookup = derivePhaseLookup(events);
+export function filterEvents(
+  events: TelemetryEvent[],
+  filters: EventFilter,
+  phaseLookup: Map<string, string | null> = derivePhaseLookup(events)
+): TelemetryEvent[] {
   return events.filter((event) => {
     const timestamp = asTimestamp(event.timestamp);
     const metadata = event.metadata;
@@ -469,22 +721,34 @@ export function filterEvents(events: TelemetryEvent[], filters: EventFilter): Te
 }
 
 export function deriveTelemetryState(events: TelemetryEvent[]): TelemetryDerivedState {
-  const sortedEvents = [...events].sort((left, right) => {
-    if (left.sequenceNumber !== right.sequenceNumber) {
-      return left.sequenceNumber - right.sequenceNumber;
-    }
-    return left.timestamp.localeCompare(right.timestamp);
-  });
+  const sortedEvents = getSortedEvents(events);
   const phaseLookup = derivePhaseLookup(sortedEvents);
+  const eventIndex = new Map(sortedEvents.map((event) => [event.eventId, event]));
   const timeline = buildTimeline(sortedEvents, phaseLookup);
   const toolExecutions = buildToolExecutions(sortedEvents, phaseLookup);
   const llmReasoning = buildLLMReasoning(sortedEvents, phaseLookup);
+  const categoryCounts = sortedEvents.reduce(
+    (counts, event) => {
+      counts.total += 1;
+      if (event.category === 'agent') {
+        counts.agent += 1;
+      } else if (event.category === 'tool') {
+        counts.tool += 1;
+      } else if (event.category === 'llm') {
+        counts.llm += 1;
+      }
+      return counts;
+    },
+    { total: 0, agent: 0, tool: 0, llm: 0 }
+  );
 
   return {
     graph: buildGraph(sortedEvents, phaseLookup),
     timeline,
     toolExecutions,
     llmReasoning,
+    phaseLookup,
+    eventIndex,
     phases: Array.from(new Set(timeline.map((item) => item.phase).filter((value): value is string => Boolean(value)))),
     agents: Array.from(
       new Set(sortedEvents.map((event) => event.agentId).filter((value): value is string => Boolean(value)))
@@ -505,6 +769,7 @@ export function deriveTelemetryState(events: TelemetryEvent[]): TelemetryDerived
     eventTypes: Array.from(new Set(sortedEvents.map((event) => event.eventType))).sort((left, right) =>
       left.localeCompare(right)
     ),
+    categoryCounts,
   };
 }
 
@@ -558,9 +823,20 @@ export function normalizeServerMessage(message: ApiServerMessage | unknown): Ser
 
   return {
     type,
-    event: isRecord(message.event) ? normalizeEvent(asApiTelemetryEvent(message.event)) : undefined,
+    event: isRecord(message.event)
+      ? (() => {
+          const normalized = asApiTelemetryEvent(message.event);
+          return normalized ? normalizeEvent(normalized) : undefined;
+        })()
+      : undefined,
     events: Array.isArray(message.events)
-      ? message.events.filter(isRecord).map((event) => normalizeEvent(asApiTelemetryEvent(event)))
+      ? message.events
+          .map((event) => {
+            if (!isRecord(event)) return null;
+            const normalized = asApiTelemetryEvent(event);
+            return normalized ? normalizeEvent(normalized) : null;
+          })
+          .filter((event): event is TelemetryEvent => event !== null)
       : undefined,
     error: typeof message.error === 'string' ? message.error : undefined,
   };

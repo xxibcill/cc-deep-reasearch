@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.content_gen.models import (
     AngleOption,
@@ -113,7 +113,7 @@ def _parse_angle_options(text: str) -> list[AngleOption]:
         block_text = block.strip()
         if not block_text:
             continue
-        data: dict = {}
+        data: dict[str, Any] = {}
         for field in _ANGLE_FIELDS:
             val = _extract_field(block_text, field)
             if val:

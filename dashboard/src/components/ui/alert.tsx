@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 type AlertVariant = 'default' | 'info' | 'warning' | 'destructive' | 'success'
 type AlertProps = React.HTMLAttributes<HTMLDivElement> & { variant?: AlertVariant }
 
-const Alert = React.forwardRef<HTMLDivElement, AlertProps>(
+export const Alert = React.forwardRef<HTMLDivElement, AlertProps>(
   ({ className, variant = 'default', children, ...props }, ref) => {
     const variantClasses: Record<AlertVariant, string> = {
       default: 'border-border/80 bg-card/90 text-foreground',

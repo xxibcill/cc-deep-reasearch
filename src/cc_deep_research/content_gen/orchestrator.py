@@ -5,12 +5,13 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from cc_deep_research.content_gen.models import (
     PIPELINE_STAGE_LABELS,
     PIPELINE_STAGES,
     AngleDefinition,
+    BacklogItem,
     CoreInputs,
     IterationState,
     OpportunityBrief,
@@ -48,7 +49,7 @@ def _selected_idea_candidates(ctx: PipelineContext) -> list[str]:
     return ordered
 
 
-def _resolve_selected_item(ctx: PipelineContext) -> Any | None:
+def _resolve_selected_item(ctx: PipelineContext) -> BacklogItem | None:
     if ctx.backlog is None:
         return None
 
@@ -223,26 +224,26 @@ class ContentGenOrchestrator:
                 return False, "scripting/angles missing"
             if _resolve_selected_angle(ctx) is None:
                 return False, "selected angle missing"
-            source = ""
+            script_content: str = ""
             if ctx.scripting.qc:
-                source = ctx.scripting.qc.final_script
+                script_content = ctx.scripting.qc.final_script
             elif ctx.scripting.tightened:
-                source = ctx.scripting.tightened.content
+                script_content = ctx.scripting.tightened.content
             elif ctx.scripting.draft:
-                source = ctx.scripting.draft.content
-            if not source:
+                script_content = ctx.scripting.draft.content
+            if not script_content:
                 return False, "script empty"
         if stage == "human_qc":
             if ctx.scripting is None:
                 return False, "scripting missing"
-            source = ""
+            script_content = ""
             if ctx.scripting.qc:
-                source = ctx.scripting.qc.final_script
+                script_content = ctx.scripting.qc.final_script
             elif ctx.scripting.tightened:
-                source = ctx.scripting.tightened.content
+                script_content = ctx.scripting.tightened.content
             elif ctx.scripting.draft:
-                source = ctx.scripting.draft.content
-            if not source:
+                script_content = ctx.scripting.draft.content
+            if not script_content:
                 return False, "script empty"
         if stage == "publish_queue":
             if (
@@ -419,15 +420,18 @@ class ContentGenOrchestrator:
             prev = ctx.iteration_state.quality_history[-1]
             previous_feedback = self._format_feedback(prev)
 
-        return await agent.evaluate(
-            scripting=ctx.scripting or ScriptingContext(),
-            visual_plan=ctx.visual_plan,
-            packaging=ctx.packaging,
-            research_pack=ctx.research_pack,
-            angle=ctx.angles,
-            iteration_number=iteration,
-            quality_threshold=threshold,
-            previous_feedback=previous_feedback,
+        return cast(
+            QualityEvaluation,
+            await agent.evaluate(
+                scripting=ctx.scripting or ScriptingContext(),
+                visual_plan=ctx.visual_plan,
+                packaging=ctx.packaging,
+                research_pack=ctx.research_pack,
+                angle=ctx.angles,
+                iteration_number=iteration,
+                quality_threshold=threshold,
+                previous_feedback=previous_feedback,
+            ),
         )
 
     def _should_stop_iterating(
@@ -723,7 +727,7 @@ class ContentGenOrchestrator:
             theme, strategy, count=count, opportunity_brief=opportunity_brief
         )
 
-    async def run_scoring(self, items: list) -> Any:
+    async def run_scoring(self, items: list[Any]) -> Any:
         from cc_deep_research.content_gen.storage import StrategyStore
 
         store = StrategyStore()
@@ -782,7 +786,7 @@ class ContentGenOrchestrator:
         return await agent.schedule(packaging, idea_id=idea_id)
 
     async def run_performance(
-        self, *, video_id: str, metrics: dict, script: str = "", hook: str = "", caption: str = ""
+        self, *, video_id: str, metrics: dict[str, Any], script: str = "", hook: str = "", caption: str = ""
     ) -> Any:
         agent = self._get_agent("performance")
         return await agent.analyze(
@@ -869,11 +873,14 @@ class ContentGenOrchestrator:
         async def evaluator(
             artifact: ScriptingContext, iteration: int, prev_feedback: str
         ) -> QualityEvaluation:
-            return await evaluator_agent.evaluate_scripting(
-                scripting=artifact,
-                iteration_number=iteration,
-                quality_threshold=threshold,
-                previous_feedback=prev_feedback,
+            return cast(
+                QualityEvaluation,
+                await evaluator_agent.evaluate_scripting(
+                    scripting=artifact,
+                    iteration_number=iteration,
+                    quality_threshold=threshold,
+                    previous_feedback=prev_feedback,
+                ),
             )
 
         loop_config = LoopConfig(

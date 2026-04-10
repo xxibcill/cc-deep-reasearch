@@ -22,7 +22,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from cc_deep_research.llm.router import LLMRouter
+    from cc_deep_research.prompts import PromptRegistry
 
 from cc_deep_research.agents.ai_agent_integration import AIAgentIntegration
 from cc_deep_research.agents.ai_executor import AIExecutor
@@ -71,8 +75,8 @@ class ReportQualityEvaluatorAgent:
         self,
         config: dict[str, Any],
         *,
-        llm_router: "LLMRouter | None" = None,
-        prompt_registry: "PromptRegistry | None" = None,
+        llm_router: LLMRouter | None = None,
+        prompt_registry: PromptRegistry | None = None,
     ) -> None:
         """Initialize the report quality evaluator.
 
@@ -231,9 +235,9 @@ Focus on:
 
         # Apply prompt prefix from registry if available
         if self._prompt_registry:
-            config = self._prompt_registry.resolve_prompt(AGENT_ID, "evaluate")
-            if config.prompt_prefix:
-                return f"{config.prompt_prefix}\n\n{base_prompt}"
+            _, prompt_prefix, _ = self._prompt_registry.resolve_prompt(AGENT_ID, "evaluate")
+            if prompt_prefix:
+                return f"{prompt_prefix}\n\n{base_prompt}"
         return base_prompt
 
     def _get_system_prompt(self) -> str:
@@ -242,9 +246,9 @@ Focus on:
 
         # Use override from registry if available
         if self._prompt_registry:
-            config = self._prompt_registry.resolve_prompt(AGENT_ID, "evaluate")
-            if config.system_prompt:
-                return config.system_prompt
+            system_prompt, _, _ = self._prompt_registry.resolve_prompt(AGENT_ID, "evaluate")
+            if system_prompt:
+                return system_prompt
         return default_system_prompt
 
     def _parse_llm_response(self, content: str) -> dict[str, Any]:
@@ -265,7 +269,7 @@ Focus on:
             end = content.rfind("}") + 1
             if start >= 0 and end > start:
                 json_str = content[start:end]
-                return json.loads(json_str)
+                return cast(dict[str, Any], json.loads(json_str))
         except json.JSONDecodeError:
             pass
 
@@ -396,7 +400,7 @@ Focus on:
         warnings = []
         recommendations = []
 
-        for dimension_name, dimension_data in llm_result.items():
+        for _dimension_name, dimension_data in llm_result.items():
             if isinstance(dimension_data, dict):
                 warnings.extend(dimension_data.get("issues", []))
                 recommendations.extend(dimension_data.get("recommendations", []))
@@ -448,7 +452,14 @@ Focus on:
         warnings = []
         recommendations = []
 
-        for assessment in [writing_quality, structure_flow, technical_accuracy, user_experience, consistency, executive_summary]:
+        for assessment in [
+            writing_quality,
+            structure_flow,
+            technical_accuracy,
+            user_experience,
+            consistency,
+            executive_summary,
+        ]:
             critical_issues.extend(assessment.get("critical_issues", []))
             warnings.extend(assessment.get("warnings", []))
             recommendations.extend(assessment.get("recommendations", []))
@@ -506,7 +517,7 @@ Focus on:
         recommendations: list[str] = []
 
         # Check for very short sentences (potential clarity issues)
-        sentence_pattern = r'(?<=[.!?])\s+'
+        sentence_pattern = r"(?<=[.!?])\s+"
         sentences = re.split(sentence_pattern, markdown)
         short_sentences = [s for s in sentences if len(s.strip()) > 0 and len(s.strip()) < 30]
 
@@ -514,7 +525,7 @@ Focus on:
         very_long_sentences = [s for s in sentences if len(s.strip()) > 300]
 
         # Check for paragraph structure
-        paragraph_pattern = r'\n\s*\n'
+        paragraph_pattern = r"\n\s*\n"
         paragraphs = [p for p in re.split(paragraph_pattern, markdown) if len(p.strip()) > 50]
         very_short_paragraphs = [p for p in paragraphs if len(p.strip()) < 100]
 
@@ -522,18 +533,24 @@ Focus on:
         score = 0.8  # Base score
         if len(short_sentences) > len(sentences) * 0.2:
             score -= 0.1
-            warnings.append(f"Many short sentences found ({len(short_sentences)} out of {len(sentences)})")
+            warnings.append(
+                f"Many short sentences found ({len(short_sentences)} out of {len(sentences)})"
+            )
         if len(very_long_sentences) > 0:
             score -= 0.1
             warnings.append(f"Found {len(very_long_sentences)} very long sentences (>300 chars)")
         if len(very_short_paragraphs) > len(paragraphs) * 0.3:
             score -= 0.1
-            warnings.append(f"Many very short paragraphs ({len(very_short_paragraphs)} out of {len(paragraphs)})")
+            warnings.append(
+                f"Many very short paragraphs ({len(very_short_paragraphs)} out of {len(paragraphs)})"
+            )
 
         score = max(0.0, min(1.0, score))
 
         if score < 0.6:
-            recommendations.append("Improve writing clarity by using complete, well-structured sentences")
+            recommendations.append(
+                "Improve writing clarity by using complete, well-structured sentences"
+            )
 
         return {
             "score": score,
@@ -560,12 +577,12 @@ Focus on:
         missing_sections = [s for s in required_sections if s not in markdown]
 
         # Check section structure
-        section_headers = re.findall(r'^#{1,3}\s+.+', markdown, re.MULTILINE)
+        section_headers = re.findall(r"^#{1,3}\s+.+", markdown, re.MULTILINE)
         has_nested_headers = any(h.startswith("###") for h in section_headers)
 
         # Check for lists (good for readability)
-        has_bullet_lists = bool(re.search(r'^\s*[-*+]\s', markdown, re.MULTILINE))
-        has_numbered_lists = bool(re.search(r'^\s*\d+\.\s', markdown, re.MULTILINE))
+        has_bullet_lists = bool(re.search(r"^\s*[-*+]\s", markdown, re.MULTILINE))
+        has_numbered_lists = bool(re.search(r"^\s*\d+\.\s", markdown, re.MULTILINE))
 
         # Calculate score
         score = 0.8  # Base score
@@ -625,14 +642,16 @@ Focus on:
             score = 1.0  # No findings to check
 
         # Check citation format
-        citations = re.findall(r'\[(\d+)\]', markdown)
+        citations = re.findall(r"\[(\d+)\]", markdown)
         if citations and len(analysis.cross_reference_claims) > 0:
             max_citation = int(max(citations))
             if max_citation > len(analysis.cross_reference_claims) + 5:
                 warnings.append("Citation numbering seems inconsistent with available claims")
 
         if score < 0.7 and finding_count > 0:
-            recommendations.append(f"Only {score:.0%} of key findings appear to be referenced in the report")
+            recommendations.append(
+                f"Only {score:.0%} of key findings appear to be referenced in the report"
+            )
 
         return {
             "score": score,
@@ -669,10 +688,11 @@ Focus on:
         jargon_density = jargon_count / (len(markdown.split()) + 1)
 
         # Check for actionable insights
-        has_conclusions = bool(re.search(r'## (Conclusions?|Recommendations?)', markdown, re.IGNORECASE))
+        has_conclusions = bool(
+            re.search(r"## (Conclusions?|Recommendations?)", markdown, re.IGNORECASE)
+        )
         has_actionable = any(
-            word in markdown.lower()
-            for word in ["recommend", "should", "consider", "implement"]
+            word in markdown.lower() for word in ["recommend", "should", "consider", "implement"]
         )
 
         # Calculate score
@@ -685,7 +705,9 @@ Focus on:
         if jargon_count > 5:
             warnings.append(f"Potential overuse of jargon ({jargon_count} instances)")
         if not has_conclusions and not has_actionable:
-            recommendations.append("Consider adding a conclusions or recommendations section for actionability")
+            recommendations.append(
+                "Consider adding a conclusions or recommendations section for actionability"
+            )
 
         return {
             "score": score,
@@ -733,7 +755,9 @@ Focus on:
 
         if score < 0.7:
             warnings.append("Report may not fully reflect analysis themes and consensus points")
-            recommendations.append("Ensure major themes and consensus points are covered in the report")
+            recommendations.append(
+                "Ensure major themes and consensus points are covered in the report"
+            )
 
         return {
             "score": score,
@@ -767,9 +791,7 @@ Focus on:
 
         # Extract the Executive Summary section
         exec_summary_match = re.search(
-            r'## Executive Summary\n(.*?)(?=\n## |\Z)',
-            markdown,
-            re.DOTALL
+            r"## Executive Summary\n(.*?)(?=\n## |\Z)", markdown, re.DOTALL
         )
 
         if not exec_summary_match:
@@ -807,10 +829,7 @@ Focus on:
         if gaps:
             # Check if summary has gap descriptions inline instead of pointer
             has_pointer = EXECUTIVE_SUMMARY_GAPS_POINTER[:50] in exec_summary
-            has_inline_gaps = any(
-                gap.get("gap_description", "")[:30] in exec_summary
-                for gap in gaps if isinstance(gap, dict)
-            )
+            has_inline_gaps = any(gap.gap_description[:30] in exec_summary for gap in gaps)
 
             if has_inline_gaps and not has_pointer:
                 score -= 0.2

@@ -6,7 +6,7 @@ export function Badge({
   children,
 }: {
   className?: string;
-  variant?: 'default' | 'secondary' | 'success' | 'warning' | 'destructive' | 'outline';
+  variant?: 'default' | 'secondary' | 'success' | 'warning' | 'destructive' | 'outline' | 'info';
   children: React.ReactNode;
 }) {
   const variants = {
@@ -16,6 +16,7 @@ export function Badge({
     warning: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100',
     destructive: 'bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-100',
     outline: 'border border-border bg-background text-foreground',
+    info: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100',
   };
 
   return (

@@ -846,6 +846,8 @@ class ScriptingAgent:
 
 async def _wrap_step0(agent: ScriptingAgent, ctx: ScriptingContext) -> ScriptingContext:
     result = await agent.define_core_inputs(ctx.raw_idea)
+    if result.core_inputs is None:
+        raise ValueError("core_inputs should not be None after define_core_inputs")
     return agent._seed_core_inputs(
         ctx,
         raw_idea=result.raw_idea,
@@ -994,7 +996,7 @@ def _extract_weakest_parts(text: str) -> list[str]:
 
 def _serialize_trace_value(value: object) -> object:
     if hasattr(value, "model_dump"):
-        return value.model_dump(mode="json")  # type: ignore[union-attr]
+        return value.model_dump(mode="json")
     if isinstance(value, list):
         return [_serialize_trace_value(item) for item in value]
     if isinstance(value, dict):

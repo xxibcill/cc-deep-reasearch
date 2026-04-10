@@ -79,6 +79,7 @@ __all__ = [
     "ValidatorAgent",
     "ResearcherAgent",
     "ReportQualityEvaluatorAgent",
+    "ReportRefinerAgent",
     "AIAnalysisService",
     "AIAgentIntegration",
     "AGENT_TYPE_LEAD",
