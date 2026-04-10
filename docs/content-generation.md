@@ -163,7 +163,7 @@ Run the 14-stage orchestrated flow:
 cc-deep-research content-gen pipeline --theme "..."
 ```
 
-This path works for generation up through QC, but it currently has important gaps documented below in [Current Gaps And Caveats](#current-gaps-and-caveats).
+This path works for generation up through QC, with the remaining operational caveats documented below in [Current Gaps And Caveats](#current-gaps-and-caveats).
 
 ## End-To-End Flow
 
@@ -191,7 +191,8 @@ strategy memory
   -> opportunity brief
   -> backlog ideas
   -> scored shortlist
-  -> one selected idea
+  -> top-2 candidate queue
+  -> one primary execution lane
   -> multiple angles
   -> one chosen angle
   -> research pack
@@ -333,9 +334,9 @@ cc-deep-research content-gen backlog score --from-file backlog.json --select-top
 
 Pipeline behavior:
 
-- scoring now returns a ranked `shortlist`, `selected_idea_id`, `selection_reasoning`, and `runner_up_idea_ids`
-- the full pipeline stores that selection state on `PipelineContext` and uses the chosen idea consistently downstream
-- it still does not branch into multiple ideas or keep a multi-idea execution queue
+- scoring returns a ranked `shortlist`, `selected_idea_id`, `selection_reasoning`, `runner_up_idea_ids`, and a small `active_candidates` queue
+- the full pipeline keeps the top 2 ideas alive as `active_candidates`: one `primary` lane and one `runner_up`
+- downstream execution still advances the primary lane, but the runner-up remains explicit in `PipelineContext` and backlog status
 
 ### Stage 4: Angle Generation
 
@@ -635,7 +636,8 @@ Persistence:
 Important detail:
 
 - the standalone publish path persists every generated publish item
-- the full pipeline only stores the first generated `PublishItem` in `PipelineContext`
+- the full pipeline now retains all generated publish items in `PipelineContext.publish_items`
+- `PipelineContext.publish_item` remains as the first-item compatibility alias for older callers and saved contexts
 
 ### Stage 13: Performance Analysis
 
@@ -686,10 +688,11 @@ Options:
 
 What it actually does today:
 
-1. Creates a fresh `PipelineContext`.
-2. Runs handlers from `from_stage` through `to_stage`.
-3. Prints a summary.
-4. Optionally writes:
+1. Creates a fresh `PipelineContext`, or reloads a saved one with `--from-file`.
+2. Supports direct-idea bypass with `--idea`, seeding the pipeline from a selected idea instead of backlog generation.
+3. Runs handlers from `from_stage` through `to_stage`.
+4. Prints a summary.
+5. Optionally writes:
    - final script to `--output`
    - full context to `--output.context.json` or `pipeline_context.json`
 
@@ -697,6 +700,7 @@ Recommended usage:
 
 - use it to generate a first-pass pipeline context
 - inspect and save that context
+- resume later stages with `--from-file` when you want to continue from QC approval or another saved checkpoint
 - handle QC approval and publish scheduling with explicit follow-up commands
 
 ## Recommended Operator Workflow
@@ -738,6 +742,7 @@ Default persisted files:
 - strategy memory: `~/.config/cc-deep-research/strategy.yaml`
 - scripting runs: `~/.config/cc-deep-research/scripts/`
 - publish queue: `~/.config/cc-deep-research/publish_queue.yaml`
+- browser-started pipeline jobs: `~/.config/cc-deep-research/content-gen/pipelines/`
 
 Optional operator-managed files:
 
@@ -758,8 +763,16 @@ Storage classes exist for:
 - backlog
 - scripting runs
 - publish queue
+- browser-started pipeline jobs
 
-Only strategy, scripting autosave, and publish-queue persistence are wired into normal CLI behavior today.
+What is wired into normal workflow behavior today:
+
+- strategy persistence
+- scripting autosave
+- publish-queue persistence
+- browser-started pipeline job persistence and restart recovery
+- CLI pipeline context checkpointing after each completed stage when a context output path is configured
+- best-effort partial pipeline-context save on CLI pipeline failure
 
 ## Configuration
 
@@ -774,15 +787,12 @@ Content-generation settings live in [`ContentGenConfig`](../src/cc_deep_research
 
 What is currently honored in code:
 
-- `default_platforms`
-- `research_max_queries`
-- `scoring_threshold_produce`
-
-What exists in the schema but is not currently wired into the storage layer:
-
 - `strategy_path`
 - `backlog_path`
 - `publish_queue_path`
+- `default_platforms`
+- `research_max_queries`
+- `scoring_threshold_produce`
 
 ## LLM Routing Behavior
 
@@ -793,12 +803,15 @@ Important routing facts:
 - content-generation agent IDs are not given custom route defaults in `LLMConfig.get_route_for_agent`
 - in practice they fall back to the global default route
 - the router can fall back across configured transports
-- if no usable transport exists, the router returns an empty heuristic response
+- if no usable transport exists, the router ultimately falls back to an empty heuristic response internally
 
 Operational consequence:
 
 - the scripting agent checks availability first and raises a clear error if no route is available
-- most other content agents do not do that check, so a missing LLM route can surface as blank outputs rather than a loud failure
+- non-scripting content agents now also check route availability before execution
+- non-scripting agents retry once when the router returns a blank shell
+- fail-fast stages still raise on empty responses after retry
+- tolerant stages keep their degraded/partial behavior, but they no longer silently continue when no usable LLM route exists
 
 ## Test Coverage
 
@@ -828,54 +841,38 @@ The dashboard pipeline detail page at `/content-gen/pipeline/[id]` is the operat
 
 The implementation is usable, but several parts are still transitional.
 
-### `pipeline --from-file` is currently ignored
+### Full pipeline execution is still primary-lane first
 
-The CLI exposes `--from-file`, but the parameter is not used by the pipeline command implementation. The command always creates a fresh `PipelineContext`.
-
-Practical impact:
-
-- you cannot truly resume the full pipeline from a saved pipeline context
-- any workflow that expects `qc approve` plus `pipeline --from-file --from-stage 10` will not work as advertised
-
-### `pipeline --idea` does not skip backlog
-
-The help text says `--idea` should skip backlog and start scripting with that idea. The current implementation only uses `theme or idea or "general"` as the theme argument to `run_full_pipeline`.
+The pipeline now preserves a small top-2 candidate queue, but downstream automation still executes only the primary candidate lane in a given run.
 
 Practical impact:
 
-- `--idea` behaves like an alternate theme string, not a direct scripting seed
+- the second candidate is preserved and visible, but it is not automatically researched and scripted in parallel
+- fanout is intentionally capped at 2 ideas, not arbitrary breadth
 
-### Starting from a later stage only works if prior state exists, but the CLI does not load prior state
-
-`run_full_pipeline` accepts `from_stage`, but because the CLI always starts from a new empty context, later-stage resumes are mostly useful only from code, not from the current CLI.
-
-### Full pipeline auto-selection is narrow
-
-The pipeline:
-
-- chooses one explicit shortlisted winner and preserves runner-ups
-- chooses the selected angle if present, otherwise the first angle
-- does not fan out across multiple shortlisted ideas
-
-This keeps the implementation simple, but it is closer to a single-lane prototype than a queue-driven editorial planner.
-
-### The auto pipeline stops before publish in normal use
+### Publish still requires an explicit human approval pass
 
 The QC stage always produces `approved_for_publish = False`. The publish stage only runs if approval is already `True`.
 
-Because the current pipeline command does not reload saved context, the normal all-in-one flow does not reach `publish_queue` automatically.
+Practical impact:
+
+- a normal all-in-one pipeline run still stops before publish
+- operators should use `qc approve` and then resume the pipeline with `--from-file` when they want to continue from the saved context
 
 ### Backlog persistence is incomplete
 
 `BacklogStore` exists, but `content-gen backlog build` and `content-gen backlog score` do not automatically write to it. Backlog outputs are file-based unless you save them explicitly and manage persistence yourself.
 
-### Path configuration is incomplete
+### CLI and browser pipeline persistence are now durable, but stage artifacts are still uneven
 
-The config schema includes storage path overrides, but the storage classes still default directly to XDG-style paths under `~/.config/cc-deep-research/`.
+Browser-started pipeline runs now persist their latest job state and `PipelineContext`, and the CLI pipeline command now writes checkpoint-style context snapshots when you opt into a context output path.
 
-### Publish-item context storage is lossy
+Practical impact:
 
-`PublishAgent.schedule()` returns a list of publish items, one per platform. The full pipeline keeps only the first one in `PipelineContext.publish_item`.
+- dashboard pipeline runs survive app restart as resumable saved jobs
+- interrupted in-flight dashboard runs reappear as failed/interrupted jobs with saved context instead of vanishing
+- CLI pipeline runs can preserve the latest resumable context even if a later stage crashes
+- individual stage artifacts like backlog JSON, research-pack JSON, and packaging JSON are still operator-managed unless you save them explicitly
 
 ### Research-pack query families are still intentionally narrow
 
@@ -885,13 +882,11 @@ The search-query builder now uses labeled retrieval families with current-year f
 
 The most obvious next improvements are:
 
-1. Make `pipeline --from-file` actually load and resume `PipelineContext`.
-2. Make `pipeline --idea` bypass backlog and seed scripting directly.
-3. Wire config path overrides into `StrategyStore`, `BacklogStore`, and `PublishQueueStore`.
-4. Persist backlog outputs automatically when operators request a managed workflow.
-5. Add stricter validation to non-scripting agents when LLM output is empty or malformed.
-6. Expand the pipeline context to retain all publish items, not only the first.
-7. Expand retrieval planning beyond the fixed expert-query family set when broader fanout is needed.
+1. Expand the active candidate queue beyond the current top-2 cap when broader editorial planning is needed.
+2. Let the pipeline optionally run the runner-up lane through its own angle/research/script passes.
+3. Persist backlog outputs automatically when operators request a managed workflow.
+4. Expand tolerant-stage metadata so production, publish, and performance stages can record degraded empty-response outcomes more explicitly.
+5. Expand retrieval planning beyond the fixed expert-query family set when broader fanout is needed.
 
 ## Source Map
 
