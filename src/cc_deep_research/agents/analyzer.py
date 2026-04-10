@@ -10,7 +10,7 @@ The analyzer agent is responsible for:
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 from cc_deep_research.agents.ai_analysis_service import AIAnalysisService
 from cc_deep_research.models import (
@@ -210,7 +210,7 @@ class AnalyzerAgent:
             return text
 
         # Common AI truncation patterns with replacements
-        truncation_repairs = [
+        truncation_repairs: list[tuple[str, str | Callable[[re.Match[str]], str]]] = [
             (r'\bFor the vast m\.\.', 'For the vast majority'),
             (r'\bFor the vast M\.\.', 'For the vast majority'),
             (r'\b[A-Z][a-z]{1,3}\.\.\.', lambda m: m.group(0) + 'ing'),  # m... -> ...ing
@@ -259,7 +259,7 @@ class AnalyzerAgent:
         cross_ref = self._perform_cross_reference(sources)
         gaps = self._identify_gaps(sources, query)
         typed_claims = self._build_claims(
-            raw_claims=cross_ref["claims"],
+            raw_claims=cast(list[dict[str, Any]], cross_ref["claims"]),
             sources=sources,
             fallback_themes=[],
         )
@@ -268,8 +268,8 @@ class AnalyzerAgent:
         return AnalysisResult(
             key_findings=typed_findings,
             themes=themes,
-            consensus_points=self._extract_consensus_claims(cross_ref.get("consensus", [])),
-            contention_points=self._extract_consensus_claims(cross_ref.get("contention", [])),
+            consensus_points=self._extract_consensus_claims(cast(list[str], cross_ref.get("consensus", []))),
+            contention_points=self._extract_consensus_claims(cast(list[str], cross_ref.get("contention", []))),
             cross_reference_claims=typed_claims,
             gaps=gaps,
             source_count=len(sources),
@@ -307,7 +307,7 @@ class AnalyzerAgent:
 
     def _identify_themes(
         self, sources: list[SearchResultItem]
-    ) -> list[AnalysisGap]:
+    ) -> list[str]:
         """Identify major themes across sources.
 
         Args:
@@ -361,7 +361,7 @@ class AnalyzerAgent:
 
     def _identify_gaps(
         self, sources: list[SearchResultItem], query: str  # noqa: ARG002
-    ) -> list[str]:
+    ) -> list[AnalysisGap]:
         """Identify information gaps in the research.
 
         Args:

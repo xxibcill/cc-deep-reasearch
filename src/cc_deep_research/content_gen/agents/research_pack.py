@@ -13,6 +13,7 @@ from cc_deep_research.content_gen.models import (
 )
 from cc_deep_research.content_gen.prompts import research_pack as prompts
 from cc_deep_research.llm import LLMRouter
+from cc_deep_research.providers import SearchProvider
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
@@ -89,8 +90,8 @@ class ResearchPackAgent:
             for query in queries:
                 try:
                     result = await provider.search(query, opts)
-                    if result and result.items:
-                        for r in result.items[:3]:
+                    if result and result.results:
+                        for r in result.results[:3]:
                             snippet = (
                                 f"[{r.title}] {r.content[:300]}" if r.content else f"[{r.title}]"
                             )
@@ -102,7 +103,7 @@ class ResearchPackAgent:
             return "No search results found."
         return "\n".join(results)
 
-    def _get_providers(self) -> list[str]:
+    def _get_providers(self) -> list[SearchProvider]:
         from cc_deep_research.providers import resolve_provider_specs
         from cc_deep_research.providers.factory import build_search_providers
 

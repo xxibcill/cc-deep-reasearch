@@ -1438,7 +1438,7 @@ class ResearchMonitor:
             event_type="checkpoint.created",
             category="checkpoint",
             name=phase,
-            status=checkpoint["status"],
+            status=str(checkpoint["status"]),
             metadata={
                 "checkpoint_id": checkpoint_id,
                 "phase": phase,

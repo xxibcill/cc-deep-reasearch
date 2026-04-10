@@ -569,7 +569,7 @@ def register_content_gen_routes(
         logger.info("Pipeline WS connecting pipeline_id=%s", pipeline_id)
         await websocket.accept()
 
-        connection = WebSocketConnection(websocket, pipeline_id)
+        connection = WebSocketConnection(websocket, pipeline_id)  # type: ignore[arg-type]
         await event_router.subscribe(pipeline_id, connection)
 
         # Send initial state

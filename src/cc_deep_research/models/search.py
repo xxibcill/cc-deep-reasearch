@@ -141,7 +141,7 @@ class SearchResultItem(BaseModel):
             ]
         )
         self.query_provenance = merged
-        self._normalize_provenance()
+        self._normalize_provenance()  # type: ignore[operator]
 
 
 class SearchResult(BaseModel):

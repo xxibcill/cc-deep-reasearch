@@ -142,7 +142,7 @@ class ParallelSourceCollectionStrategy:
         families_by_query = {family.query: family for family in query_families}
         for result in results:
             task_id = result["task_id"]
-            agent_event_id = task_agent_ids.get(task_id)
+            parent_event_id = task_agent_ids.get(task_id)
 
             if result["status"] == "success":
                 family = families_by_query.get(
@@ -171,7 +171,7 @@ class ParallelSourceCollectionStrategy:
                     agent_id=task_id,
                     agent_type="researcher",
                     status="completed",
-                    parent_event_id=agent_event_id,
+                    parent_event_id=parent_event_id,
                     metadata={
                         "source_count": result["source_count"],
                         "duration_ms": int(result["execution_time_ms"]),
@@ -203,7 +203,7 @@ class ParallelSourceCollectionStrategy:
                 agent_id=task_id,
                 agent_type="researcher",
                 status=result["status"],
-                parent_event_id=agent_event_id,
+                parent_event_id=parent_event_id,
                 metadata={
                     "error": result.get("error", "Unknown error"),
                     "query": result.get("query", ""),

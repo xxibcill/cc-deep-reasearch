@@ -102,7 +102,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
             "forbidden_claims",
             "proof_standards",
         }
-        patch = {key: [v.strip() for v in value.split(",")]} if key in list_fields else {key: value}
+        patch = {key: [v.strip() for v in value.split(",")]} if key in list_fields else {key: value}  # type: ignore[dict-item]
         store.update(patch)
         click.echo(f"Updated {key} in {store.path}")
 

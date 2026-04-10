@@ -846,6 +846,8 @@ class ScriptingAgent:
 
 async def _wrap_step0(agent: ScriptingAgent, ctx: ScriptingContext) -> ScriptingContext:
     result = await agent.define_core_inputs(ctx.raw_idea)
+    if result.core_inputs is None:
+        raise ValueError("core_inputs should not be None after define_core_inputs")
     return agent._seed_core_inputs(
         ctx,
         raw_idea=result.raw_idea,

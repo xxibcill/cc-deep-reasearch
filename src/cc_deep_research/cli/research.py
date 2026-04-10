@@ -205,7 +205,7 @@ def register_research_commands(cli: click.Group) -> None:
                         depth=depth,
                         output_format=output_format,
                         providers=config.search.providers,
-                        execution_mode=execution_mode,
+                        team_mode=execution_mode,
                         monitor_enabled=monitor,
                     )
                 )

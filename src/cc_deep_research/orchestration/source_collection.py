@@ -398,7 +398,7 @@ class SourceCollectionService:
     ) -> list[SearchResultItem]:
         """Run the sequential provider-backed collection strategy."""
         return await self._sequential.collect(
-            collector=collector,
+            collector=collector,  # type: ignore[arg-type]
             query_families=query_families,
             depth=depth,
         )

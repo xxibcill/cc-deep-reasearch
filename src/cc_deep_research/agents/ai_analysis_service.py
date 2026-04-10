@@ -160,6 +160,7 @@ class AIAnalysisService:
             raise RuntimeError("LLM router is not configured")
 
         async def _run() -> str:
+            assert self._llm_router is not None
             response = await self._llm_router.execute(
                 agent_id=self._agent_id,
                 prompt=prompt,

@@ -860,7 +860,7 @@ class PlannerAgent:
         findings: list[str] = []
         for finding in analysis.key_findings[:2]:
             title = finding.title if hasattr(finding, "title") else str(finding)
-            if title:
+            if isinstance(title, str) and title:
                 findings.append(title.strip())
         if findings:
             signals.append("Current evidence points to " + "; ".join(findings) + ".")
