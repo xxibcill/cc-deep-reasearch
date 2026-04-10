@@ -37,6 +37,7 @@ from cc_deep_research.content_gen.models import (
     CONTENT_GEN_STAGE_CONTRACTS,
     PIPELINE_STAGES,
     SCRIPTING_STEPS,
+    ArgumentBeatClaim,
     ArgumentClaim,
     ArgumentMap,
     ArgumentProofAnchor,
@@ -68,6 +69,7 @@ from cc_deep_research.content_gen.models import (
     ProofRule,
     PublishItem,
     QCResult,
+    QualityEvaluation,
     ResearchClaim,
     ResearchClaimType,
     ResearchConfidence,
@@ -5644,4 +5646,370 @@ def test_script_claim_statement_model() -> None:
     assert "claim_1" in stmt.claim_ids
     assert stmt.status == ClaimTraceStatus.SUPPORTED
 
+
+# ---------------------------------------------------------------------------
+# Task 19: Competitive Differentiation and Genericity Detection
+# ---------------------------------------------------------------------------
+
+
+def test_argument_map_parser_includes_differentiation_fields() -> None:
+    """Argument map parser should extract differentiation fields (Task 19)."""
+    from cc_deep_research.content_gen.agents.argument_map import _parse_argument_map
+
+    result = _parse_argument_map(
+        """thesis: Buyers compare tier contrast before reading every feature line
+audience_belief_to_challenge: Better feature copy is the main lever on pricing conversion
+core_mechanism: Buyers anchor on tier comparison order and only then interpret features through that frame
+
+proof_anchors:
+---
+proof_id: proof_1
+summary: Buyers compare tier contrast before reading every feature line
+source_ids: src_01
+usage_note: Use this to reframe why copy tweaks underperform
+---
+
+safe_claims:
+---
+claim_id: claim_1
+claim: Pricing order changes what buyers notice first
+supporting_proof_ids: proof_1
+---
+
+beat_claim_plan:
+---
+beat_id: beat_1
+beat_name: Hook
+goal: Challenge the default pricing diagnosis
+claim_ids: claim_1
+proof_anchor_ids: proof_1
+---
+
+what_this_contributes: Shows how tier ordering (not copy) drives buyer perception — contrary to common content that says "improve your copy"
+genericity_flags:
+- Don't say "tier comparison changes everything" — too broad
+- Don't default to "pricing is psychology" without mechanism
+differentiation_strategy: Lead with the ordering mechanism as the primary lever, not copy quality
+""",
+        idea_id="idea_1",
+        angle_id="angle_1",
+    )
+
+    assert result.what_this_contributes == (
+        "Shows how tier ordering (not copy) drives buyer perception — "
+        "contrary to common content that says \"improve your copy\""
+    )
+    assert result.genericity_flags == [
+        "Don't say \"tier comparison changes everything\" — too broad",
+        "Don't default to \"pricing is psychology\" without mechanism",
+    ]
+    assert result.differentiation_stategy == (
+        "Lead with the ordering mechanism as the primary lever, not copy quality"
+    )
+
+
+def test_argument_map_parser_handles_missing_differentiation_fields() -> None:
+    """Differentiation fields are optional — missing values should be empty strings/lists."""
+    from cc_deep_research.content_gen.agents.argument_map import _parse_argument_map
+
+    result = _parse_argument_map(
+        """thesis: The visible premium tier reframes the middle plan
+audience_belief_to_challenge: Buyers read feature grids first
+core_mechanism: Decoy tiers shift comparison anchor before features are evaluated
+
+proof_anchors:
+---
+proof_id: proof_1
+summary: Tier contrast is evaluated before feature detail
+source_ids: src_01
+---
+
+safe_claims:
+---
+claim_id: claim_1
+claim: Buyers compare before they read
+supporting_proof_ids: proof_1
+---
+
+beat_claim_plan:
+---
+beat_id: beat_1
+beat_name: Hook
+goal: Reframe the comparison order
+claim_ids: claim_1
+proof_anchor_ids: proof_1
+---
+""",
+        idea_id="idea_1",
+        angle_id="angle_1",
+    )
+
+    assert result.what_this_contributes == ""
+    assert result.genericity_flags == []
+    assert result.differentiation_stategy == ""
+
+
+def test_argument_map_model_differentiation_fields_survive_serialization() -> None:
+    """Differentiation fields should survive JSON round-trip."""
+    am = ArgumentMap(
+        idea_id="idea_1",
+        angle_id="angle_1",
+        thesis="Test thesis",
+        proof_anchors=[
+            ArgumentProofAnchor(proof_id="proof_1", summary="Test proof"),
+        ],
+        safe_claims=[
+            ArgumentClaim(claim_id="claim_1", claim="Test claim", supporting_proof_ids=["proof_1"]),
+        ],
+        beat_claim_plan=[
+            ArgumentBeatClaim(
+                beat_id="beat_1",
+                beat_name="Hook",
+                goal="Test",
+                claim_ids=["claim_1"],
+                proof_anchor_ids=["proof_1"],
+            ),
+        ],
+        what_this_contributes="Something different from consensus",
+        genericity_flags=["Generic thing 1", "Generic thing 2"],
+        differentiation_stategy="Lead with mechanism",
+    )
+
+    json_str = am.model_dump_json()
+    restored = ArgumentMap.model_validate_json(json_str)
+
+    assert restored.what_this_contributes == "Something different from consensus"
+    assert restored.genericity_flags == ["Generic thing 1", "Generic thing 2"]
+    assert restored.differentiation_stategy == "Lead with mechanism"
+
+
+def test_quality_evaluation_parser_includes_genericity_and_cliche_fields() -> None:
+    """Quality evaluation parser should extract genericity score and cliché flags (Task 19)."""
+    result = _parse_quality_evaluation(
+        """overall_quality_score: 0.71
+passes_threshold: false
+evidence_coverage: 0.85
+claim_safety: 0.90
+originality: 0.55
+precision: 0.68
+expertise_density: 0.72
+genericity: 0.78
+critical_issues:
+- None
+unsupported_claims:
+- None
+evidence_actions_required:
+- None
+improvement_suggestions:
+- Avoid the generic "just test more" close
+research_gaps_identified:
+- None
+cliche_flags:
+- "The key is to just keep iterating"
+- "In today's fast-paced market, testing is everything"
+interchangeable_take_flags:
+- Run more experiments without mechanism or data depth
+rationale: Script hits the core proof points but lands as generic — sounds like most DTC content on this topic.
+""".replace("- None\n", ""),
+        iteration_number=1,
+    )
+
+    assert result.genericity == pytest.approx(0.78)
+    assert result.cliche_flags == [
+        "The key is to just keep iterating",
+        "In today's fast-paced market, testing is everything",
+    ]
+    assert result.interchangeable_take_flags == [
+        "Run more experiments without mechanism or data depth",
+    ]
+    assert result.passes_threshold is False
+
+
+def test_quality_evaluation_parser_high_genericity_flags_specific_issues() -> None:
+    """High genericity (low score) should produce actionable flags without breaking threshold logic."""
+    result = _parse_quality_evaluation(
+        """overall_quality_score: 0.58
+passes_threshold: false
+evidence_coverage: 0.60
+claim_safety: 0.70
+originality: 0.40
+precision: 0.50
+expertise_density: 0.55
+genericity: 0.85
+critical_issues:
+- Script follows the standard "5 tips" format with no differentiation
+unsupported_claims:
+- None
+evidence_actions_required:
+- None
+improvement_suggestions:
+- None
+research_gaps_identified:
+- None
+cliche_flags:
+- "Here are 5 tips to optimize your funnel"
+- "The key to success is testing and iteration"
+interchangeable_take_flags:
+- "Test more" without specifying which variable or what evidence exists
+rationale: Script is technically sound but indistinguishable from hundreds of other videos on this topic.
+""".replace("- None\n", ""),
+        iteration_number=1,
+    )
+
+    assert result.genericity == pytest.approx(0.85)
+    assert len(result.cliche_flags) == 2
+    assert len(result.interchangeable_take_flags) == 1
+    assert result.passes_threshold is False
+
+
+def test_quality_evaluation_parser_low_genericity_distinctive_content() -> None:
+    """Low genericity (high score) means content is distinctive — empty flags are valid."""
+    result = _parse_quality_evaluation(
+        """overall_quality_score: 0.83
+passes_threshold: true
+evidence_coverage: 0.88
+claim_safety: 0.91
+originality: 0.82
+precision: 0.79
+expertise_density: 0.80
+genericity: 0.15
+critical_issues:
+- None
+unsupported_claims:
+- None
+evidence_actions_required:
+- None
+improvement_suggestions:
+- None
+research_gaps_identified:
+- None
+rationale: Content is distinctive — specific mechanism, contrarian framing, no generic tips format.
+""".replace("- None\n", ""),
+        iteration_number=1,
+    )
+
+    assert result.genericity == pytest.approx(0.15)
+    assert result.cliche_flags == []
+    assert result.interchangeable_take_flags == []
+    assert result.passes_threshold is True
+
+
+def test_quality_evaluation_model_serialization_preserves_genericity_fields() -> None:
+    """QualityEvaluation genericity fields survive JSON round-trip."""
+    qe = QualityEvaluation(
+        overall_quality_score=0.75,
+        passes_threshold=True,
+        evidence_coverage=0.80,
+        claim_safety=0.85,
+        originality=0.70,
+        precision=0.75,
+        expertise_density=0.72,
+        genericity=0.25,
+        cliche_flags=["Generic tip format"],
+        interchangeable_take_flags=["Run more experiments without specifics"],
+        iteration_number=1,
+        rationale="Distinctive content with specific mechanism.",
+    )
+
+    json_str = qe.model_dump_json()
+    restored = QualityEvaluation.model_validate_json(json_str)
+
+    assert restored.genericity == pytest.approx(0.25)
+    assert restored.cliche_flags == ["Generic tip format"]
+    assert restored.interchangeable_take_flags == ["Run more experiments without specifics"]
+
+
+def test_angle_option_differentiation_fields_survive_serialization() -> None:
+    """AngleOption differentiation fields survive JSON round-trip."""
+    opt = AngleOption(
+        angle_id="angle_1",
+        target_audience="B2B SaaS founders",
+        viewer_problem="Discounting is killing margins",
+        core_promise="Tell when a pricing objection is really a packaging problem",
+        primary_takeaway="Repeated discounting usually means unclear offer ladder",
+        lens="contrarian",
+        format="tactical explainer",
+        tone="direct",
+        cta="Pull three lost-call notes and tag the objection pattern",
+        why_this_version_should_exist="Links pricing to day-to-day deal review",
+        differentiation_summary="Reframes pricing objections as packaging signals, not negotiation leverage",
+        genericity_risks=[
+            "Generic 'pricing is about value' without mechanism",
+            "Standard '3 pricing strategies' format",
+        ],
+        market_framing_challenged="The 'add more value to justify pricing' consensus",
+    )
+
+    json_str = opt.model_dump_json()
+    restored = AngleOption.model_validate_json(json_str)
+
+    assert restored.differentiation_summary == "Reframes pricing objections as packaging signals, not negotiation leverage"
+    assert restored.genericity_risks == [
+        "Generic 'pricing is about value' without mechanism",
+        "Standard '3 pricing strategies' format",
+    ]
+    assert restored.market_framing_challenged == "The 'add more value to justify pricing' consensus"
+
+
+def test_angle_parser_includes_differentiation_fields() -> None:
+    """Angle parser should extract differentiation_summary, market_framing_challenged, and genericity_risks."""
+    from cc_deep_research.content_gen.agents.angle import _parse_angle_options
+
+    text = """---
+angle_id: angle_1
+target_audience: B2B SaaS founders with discount-heavy sales
+viewer_problem: Discounts are masking weak positioning
+core_promise: Identify when a pricing objection is really a packaging problem
+primary_takeaway: Repeated discounting usually means the offer ladder is unclear
+lens: contrarian
+format: tactical explainer
+tone: direct
+cta: Pull three lost-call notes and tag the objection pattern
+why_this_version_should_exist: Links pricing to day-to-day deal review
+differentiation_summary: Reframes pricing objections as packaging signals, not negotiation leverage
+market_framing_challenged: The 'add more value to justify pricing' consensus
+genericity_risks:
+- Generic "pricing is about value" without mechanism
+- Standard "3 pricing strategies" format
+---
+
+---
+angle_id: angle_2
+target_audience: Startup founders launching pricing pages
+viewer_problem: They keep polishing copy while buyers compare only price
+core_promise: Show the framing change that makes a higher tier feel justified
+primary_takeaway: Anchors shape perceived value before feature details matter
+lens: buyer psychology teardown
+format: contrarian breakdown
+tone: sharp but practical
+cta: Audit your highest-priced plan against the decoy effect
+why_this_version_should_exist: Turns abstract pricing theory into a concrete page review
+differentiation_summary: Uses specific anchoring mechanism (decoy effect) to explain tier perception
+market_framing_challenged: The "better copy = higher conversion" advice
+genericity_risks:
+- Generic "anchoring works" without decoy mechanism
+- Vague "psychology of pricing" framing
+---
+Best angle_id: angle_1
+Selection reasoning: Clearer differentiation from market consensus and specific mechanism.
+"""
+    options = _parse_angle_options(text)
+
+    assert len(options) == 2
+
+    angle_1 = next(a for a in options if a.angle_id == "angle_1")
+    assert angle_1.differentiation_summary == "Reframes pricing objections as packaging signals, not negotiation leverage"
+    assert angle_1.market_framing_challenged == "The 'add more value to justify pricing' consensus"
+    assert angle_1.genericity_risks == [
+        "Generic \"pricing is about value\" without mechanism",
+        "Standard \"3 pricing strategies\" format",
+    ]
+
+    angle_2 = next(a for a in options if a.angle_id == "angle_2")
+    assert angle_2.differentiation_summary == "Uses specific anchoring mechanism (decoy effect) to explain tier perception"
+    assert angle_2.market_framing_challenged == "The \"better copy = higher conversion\" advice"
+    assert angle_2.genericity_risks == [
+        "Generic \"anchoring works\" without decoy mechanism",
+        "Vague \"psychology of pricing\" framing",
+    ]
 

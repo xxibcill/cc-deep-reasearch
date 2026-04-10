@@ -30,6 +30,7 @@ _ANGLE_REQUIRED_FIELDS = (
 )
 
 _ANGLE_FIELDS = [
+    "angle_id",
     "target_audience",
     "viewer_problem",
     "core_promise",
@@ -39,6 +40,9 @@ _ANGLE_FIELDS = [
     "tone",
     "cta",
     "why_this_version_should_exist",
+    "differentiation_summary",
+    "market_framing_challenged",
+    "genericity_risks",
 ]
 
 
@@ -66,7 +70,7 @@ class AngleAgent:
             user_prompt=user_prompt,
             temperature=temperature,
             workflow_name="angle generation workflow",
-            cli_command="content-gen angle generate",
+            cli_command="content-gen pipeline",
             logger=logger,
         )
 
@@ -110,6 +114,42 @@ def _extract_field(text: str, field_name: str) -> str:
     return ""
 
 
+def _extract_list_field(text: str, field_name: str) -> list[str]:
+    """Extract a '-' list field from a block.
+
+    Finds the field_name: line, then collects list items from subsequent lines
+    that start with '- ' or '* ' until a non-list line (field header or
+    empty continuation) is encountered.
+    """
+    # Find the line that contains "field_name:"
+    lines = text.split("\n")
+    field_line_idx = -1
+    for i, line in enumerate(lines):
+        if re.match(rf"^{re.escape(field_name)}:\s*$", line.strip(), re.IGNORECASE):
+            field_line_idx = i
+            break
+
+    if field_line_idx == -1:
+        return []
+
+    items: list[str] = []
+    for line in lines[field_line_idx + 1:]:
+        stripped = line.strip()
+        if stripped.startswith("- ") or stripped.startswith("* "):
+            items.append(stripped[2:].strip())
+        elif stripped == "":
+            # Empty line — continue collecting if we already have items
+            continue
+        else:
+            # Non-list, non-empty line — either a new field header or unexpected content
+            # Stop if we haven't started collecting yet (could be a continuation
+            # from previous field that doesn't start with dash), but if we have
+            # items, this non-list line ends the list
+            break
+
+    return items
+
+
 def _parse_angle_options(text: str) -> list[AngleOption]:
     options: list[AngleOption] = []
     blocks = re.split(r"---+", text)
@@ -119,7 +159,10 @@ def _parse_angle_options(text: str) -> list[AngleOption]:
             continue
         data: dict = {}
         for field in _ANGLE_FIELDS:
-            val = _extract_field(block_text, field)
+            if field == "genericity_risks":
+                val = _extract_list_field(block_text, field)
+            else:
+                val = _extract_field(block_text, field)
             if val:
                 data[field] = val
         if _is_complete_angle_option(data):

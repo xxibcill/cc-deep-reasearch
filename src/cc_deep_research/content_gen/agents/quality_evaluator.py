@@ -236,7 +236,15 @@ def _extract_list(text: str, header: str) -> list[str]:
             continue
         if in_section:
             if stripped.startswith("- ") or stripped.startswith("* "):
-                items.append(stripped[2:].strip())
+                item = stripped[2:].strip()
+                # Only strip outer double quotes when the item starts AND ends with ".
+                # This means the opening " is wrapping the whole item, not just the
+                # beginning. Items like '"Run more experiments" without mechanism' have
+                # inner quotes and should be kept as-is since the opening " doesn't
+                # wrap the whole item (there's content after the closing ").
+                if len(item) >= 2 and item.startswith('"') and item.endswith('"'):
+                    item = item[1:-1]
+                items.append(item)
             elif (
                 stripped
                 and not stripped.startswith("-")
@@ -265,6 +273,10 @@ def _parse_quality_evaluation(text: str, iteration_number: int) -> QualityEvalua
     if revision_mode != RevisionMode.NONE:
         targeted_plan = _parse_targeted_revision_plan(text)
 
+    # Task 19: Generic framing detection
+    cliche_flags = _extract_list(text, "cliche_flags")
+    interchangeable_take_flags = _extract_list(text, "interchangeable_take_flags")
+
     return QualityEvaluation(
         overall_quality_score=_extract_score(text, "overall_quality_score"),
         passes_threshold=parsed_passes_threshold and not unsupported_claims,
@@ -273,11 +285,14 @@ def _parse_quality_evaluation(text: str, iteration_number: int) -> QualityEvalua
         originality=_extract_score(text, "originality"),
         precision=_extract_score(text, "precision"),
         expertise_density=_extract_score(text, "expertise_density"),
+        genericity=_extract_score(text, "genericity"),
         critical_issues=_extract_list(text, "critical_issues"),
         unsupported_claims=unsupported_claims,
         evidence_actions_required=_extract_list(text, "evidence_actions_required"),
         improvement_suggestions=_extract_list(text, "improvement_suggestions"),
         research_gaps_identified=_extract_list(text, "research_gaps_identified"),
+        cliche_flags=cliche_flags,
+        interchangeable_take_flags=interchangeable_take_flags,
         rationale=_extract_field(text, "rationale"),
         iteration_number=iteration_number,
         targeted_revision_plan=targeted_plan,

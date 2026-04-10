@@ -47,6 +47,15 @@ Selection criteria for the strongest angle:
 - Highest contrast from competitor content
 - Easiest visual expression
 
+Task 19 — Competitive Differentiation:
+For each angle, explicitly address:
+- differentiation_summary: Why this angle is distinct from the baseline market
+  framing for this topic (what commonly repeated advice does it reframe or reject?)
+- market_framing_challenged: What common/repeated market framing this angle
+  reframes or contradicts
+- genericity_risks: Known failure modes for this angle (e.g., could slide into
+  clichéd framing, interchangeable takeaways, generic advice without backing)
+
 Output format — repeat for each angle:
 
 ---
@@ -60,6 +69,10 @@ format: (delivery format: talking head, screen recording, demonstration, etc.)
 tone: (tone: direct, conversational, urgent, playful, etc.)
 cta: (call to action)
 why_this_version_should_exist: (why this angle is different from what exists)
+differentiation_summary: (why this angle is distinct from baseline market framing)
+market_framing_challenged: (common/repeated framing this angle reframes or contradicts)
+genericity_risks:
+- (specific failure mode: clichéd framing, generic takeaway, etc.)
 ---
 
 End with:
