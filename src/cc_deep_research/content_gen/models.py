@@ -1633,6 +1633,104 @@ class HumanQCGate(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Targeted Revision (Task 18)
+# ---------------------------------------------------------------------------
+
+
+class BeatRevisionScope(BaseModel):
+    """Identifies a specific beat or claim group that needs repair."""
+
+    beat_id: str = ""
+    beat_name: str = ""
+    # Claim IDs within this beat that are weak or unsupported
+    weak_claim_ids: list[str] = Field(default_factory=list)
+    # Which proof anchors are missing or stale for this beat
+    missing_proof_ids: list[str] = Field(default_factory=list)
+    # Why this beat is weak
+    weakness_reason: str = ""
+    # Stable — True means this beat passed QC and should not be touched
+    is_stable: bool = False
+
+
+class RewriteActionType(StrEnum):
+    """The type of repair action for a targeted revision."""
+
+    REWRITE_BEAT = "rewrite_beat"  # Rewrite the beat content (severe issues)
+    REFRESH_EVIDENCE = "refresh_evidence"  # Update evidence only, keep structure
+    QUALIFY_CLAIM = "qualify_claim"  # Soften a claim instead of proving it
+    REMOVE_CLAIM = "remove_claim"  # Drop the claim entirely
+    ADD_COUNTERARGUMENT = "add_counterargument"  # Add counterargument coverage
+
+
+class TargetedRewriteAction(BaseModel):
+    """A single repair action targeting a specific beat or claim."""
+
+    action_id: str = Field(default_factory=lambda: f"rewrite_{uuid4().hex[:8]}")
+    action_type: RewriteActionType
+    beat_id: str = ""
+    beat_name: str = ""
+    # For rewrite_beat / refresh_evidence
+    weak_claim_ids: list[str] = Field(default_factory=list)
+    # For refresh_evidence — which proof anchors are missing
+    missing_proof_ids: list[str] = Field(default_factory=list)
+    # For qualify_claim / remove_claim
+    target_claim_text: str = ""
+    target_claim_id: str = ""
+    # Instructions for the LLM doing the repair
+    instruction: str = ""
+    # Evidence gaps — passed to retrieval for targeted research
+    evidence_gaps: list[str] = Field(default_factory=list)
+    priority: int = Field(default=0, ge=0, le=10)  # Higher = more urgent
+
+
+class TargetedRevisionPlan(BaseModel):
+    """A surgical revision plan targeting only weak beats and claims.
+
+    Produced by the quality evaluator when the script has localized issues
+    rather than pervasive failure. Allows the loop to repair specific beats
+    without rebuilding the entire script.
+    """
+
+    revision_id: str = Field(default_factory=lambda: f"rev_{uuid4().hex[:8]}")
+    # Beats that passed QC and should be preserved unchanged
+    stable_beats: list[BeatRevisionScope] = Field(default_factory=list)
+    # Beats that need repair
+    weak_beats: list[BeatRevisionScope] = Field(default_factory=list)
+    # Individual repair actions
+    actions: list[TargetedRewriteAction] = Field(default_factory=list)
+    # Short summary of what changed
+    revision_summary: str = ""
+    # When True, the script is too broken for targeted repair — do full restart
+    full_restart_recommended: bool = False
+    # If True, this plan replaces the existing script; if False, it patches it
+    is_patch: bool = True
+    # Evidence gaps requiring targeted retrieval
+    retrieval_gaps: list[str] = Field(default_factory=list)
+
+    @property
+    def has_targeted_actions(self) -> bool:
+        return bool(self.actions)
+
+    @property
+    def needs_retrieval(self) -> bool:
+        return bool(self.retrieval_gaps)
+
+    def stable_beat_ids(self) -> list[str]:
+        return [b.beat_id for b in self.stable_beats]
+
+    def weak_beat_ids(self) -> list[str]:
+        return [b.beat_id for b in self.weak_beats]
+
+
+class RevisionMode(StrEnum):
+    """Revision strategy for the iterative loop."""
+
+    FULL = "full"  # Re-run all content stages with broad feedback
+    TARGETED = "targeted"  # Surgical repair of specific weak beats only
+    NONE = "none"  # No revision needed — script is acceptable
+
+
+# ---------------------------------------------------------------------------
 # Pipeline stage 10: Publish queue
 # ---------------------------------------------------------------------------
 
@@ -1658,6 +1756,9 @@ class QualityEvaluation(BaseModel):
     research_gaps_identified: list[str] = Field(default_factory=list)
     rationale: str = ""
     iteration_number: int = 1
+    # Task 18: structured repair plan for targeted revision
+    targeted_revision_plan: TargetedRevisionPlan | None = None
+    revision_mode: RevisionMode = RevisionMode.NONE
 
     @property
     def has_blocking_claim_issues(self) -> bool:
@@ -1675,6 +1776,26 @@ class IterationState(BaseModel):
     is_converged: bool = False
     convergence_reason: str = ""
     should_rerun_research: bool = False
+    revision_mode: RevisionMode = RevisionMode.FULL
+    targeted_revision_plan: TargetedRevisionPlan | None = None
+
+    @property
+    def weak_beat_ids(self) -> list[str]:
+        """Return beat IDs that failed quality check and need targeted revision."""
+        if self.targeted_revision_plan is None:
+            return []
+        return [
+            action.beat_id
+            for action in self.targeted_revision_plan.actions
+            if action.action_type in {"rewrite_beat", "refresh_evidence"}
+        ]
+
+    @property
+    def requires_full_restart(self) -> bool:
+        """Return True when the script is fundamentally broken and full restart is cleaner."""
+        if self.targeted_revision_plan is None:
+            return False
+        return self.targeted_revision_plan.full_restart_recommended
 
 
 class ScriptingIterationSummary(BaseModel):

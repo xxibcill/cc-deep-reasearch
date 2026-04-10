@@ -51,6 +51,18 @@ Keep claim-safety issues separate from style issues:
 - critical_issues: other blockers such as broken logic or weak structure
 - improvement_suggestions: non-blocking improvements
 
+Task 18 — Targeted Revision:
+When the script has some beats that are solid and others that are weak, prefer
+targeted revision over full rewrite. Produce a targeted_revision_plan when:
+- Some beats are clearly strong (backed by good proof, clear logic)
+- Weak issues are isolated to specific beats or claims
+- The script is not fundamentally broken (e.g., wrong angle, missing structure)
+
+revision_mode:
+- none: passes threshold, no revision needed
+- targeted: use targeted revision plan to repair only weak beats
+- full: script too broken for surgical fix — do full rewrite
+
 Output format:
 
 overall_quality_score: 0.0-1.0
@@ -75,6 +87,43 @@ improvement_suggestions:
 
 research_gaps_identified:
 - (factual gap requiring new research, or omit section if none)
+
+# Task 18: Targeted Revision Plan
+revision_mode: none | targeted | full
+
+# Only present when revision_mode is targeted or full:
+targeted_revision_plan:
+  revision_summary: (1-sentence summary of what needs repair)
+  full_restart_recommended: true | false  # true when script is fundamentally broken
+  is_patch: true  # always true for targeted revision
+
+  stable_beats:  # beats that passed QC — preserve unchanged
+  - beat_id: (beat identifier or name from argument map)
+    beat_name: (display name)
+    is_stable: true
+    weakness_reason: ""  # empty for stable beats
+
+  weak_beats:  # beats needing repair
+  - beat_id: (beat identifier)
+    beat_name: (display name)
+    weak_claim_ids: (claim IDs that are unsupported or weak, or empty)
+    missing_proof_ids: (proof anchor IDs that are absent, or empty)
+    weakness_reason: (why this beat is weak)
+
+  actions:  # individual repair instructions
+  - action_type: rewrite_beat | refresh_evidence | qualify_claim | remove_claim
+    beat_id: (beat identifier, or "" for qualify/remove)
+    beat_name: (display name)
+    weak_claim_ids: (for rewrite_beat)
+    missing_proof_ids: (for refresh_evidence)
+    target_claim_text: (for qualify_claim or remove_claim)
+    target_claim_id: (for qualify_claim or remove_claim)
+    instruction: (specific instruction for the repair agent)
+    evidence_gaps: (specific evidence needed, or empty)
+    priority: 0-10
+
+  retrieval_gaps:  # evidence topics needed for targeted research
+  - (specific evidence topics needed, or omit section if none)
 
 rationale: (reasoning for scores and decision)"""
 

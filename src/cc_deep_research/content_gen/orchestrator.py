@@ -27,6 +27,7 @@ from cc_deep_research.content_gen.models import (
     PipelineStageTrace,
     QualityEvaluation,
     ResearchPack,
+    RevisionMode,
     ScoringOutput,
     ScriptClaimStatement,
     ScriptingContext,
@@ -34,6 +35,7 @@ from cc_deep_research.content_gen.models import (
     ScriptVersion,
     StageTraceMetadata,
     StrategyMemory,
+    TargetedRevisionPlan,
 )
 
 if TYPE_CHECKING:
@@ -596,7 +598,12 @@ class ContentGenOrchestrator:
         ctx: PipelineContext,
         progress_callback: Callable[[int, str], None] | None,
         stage_completed_callback: Callable[[int, str, str, PipelineContext], None] | None = None,
+        *,
+        retrieval_gaps: list[str] | None = None,
     ) -> PipelineContext:
+        # retrieval_gaps is forwarded to stage handlers via ctx.iteration_state
+        # from the targeted revision path — the base _run_stage does not use it directly
+        _ = retrieval_gaps  # noqa: ARG002
         stage_name = PIPELINE_STAGES[idx]
         label = PIPELINE_STAGE_LABELS.get(stage_name, stage_name)
         if progress_callback:
@@ -707,14 +714,29 @@ class ContentGenOrchestrator:
             if progress_callback:
                 progress_callback(-1, f"Iteration {iteration}/{max_iter}")
 
+            # Check for full restart recommendation
+            if iter_state.targeted_revision_plan and iter_state.targeted_revision_plan.full_restart_recommended:
+                logger.info("Full restart recommended — clearing targeted plan")
+                iter_state.targeted_revision_plan = None
+                iter_state.revision_mode = RevisionMode.FULL
+
             # Re-run research if gaps were identified in previous iteration
             if iteration > 1 and iter_state.should_rerun_research:
                 ctx = await self._run_stage(5, ctx, progress_callback, stage_completed_callback)
                 iter_state.should_rerun_research = False
 
-            # Run content stages 6-11
-            for idx in range(6, min(12, end_stage + 1)):
-                ctx = await self._run_stage(idx, ctx, progress_callback, stage_completed_callback)
+            # Determine revision mode for this iteration
+            revision_mode = iter_state.revision_mode if iteration > 1 else RevisionMode.FULL
+
+            # Run targeted or full content stages
+            if revision_mode == RevisionMode.TARGETED and iter_state.targeted_revision_plan:
+                ctx = await self._run_targeted_revision(ctx, progress_callback, end_stage, stage_completed_callback)
+            else:
+                for idx in range(6, min(12, end_stage + 1)):
+                    ctx = await self._run_stage(idx, ctx, progress_callback, stage_completed_callback)
+
+            # Re-fetch iter_state in case stage handlers replaced it
+            iter_state = ctx.iteration_state
 
             # Evaluate quality
             quality_eval = await self._evaluate_quality(ctx, iteration, threshold)
@@ -728,10 +750,51 @@ class ContentGenOrchestrator:
                 break
 
             # Prepare next iteration
-            if quality_eval.research_gaps_identified:
+            if quality_eval.research_gaps_identified or (
+                quality_eval.targeted_revision_plan and quality_eval.targeted_revision_plan.needs_retrieval
+            ):
                 iter_state.should_rerun_research = True
+
+            # Transfer targeted revision plan from evaluation to iteration state
+            if quality_eval.targeted_revision_plan:
+                iter_state.targeted_revision_plan = quality_eval.targeted_revision_plan
+                iter_state.revision_mode = quality_eval.revision_mode
+
             self._inject_feedback(ctx, quality_eval)
             iter_state.current_iteration += 1
+
+        return ctx
+
+    async def _run_targeted_revision(
+        self,
+        ctx: PipelineContext,
+        progress_callback: Callable[[int, str], None] | None,
+        end_stage: int,
+        stage_completed_callback: Callable[[int, str, str, PipelineContext], None] | None = None,
+    ) -> PipelineContext:
+        """Run content stages with targeted revision mode.
+
+        Only re-runs research for weak beats' evidence gaps and runs
+        scripting only for beats that need repair. Stable beats are preserved.
+        """
+        plan = ctx.iteration_state.targeted_revision_plan
+        if plan is None:
+            return ctx
+
+        # Step 1: Targeted research refresh for evidence gaps
+        retrieval_gaps = self._extract_retrieval_gaps(plan)
+        if retrieval_gaps:
+            logger.info("Running targeted research for %d gaps", len(retrieval_gaps))
+            ctx = await self._run_stage(5, ctx, progress_callback, stage_completed_callback, retrieval_gaps=retrieval_gaps)
+
+        # Step 2: Re-run argument map to incorporate refreshed evidence
+        if retrieval_gaps:
+            ctx = await self._run_stage(6, ctx, progress_callback, stage_completed_callback)
+
+        # Step 3: Run scripting and remaining stages (scripting uses the plan
+        # to know which beats to preserve and which to rewrite)
+        for idx in range(7, min(12, end_stage + 1)):
+            ctx = await self._run_stage(idx, ctx, progress_callback, stage_completed_callback)
 
         return ctx
 
@@ -804,6 +867,13 @@ class ContentGenOrchestrator:
     def _inject_feedback(ctx: PipelineContext, quality_eval: QualityEvaluation) -> None:
         if not ctx.scripting:
             return
+
+        # Handle targeted revision mode
+        if ContentGenOrchestrator._should_use_targeted_mode(quality_eval):
+            ContentGenOrchestrator._apply_targeted_feedback(ctx, quality_eval)
+            return
+
+        # Standard full feedback injection
         feedback_lines = [f"Iteration {quality_eval.iteration_number} feedback:"]
         if quality_eval.unsupported_claims:
             feedback_lines.append("Unsupported claims to remove, qualify, or prove:")
@@ -823,6 +893,78 @@ class ContentGenOrchestrator:
         feedback_text = "\n".join(feedback_lines)
         existing = ctx.scripting.research_context or ""
         ctx.scripting.research_context = f"{feedback_text}\n\n{existing}"
+        ctx.iteration_state.revision_mode = RevisionMode.FULL
+
+    # ------------------------------------------------------------------
+    # Targeted Revision helpers (Task 18)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_retrieval_gaps(plan: TargetedRevisionPlan | None) -> list[str]:
+        """Extract evidence gaps from a targeted revision plan."""
+        if plan is None:
+            return []
+        gaps = list(plan.retrieval_gaps)
+        for action in plan.actions:
+            gaps.extend(action.evidence_gaps)
+        return gaps
+
+    @staticmethod
+    def _build_targeted_feedback(quality_eval: QualityEvaluation) -> str:
+        """Build feedback string from a targeted revision plan for the next iteration."""
+        if quality_eval.targeted_revision_plan is None:
+            return ""
+        plan = quality_eval.targeted_revision_plan
+        parts: list[str] = []
+
+        if plan.revision_summary:
+            parts.append(f"Revision: {plan.revision_summary}")
+
+        for action in plan.actions:
+            if action.instruction:
+                parts.append(f"[{action.beat_name or action.beat_id}] {action.instruction}")
+            elif action.weak_claim_ids:
+                parts.append(f"[{action.beat_name or action.beat_id}] Rewrite needed for claims: {', '.join(action.weak_claim_ids)}")
+
+        if plan.full_restart_recommended:
+            parts.append("WARNING: Full restart recommended — targeted revision insufficient.")
+
+        return "\n".join(parts)
+
+    @staticmethod
+    def _should_use_targeted_mode(quality_eval: QualityEvaluation) -> bool:
+        """Decide whether to use targeted or full revision mode."""
+        if quality_eval.revision_mode == RevisionMode.FULL:
+            return False
+        if quality_eval.targeted_revision_plan is None:
+            return False
+        if quality_eval.targeted_revision_plan.full_restart_recommended:
+            return False
+        return quality_eval.targeted_revision_plan.has_targeted_actions
+
+    @staticmethod
+    def _apply_targeted_feedback(ctx: PipelineContext, quality_eval: QualityEvaluation) -> None:
+        """Inject targeted revision feedback into scripting context."""
+        if not ctx.scripting or not quality_eval.targeted_revision_plan:
+            return
+
+        plan = quality_eval.targeted_revision_plan
+
+        # Build targeted feedback
+        targeted_feedback = ContentGenOrchestrator._build_targeted_feedback(quality_eval)
+        if not targeted_feedback:
+            return
+
+        # Mark stable beats that should be preserved
+        stable_ids = plan.stable_beat_ids()
+
+        # Inject into research_context
+        existing = ctx.scripting.research_context or ""
+        ctx.scripting.research_context = f"TARGETED REVISION:\n{targeted_feedback}\n\nStable beats (preserve unchanged): {', '.join(stable_ids) if stable_ids else 'none'}\n\n{existing}"
+
+        # Store plan in iteration state for scripting agent to use
+        ctx.iteration_state.targeted_revision_plan = plan
+        ctx.iteration_state.revision_mode = RevisionMode.TARGETED
 
     def _summarize_input(self, idx: int, ctx: PipelineContext) -> str:
         stage = PIPELINE_STAGES[idx]
@@ -1456,6 +1598,12 @@ async def _stage_build_research_pack(
             if ctx.iteration_state.quality_history:
                 latest_eval = ctx.iteration_state.quality_history[-1]
                 research_gaps = list(latest_eval.research_gaps_identified)
+            # Task 18: also pull in targeted retrieval gaps from revision plan
+            if ctx.iteration_state.targeted_revision_plan:
+                plan = ctx.iteration_state.targeted_revision_plan
+                targeted_gaps = orch._extract_retrieval_gaps(plan)
+                if targeted_gaps:
+                    research_gaps = (research_gaps or []) + targeted_gaps
         research_pack = await agent.build(item, angle, feedback=feedback, research_gaps=research_gaps)
         _record_lane_completion(
             ctx,
