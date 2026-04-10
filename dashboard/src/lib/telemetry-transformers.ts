@@ -90,8 +90,8 @@ function getSortedEvents(events: TelemetryEvent[]): TelemetryEvent[] {
   });
 }
 
-const STALL_THRESHOLD_MS = 120000;
-const SLOW_THRESHOLD_MS = 30000;
+export const STALL_THRESHOLD_MS = 120000;
+export const SLOW_THRESHOLD_MS = 30000;
 
 export function deriveOperatorInsights(
   events: TelemetryEvent[],

@@ -11,6 +11,7 @@ const defaultSessionListQuery: SessionListQueryState = {
   search: '',
   status: '',
   activeOnly: false,
+  archivedOnly: false,
 };
 
 interface DashboardState {
@@ -274,3 +275,13 @@ const useDashboardStore = create<DashboardState>((set) => ({
 }));
 
 export default useDashboardStore;
+
+export const DEFAULT_EVENT_FILTERS: EventFilter = {
+  phase: [],
+  agent: [],
+  tool: [],
+  provider: [],
+  status: [],
+  eventTypes: [],
+  timeRange: null,
+};
