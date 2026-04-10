@@ -122,6 +122,9 @@ function matchesSessionListQuery(session: Session, query: SessionListQueryState)
   if (query.activeOnly && !session.active) {
     return false;
   }
+  if (query.archivedOnly && !session.archived) {
+    return false;
+  }
   if (query.status && session.status !== query.status) {
     return false;
   }
@@ -295,13 +298,3 @@ const useDashboardStore = create<DashboardState>((set) => ({
 }));
 
 export default useDashboardStore;
-
-export const DEFAULT_EVENT_FILTERS: EventFilter = {
-  phase: [],
-  agent: [],
-  tool: [],
-  provider: [],
-  status: [],
-  eventTypes: [],
-  timeRange: null,
-};
