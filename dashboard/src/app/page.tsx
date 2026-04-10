@@ -5,13 +5,9 @@ import { AlertCircle, Play, Radar } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { HelpCallout, OnboardingCard } from '@/components/ui/help-callout';
-import { MetricCard } from '@/components/ui/metric-card';
-import { ResearchContentActions } from '@/components/research-content-actions';
 import { SessionList } from '@/components/session-list';
 import { StartResearchForm } from '@/components/start-research-form';
 import { getApiErrorMessage, getSessions } from '@/lib/api';
-import { buildResearchContentBridgePayloadFromSession } from '@/lib/research-content-bridge';
 import useDashboardStore from '@/hooks/useDashboard';
 
 const SESSION_PAGE_SIZE = 24;
@@ -128,79 +124,47 @@ export default function HomePage() {
             </div>
 
             {hasNoSessions ? (
-              <>
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="info">No sessions yet</Badge>
-                </div>
-                <OnboardingCard
-                  id="first-session"
-                  title="Start your first research"
-                  description="Launch your first research session to begin monitoring runs, tracing agent behavior, and building your archive."
-                  steps={[
-                    { label: "Enter a research question", description: "Use the form on the right to describe what you want to learn." },
-                    { label: "Choose depth", description: "Quick for facts, Standard for overviews, Deep for thorough analysis." },
-                    { label: "Monitor progress", description: "Watch the live telemetry stream as agents collect and analyze sources." },
-                    { label: "Review the report", description: "When complete, read the generated report or send to Content Studio." },
-                  ]}
-                />
-              </>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="default">No sessions yet</Badge>
+              </div>
             ) : (
               <div className="space-y-4">
-                <HelpCallout
-                  id="home-workflow"
-                  title="Main workflow"
-                  content="Launch from Research, inspect live runs in Monitor, use Compare to measure changes across sessions, and move report-ready work into Content Studio when downstream production starts."
-                />
                 <div className="grid gap-3 md:grid-cols-3">
-                  <MetricCard
-                    description="Active research runs"
-                    icon={Play}
-                    label="Running now"
-                    tone="primary"
-                    value={loading ? '...' : activeSessions.length}
-                  />
-
-                  <MetricCard
-                    description="Failed or interrupted"
-                    icon={AlertCircle}
-                    label="Needs attention"
-                    tone="warning"
-                    value={loading ? '...' : failedSessions.length}
-                  />
-
-                  <MetricCard
-                    description={
-                      featuredReadySession
-                        ? 'Ready for review and downstream content work.'
-                        : 'Ready for review'
-                    }
-                    icon={Radar}
-                    label="Reports ready"
-                    tone="success"
-                    value={loading ? '...' : readySessions.length}
-                  >
-                    {featuredReadySession ? (
-                      <div className="space-y-3">
-                        <div className="space-y-1">
-                          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                            Suggested handoff
-                          </p>
-                          <p className="text-sm leading-6 text-foreground">
-                            {featuredReadySession.label}
-                          </p>
-                        </div>
-                        <ResearchContentActions
-                          payload={buildResearchContentBridgePayloadFromSession(
-                            featuredReadySession.sessionId,
-                            featuredReadySession,
-                            'home'
-                          )}
-                          primaryIntent="pipeline"
-                          size="sm"
-                        />
+                  <Card className="border-slate-200/80 shadow-sm">
+                    <CardContent className="flex items-center gap-3 p-4">
+                      <div className="rounded-xl bg-slate-100 p-2 text-slate-700">
+                        <Play className="h-4 w-4" />
                       </div>
-                    ) : null}
-                  </MetricCard>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Running now</p>
+                        <p className="text-lg font-semibold text-slate-900">{loading ? '...' : activeSessions.length}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-slate-200/80 shadow-sm">
+                    <CardContent className="flex items-center gap-3 p-4">
+                      <div className="rounded-xl bg-amber-100 p-2 text-amber-700">
+                        <AlertCircle className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Needs attention</p>
+                        <p className="text-lg font-semibold text-slate-900">{loading ? '...' : failedSessions.length}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-slate-200/80 shadow-sm">
+                    <CardContent className="flex items-center gap-3 p-4">
+                      <div className="rounded-xl bg-emerald-100 p-2 text-emerald-700">
+                        <Radar className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Reports ready</p>
+                        <p className="text-lg font-semibold text-slate-900">{loading ? '...' : readySessions.length}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
               </div>
             )}
