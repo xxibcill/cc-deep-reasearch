@@ -5,6 +5,7 @@ import { Archive, CheckCircle2, Trash2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { BacklogItem, BacklogItemStatus } from '@/types/content-gen'
@@ -68,6 +69,7 @@ export function BacklogPanel({
   const [statusFilter, setStatusFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
   const [busyKey, setBusyKey] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const categories = [...new Set(items.map((item) => item.category).filter(Boolean))].sort()
   const filteredItems = items
@@ -85,7 +87,10 @@ export function BacklogPanel({
   const runAction = async (key: string, action: () => Promise<void>) => {
     try {
       setBusyKey(key)
+      setActionError(null)
       await action()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err))
     } finally {
       setBusyKey(null)
     }
@@ -97,6 +102,11 @@ export function BacklogPanel({
 
   return (
     <div className="space-y-4">
+      {actionError && (
+        <Alert variant="destructive">
+          <AlertDescription>{actionError}</AlertDescription>
+        </Alert>
+      )}
       <div className="flex flex-col gap-3 rounded-[1rem] border border-border/75 bg-surface/62 p-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-1">
           <p className="text-sm font-medium text-foreground">Persistent backlog</p>
