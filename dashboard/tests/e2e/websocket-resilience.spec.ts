@@ -343,7 +343,10 @@ test("monitor shows failure state when WebSocket refuses connection but workspac
   // Wait for reconnect to exhaust (5 attempts × up to 30s backoff = lots, but real delay is small)
   await page.waitForTimeout(3000);
 
-  // One of the valid connection-state banners should be shown
+  // One of the valid connection-state banners should be shown.
+  // We accept any valid reconnecting state because the UI transitions through multiple
+  // states during reconnection (connecting → disconnected → reconnecting → etc.) and
+  // the exact state visible at test time depends on timing within the reconnect loop.
   const failureVisible = await page
     .getByText("Live stream unavailable")
     .isVisible()
