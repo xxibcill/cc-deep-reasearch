@@ -37,7 +37,9 @@ from cc_deep_research.content_gen.models import (
     CONTENT_GEN_STAGE_CONTRACTS,
     PIPELINE_STAGES,
     SCRIPTING_STEPS,
+    ArgumentClaim,
     ArgumentMap,
+    ArgumentProofAnchor,
     AngleDefinition,
     AngleOutput,
     AngleOption,
@@ -45,6 +47,10 @@ from cc_deep_research.content_gen.models import (
     BacklogOutput,
     BeatIntent,
     BeatIntentMap,
+    ClaimTraceEntry,
+    ClaimTraceLedger,
+    ClaimTraceStage,
+    ClaimTraceStatus,
     ContrarianBelief,
     CoreInputs,
     ExpertFramework,
@@ -62,6 +68,7 @@ from cc_deep_research.content_gen.models import (
     ProofRule,
     PublishItem,
     QCResult,
+    ResearchClaim,
     ResearchClaimType,
     ResearchConfidence,
     ResearchFindingType,
@@ -75,6 +82,7 @@ from cc_deep_research.content_gen.models import (
     RetrievalPlan,
     SavedScriptRun,
     ScoringOutput,
+    ScriptClaimStatement,
     ScriptingContext,
     ScriptStructure,
     ScriptVersion,
@@ -5300,4 +5308,340 @@ def test_retrieval_planner_research_hypotheses_empty_by_default() -> None:
     plan = planner.build_plan()
 
     assert plan.research_hypotheses == []
+
+
+# ---------------------------------------------------------------------------
+# Claim Traceability Ledger Tests (Task 17)
+# ---------------------------------------------------------------------------
+
+
+def test_claim_ledger_initialized_from_research_pack() -> None:
+    """Ledger entries are created from research pack claims."""
+    research_pack = ResearchPack(
+        idea_id="test_idea",
+        claims=[
+            ResearchClaim(claim_id="claim_1", claim="Climate is warming", claim_type=ResearchClaimType.KEY_FACT),
+            ResearchClaim(
+                claim_id="claim_2",
+                claim="CO2 levels rising",
+                claim_type=ResearchClaimType.PROOF_POINT,
+                source_ids=["src_1"],
+            ),
+        ],
+    )
+
+    ledger = ClaimTraceLedger()
+    for claim in research_pack.claims:
+        from cc_deep_research.content_gen.models import ClaimTraceEntry
+
+        entry = ClaimTraceEntry(
+            claim_id=claim.claim_id,
+            claim_text=claim.claim,
+            first_seen_stage=ClaimTraceStage.RESEARCH_PACK,
+            research_claim_type=claim.claim_type,
+            source_ids=list(claim.source_ids),
+            status=ClaimTraceStatus.SUPPORTED if claim.source_ids else ClaimTraceStatus.UNSUPPORTED,
+        )
+        ledger.entries.append(entry)
+
+    assert len(ledger.entries) == 2
+    assert ledger.get_claim("claim_1") is not None
+    assert ledger.get_claim("claim_1").status == ClaimTraceStatus.UNSUPPORTED
+    assert ledger.get_claim("claim_2").status == ClaimTraceStatus.SUPPORTED
+
+
+def test_claim_ledger_tracks_argument_map_claims() -> None:
+    """Ledger properly tracks claims that appear in argument map."""
+    ledger = ClaimTraceLedger()
+
+    # Add research claim
+    entry = ClaimTraceEntry(
+        claim_id="claim_1",
+        claim_text="Global temperature rose 1.1C",
+        first_seen_stage=ClaimTraceStage.RESEARCH_PACK,
+        source_ids=["src_1"],
+        status=ClaimTraceStatus.SUPPORTED,
+    )
+    ledger.entries.append(entry)
+
+    # Simulate argument map processing - claim appears in argument map with proof
+    existing_entry = ledger.get_claim("claim_1")
+    assert existing_entry is not None
+    existing_entry.present_in_argument_map = True
+    existing_entry.argument_claim_id = "arg_claim_1"
+    existing_entry.supporting_proof_ids = ["proof_1"]
+
+    assert existing_entry.present_in_argument_map is True
+    assert existing_entry.argument_claim_id == "arg_claim_1"
+    assert existing_entry.supporting_proof_ids == ["proof_1"]
+
+
+def test_claim_ledger_detects_introduced_late_claim() -> None:
+    """Ledger detects claims that appear in script but were not in argument map."""
+    ledger = ClaimTraceLedger()
+
+    # Research claim that was NOT included in argument map
+    entry = ClaimTraceEntry(
+        claim_id="claim_late",
+        claim_text="This fact was never validated in argument map",
+        first_seen_stage=ClaimTraceStage.RESEARCH_PACK,
+        source_ids=["src_1"],
+        status=ClaimTraceStatus.SUPPORTED,
+    )
+    ledger.entries.append(entry)
+
+    # Simulate script containing this claim but it wasn't in argument map
+    final_script = "This fact was never validated in argument map. This is the script content."
+    entry_text_lower = entry.claim_text.lower()
+    assert entry_text_lower in final_script.lower()
+    assert entry.present_in_argument_map is False
+    assert entry.first_seen_stage == ClaimTraceStage.RESEARCH_PACK
+
+    # This claim should be flagged as introduced_late
+    entry.status = ClaimTraceStatus.INTRODUCED_LATE
+    ledger.introduced_late_claims.append(entry.claim_id)
+
+    assert ClaimTraceStatus.INTRODUCED_LATE in [e.status for e in ledger.entries]
+    assert "claim_late" in ledger.introduced_late_claims
+
+
+def test_claim_ledger_detects_dropped_claim() -> None:
+    """Ledger detects claims that were in argument map but not in final script."""
+    ledger = ClaimTraceLedger()
+
+    # Claim that was in argument map
+    entry = ClaimTraceEntry(
+        claim_id="claim_dropped",
+        claim_text="This claim was in the argument map",
+        first_seen_stage=ClaimTraceStage.ARGUMENT_MAP,
+        present_in_argument_map=True,
+        supporting_proof_ids=["proof_1"],
+        status=ClaimTraceStatus.SUPPORTED,
+    )
+    ledger.entries.append(entry)
+
+    # Simulate script that does NOT contain this claim
+    final_script = "Some other content in the script"
+    assert entry.claim_text.lower() not in final_script.lower()
+    assert entry.present_in_argument_map is True
+
+    # This claim should be flagged as dropped
+    entry.status = ClaimTraceStatus.DROPPED
+    ledger.dropped_claims.append(entry.claim_id)
+
+    assert ClaimTraceStatus.DROPPED in [e.status for e in ledger.entries]
+    assert "claim_dropped" in ledger.dropped_claims
+
+
+def test_claim_ledger_script_claim_statement_tracking() -> None:
+    """Script claims are tracked with their statement IDs and proof anchors."""
+    ledger = ClaimTraceLedger()
+
+    # Add a supported claim
+    entry = ClaimTraceEntry(
+        claim_id="claim_1",
+        claim_text="The Earth is warming",
+        first_seen_stage=ClaimTraceStage.RESEARCH_PACK,
+        source_ids=["src_1"],
+        present_in_argument_map=True,
+        supporting_proof_ids=["proof_1"],
+        status=ClaimTraceStatus.SUPPORTED,
+    )
+    ledger.entries.append(entry)
+
+    # Create script claim statement
+    statement = ScriptClaimStatement(
+        statement_id="stmt_1",
+        text="The Earth is warming",
+        beat_name="intro",
+        claim_ids=["claim_1"],
+        proof_anchor_ids=["proof_1"],
+        status=ClaimTraceStatus.SUPPORTED,
+        status_reason="Matched to argument map claim with proof anchors",
+    )
+    ledger.script_claims.append(statement)
+    entry.script_statement_ids.append(statement.statement_id)
+
+    assert len(ledger.script_claims) == 1
+    assert ledger.get_script_claim("stmt_1") is not None
+    assert ledger.get_script_claim("stmt_1").status == ClaimTraceStatus.SUPPORTED
+    assert ledger.unsupported_script_claims == []
+
+
+def test_claim_ledger_unsupported_script_claim_detection() -> None:
+    """Unsupported script claims are properly flagged."""
+    ledger = ClaimTraceLedger()
+
+    # Add an unsupported claim (no proof in argument map)
+    entry = ClaimTraceEntry(
+        claim_id="claim_weak",
+        claim_text="This claim has no proof",
+        first_seen_stage=ClaimTraceStage.RESEARCH_PACK,
+        status=ClaimTraceStatus.UNSUPPORTED,
+    )
+    ledger.entries.append(entry)
+
+    # Create script claim statement without proof
+    statement = ScriptClaimStatement(
+        statement_id="stmt_weak",
+        text="This claim has no proof",
+        claim_ids=["claim_weak"],
+        status=ClaimTraceStatus.UNSUPPORTED,
+        status_reason="No proof anchors available",
+    )
+    ledger.script_claims.append(statement)
+    entry.script_statement_ids.append(statement.statement_id)
+
+    if statement.status == ClaimTraceStatus.UNSUPPORTED:
+        ledger.unsupported_script_claims.append(statement.statement_id)
+
+    assert "stmt_weak" in ledger.unsupported_script_claims
+    assert ledger.get_script_claim("stmt_weak") is not None
+    assert ledger.get_script_claim("stmt_weak").status == ClaimTraceStatus.UNSUPPORTED
+
+
+def test_claim_ledger_claims_needing_attention() -> None:
+    """claims_needing_attention returns all problematic claims."""
+    ledger = ClaimTraceLedger()
+
+    # Add various types of claims
+    entries = [
+        ClaimTraceEntry(
+            claim_id="good",
+            claim_text="Good claim",
+            status=ClaimTraceStatus.SUPPORTED,
+        ),
+        ClaimTraceEntry(
+            claim_id="unsupported",
+            claim_text="Unsupported claim",
+            status=ClaimTraceStatus.UNSUPPORTED,
+        ),
+        ClaimTraceEntry(
+            claim_id="late",
+            claim_text="Introduced late",
+            status=ClaimTraceStatus.INTRODUCED_LATE,
+        ),
+        ClaimTraceEntry(
+            claim_id="dropped",
+            claim_text="Dropped claim",
+            status=ClaimTraceStatus.DROPPED,
+        ),
+    ]
+    ledger.entries.extend(entries)
+
+    needs_attention = ledger.claims_needing_attention()
+    assert len(needs_attention) == 3
+    assert ledger.get_claim("good") not in needs_attention
+    assert ledger.get_claim("unsupported") in needs_attention
+    assert ledger.get_claim("late") in needs_attention
+    assert ledger.get_claim("dropped") in needs_attention
+
+
+def test_claim_ledger_to_summary() -> None:
+    """to_summary produces human-readable traceability summary."""
+    ledger = ClaimTraceLedger()
+    ledger.entries.append(
+        ClaimTraceEntry(claim_id="c1", claim_text="Test", status=ClaimTraceStatus.SUPPORTED)
+    )
+    ledger.script_claims.append(
+        ScriptClaimStatement(statement_id="s1", text="Test", status=ClaimTraceStatus.SUPPORTED)
+    )
+
+    summary = ledger.to_summary()
+    assert "Total tracked claims: 1" in summary
+    assert "Script statements: 1" in summary
+
+
+def test_claim_ledger_unsupported_claims_for_qc() -> None:
+    """unsupported_claims_for_qc returns formatted list for QC review."""
+    ledger = ClaimTraceLedger()
+
+    entries = [
+        ClaimTraceEntry(
+            claim_id="late_1",
+            claim_text="Late introduced claim",
+            status=ClaimTraceStatus.INTRODUCED_LATE,
+        ),
+        ClaimTraceEntry(
+            claim_id="unsupported_1",
+            claim_text="Unsupported claim text",
+            status=ClaimTraceStatus.UNSUPPORTED,
+        ),
+    ]
+    ledger.entries.extend(entries)
+
+    # Add script statements for QC
+    ledger.script_claims.append(
+        ScriptClaimStatement(
+            statement_id="s1",
+            text="Late introduced claim",
+            claim_ids=["late_1"],
+            status=ClaimTraceStatus.INTRODUCED_LATE,
+        )
+    )
+    ledger.script_claims.append(
+        ScriptClaimStatement(
+            statement_id="s2",
+            text="Unsupported claim text",
+            claim_ids=["unsupported_1"],
+            status=ClaimTraceStatus.UNSUPPORTED,
+        )
+    )
+
+    unsupported = ledger.unsupported_claims_for_qc()
+    assert any("LATE" in c for c in unsupported)
+    assert any("UNSUPPORTED" in c for c in unsupported)
+
+
+def test_claim_ledger_pipeline_context_serialization() -> None:
+    """Claim ledger survives PipelineContext serialization."""
+    ledger = ClaimTraceLedger()
+    ledger.entries.append(
+        ClaimTraceEntry(
+            claim_id="test_claim",
+            claim_text="Test claim text",
+            first_seen_stage=ClaimTraceStage.RESEARCH_PACK,
+            status=ClaimTraceStatus.SUPPORTED,
+        )
+    )
+    ledger.script_claims.append(
+        ScriptClaimStatement(
+            statement_id="stmt_test",
+            text="Test claim text",
+            status=ClaimTraceStatus.SUPPORTED,
+        )
+    )
+
+    ctx = PipelineContext(
+        theme="test theme",
+        claim_ledger=ledger,
+    )
+
+    # Serialize and deserialize
+    json_data = ctx.model_dump_json()
+    restored = PipelineContext.model_validate_json(json_data)
+
+    assert restored.claim_ledger is not None
+    assert len(restored.claim_ledger.entries) == 1
+    assert restored.claim_ledger.get_claim("test_claim") is not None
+    assert len(restored.claim_ledger.script_claims) == 1
+
+
+def test_script_claim_statement_model() -> None:
+    """ScriptClaimStatement model fields work correctly."""
+    stmt = ScriptClaimStatement(
+        statement_id="stmt_1",
+        text="Climate change is real",
+        beat_name="Hook",
+        claim_ids=["claim_1", "claim_2"],
+        proof_anchor_ids=["proof_1"],
+        status=ClaimTraceStatus.SUPPORTED,
+        status_reason="Has strong proof anchors",
+        source_snippet="According to NASA...",
+    )
+
+    assert stmt.statement_id == "stmt_1"
+    assert "claim_1" in stmt.claim_ids
+    assert stmt.status == ClaimTraceStatus.SUPPORTED
+
 

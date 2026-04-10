@@ -464,6 +464,7 @@ class ScriptingContext(BaseModel):
     visual_notes: list[VisualNote] | None = None
     qc: QCResult | None = None
     step_traces: list[ScriptingStepTrace] = Field(default_factory=list)
+    claim_ledger: ClaimTraceLedger | None = None
 
 
 class SavedScriptRun(BaseModel):
@@ -505,6 +506,217 @@ SCRIPTING_STEP_LABELS: dict[str, str] = {
     "add_visual_notes": "Adding visual notes",
     "run_qc": "Running QC",
 }
+
+
+# ---------------------------------------------------------------------------
+# Claim Traceability Ledger (Task 17)
+# ---------------------------------------------------------------------------
+
+
+class ClaimTraceStatus(StrEnum):
+    """Status of a claim as it travels through the pipeline."""
+
+    SUPPORTED = "supported"  # Has proof anchor backing
+    UNSUPPORTED = "unsupported"  # No proof anchor found
+    WEAKENED = "weakened"  # Originally supported but proof was dropped
+    INTRODUCED_LATE = "introduced_late"  # Added in scripting without prior backing
+    DROPPED = "dropped"  # Was in argument map but not in final script
+    UNKNOWN = "unknown"  # Cannot be determined
+
+
+class ClaimTraceStage(StrEnum):
+    """Pipeline stage where a claim first appeared."""
+
+    RESEARCH_PACK = "research_pack"  # ResearchClaim in research pack
+    ARGUMENT_MAP = "argument_map"  # ArgumentClaim in argument map
+    BEAT_PLAN = "beat_plan"  # Claim referenced in beat_claim_plan
+    SCRIPTING = "scripting"  # First appeared in script drafting
+
+
+class ScriptClaimStatement(BaseModel):
+    """A single claim/statement made in the final script with traceability."""
+
+    statement_id: str = Field(default_factory=lambda: f"stmt_{uuid4().hex[:8]}")
+    text: str = ""  # The actual claim text from the script
+    beat_name: str = ""  # Which beat this belongs to
+    claim_ids: list[str] = Field(default_factory=list)  # Research claim IDs this traces back to
+    proof_anchor_ids: list[str] = Field(default_factory=list)  # Proof anchors used
+    status: ClaimTraceStatus = ClaimTraceStatus.UNKNOWN
+    status_reason: str = ""  # Why this status was assigned
+    source_snippet: str = ""  # Exact text that supports this in research
+
+
+class ClaimTraceEntry(BaseModel):
+    """Single claim's lineage entry in the traceability ledger."""
+
+    claim_id: str = ""  # The canonical claim identifier
+    claim_text: str = ""  # The claim text at research stage
+    first_seen_stage: ClaimTraceStage = ClaimTraceStage.RESEARCH_PACK
+    # Research pack origin
+    research_claim_type: ResearchClaimType | None = None
+    source_ids: list[str] = Field(default_factory=list)
+    # Argument map state
+    present_in_argument_map: bool = False
+    argument_claim_id: str = ""  # claim_id in ArgumentClaim if present
+    supporting_proof_ids: list[str] = Field(default_factory=list)
+    # Beat plan state
+    present_in_beat_plan: bool = False
+    beat_ids: list[str] = Field(default_factory=list)
+    # Script state
+    present_in_script: bool = False
+    script_statement_ids: list[str] = Field(default_factory=list)  # References to ScriptClaimStatement
+    # Status tracking
+    status: ClaimTraceStatus = ClaimTraceStatus.UNKNOWN
+    status_changed_at: str = ""  # ISO timestamp of last status change
+    notes: str = ""
+
+
+class ClaimTraceLedger(BaseModel):
+    """Ledger tracking all claims and their lineage through the pipeline.
+
+    Machine-readable claim traceability that answers "where did this claim come from?"
+    for any major script assertion.
+    """
+
+    entries: list[ClaimTraceEntry] = Field(default_factory=list)
+    script_claims: list[ScriptClaimStatement] = Field(default_factory=list)
+    unsupported_script_claims: list[str] = Field(default_factory=list)  # statement_ids of unsupported claims
+    introduced_late_claims: list[str] = Field(default_factory=list)  # claim_ids introduced in scripting
+    dropped_claims: list[str] = Field(default_factory=list)  # claim_ids present in argument map but not script
+    weakened_claims: list[str] = Field(default_factory=list)  # claim_ids that lost proof support
+
+    def get_claim(self, claim_id: str) -> ClaimTraceEntry | None:
+        """Get trace entry by claim_id."""
+        return next((e for e in self.entries if e.claim_id == claim_id), None)
+
+    def get_script_claim(self, statement_id: str) -> ScriptClaimStatement | None:
+        """Get script claim statement by statement_id."""
+        return next((s for s in self.script_claims if s.statement_id == statement_id), None)
+
+    def claims_needing_attention(self) -> list[ClaimTraceEntry]:
+        """Return all claims with problematic statuses."""
+        return [
+            e
+            for e in self.entries
+            if e.status
+            in (
+                ClaimTraceStatus.UNSUPPORTED,
+                ClaimTraceStatus.INTRODUCED_LATE,
+                ClaimTraceStatus.WEAKENED,
+                ClaimTraceStatus.DROPPED,
+            )
+        ]
+
+    def unsupported_claims_for_qc(self) -> list[str]:
+        """Return human-readable list of unsupported claims for QC review."""
+        result: list[str] = []
+        for entry in self.entries:
+            if entry.status == ClaimTraceStatus.INTRODUCED_LATE:
+                result.append(f"LATE: {entry.claim_text}")
+            elif entry.status == ClaimTraceStatus.UNSUPPORTED:
+                result.append(f"UNSUPPORTED: {entry.claim_text}")
+            elif entry.status == ClaimTraceStatus.WEAKENED:
+                result.append(f"WEAKENED: {entry.claim_text}")
+            elif entry.status == ClaimTraceStatus.DROPPED:
+                result.append(f"DROPPED: {entry.claim_text}")
+        return result
+
+    def to_summary(self) -> str:
+        """Generate human-readable traceability summary."""
+        lines = ["Claim Traceability Summary:"]
+        lines.append(f"  Total tracked claims: {len(self.entries)}")
+        lines.append(f"  Script statements: {len(self.script_claims)}")
+        if self.unsupported_script_claims:
+            lines.append(f"  Unsupported in script: {len(self.unsupported_script_claims)}")
+        if self.introduced_late_claims:
+            lines.append(f"  Introduced late: {len(self.introduced_late_claims)}")
+        if self.dropped_claims:
+            lines.append(f"  Dropped from argument map: {len(self.dropped_claims)}")
+        if self.weakened_claims:
+            lines.append(f"  Weakened (lost proof): {len(self.weakened_claims)}")
+        return "\n".join(lines)
+
+
+def _build_claim_ledger_from_research_pack(
+    research_pack: ResearchPack | None,
+) -> ClaimTraceLedger:
+    """Initialize ledger entries from research pack claims."""
+    if research_pack is None:
+        return ClaimTraceLedger()
+
+    ledger = ClaimTraceLedger()
+    for claim in research_pack.claims:
+        entry = ClaimTraceEntry(
+            claim_id=claim.claim_id,
+            claim_text=claim.claim,
+            first_seen_stage=ClaimTraceStage.RESEARCH_PACK,
+            research_claim_type=claim.claim_type,
+            source_ids=list(claim.source_ids),
+            status=ClaimTraceStatus.SUPPORTED if claim.source_ids else ClaimTraceStatus.UNSUPPORTED,
+        )
+        ledger.entries.append(entry)
+
+    return ledger
+
+
+def _update_ledger_from_argument_map(
+    ledger: ClaimTraceLedger,
+    argument_map: ArgumentMap | None,
+) -> ClaimTraceLedger:
+    """Update ledger entries with argument map state."""
+    if argument_map is None:
+        return ledger
+
+    # Index existing entries by claim text for matching
+    claim_text_to_id: dict[str, str] = {e.claim_text: e.claim_id for e in ledger.entries}
+
+    for arg_claim in argument_map.safe_claims:
+        if arg_claim.claim in claim_text_to_id:
+            # Update existing entry
+            entry = ledger.get_claim(claim_text_to_id[arg_claim.claim])
+            if entry:
+                entry.present_in_argument_map = True
+                entry.argument_claim_id = arg_claim.claim_id
+                entry.supporting_proof_ids = list(arg_claim.supporting_proof_ids)
+                # Check if still has proof
+                if not arg_claim.supporting_proof_ids:
+                    entry.status = ClaimTraceStatus.UNSUPPORTED
+        else:
+            # New claim first seen in argument map
+            entry = ClaimTraceEntry(
+                claim_id=arg_claim.claim_id,
+                claim_text=arg_claim.claim,
+                first_seen_stage=ClaimTraceStage.ARGUMENT_MAP,
+                present_in_argument_map=True,
+                argument_claim_id=arg_claim.claim_id,
+                supporting_proof_ids=list(arg_claim.supporting_proof_ids),
+                status=ClaimTraceStatus.SUPPORTED if arg_claim.supporting_proof_ids else ClaimTraceStatus.UNSUPPORTED,
+            )
+            ledger.entries.append(entry)
+            claim_text_to_id[arg_claim.claim] = arg_claim.claim_id
+
+    # Process beat_claim_plan
+    for beat in argument_map.beat_claim_plan:
+        for claim_id in beat.claim_ids:
+            entry = ledger.get_claim(claim_id)
+            if entry:
+                entry.present_in_beat_plan = True
+                if beat.beat_id not in entry.beat_ids:
+                    entry.beat_ids.append(beat.beat_id)
+            else:
+                # Claim referenced in beat plan but not in our ledger - should not happen
+                # but handle gracefully by creating entry
+                entry = ClaimTraceEntry(
+                    claim_id=claim_id,
+                    claim_text="",
+                    first_seen_stage=ClaimTraceStage.BEAT_PLAN,
+                    present_in_beat_plan=True,
+                    beat_ids=[beat.beat_id],
+                    status=ClaimTraceStatus.UNKNOWN,
+                )
+                ledger.entries.append(entry)
+
+    return ledger
 
 
 # ---------------------------------------------------------------------------
@@ -1642,6 +1854,7 @@ class PipelineContext(BaseModel):
     performance: PerformanceAnalysis | None = None
     iteration_state: IterationState | None = None
     stage_traces: list[PipelineStageTrace] = Field(default_factory=list)
+    claim_ledger: ClaimTraceLedger | None = None
 
     @model_validator(mode="after")
     def _populate_candidate_queue(self) -> PipelineContext:

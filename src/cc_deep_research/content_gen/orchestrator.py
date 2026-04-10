@@ -14,6 +14,10 @@ from cc_deep_research.content_gen.models import (
     ArgumentMap,
     BeatIntent,
     BeatIntentMap,
+    ClaimTraceEntry,
+    ClaimTraceLedger,
+    ClaimTraceStage,
+    ClaimTraceStatus,
     CoreInputs,
     IterationState,
     OpportunityBrief,
@@ -24,6 +28,7 @@ from cc_deep_research.content_gen.models import (
     QualityEvaluation,
     ResearchPack,
     ScoringOutput,
+    ScriptClaimStatement,
     ScriptingContext,
     ScriptStructure,
     ScriptVersion,
@@ -241,6 +246,139 @@ def _seed_beat_intents_from_argument_map(argument_map: ArgumentMap | None) -> Be
             for beat in argument_map.beat_claim_plan
         ]
     )
+
+
+def _build_claim_ledger(
+    research_pack: ResearchPack | None,
+    argument_map: ArgumentMap | None,
+    scripting: ScriptingContext | None,
+) -> ClaimTraceLedger:
+    """Build claim traceability ledger from research pack, argument map, and scripting context."""
+    from datetime import UTC, datetime
+
+    # Initialize from research pack
+    ledger = ClaimTraceLedger()
+    claim_text_to_id: dict[str, str] = {}
+
+    if research_pack:
+        for claim in research_pack.claims:
+            entry = ClaimTraceEntry(
+                claim_id=claim.claim_id,
+                claim_text=claim.claim,
+                first_seen_stage=ClaimTraceStage.RESEARCH_PACK,
+                research_claim_type=claim.claim_type,
+                source_ids=list(claim.source_ids),
+                status=ClaimTraceStatus.SUPPORTED if claim.source_ids else ClaimTraceStatus.UNSUPPORTED,
+            )
+            ledger.entries.append(entry)
+            claim_text_to_id[claim.claim] = claim.claim_id
+
+    # Update from argument map
+    if argument_map:
+        for arg_claim in argument_map.safe_claims:
+            if arg_claim.claim in claim_text_to_id:
+                existing_entry = ledger.get_claim(claim_text_to_id[arg_claim.claim])
+                if existing_entry:
+                    existing_entry.present_in_argument_map = True
+                    existing_entry.argument_claim_id = arg_claim.claim_id
+                    existing_entry.supporting_proof_ids = list(arg_claim.supporting_proof_ids)
+                    if not arg_claim.supporting_proof_ids:
+                        existing_entry.status = ClaimTraceStatus.UNSUPPORTED
+            else:
+                entry = ClaimTraceEntry(
+                    claim_id=arg_claim.claim_id,
+                    claim_text=arg_claim.claim,
+                    first_seen_stage=ClaimTraceStage.ARGUMENT_MAP,
+                    present_in_argument_map=True,
+                    argument_claim_id=arg_claim.claim_id,
+                    supporting_proof_ids=list(arg_claim.supporting_proof_ids),
+                    status=ClaimTraceStatus.SUPPORTED if arg_claim.supporting_proof_ids else ClaimTraceStatus.UNSUPPORTED,
+                )
+                ledger.entries.append(entry)
+                claim_text_to_id[arg_claim.claim] = arg_claim.claim_id
+
+        for beat in argument_map.beat_claim_plan:
+            for claim_id in beat.claim_ids:
+                existing_entry = ledger.get_claim(claim_id)
+                if existing_entry:
+                    existing_entry.present_in_beat_plan = True
+                    if beat.beat_id not in existing_entry.beat_ids:
+                        existing_entry.beat_ids.append(beat.beat_id)
+                else:
+                    entry = ClaimTraceEntry(
+                        claim_id=claim_id,
+                        claim_text="",
+                        first_seen_stage=ClaimTraceStage.BEAT_PLAN,
+                        present_in_beat_plan=True,
+                        beat_ids=[beat.beat_id],
+                        status=ClaimTraceStatus.UNKNOWN,
+                    )
+                    ledger.entries.append(entry)
+
+    # Analyze script for claim traceability
+    if scripting:
+        final_script = ""
+        if scripting.qc and scripting.qc.final_script:
+            final_script = scripting.qc.final_script
+        elif scripting.tightened:
+            final_script = scripting.tightened.content
+        elif scripting.draft:
+            final_script = scripting.draft.content
+
+        if final_script:
+            # Match script claims against known claims from argument map
+            arg_claims_by_text = {c.claim: c for c in (argument_map.safe_claims if argument_map else [])}
+
+            for claim_text, arg_claim in arg_claims_by_text.items():
+                if claim_text.lower() in final_script.lower():
+                    existing_entry = ledger.get_claim(arg_claim.claim_id)
+                    if existing_entry:
+                        existing_entry.present_in_script = True
+                        statement = ScriptClaimStatement(
+                            text=claim_text,
+                            beat_name=existing_entry.beat_ids[0] if existing_entry.beat_ids else "",
+                            claim_ids=[arg_claim.claim_id],
+                            proof_anchor_ids=list(arg_claim.supporting_proof_ids),
+                            status=ClaimTraceStatus.SUPPORTED if arg_claim.supporting_proof_ids else ClaimTraceStatus.UNSUPPORTED,
+                            status_reason="Matched to argument map claim with proof anchors"
+                            if arg_claim.supporting_proof_ids
+                            else "Matched to argument map claim without proof anchors",
+                        )
+                        ledger.script_claims.append(statement)
+                        existing_entry.script_statement_ids.append(statement.statement_id)
+
+            # Detect introduced late claims (mentioned in script but not in argument map)
+            for entry in ledger.entries:
+                if (
+                    not entry.present_in_argument_map
+                    and entry.first_seen_stage == ClaimTraceStage.RESEARCH_PACK
+                    and entry.claim_text.lower() in final_script.lower()
+                ):
+                    entry.status = ClaimTraceStatus.INTRODUCED_LATE
+                    entry.status_changed_at = datetime.now(tz=UTC).isoformat()
+                    ledger.introduced_late_claims.append(entry.claim_id)
+                    statement = ScriptClaimStatement(
+                        text=entry.claim_text,
+                        claim_ids=[entry.claim_id],
+                        status=ClaimTraceStatus.INTRODUCED_LATE,
+                        status_reason="Claim from research pack appeared in script but was not in argument map",
+                    )
+                    ledger.script_claims.append(statement)
+                    entry.script_statement_ids.append(statement.statement_id)
+
+            # Detect dropped claims (in argument map but not in script)
+            for entry in ledger.entries:
+                if entry.present_in_argument_map and not entry.present_in_script:
+                    entry.status = ClaimTraceStatus.DROPPED
+                    entry.status_changed_at = datetime.now(tz=UTC).isoformat()
+                    ledger.dropped_claims.append(entry.claim_id)
+
+            # Flag unsupported script claims
+            for stmt in ledger.script_claims:
+                if stmt.status == ClaimTraceStatus.UNSUPPORTED:
+                    ledger.unsupported_script_claims.append(stmt.statement_id)
+
+    return ledger
 
 
 class ContentGenOrchestrator:
@@ -1400,6 +1538,11 @@ async def _stage_run_scripting(
         )
         start_step = 5 if seeded_ctx.structure and seeded_ctx.beat_intents else 3
         scripting = await agent.run_from_step(seeded_ctx, start_step)
+
+        # Build claim traceability ledger
+        claim_ledger = _build_claim_ledger(lane.research_pack, lane.argument_map, scripting)
+        scripting.claim_ledger = claim_ledger
+
         _record_lane_completion(
             ctx,
             candidate,
@@ -1518,11 +1661,33 @@ async def _stage_human_qc(orch: ContentGenOrchestrator, ctx: PipelineContext) ->
             packaging_summary = "; ".join(parts)
         research_summary = _format_qc_research_summary(lane.research_pack)
         argument_map_summary = _format_qc_argument_map_summary(lane.argument_map)
+
+        # Build claim traceability summary from ledger
+        claim_trace_summary = ""
+        if lane.scripting and lane.scripting.claim_ledger:
+            ledger = lane.scripting.claim_ledger
+            claim_trace_parts = ["Claim Traceability Analysis:"]
+            if ledger.unsupported_script_claims:
+                claim_trace_parts.append(f"Unsupported claims detected: {len(ledger.unsupported_script_claims)}")
+                claim_trace_parts.extend(f"- {c}" for c in ledger.unsupported_claims_for_qc()[:5])
+            if ledger.introduced_late_claims:
+                claim_trace_parts.append(f"Introduced late (not in argument map): {len(ledger.introduced_late_claims)}")
+            if ledger.dropped_claims:
+                claim_trace_parts.append(f"Dropped from argument map: {len(ledger.dropped_claims)}")
+            if ledger.weakened_claims:
+                claim_trace_parts.append(f"Lost proof support: {len(ledger.weakened_claims)}")
+            claim_trace_summary = "\n".join(claim_trace_parts)
+            if claim_trace_summary == "Claim Traceability Analysis:":
+                claim_trace_summary = "Claim Traceability Analysis: All script claims traceable to argument map."
+
+        # Combine summaries, with claim traceability first as it's most important for QC
+        full_research_summary = claim_trace_summary + "\n\n" + research_summary if claim_trace_summary else research_summary
+
         qc_gate = await agent.review(
             script=script,
             visual_summary=visual_summary,
             packaging_summary=packaging_summary,
-            research_summary=research_summary,
+            research_summary=full_research_summary,
             argument_map_summary=argument_map_summary,
         )
         _record_lane_completion(
