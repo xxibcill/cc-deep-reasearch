@@ -344,7 +344,7 @@ def test_content_gen_stage_contract_registry_tracks_expert_workflow_shapes() -> 
     scripting_contract = CONTENT_GEN_STAGE_CONTRACTS["run_scripting"]
     qc_contract = CONTENT_GEN_STAGE_CONTRACTS["human_qc"]
 
-    assert research_contract.contract_version == "1.1.0"
+    assert research_contract.contract_version == "1.2.0"
     assert "counterpoints" in research_contract.expected_sections
     assert "uncertainty_flags" in research_contract.expected_sections
 
@@ -3805,9 +3805,20 @@ research_stop_reason: Enough support for a qualitative teardown"""
     )
 
     assert "[src_01]" in agent.last_user_prompt
-    assert "query_family: proof" in agent.last_user_prompt
+    # Source catalog now includes quality signals (Task 16)
+    assert "authority:" in agent.last_user_prompt
+    assert "directness:" in agent.last_user_prompt
+    assert "freshness:" in agent.last_user_prompt
     assert result.supporting_sources[0].url == "https://example.com/pricing"
     assert result.supporting_sources[0].query_family == "proof"
+    # New quality fields populated by _score_source_quality (Task 16)
+    # quality_rank is always computed
+    assert result.supporting_sources[0].quality_rank is not None
+    assert result.supporting_sources[0].quality_rank >= 0.0
+    # directness and freshness are inferred from query family and date
+    assert result.supporting_sources[0].evidence_directness.value != "unknown"
+    assert result.supporting_sources[0].source_freshness.value != "unknown"
+    # authority may be unknown for generic URLs like example.com
     assert result.findings[0].source_ids == ["src_01"]
     assert result.claims[0].source_ids == ["src_01"]
     assert result.uncertainty_flags[0].source_ids == ["src_01"]
@@ -4504,6 +4515,291 @@ def test_research_pack_not_degraded_when_complete() -> None:
 
     assert pack.is_degraded is False
     assert pack.degradation_reason == ""
+
+
+# ---------------------------------------------------------------------------
+# Source Quality Scoring Tests (Task 16)
+# ---------------------------------------------------------------------------
+
+
+def test_source_authority_primary_domain() -> None:
+    """Primary source authority should be inferred for official domains."""
+    from cc_deep_research.content_gen.agents.research_pack import _infer_authority
+    from cc_deep_research.content_gen.models import SourceAuthority
+
+    # Government domains
+    source = _make_minimal_source("https://www.sec.gov/filing")
+    assert _infer_authority(source) == SourceAuthority.PRIMARY
+
+    # Academic/research domains
+    source = _make_minimal_source("https://arxiv.org/abs/1234")
+    assert _infer_authority(source) == SourceAuthority.PRIMARY
+
+    # Official documentation
+    source = _make_minimal_source("https://docs.stripe.com/payments")
+    assert _infer_authority(source) == SourceAuthority.PRIMARY
+
+
+def test_source_authority_secondary_domain() -> None:
+    """Secondary source authority should be inferred for news and analysis."""
+    from cc_deep_research.content_gen.agents.research_pack import _infer_authority
+    from cc_deep_research.content_gen.models import SourceAuthority
+
+    source = _make_minimal_source("https://techcrunch.com/startup-news")
+    assert _infer_authority(source) == SourceAuthority.SECONDARY
+
+    source = _make_minimal_source("https://hbr.org/2024/01/strategy")
+    assert _infer_authority(source) == SourceAuthority.SECONDARY
+
+
+def test_source_authority_tertiary_domain() -> None:
+    """Tertiary source authority should be inferred for social and aggregation sites."""
+    from cc_deep_research.content_gen.agents.research_pack import _infer_authority
+    from cc_deep_research.content_gen.models import SourceAuthority
+
+    source = _make_minimal_source("https://twitter.com/user/status/123")
+    assert _infer_authority(source) == SourceAuthority.TERTIARY
+
+    source = _make_minimal_source("https://reddit.com/r/python/comments/abc")
+    assert _infer_authority(source) == SourceAuthority.TERTIARY
+
+
+def test_source_authority_unknown_domain() -> None:
+    """Unknown authority for unrecognizable domains."""
+    from cc_deep_research.content_gen.agents.research_pack import _infer_authority
+    from cc_deep_research.content_gen.models import SourceAuthority
+
+    source = _make_minimal_source("https://example.com/some-page")
+    assert _infer_authority(source) == SourceAuthority.UNKNOWN
+
+
+def test_evidence_directness_by_family() -> None:
+    """Evidence directness should be inferred from query family."""
+    from cc_deep_research.content_gen.agents.research_pack import _infer_directness
+    from cc_deep_research.content_gen.models import EvidenceDirectness
+    from cc_deep_research.models import QueryFamily
+
+    # Proof families should be direct
+    plan = QueryFamily(query="test", family="proof", intent_tags=["evidence"])
+    assert _infer_directness(plan) == EvidenceDirectness.DIRECT
+
+    plan = QueryFamily(query="test", family="primary-source", intent_tags=["official"])
+    assert _infer_directness(plan) == EvidenceDirectness.DIRECT
+
+    # Competitor families should be indirect
+    plan = QueryFamily(query="test", family="competitor", intent_tags=["example"])
+    assert _infer_directness(plan) == EvidenceDirectness.INDIRECT
+
+    # Contrarian families should be anecdotal
+    plan = QueryFamily(query="test", family="contrarian", intent_tags=["myth"])
+    assert _infer_directness(plan) == EvidenceDirectness.ANECDOTAL
+
+
+def test_source_freshness_from_date() -> None:
+    """Source freshness should be inferred from published date."""
+    from cc_deep_research.content_gen.agents.research_pack import _infer_freshness
+    from cc_deep_research.content_gen.models import SourceFreshness
+    from datetime import datetime
+
+    # Current: within 6 months
+    recent = datetime.now().strftime("%Y-%m-%d")
+    assert _infer_freshness(recent) == SourceFreshness.CURRENT
+
+    # Recent: within 2 years
+    one_year_ago = (datetime.now().replace(year=datetime.now().year - 1)).strftime("%Y-%m-%d")
+    assert _infer_freshness(one_year_ago) == SourceFreshness.RECENT
+
+    # Stale: older than 2 years
+    three_years_ago = (datetime.now().replace(year=datetime.now().year - 3)).strftime("%Y-%m-%d")
+    assert _infer_freshness(three_years_ago) == SourceFreshness.STALE
+
+    # Unknown date
+    assert _infer_freshness(None) == SourceFreshness.UNKNOWN
+    assert _infer_freshness("") == SourceFreshness.UNKNOWN
+    assert _infer_freshness("unknown") == SourceFreshness.UNKNOWN
+
+
+def test_compute_quality_rank_primary_direct_current() -> None:
+    """Highest rank for primary, direct, current sources."""
+    from cc_deep_research.content_gen.agents.research_pack import _compute_quality_rank
+    from cc_deep_research.content_gen.models import (
+        EvidenceDirectness,
+        SourceAuthority,
+        SourceFreshness,
+    )
+
+    rank = _compute_quality_rank(
+        SourceAuthority.PRIMARY,
+        EvidenceDirectness.DIRECT,
+        SourceFreshness.CURRENT,
+    )
+    assert rank >= 0.9  # Should be very high
+
+
+def test_compute_quality_rank_tertiary_anecdotal_stale() -> None:
+    """Lowest rank for tertiary, anecdotal, stale sources."""
+    from cc_deep_research.content_gen.agents.research_pack import _compute_quality_rank
+    from cc_deep_research.content_gen.models import (
+        EvidenceDirectness,
+        SourceAuthority,
+        SourceFreshness,
+    )
+
+    rank = _compute_quality_rank(
+        SourceAuthority.TERTIARY,
+        EvidenceDirectness.ANECDOTAL,
+        SourceFreshness.STALE,
+    )
+    assert rank < 0.5  # Should be low
+
+
+def test_score_source_quality_populates_all_fields() -> None:
+    """_score_source_quality should populate authority, directness, freshness, and rank."""
+    from cc_deep_research.content_gen.agents.research_pack import _score_source_quality
+    from cc_deep_research.content_gen.models import (
+        EvidenceDirectness,
+        ResearchSource,
+        SourceAuthority,
+        SourceFreshness,
+    )
+    from cc_deep_research.models import QueryFamily
+
+    source = ResearchSource(
+        source_id="src_test",
+        url="https://arxiv.org/abs/1234",
+        title="Research paper",
+        provider="arxiv",
+        published_date="2026-01-15",
+    )
+    plan = QueryFamily(query="test", family="proof", intent_tags=["evidence"])
+
+    _score_source_quality(source, plan)
+
+    assert source.source_authority == SourceAuthority.PRIMARY
+    assert source.evidence_directness == EvidenceDirectness.DIRECT
+    assert source.source_freshness == SourceFreshness.CURRENT
+    assert source.quality_rank is not None
+    assert source.quality_rank >= 0.8
+
+
+def test_render_source_catalog_sorts_by_quality() -> None:
+    """Source catalog should be sorted by quality_rank descending."""
+    from cc_deep_research.content_gen.agents.research_pack import _render_source_catalog
+    from cc_deep_research.content_gen.models import (
+        EvidenceDirectness,
+        ResearchSource,
+        SourceAuthority,
+        SourceFreshness,
+    )
+
+    # Create sources with different quality ranks
+    low_quality = ResearchSource(
+        source_id="src_low",
+        url="https://twitter.com/status/123",
+        title="Tweet",
+        provider="twitter",
+        quality_rank=0.2,
+        source_authority=SourceAuthority.TERTIARY,
+        evidence_directness=EvidenceDirectness.ANECDOTAL,
+        source_freshness=SourceFreshness.UNKNOWN,
+    )
+    high_quality = ResearchSource(
+        source_id="src_high",
+        url="https://arxiv.org/abs/1234",
+        title="Research paper",
+        provider="arxiv",
+        quality_rank=0.9,
+        source_authority=SourceAuthority.PRIMARY,
+        evidence_directness=EvidenceDirectness.DIRECT,
+        source_freshness=SourceFreshness.CURRENT,
+    )
+
+    catalog = _render_source_catalog([low_quality, high_quality])
+
+    # High quality should appear first
+    high_pos = catalog.find("src_high")
+    low_pos = catalog.find("src_low")
+    assert high_pos < low_pos, "Higher quality source should appear first in catalog"
+
+
+def test_render_source_catalog_includes_quality_signals() -> None:
+    """Source catalog should include authority, directness, and freshness fields."""
+    from cc_deep_research.content_gen.agents.research_pack import _render_source_catalog
+    from cc_deep_research.content_gen.models import (
+        EvidenceDirectness,
+        ResearchSource,
+        SourceAuthority,
+        SourceFreshness,
+    )
+
+    source = ResearchSource(
+        source_id="src_01",
+        url="https://arxiv.org/abs/1234",
+        title="Research paper",
+        provider="arxiv",
+        quality_rank=0.9,
+        source_authority=SourceAuthority.PRIMARY,
+        evidence_directness=EvidenceDirectness.DIRECT,
+        source_freshness=SourceFreshness.CURRENT,
+    )
+
+    catalog = _render_source_catalog([source])
+
+    assert "authority: primary" in catalog
+    assert "directness: direct" in catalog
+    assert "freshness: current" in catalog
+    assert "STRONG" in catalog or "quality:" in catalog
+
+
+def test_strong_primary_source_outranks_weak_secondary() -> None:
+    """A strong primary source should outrank a weak secondary summary for the same claim."""
+    from cc_deep_research.content_gen.agents.research_pack import _score_source_quality
+    from cc_deep_research.content_gen.models import ResearchSource
+    from cc_deep_research.models import QueryFamily
+
+    # Strong primary: official documentation
+    strong_source = ResearchSource(
+        source_id="src_strong",
+        url="https://docs.stripe.com/payments",
+        title="Stripe Payments Documentation",
+        provider="stripe",
+        published_date="2026-03-01",
+    )
+    strong_plan = QueryFamily(query="stripe payments", family="primary-source", intent_tags=["official", "docs"])
+    _score_source_quality(strong_source, strong_plan)
+
+    # Weak secondary: a Twitter summary
+    weak_source = ResearchSource(
+        source_id="src_weak",
+        url="https://twitter.com/user/status/456",
+        title="Someone's tweet about Stripe",
+        provider="twitter",
+        published_date="2024-01-01",  # Stale
+    )
+    weak_plan = QueryFamily(query="stripe payments twitter", family="competitor", intent_tags=["social"])
+    _score_source_quality(weak_source, weak_plan)
+
+    # Strong source should have higher quality rank
+    assert strong_source.quality_rank is not None
+    assert weak_source.quality_rank is not None
+    assert strong_source.quality_rank > weak_source.quality_rank
+
+    # Strong source should be primary authority
+    assert strong_source.source_authority.value == "primary"
+    # Weak source should be tertiary or unknown
+    assert weak_source.source_authority.value in ("tertiary", "unknown")
+
+
+def _make_minimal_source(url: str) -> "ResearchSource":
+    """Helper to create a minimal ResearchSource for testing."""
+    from cc_deep_research.content_gen.models import ResearchSource
+
+    return ResearchSource(
+        source_id="src_test",
+        url=url,
+        title="Test",
+        provider="test",
+    )
 
 
 def test_production_brief_degraded_flag_blank_response() -> None:

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from cc_deep_research.content_gen.models import AngleOption, BacklogItem
 
-CONTRACT_VERSION = "1.1.0"
+CONTRACT_VERSION = "1.2.0"
 
 GLOBAL_RULES = """\
 You are building a compact research pack for a short-form video inside a modular workflow.
@@ -45,6 +45,24 @@ Do not over-research. Stop when these conditions are all met:
 - You can support the main promise
 - You have flagged uncertain claims
 - You can point each major finding or claim to one or more source_ids when possible
+
+Source Quality Guidelines:
+The source catalog is pre-sorted by evidence strength (strongest first).
+Each source carries explicit quality signals:
+- authority: primary (official docs/data) > secondary (news/analysis) > tertiary (summaries/social)
+- directness: direct (original data) > indirect (analysis) > anecdotal (personal accounts)
+- freshness: current (>6mo) > recent (>2yr) > stale
+- quality rank: 0-1 score combining all signals (higher = stronger)
+
+Evidence Preference Rules:
+- When multiple sources cover the same claim, prefer sources with higher quality_rank
+- For key facts and proof points, prefer authority=primary and directness=direct
+- If only weak sources (quality_rank < 0.5) are available for a claim, flag the claim
+  in uncertainty_flags with severity=high and note the weak support
+- Secondary and tertiary sources are acceptable for context and framing, but
+  anchor claims should cite primary sources
+- Stale sources (>2yr) may still be valid for foundational facts but should be
+  flagged if the topic is fast-moving
 
 Rules:
 - Use source_ids from the source catalog whenever a finding or claim has support
