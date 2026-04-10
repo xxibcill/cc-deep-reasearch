@@ -21,7 +21,10 @@ from cc_deep_research.content_gen.agents.backlog import (
 )
 from cc_deep_research.content_gen.agents.packaging import PackagingAgent, _parse_platform_packages
 from cc_deep_research.content_gen.agents.qc import QCAgent, _parse_qc_gate
-from cc_deep_research.content_gen.agents.quality_evaluator import _parse_quality_evaluation
+from cc_deep_research.content_gen.agents.quality_evaluator import (
+    QualityEvaluatorAgent,
+    _parse_quality_evaluation,
+)
 from cc_deep_research.content_gen.agents.research_pack import (
     ResearchPackAgent,
     _build_search_queries,
@@ -51,6 +54,7 @@ from cc_deep_research.content_gen.models import (
     ProductionBrief,
     PackagingOutput,
     PipelineContext,
+    PipelineCandidate,
     PipelineStageTrace,
     PlatformPackage,
     ProofRule,
@@ -71,6 +75,7 @@ from cc_deep_research.content_gen.models import (
     StrategyMemory,
 )
 from cc_deep_research.content_gen.orchestrator import _format_research_context
+from cc_deep_research.content_gen.progress import PipelineRunJobRegistry, PipelineRunStatus
 from cc_deep_research.content_gen.prompts import argument_map as argument_map_prompts
 from cc_deep_research.content_gen.prompts import angle as angle_prompts
 from cc_deep_research.content_gen.prompts import backlog as backlog_prompts
@@ -224,6 +229,47 @@ class _FakeQCAgent(QCAgent):
         return self._response
 
 
+class _StubTextRouter:
+    def __init__(self, responses: list[str], *, available: bool = True) -> None:
+        from cc_deep_research.llm.base import LLMProviderType, LLMResponse, LLMTransportType
+
+        self._responses = list(responses)
+        self._available = available
+        self.calls = 0
+        self._provider = LLMProviderType.OPENROUTER
+        self._transport = LLMTransportType.OPENROUTER_API
+        self._response_type = LLMResponse
+
+    def is_available(self, agent_id: str) -> bool:
+        del agent_id
+        return self._available
+
+    async def execute(
+        self,
+        agent_id: str,
+        prompt: str,
+        *,
+        system_prompt: str | None = None,
+        temperature: float = 0.3,
+        max_tokens: int = 4096,
+        metadata: dict | None = None,
+    ):
+        del agent_id, prompt, system_prompt, temperature, max_tokens, metadata
+        self.calls += 1
+        index = min(self.calls - 1, max(len(self._responses) - 1, 0))
+        content = self._responses[index] if self._responses else ""
+        return self._response_type(
+            content=content,
+            model="test-model",
+            provider=self._provider,
+            transport=self._transport,
+            latency_ms=1,
+            finish_reason="stop",
+            usage={},
+            metadata={},
+        )
+
+
 # ---------------------------------------------------------------------------
 # Dispatch table
 # ---------------------------------------------------------------------------
@@ -317,6 +363,7 @@ def test_pipeline_context_default_values() -> None:
     assert ctx.selected_idea_id == ""
     assert ctx.selection_reasoning == ""
     assert ctx.runner_up_idea_ids == []
+    assert ctx.active_candidates == []
     assert ctx.scripting is None
     assert ctx.qc_gate is None
     assert ctx.current_stage == 0
@@ -333,7 +380,7 @@ def test_argument_map_model_defaults_do_not_break_empty_instantiation() -> None:
 
 
 def test_pipeline_context_roundtrip() -> None:
-    """PipelineContext should survive JSON serialization."""
+    """PipelineContext should survive JSON serialization and derive the candidate queue."""
     ctx = PipelineContext(
         theme="test theme",
         strategy=StrategyMemory(niche="fitness", content_pillars=["strength"]),
@@ -381,6 +428,8 @@ def test_pipeline_context_roundtrip() -> None:
     assert restored.selected_idea_id == "idea-2"
     assert restored.selection_reasoning == "Better hook and clearer evidence fit."
     assert restored.runner_up_idea_ids == ["idea-1"]
+    assert [candidate.idea_id for candidate in restored.active_candidates] == ["idea-2", "idea-1"]
+    assert [candidate.role for candidate in restored.active_candidates] == ["primary", "runner_up"]
     assert len(restored.backlog.items) == 1
     assert restored.backlog.items[0].idea == "test idea"
 
@@ -1233,6 +1282,11 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
     assert ctx.shortlist == fixture["scoring"]["shortlist"]
     assert ctx.selected_idea_id == selected_idea_id
     assert ctx.selection_reasoning == fixture["scoring"]["selection_reasoning"]
+    assert [candidate.idea_id for candidate in ctx.active_candidates] == [
+        selected_idea_id,
+        fixture["scoring"]["runner_up_idea_ids"][0],
+    ]
+    assert [candidate.status for candidate in ctx.active_candidates] == ["in_production", "runner_up"]
     assert ctx.research_pack is not None
     assert ctx.research_pack.idea_id == selected_idea_id
     assert ctx.argument_map is not None
@@ -1243,6 +1297,8 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
     assert ctx.packaging.idea_id == selected_idea_id
     assert ctx.qc_gate is not None
     assert ctx.qc_gate.approved_for_publish is True
+    assert len(ctx.publish_items) == len(fixture["publish_items"])
+    assert ctx.publish_items[0].idea_id == selected_idea_id
     assert ctx.publish_item is not None
     assert ctx.publish_item.idea_id == selected_idea_id
     assert [trace.stage_name for trace in ctx.stage_traces] == PIPELINE_STAGES
@@ -1252,10 +1308,12 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
     assert score_trace.decision_summary == fixture["scoring"]["selection_reasoning"]
     assert score_trace.metadata.selected_idea_id == selected_idea_id
     assert score_trace.metadata.shortlist_count == len(fixture["scoring"]["shortlist"])
+    assert score_trace.metadata.active_candidate_count == 2
 
     angle_trace = next(trace for trace in ctx.stage_traces if trace.stage_name == "generate_angles")
     assert angle_trace.decision_summary == fixture["angles"]["selection_reasoning"]
     assert angle_trace.metadata.selected_angle_id == fixture["angles"]["selected_angle_id"]
+    assert angle_trace.metadata.active_candidate_count == 2
 
     research_trace = next(trace for trace in ctx.stage_traces if trace.stage_name == "build_research_pack")
     assert research_trace.decision_summary == fixture["research_pack"]["research_stop_reason"]
@@ -1415,10 +1473,16 @@ async def test_full_pipeline_direct_idea_bypasses_ideation_stages() -> None:
                 shortlist=["idea-1"],
                 selected_idea_id="idea-1",
                 selection_reasoning="Seeded directly from --idea.",
+                active_candidates=[
+                    PipelineCandidate(idea_id="idea-1", role="primary", status="selected")
+                ],
             ),
             shortlist=["idea-1"],
             selected_idea_id="idea-1",
             selection_reasoning="Seeded directly from --idea.",
+            active_candidates=[
+                PipelineCandidate(idea_id="idea-1", role="primary", status="selected")
+            ],
         )
 
         result = await orch.run_full_pipeline(
@@ -1434,6 +1498,7 @@ async def test_full_pipeline_direct_idea_bypasses_ideation_stages() -> None:
     assert executed == [0, 4]
     assert result.angles is not None
     assert result.angles.selected_angle_id == "angle-1"
+    assert [candidate.idea_id for candidate in result.active_candidates] == ["idea-1"]
 
 
 # ---------------------------------------------------------------------------
@@ -1476,6 +1541,89 @@ def test_publish_item_defaults() -> None:
     assert item.cross_post_targets == []
 
 
+def test_pipeline_context_syncs_publish_item_and_publish_items() -> None:
+    ctx = PipelineContext(
+        publish_items=[
+            PublishItem(idea_id="idea-1", platform="tiktok"),
+            PublishItem(idea_id="idea-1", platform="shorts"),
+        ]
+    )
+    assert ctx.publish_item is not None
+    assert ctx.publish_item.platform == "tiktok"
+
+    restored = PipelineContext(
+        publish_item=PublishItem(idea_id="idea-2", platform="reels"),
+    )
+    assert len(restored.publish_items) == 1
+    assert restored.publish_items[0].platform == "reels"
+
+
+def test_pipeline_job_registry_persists_completed_runs(tmp_path: Path) -> None:
+    registry = PipelineRunJobRegistry(path=tmp_path)
+    job = registry.create_job(
+        "pricing anchors",
+        from_stage=2,
+        to_stage=10,
+        pipeline_id="cgp-persisted",
+    )
+    ctx = PipelineContext(
+        theme="pricing anchors",
+        current_stage=6,
+        selected_idea_id="idea-1",
+    )
+
+    registry.mark_running(job.pipeline_id)
+    registry.update_context(job.pipeline_id, ctx)
+    registry.mark_completed(job.pipeline_id, context=ctx)
+
+    restored = PipelineRunJobRegistry(path=tmp_path)
+    restored_job = restored.get_job(job.pipeline_id)
+
+    assert restored_job is not None
+    assert restored_job.status == PipelineRunStatus.COMPLETED
+    assert restored_job.pipeline_context is not None
+    assert restored_job.pipeline_context.current_stage == 6
+    assert restored_job.pipeline_context.selected_idea_id == "idea-1"
+    assert restored_job.error is None
+    assert restored_job.started_at is not None
+    assert restored_job.completed_at is not None
+
+
+def test_pipeline_job_registry_recovers_interrupted_runs_from_disk(tmp_path: Path) -> None:
+    registry = PipelineRunJobRegistry(path=tmp_path)
+    job = registry.create_job(
+        "pricing anchors",
+        from_stage=0,
+        to_stage=12,
+        pipeline_id="cgp-interrupted",
+    )
+    ctx = PipelineContext(
+        theme="pricing anchors",
+        current_stage=8,
+        selected_idea_id="idea-2",
+        scripting=ScriptingContext(
+            raw_idea="Pricing anchor script",
+            qc=QCResult(checks=[], weakest_parts=[], final_script="Saved final script"),
+        ),
+    )
+
+    registry.mark_running(job.pipeline_id)
+    registry.update_context(job.pipeline_id, ctx)
+
+    restored = PipelineRunJobRegistry(path=tmp_path)
+    restored_job = restored.get_job(job.pipeline_id)
+
+    assert restored_job is not None
+    assert restored_job.status == PipelineRunStatus.FAILED
+    assert restored_job.error == "Pipeline run was interrupted before completion. Resume from the saved context."
+    assert restored_job.pipeline_context is not None
+    assert restored_job.pipeline_context.current_stage == 8
+    assert restored_job.pipeline_context.scripting is not None
+    assert restored_job.pipeline_context.scripting.qc is not None
+    assert restored_job.pipeline_context.scripting.qc.final_script == "Saved final script"
+    assert restored_job.stop_requested is False
+
+
 # ---------------------------------------------------------------------------
 # Storage layer
 # ---------------------------------------------------------------------------
@@ -1492,6 +1640,17 @@ def test_strategy_store_roundtrip(tmp_path: Path) -> None:
     loaded = store.load()
     assert loaded.niche == "fitness"
     assert loaded.content_pillars == ["strength", "mobility"]
+
+
+def test_strategy_store_uses_configured_path() -> None:
+    from cc_deep_research.config import Config
+    from cc_deep_research.content_gen.storage import StrategyStore
+
+    config = Config()
+    config.content_gen.strategy_path = "/tmp/custom-strategy.yaml"
+
+    store = StrategyStore(config=config)
+    assert str(store.path) == "/tmp/custom-strategy.yaml"
 
 
 def test_strategy_store_returns_blank_when_missing(tmp_path: Path) -> None:
@@ -1531,6 +1690,17 @@ def test_backlog_store_roundtrip(tmp_path: Path) -> None:
     assert loaded.items[0].idea == "idea 1"
 
 
+def test_backlog_store_uses_configured_path() -> None:
+    from cc_deep_research.config import Config
+    from cc_deep_research.content_gen.storage import BacklogStore
+
+    config = Config()
+    config.content_gen.backlog_path = "/tmp/custom-backlog.yaml"
+
+    store = BacklogStore(config=config)
+    assert str(store.path) == "/tmp/custom-backlog.yaml"
+
+
 def test_backlog_store_update_item(tmp_path: Path) -> None:
     """BacklogStore.update_item should modify a single item."""
     from cc_deep_research.content_gen.storage import BacklogStore
@@ -1564,7 +1734,7 @@ def test_backlog_service_persist_generated_uses_config_path(tmp_path: Path) -> N
 
 
 def test_backlog_service_apply_scoring_marks_selected(tmp_path: Path) -> None:
-    """Applying scoring should attach score metadata and promote the selected item."""
+    """Applying scoring should attach score metadata and keep one active runner-up."""
     from cc_deep_research.content_gen.backlog_service import BacklogService
     from cc_deep_research.content_gen.storage import BacklogStore
 
@@ -1581,8 +1751,9 @@ def test_backlog_service_apply_scoring_marks_selected(tmp_path: Path) -> None:
         ScoringOutput(
             scores=[
                 IdeaScores(idea_id="idea-1", total_score=31, recommendation="produce_now"),
-                IdeaScores(idea_id="idea-2", total_score=22, recommendation="hold"),
+                IdeaScores(idea_id="idea-2", total_score=22, recommendation="produce_now"),
             ],
+            shortlist=["idea-1", "idea-2"],
             selected_idea_id="idea-1",
             selection_reasoning="Best fit",
         )
@@ -1594,7 +1765,7 @@ def test_backlog_service_apply_scoring_marks_selected(tmp_path: Path) -> None:
     assert by_id["idea-1"].latest_score == 31
     assert by_id["idea-1"].latest_recommendation == "produce_now"
     assert by_id["idea-1"].selection_reasoning == "Best fit"
-    assert by_id["idea-2"].status == "backlog"
+    assert by_id["idea-2"].status == "runner_up"
 
 
 def test_publish_queue_store_roundtrip(tmp_path: Path) -> None:
@@ -1621,6 +1792,17 @@ def test_publish_queue_store_update_status(tmp_path: Path) -> None:
     updated = store.update_status("test", "tiktok", "published")
     assert updated is not None
     assert updated.status == "published"
+
+
+def test_publish_queue_store_uses_configured_path() -> None:
+    from cc_deep_research.config import Config
+    from cc_deep_research.content_gen.storage import PublishQueueStore
+
+    config = Config()
+    config.content_gen.publish_queue_path = "/tmp/custom-publish.yaml"
+
+    store = PublishQueueStore(config=config)
+    assert str(store.path) == "/tmp/custom-publish.yaml"
 
 
 # ---------------------------------------------------------------------------
@@ -2178,6 +2360,45 @@ async def test_publish_stage_requires_human_approval() -> None:
     result = await _stage_publish_queue(FakeOrchestrator(), ctx)
 
     assert result.publish_item is None
+    assert result.publish_items == []
+
+
+@pytest.mark.asyncio
+async def test_publish_stage_retains_all_publish_items() -> None:
+    from cc_deep_research.content_gen.orchestrator import _stage_publish_queue
+
+    items = [
+        PublishItem(idea_id="idea-1", platform="tiktok"),
+        PublishItem(idea_id="idea-1", platform="shorts"),
+    ]
+
+    class FakeOrchestrator:
+        def _get_agent(self, _name: str):
+            class FakePublishAgent:
+                async def schedule(self, packaging: PackagingOutput, *, idea_id: str) -> list[PublishItem]:
+                    assert idea_id == "idea-1"
+                    assert len(packaging.platform_packages) == 2
+                    return items
+
+            return FakePublishAgent()
+
+    ctx = PipelineContext(
+        selected_idea_id="idea-1",
+        packaging=PackagingOutput(
+            platform_packages=[
+                PlatformPackage(platform="tiktok", primary_hook="Hook"),
+                PlatformPackage(platform="shorts", primary_hook="Hook"),
+            ]
+        ),
+        qc_gate=HumanQCGate(approved_for_publish=True),
+    )
+
+    result = await _stage_publish_queue(FakeOrchestrator(), ctx)
+
+    assert len(result.publish_items) == 2
+    assert result.publish_items[1].platform == "shorts"
+    assert result.publish_item is not None
+    assert result.publish_item.platform == "tiktok"
 
 
 # ---------------------------------------------------------------------------
@@ -2550,6 +2771,76 @@ def test_cli_pipeline_from_file_loads_saved_context(
     assert result.output == ""
 
 
+def test_cli_pipeline_failure_saves_partial_context(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Pipeline failures should persist the latest stage context for resume."""
+
+    class FakeOrchestrator:
+        def __init__(self, _config) -> None:
+            pass
+
+        async def run_full_pipeline(
+            self,
+            theme: str,
+            *,
+            from_stage: int = 0,
+            to_stage: int | None = None,
+            initial_context: PipelineContext | None = None,
+            bypass_ideation: bool = False,
+            progress_callback=None,
+            stage_completed_callback=None,
+        ) -> PipelineContext:
+            del to_stage, initial_context, bypass_ideation, progress_callback
+            assert theme == "saved theme"
+            assert from_stage == 0
+            partial = PipelineContext(
+                theme=theme,
+                current_stage=6,
+                selected_idea_id="idea-partial",
+                scripting=ScriptingContext(
+                    raw_idea="partial idea",
+                    qc=QCResult(checks=[], weakest_parts=[], final_script="Partial script"),
+                ),
+            )
+            if stage_completed_callback is not None:
+                stage_completed_callback(6, "completed", "", partial)
+            raise ValueError("boom")
+
+    monkeypatch.setattr(
+        "cc_deep_research.content_gen.orchestrator.ContentGenOrchestrator",
+        FakeOrchestrator,
+    )
+
+    output_path = tmp_path / "pipeline_script.txt"
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "content-gen",
+            "pipeline",
+            "--theme",
+            "saved theme",
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Pipeline failed." in result.output
+    assert "Partial context saved to:" in result.output
+
+    context_path = output_path.with_suffix(output_path.suffix + ".context.json")
+    assert context_path.exists()
+    restored = PipelineContext.model_validate_json(context_path.read_text())
+    assert restored.current_stage == 6
+    assert restored.selected_idea_id == "idea-partial"
+    assert restored.scripting is not None
+    assert restored.scripting.qc is not None
+    assert restored.scripting.qc.final_script == "Partial script"
+
+
 def test_cli_pipeline_idea_seeds_direct_bypass_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2572,8 +2863,10 @@ def test_cli_pipeline_idea_seeds_direct_bypass_context(
             assert len(ctx.backlog.items) == 1
             assert ctx.backlog.items[0].idea == "Direct seed"
             assert ctx.selected_idea_id == ctx.backlog.items[0].idea_id
+            assert [candidate.idea_id for candidate in ctx.active_candidates] == [ctx.backlog.items[0].idea_id]
             assert ctx.scoring is not None
             assert ctx.scoring.selected_idea_id == ctx.backlog.items[0].idea_id
+            assert [candidate.idea_id for candidate in ctx.scoring.active_candidates] == [ctx.backlog.items[0].idea_id]
             return None
 
         async def run_full_pipeline(
@@ -2596,6 +2889,7 @@ def test_cli_pipeline_idea_seeds_direct_bypass_context(
             assert initial_context.backlog.items[0].source == "direct_idea"
             assert initial_context.scoring is not None
             assert initial_context.scoring.selection_reasoning == "Seeded directly from --idea."
+            assert initial_context.active_candidates[0].status == "selected"
             return initial_context
 
     monkeypatch.setattr(
@@ -2734,7 +3028,7 @@ def test_scoring_output_degraded_flag() -> None:
 
 
 def test_scoring_output_roundtrip_with_shortlist() -> None:
-    """ScoringOutput should preserve shortlist selection fields."""
+    """ScoringOutput should preserve shortlist selection fields and derive active candidates."""
     output = ScoringOutput(
         scores=[
             IdeaScores(
@@ -2763,6 +3057,8 @@ def test_scoring_output_roundtrip_with_shortlist() -> None:
     assert restored.selected_idea_id == "id1"
     assert restored.selection_reasoning == "Best mix of hook strength and evidence."
     assert restored.runner_up_idea_ids == ["id2"]
+    assert [candidate.idea_id for candidate in restored.active_candidates] == ["id1", "id2"]
+    assert [candidate.status for candidate in restored.active_candidates] == ["selected", "runner_up"]
 
 
 def test_derive_selection_prefers_explicit_selected_idea() -> None:
@@ -2824,6 +3120,17 @@ async def test_backlog_golden_fixture_happy_path_parses_items_and_metadata() -> 
 
 
 @pytest.mark.asyncio
+async def test_backlog_agent_raises_when_no_llm_route_available() -> None:
+    """Backlog generation should fail loudly when no configured LLM route is usable."""
+    from cc_deep_research.config import Config
+
+    agent = BacklogAgent(Config())
+
+    with pytest.raises(RuntimeError, match="No LLM route is available for the content backlog workflow"):
+        await agent.build_backlog("pricing", StrategyMemory())
+
+
+@pytest.mark.asyncio
 async def test_backlog_golden_fixture_malformed_output_marks_stage_degraded() -> None:
     """Malformed backlog output should degrade cleanly instead of fabricating ideas."""
     agent = _FakeBacklogAgent(load_text_fixture("content_gen_backlog_malformed.txt"))
@@ -2833,6 +3140,23 @@ async def test_backlog_golden_fixture_malformed_output_marks_stage_degraded() ->
     assert result.items == []
     assert result.rejected_count == 1
     assert result.rejection_reasons == ["Missing a concrete idea statement"]
+    assert result.is_degraded is True
+    assert result.degradation_reason == "zero valid ideas parsed from LLM response"
+
+
+@pytest.mark.asyncio
+async def test_backlog_agent_blank_response_retries_then_degrades() -> None:
+    """Blank backlog responses should retry once and still degrade cleanly."""
+    from cc_deep_research.config import Config
+
+    agent = BacklogAgent(Config())
+    router = _StubTextRouter(["", ""], available=True)
+    agent._router = router
+
+    result = await agent.build_backlog("pricing", StrategyMemory())
+
+    assert router.calls == 2
+    assert result.items == []
     assert result.is_degraded is True
     assert result.degradation_reason == "zero valid ideas parsed from LLM response"
 
@@ -3455,6 +3779,25 @@ async def test_qc_agent_raises_when_hook_strength_missing() -> None:
 
     with pytest.raises(ValueError, match="hook_strength"):
         await agent.review(script="Script")
+
+
+@pytest.mark.asyncio
+async def test_quality_evaluator_raises_on_blank_response_after_retry() -> None:
+    """Quality evaluation should fail loudly when the LLM returns empty shells."""
+    from cc_deep_research.config import Config
+
+    agent = QualityEvaluatorAgent(Config())
+    router = _StubTextRouter(["", ""], available=True)
+    agent._router = router
+
+    with pytest.raises(ValueError, match="quality evaluation workflow returned an empty response"):
+        await agent.evaluate_scripting(
+            scripting=ScriptingContext(raw_idea="Idea"),
+            iteration_number=1,
+            quality_threshold=0.75,
+        )
+
+    assert router.calls == 2
 
 
 def test_parse_backlog_items_handles_partial_items() -> None:
