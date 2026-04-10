@@ -7,6 +7,7 @@ export function Select({
   onChange,
   className,
   labelClassName,
+  testId,
 }: {
   label: string;
   value: string;
@@ -14,6 +15,7 @@ export function Select({
   onChange: (value: string) => void;
   className?: string;
   labelClassName?: string;
+  testId?: string;
 }) {
   return (
     <label
