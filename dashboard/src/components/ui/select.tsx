@@ -11,7 +11,6 @@ export function Select({
   testId,
   className,
   labelClassName,
-  testId,
 }: {
   label: string;
   value: string;
@@ -21,7 +20,6 @@ export function Select({
   testId?: string;
   className?: string;
   labelClassName?: string;
-  testId?: string;
 }) {
   const fallbackId = useId();
   const selectId = testId ? `${testId}-input` : fallbackId;
