@@ -17,6 +17,7 @@ from cc_deep_research.config import load_config
 from cc_deep_research.content_gen.models import (
     PIPELINE_STAGE_LABELS,
     PIPELINE_STAGES,
+    PipelineContext,
     ScriptingContext,
     ScriptingIterations,
     ScriptingIterationSummary,
@@ -116,7 +117,9 @@ def _serialize_scripting_payload(result: ScriptingRunResult) -> dict[str, Any]:
 
 
 def _serialize_saved_script_run(run: Any) -> dict[str, Any]:
-    payload = run.model_dump(mode="json")
+    raw = run.model_dump(mode="json")
+    assert isinstance(raw, dict)
+    payload = raw
     if payload.get("iterations") is None:
         payload.pop("iterations", None)
     return payload
@@ -174,7 +177,7 @@ def register_content_gen_routes(
                     )
                 )
 
-            def _stage_completed(stage_idx: int, status: str, detail: str, stage_ctx) -> None:
+            def _stage_completed(stage_idx: int, status: str, detail: str, stage_ctx: PipelineContext) -> None:
                 # Update job registry with latest context after each stage
                 job_registry.update_context(job.pipeline_id, stage_ctx)
                 serialized_context = json.loads(stage_ctx.model_dump_json())
@@ -334,7 +337,7 @@ def register_content_gen_routes(
                     )
                 )
 
-            def _stage_completed(stage_idx: int, status: str, detail: str, stage_ctx) -> None:
+            def _stage_completed(stage_idx: int, status: str, detail: str, stage_ctx: PipelineContext) -> None:
                 # Update job registry with latest context after each stage
                 job_registry.update_context(new_job.pipeline_id, stage_ctx)
                 serialized_context = json.loads(stage_ctx.model_dump_json())

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, AsyncIterator, cast
 from uuid import uuid4
 
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
@@ -190,7 +190,7 @@ class WebSocketDiagnosticsMiddleware:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Manage application lifecycle."""
     runtime = get_backend_runtime(app)
     await runtime.start()
@@ -281,7 +281,7 @@ def _serialize_timestamp(value: Any) -> str | None:
     if value is None:
         return None
     if hasattr(value, "isoformat"):
-        return value.isoformat()
+        return cast(str, value.isoformat())
     return str(value)
 
 
@@ -751,7 +751,7 @@ def register_routes(app: FastAPI) -> None:
                 status_code=404,
             )
 
-        response: dict = {
+        response: dict[str, Any] = {
             "run_id": job.run_id,
             "status": job.status.value,
             "created_at": job.created_at.isoformat(),
@@ -1720,7 +1720,7 @@ def register_routes(app: FastAPI) -> None:
         return JSONResponse(content=result.model_dump(mode="json"))
 
     @app.post("/api/sessions/{session_id}/rerun-step")
-    async def rerun_step(request: dict) -> JSONResponse:
+    async def rerun_step(request: dict[str, Any]) -> JSONResponse:
         """Rerun a single step from a checkpoint in debug mode.
 
         Args:

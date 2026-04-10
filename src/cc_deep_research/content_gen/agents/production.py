@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.content_gen.models import ProductionBrief, VisualPlanOutput
 from cc_deep_research.content_gen.prompts import production as prompts
@@ -99,7 +99,7 @@ _LIST_FIELDS = [
 
 
 def _parse_production_brief(text: str, idea_id: str) -> ProductionBrief:
-    data: dict = {"idea_id": idea_id}
+    data: dict[str, Any] = {"idea_id": idea_id}
     for field in ("location", "setup", "wardrobe", "backup_plan"):
         data[field] = _extract_field(text, field)
     for field in _LIST_FIELDS:

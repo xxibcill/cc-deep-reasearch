@@ -13,6 +13,8 @@ When editing prompts, ensure output format remains compatible with
 the parser in agents/performance.py.
 """
 
+from typing import Any
+
 from __future__ import annotations
 
 CONTRACT_VERSION = "1.0.0"
@@ -74,7 +76,7 @@ backlog_updates:
 def performance_user(
     *,
     video_id: str,
-    metrics: dict,
+    metrics: dict[str, Any],
     script: str = "",
     hook: str = "",
     caption: str = "",

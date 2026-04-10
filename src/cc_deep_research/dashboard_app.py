@@ -6,7 +6,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from cc_deep_research.telemetry import (
     get_default_dashboard_db_path,
@@ -481,7 +481,7 @@ def run_dashboard(
                 return False
             if provider_filter != "All" and row["provider"] != provider_filter:
                 return False
-            return event_type_filter == "All" or row["event_type"] == event_type_filter
+            return cast(bool, event_type_filter == "All" or row["event_type"] == event_type_filter)
 
         filtered_tail_rows = [row for row in tail_rows if include_row(row)]
         tail_df = pd.DataFrame(filtered_tail_rows)

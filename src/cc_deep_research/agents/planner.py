@@ -188,7 +188,7 @@ class PlannerAgent:
         should_continue = False
         reason_code = "goal_satisfied"
         rationale = "The planner believes the current evidence is sufficient for the research goal."
-        stop_reason = STOP_REASON_SUCCESS
+        stop_reason: str | None = STOP_REASON_SUCCESS
 
         if validation_requires_follow_up and next_queries:
             should_continue = True
