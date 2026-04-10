@@ -22,13 +22,16 @@ Recommended order:
 10. `10-search-query-families-and-freshness.md` - Done
 11. `11-tests-and-contract-docs.md` - Done
 12. `12-workflow-resume-and-idea-bypass.md` - Done
-13. `13-multi-lane-shortlist-fanout.md`
+13. `13-multi-lane-shortlist-fanout.md` - Planned
+14. `14-tolerant-stage-degraded-metadata.md` - Planned
+15. `15-retrieval-fanout-redesign.md` - Planned
 
 Parallelization guidance:
 - Tasks 02 and 03 can overlap only if one agent owns models and the other owns retrieval formatting.
 - Tasks 04 and 05 are sequential.
 - Tasks 08 and 09 can run in parallel after task 07.
 - Tasks 12 and 13 are optional follow-up workflow tasks and do not block the core expert-quality path.
+- Tasks 14 and 15 are follow-up reliability/scale tasks and can start after the current workflow hardening work is stable.
 
 Definition of "more expert" for this project:
 - Stronger editorial point of view
