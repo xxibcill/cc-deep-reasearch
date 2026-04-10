@@ -6,7 +6,7 @@ import { SessionPageFrame } from '@/components/session-page-frame';
 export default function SessionMonitorPage({ params }: { params: { id: string } }) {
   return (
     <SessionPageFrame
-      routeId={id}
+      routeId={params.id}
       view="monitor"
       title="Telemetry Monitor"
       description="Live telemetry, workflow graphs, event tables, and execution traces."
