@@ -17,8 +17,9 @@ from cc_deep_research.content_gen.models import (
     CoreInputs,
     IterationState,
     OpportunityBrief,
-    PipelineContext,
     PipelineCandidate,
+    PipelineContext,
+    PipelineLaneContext,
     PipelineStageTrace,
     QualityEvaluation,
     ResearchPack,
@@ -99,15 +100,65 @@ def _resolve_selected_angle(ctx: PipelineContext) -> Any | None:
     return ctx.angles.angle_options[0] if ctx.angles.angle_options else None
 
 
-def _update_primary_candidate_status(ctx: PipelineContext, status: str) -> None:
-    primary_id = _resolve_selected_idea_id(ctx)
-    if not primary_id:
+def _lane_candidates(ctx: PipelineContext) -> list[PipelineCandidate]:
+    candidates = ctx.active_candidates or (ctx.scoring.active_candidates if ctx.scoring else [])
+    if candidates:
+        return candidates
+
+    selected_idea_id = _resolve_selected_idea_id(ctx)
+    if not selected_idea_id:
+        return []
+    return [PipelineCandidate(idea_id=selected_idea_id, role="primary", status="selected")]
+
+
+def _resolve_lane_context(ctx: PipelineContext, idea_id: str) -> PipelineLaneContext | None:
+    return next((lane for lane in ctx.lane_contexts if lane.idea_id == idea_id), None)
+
+
+def _ensure_lane_context(ctx: PipelineContext, candidate: PipelineCandidate) -> PipelineLaneContext:
+    lane = _resolve_lane_context(ctx, candidate.idea_id)
+    if lane is not None:
+        lane.role = candidate.role
+        lane.status = candidate.status
+        return lane
+
+    lane = PipelineLaneContext(
+        idea_id=candidate.idea_id,
+        role=candidate.role,
+        status=candidate.status,
+    )
+    ctx.lane_contexts.append(lane)
+    return lane
+
+
+def _resolve_lane_item(ctx: PipelineContext, idea_id: str) -> Any | None:
+    if ctx.backlog is None:
+        return None
+    return next((item for item in ctx.backlog.items if item.idea_id == idea_id), None)
+
+
+def _resolve_lane_angle(ctx: PipelineContext, idea_id: str) -> Any | None:
+    lane = _resolve_lane_context(ctx, idea_id)
+    if lane is None or lane.angles is None:
+        return None
+    if lane.angles.selected_angle_id:
+        angle = next(
+            (option for option in lane.angles.angle_options if option.angle_id == lane.angles.selected_angle_id),
+            None,
+        )
+        if angle is not None:
+            return angle
+    return lane.angles.angle_options[0] if lane.angles.angle_options else None
+
+
+def _update_candidate_status(ctx: PipelineContext, idea_id: str, status: str) -> None:
+    if not idea_id:
         return
 
     def _update(candidates: list[PipelineCandidate]) -> list[PipelineCandidate]:
         updated: list[PipelineCandidate] = []
         for candidate in candidates:
-            if candidate.idea_id == primary_id and candidate.role == "primary":
+            if candidate.idea_id == idea_id:
                 updated.append(candidate.model_copy(update={"status": status}))
             else:
                 updated.append(candidate)
@@ -117,6 +168,50 @@ def _update_primary_candidate_status(ctx: PipelineContext, status: str) -> None:
         ctx.active_candidates = _update(ctx.active_candidates)
     if ctx.scoring and ctx.scoring.active_candidates:
         ctx.scoring.active_candidates = _update(ctx.scoring.active_candidates)
+    lane = _resolve_lane_context(ctx, idea_id)
+    if lane is not None:
+        lane.status = status
+
+
+def _sync_primary_lane(ctx: PipelineContext) -> None:
+    primary_lane = next(
+        (lane for lane in ctx.lane_contexts if lane.role == "primary"),
+        ctx.lane_contexts[0] if ctx.lane_contexts else None,
+    )
+    if primary_lane is None:
+        return
+
+    ctx.angles = primary_lane.angles
+    ctx.research_pack = primary_lane.research_pack
+    ctx.argument_map = primary_lane.argument_map
+    ctx.scripting = primary_lane.scripting
+    ctx.visual_plan = primary_lane.visual_plan
+    ctx.production_brief = primary_lane.production_brief
+    ctx.packaging = primary_lane.packaging
+    ctx.qc_gate = primary_lane.qc_gate
+    ctx.publish_items = list(primary_lane.publish_items)
+    ctx.publish_item = ctx.publish_items[0] if ctx.publish_items else None
+
+
+def _record_lane_completion(
+    ctx: PipelineContext,
+    candidate: PipelineCandidate,
+    *,
+    stage_index: int,
+    stage_field: str,
+    value: Any,
+) -> None:
+    lane = _ensure_lane_context(ctx, candidate)
+    setattr(lane, stage_field, value)
+    lane.last_completed_stage = max(lane.last_completed_stage, stage_index)
+    _sync_primary_lane(ctx)
+
+
+def _lane_publish_prereqs_met(ctx: PipelineContext) -> bool:
+    return any(
+        lane.packaging is not None and lane.qc_gate is not None and lane.qc_gate.approved_for_publish
+        for lane in ctx.lane_contexts
+    )
 
 
 def _seed_structure_from_argument_map(argument_map: ArgumentMap | None) -> ScriptStructure | None:
@@ -290,80 +385,71 @@ class ContentGenOrchestrator:
     def _check_prerequisites(self, idx: int, ctx: PipelineContext) -> tuple[bool, str]:
         """Check if prerequisites for a stage are met. Returns (met, reason_if_not)."""
         stage = PIPELINE_STAGES[idx]
-        if stage == "score_ideas":
-            if ctx.backlog is None:
-                return False, "backlog missing"
-        if stage == "generate_angles":
-            if ctx.backlog is None:
-                return False, "backlog missing"
-            if _resolve_selected_item(ctx) is None:
-                return False, "scoring/selected idea missing"
-        if stage == "build_research_pack":
-            if ctx.backlog is None or ctx.angles is None:
-                return False, "backlog/angles missing"
-            if _resolve_selected_item(ctx) is None:
-                return False, "selected idea not found"
-            if _resolve_selected_angle(ctx) is None:
-                return False, "selected angle missing"
-        if stage == "build_argument_map":
-            if ctx.research_pack is None:
-                return False, "research_pack missing"
-            if ctx.backlog is None or ctx.angles is None:
-                return False, "backlog/angles missing"
-            if _resolve_selected_item(ctx) is None:
-                return False, "selected idea not found"
-            if _resolve_selected_angle(ctx) is None:
-                return False, "selected angle missing"
-        if stage == "run_scripting":
-            if ctx.backlog is None or ctx.angles is None or ctx.argument_map is None:
-                return False, "backlog/angles/argument_map missing"
-            if _resolve_selected_item(ctx) is None:
-                return False, "selected idea not found"
-            if _resolve_selected_angle(ctx) is None:
-                return False, "selected angle missing"
-        if stage == "visual_translation":
-            if ctx.scripting is None:
-                return False, "scripting missing"
-            source = ctx.scripting.tightened or ctx.scripting.annotated_script or ctx.scripting.draft
-            if source is None or ctx.scripting.structure is None:
-                return False, "script/structure incomplete"
-        if stage == "production_brief":
-            if ctx.visual_plan is None:
-                return False, "visual_plan missing"
-        if stage == "packaging":
-            if ctx.scripting is None or ctx.angles is None:
-                return False, "scripting/angles missing"
-            if _resolve_selected_angle(ctx) is None:
-                return False, "selected angle missing"
-            source = ""
-            if ctx.scripting.qc:
-                source = ctx.scripting.qc.final_script
-            elif ctx.scripting.tightened:
-                source = ctx.scripting.tightened.content
-            elif ctx.scripting.draft:
-                source = ctx.scripting.draft.content
-            if not source:
-                return False, "script empty"
-        if stage == "human_qc":
-            if ctx.scripting is None:
-                return False, "scripting missing"
-            source = ""
-            if ctx.scripting.qc:
-                source = ctx.scripting.qc.final_script
-            elif ctx.scripting.tightened:
-                source = ctx.scripting.tightened.content
-            elif ctx.scripting.draft:
-                source = ctx.scripting.draft.content
-            if not source:
-                return False, "script empty"
-        if stage == "publish_queue":
-            if (
-                ctx.packaging is None
-                or not ctx.packaging.platform_packages
-                or ctx.qc_gate is None
-                or not ctx.qc_gate.approved_for_publish
-            ):
-                return False, "packaging empty, qc_gate missing, or not approved"
+        lane_candidates = _lane_candidates(ctx)
+        if stage == "score_ideas" and ctx.backlog is None:
+            return False, "backlog missing"
+        if stage == "generate_angles" and ctx.backlog is None:
+            return False, "backlog missing"
+        if stage == "generate_angles" and not any(
+            _resolve_lane_item(ctx, candidate.idea_id) is not None for candidate in lane_candidates
+        ):
+            return False, "scoring/selected idea missing"
+        if stage == "build_research_pack" and ctx.backlog is None:
+            return False, "backlog missing"
+        if stage == "build_research_pack" and not any(
+            _resolve_lane_item(ctx, candidate.idea_id) is not None
+            and _resolve_lane_angle(ctx, candidate.idea_id) is not None
+            for candidate in lane_candidates
+        ):
+            return False, "lane backlog/angles missing"
+        if stage == "build_argument_map" and not any(
+            (lane := _resolve_lane_context(ctx, candidate.idea_id)) is not None
+            and lane.research_pack is not None
+            and _resolve_lane_item(ctx, candidate.idea_id) is not None
+            and _resolve_lane_angle(ctx, candidate.idea_id) is not None
+            for candidate in lane_candidates
+        ):
+            return False, "lane research_pack/backlog/angles missing"
+        if stage == "run_scripting" and not any(
+            (lane := _resolve_lane_context(ctx, candidate.idea_id)) is not None
+            and lane.argument_map is not None
+            and _resolve_lane_item(ctx, candidate.idea_id) is not None
+            and _resolve_lane_angle(ctx, candidate.idea_id) is not None
+            for candidate in lane_candidates
+        ):
+            return False, "lane backlog/angles/argument_map missing"
+        if stage == "visual_translation" and not any(
+            lane.scripting is not None
+            and (lane.scripting.tightened or lane.scripting.annotated_script or lane.scripting.draft) is not None
+            and lane.scripting.structure is not None
+            for lane in ctx.lane_contexts
+        ):
+            return False, "lane script/structure incomplete"
+        if stage == "production_brief" and not any(lane.visual_plan is not None for lane in ctx.lane_contexts):
+            return False, "lane visual_plan missing"
+        if stage == "packaging" and not any(
+            lane.scripting is not None
+            and _resolve_lane_angle(ctx, lane.idea_id) is not None
+            and (
+                (lane.scripting.qc and lane.scripting.qc.final_script)
+                or (lane.scripting.tightened and lane.scripting.tightened.content)
+                or (lane.scripting.draft and lane.scripting.draft.content)
+            )
+            for lane in ctx.lane_contexts
+        ):
+            return False, "lane scripting/angles missing or script empty"
+        if stage == "human_qc" and not any(
+            lane.scripting is not None
+            and (
+                (lane.scripting.qc and lane.scripting.qc.final_script)
+                or (lane.scripting.tightened and lane.scripting.tightened.content)
+                or (lane.scripting.draft and lane.scripting.draft.content)
+            )
+            for lane in ctx.lane_contexts
+        ):
+            return False, "lane script empty"
+        if stage == "publish_queue" and not _lane_publish_prereqs_met(ctx):
+            return False, "lane packaging empty, qc_gate missing, or not approved"
         return True, ""
 
     async def _run_stage(
@@ -797,9 +883,8 @@ class ContentGenOrchestrator:
                 meta.platforms_count = len(ctx.publish_items)
             elif ctx.publish_item:
                 meta.selected_idea_id = ctx.publish_item.idea_id or _resolve_selected_idea_id(ctx)
-        elif stage == "human_qc":
-            if ctx.qc_gate:
-                meta.approved = ctx.qc_gate.approved_for_publish
+        elif stage == "human_qc" and ctx.qc_gate:
+            meta.approved = ctx.qc_gate.approved_for_publish
 
         if ctx.iteration_state:
             meta.current_iteration = ctx.iteration_state.current_iteration
@@ -1154,6 +1239,8 @@ async def _stage_score_ideas(orch: ContentGenOrchestrator, ctx: PipelineContext)
         ctx.selected_idea_id = ""
         ctx.selection_reasoning = ""
         ctx.runner_up_idea_ids = []
+        ctx.active_candidates = []
+        ctx.lane_contexts = []
         return ctx
     agent = orch._get_agent("backlog")
     strategy = ctx.strategy or StrategyMemory()
@@ -1164,50 +1251,84 @@ async def _stage_score_ideas(orch: ContentGenOrchestrator, ctx: PipelineContext)
     ctx.selection_reasoning = ctx.scoring.selection_reasoning
     ctx.runner_up_idea_ids = ctx.scoring.runner_up_idea_ids
     ctx.active_candidates = list(ctx.scoring.active_candidates)
-    BacklogService(orch._config).apply_scoring(ctx.scoring)
+    ctx = PipelineContext.model_validate(ctx.model_dump())
+    BacklogService(getattr(orch, "_config", None)).apply_scoring(ctx.scoring)
     return ctx
 
 
 async def _stage_generate_angles(
     orch: ContentGenOrchestrator, ctx: PipelineContext
 ) -> PipelineContext:
-    item = _resolve_selected_item(ctx)
-    if item is None:
+    candidates = _lane_candidates(ctx)
+    if not candidates:
         return ctx
     strategy = ctx.strategy or StrategyMemory()
     agent = orch._get_agent("angle")
-    ctx.angles = await agent.generate(item, strategy)
+    for candidate in candidates:
+        item = _resolve_lane_item(ctx, candidate.idea_id)
+        if item is None:
+            continue
+        angles = await agent.generate(item, strategy)
+        _record_lane_completion(ctx, candidate, stage_index=4, stage_field="angles", value=angles)
     return ctx
 
 
 async def _stage_build_research_pack(
     orch: ContentGenOrchestrator, ctx: PipelineContext
 ) -> PipelineContext:
-    if ctx.backlog is None or ctx.angles is None:
+    if ctx.backlog is None:
         return ctx
-    item = _resolve_selected_item(ctx)
-    angle = _resolve_selected_angle(ctx)
-    if item is None or angle is None:
+    candidates = _lane_candidates(ctx)
+    if not candidates:
         return ctx
     agent = orch._get_agent("research")
-    feedback = ""
-    if ctx.iteration_state and ctx.iteration_state.should_rerun_research and ctx.iteration_state.latest_feedback:
-        feedback = ctx.iteration_state.latest_feedback
-    ctx.research_pack = await agent.build(item, angle, feedback=feedback)
+    for candidate in candidates:
+        item = _resolve_lane_item(ctx, candidate.idea_id)
+        angle = _resolve_lane_angle(ctx, candidate.idea_id)
+        if item is None or angle is None:
+            continue
+        feedback = ""
+        if (
+            candidate.role == "primary"
+            and ctx.iteration_state
+            and ctx.iteration_state.should_rerun_research
+            and ctx.iteration_state.latest_feedback
+        ):
+            feedback = ctx.iteration_state.latest_feedback
+        research_pack = await agent.build(item, angle, feedback=feedback)
+        _record_lane_completion(
+            ctx,
+            candidate,
+            stage_index=5,
+            stage_field="research_pack",
+            value=research_pack,
+        )
     return ctx
 
 
 async def _stage_build_argument_map(
     orch: ContentGenOrchestrator, ctx: PipelineContext
 ) -> PipelineContext:
-    if ctx.research_pack is None or ctx.backlog is None or ctx.angles is None:
+    if ctx.backlog is None:
         return ctx
-    item = _resolve_selected_item(ctx)
-    angle = _resolve_selected_angle(ctx)
-    if item is None or angle is None:
+    candidates = _lane_candidates(ctx)
+    if not candidates:
         return ctx
     agent = orch._get_agent("argument_map")
-    ctx.argument_map = await agent.build(item, angle, ctx.research_pack)
+    for candidate in candidates:
+        lane = _resolve_lane_context(ctx, candidate.idea_id)
+        item = _resolve_lane_item(ctx, candidate.idea_id)
+        angle = _resolve_lane_angle(ctx, candidate.idea_id)
+        if lane is None or lane.research_pack is None or item is None or angle is None:
+            continue
+        argument_map = await agent.build(item, angle, lane.research_pack)
+        _record_lane_completion(
+            ctx,
+            candidate,
+            stage_index=6,
+            stage_field="argument_map",
+            value=argument_map,
+        )
     return ctx
 
 
@@ -1216,154 +1337,214 @@ async def _stage_run_scripting(
 ) -> PipelineContext:
     from cc_deep_research.content_gen.backlog_service import BacklogService
 
-    if ctx.backlog is None or ctx.angles is None or ctx.argument_map is None:
+    if ctx.backlog is None:
         return ctx
-    item = _resolve_selected_item(ctx)
-    angle = _resolve_selected_angle(ctx)
-    raw_idea = item.idea if item else ctx.theme
+    candidates = _lane_candidates(ctx)
+    if not candidates:
+        return ctx
     agent = orch._get_agent("scripting")
-    # Preserve existing research context (includes feedback from prior iterations)
-    existing_research = ""
-    if ctx.scripting and ctx.scripting.research_context:
-        existing_research = ctx.scripting.research_context
-    research_context = existing_research or _format_research_context(ctx.research_pack)
-    seeded_ctx = ScriptingContext(
-        raw_idea=raw_idea,
-        research_context=research_context,
-        tone=(angle.tone if angle else ""),
-        cta=(angle.cta if angle else ""),
-        argument_map=ctx.argument_map,
-        core_inputs=CoreInputs(
-            topic=item.idea if item else raw_idea,
-            outcome=(
-                (angle.primary_takeaway if angle else "")
-                or (item.problem if item else raw_idea)
+    service: BacklogService | None = None
+    for candidate in candidates:
+        lane = _resolve_lane_context(ctx, candidate.idea_id)
+        item = _resolve_lane_item(ctx, candidate.idea_id)
+        angle = _resolve_lane_angle(ctx, candidate.idea_id)
+        if lane is None or lane.argument_map is None:
+            continue
+        raw_idea = item.idea if item else ctx.theme
+        existing_research = ""
+        if lane.scripting and lane.scripting.research_context:
+            existing_research = lane.scripting.research_context
+        research_context = existing_research or _format_research_context(lane.research_pack)
+        seeded_ctx = ScriptingContext(
+            raw_idea=raw_idea,
+            research_context=research_context,
+            tone=(angle.tone if angle else ""),
+            cta=(angle.cta if angle else ""),
+            argument_map=lane.argument_map,
+            core_inputs=CoreInputs(
+                topic=item.idea if item else raw_idea,
+                outcome=((angle.primary_takeaway if angle else "") or (item.problem if item else raw_idea)),
+                audience=((angle.target_audience if angle else "") or (item.audience if item else "")),
             ),
-            audience=(
-                (angle.target_audience if angle else "")
-                or (item.audience if item else "")
+            angle=AngleDefinition(
+                angle=(angle.core_promise if angle else "") or raw_idea,
+                content_type=((angle.format if angle else "") or (angle.lens if angle else "") or "Insight"),
+                core_tension=((angle.viewer_problem if angle else "") or (item.problem if item else "") or raw_idea),
+                why_it_works=(angle.why_this_version_should_exist if angle else ""),
             ),
-        ),
-        angle=AngleDefinition(
-            angle=(angle.core_promise if angle else "") or raw_idea,
-            content_type=(
-                (angle.format if angle else "")
-                or (angle.lens if angle else "")
-                or "Insight"
-            ),
-            core_tension=(
-                (angle.viewer_problem if angle else "")
-                or (item.problem if item else "")
-                or raw_idea
-            ),
-            why_it_works=(angle.why_this_version_should_exist if angle else ""),
-        ),
-        structure=_seed_structure_from_argument_map(ctx.argument_map),
-        beat_intents=_seed_beat_intents_from_argument_map(ctx.argument_map),
-    )
-    start_step = 5 if seeded_ctx.structure and seeded_ctx.beat_intents else 3
-    ctx.scripting = await agent.run_from_step(seeded_ctx, start_step)
-    selected_idea_id = _resolve_selected_idea_id(ctx)
-    if selected_idea_id:
-        BacklogService(orch._config).mark_in_production(
-            selected_idea_id,
-            source_pipeline_id=ctx.pipeline_id,
+            structure=_seed_structure_from_argument_map(lane.argument_map),
+            beat_intents=_seed_beat_intents_from_argument_map(lane.argument_map),
         )
-        _update_primary_candidate_status(ctx, "in_production")
+        start_step = 5 if seeded_ctx.structure and seeded_ctx.beat_intents else 3
+        scripting = await agent.run_from_step(seeded_ctx, start_step)
+        _record_lane_completion(
+            ctx,
+            candidate,
+            stage_index=7,
+            stage_field="scripting",
+            value=scripting,
+        )
+        if service is None:
+            service = BacklogService(getattr(orch, "_config", None))
+        service.mark_in_production(candidate.idea_id, source_pipeline_id=ctx.pipeline_id)
+        _update_candidate_status(ctx, candidate.idea_id, "in_production")
     return ctx
 
 
 async def _stage_visual_translation(
     orch: ContentGenOrchestrator, ctx: PipelineContext
 ) -> PipelineContext:
-    if ctx.scripting is None:
-        return ctx
-    source = ctx.scripting.tightened or ctx.scripting.annotated_script or ctx.scripting.draft
-    structure = ctx.scripting.structure
-    if source is None or structure is None:
+    candidates = _lane_candidates(ctx)
+    if not candidates:
         return ctx
     agent = orch._get_agent("visual")
-    ctx.visual_plan = await agent.translate(source, structure)
+    for candidate in candidates:
+        lane = _resolve_lane_context(ctx, candidate.idea_id)
+        if lane is None or lane.scripting is None:
+            continue
+        source = lane.scripting.tightened or lane.scripting.annotated_script or lane.scripting.draft
+        structure = lane.scripting.structure
+        if source is None or structure is None:
+            continue
+        visual_plan = await agent.translate(source, structure)
+        _record_lane_completion(
+            ctx,
+            candidate,
+            stage_index=8,
+            stage_field="visual_plan",
+            value=visual_plan,
+        )
     return ctx
 
 
 async def _stage_production_brief(
     orch: ContentGenOrchestrator, ctx: PipelineContext
 ) -> PipelineContext:
-    if ctx.visual_plan is None:
+    candidates = _lane_candidates(ctx)
+    if not candidates:
         return ctx
     agent = orch._get_agent("production")
-    ctx.production_brief = await agent.brief(ctx.visual_plan)
+    for candidate in candidates:
+        lane = _resolve_lane_context(ctx, candidate.idea_id)
+        if lane is None or lane.visual_plan is None:
+            continue
+        production_brief = await agent.brief(lane.visual_plan)
+        _record_lane_completion(
+            ctx,
+            candidate,
+            stage_index=9,
+            stage_field="production_brief",
+            value=production_brief,
+        )
     return ctx
 
 
 async def _stage_packaging(orch: ContentGenOrchestrator, ctx: PipelineContext) -> PipelineContext:
-    if ctx.scripting is None or ctx.angles is None:
-        return ctx
-    source = ctx.scripting.qc.final_script if ctx.scripting.qc else ""
-    if not source:
-        source = ctx.scripting.tightened.content if ctx.scripting.tightened else ""
-    if not source:
-        source = ctx.scripting.draft.content if ctx.scripting.draft else ""
-    if not source:
-        return ctx
-
-    script = ScriptVersion(content=source, word_count=len(source.split()))
-    angle = _resolve_selected_angle(ctx)
-    if angle is None:
+    candidates = _lane_candidates(ctx)
+    if not candidates:
         return ctx
     agent = orch._get_agent("packaging")
     platforms = orch._config.content_gen.default_platforms
     strategy = ctx.strategy or StrategyMemory()
-    ctx.packaging = await agent.generate(script, angle, platforms, strategy=strategy)
+    for candidate in candidates:
+        lane = _resolve_lane_context(ctx, candidate.idea_id)
+        angle = _resolve_lane_angle(ctx, candidate.idea_id)
+        if lane is None or lane.scripting is None or angle is None:
+            continue
+        source = lane.scripting.qc.final_script if lane.scripting.qc else ""
+        if not source:
+            source = lane.scripting.tightened.content if lane.scripting.tightened else ""
+        if not source:
+            source = lane.scripting.draft.content if lane.scripting.draft else ""
+        if not source:
+            continue
+        script = ScriptVersion(content=source, word_count=len(source.split()))
+        packaging = await agent.generate(script, angle, platforms, strategy=strategy)
+        _record_lane_completion(
+            ctx,
+            candidate,
+            stage_index=10,
+            stage_field="packaging",
+            value=packaging,
+        )
     return ctx
 
 
 async def _stage_human_qc(orch: ContentGenOrchestrator, ctx: PipelineContext) -> PipelineContext:
-    if ctx.scripting is None:
+    candidates = _lane_candidates(ctx)
+    if not candidates:
         return ctx
-    script = ctx.scripting.qc.final_script if ctx.scripting.qc else ""
-    if not script:
-        script = ctx.scripting.tightened.content if ctx.scripting.tightened else ""
-    if not script:
-        script = ctx.scripting.draft.content if ctx.scripting.draft else ""
-    if not script:
-        return ctx
-    visual_summary = ""
-    if ctx.visual_plan:
-        visual_summary = "; ".join(
-            f"{bv.beat}: {bv.visual}" for bv in ctx.visual_plan.visual_plan[:5]
-        )
-    packaging_summary = ""
-    if ctx.packaging:
-        parts = [f"{p.platform}: {p.primary_hook}" for p in ctx.packaging.platform_packages]
-        packaging_summary = "; ".join(parts)
-    research_summary = _format_qc_research_summary(ctx.research_pack)
-    argument_map_summary = _format_qc_argument_map_summary(ctx.argument_map)
     agent = orch._get_agent("qc")
-    ctx.qc_gate = await agent.review(
-        script=script,
-        visual_summary=visual_summary,
-        packaging_summary=packaging_summary,
-        research_summary=research_summary,
-        argument_map_summary=argument_map_summary,
-    )
+    for candidate in candidates:
+        lane = _resolve_lane_context(ctx, candidate.idea_id)
+        if lane is None or lane.scripting is None:
+            continue
+        script = lane.scripting.qc.final_script if lane.scripting.qc else ""
+        if not script:
+            script = lane.scripting.tightened.content if lane.scripting.tightened else ""
+        if not script:
+            script = lane.scripting.draft.content if lane.scripting.draft else ""
+        if not script:
+            continue
+        visual_summary = ""
+        if lane.visual_plan:
+            visual_summary = "; ".join(f"{bv.beat}: {bv.visual}" for bv in lane.visual_plan.visual_plan[:5])
+        packaging_summary = ""
+        if lane.packaging:
+            parts = [f"{p.platform}: {p.primary_hook}" for p in lane.packaging.platform_packages]
+            packaging_summary = "; ".join(parts)
+        research_summary = _format_qc_research_summary(lane.research_pack)
+        argument_map_summary = _format_qc_argument_map_summary(lane.argument_map)
+        qc_gate = await agent.review(
+            script=script,
+            visual_summary=visual_summary,
+            packaging_summary=packaging_summary,
+            research_summary=research_summary,
+            argument_map_summary=argument_map_summary,
+        )
+        _record_lane_completion(
+            ctx,
+            candidate,
+            stage_index=11,
+            stage_field="qc_gate",
+            value=qc_gate,
+        )
     return ctx
 
 
 async def _stage_publish_queue(
     orch: ContentGenOrchestrator, ctx: PipelineContext
 ) -> PipelineContext:
-    if ctx.packaging is None or ctx.qc_gate is None or not ctx.qc_gate.approved_for_publish:
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+
+    candidates = _lane_candidates(ctx)
+    if not candidates:
         return ctx
-    idea_id = _resolve_selected_idea_id(ctx)
     agent = orch._get_agent("publish")
-    items = await agent.schedule(ctx.packaging, idea_id=idea_id)
-    ctx.publish_items = items
-    if items:
-        ctx.publish_item = items[0]
-    else:
-        ctx.publish_item = None
+    service: BacklogService | None = None
+    for candidate in candidates:
+        lane = _resolve_lane_context(ctx, candidate.idea_id)
+        if (
+            lane is None
+            or lane.packaging is None
+            or lane.qc_gate is None
+            or not lane.qc_gate.approved_for_publish
+        ):
+            continue
+        items = await agent.schedule(lane.packaging, idea_id=candidate.idea_id)
+        _record_lane_completion(
+            ctx,
+            candidate,
+            stage_index=12,
+            stage_field="publish_items",
+            value=items,
+        )
+        if items:
+            if service is None:
+                service = BacklogService(getattr(orch, "_config", None))
+            service.mark_published(candidate.idea_id, source_pipeline_id=ctx.pipeline_id)
+            _update_candidate_status(ctx, candidate.idea_id, "published")
+    _sync_primary_lane(ctx)
     return ctx
 
 
