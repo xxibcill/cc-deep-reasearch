@@ -105,7 +105,7 @@ class ResearchLeadAgent:
         Returns:
             Strategy dictionary with task plan.
         """
-        strategies = {
+        strategies: dict[ResearchDepth, dict[str, Any]] = {
             ResearchDepth.QUICK: {
                 "query_variations": 1,
                 "max_sources": 3,
@@ -129,7 +129,7 @@ class ResearchLeadAgent:
             },
         }
 
-        base_strategy = dict(strategies[depth])
+        base_strategy = strategies[depth].copy()
 
         # Adjust based on complexity
         if complexity == "simple":

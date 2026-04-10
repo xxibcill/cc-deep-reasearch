@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { deriveOperatorInsights, deriveTelemetryState } from "@/lib/telemetry-transformers";
+import { deriveOperatorInsights, deriveTelemetryState, STALL_THRESHOLD_MS } from "@/lib/telemetry-transformers";
 import type { TelemetryEvent } from "@/types/telemetry";
 
 function buildEvent(
@@ -116,7 +116,7 @@ test("deriveOperatorInsights flags completed runs that are missing a report", as
 });
 
 test("deriveOperatorInsights detects stalled active runs", async () => {
-  const stalledTimestamp = new Date(Date.now() - 121_000).toISOString();
+  const stalledTimestamp = new Date(Date.now() - STALL_THRESHOLD_MS - 1000).toISOString();
   const events = [
     buildEvent(1, {
       timestamp: stalledTimestamp,

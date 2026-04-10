@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import type {
-  BacklogItem,
   PipelineRunSummary,
   PipelineContext,
   StageProgress,
@@ -9,11 +8,6 @@ import type {
   SavedScriptRun,
 } from '@/types/content-gen';
 import {
-  listBacklog,
-  updateBacklogItem as updateBacklogItemApi,
-  selectBacklogItem as selectBacklogItemApi,
-  archiveBacklogItem as archiveBacklogItemApi,
-  deleteBacklogItem as deleteBacklogItemApi,
   listPipelines,
   startPipeline,
   getPipeline,
@@ -39,11 +33,6 @@ interface ContentGenState {
   // Strategy
   strategy: StrategyMemory | null;
   strategyLoading: boolean;
-
-  // Backlog
-  backlog: BacklogItem[];
-  backlogPath: string | null;
-  backlogLoading: boolean;
 
   // Publish queue
   publishQueue: PublishItem[];
@@ -71,12 +60,6 @@ interface ContentGenState {
   loadStrategy: () => Promise<void>;
   updateStrategy: (patch: Record<string, unknown>) => Promise<void>;
 
-  loadBacklog: () => Promise<void>;
-  updateBacklogItem: (ideaId: string, patch: Record<string, unknown>) => Promise<void>;
-  selectBacklogItem: (ideaId: string) => Promise<void>;
-  archiveBacklogItem: (ideaId: string) => Promise<void>;
-  deleteBacklogItem: (ideaId: string) => Promise<void>;
-
   loadPublishQueue: () => Promise<void>;
   removeFromQueue: (ideaId: string, platform: string) => Promise<void>;
 
@@ -94,9 +77,6 @@ const initialState = {
   pipelineStageProgress: {},
   strategy: null,
   strategyLoading: false,
-  backlog: [],
-  backlogPath: null,
-  backlogLoading: false,
   publishQueue: [],
   publishQueueLoading: false,
   scripts: [],
@@ -239,77 +219,6 @@ const useContentGen = create<ContentGenState>((set, get) => ({
     }
   },
 
-  loadBacklog: async () => {
-    set({ backlogLoading: true, error: null });
-    try {
-      const backlog = await listBacklog();
-      set({
-        backlog: backlog.items,
-        backlogPath: backlog.path || null,
-        backlogLoading: false,
-      });
-    } catch (err) {
-      set({
-        backlogLoading: false,
-        error: getApiErrorMessage(err, 'Failed to load backlog.'),
-      });
-    }
-  },
-
-  updateBacklogItem: async (ideaId, patch) => {
-    set({ error: null });
-    try {
-      const updated = await updateBacklogItemApi(ideaId, patch);
-      set((state) => ({
-        backlog: state.backlog.map((item) => (item.idea_id === ideaId ? updated : item)),
-      }));
-    } catch (err) {
-      set({ error: getApiErrorMessage(err, 'Failed to update backlog item.') });
-    }
-  },
-
-  selectBacklogItem: async (ideaId) => {
-    set({ error: null });
-    try {
-      const selected = await selectBacklogItemApi(ideaId);
-      set((state) => ({
-        backlog: state.backlog.map((item) =>
-          item.idea_id === ideaId
-            ? selected
-            : item.status === 'selected'
-              ? { ...item, status: 'backlog', selection_reasoning: '' }
-              : item
-        ),
-      }));
-    } catch (err) {
-      set({ error: getApiErrorMessage(err, 'Failed to select backlog item.') });
-    }
-  },
-
-  archiveBacklogItem: async (ideaId) => {
-    set({ error: null });
-    try {
-      const archived = await archiveBacklogItemApi(ideaId);
-      set((state) => ({
-        backlog: state.backlog.map((item) => (item.idea_id === ideaId ? archived : item)),
-      }));
-    } catch (err) {
-      set({ error: getApiErrorMessage(err, 'Failed to archive backlog item.') });
-    }
-  },
-
-  deleteBacklogItem: async (ideaId) => {
-    set({ error: null });
-    try {
-      await deleteBacklogItemApi(ideaId);
-      set((state) => ({
-        backlog: state.backlog.filter((item) => item.idea_id !== ideaId),
-      }));
-    } catch (err) {
-      set({ error: getApiErrorMessage(err, 'Failed to remove backlog item.') });
-    }
-  },
-
   loadPublishQueue: async () => {
     set({ publishQueueLoading: true, error: null });
     try {
@@ -339,11 +248,15 @@ const useContentGen = create<ContentGenState>((set, get) => ({
 
   clearError: () => set({ error: null }),
 
+  /**
+   * Loads all content gen data in parallel. Errors are caught individually by each
+   * load function and set on the store's error state — this function intentionally
+   * does not throw so the UI remains usable even if some data fails to load.
+   */
   loadAll: async () => {
     await Promise.allSettled([
       get().loadPipelines(),
       get().loadScripts(),
-      get().loadBacklog(),
       get().loadPublishQueue(),
       get().loadStrategy(),
     ]);

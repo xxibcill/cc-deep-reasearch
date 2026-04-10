@@ -268,7 +268,7 @@ class ReportRefinerAgent:
         """
         # Find very short sentences and connect them
         lines = markdown.split('\n')
-        result = []
+        result: list[str] = []
 
         for i, line in enumerate(lines):
             if len(line.strip()) > 10 and len(line.strip()) < 40:
@@ -291,8 +291,8 @@ class ReportRefinerAgent:
             Markdown with improved paragraph structure.
         """
         lines = markdown.split('\n')
-        result = []
-        current_paragraph = []
+        result: list[str] = []
+        current_paragraph: list[str] = []
         min_paragraph_length = 100
 
         for line in lines:

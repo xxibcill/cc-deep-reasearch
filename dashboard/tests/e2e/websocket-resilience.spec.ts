@@ -18,7 +18,7 @@ async function installAlwaysFailingWebSocket(page: Page) {
       static CLOSING = 2;
       static CLOSED = 3;
 
-      readyState: number;
+      readyState!: number;
       url: string;
       onopen: ((event: Event) => void) | null = null;
       onmessage: ((event: MessageEvent<string>) => void) | null = null;
@@ -186,7 +186,7 @@ async function installStalledWebSocket(page: Page) {
 
       close() {
         this.readyState = StalledWebSocket.CLOSED;
-        this.onclose?.(new Event("close"));
+        this.onclose?.(new CloseEvent("close", { code: 1000 }));
       }
     }
 
@@ -229,7 +229,7 @@ async function installPartialStreamWebSocket(page: Page) {
       static CLOSING = 2;
       static CLOSED = 3;
 
-      readyState: number;
+      readyState!: number;
       url: string;
       onopen: ((event: Event) => void) | null = null;
       onmessage: ((event: MessageEvent<string>) => void) | null = null;
@@ -293,7 +293,7 @@ async function installPartialStreamWebSocket(page: Page) {
 
       close() {
         this.readyState = PartialStreamWebSocket.CLOSED;
-        this.onclose?.(new Event("close"));
+        this.onclose?.(new CloseEvent("close", { code: 1000 }));
       }
     }
 
