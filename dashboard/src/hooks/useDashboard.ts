@@ -41,32 +41,6 @@ export const DEFAULT_LIVE_STREAM_STATUS: LiveStreamStatus = {
   canReconnect: false,
 };
 
-export const DEFAULT_EVENT_FILTERS: EventFilter = {
-  phase: [],
-  agent: [],
-  tool: [],
-  provider: [],
-  status: [],
-  eventTypes: [],
-  timeRange: null,
-};
-
-export const DEFAULT_LIVE_STREAM_STATUS: LiveStreamStatus = {
-  phase: 'idle',
-  connected: false,
-  reconnectAttempt: 0,
-  maxReconnectAttempts: 5,
-  nextRetryAt: null,
-  lastMessageAt: null,
-  lastEventAt: null,
-  lastHistoryAt: null,
-  lastDisconnectAt: null,
-  failureReason: null,
-  canReconnect: false,
-};
-
-export const MAX_BUFFERED_EVENTS = 4000;
-
 interface DashboardState {
   sessionId: string | null;
   setSessionId: (id: string | null) => void;
