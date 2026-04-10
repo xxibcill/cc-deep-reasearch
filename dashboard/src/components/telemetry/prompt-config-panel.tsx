@@ -70,7 +70,7 @@ function AgentOverrideCard({
   const agentLabel = AGENT_LABELS[agentId] || agentId;
 
   return (
-    <div className="rounded-xl border border-border/70 p-4 space-y-3">
+    <div className="rounded-xl border border-border/70 space-y-3 p-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Badge variant="default" className="bg-primary/90 text-primary-foreground">

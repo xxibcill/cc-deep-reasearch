@@ -33,7 +33,9 @@ export default function SessionMonitorPage({ params }: { params: { id: string } 
       title="Telemetry Monitor"
       description="Live telemetry, workflow graphs, event tables, and execution traces stay isolated on the monitor route."
     >
-      {({ sessionId }) => <SessionTelemetryWorkspace sessionId={sessionId} />}
+      {({ sessionId, runStatus, sessionSummary }) => (
+        <SessionTelemetryWorkspace sessionId={sessionId} runStatus={runStatus} sessionSummary={sessionSummary} />
+      )}
     </SessionPageFrame>
   );
 }

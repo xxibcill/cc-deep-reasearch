@@ -2,7 +2,7 @@
 
 import { AgentExecution, TelemetryEvent } from '@/types/telemetry';
 
-const MAX_VISIBLE_MARKERS_PER_LANE = 18;
+export const MAX_VISIBLE_MARKERS_PER_LANE = 18;
 
 const STATUS_CLASS: Record<string, string> = {
   completed: 'bg-success',
