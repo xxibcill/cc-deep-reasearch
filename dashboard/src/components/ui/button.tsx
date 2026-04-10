@@ -16,23 +16,6 @@ const variantClasses: Record<ButtonVariant, string> = {
     'border border-error/40 bg-destructive text-destructive-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] hover:-translate-y-px hover:bg-destructive/90',
 };
 
-export function buttonVariants({
-  variant = 'default',
-  size = 'default',
-  className,
-}: {
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  className?: string;
-}) {
-  return cn(
-    'inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50',
-    variantClasses[variant],
-    sizeClasses[size],
-    className
-  );
-}
-
 const sizeClasses: Record<ButtonSize, string> = {
   default: 'h-11 px-4 py-2.5',
   sm: 'h-9 px-3',

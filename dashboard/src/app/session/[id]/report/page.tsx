@@ -17,6 +17,7 @@ export default function SessionReportPage({ params }: { params: Promise<{ id: st
         <SessionReport
           sessionId={sessionId}
           runStatus={runStatus}
+          sessionSummary={sessionSummary}
           hasReport={sessionSummary?.hasReport}
         />
       )}
