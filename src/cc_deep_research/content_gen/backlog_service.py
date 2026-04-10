@@ -95,10 +95,10 @@ class BacklogService:
                 patch["last_scored_at"] = now
 
             if scoring.selected_idea_id and item.idea_id == scoring.selected_idea_id:
-                patch["status"] = "selected"
+                patch["status"] = _merge_backlog_status(item.status, "selected")
                 patch["selection_reasoning"] = scoring.selection_reasoning
             elif item.idea_id in active_runner_up_ids:
-                patch["status"] = "runner_up"
+                patch["status"] = _merge_backlog_status(item.status, "runner_up")
                 patch["selection_reasoning"] = ""
             elif item.status in {"selected", "runner_up"}:
                 patch["status"] = "backlog"
@@ -170,6 +170,17 @@ class BacklogService:
             patch["source_pipeline_id"] = source_pipeline_id
         return self.update_item(idea_id, patch)
 
+    def mark_published(
+        self,
+        idea_id: str,
+        *,
+        source_pipeline_id: str = "",
+    ) -> BacklogItem | None:
+        patch: dict[str, Any] = {"status": "published"}
+        if source_pipeline_id:
+            patch["source_pipeline_id"] = source_pipeline_id
+        return self.update_item(idea_id, patch)
+
     def delete_item(self, idea_id: str) -> bool:
         backlog = self.load()
         filtered_items = [item for item in backlog.items if item.idea_id != idea_id]
@@ -220,3 +231,21 @@ class BacklogService:
             persisted_items.append(persisted)
 
         return persisted_items, merged_items
+
+
+_STATUS_PRECEDENCE = {
+    "backlog": 0,
+    "runner_up": 1,
+    "selected": 2,
+    "in_production": 3,
+    "published": 4,
+    "archived": 5,
+}
+
+
+def _merge_backlog_status(current_status: str, desired_status: str) -> str:
+    if current_status in {"in_production", "published", "archived"}:
+        current_rank = _STATUS_PRECEDENCE.get(current_status, 0)
+        desired_rank = _STATUS_PRECEDENCE.get(desired_status, 0)
+        return current_status if current_rank > desired_rank else desired_status
+    return desired_status

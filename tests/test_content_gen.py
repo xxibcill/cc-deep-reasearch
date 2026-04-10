@@ -55,6 +55,7 @@ from cc_deep_research.content_gen.models import (
     PackagingOutput,
     PipelineContext,
     PipelineCandidate,
+    PipelineLaneContext,
     PipelineStageTrace,
     PlatformPackage,
     ProofRule,
@@ -73,6 +74,7 @@ from cc_deep_research.content_gen.models import (
     ScriptStructure,
     ScriptVersion,
     StrategyMemory,
+    VisualPlanOutput,
 )
 from cc_deep_research.content_gen.orchestrator import _format_research_context
 from cc_deep_research.content_gen.progress import PipelineRunJobRegistry, PipelineRunStatus
@@ -432,6 +434,58 @@ def test_pipeline_context_roundtrip() -> None:
     assert [candidate.role for candidate in restored.active_candidates] == ["primary", "runner_up"]
     assert len(restored.backlog.items) == 1
     assert restored.backlog.items[0].idea == "test idea"
+
+
+def test_pipeline_context_roundtrip_with_lane_contexts_syncs_primary_fields() -> None:
+    """Lane context state should survive roundtrip and repopulate legacy primary fields."""
+    ctx = PipelineContext(
+        shortlist=["idea-1", "idea-2"],
+        selected_idea_id="idea-1",
+        runner_up_idea_ids=["idea-2"],
+        lane_contexts=[
+            PipelineLaneContext(
+                idea_id="idea-1",
+                role="primary",
+                status="in_production",
+                last_completed_stage=10,
+                angles=AngleOutput(
+                    idea_id="idea-1",
+                    angle_options=[AngleOption(angle_id="angle-1", core_promise="Primary angle")],
+                    selected_angle_id="angle-1",
+                ),
+                packaging=PackagingOutput(
+                    idea_id="idea-1",
+                    platform_packages=[PlatformPackage(platform="tiktok", primary_hook="Primary hook")],
+                ),
+                publish_items=[PublishItem(idea_id="idea-1", platform="tiktok")],
+            ),
+            PipelineLaneContext(
+                idea_id="idea-2",
+                role="runner_up",
+                status="runner_up",
+                last_completed_stage=4,
+                angles=AngleOutput(
+                    idea_id="idea-2",
+                    angle_options=[AngleOption(angle_id="angle-2", core_promise="Runner-up angle")],
+                    selected_angle_id="angle-2",
+                ),
+            ),
+        ],
+    )
+
+    restored = PipelineContext.model_validate_json(ctx.model_dump_json())
+
+    assert len(restored.lane_contexts) == 2
+    assert [candidate.idea_id for candidate in restored.active_candidates] == ["idea-1", "idea-2"]
+    assert [candidate.status for candidate in restored.active_candidates] == ["in_production", "runner_up"]
+    assert restored.angles is not None
+    assert restored.angles.idea_id == "idea-1"
+    assert restored.packaging is not None
+    assert restored.packaging.idea_id == "idea-1"
+    assert len(restored.publish_items) == 1
+    assert restored.publish_items[0].idea_id == "idea-1"
+    assert restored.publish_item is not None
+    assert restored.publish_item.idea_id == "idea-1"
 
 
 def test_strategy_memory_coerces_expert_fields_from_string_lists() -> None:
@@ -1106,6 +1160,109 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
     selected_idea = next(
         item for item in fixture["backlog"]["items"] if item["idea_id"] == selected_idea_id
     )
+    runner_up_idea_id = fixture["scoring"]["runner_up_idea_ids"][0]
+    runner_up_idea = next(
+        item for item in fixture["backlog"]["items"] if item["idea_id"] == runner_up_idea_id
+    )
+    runner_up_angles = AngleOutput(
+        idea_id=runner_up_idea_id,
+        angle_options=[
+            AngleOption(
+                angle_id="angle-runner-up",
+                target_audience=runner_up_idea["audience"],
+                viewer_problem=runner_up_idea["problem"],
+                core_promise="Show the runner-up path clearly enough to keep it viable.",
+                primary_takeaway="The alternate take still deserves a production slot.",
+                lens="Contrarian",
+                format="Explainer",
+                tone="Direct",
+                cta="Test this framing against your current version.",
+                why_this_version_should_exist="It targets the same audience from a sharper alternate angle.",
+            )
+        ],
+        selected_angle_id="angle-runner-up",
+        selection_reasoning="Runner-up lane keeps a credible alternate framing alive.",
+    )
+    runner_up_research_pack = ResearchPack(
+        idea_id=runner_up_idea_id,
+        angle_id="angle-runner-up",
+        key_facts=["Secondary lane fact"],
+        proof_points=["Secondary lane proof"],
+    )
+    runner_up_argument_map = ArgumentMap(
+        idea_id=runner_up_idea_id,
+        angle_id="angle-runner-up",
+        thesis="The runner-up thesis stays production-worthy.",
+        proof_anchors=[
+            {
+                "proof_id": "runner_proof_1",
+                "summary": "The alternate framing still lands on a clear mechanism.",
+            }
+        ],
+        safe_claims=[
+            {
+                "claim_id": "runner_claim_1",
+                "claim": "Alternate framing can still improve clarity.",
+                "supporting_proof_ids": ["runner_proof_1"],
+            }
+        ],
+        beat_claim_plan=[
+            {
+                "beat_id": "runner_beat_1",
+                "beat_name": "Hook",
+                "goal": "Frame the alternate idea as a viable second lane.",
+                "claim_ids": ["runner_claim_1"],
+                "proof_anchor_ids": ["runner_proof_1"],
+            }
+        ],
+    )
+    runner_up_scripting = ScriptingContext(
+        raw_idea=runner_up_idea["idea"],
+        research_context="Secondary lane proof",
+        structure=ScriptStructure(
+            chosen_structure="Problem > proof > action",
+            why_it_fits="Keeps the alternate lane concise.",
+            beat_list=["Hook", "Proof", "Close"],
+        ),
+        draft=ScriptVersion(
+            content="Runner-up script keeps the alternate angle alive.",
+            word_count=8,
+        ),
+        qc=QCResult(
+            checks=[],
+            weakest_parts=[],
+            final_script="Runner-up script keeps the alternate angle alive.",
+        ),
+    )
+    runner_up_visual_plan = VisualPlanOutput.model_validate(
+        {
+            "idea_id": runner_up_idea_id,
+            "angle_id": "angle-runner-up",
+            "visual_plan": [
+                {
+                    "beat": "Hook",
+                    "spoken_line": "Runner-up script keeps the alternate angle alive.",
+                    "visual": "Show the alternate frame directly.",
+                }
+            ],
+            "visual_refresh_check": "pass",
+        }
+    )
+    runner_up_production_brief = ProductionBrief(
+        idea_id=runner_up_idea_id,
+        location="Desk",
+        setup="Single-camera",
+    )
+    runner_up_packaging = PackagingOutput(
+        idea_id=runner_up_idea_id,
+        platform_packages=[
+            PlatformPackage(platform="tiktok", primary_hook="Runner-up hook"),
+        ],
+    )
+    runner_up_qc_gate = HumanQCGate(approved_for_publish=True)
+    runner_up_publish_items = [
+        PublishItem(idea_id=runner_up_idea_id, platform="tiktok", publish_datetime="optimal")
+    ]
 
     class FakeConfig:
         content_gen = type(
@@ -1167,16 +1324,21 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
 
     class FakeAngleAgent:
         async def generate(self, item: BacklogItem, strategy: StrategyMemory) -> AngleOutput:
-            assert item.idea_id == selected_idea_id
             assert strategy.niche == fixture["strategy"]["niche"]
-            return AngleOutput.model_validate(fixture["angles"])
+            if item.idea_id == selected_idea_id:
+                return AngleOutput.model_validate(fixture["angles"])
+            assert item.idea_id == runner_up_idea_id
+            return runner_up_angles
 
     class FakeResearchAgent:
         async def build(self, item: BacklogItem, angle: AngleOption, *, feedback: str = "") -> ResearchPack:
-            assert item.idea_id == selected_idea_id
-            assert angle.angle_id == fixture["angles"]["selected_angle_id"]
             assert feedback == ""
-            return ResearchPack.model_validate(fixture["research_pack"])
+            if item.idea_id == selected_idea_id:
+                assert angle.angle_id == fixture["angles"]["selected_angle_id"]
+                return ResearchPack.model_validate(fixture["research_pack"])
+            assert item.idea_id == runner_up_idea_id
+            assert angle.angle_id == runner_up_angles.selected_angle_id
+            return runner_up_research_pack
 
     class FakeArgumentMapAgent:
         async def build(
@@ -1185,39 +1347,53 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
             angle: AngleOption,
             research_pack: ResearchPack,
         ) -> ArgumentMap:
-            assert item.idea_id == selected_idea_id
-            assert angle.angle_id == fixture["angles"]["selected_angle_id"]
-            assert research_pack.idea_id == selected_idea_id
-            return ArgumentMap.model_validate(fixture["argument_map"])
+            if item.idea_id == selected_idea_id:
+                assert angle.angle_id == fixture["angles"]["selected_angle_id"]
+                assert research_pack.idea_id == selected_idea_id
+                return ArgumentMap.model_validate(fixture["argument_map"])
+            assert item.idea_id == runner_up_idea_id
+            assert angle.angle_id == runner_up_angles.selected_angle_id
+            assert research_pack.idea_id == runner_up_idea_id
+            return runner_up_argument_map
 
     class FakeScriptingAgent:
         async def run_from_step(self, ctx: ScriptingContext, step: int) -> ScriptingContext:
             assert step == 5
-            assert ctx.raw_idea == selected_idea["idea"]
             assert ctx.argument_map is not None
-            assert ctx.argument_map.thesis == fixture["argument_map"]["thesis"]
             assert ctx.core_inputs is not None
-            assert ctx.core_inputs.topic == selected_idea["idea"]
             assert ctx.structure is not None
-            assert ctx.structure.beat_list == ["Hook", "Reframe", "Proof", "Close"]
             assert ctx.beat_intents is not None
-            assert ctx.beat_intents.beats[0].claim_ids == ["claim_1"]
-            assert ctx.beat_intents.beats[2].proof_anchor_ids == ["proof_2"]
-            assert "Anchors shape perceived value" in ctx.research_context
-            return ScriptingContext.model_validate(fixture["scripting"])
+            if ctx.raw_idea == selected_idea["idea"]:
+                assert ctx.argument_map.thesis == fixture["argument_map"]["thesis"]
+                assert ctx.core_inputs.topic == selected_idea["idea"]
+                assert ctx.structure.beat_list == ["Hook", "Reframe", "Proof", "Close"]
+                assert ctx.beat_intents.beats[0].claim_ids == ["claim_1"]
+                assert ctx.beat_intents.beats[2].proof_anchor_ids == ["proof_2"]
+                assert "Anchors shape perceived value" in ctx.research_context
+                return ScriptingContext.model_validate(fixture["scripting"])
+            assert ctx.raw_idea == runner_up_idea["idea"]
+            assert ctx.argument_map.thesis == runner_up_argument_map.thesis
+            assert ctx.core_inputs.topic == runner_up_idea["idea"]
+            assert ctx.structure.beat_list == ["Hook"]
+            assert ctx.beat_intents.beats[0].claim_ids == ["runner_claim_1"]
+            assert "Secondary lane proof" in ctx.research_context
+            return runner_up_scripting
 
     class FakeVisualAgent:
         async def translate(self, script: ScriptVersion, structure: ScriptStructure) -> object:
-            assert "anchor tier is broken" in script.content
-            assert structure.chosen_structure == fixture["scripting"]["structure"]["chosen_structure"]
-            from cc_deep_research.content_gen.models import VisualPlanOutput
-
-            return VisualPlanOutput.model_validate(fixture["visual_plan"])
+            if "anchor tier is broken" in script.content:
+                assert structure.chosen_structure == fixture["scripting"]["structure"]["chosen_structure"]
+                return VisualPlanOutput.model_validate(fixture["visual_plan"])
+            assert "Runner-up script keeps the alternate angle alive." in script.content
+            assert structure.chosen_structure == "Problem > proof > action"
+            return runner_up_visual_plan
 
     class FakeProductionAgent:
         async def brief(self, visual_plan) -> object:
-            assert visual_plan.idea_id == selected_idea_id
-            return ProductionBrief.model_validate(fixture["production_brief"])
+            if visual_plan.idea_id == selected_idea_id:
+                return ProductionBrief.model_validate(fixture["production_brief"])
+            assert visual_plan.idea_id == runner_up_idea_id
+            return runner_up_production_brief
 
     class FakePackagingAgent:
         async def generate(
@@ -1228,11 +1404,14 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
             *,
             strategy: StrategyMemory,
         ) -> PackagingOutput:
-            assert "anchor tier is broken" in script.content
-            assert angle.angle_id == fixture["angles"]["selected_angle_id"]
             assert platforms == ["tiktok"]
             assert strategy.niche == fixture["strategy"]["niche"]
-            return PackagingOutput.model_validate(fixture["packaging"])
+            if "anchor tier is broken" in script.content:
+                assert angle.angle_id == fixture["angles"]["selected_angle_id"]
+                return PackagingOutput.model_validate(fixture["packaging"])
+            assert "Runner-up script keeps the alternate angle alive." in script.content
+            assert angle.angle_id == runner_up_angles.selected_angle_id
+            return runner_up_packaging
 
     class FakeQCAgent:
         async def review(
@@ -1244,20 +1423,29 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
             research_summary: str = "",
             argument_map_summary: str = "",
         ) -> HumanQCGate:
-            assert "anchor tier is broken" in script
-            assert "Hook: Highlight the cheapest plan selection on a pricing page" in visual_summary
-            assert "tiktok: If buyers always choose cheapest, your anchor tier is broken" in packaging_summary
-            assert "Supported claims:" in research_summary
-            assert "Claims requiring verification:" in research_summary
-            assert "Safe claims:" in argument_map_summary
-            assert "Claims to qualify or avoid:" in argument_map_summary
-            return HumanQCGate.model_validate(fixture["qc_gate"])
+            if "anchor tier is broken" in script:
+                assert "Hook: Highlight the cheapest plan selection on a pricing page" in visual_summary
+                assert "tiktok: If buyers always choose cheapest, your anchor tier is broken" in packaging_summary
+                assert "Supported claims:" in research_summary
+                assert "Claims requiring verification:" in research_summary
+                assert "Safe claims:" in argument_map_summary
+                assert "Claims to qualify or avoid:" in argument_map_summary
+                return HumanQCGate.model_validate(fixture["qc_gate"])
+            assert "Runner-up script keeps the alternate angle alive." in script
+            assert "Hook: Show the alternate frame directly." in visual_summary
+            assert "tiktok: Runner-up hook" in packaging_summary
+            assert "Secondary lane fact" in research_summary
+            assert "Alternate framing can still improve clarity." in argument_map_summary
+            return runner_up_qc_gate
 
     class FakePublishAgent:
         async def schedule(self, packaging: PackagingOutput, *, idea_id: str) -> list[PublishItem]:
-            assert packaging.idea_id == selected_idea_id
-            assert idea_id == selected_idea_id
-            return [PublishItem.model_validate(item) for item in fixture["publish_items"]]
+            if idea_id == selected_idea_id:
+                assert packaging.idea_id == selected_idea_id
+                return [PublishItem.model_validate(item) for item in fixture["publish_items"]]
+            assert idea_id == runner_up_idea_id
+            assert packaging.idea_id == runner_up_idea_id
+            return runner_up_publish_items
 
     monkeypatch.setattr("cc_deep_research.content_gen.storage.StrategyStore", FakeStrategyStore)
 
@@ -1286,7 +1474,21 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
         selected_idea_id,
         fixture["scoring"]["runner_up_idea_ids"][0],
     ]
-    assert [candidate.status for candidate in ctx.active_candidates] == ["in_production", "runner_up"]
+    assert [candidate.status for candidate in ctx.active_candidates] == ["published", "published"]
+    assert len(ctx.lane_contexts) == 2
+    lane_by_id = {lane.idea_id: lane for lane in ctx.lane_contexts}
+    assert lane_by_id[selected_idea_id].angles is not None
+    assert lane_by_id[selected_idea_id].publish_items[0].idea_id == selected_idea_id
+    assert lane_by_id[runner_up_idea_id].angles is not None
+    assert lane_by_id[runner_up_idea_id].research_pack is not None
+    assert lane_by_id[runner_up_idea_id].argument_map is not None
+    assert lane_by_id[runner_up_idea_id].scripting is not None
+    assert lane_by_id[runner_up_idea_id].visual_plan is not None
+    assert lane_by_id[runner_up_idea_id].production_brief is not None
+    assert lane_by_id[runner_up_idea_id].packaging is not None
+    assert lane_by_id[runner_up_idea_id].qc_gate is not None
+    assert lane_by_id[runner_up_idea_id].publish_items == runner_up_publish_items
+    assert lane_by_id[runner_up_idea_id].last_completed_stage == 12
     assert ctx.research_pack is not None
     assert ctx.research_pack.idea_id == selected_idea_id
     assert ctx.argument_map is not None
@@ -1399,6 +1601,54 @@ async def test_full_pipeline_resume_uses_initial_context_for_late_stage() -> Non
     assert seen["ctx"].scripting.qc.final_script == "Saved final script"
     assert result.packaging is not None
     assert result.stage_traces[-1].status == "completed"
+
+
+def test_validate_resume_context_accepts_partial_multilane_lane_contexts() -> None:
+    """Resume validation should accept lane-scoped artifacts without needing legacy top-level fields."""
+    from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
+
+    class FakeConfig:
+        content_gen = type(
+            "ContentGen",
+            (),
+            {
+                "max_iterations": 1,
+                "quality_threshold": 0.7,
+                "convergence_threshold": 0.1,
+                "enable_iterative_mode": False,
+                "scoring_threshold_produce": 3.5,
+                "default_platforms": ["tiktok"],
+            },
+        )()
+
+        llm = type(
+            "LLM",
+            (),
+            {
+                "anthropic": type("C", (), {"enabled": True, "api_key": "test"})(),
+            },
+        )()
+
+    orch = ContentGenOrchestrator(FakeConfig())
+    ctx = PipelineContext(
+        backlog=BacklogOutput(items=[BacklogItem(idea_id="idea-1", idea="Saved lane idea")]),
+        shortlist=["idea-1"],
+        selected_idea_id="idea-1",
+        lane_contexts=[
+            PipelineLaneContext(
+                idea_id="idea-1",
+                role="primary",
+                status="selected",
+                angles=AngleOutput(
+                    idea_id="idea-1",
+                    angle_options=[AngleOption(angle_id="angle-1", core_promise="Saved angle")],
+                    selected_angle_id="angle-1",
+                ),
+            )
+        ],
+    )
+
+    assert orch.validate_resume_context(from_stage=5, ctx=ctx) is None
 
 
 @pytest.mark.asyncio
@@ -1766,6 +2016,48 @@ def test_backlog_service_apply_scoring_marks_selected(tmp_path: Path) -> None:
     assert by_id["idea-1"].latest_recommendation == "produce_now"
     assert by_id["idea-1"].selection_reasoning == "Best fit"
     assert by_id["idea-2"].status == "runner_up"
+
+
+def test_backlog_service_multi_lane_status_transitions_preserve_progress(tmp_path: Path) -> None:
+    """Scoring should not demote lanes already in production, and publish should finalize status."""
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+    from cc_deep_research.content_gen.storage import BacklogStore
+
+    store = BacklogStore(tmp_path / "backlog.yaml")
+    service = BacklogService(store=store)
+    service.upsert_items(
+        [
+            BacklogItem(idea_id="idea-1", idea="Primary", status="in_production"),
+            BacklogItem(idea_id="idea-2", idea="Runner-up"),
+        ]
+    )
+
+    service.apply_scoring(
+        ScoringOutput(
+            shortlist=["idea-1", "idea-2"],
+            selected_idea_id="idea-1",
+            selection_reasoning="Keep primary lane leading.",
+            active_candidates=[
+                PipelineCandidate(idea_id="idea-1", role="primary", status="in_production"),
+                PipelineCandidate(idea_id="idea-2", role="runner_up", status="runner_up"),
+            ],
+        )
+    )
+
+    scored = store.load()
+    scored_by_id = {item.idea_id: item for item in scored.items}
+    assert scored_by_id["idea-1"].status == "in_production"
+    assert scored_by_id["idea-1"].selection_reasoning == "Keep primary lane leading."
+    assert scored_by_id["idea-2"].status == "runner_up"
+
+    published = service.mark_published("idea-1", source_pipeline_id="pipe-123")
+
+    assert published is not None
+    assert published.status == "published"
+    assert published.source_pipeline_id == "pipe-123"
+
+    final_state = store.load()
+    assert next(item for item in final_state.items if item.idea_id == "idea-1").status == "published"
 
 
 def test_publish_queue_store_roundtrip(tmp_path: Path) -> None:

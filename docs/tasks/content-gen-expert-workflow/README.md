@@ -22,7 +22,7 @@ Recommended order:
 10. `10-search-query-families-and-freshness.md` - Done
 11. `11-tests-and-contract-docs.md` - Done
 12. `12-workflow-resume-and-idea-bypass.md` - Done
-13. `13-multi-lane-shortlist-fanout.md` - Planned
+13. `13-multi-lane-shortlist-fanout.md` - Done
 14. `14-tolerant-stage-degraded-metadata.md` - Planned
 15. `15-retrieval-fanout-redesign.md` - Planned
 

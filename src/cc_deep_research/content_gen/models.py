@@ -1403,6 +1403,24 @@ class PublishItem(BaseModel):
     status: str = "scheduled"  # scheduled | published
 
 
+class PipelineLaneContext(BaseModel):
+    """Per-idea execution state for one shortlisted production lane."""
+
+    idea_id: str = ""
+    role: Literal["primary", "runner_up"] = "primary"
+    status: Literal["selected", "runner_up", "in_production", "published"] = "selected"
+    last_completed_stage: int = -1
+    angles: AngleOutput | None = None
+    research_pack: ResearchPack | None = None
+    argument_map: ArgumentMap | None = None
+    scripting: ScriptingContext | None = None
+    visual_plan: VisualPlanOutput | None = None
+    production_brief: ProductionBrief | None = None
+    packaging: PackagingOutput | None = None
+    qc_gate: HumanQCGate | None = None
+    publish_items: list[PublishItem] = Field(default_factory=list)
+
+
 # ---------------------------------------------------------------------------
 # Pipeline stage 11: Performance analyst
 # ---------------------------------------------------------------------------
@@ -1503,6 +1521,7 @@ class PipelineContext(BaseModel):
     selection_reasoning: str = ""
     runner_up_idea_ids: list[str] = Field(default_factory=list)
     active_candidates: list[PipelineCandidate] = Field(default_factory=list)
+    lane_contexts: list[PipelineLaneContext] = Field(default_factory=list)
     angles: AngleOutput | None = None
     research_pack: ResearchPack | None = None
     argument_map: ArgumentMap | None = None
@@ -1519,21 +1538,46 @@ class PipelineContext(BaseModel):
 
     @model_validator(mode="after")
     def _populate_candidate_queue(self) -> PipelineContext:
-        shortlist = self.shortlist or (self.scoring.shortlist if self.scoring else [])
+        lane_candidates = _derive_candidates_from_lane_contexts(self.lane_contexts)
+        legacy_primary_idea_id = _derive_legacy_primary_idea_id(self)
+        shortlist = self.shortlist or (self.scoring.shortlist if self.scoring else []) or [
+            candidate.idea_id for candidate in lane_candidates
+        ] or ([legacy_primary_idea_id] if legacy_primary_idea_id else [])
         runner_up_idea_ids = self.runner_up_idea_ids or (
             self.scoring.runner_up_idea_ids if self.scoring else []
-        )
+        ) or [candidate.idea_id for candidate in lane_candidates if candidate.role == "runner_up"]
         selected_idea_id = self.selected_idea_id or (
             self.scoring.selected_idea_id if self.scoring else ""
-        )
+        ) or next(
+            (candidate.idea_id for candidate in lane_candidates if candidate.role == "primary"),
+            "",
+        ) or legacy_primary_idea_id
         existing_candidates = self.active_candidates or (
             self.scoring.active_candidates if self.scoring else []
+        ) or lane_candidates or (
+            [PipelineCandidate(idea_id=legacy_primary_idea_id, role="primary", status="selected")]
+            if legacy_primary_idea_id
+            else []
         )
         self.active_candidates = _derive_pipeline_candidates(
             selected_idea_id=selected_idea_id,
             shortlist=shortlist,
             runner_up_idea_ids=runner_up_idea_ids,
             existing_candidates=existing_candidates,
+        )
+        legacy_primary_publish_items = self.publish_items or ([self.publish_item] if self.publish_item is not None else [])
+        self.lane_contexts = _derive_lane_contexts(
+            candidates=self.active_candidates,
+            existing_lane_contexts=self.lane_contexts,
+            primary_angles=self.angles,
+            primary_research_pack=self.research_pack,
+            primary_argument_map=self.argument_map,
+            primary_scripting=self.scripting,
+            primary_visual_plan=self.visual_plan,
+            primary_production_brief=self.production_brief,
+            primary_packaging=self.packaging,
+            primary_qc_gate=self.qc_gate,
+            primary_publish_items=legacy_primary_publish_items,
         )
         if not self.selected_idea_id:
             primary = next(
@@ -1546,10 +1590,26 @@ class PipelineContext(BaseModel):
             self.runner_up_idea_ids = [
                 candidate.idea_id for candidate in self.active_candidates if candidate.role == "runner_up"
             ]
-        if not self.publish_items and self.publish_item is not None:
-            self.publish_items = [self.publish_item]
-        if self.publish_item is None and self.publish_items:
-            self.publish_item = self.publish_items[0]
+        primary_lane = next(
+            (lane for lane in self.lane_contexts if lane.role == "primary"),
+            self.lane_contexts[0] if self.lane_contexts else None,
+        )
+        if primary_lane is not None:
+            self.angles = primary_lane.angles
+            self.research_pack = primary_lane.research_pack
+            self.argument_map = primary_lane.argument_map
+            self.scripting = primary_lane.scripting
+            self.visual_plan = primary_lane.visual_plan
+            self.production_brief = primary_lane.production_brief
+            self.packaging = primary_lane.packaging
+            self.qc_gate = primary_lane.qc_gate
+            self.publish_items = list(primary_lane.publish_items)
+            self.publish_item = self.publish_items[0] if self.publish_items else None
+        else:
+            if not self.publish_items and self.publish_item is not None:
+                self.publish_items = [self.publish_item]
+            if self.publish_item is None and self.publish_items:
+                self.publish_item = self.publish_items[0]
         return self
 
 
@@ -1613,6 +1673,97 @@ def _derive_pipeline_candidates(
             break
 
     return candidates
+
+
+def _derive_candidates_from_lane_contexts(
+    lane_contexts: list[PipelineLaneContext] | None,
+) -> list[PipelineCandidate]:
+    if not lane_contexts:
+        return []
+
+    ordered_lanes = sorted(
+        (lane for lane in lane_contexts if lane.idea_id),
+        key=lambda lane: (0 if lane.role == "primary" else 1, lane.idea_id),
+    )
+    return [
+        PipelineCandidate(
+            idea_id=lane.idea_id,
+            role=lane.role,
+            status=lane.status,
+        )
+        for lane in ordered_lanes[:_ACTIVE_CANDIDATE_LIMIT]
+    ]
+
+
+def _derive_lane_contexts(
+    *,
+    candidates: list[PipelineCandidate],
+    existing_lane_contexts: list[PipelineLaneContext] | None = None,
+    primary_angles: AngleOutput | None = None,
+    primary_research_pack: ResearchPack | None = None,
+    primary_argument_map: ArgumentMap | None = None,
+    primary_scripting: ScriptingContext | None = None,
+    primary_visual_plan: VisualPlanOutput | None = None,
+    primary_production_brief: ProductionBrief | None = None,
+    primary_packaging: PackagingOutput | None = None,
+    primary_qc_gate: HumanQCGate | None = None,
+    primary_publish_items: list[PublishItem] | None = None,
+) -> list[PipelineLaneContext]:
+    existing_by_id = {
+        lane.idea_id: lane for lane in (existing_lane_contexts or []) if lane.idea_id
+    }
+    lane_contexts: list[PipelineLaneContext] = []
+
+    for candidate in candidates:
+        lane = existing_by_id.get(candidate.idea_id)
+        if lane is None:
+            lane = PipelineLaneContext(
+                idea_id=candidate.idea_id,
+                role=candidate.role,
+                status=candidate.status,
+            )
+        else:
+            lane = lane.model_copy(
+                update={
+                    "role": candidate.role,
+                    "status": candidate.status,
+                }
+            )
+
+        if candidate.role == "primary":
+            lane = lane.model_copy(
+                update={
+                    "angles": lane.angles or primary_angles,
+                    "research_pack": lane.research_pack or primary_research_pack,
+                    "argument_map": lane.argument_map or primary_argument_map,
+                    "scripting": lane.scripting or primary_scripting,
+                    "visual_plan": lane.visual_plan or primary_visual_plan,
+                    "production_brief": lane.production_brief or primary_production_brief,
+                    "packaging": lane.packaging or primary_packaging,
+                    "qc_gate": lane.qc_gate or primary_qc_gate,
+                    "publish_items": lane.publish_items or list(primary_publish_items or []),
+                }
+            )
+
+        lane_contexts.append(lane)
+
+    return lane_contexts
+
+
+def _derive_legacy_primary_idea_id(ctx: PipelineContext) -> str:
+    for idea_id in (
+        getattr(ctx.angles, "idea_id", ""),
+        getattr(ctx.research_pack, "idea_id", ""),
+        getattr(ctx.argument_map, "idea_id", ""),
+        getattr(ctx.visual_plan, "idea_id", ""),
+        getattr(ctx.production_brief, "idea_id", ""),
+        getattr(ctx.packaging, "idea_id", ""),
+        getattr(ctx.publish_item, "idea_id", ""),
+        ctx.publish_items[0].idea_id if ctx.publish_items else "",
+    ):
+        if idea_id:
+            return idea_id
+    return ""
 
 
 # ---------------------------------------------------------------------------
