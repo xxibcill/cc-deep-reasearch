@@ -11,6 +11,7 @@ from cc_deep_research.content_gen.agents._llm_utils import call_agent_llm_text
 from cc_deep_research.content_gen.models import (
     AngleOption,
     BacklogItem,
+    EvidenceDirectness,
     ResearchClaim,
     ResearchClaimType,
     ResearchConfidence,
@@ -26,6 +27,8 @@ from cc_deep_research.content_gen.models import (
     RetrievalDecision,
     RetrievalMode,
     RetrievalPlan,
+    SourceAuthority,
+    SourceFreshness,
 )
 from cc_deep_research.content_gen.prompts import research_pack as prompts
 from cc_deep_research.llm import LLMRouter
@@ -741,7 +744,7 @@ def _source_from_search_result(
                 intent_tags=list(query_plan.intent_tags),
             )
         ]
-    return ResearchSource(
+    source = ResearchSource(
         source_id=source_id,
         url=item.url,
         title=item.title,
@@ -754,6 +757,9 @@ def _source_from_search_result(
         query_provenance=provenance,
         source_metadata=dict(item.source_metadata),
     )
+    # Score source quality after creation (Task 16)
+    _score_source_quality(source, query_plan)
+    return source
 
 
 def _merge_query_context(
@@ -781,24 +787,257 @@ def _merge_query_context(
         existing_keys.add(key)
 
 
+# ---------------------------------------------------------------------------
+# Source Quality Scoring (Task 16)
+# ---------------------------------------------------------------------------
+
+# Query families that typically produce direct evidence
+_DIRECT_FAMILY_SCORES: dict[str, float] = {
+    "proof": 1.0,
+    "primary-source": 1.0,
+    "evidence": 0.9,
+}
+
+# Query families that typically produce indirect evidence
+_INDIRECT_FAMILY_SCORES: dict[str, float] = {
+    "competitor": 0.6,
+    "framing": 0.5,
+    "practitioner-language": 0.5,
+}
+
+# Query families that typically produce anecdotal or low-confidence evidence
+_ANECDOTAL_FAMILY_SCORES: dict[str, float] = {
+    "contrarian": 0.4,
+    "myth-busting": 0.4,
+    "freshness": 0.3,
+}
+
+
+def _score_source_quality(
+    source: ResearchSource,
+    query_plan: QueryFamily,
+) -> None:
+    """Compute and assign quality metadata to a source.
+
+    Scoring factors:
+    - source_authority: inferred from URL domain and provider
+    - evidence_directness: inferred from query family
+    - source_freshness: inferred from published_date
+    - quality_rank: weighted combination of the above
+    """
+    source.source_authority = _infer_authority(source)
+    source.evidence_directness = _infer_directness(query_plan)
+    source.source_freshness = _infer_freshness(source.published_date)
+    source.quality_rank = _compute_quality_rank(
+        source.source_authority,
+        source.evidence_directness,
+        source.source_freshness,
+    )
+
+
+def _infer_authority(source: ResearchSource) -> SourceAuthority:
+    """Infer source authority from URL domain and metadata."""
+    url_lower = source.url.lower()
+    title_lower = source.title.lower()
+    provider_lower = source.provider.lower()
+
+    # Check for primary source indicators by domain pattern
+    # Academic/research domains
+    if any(r in url_lower for r in ["arxiv.org", "scholar.google.com", "research.", "semantic scholar"]):
+        return SourceAuthority.PRIMARY
+
+    # Government domains (.gov TLD)
+    if ".gov" in url_lower or any(g in url_lower for g in ["sec.gov", "ftc.gov", "doj.gov", "whitehouse.gov"]):
+        return SourceAuthority.PRIMARY
+
+    # Official documentation (docs.*, developer.*, *documentation*)
+    if "docs." in url_lower or "developer." in url_lower or "documentation" in url_lower:
+        return SourceAuthority.PRIMARY
+
+    # Major tech company official sites
+    if any(c in url_lower for c in ["anthropic.com", "openai.com", "google.com", "microsoft.com", "azure.microsoft.com", "aws.amazon.com", "cloud.google.com"]):
+        return SourceAuthority.PRIMARY
+
+    # Check for secondary source indicators (news, analysis, industry)
+    secondary_indicators = [
+        "news", "article", "blog", "analysis", "report", "review",
+        "forbes", "techcrunch", "wired", "verge", "ars technica",
+        "hbr.org", "mckinsey", "bcg", "deloitte", "pwc",
+        "medium", "substack", "substack",
+    ]
+    if any(ind in url_lower for ind in secondary_indicators):
+        return SourceAuthority.SECONDARY
+    if any(ind in title_lower for ind in secondary_indicators):
+        return SourceAuthority.SECONDARY
+
+    # Check provider hints
+    if any(p in provider_lower for p in ["news", "blog", "analysis", "report"]):
+        return SourceAuthority.SECONDARY
+
+    # Check for tertiary (summaries, social, aggregations)
+    tertiary_indicators = [
+        "twitter", "x.com", "facebook", "reddit", "linkedin",
+        "wikipedia", "wikia", " fandom", "smmry", "sumo",
+        "buzzfeed", "listicle", "quora", "stack overflow",
+    ]
+    if any(ind in url_lower for ind in tertiary_indicators):
+        return SourceAuthority.TERTIARY
+
+    return SourceAuthority.UNKNOWN
+
+
+def _infer_directness(query_plan: QueryFamily) -> EvidenceDirectness:
+    """Infer evidence directness from query family."""
+    family = query_plan.family.lower()
+
+    if family in _DIRECT_FAMILY_SCORES:
+        return EvidenceDirectness.DIRECT
+
+    if family in _INDIRECT_FAMILY_SCORES:
+        return EvidenceDirectness.INDIRECT
+
+    if family in _ANECDOTAL_FAMILY_SCORES:
+        return EvidenceDirectness.ANECDOTAL
+
+    # Check intent tags for directness signals
+    direct_tags = {"proof", "evidence", "benchmark", "official", "primary_source", "data", "study"}
+    indirect_tags = {"competitor", "framing", "example", "analysis", "practitioner"}
+    anecdotal_tags = {"myth", "limitation", "counterevidence", "social"}
+
+    intent_set = {tag.lower() for tag in query_plan.intent_tags}
+
+    if intent_set & direct_tags:
+        return EvidenceDirectness.DIRECT
+    if intent_set & indirect_tags:
+        return EvidenceDirectness.INDIRECT
+    if intent_set & anecdotal_tags:
+        return EvidenceDirectness.ANECDOTAL
+
+    return EvidenceDirectness.UNKNOWN
+
+
+def _infer_freshness(published_date: str | None) -> SourceFreshness:
+    """Infer source freshness from published date."""
+    if not published_date or published_date.lower() in ("unknown", "", "none"):
+        return SourceFreshness.UNKNOWN
+
+    try:
+        # Try parsing common date formats
+        from datetime import datetime
+
+        parsed: datetime | None = None
+        for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%B %d, %Y", "%b %d, %Y", "%Y"):
+            try:
+                parsed = datetime.strptime(published_date.strip(), fmt)
+                break
+            except ValueError:
+                continue
+
+        if parsed is None:
+            return SourceFreshness.UNKNOWN
+
+        now = datetime.now()
+        age_days = (now - parsed).days
+
+        if age_days <= 180:  # ~6 months
+            return SourceFreshness.CURRENT
+        if age_days <= 730:  # ~2 years
+            return SourceFreshness.RECENT
+        return SourceFreshness.STALE
+
+    except Exception:
+        return SourceFreshness.UNKNOWN
+
+
+def _compute_quality_rank(
+    authority: SourceAuthority,
+    directness: EvidenceDirectness,
+    freshness: SourceFreshness,
+) -> float:
+    """Compute a composite quality rank from explicit factors.
+
+    Returns a float in [0.0, 1.0] representing overall source strength.
+    Each factor contributes independently so the system can still say
+    "this is the best available, but it is weak" when factors conflict.
+    """
+    # Authority weights
+    authority_scores: dict[SourceAuthority, float] = {
+        SourceAuthority.PRIMARY: 1.0,
+        SourceAuthority.SECONDARY: 0.7,
+        SourceAuthority.TERTIARY: 0.3,
+        SourceAuthority.UNKNOWN: 0.5,
+    }
+
+    # Directness weights
+    directness_scores: dict[EvidenceDirectness, float] = {
+        EvidenceDirectness.DIRECT: 1.0,
+        EvidenceDirectness.INDIRECT: 0.6,
+        EvidenceDirectness.ANECDOTAL: 0.2,
+        EvidenceDirectness.UNKNOWN: 0.5,
+    }
+
+    # Freshness weights (stale is penalized but not zeroed)
+    freshness_scores: dict[SourceFreshness, float] = {
+        SourceFreshness.CURRENT: 1.0,
+        SourceFreshness.RECENT: 0.85,
+        SourceFreshness.STALE: 0.5,
+        SourceFreshness.UNKNOWN: 0.6,
+    }
+
+    auth_score = authority_scores.get(authority, 0.5)
+    direct_score = directness_scores.get(directness, 0.5)
+    fresh_score = freshness_scores.get(freshness, 0.6)
+
+    # Weighted average: authority and directness matter most
+    return round(auth_score * 0.4 + direct_score * 0.4 + fresh_score * 0.2, 3)
+
+
 def _render_source_catalog(sources: list[ResearchSource]) -> str:
-    parts = ["Source Catalog:"]
-    for source in sources:
+    """Render source catalog with quality signals visible for synthesis.
+
+    Sources are sorted by quality_rank (highest first) so the model
+    encounters stronger evidence before weaker evidence.
+    Quality metadata is included so the model can distinguish strong
+    from weak sources for each claim.
+    """
+    # Sort by quality_rank descending, unknown ranks at the end
+    sorted_sources = sorted(
+        sources,
+        key=lambda s: s.quality_rank if s.quality_rank is not None else -1.0,
+        reverse=True,
+    )
+
+    parts = ["Source Catalog (ranked by evidence strength):"]
+    for source in sorted_sources:
+        quality_label = _quality_label_for(source)
         parts.append(
             "\n".join(
                 [
-                    f"[{source.source_id}]",
+                    f"[{source.source_id}] {quality_label}",
                     f"title: {source.title or 'Untitled source'}",
                     f"url: {source.url}",
                     f"provider: {source.provider or 'unknown'}",
-                    f"query: {source.query or 'unknown'}",
-                    f"query_family: {source.query_family or 'baseline'}",
+                    f"authority: {source.source_authority.value} | directness: {source.evidence_directness.value} | freshness: {source.source_freshness.value}",
                     f"published_date: {source.published_date or 'unknown'}",
                     f"snippet: {source.snippet or 'No snippet available'}",
                 ]
             )
         )
     return "\n\n".join(parts)
+
+
+def _quality_label_for(source: ResearchSource) -> str:
+    """Generate a human-readable quality label for a source."""
+    rank = source.quality_rank
+    if rank is None:
+        return "(quality: unknown)"
+    if rank >= 0.8:
+        return f"(quality: {rank:.1f} STRONG)"
+    if rank >= 0.6:
+        return f"(quality: {rank:.1f} moderate)"
+    if rank >= 0.4:
+        return f"(quality: {rank:.1f} weak)"
+    return f"(quality: {rank:.1f} poor)"
 
 
 # ---------------------------------------------------------------------------

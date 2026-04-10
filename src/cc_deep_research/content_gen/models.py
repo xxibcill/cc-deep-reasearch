@@ -142,13 +142,13 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "build_research_pack": ContentGenStageContract(
         stage_name="build_research_pack",
         prompt_module="prompts/research_pack.py",
-        contract_version="1.1.0",
+        contract_version="1.2.0",
         parser_location="agents/research_pack.py::_parse_research_pack",
         output_model="ResearchPack",
         format_notes=(
             "Structured findings/claims/flag blocks reference source_ids from the "
-            "prompt-provided source catalog; the model retains backward-compatible "
-            "legacy list views for downstream consumers."
+            "prompt-provided source catalog; sources are pre-sorted by quality_rank "
+            "and carry authority/directness/freshness signals (Task 16)."
         ),
         required_fields=(),
         expected_sections=(
@@ -818,6 +818,51 @@ class ResearchSeverity(StrEnum):
     HIGH = "high"
 
 
+class SourceAuthority(StrEnum):
+    """Authority level of a source.
+
+    - PRIMARY: Official docs, original research, government data, first-party reports
+    - SECONDARY: News analysis, industry reports, expert commentary
+    - TERTIARY: Summaries, aggregations, secondary references, social posts
+    - UNKNOWN: Cannot be determined from available metadata
+    """
+
+    PRIMARY = "primary"
+    SECONDARY = "secondary"
+    TERTIARY = "tertiary"
+    UNKNOWN = "unknown"
+
+
+class EvidenceDirectness(StrEnum):
+    """How directly the source supports a specific claim or finding.
+
+    - DIRECT: Original data, first-hand accounts, official statements
+    - INDIRECT: Analysis, interpretation, second-hand reporting
+    - ANECDOTAL: Personal accounts, unsourced claims, general observations
+    - UNKNOWN: Cannot be determined
+    """
+
+    DIRECT = "direct"
+    INDIRECT = "indirect"
+    ANECDOTAL = "anecdotal"
+    UNKNOWN = "unknown"
+
+
+class SourceFreshness(StrEnum):
+    """Freshness of the source relative to current date.
+
+    - CURRENT: Within last 6 months (highly relevant for fast-moving topics)
+    - RECENT: Within last 2 years (standard relevance window)
+    - STALE: Older than 2 years (may still be valuable for foundational facts)
+    - UNKNOWN: No date information available
+    """
+
+    CURRENT = "current"
+    RECENT = "recent"
+    STALE = "stale"
+    UNKNOWN = "unknown"
+
+
 class RetrievalMode(StrEnum):
     """Retrieval strategy mode for the planner."""
 
@@ -883,6 +928,11 @@ class ResearchSource(BaseModel):
     snippet: str = ""
     query_provenance: list[QueryProvenance] = Field(default_factory=list)
     source_metadata: dict[str, Any] = Field(default_factory=dict)
+    # Source quality metadata (Task 16)
+    source_authority: SourceAuthority = SourceAuthority.UNKNOWN
+    evidence_directness: EvidenceDirectness = EvidenceDirectness.UNKNOWN
+    source_freshness: SourceFreshness = SourceFreshness.UNKNOWN
+    quality_rank: float | None = Field(default=None, description="Computed quality rank (higher = stronger evidence)")
 
     @model_validator(mode="after")
     def _sync_query_provenance(self) -> ResearchSource:
