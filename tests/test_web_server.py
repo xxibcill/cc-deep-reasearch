@@ -43,7 +43,12 @@ from cc_deep_research.research_runs.models import (
 )
 from cc_deep_research.session_store import SessionStore
 from cc_deep_research.telemetry import ingest_telemetry_to_duckdb
-from cc_deep_research.web_server import create_app, get_event_router, get_job_registry
+from cc_deep_research.web_server import (
+    create_app,
+    get_event_router,
+    get_job_registry,
+    get_pipeline_job_registry,
+)
 
 
 def test_create_app_uses_supplied_runtime_dependencies() -> None:
@@ -112,6 +117,41 @@ def test_job_registry_can_mark_run_cancelled() -> None:
     assert job.stop_requested is True
     assert job.status == ResearchRunStatus.CANCELLED
     assert job.completed_at is not None
+
+
+def test_create_app_restores_persisted_pipeline_jobs(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pipeline jobs should survive FastAPI app recreation."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    app = create_app()
+    pipeline_jobs = get_pipeline_job_registry(app)
+    job = pipeline_jobs.create_job(
+        "pricing anchors",
+        from_stage=0,
+        to_stage=8,
+        pipeline_id="cgp-restored",
+    )
+    ctx = PipelineContext(
+        theme="pricing anchors",
+        current_stage=4,
+        selected_idea_id="idea-1",
+    )
+    pipeline_jobs.mark_running(job.pipeline_id)
+    pipeline_jobs.update_context(job.pipeline_id, ctx)
+    pipeline_jobs.mark_completed(job.pipeline_id, context=ctx)
+
+    restored_app = create_app()
+    restored_jobs = get_pipeline_job_registry(restored_app)
+    restored_job = restored_jobs.get_job(job.pipeline_id)
+
+    assert restored_job is not None
+    assert restored_job.status.value == "completed"
+    assert restored_job.pipeline_context is not None
+    assert restored_job.pipeline_context.current_stage == 4
+    assert restored_job.pipeline_context.selected_idea_id == "idea-1"
 
 
 def test_run_scripting_endpoint_can_force_single_pass(
