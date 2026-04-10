@@ -19,6 +19,10 @@ export interface ResearchContentBridgePayload {
 }
 
 const RESEARCH_CONTENT_BRIDGE_STORAGE_KEY = 'ccdr.research-content-bridge'
+/**
+ * Maximum characters of report content to transfer to content studio.
+ * Truncates large reports to avoid sessionStorage bloat while preserving context.
+ */
 const REPORT_TRANSFER_LIMIT = 12000
 
 function trimText(value: string | null | undefined): string {
