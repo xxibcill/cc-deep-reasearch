@@ -5,6 +5,7 @@ import {
   EventFilter,
   ViewMode,
   SessionListQueryState,
+  LiveStreamStatus,
 } from '@/types/telemetry';
 
 export const DEFAULT_SESSION_LIST_QUERY: SessionListQueryState = {
@@ -25,6 +26,20 @@ export const DEFAULT_EVENT_FILTERS: EventFilter = {
 };
 
 export const MAX_BUFFERED_EVENTS = 4000;
+
+export const DEFAULT_LIVE_STREAM_STATUS: LiveStreamStatus = {
+  phase: 'idle',
+  connected: false,
+  reconnectAttempt: 0,
+  maxReconnectAttempts: 5,
+  nextRetryAt: null,
+  lastMessageAt: null,
+  lastEventAt: null,
+  lastHistoryAt: null,
+  lastDisconnectAt: null,
+  failureReason: null,
+  canReconnect: true,
+};
 
 interface DashboardState {
   sessionId: string | null;
@@ -59,6 +74,8 @@ interface DashboardState {
 
   events: TelemetryEvent[];
   connected: boolean;
+  liveStreamStatus: LiveStreamStatus;
+  setLiveStreamStatus: (status: Partial<LiveStreamStatus>) => void;
   selectedEvent: TelemetryEvent | null;
   replaceEvents: (events: TelemetryEvent[]) => void;
   appendEvent: (event: TelemetryEvent) => void;
@@ -231,6 +248,10 @@ const useDashboardStore = create<DashboardState>((set) => ({
 
   events: [],
   connected: false,
+  liveStreamStatus: DEFAULT_LIVE_STREAM_STATUS,
+  setLiveStreamStatus: (status) => set((state) => ({
+    liveStreamStatus: { ...state.liveStreamStatus, ...status },
+  })),
   selectedEvent: null,
   replaceEvents: (events) => set({ events: sortEvents(events) }),
   appendEvent: (event) =>

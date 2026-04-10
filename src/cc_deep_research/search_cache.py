@@ -228,7 +228,7 @@ class SearchCacheStore:
                     created_at = excluded.created_at,
                     expires_at = excluded.expires_at,
                     last_accessed_at = excluded.last_accessed_at,
-                    hit_count = 0
+                    hit_count = hit_count
                 """,
                 (
                     cache_key,

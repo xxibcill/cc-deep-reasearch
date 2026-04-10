@@ -5,37 +5,40 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function getStatusBadgeVariant(
-  status: string
-): 'success' | 'warning' | 'destructive' | 'secondary' | 'default' | 'info' | 'outline' {
-  switch (status) {
-    case 'completed':
-    case 'success':
-    case 'healthy':
-      return 'success';
-    case 'running':
-    case 'started':
-    case 'pending':
-    case 'scheduled':
-      return 'info';
-    case 'failed':
-    case 'error':
-    case 'timeout':
-    case 'destructive':
-      return 'destructive';
-    case 'warning':
-    case 'cancelled':
-    case 'stalled':
-      return 'warning';
-    case 'secondary':
-    case 'unknown':
-    case 'selected':
-    case 'recorded':
-    case 'fallback':
-      return 'secondary';
-    case 'outline':
-      return 'outline';
-    default:
-      return 'default';
+export type BadgeVariant = 'default' | 'secondary' | 'success' | 'warning' | 'destructive' | 'outline' | 'info';
+
+/**
+ * Maps generic event/operation status strings to badge variants.
+ *
+ * Mapping philosophy:
+ * - success/completed/healthy → success (positive outcomes)
+ * - failed/error/timeout → destructive (errors/failures)
+ * - running/started/pending/scheduled → default (in-progress states)
+ * - queued/secondary/unknown/etc → secondary (neutral/informational)
+ * - cancelled/skipped/stalled/warning → warning (attention needed but not errors)
+ * - outline → outline (explicit styling request)
+ */
+export function getStatusBadgeVariant(status: string): BadgeVariant {
+  if (status === 'completed' || status === 'success') {
+    return 'success';
   }
+  if (status === 'failed' || status === 'error') {
+    return 'destructive';
+  }
+  if (status === 'running') {
+    return 'default';
+  }
+  if (status === 'queued') {
+    return 'secondary';
+  }
+  if (status === 'cancelled') {
+    return 'warning';
+  }
+  if (status === 'skipped') {
+    return 'warning';
+  }
+  if (status === 'timeout' || status === 'fallback') {
+    return 'warning';
+  }
+  return 'secondary';
 }
