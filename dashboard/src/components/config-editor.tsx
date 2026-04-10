@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { startTransition, useEffect, useState, type ReactNode } from 'react';
 
 import { ConfigSecretsPanel } from '@/components/config-secrets-panel';
+import { ErrorBoundary } from '@/components/error-boundary';
 import { Button } from '@/components/ui/button';
 import {
   getApiErrorMessage,
@@ -164,7 +165,7 @@ function normalizeFormState(config: ConfigResponse): FormState {
   };
 }
 
-export function ConfigEditor() {
+function ConfigEditorContent() {
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -504,6 +505,15 @@ export function ConfigEditor() {
         </aside>
       </div>
     </div>
+  );
+}
+
+
+export function ConfigEditor() {
+  return (
+    <ErrorBoundary>
+      <ConfigEditorContent />
+    </ErrorBoundary>
   );
 }
 
