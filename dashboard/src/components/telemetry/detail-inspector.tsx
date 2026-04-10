@@ -13,7 +13,7 @@ import type {
   ToolExecution,
 } from '@/types/telemetry';
 
-const JSON_TRUNCATE_LENGTH = 500;
+const JSON_TRUNCATE_LENGTH = 2000;
 
 function statusAccent(status: string) {
   return getStatusBadgeVariant(status) as 'success' | 'warning' | 'destructive' | 'secondary' | 'default' | 'info' | 'outline';

@@ -14,6 +14,7 @@ import {
 } from '@/types/telemetry';
 
 const MAX_RECONNECT_ATTEMPTS = 5;
+const DEFAULT_HISTORY_LIMIT = 1000;
 
 function derivePhase(connected: boolean, reconnecting: boolean, hasEvents: boolean): LiveStreamPhase {
   if (connected) return 'live';
@@ -43,10 +44,13 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
   const lastHistoryAtRef = useRef<string | null>(null);
   const lastDisconnectAtRef = useRef<string | null>(null);
   const failureReasonRef = useRef<string | null>(null);
+  const parseErrorCountRef = useRef(0);
+  const paginationInFlightRef = useRef<Set<string>>(new Set());
 
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [nextRetryAt, setNextRetryAt] = useState<string | null>(null);
   const [phase, setPhase] = useState<LiveStreamPhase>(historical ? 'historical' : 'idle');
+  const [paginationLoading, setPaginationLoading] = useState(false);
 
   const liveStreamStatus: LiveStreamStatus = {
     phase,
@@ -141,7 +145,7 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
       // Request history
       const historyMessage: WSClientGetHistoryMessage = {
         type: 'get_history',
-        limit: 1000,
+        limit: DEFAULT_HISTORY_LIMIT,
       };
       ws.send(JSON.stringify(historyMessage));
       lastHistoryAtRef.current = new Date().toISOString();
@@ -174,7 +178,11 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
           failureReasonRef.current = message.error ?? 'Unknown error';
         }
       } catch (error) {
-        console.error('Failed to parse WebSocket message:', error);
+        parseErrorCountRef.current += 1;
+        console.error(
+          `[dashboard] failed to parse WebSocket message (count=${parseErrorCountRef.current}):`,
+          error
+        );
       }
     };
 
@@ -254,10 +262,18 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
   /**
    * Fetch more events using cursor-based pagination
    */
-  const fetchMoreEvents = useCallback((cursor: number | null, beforeCursor: number | null = null, limit: number = 1000) => {
+  const fetchMoreEvents = useCallback((cursor: number | null, beforeCursor: number | null = null, limit: number = DEFAULT_HISTORY_LIMIT) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       return;
     }
+
+    // Track in-flight pagination request to prevent duplicates
+    const paginationKey = `cursor:${cursor ?? 'null'}:before:${beforeCursor ?? 'null'}`;
+    if (paginationInFlightRef.current.has(paginationKey)) {
+      return;
+    }
+    paginationInFlightRef.current.add(paginationKey);
+    setPaginationLoading(true);
 
     const message: WSClientGetHistoryMessage = {
       type: 'get_history',
@@ -266,20 +282,26 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
       limit,
     };
     wsRef.current.send(JSON.stringify(message));
+
+    // Clean up after a timeout (fallback in case we don't receive a response)
+    window.setTimeout(() => {
+      paginationInFlightRef.current.delete(paginationKey);
+      setPaginationLoading(false);
+    }, 10000);
   }, []);
 
   /**
    * Fetch next page of events
    */
   const fetchNextPage = useCallback((nextCursor: number) => {
-    fetchMoreEvents(nextCursor, null, 1000);
+    fetchMoreEvents(nextCursor, null, DEFAULT_HISTORY_LIMIT);
   }, [fetchMoreEvents]);
 
   /**
    * Fetch previous page of events
    */
   const fetchPrevPage = useCallback((prevCursor: number) => {
-    fetchMoreEvents(null, prevCursor, 1000);
+    fetchMoreEvents(null, prevCursor, DEFAULT_HISTORY_LIMIT);
   }, [fetchMoreEvents]);
 
   useEffect(() => {
@@ -309,5 +331,6 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
     fetchMoreEvents,
     fetchNextPage,
     fetchPrevPage,
+    paginationLoading,
   };
 }

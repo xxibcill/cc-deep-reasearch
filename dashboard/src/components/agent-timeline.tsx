@@ -30,18 +30,40 @@ function sampleMarkers(markers: AgentExecution['markers']) {
     };
   }
 
-  const lastIndex = markers.length - 1;
-  const selectedIndexes = new Set<number>([0, lastIndex]);
-  const targetInteriorCount = MAX_VISIBLE_MARKERS_PER_LANE - 2;
+  // Always include first and last markers (key checkpoints)
+  const firstTimestamp = markers[0]?.timestamp ?? 0;
+  const lastTimestamp = markers[markers.length - 1]?.timestamp ?? 0;
+  const timeRange = lastTimestamp - firstTimestamp;
 
-  for (let step = 1; step <= targetInteriorCount; step += 1) {
-    const index = Math.round((step * lastIndex) / (targetInteriorCount + 1));
-    selectedIndexes.add(index);
+  const selectedMarkers: typeof markers = [markers[0]];
+
+  if (timeRange > 0) {
+    // Use timestamp-based sampling for stable visuals across re-renders
+    const targetInteriorCount = MAX_VISIBLE_MARKERS_PER_LANE - 2;
+    for (let step = 1; step <= targetInteriorCount; step += 1) {
+      const targetTimestamp = firstTimestamp + (step / (targetInteriorCount + 1)) * timeRange;
+      // Find the marker closest to the target timestamp
+      let closestIndex = 0;
+      let closestDiff = Math.abs((markers[0]?.timestamp ?? 0) - targetTimestamp);
+      for (let i = 1; i < markers.length - 1; i++) {
+        const diff = Math.abs((markers[i]?.timestamp ?? 0) - targetTimestamp);
+        if (diff < closestDiff) {
+          closestDiff = diff;
+          closestIndex = i;
+        }
+      }
+      // Avoid duplicates
+      if (closestIndex !== 0 && closestIndex !== markers.length - 1) {
+        selectedMarkers.push(markers[closestIndex]);
+      }
+    }
   }
 
+  selectedMarkers.push(markers[markers.length - 1]);
+
   return {
-    markers: markers.filter((_, index) => selectedIndexes.has(index)),
-    hiddenCount: markers.length - selectedIndexes.size,
+    markers: selectedMarkers,
+    hiddenCount: markers.length - selectedMarkers.length,
   };
 }
 
