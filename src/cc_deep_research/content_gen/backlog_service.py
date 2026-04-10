@@ -79,6 +79,11 @@ class BacklogService:
 
         now = _now_iso()
         score_by_id = {score.idea_id: score for score in scoring.scores}
+        active_runner_up_ids = {
+            candidate.idea_id
+            for candidate in scoring.active_candidates
+            if candidate.role == "runner_up"
+        }
         updated_items: list[BacklogItem] = []
 
         for item in backlog.items:
@@ -92,7 +97,10 @@ class BacklogService:
             if scoring.selected_idea_id and item.idea_id == scoring.selected_idea_id:
                 patch["status"] = "selected"
                 patch["selection_reasoning"] = scoring.selection_reasoning
-            elif scoring.selected_idea_id and item.status == "selected":
+            elif item.idea_id in active_runner_up_ids:
+                patch["status"] = "runner_up"
+                patch["selection_reasoning"] = ""
+            elif item.status in {"selected", "runner_up"}:
                 patch["status"] = "backlog"
                 patch["selection_reasoning"] = ""
 

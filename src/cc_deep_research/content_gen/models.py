@@ -1,6 +1,6 @@
 """Data models for the content generation workflow.
 
-Contract Version: 1.3.0
+Contract Version: 1.4.0
 
 This module defines the data contracts for each pipeline stage. Each model
 represents the expected output format from its corresponding agent.
@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from cc_deep_research.models.search import QueryProvenance
 
-CONTRACT_VERSION = "1.3.0"
+CONTRACT_VERSION = "1.4.0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -653,7 +653,7 @@ class BacklogItem(BaseModel):
     evidence: str = ""
     risk_level: str = "medium"  # low | medium | high
     priority_score: float = 0.0
-    status: str = "backlog"  # backlog | selected | in_production | published | archived
+    status: str = "backlog"  # backlog | selected | runner_up | in_production | published | archived
     latest_score: int | None = None
     latest_recommendation: str = ""
     selection_reasoning: str = ""
@@ -707,10 +707,40 @@ class ScoringOutput(BaseModel):
     selected_idea_id: str = ""
     selection_reasoning: str = ""
     runner_up_idea_ids: list[str] = Field(default_factory=list)
+    active_candidates: list[PipelineCandidate] = Field(default_factory=list)
     hold: list[str] = Field(default_factory=list)  # idea_ids
     killed: list[str] = Field(default_factory=list)  # idea_ids
     is_degraded: bool = False
     degradation_reason: str = ""
+
+    @model_validator(mode="after")
+    def _populate_active_candidates(self) -> ScoringOutput:
+        self.active_candidates = _derive_pipeline_candidates(
+            selected_idea_id=self.selected_idea_id,
+            shortlist=self.shortlist,
+            runner_up_idea_ids=self.runner_up_idea_ids,
+            existing_candidates=self.active_candidates,
+        )
+        if not self.runner_up_idea_ids:
+            self.runner_up_idea_ids = [
+                candidate.idea_id for candidate in self.active_candidates if candidate.role == "runner_up"
+            ]
+        if not self.selected_idea_id:
+            primary = next(
+                (candidate.idea_id for candidate in self.active_candidates if candidate.role == "primary"),
+                "",
+            )
+            if primary:
+                self.selected_idea_id = primary
+        return self
+
+
+class PipelineCandidate(BaseModel):
+    """One active candidate lane in the small editorial queue."""
+
+    idea_id: str
+    role: Literal["primary", "runner_up"] = "primary"
+    status: Literal["selected", "runner_up", "in_production", "published"] = "selected"
 
 
 # ---------------------------------------------------------------------------
@@ -1426,6 +1456,7 @@ class StageTraceMetadata(BaseModel):
     beats_count: int = 0
     platforms_count: int = 0
     approved: bool = False
+    active_candidate_count: int = 0
 
 
 class PipelineStageTrace(BaseModel):
@@ -1471,6 +1502,7 @@ class PipelineContext(BaseModel):
     selected_idea_id: str = ""
     selection_reasoning: str = ""
     runner_up_idea_ids: list[str] = Field(default_factory=list)
+    active_candidates: list[PipelineCandidate] = Field(default_factory=list)
     angles: AngleOutput | None = None
     research_pack: ResearchPack | None = None
     argument_map: ArgumentMap | None = None
@@ -1479,10 +1511,108 @@ class PipelineContext(BaseModel):
     production_brief: ProductionBrief | None = None
     packaging: PackagingOutput | None = None
     qc_gate: HumanQCGate | None = None
+    publish_items: list[PublishItem] = Field(default_factory=list)
     publish_item: PublishItem | None = None
     performance: PerformanceAnalysis | None = None
     iteration_state: IterationState | None = None
     stage_traces: list[PipelineStageTrace] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _populate_candidate_queue(self) -> PipelineContext:
+        shortlist = self.shortlist or (self.scoring.shortlist if self.scoring else [])
+        runner_up_idea_ids = self.runner_up_idea_ids or (
+            self.scoring.runner_up_idea_ids if self.scoring else []
+        )
+        selected_idea_id = self.selected_idea_id or (
+            self.scoring.selected_idea_id if self.scoring else ""
+        )
+        existing_candidates = self.active_candidates or (
+            self.scoring.active_candidates if self.scoring else []
+        )
+        self.active_candidates = _derive_pipeline_candidates(
+            selected_idea_id=selected_idea_id,
+            shortlist=shortlist,
+            runner_up_idea_ids=runner_up_idea_ids,
+            existing_candidates=existing_candidates,
+        )
+        if not self.selected_idea_id:
+            primary = next(
+                (candidate.idea_id for candidate in self.active_candidates if candidate.role == "primary"),
+                "",
+            )
+            if primary:
+                self.selected_idea_id = primary
+        if not self.runner_up_idea_ids:
+            self.runner_up_idea_ids = [
+                candidate.idea_id for candidate in self.active_candidates if candidate.role == "runner_up"
+            ]
+        if not self.publish_items and self.publish_item is not None:
+            self.publish_items = [self.publish_item]
+        if self.publish_item is None and self.publish_items:
+            self.publish_item = self.publish_items[0]
+        return self
+
+
+_ACTIVE_CANDIDATE_LIMIT = 2
+
+
+def _derive_pipeline_candidates(
+    *,
+    selected_idea_id: str = "",
+    shortlist: list[str] | None = None,
+    runner_up_idea_ids: list[str] | None = None,
+    existing_candidates: list[PipelineCandidate] | None = None,
+) -> list[PipelineCandidate]:
+    primary_id = selected_idea_id.strip()
+    if not primary_id and existing_candidates:
+        primary_id = next(
+            (candidate.idea_id for candidate in existing_candidates if candidate.role == "primary"),
+            "",
+        )
+    if not primary_id and shortlist:
+        primary_id = next((idea_id for idea_id in shortlist if idea_id), "")
+
+    ordered_ids: list[str] = []
+    for idea_id in [primary_id, *(shortlist or []), *(runner_up_idea_ids or [])]:
+        if idea_id and idea_id not in ordered_ids:
+            ordered_ids.append(idea_id)
+
+    if not ordered_ids:
+        return []
+
+    primary_status = "selected"
+    if existing_candidates:
+        primary_status = next(
+            (
+                candidate.status
+                for candidate in existing_candidates
+                if candidate.idea_id == primary_id and candidate.role == "primary"
+            ),
+            primary_status,
+        )
+
+    candidates = [
+        PipelineCandidate(
+            idea_id=primary_id or ordered_ids[0],
+            role="primary",
+            status=primary_status if primary_status in {"selected", "in_production", "published"} else "selected",
+        )
+    ]
+
+    for idea_id in ordered_ids:
+        if idea_id == candidates[0].idea_id:
+            continue
+        candidates.append(
+            PipelineCandidate(
+                idea_id=idea_id,
+                role="runner_up",
+                status="runner_up",
+            )
+        )
+        if len(candidates) >= _ACTIVE_CANDIDATE_LIMIT:
+            break
+
+    return candidates
 
 
 # ---------------------------------------------------------------------------

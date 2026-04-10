@@ -792,6 +792,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
             BacklogItem,
             BacklogOutput,
             PipelineContext,
+            PipelineCandidate,
             ScoringOutput,
         )
 
@@ -831,10 +832,16 @@ def register_content_gen_commands(cli: click.Group) -> None:
                     shortlist=[seeded_item.idea_id],
                     selected_idea_id=seeded_item.idea_id,
                     selection_reasoning="Seeded directly from --idea.",
+                    active_candidates=[
+                        PipelineCandidate(idea_id=seeded_item.idea_id, role="primary", status="selected")
+                    ],
                 ),
                 shortlist=[seeded_item.idea_id],
                 selected_idea_id=seeded_item.idea_id,
                 selection_reasoning="Seeded directly from --idea.",
+                active_candidates=[
+                    PipelineCandidate(idea_id=seeded_item.idea_id, role="primary", status="selected")
+                ],
             )
             bypass_ideation = True
         elif not theme:
@@ -855,9 +862,23 @@ def register_content_gen_commands(cli: click.Group) -> None:
             msg = "--to-stage must be greater than or equal to --from-stage"
             raise click.UsageError(msg)
 
+        context_output_path = _resolve_pipeline_context_path(output, save_context)
+        latest_ctx = ctx
+
         def progress(idx: int, label: str) -> None:
             if not quiet:
                 click.echo(f"  Stage {idx + 1}/{len(PIPELINE_STAGES)}: {label}...")
+
+        def on_stage_completed(
+            _idx: int,
+            _status: str,
+            _detail: str,
+            stage_ctx: PipelineContext,
+        ) -> None:
+            nonlocal latest_ctx
+            latest_ctx = stage_ctx.model_copy(deep=True)
+            if context_output_path is not None:
+                _write_pipeline_context(stage_ctx, context_output_path)
 
         async def _run() -> PipelineContext:
             from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
@@ -879,11 +900,17 @@ def register_content_gen_commands(cli: click.Group) -> None:
                 initial_context=ctx,
                 bypass_ideation=bypass_ideation,
                 progress_callback=progress,
+                stage_completed_callback=on_stage_completed,
             )
 
         try:
             result = asyncio.run(_run())
         except Exception:
+            _auto_save_failed_pipeline_context(
+                latest_ctx,
+                context_output_path,
+                quiet,
+            )
             if not quiet:
                 click.echo("Pipeline failed.", err=True)
             raise
@@ -915,11 +942,10 @@ def register_content_gen_commands(cli: click.Group) -> None:
             if result.qc_gate:
                 click.echo(f"QC: approved={result.qc_gate.approved_for_publish}")
 
-        if save_context or output:
-            ctx_path = (output + ".context.json") if output else "pipeline_context.json"
-            Path(ctx_path).write_text(result.model_dump_json(indent=2))
+        if context_output_path is not None:
+            _write_pipeline_context(result, context_output_path)
             if not quiet:
-                click.echo(f"\nContext saved to: {ctx_path}")
+                click.echo(f"\nContext saved to: {context_output_path}")
 
         if output:
             # Write final script to output
@@ -946,6 +972,37 @@ def _auto_save_failed_context(
             click.echo(f"\nPipeline failed. Partial context saved to: {fallback_path}", err=True)
     except Exception:
         pass  # best-effort; don't mask the original error
+
+
+def _resolve_pipeline_context_path(output: str | None, save_context: bool) -> str | None:
+    """Return the intended pipeline context path for explicit saves."""
+    if output:
+        return output + ".context.json"
+    if save_context:
+        return "pipeline_context.json"
+    return None
+
+
+def _write_pipeline_context(ctx: PipelineContext, path: str) -> None:
+    """Persist a pipeline context snapshot."""
+    Path(path).write_text(ctx.model_dump_json(indent=2))
+
+
+def _auto_save_failed_pipeline_context(
+    ctx: PipelineContext | None,
+    output_path: str | None,
+    quiet: bool,
+) -> None:
+    """Best-effort save of partial pipeline context on failure."""
+    if ctx is None:
+        return
+    try:
+        fallback_path = output_path or "pipeline_context_failed.json"
+        _write_pipeline_context(ctx, fallback_path)
+        if not quiet:
+            click.echo(f"\nPipeline failed. Partial context saved to: {fallback_path}", err=True)
+    except Exception:
+        pass
 
 
 def _load_packaging_inputs(text: str) -> tuple[ScriptVersion, AngleOption]:
