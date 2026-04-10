@@ -1,8 +1,10 @@
 'use client';
 
-import Link from 'next/link';
 import { useDeferredValue, useEffect, useState } from 'react';
+import { AlertCircle, Play, Radar } from 'lucide-react';
 
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { SessionList } from '@/components/session-list';
 import { StartResearchForm } from '@/components/start-research-form';
 import { getApiErrorMessage, getSessions } from '@/lib/api';
@@ -21,6 +23,12 @@ export default function HomePage() {
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
   const deferredSearch = useDeferredValue(query.search);
+
+  const activeSessions = sessions.filter((s) => s.active);
+  const failedSessions = sessions.filter((s) => !s.active && (s.status === 'failed' || s.status === 'interrupted'));
+  const readySessions = sessions.filter((s) => s.hasReport && !s.active);
+  const featuredReadySession = readySessions[0] ?? null;
+  const hasNoSessions = total === 0 && !loading;
 
   useEffect(() => {
     let mounted = true;
@@ -99,47 +107,101 @@ export default function HomePage() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <header className="mb-8">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">CC Deep Research</h1>
-            <p className="text-sm text-muted-foreground mt-1">AI-powered research with real-time monitoring</p>
+    <div className="mx-auto max-w-content px-page-x py-page-y">
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,0.62fr)]">
+        <div className="panel-shell data-grid rounded-[1.5rem] p-6 sm:p-8">
+          <div className="space-y-8">
+            <div className="space-y-4">
+              <p className="eyebrow">Control room</p>
+              <h1 className="font-display text-[clamp(2.8rem,6vw,4.8rem)] font-semibold uppercase tracking-[0.01em] text-foreground">
+                {hasNoSessions ? 'Ready to research' : 'Operations overview'}
+              </h1>
+              <p className="max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
+                {hasNoSessions
+                  ? 'Start your first research session to begin monitoring runs, tracing agent behavior, and building your archive.'
+                  : 'Active runs, attention-needed sessions, and completed research with reports ready.'}
+              </p>
+            </div>
+
+            {hasNoSessions ? (
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="default">No sessions yet</Badge>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid gap-3 md:grid-cols-3">
+                  <Card className="border-slate-200/80 shadow-sm">
+                    <CardContent className="flex items-center gap-3 p-4">
+                      <div className="rounded-xl bg-slate-100 p-2 text-slate-700">
+                        <Play className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Running now</p>
+                        <p className="text-lg font-semibold text-slate-900">{loading ? '...' : activeSessions.length}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-slate-200/80 shadow-sm">
+                    <CardContent className="flex items-center gap-3 p-4">
+                      <div className="rounded-xl bg-amber-100 p-2 text-amber-700">
+                        <AlertCircle className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Needs attention</p>
+                        <p className="text-lg font-semibold text-slate-900">{loading ? '...' : failedSessions.length}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-slate-200/80 shadow-sm">
+                    <CardContent className="flex items-center gap-3 p-4">
+                      <div className="rounded-xl bg-emerald-100 p-2 text-emerald-700">
+                        <Radar className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Reports ready</p>
+                        <p className="text-lg font-semibold text-slate-900">{loading ? '...' : readySessions.length}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            )}
           </div>
-          <Link
-            className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-            href="/settings"
-          >
-            Open settings
-          </Link>
         </div>
-      </header>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[340px_1fr]">
-        <aside className="lg:sticky lg:top-8 lg:self-start">
-          <div className="rounded-lg border bg-card p-5">
-            <h2 className="text-lg font-semibold mb-4">Start Research</h2>
-            <StartResearchForm />
-          </div>
+        <aside className="xl:sticky xl:top-[7.5rem] xl:self-start">
+          <Card className={`rounded-[1.45rem] ${hasNoSessions ? '' : 'opacity-75'}`}>
+            <CardHeader className="border-b border-border/70">
+              <p className="eyebrow">Launch console</p>
+              <CardTitle className="text-[2rem]">Start Research</CardTitle>
+              <p className="max-w-[28ch] text-sm leading-6 text-muted-foreground">
+                Pick a preset, describe the question, then open operator controls only when the
+                run needs custom tuning.
+              </p>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <StartResearchForm />
+            </CardContent>
+          </Card>
         </aside>
+      </section>
 
-        <section>
-          <div className="rounded-lg border bg-card p-5">
-            <SessionList
-              error={sessionsError}
-              loading={loading}
-              loadingMore={loadingMore}
-              loadMoreError={loadMoreError}
-              nextCursor={nextCursor}
-              onRefresh={() => setReloadNonce((value) => value + 1)}
-              onRetry={() => setReloadNonce((value) => value + 1)}
-              onLoadMore={handleLoadMore}
-              sessions={sessions}
-              total={total}
-            />
-          </div>
-        </section>
-      </div>
+      <section className="mt-8">
+        <SessionList
+          error={sessionsError}
+          loading={loading}
+          loadingMore={loadingMore}
+          loadMoreError={loadMoreError}
+          nextCursor={nextCursor}
+          onRefresh={() => setReloadNonce((value) => value + 1)}
+          onRetry={() => setReloadNonce((value) => value + 1)}
+          onLoadMore={handleLoadMore}
+          sessions={sessions}
+          total={total}
+        />
+      </section>
     </div>
   );
 }

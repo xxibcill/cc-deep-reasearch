@@ -8,8 +8,8 @@ export default function SessionPage({ params }: { params: { id: string } }) {
     <SessionPageFrame
       routeId={params.id}
       view="details"
-      title="Session Details"
-      description="Static metadata, artifact availability, and run facts live on the base session route."
+      title="Session Overview"
+      description="What this session is about, whether it succeeded, and what to do next."
     >
       {({ sessionId, runStatus, sessionSummary }) => (
         <SessionStaticDetails
