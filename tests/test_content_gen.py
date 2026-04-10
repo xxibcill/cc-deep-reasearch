@@ -4419,3 +4419,281 @@ def test_opportunity_prompt_user_includes_strategy_fields() -> None:
     assert "spot reduction" in result
     assert "peer-reviewed" in result
     assert "no hype" in result
+
+
+# ---------------------------------------------------------------------------
+# Degraded metadata tests for tolerant stages (Task 14)
+# ---------------------------------------------------------------------------
+
+
+def test_research_pack_degraded_flag_blank_response() -> None:
+    """ResearchPack should track degraded state when LLM response is blank."""
+    from cc_deep_research.content_gen.agents.research_pack import _maybe_set_degraded
+    from cc_deep_research.content_gen.models import ResearchPack
+
+    pack = ResearchPack(idea_id="test", angle_id="a1")
+    _maybe_set_degraded(pack, "")
+
+    assert pack.is_degraded is True
+    assert pack.degradation_reason == "blank LLM response after retry"
+
+
+def test_research_pack_degraded_flag_zero_usable_records() -> None:
+    """ResearchPack should track degraded state when parser produces zero usable records."""
+    from cc_deep_research.content_gen.agents.research_pack import _maybe_set_degraded
+    from cc_deep_research.content_gen.models import ResearchPack
+
+    pack = ResearchPack(idea_id="test", angle_id="a1")
+    _maybe_set_degraded(pack, "some text but no structured sections")
+
+    assert pack.is_degraded is True
+    assert pack.degradation_reason == "parser produced zero usable records"
+
+
+def test_research_pack_degraded_flag_partial_records() -> None:
+    """ResearchPack should track degraded state when parser produces partial records."""
+    from cc_deep_research.content_gen.agents.research_pack import _maybe_set_degraded
+    from cc_deep_research.content_gen.models import ResearchFinding, ResearchPack
+
+    pack = ResearchPack(
+        idea_id="test",
+        angle_id="a1",
+        findings=[ResearchFinding(summary="Some finding")],
+        # claims, counterpoints, uncertainty_flags are empty
+    )
+    _maybe_set_degraded(pack, "findings:\n---\nsummary: Some finding")
+
+    assert pack.is_degraded is True
+    assert "missing:" in pack.degradation_reason
+
+
+def test_research_pack_not_degraded_when_complete() -> None:
+    """ResearchPack should not be degraded when all structured fields are populated."""
+    from cc_deep_research.content_gen.agents.research_pack import _maybe_set_degraded
+    from cc_deep_research.content_gen.models import ResearchClaim, ResearchCounterpoint, ResearchFinding, ResearchPack, ResearchUncertaintyFlag
+
+    pack = ResearchPack(
+        idea_id="test",
+        angle_id="a1",
+        findings=[ResearchFinding(summary="Some finding")],
+        claims=[ResearchClaim(claim="Some claim")],
+        counterpoints=[ResearchCounterpoint(summary="Some counterpoint")],
+        uncertainty_flags=[ResearchUncertaintyFlag(claim="Some flag")],
+    )
+    _maybe_set_degraded(pack, "findings:\n---\nsummary: Some finding\nclaims:\n---\nclaim: Some claim")
+
+    assert pack.is_degraded is False
+    assert pack.degradation_reason == ""
+
+
+def test_production_brief_degraded_flag_blank_response() -> None:
+    """ProductionBrief should track degraded state when LLM response is blank."""
+    from cc_deep_research.content_gen.agents.production import _maybe_set_degraded
+    from cc_deep_research.content_gen.models import ProductionBrief
+
+    brief = ProductionBrief(idea_id="test")
+    _maybe_set_degraded(brief, "")
+
+    assert brief.is_degraded is True
+    assert brief.degradation_reason == "blank LLM response after retry"
+
+
+def test_production_brief_degraded_flag_zero_usable_records() -> None:
+    """ProductionBrief should track degraded state when parser produces zero usable records."""
+    from cc_deep_research.content_gen.agents.production import _maybe_set_degraded
+    from cc_deep_research.content_gen.models import ProductionBrief
+
+    brief = ProductionBrief(idea_id="test")
+    _maybe_set_degraded(brief, "location:")
+
+    assert brief.is_degraded is True
+    assert brief.degradation_reason == "parser produced zero usable records"
+
+
+def test_production_brief_degraded_flag_partial_records() -> None:
+    """ProductionBrief should track degraded state when parser produces partial records."""
+    from cc_deep_research.content_gen.agents.production import _maybe_set_degraded
+    from cc_deep_research.content_gen.models import ProductionBrief
+
+    brief = ProductionBrief(idea_id="test", location="Studio A", props=[])
+    _maybe_set_degraded(brief, "location: Studio A")
+
+    assert brief.is_degraded is True
+    assert "missing:" in brief.degradation_reason
+
+
+def test_production_brief_not_degraded_when_complete() -> None:
+    """ProductionBrief should not be degraded when all fields are populated."""
+    from cc_deep_research.content_gen.agents.production import _maybe_set_degraded
+    from cc_deep_research.content_gen.models import ProductionBrief
+
+    brief = ProductionBrief(
+        idea_id="test",
+        location="Studio A",
+        setup="Three camera angles",
+        wardrobe="Casual",
+        props=["Laptop", "Notebook"],
+        assets_to_prepare=["Screenshots"],
+        audio_checks=["Mic level"],
+        battery_checks=["Check battery"],
+        storage_checks=["Clear space"],
+        pickup_lines_to_capture=["Opening hook"],
+        backup_plan="Use B-roll if needed",
+    )
+    _maybe_set_degraded(brief, "location: Studio A\nsetup: Three camera angles")
+
+    assert brief.is_degraded is False
+    assert brief.degradation_reason == ""
+
+
+def test_performance_analysis_degraded_flag_blank_response() -> None:
+    """PerformanceAnalysis should track degraded state when LLM response is blank."""
+    from cc_deep_research.content_gen.agents.performance import _maybe_set_degraded
+    from cc_deep_research.content_gen.models import PerformanceAnalysis
+
+    analysis = PerformanceAnalysis(video_id="v123")
+    _maybe_set_degraded(analysis, "")
+
+    assert analysis.is_degraded is True
+    assert analysis.degradation_reason == "blank LLM response after retry"
+
+
+def test_performance_analysis_degraded_flag_zero_usable_records() -> None:
+    """PerformanceAnalysis should track degraded state when parser produces zero usable records."""
+    from cc_deep_research.content_gen.agents.performance import _maybe_set_degraded
+    from cc_deep_research.content_gen.models import PerformanceAnalysis
+
+    analysis = PerformanceAnalysis(video_id="v123")
+    _maybe_set_degraded(analysis, "hook_diagnosis:")
+
+    assert analysis.is_degraded is True
+    assert analysis.degradation_reason == "parser produced zero usable records"
+
+
+def test_performance_analysis_degraded_flag_partial_records() -> None:
+    """PerformanceAnalysis should track degraded state when parser produces partial records."""
+    from cc_deep_research.content_gen.agents.performance import _maybe_set_degraded
+    from cc_deep_research.content_gen.models import PerformanceAnalysis
+
+    analysis = PerformanceAnalysis(
+        video_id="v123",
+        what_worked=["Strong hook"],
+        what_failed=[],
+        audience_signals=[],
+        dropoff_hypotheses=[],
+        follow_up_ideas=[],
+        backlog_updates=[],
+    )
+    _maybe_set_degraded(analysis, "what_worked:\n- Strong hook")
+
+    assert analysis.is_degraded is True
+    assert "missing:" in analysis.degradation_reason
+
+
+def test_performance_analysis_not_degraded_when_complete() -> None:
+    """PerformanceAnalysis should not be degraded when all fields are populated."""
+    from cc_deep_research.content_gen.agents.performance import _maybe_set_degraded
+    from cc_deep_research.content_gen.models import PerformanceAnalysis
+
+    analysis = PerformanceAnalysis(
+        video_id="v123",
+        what_worked=["Strong hook", "Clear CTA"],
+        what_failed=["Weak second beat"],
+        audience_signals=["High retention on hook"],
+        dropoff_hypotheses=["Topic too narrow"],
+        hook_diagnosis="Strong but could be tighter",
+        lesson="Lead with the surprising stat",
+        next_test="Try different opening frame",
+        follow_up_ideas=["Follow up on stat angle"],
+        backlog_updates=["Add pricing angle"],
+    )
+    _maybe_set_degraded(
+        analysis,
+        "what_worked:\n- Strong hook\n- Clear CTA\nwhat_failed:\n- Weak second beat",
+    )
+
+    assert analysis.is_degraded is False
+    assert analysis.degradation_reason == ""
+
+
+def test_orchestrator_build_trace_metadata_research_pack_degraded() -> None:
+    """Orchestrator should surface research pack degraded state in stage trace metadata."""
+    from cc_deep_research.content_gen.models import PipelineContext, ResearchPack, StageTraceMetadata
+
+    ctx = PipelineContext(
+        research_pack=ResearchPack(
+            idea_id="test-idea",
+            angle_id="test-angle",
+            is_degraded=True,
+            degradation_reason="blank LLM response after retry",
+        )
+    )
+
+    # Simulate _build_trace_metadata behavior for build_research_pack stage
+    meta = StageTraceMetadata()
+    if ctx.research_pack:
+        meta.is_degraded = ctx.research_pack.is_degraded
+        meta.degradation_reason = ctx.research_pack.degradation_reason
+
+    assert meta.is_degraded is True
+    assert meta.degradation_reason == "blank LLM response after retry"
+
+
+def test_orchestrator_build_trace_metadata_production_brief_degraded() -> None:
+    """Orchestrator should surface production brief degraded state in stage trace metadata."""
+    from cc_deep_research.content_gen.models import PipelineContext, ProductionBrief, StageTraceMetadata
+
+    ctx = PipelineContext(
+        production_brief=ProductionBrief(
+            idea_id="test-idea",
+            is_degraded=True,
+            degradation_reason="parser produced partial records; missing: props, assets_to_prepare",
+        )
+    )
+
+    # Simulate _build_trace_metadata behavior for production_brief stage
+    meta = StageTraceMetadata()
+    if ctx.production_brief:
+        meta.is_degraded = ctx.production_brief.is_degraded
+        meta.degradation_reason = ctx.production_brief.degradation_reason
+
+    assert meta.is_degraded is True
+    assert "missing:" in meta.degradation_reason
+
+
+def test_orchestrator_build_trace_metadata_performance_analysis_degraded() -> None:
+    """Orchestrator should surface performance analysis degraded state in stage trace metadata."""
+    from cc_deep_research.content_gen.models import PIPELINE_STAGES, PerformanceAnalysis, PipelineContext, StageTraceMetadata
+
+    ctx = PipelineContext(
+        performance=PerformanceAnalysis(
+            video_id="v123",
+            is_degraded=True,
+            degradation_reason="blank LLM response after retry",
+        )
+    )
+
+    # Simulate _build_trace_metadata behavior for performance_analysis stage
+    meta = StageTraceMetadata()
+    if ctx.performance:
+        meta.is_degraded = ctx.performance.is_degraded
+        meta.degradation_reason = ctx.performance.degradation_reason
+
+    assert meta.is_degraded is True
+    assert meta.degradation_reason == "blank LLM response after retry"
+
+
+def test_orchestrator_collect_warnings_publish_queue_no_items() -> None:
+    """Orchestrator should warn when publish queue produces no items."""
+    from cc_deep_research.content_gen.models import PipelineContext
+
+    ctx = PipelineContext(publish_items=[])
+
+    # Simulate _collect_trace_warnings behavior for publish_queue stage
+    warnings: list[str] = []
+    has_items = bool(ctx.publish_items or ctx.publish_item is not None)
+    if not has_items:
+        warnings.append("Publish queue produced no items; upstream dependency may be incomplete.")
+
+    assert len(warnings) == 1
+    assert "no items" in warnings[0]

@@ -918,6 +918,8 @@ class ResearchPack(BaseModel):
     claims_requiring_verification: list[str] = Field(default_factory=list)
     unsafe_or_uncertain_claims: list[str] = Field(default_factory=list)
     research_stop_reason: str = ""
+    is_degraded: bool = False
+    degradation_reason: str = ""
 
     @model_validator(mode="after")
     def _sync_structured_and_legacy_views(self) -> ResearchPack:
@@ -1261,6 +1263,8 @@ class ProductionBrief(BaseModel):
     storage_checks: list[str] = Field(default_factory=list)
     pickup_lines_to_capture: list[str] = Field(default_factory=list)
     backup_plan: str = ""
+    is_degraded: bool = False
+    degradation_reason: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -1440,6 +1444,8 @@ class PerformanceAnalysis(BaseModel):
     next_test: str = ""
     follow_up_ideas: list[str] = Field(default_factory=list)
     backlog_updates: list[str] = Field(default_factory=list)
+    is_degraded: bool = False
+    degradation_reason: str = ""
 
 
 # ---------------------------------------------------------------------------
