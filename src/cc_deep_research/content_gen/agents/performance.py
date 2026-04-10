@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Any
 
 from cc_deep_research.content_gen.models import PerformanceAnalysis
 from cc_deep_research.content_gen.prompts import performance as prompts
@@ -109,7 +109,7 @@ def _extract_list(text: str, header: str) -> list[str]:
 
 
 def _parse_performance(text: str, video_id: str) -> PerformanceAnalysis:
-    data: dict = {"video_id": video_id}
+    data: dict[str, Any] = {"video_id": video_id}
     for field in _LIST_FIELDS:
         data[field] = _extract_list(text, field)
     for field in ("hook_diagnosis", "lesson", "next_test"):

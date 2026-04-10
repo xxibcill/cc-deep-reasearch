@@ -213,8 +213,8 @@ def register_session_commands(cli: click.Group) -> None:
             if value:
                 has_issues = True
                 click.echo(f"{key.replace('_', ' ').title()}: {len(value)}")
-                for item in value[:10]:
-                    click.echo(f"  - {item}")
+                for drift_item in value[:10]:
+                    click.echo(f"  - {drift_item}")
                 if len(value) > 10:
                     click.echo(f"  ... and {len(value) - 10} more")
                 click.echo()

@@ -5,7 +5,15 @@ import { Activity, ChevronDown, FileText, GitBranch, List, Network, SlidersHoriz
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogBody,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select } from '@/components/ui/select';
 import { Tabs } from '@/components/ui/tabs';
@@ -23,6 +31,7 @@ import {
   Decision,
   Degradation,
   Failure,
+  LiveStreamStatus,
   ApiTelemetryEvent,
   SessionPromptMetadata,
   EventFilter,
@@ -51,7 +60,7 @@ const LLMReasoningPanel = dynamic(
 
 interface SessionDetailsProps {
   sessionId: string;
-  connected: boolean;
+  liveStreamStatus: LiveStreamStatus;
   events: TelemetryEvent[];
   selectedEvent: TelemetryEvent | null;
   viewMode: ViewMode;
@@ -77,18 +86,26 @@ function formatEventTime(timestamp: string): string {
 }
 
 function StatusBadge({
-  connected,
+  liveStreamStatus,
   eventCount,
 }: {
-  connected: boolean;
+  liveStreamStatus: LiveStreamStatus;
   eventCount: number;
 }) {
-  if (connected) {
+  if (liveStreamStatus.phase === 'live') {
     return <Badge variant="success">Live</Badge>;
   }
 
+  if (liveStreamStatus.phase === 'historical') {
+    return <Badge variant="secondary">Historical</Badge>;
+  }
+
+  if (liveStreamStatus.phase === 'reconnecting') {
+    return <Badge variant="warning">Reconnecting</Badge>;
+  }
+
   if (eventCount > 0) {
-    return <Badge variant="secondary">Snapshot</Badge>;
+    return <Badge variant="outline">Snapshot</Badge>;
   }
 
   return <Badge variant="destructive">Offline</Badge>;
@@ -250,12 +267,18 @@ function EventDetailsModal({
   onClose: () => void;
 }) {
   return (
-    <Dialog open={Boolean(event)} onOpenChange={(open) => !open && onClose()} title="Event Details">
-      <div className="p-4">
-        <pre className="text-sm bg-muted p-4 rounded-md overflow-auto">
-          {JSON.stringify(event, null, 2)}
-        </pre>
-      </div>
+    <Dialog open={Boolean(event)} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Event Details</DialogTitle>
+          <DialogClose />
+        </DialogHeader>
+        <DialogBody>
+          <pre className="text-sm bg-muted p-4 rounded-md overflow-auto">
+            {JSON.stringify(event, null, 2)}
+          </pre>
+        </DialogBody>
+      </DialogContent>
     </Dialog>
   );
 }
@@ -574,7 +597,7 @@ function PromptConfigurationPanel({
 
 export function SessionDetails({
   sessionId,
-  connected,
+  liveStreamStatus,
   events,
   selectedEvent,
   viewMode,
@@ -635,7 +658,7 @@ export function SessionDetails({
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <CardTitle>Telemetry Explorer</CardTitle>
-                <StatusBadge connected={connected} eventCount={deferredEvents.length} />
+                <StatusBadge liveStreamStatus={liveStreamStatus} eventCount={deferredEvents.length} />
               </div>
               <p className="text-sm text-muted-foreground">
                 Session <span className="font-mono text-xs text-foreground">{sessionId}</span> with{' '}

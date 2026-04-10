@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -35,7 +36,7 @@ class BacklogStore:
         data = backlog.model_dump(exclude_none=True)
         self._path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
 
-    def update_item(self, idea_id: str, patch: dict) -> BacklogItem | None:
+    def update_item(self, idea_id: str, patch: dict[str, Any]) -> BacklogItem | None:
         """Update a single item and save. Returns the updated item or None."""
         backlog = self.load()
         for item in backlog.items:

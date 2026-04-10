@@ -420,7 +420,7 @@ def build_critical_path(events: list[dict[str, Any]]) -> dict[str, Any]:
 
         # Track started events
         if event_type.endswith(".started"):
-            pending_starts[event_id] = {
+            pending_starts[event_id] = {  # type: ignore[index]
                 "start_event": event,
                 "end_event": None,
                 "duration_ms": None,
@@ -1075,7 +1075,7 @@ def build_decision_graph(events: list[dict[str, Any]]) -> dict[str, Any]:
     )
 
     for node_id, cause_ids in explicit_causes_by_node.items():
-        node = nodes.get(node_id)
+        node = nodes.get(node_id)  # type: ignore[assignment]
         if node is None:
             continue
 
@@ -1143,7 +1143,7 @@ def build_decision_graph(events: list[dict[str, Any]]) -> dict[str, Any]:
             key=lambda edge: (edge["source"], edge["target"], edge["kind"], edge["inferred"]),
         ),
     }
-    graph["summary"] = {
+    graph["summary"] = {  # type: ignore[assignment]
         "node_count": len(graph["nodes"]),
         "edge_count": len(graph["edges"]),
         "explicit_edge_count": sum(1 for edge in graph["edges"] if not edge["inferred"]),

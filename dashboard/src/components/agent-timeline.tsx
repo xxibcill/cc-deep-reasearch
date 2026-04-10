@@ -2,15 +2,17 @@
 
 import { AgentExecution, TelemetryEvent } from '@/types/telemetry';
 
+export const MAX_VISIBLE_MARKERS_PER_LANE = 18;
+
 const STATUS_CLASS: Record<string, string> = {
-  completed: 'bg-emerald-500',
-  success: 'bg-emerald-500',
-  running: 'bg-blue-500',
-  started: 'bg-blue-500',
-  failed: 'bg-rose-500',
-  error: 'bg-rose-500',
-  timeout: 'bg-amber-500',
-  unknown: 'bg-slate-400',
+  completed: 'bg-success',
+  success: 'bg-success',
+  running: 'bg-primary',
+  started: 'bg-primary',
+  failed: 'bg-error',
+  error: 'bg-error',
+  timeout: 'bg-warning',
+  unknown: 'bg-muted-foreground',
 };
 
 function percent(value: number, min: number, max: number): number {
@@ -18,6 +20,51 @@ function percent(value: number, min: number, max: number): number {
     return 0;
   }
   return ((value - min) / (max - min)) * 100;
+}
+
+function sampleMarkers(markers: AgentExecution['markers']) {
+  if (markers.length <= MAX_VISIBLE_MARKERS_PER_LANE) {
+    return {
+      markers,
+      hiddenCount: 0,
+    };
+  }
+
+  // Always include first and last markers (key checkpoints)
+  const firstTimestamp = markers[0]?.timestamp ?? 0;
+  const lastTimestamp = markers[markers.length - 1]?.timestamp ?? 0;
+  const timeRange = lastTimestamp - firstTimestamp;
+
+  const selectedMarkers: typeof markers = [markers[0]];
+
+  if (timeRange > 0) {
+    // Use timestamp-based sampling for stable visuals across re-renders
+    const targetInteriorCount = MAX_VISIBLE_MARKERS_PER_LANE - 2;
+    for (let step = 1; step <= targetInteriorCount; step += 1) {
+      const targetTimestamp = firstTimestamp + (step / (targetInteriorCount + 1)) * timeRange;
+      // Find the marker closest to the target timestamp
+      let closestIndex = 0;
+      let closestDiff = Math.abs((markers[0]?.timestamp ?? 0) - targetTimestamp);
+      for (let i = 1; i < markers.length - 1; i++) {
+        const diff = Math.abs((markers[i]?.timestamp ?? 0) - targetTimestamp);
+        if (diff < closestDiff) {
+          closestDiff = diff;
+          closestIndex = i;
+        }
+      }
+      // Avoid duplicates
+      if (closestIndex !== 0 && closestIndex !== markers.length - 1) {
+        selectedMarkers.push(markers[closestIndex]);
+      }
+    }
+  }
+
+  selectedMarkers.push(markers[markers.length - 1]);
+
+  return {
+    markers: selectedMarkers,
+    hiddenCount: markers.length - selectedMarkers.length,
+  };
 }
 
 export function AgentTimeline({
@@ -43,9 +90,10 @@ export function AgentTimeline({
         const laneEnd = percent(lane.endTime ?? lane.startTime, minStart, maxEnd);
         const width = Math.max(laneEnd - laneStart, 3);
         const representativeEvent = lane.eventIds.at(-1);
+        const visibleMarkers = sampleMarkers(lane.markers);
 
         return (
-          <div key={lane.id} className="rounded-xl border bg-card p-4">
+          <div key={lane.id} className="rounded-xl border border-border/70 bg-surface/56 p-4">
             <div className="mb-3 flex items-center justify-between gap-4">
               <div>
                 <div className="text-sm font-semibold">{lane.agentName}</div>
@@ -54,19 +102,24 @@ export function AgentTimeline({
                 </div>
               </div>
               <button
-                className="text-xs font-medium text-blue-700 hover:underline"
+                className="text-xs font-medium text-primary hover:underline"
                 onClick={() => onSelectEvent(representativeEvent ? eventIndex.get(representativeEvent) ?? null : null)}
                 type="button"
               >
                 Inspect lane
               </button>
             </div>
-            <div className="relative h-16 rounded-lg bg-slate-100">
+            {visibleMarkers.hiddenCount > 0 ? (
+              <p className="mb-3 text-xs text-muted-foreground">
+                Showing key checkpoints plus a sampled subset of markers for this dense lane.
+              </p>
+            ) : null}
+            <div className="relative h-16 rounded-lg border border-border/60 bg-surface-raised/72">
               <div
                 className={`absolute top-5 h-6 rounded-full ${STATUS_CLASS[lane.status] ?? STATUS_CLASS.unknown}`}
                 style={{ left: `${laneStart}%`, width: `${width}%` }}
               />
-              {lane.markers.map((marker) => (
+              {visibleMarkers.markers.map((marker) => (
                 <button
                   key={marker.id}
                   className="absolute top-2 h-12 -translate-x-1/2"
@@ -74,8 +127,8 @@ export function AgentTimeline({
                   style={{ left: `${percent(marker.timestamp, minStart, maxEnd)}%` }}
                   type="button"
                 >
-                  <span className="block h-3 w-3 rounded-full bg-slate-900" />
-                  <span className="mt-1 block max-w-[7rem] truncate text-[10px] text-slate-600">{marker.label}</span>
+                  <span className="block h-3 w-3 rounded-full bg-primary" />
+                  <span className="mt-1 block max-w-[7rem] truncate text-[10px] text-muted-foreground">{marker.label}</span>
                 </button>
               ))}
             </div>

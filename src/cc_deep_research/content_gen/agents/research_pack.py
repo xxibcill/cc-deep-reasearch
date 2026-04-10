@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.content_gen.models import (
     AngleOption,
@@ -13,6 +13,7 @@ from cc_deep_research.content_gen.models import (
 )
 from cc_deep_research.content_gen.prompts import research_pack as prompts
 from cc_deep_research.llm import LLMRouter
+from cc_deep_research.providers import SearchProvider
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
@@ -89,8 +90,8 @@ class ResearchPackAgent:
             for query in queries:
                 try:
                     result = await provider.search(query, opts)
-                    if result and result.items:
-                        for r in result.items[:3]:
+                    if result and result.results:
+                        for r in result.results[:3]:
                             snippet = (
                                 f"[{r.title}] {r.content[:300]}" if r.content else f"[{r.title}]"
                             )
@@ -102,7 +103,7 @@ class ResearchPackAgent:
             return "No search results found."
         return "\n".join(results)
 
-    def _get_providers(self) -> list:
+    def _get_providers(self) -> list[SearchProvider]:
         from cc_deep_research.providers import resolve_provider_specs
         from cc_deep_research.providers.factory import build_search_providers
 
@@ -152,7 +153,7 @@ def _parse_research_pack(text: str, idea_id: str, angle_id: str) -> ResearchPack
     This stage is intentionally tolerant: downstream scripting can continue
     with a partial pack, and later iterations may rerun research to fill gaps.
     """
-    data: dict = {"idea_id": idea_id, "angle_id": angle_id}
+    data: dict[str, Any] = {"idea_id": idea_id, "angle_id": angle_id}
     for field in _LIST_FIELDS:
         data[field] = _extract_list(text, field)
     data["research_stop_reason"] = _extract_field(text, "research_stop_reason")

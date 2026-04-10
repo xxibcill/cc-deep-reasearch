@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 from cc_deep_research.agents import ResearcherAgent
 from cc_deep_research.config import Config
@@ -28,7 +29,7 @@ def _emit_agent_lifecycle(
     agent_type: str,
     status: str,
     parent_event_id: str | None = None,
-    metadata: dict | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> str:
     """Emit a standardized agent lifecycle event."""
     return monitor.emit_event(
@@ -141,7 +142,7 @@ class ParallelSourceCollectionStrategy:
         families_by_query = {family.query: family for family in query_families}
         for result in results:
             task_id = result["task_id"]
-            agent_event_id = task_agent_ids.get(task_id)
+            parent_event_id = task_agent_ids.get(task_id)
 
             if result["status"] == "success":
                 family = families_by_query.get(
@@ -170,7 +171,7 @@ class ParallelSourceCollectionStrategy:
                     agent_id=task_id,
                     agent_type="researcher",
                     status="completed",
-                    parent_event_id=agent_event_id,
+                    parent_event_id=parent_event_id,
                     metadata={
                         "source_count": result["source_count"],
                         "duration_ms": int(result["execution_time_ms"]),
@@ -202,7 +203,7 @@ class ParallelSourceCollectionStrategy:
                 agent_id=task_id,
                 agent_type="researcher",
                 status=result["status"],
-                parent_event_id=agent_event_id,
+                parent_event_id=parent_event_id,
                 metadata={
                     "error": result.get("error", "Unknown error"),
                     "query": result.get("query", ""),
