@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -26,6 +26,16 @@ export function EventTable({
   const rowHeight = 56;
   const viewportHeight = 520;
   const overscan = 10;
+  const rafRef = useRef<number | null>(null);
+  const handleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    if (rafRef.current !== null) {
+      return;
+    }
+    rafRef.current = requestAnimationFrame(() => {
+      setScrollTop(event.currentTarget.scrollTop);
+      rafRef.current = null;
+    });
+  }, []);
   const sortedEvents = useMemo(() => {
     return [...events].sort((left, right) => {
       const timestampOrder = right.timestamp.localeCompare(left.timestamp);
@@ -59,7 +69,7 @@ export function EventTable({
       <CardContent className="p-0">
         <ScrollArea
           className="h-[520px]"
-          onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+          onScroll={handleScroll}
         >
           <div className="min-w-[920px] text-sm">
             <div
