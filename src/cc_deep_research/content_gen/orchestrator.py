@@ -18,6 +18,7 @@ from cc_deep_research.content_gen.models import (
     IterationState,
     OpportunityBrief,
     PipelineContext,
+    PipelineCandidate,
     PipelineStageTrace,
     QualityEvaluation,
     ResearchPack,
@@ -35,10 +36,24 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _active_candidate_ids(ctx: PipelineContext) -> list[str]:
+    candidate_groups = [
+        ctx.active_candidates,
+        ctx.scoring.active_candidates if ctx.scoring else [],
+    ]
+    ordered: list[str] = []
+    for group in candidate_groups:
+        for candidate in group:
+            if candidate.idea_id and candidate.idea_id not in ordered:
+                ordered.append(candidate.idea_id)
+    return ordered
+
+
 def _selected_idea_candidates(ctx: PipelineContext) -> list[str]:
     candidates: list[str] = []
     if ctx.selected_idea_id:
         candidates.append(ctx.selected_idea_id)
+    candidates.extend(_active_candidate_ids(ctx))
     if ctx.scoring:
         if ctx.scoring.selected_idea_id:
             candidates.append(ctx.scoring.selected_idea_id)
@@ -82,6 +97,26 @@ def _resolve_selected_angle(ctx: PipelineContext) -> Any | None:
         if angle is not None:
             return angle
     return ctx.angles.angle_options[0] if ctx.angles.angle_options else None
+
+
+def _update_primary_candidate_status(ctx: PipelineContext, status: str) -> None:
+    primary_id = _resolve_selected_idea_id(ctx)
+    if not primary_id:
+        return
+
+    def _update(candidates: list[PipelineCandidate]) -> list[PipelineCandidate]:
+        updated: list[PipelineCandidate] = []
+        for candidate in candidates:
+            if candidate.idea_id == primary_id and candidate.role == "primary":
+                updated.append(candidate.model_copy(update={"status": status}))
+            else:
+                updated.append(candidate)
+        return updated
+
+    if ctx.active_candidates:
+        ctx.active_candidates = _update(ctx.active_candidates)
+    if ctx.scoring and ctx.scoring.active_candidates:
+        ctx.scoring.active_candidates = _update(ctx.scoring.active_candidates)
 
 
 def _seed_structure_from_argument_map(argument_map: ArgumentMap | None) -> ScriptStructure | None:
@@ -579,9 +614,10 @@ class ContentGenOrchestrator:
             if ctx.scoring:
                 return (
                     f"selected_idea_id={_resolve_selected_idea_id(ctx) or 'none'}, "
-                    f"shortlist={len(ctx.shortlist or ctx.scoring.shortlist)}"
+                    f"shortlist={len(ctx.shortlist or ctx.scoring.shortlist)}, "
+                    f"active_candidates={len(ctx.active_candidates or ctx.scoring.active_candidates)}"
                 )
-            return "selected_idea_id=none, shortlist=0"
+            return "selected_idea_id=none, shortlist=0, active_candidates=0"
         if stage == "build_research_pack":
             if ctx.angles:
                 return f"idea_id={_resolve_selected_idea_id(ctx) or 'none'}"
@@ -635,6 +671,7 @@ class ContentGenOrchestrator:
                 return (
                     f"produce={len(ctx.scoring.produce_now)}, "
                     f"shortlist={len(ctx.scoring.shortlist)}, "
+                    f"active_candidates={len(ctx.active_candidates or ctx.scoring.active_candidates)}, "
                     f"selected={ctx.scoring.selected_idea_id or 'none'}, "
                     f"hold={len(ctx.scoring.hold)}, "
                     f"kill={len(ctx.scoring.killed)}"
@@ -677,6 +714,9 @@ class ContentGenOrchestrator:
                 return f"approved={ctx.qc_gate.approved_for_publish}"
             return "not_reviewed"
         if stage == "publish_queue":
+            if ctx.publish_items:
+                first_item = ctx.publish_items[0]
+                return f"idea_id={first_item.idea_id}, platforms={len(ctx.publish_items)}"
             if ctx.publish_item:
                 return f"idea_id={ctx.publish_item.idea_id}, platform={ctx.publish_item.platform}"
             return "not_created"
@@ -695,6 +735,7 @@ class ContentGenOrchestrator:
             if ctx.scoring:
                 meta.selected_idea_id = ctx.scoring.selected_idea_id or ""
                 meta.shortlist_count = len(ctx.scoring.shortlist)
+                meta.active_candidate_count = len(ctx.active_candidates or ctx.scoring.active_candidates)
                 meta.is_degraded = ctx.scoring.is_degraded
                 meta.degradation_reason = ctx.scoring.degradation_reason
         elif stage == "generate_angles":
@@ -702,6 +743,7 @@ class ContentGenOrchestrator:
                 meta.selected_idea_id = ctx.angles.idea_id or _resolve_selected_idea_id(ctx)
                 meta.selected_angle_id = ctx.angles.selected_angle_id or ""
                 meta.option_count = len(ctx.angles.angle_options)
+                meta.active_candidate_count = len(ctx.active_candidates)
         elif stage == "build_research_pack":
             if ctx.research_pack:
                 meta.selected_idea_id = ctx.research_pack.idea_id or _resolve_selected_idea_id(ctx)
@@ -750,7 +792,10 @@ class ContentGenOrchestrator:
                 meta.selected_idea_id = ctx.packaging.idea_id or _resolve_selected_idea_id(ctx)
                 meta.platforms_count = len(ctx.packaging.platform_packages)
         elif stage == "publish_queue":
-            if ctx.publish_item:
+            if ctx.publish_items:
+                meta.selected_idea_id = ctx.publish_items[0].idea_id or _resolve_selected_idea_id(ctx)
+                meta.platforms_count = len(ctx.publish_items)
+            elif ctx.publish_item:
                 meta.selected_idea_id = ctx.publish_item.idea_id or _resolve_selected_idea_id(ctx)
         elif stage == "human_qc":
             if ctx.qc_gate:
@@ -1118,6 +1163,7 @@ async def _stage_score_ideas(orch: ContentGenOrchestrator, ctx: PipelineContext)
     ctx.selected_idea_id = ctx.scoring.selected_idea_id
     ctx.selection_reasoning = ctx.scoring.selection_reasoning
     ctx.runner_up_idea_ids = ctx.scoring.runner_up_idea_ids
+    ctx.active_candidates = list(ctx.scoring.active_candidates)
     BacklogService(orch._config).apply_scoring(ctx.scoring)
     return ctx
 
@@ -1223,6 +1269,7 @@ async def _stage_run_scripting(
             selected_idea_id,
             source_pipeline_id=ctx.pipeline_id,
         )
+        _update_primary_candidate_status(ctx, "in_production")
     return ctx
 
 
@@ -1312,9 +1359,11 @@ async def _stage_publish_queue(
     idea_id = _resolve_selected_idea_id(ctx)
     agent = orch._get_agent("publish")
     items = await agent.schedule(ctx.packaging, idea_id=idea_id)
-    # Store first publish item in context
+    ctx.publish_items = items
     if items:
         ctx.publish_item = items[0]
+    else:
+        ctx.publish_item = None
     return ctx
 
 
