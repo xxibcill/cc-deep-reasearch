@@ -9,7 +9,7 @@ export default function SessionReportPage({ params }: { params: { id: string } }
       routeId={params.id}
       view="report"
       title="Session Report"
-      description="The report route stays focused on final artifacts and only loads rendered output for completed sessions."
+      description="Final research artifacts and generated output."
     >
       {({ sessionId, runStatus, sessionSummary }) => (
         <SessionReport
