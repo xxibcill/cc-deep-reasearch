@@ -1,6 +1,6 @@
 # Task 14: Enrich Degraded Metadata For Tolerant Stages
 
-Status: Planned
+Status: Done
 
 Goal:
 Make tolerant stages fail more transparently by recording why output was partial, degraded, or empty instead of collapsing everything into sparse models.

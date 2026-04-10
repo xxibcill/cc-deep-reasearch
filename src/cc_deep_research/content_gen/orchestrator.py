@@ -837,6 +837,8 @@ class ContentGenOrchestrator:
                 meta.fact_count = len(ctx.research_pack.key_facts)
                 meta.proof_count = len(ctx.research_pack.proof_points)
                 meta.cache_reused = "cache" in ctx.research_pack.research_stop_reason.lower()
+                meta.is_degraded = ctx.research_pack.is_degraded
+                meta.degradation_reason = ctx.research_pack.degradation_reason
         elif stage == "build_argument_map":
             if ctx.argument_map:
                 meta.selected_idea_id = ctx.argument_map.idea_id or _resolve_selected_idea_id(ctx)
@@ -877,6 +879,11 @@ class ContentGenOrchestrator:
             if ctx.packaging:
                 meta.selected_idea_id = ctx.packaging.idea_id or _resolve_selected_idea_id(ctx)
                 meta.platforms_count = len(ctx.packaging.platform_packages)
+        elif stage == "production_brief":
+            if ctx.production_brief:
+                meta.selected_idea_id = ctx.production_brief.idea_id or _resolve_selected_idea_id(ctx)
+                meta.is_degraded = ctx.production_brief.is_degraded
+                meta.degradation_reason = ctx.production_brief.degradation_reason
         elif stage == "publish_queue":
             if ctx.publish_items:
                 meta.selected_idea_id = ctx.publish_items[0].idea_id or _resolve_selected_idea_id(ctx)
@@ -885,6 +892,9 @@ class ContentGenOrchestrator:
                 meta.selected_idea_id = ctx.publish_item.idea_id or _resolve_selected_idea_id(ctx)
         elif stage == "human_qc" and ctx.qc_gate:
             meta.approved = ctx.qc_gate.approved_for_publish
+        elif stage == "performance_analysis" and ctx.performance:
+            meta.is_degraded = ctx.performance.is_degraded
+            meta.degradation_reason = ctx.performance.degradation_reason
 
         if ctx.iteration_state:
             meta.current_iteration = ctx.iteration_state.current_iteration
@@ -922,6 +932,19 @@ class ContentGenOrchestrator:
             warnings.append(
                 f"Argument map flagged {len(ctx.argument_map.unsafe_claims)} unsafe claim(s) to avoid in scripting."
             )
+        elif stage == "build_research_pack" and ctx.research_pack and ctx.research_pack.is_degraded:
+            reason = ctx.research_pack.degradation_reason or "Research pack completed with degraded output."
+            warnings.append(f"Research pack degraded: {reason}")
+        elif stage == "production_brief" and ctx.production_brief and ctx.production_brief.is_degraded:
+            reason = ctx.production_brief.degradation_reason or "Production brief completed with degraded output."
+            warnings.append(f"Production brief degraded: {reason}")
+        elif stage == "publish_queue":
+            has_items = ctx.publish_items or (ctx.publish_item is not None)
+            if not has_items:
+                warnings.append("Publish queue produced no items; upstream dependency may be incomplete.")
+        elif stage == "performance_analysis" and ctx.performance and ctx.performance.is_degraded:
+            reason = ctx.performance.degradation_reason or "Performance analysis completed with degraded output."
+            warnings.append(f"Performance analysis degraded: {reason}")
 
         return warnings
 

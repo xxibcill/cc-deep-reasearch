@@ -19,6 +19,40 @@ logger = logging.getLogger(__name__)
 AGENT_ID = "content_gen_performance"
 
 
+def _maybe_set_degraded(analysis: PerformanceAnalysis, text: str) -> None:
+    """Set degraded state on PerformanceAnalysis if output is partial or empty."""
+    if not text:
+        analysis.is_degraded = True
+        analysis.degradation_reason = "blank LLM response after retry"
+        return
+
+    list_fields = [
+        analysis.what_worked,
+        analysis.what_failed,
+        analysis.audience_signals,
+        analysis.dropoff_hypotheses,
+        analysis.follow_up_ideas,
+        analysis.backlog_updates,
+    ]
+    scalar_fields = [analysis.hook_diagnosis, analysis.lesson, analysis.next_test]
+
+    non_empty_lists = [f for f in list_fields if f]
+    non_empty_scalars = [f for f in scalar_fields if f]
+
+    if not non_empty_lists and not non_empty_scalars:
+        analysis.is_degraded = True
+        analysis.degradation_reason = "parser produced zero usable records"
+        return
+
+    empty_lists = [f for f in list_fields if not f]
+    if empty_lists:
+        analysis.is_degraded = True
+        list_field_names = ["what_worked", "what_failed", "audience_signals",
+                           "dropoff_hypotheses", "follow_up_ideas", "backlog_updates"]
+        missing = [list_field_names[i] for i, f in enumerate(list_fields) if not f]
+        analysis.degradation_reason = f"parser produced partial records; missing: {', '.join(missing)}"
+
+
 class PerformanceAgent:
     """Analyze post-publish performance and generate follow-up ideas."""
 
@@ -67,7 +101,12 @@ class PerformanceAgent:
         )
         text = await self._call_llm(system, user, temperature=0.4)
 
-        return _parse_performance(text, video_id)
+        analysis = _parse_performance(text, video_id)
+
+        # Detect and record degraded state
+        _maybe_set_degraded(analysis, text)
+
+        return analysis
 
 
 # ---------------------------------------------------------------------------

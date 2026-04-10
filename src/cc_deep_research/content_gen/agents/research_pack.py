@@ -34,6 +34,31 @@ logger = logging.getLogger(__name__)
 
 AGENT_ID = "content_gen_research"
 
+
+def _maybe_set_degraded(
+    pack: ResearchPack,
+    text: str,
+) -> None:
+    """Set degraded state on ResearchPack if output is partial or empty."""
+    if not text:
+        pack.is_degraded = True
+        pack.degradation_reason = "blank LLM response after retry"
+        return
+
+    structured_fields = [pack.findings, pack.claims, pack.counterpoints, pack.uncertainty_flags]
+    non_empty = [f for f in structured_fields if f]
+    empty = [f for f in structured_fields if not f]
+
+    if not non_empty:
+        pack.is_degraded = True
+        pack.degradation_reason = "parser produced zero usable records"
+        return
+
+    if empty:
+        pack.is_degraded = True
+        field_names = [f.__class__.__name__ for f in empty]
+        pack.degradation_reason = f"parser produced partial records; missing: {', '.join(field_names)}"
+
 _LEGACY_LIST_FIELDS = [
     "audience_insights",
     "competitor_observations",
@@ -102,12 +127,17 @@ class ResearchPackAgent:
         user = prompts.synthesis_user(item, angle, search_context, feedback=feedback)
         text = await self._call_llm(system, user, temperature=0.3)
 
-        return _parse_research_pack(
+        pack = _parse_research_pack(
             text,
             item.idea_id,
             angle.angle_id,
             supporting_sources=supporting_sources,
         )
+
+        # Detect and record degraded state
+        _maybe_set_degraded(pack, text)
+
+        return pack
 
     async def _run_searches(
         self,
