@@ -1311,14 +1311,14 @@ async def _stage_build_research_pack(
         if item is None or angle is None:
             continue
         feedback = ""
-        if (
-            candidate.role == "primary"
-            and ctx.iteration_state
-            and ctx.iteration_state.should_rerun_research
-            and ctx.iteration_state.latest_feedback
-        ):
-            feedback = ctx.iteration_state.latest_feedback
-        research_pack = await agent.build(item, angle, feedback=feedback)
+        research_gaps: list[str] | None = None
+        if candidate.role == "primary" and ctx.iteration_state and ctx.iteration_state.should_rerun_research:
+            if ctx.iteration_state.latest_feedback:
+                feedback = ctx.iteration_state.latest_feedback
+            if ctx.iteration_state.quality_history:
+                latest_eval = ctx.iteration_state.quality_history[-1]
+                research_gaps = list(latest_eval.research_gaps_identified)
+        research_pack = await agent.build(item, angle, feedback=feedback, research_gaps=research_gaps)
         _record_lane_completion(
             ctx,
             candidate,

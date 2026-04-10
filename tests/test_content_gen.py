@@ -27,6 +27,7 @@ from cc_deep_research.content_gen.agents.quality_evaluator import (
 )
 from cc_deep_research.content_gen.agents.research_pack import (
     ResearchPackAgent,
+    RetrievalPlanner,
     _build_search_queries,
     _parse_research_pack,
 )
@@ -68,6 +69,10 @@ from cc_deep_research.content_gen.models import (
     ResearchPack,
     ResearchSeverity,
     ResearchSource,
+    RetrievalBudget,
+    RetrievalDecision,
+    RetrievalMode,
+    RetrievalPlan,
     SavedScriptRun,
     ScoringOutput,
     ScriptingContext,
@@ -874,8 +879,15 @@ async def test_build_research_pack_uses_pipeline_selected_idea() -> None:
             self.seen_item_id = ""
             self.seen_angle_id = ""
 
-        async def build(self, item: BacklogItem, angle: AngleOption, *, feedback: str = "") -> ResearchPack:
-            del feedback
+        async def build(
+            self,
+            item: BacklogItem,
+            angle: AngleOption,
+            *,
+            feedback: str = "",
+            research_gaps: list[str] | None = None,
+        ) -> ResearchPack:
+            del feedback, research_gaps
             self.seen_item_id = item.idea_id
             self.seen_angle_id = angle.angle_id
             return ResearchPack(idea_id=item.idea_id, angle_id=angle.angle_id)
@@ -1331,8 +1343,16 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
             return runner_up_angles
 
     class FakeResearchAgent:
-        async def build(self, item: BacklogItem, angle: AngleOption, *, feedback: str = "") -> ResearchPack:
+        async def build(
+            self,
+            item: BacklogItem,
+            angle: AngleOption,
+            *,
+            feedback: str = "",
+            research_gaps: list[str] | None = None,
+        ) -> ResearchPack:
             assert feedback == ""
+            assert research_gaps is None
             if item.idea_id == selected_idea_id:
                 assert angle.angle_id == fixture["angles"]["selected_angle_id"]
                 return ResearchPack.model_validate(fixture["research_pack"])
@@ -4697,3 +4717,291 @@ def test_orchestrator_collect_warnings_publish_queue_no_items() -> None:
 
     assert len(warnings) == 1
     assert "no items" in warnings[0]
+
+
+# ---------------------------------------------------------------------------
+# Retrieval Planner Tests
+# ---------------------------------------------------------------------------
+
+
+def _make_test_item_and_angle() -> tuple[BacklogItem, AngleOption]:
+    """Standard test item and angle for retrieval planner tests."""
+    item = BacklogItem(
+        idea="pricing psychology",
+        audience="B2B SaaS founders",
+        problem="buyers do not compare plans the way teams expect",
+    )
+    angle = AngleOption(
+        target_audience="subscription software marketers",
+        viewer_problem="teams keep optimizing copy instead of comparison framing",
+        core_promise="Tier order changes what buyers notice first",
+        primary_takeaway="Fix the comparison before the checklist",
+    )
+    return item, angle
+
+
+def test_retrieval_planner_baseline_mode_returns_core_families() -> None:
+    """Baseline mode should produce all 6 core query families."""
+    item, angle = _make_test_item_and_angle()
+    planner = RetrievalPlanner(item, angle, mode=RetrievalMode.BASELINE)
+    plan = planner.build_plan()
+
+    assert plan.is_complete
+    assert plan.mode == RetrievalMode.BASELINE
+    families = {d.family for d in plan.decisions}
+    assert families == {
+        "proof",
+        "primary-source",
+        "competitor",
+        "contrarian",
+        "freshness",
+        "practitioner-language",
+    }
+
+
+def test_retrieval_planner_contrarian_mode_prioritizes_contrarian() -> None:
+    """Contrarian mode should prioritize counterevidence queries."""
+    item, angle = _make_test_item_and_angle()
+    planner = RetrievalPlanner(item, angle, mode=RetrievalMode.CONTRARIAN)
+    plan = planner.build_plan()
+
+    assert plan.mode == RetrievalMode.CONTRARIAN
+    families = {d.family for d in plan.decisions}
+    # Should include contrarian and myth-busting
+    assert "contrarian" in families
+    # Proof should still be present for balance
+    assert "proof" in families
+
+
+def test_retrieval_planner_targeted_mode_adds_gap_queries() -> None:
+    """Targeted mode should add gap-filling queries."""
+    item, angle = _make_test_item_and_angle()
+    gaps = ["specific conversion rate data", "anchor pricing examples"]
+    planner = RetrievalPlanner(
+        item,
+        angle,
+        mode=RetrievalMode.TARGETED,
+        research_gaps=gaps,
+    )
+    plan = planner.build_plan()
+
+    assert plan.mode == RetrievalMode.TARGETED
+    # Should have targeted-gap family queries
+    gap_families = [d.family for d in plan.decisions if d.family == "targeted-gap"]
+    assert len(gap_families) == len(gaps)
+
+
+def test_retrieval_planner_deep_mode_expands_families() -> None:
+    """Deep mode should expand families with additional variants."""
+    item, angle = _make_test_item_and_angle()
+    planner = RetrievalPlanner(item, angle, mode=RetrievalMode.DEEP)
+    plan = planner.build_plan()
+
+    assert plan.mode == RetrievalMode.DEEP
+    # Should have more queries than baseline due to expansions
+    assert plan.total_queries >= 6
+
+
+def test_retrieval_planner_feedback_infers_contrarian_mode() -> None:
+    """Feedback containing contrarian keywords should trigger contrarian mode."""
+    item, angle = _make_test_item_and_angle()
+    planner = RetrievalPlanner(
+        item,
+        angle,
+        feedback="We need more counterevidence and alternative viewpoints",
+    )
+    plan = planner.build_plan()
+
+    assert plan.mode == RetrievalMode.CONTRARIAN
+
+
+def test_retrieval_planner_feedback_infers_targeted_mode() -> None:
+    """Feedback containing gap/missing keywords should trigger targeted mode."""
+    item, angle = _make_test_item_and_angle()
+    planner = RetrievalPlanner(
+        item,
+        angle,
+        feedback="There are missing proof points for the main claim",
+    )
+    plan = planner.build_plan()
+
+    assert plan.mode == RetrievalMode.TARGETED
+
+
+def test_retrieval_planner_budget_limits_queries() -> None:
+    """Budget should limit the number of queries produced."""
+    item, angle = _make_test_item_and_angle()
+    budget = RetrievalBudget(max_queries=3)
+    planner = RetrievalPlanner(item, angle, budget=budget)
+    plan = planner.build_plan()
+
+    assert plan.total_queries <= 3
+
+
+def test_retrieval_planner_budget_limits_sources() -> None:
+    """Budget max_sources should be preserved in the plan."""
+    item, angle = _make_test_item_and_angle()
+    budget = RetrievalBudget(max_sources=8)
+    planner = RetrievalPlanner(item, angle, budget=budget)
+    plan = planner.build_plan()
+
+    assert plan.budget.max_sources == 8
+
+
+def test_retrieval_planner_respects_stop_conditions() -> None:
+    """Budget stop_if_sources_seen should be recorded in plan."""
+    item, angle = _make_test_item_and_angle()
+    budget = RetrievalBudget(max_queries=4, stop_if_sources_seen=6)
+    planner = RetrievalPlanner(item, angle, budget=budget)
+    plan = planner.build_plan()
+
+    assert plan.budget.stop_if_sources_seen == 6
+    assert plan.budget.max_queries == 4
+
+
+def test_retrieval_plan_total_queries_property() -> None:
+    """RetrievalPlan.total_queries should return decision count."""
+    item, angle = _make_test_item_and_angle()
+    planner = RetrievalPlanner(item, angle, mode=RetrievalMode.BASELINE)
+    plan = planner.build_plan()
+
+    assert plan.total_queries == len(plan.decisions)
+
+
+def test_retrieval_plan_families_used_property() -> None:
+    """RetrievalPlan.families_used should return unique family set."""
+    item, angle = _make_test_item_and_angle()
+    planner = RetrievalPlanner(item, angle, mode=RetrievalMode.BASELINE)
+    plan = planner.build_plan()
+
+    assert plan.families_used == {d.family for d in plan.decisions}
+
+
+def test_retrieval_decision_has_intent_tags() -> None:
+    """Each retrieval decision should have intent tags."""
+    item, angle = _make_test_item_and_angle()
+    planner = RetrievalPlanner(item, angle, mode=RetrievalMode.BASELINE)
+    plan = planner.build_plan()
+
+    for decision in plan.decisions:
+        assert decision.intent_tags
+        assert decision.query
+        assert decision.family
+
+
+def test_retrieval_decision_priorities_are_set() -> None:
+    """Retrieval decisions should have priority values for ordering."""
+    item, angle = _make_test_item_and_angle()
+    planner = RetrievalPlanner(item, angle, mode=RetrievalMode.BASELINE)
+    plan = planner.build_plan()
+
+    priorities = [d.priority for d in plan.decisions]
+    # Proof family should have highest priority (10 or 5 in baseline)
+    proof_decisions = [d for d in plan.decisions if d.family == "proof"]
+    if proof_decisions:
+        assert proof_decisions[0].priority >= max(p.priority for p in plan.decisions if p.priority)
+
+
+def test_retrieval_mode_enum_values() -> None:
+    """RetrievalMode should have expected enum values."""
+    assert RetrievalMode.BASELINE == "baseline"
+    assert RetrievalMode.DEEP == "deep"
+    assert RetrievalMode.TARGETED == "targeted"
+    assert RetrievalMode.CONTRARIAN == "contrarian"
+
+
+def test_retrieval_budget_defaults() -> None:
+    """RetrievalBudget should have sensible defaults."""
+    budget = RetrievalBudget()
+
+    assert budget.max_queries == 6
+    assert budget.max_sources == 12
+    assert budget.max_results_per_query == 5
+    assert budget.stop_if_sources_seen is None
+    assert budget.stop_on_family_count is None
+
+
+def test_retrieval_budget_custom_values() -> None:
+    """RetrievalBudget should accept custom values."""
+    budget = RetrievalBudget(
+        max_queries=10,
+        max_sources=20,
+        max_results_per_query=8,
+        stop_if_sources_seen=15,
+    )
+
+    assert budget.max_queries == 10
+    assert budget.max_sources == 20
+    assert budget.max_results_per_query == 8
+    assert budget.stop_if_sources_seen == 15
+
+
+def test_retrieval_plan_default_values() -> None:
+    """RetrievalPlan should have correct default values."""
+    plan = RetrievalPlan()
+
+    assert plan.decisions == []
+    assert plan.budget == RetrievalBudget()
+    assert plan.mode == RetrievalMode.BASELINE
+    assert plan.research_hypotheses == []
+    assert plan.coverage_notes == []
+    assert plan.is_complete is False
+    assert plan.total_queries == 0
+    assert plan.families_used == set()
+
+
+def test_retrieval_planner_deduplicates_similar_queries() -> None:
+    """Planner should not add duplicate queries."""
+    item = BacklogItem(
+        idea="same topic",
+        audience="same audience",
+        problem="same problem",
+    )
+    angle = AngleOption(
+        target_audience="same audience",
+        viewer_problem="same problem",
+        core_promise="same promise",
+        primary_takeaway="same takeaway",
+    )
+    # Force duplicate by using very similar context
+    planner = RetrievalPlanner(item, angle, mode=RetrievalMode.BASELINE)
+    plan = planner.build_plan()
+
+    # All queries should be unique
+    queries = [d.query for d in plan.decisions]
+    assert len(queries) == len(set(queries))
+
+
+def test_retrieval_planner_feedback_with_gaps_prefers_targeted() -> None:
+    """Feedback with gap keywords should prefer targeted mode even with gaps provided."""
+    item, angle = _make_test_item_and_angle()
+    gaps = ["some specific gap"]
+    planner = RetrievalPlanner(
+        item,
+        angle,
+        feedback="We have gaps in the evidence coverage",
+        research_gaps=gaps,
+    )
+    plan = planner.build_plan()
+
+    # Feedback should override to targeted when gaps present
+    assert plan.mode == RetrievalMode.TARGETED
+
+
+def test_retrieval_planner_coverage_notes_populated() -> None:
+    """RetrievalPlan should include coverage notes for each decision."""
+    item, angle = _make_test_item_and_angle()
+    planner = RetrievalPlanner(item, angle, mode=RetrievalMode.BASELINE)
+    plan = planner.build_plan()
+
+    assert len(plan.coverage_notes) == len(plan.decisions)
+
+
+def test_retrieval_planner_research_hypotheses_empty_by_default() -> None:
+    """Research hypotheses should be empty unless opportunity brief provides them."""
+    item, angle = _make_test_item_and_angle()
+    planner = RetrievalPlanner(item, angle)
+    plan = planner.build_plan()
+
+    assert plan.research_hypotheses == []
+
