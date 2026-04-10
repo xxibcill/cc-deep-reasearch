@@ -444,7 +444,7 @@ class InFlightSearchRegistry:
         async with self._lock:
             task = self._tasks.get(cache_key)
             if task is None:
-                task = asyncio.create_task(operation())
+                task = asyncio.create_task(operation())  # type: ignore[arg-type]
                 self._tasks[cache_key] = task
                 task.add_done_callback(lambda completed_task: self._discard(cache_key, completed_task))
 

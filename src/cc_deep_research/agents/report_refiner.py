@@ -300,12 +300,12 @@ class ReportRefinerAgent:
             if not stripped:
                 if len('\n'.join(current_paragraph).strip()) < min_paragraph_length:
                     result.append('\n'.join(current_paragraph))
-                current_paragraph: list[str] = []
+                current_paragraph = []
             elif stripped.startswith('#'):
                 if current_paragraph:
                     result.append('\n'.join(current_paragraph))
                 result.append(line)
-                current_paragraph: list[str] = []
+                current_paragraph = []
             else:
                 current_paragraph.append(line)
 

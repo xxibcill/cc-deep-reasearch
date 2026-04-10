@@ -20,7 +20,7 @@ from .tree import (
 )
 
 
-def _load_dashboard_connection(database_path: Path) -> "duckdb.DuckDBPyConnection":  # type: ignore[name-defined]
+def _load_dashboard_connection(database_path: Path) -> "duckdb.DuckDBPyConnection":
     """Open a read-only DuckDB connection or raise a consistent dependency error."""
     try:
         import duckdb

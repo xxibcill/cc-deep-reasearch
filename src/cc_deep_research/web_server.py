@@ -702,10 +702,9 @@ def register_routes(app: FastAPI) -> None:
                     job.request,
                     event_router=event_router,
                     cancellation_check=lambda: _raise_if_run_cancelled(job),
-                    on_session_started=lambda session_id: job_registry.set_session_id(
-                        job.run_id,
-                        session_id=session_id,
-                    ),
+                    on_session_started=lambda session_id: None
+                    if job_registry.set_session_id(job.run_id, session_id=session_id)
+                    else None,
                 )
                 job_registry.mark_completed(job.run_id, result=result)
             except ResearchRunCancelled:
@@ -1784,7 +1783,7 @@ def register_routes(app: FastAPI) -> None:
         await websocket.accept()
 
         # Create connection wrapper
-        connection = WebSocketConnection(websocket, session_id)
+        connection = WebSocketConnection(websocket, session_id)  # type: ignore[arg-type]
         event_router = get_event_router(websocket.app)
 
         # Subscribe to session events
@@ -2373,7 +2372,7 @@ def _query_analytics_data(
         AND summary_json->>'has_report' = 'true'
         """,
             [days_back],
-        ).fetchone()[0]
+        ).fetchone()[0]  # type: ignore[index]
         or 0
     )
 

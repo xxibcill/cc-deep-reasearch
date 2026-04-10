@@ -90,21 +90,26 @@ def _build_session_overview_rows(
             "last_event_at": None,
         }
 
-    for session in live_sessions:
-        row = rows_by_id.get(session["session_id"], {})
+    # Process live sessions - update existing rows or create new ones
+    for live_session in live_sessions:
+        session_id = live_session["session_id"]
+        if session_id in rows_by_id:
+            row = rows_by_id[session_id]
+        else:
+            row = {}
+            rows_by_id[session_id] = row
         row.update(
             {
-                "session_id": session["session_id"],
-                "created_at": session.get("created_at") or row.get("created_at"),
-                "total_time_ms": session.get("total_time_ms", row.get("total_time_ms")),
-                "total_sources": session.get("total_sources", row.get("total_sources", 0)),
-                "status": session.get("status", row.get("status", "unknown")),
-                "active": bool(session.get("active")),
-                "event_count": session.get("event_count"),
-                "last_event_at": session.get("last_event_at"),
+                "session_id": session_id,
+                "created_at": live_session.get("created_at") or row.get("created_at"),
+                "total_time_ms": live_session.get("total_time_ms", row.get("total_time_ms")),
+                "total_sources": live_session.get("total_sources", row.get("total_sources", 0)),
+                "status": live_session.get("status", row.get("status", "unknown")),
+                "active": bool(live_session.get("active")),
+                "event_count": live_session.get("event_count"),
+                "last_event_at": live_session.get("last_event_at"),
             }
         )
-        rows_by_id[session["session_id"]] = row
 
     rows = list(rows_by_id.values())
     rows.sort(
@@ -233,7 +238,7 @@ def _render_llm_route_analytics(analytics: dict[str, Any]) -> None:
                 }
             )
         if transport_rows:
-            import pandas as pd
+            import pandas as pd  # type: ignore[import-untyped]
 
             st.dataframe(pd.DataFrame(transport_rows), width="stretch", height=120)
 
