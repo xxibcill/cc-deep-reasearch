@@ -38,7 +38,7 @@ export const DEFAULT_LIVE_STREAM_STATUS: LiveStreamStatus = {
   lastHistoryAt: null,
   lastDisconnectAt: null,
   failureReason: null,
-  canReconnect: true,
+  canReconnect: false,
 };
 
 interface DashboardState {
@@ -75,13 +75,13 @@ interface DashboardState {
   events: TelemetryEvent[];
   connected: boolean;
   liveStreamStatus: LiveStreamStatus;
-  setLiveStreamStatus: (status: Partial<LiveStreamStatus>) => void;
   selectedEvent: TelemetryEvent | null;
   replaceEvents: (events: TelemetryEvent[]) => void;
   appendEvent: (event: TelemetryEvent) => void;
   appendEvents: (events: TelemetryEvent[]) => void;
   appendBufferedEvents: (events: TelemetryEvent[]) => void;
   setConnected: (connected: boolean) => void;
+  setLiveStreamStatus: (status: Partial<LiveStreamStatus>) => void;
   setSelectedEvent: (event: TelemetryEvent | null) => void;
   resetSessionState: () => void;
 
@@ -158,6 +158,7 @@ const useDashboardStore = create<DashboardState>((set) => ({
             sessionId: id,
             events: [],
             connected: false,
+            liveStreamStatus: DEFAULT_LIVE_STREAM_STATUS,
             selectedEvent: null,
           }
     ),
@@ -249,9 +250,6 @@ const useDashboardStore = create<DashboardState>((set) => ({
   events: [],
   connected: false,
   liveStreamStatus: DEFAULT_LIVE_STREAM_STATUS,
-  setLiveStreamStatus: (status) => set((state) => ({
-    liveStreamStatus: { ...state.liveStreamStatus, ...status },
-  })),
   selectedEvent: null,
   replaceEvents: (events) => set({ events: sortEvents(events) }),
   appendEvent: (event) =>
@@ -274,12 +272,21 @@ const useDashboardStore = create<DashboardState>((set) => ({
       }),
     })),
   setConnected: (connected) => set({ connected }),
+  setLiveStreamStatus: (status) =>
+    set((state) => ({
+      liveStreamStatus: { ...state.liveStreamStatus, ...status },
+      connected:
+        Object.prototype.hasOwnProperty.call(status, 'connected')
+          ? Boolean(status.connected)
+          : state.connected,
+    })),
   setSelectedEvent: (selectedEvent) => set({ selectedEvent }),
   resetSessionState: () =>
     set({
       sessionId: null,
       events: [],
       connected: false,
+      liveStreamStatus: DEFAULT_LIVE_STREAM_STATUS,
       selectedEvent: null,
       viewMode: 'graph',
     }),

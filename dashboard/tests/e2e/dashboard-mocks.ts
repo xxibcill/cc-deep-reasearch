@@ -616,4 +616,3 @@ export async function mockResearchRunApi(page: Page, runId = "research-report-00
 export function screenshotPath(fileName: string) {
   return path.join(process.cwd(), "playwright-screenshots", "2026-04-06", fileName);
 }
-}

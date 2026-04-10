@@ -225,10 +225,10 @@ export function areSessionListQueriesEqual(
   right: SessionListQueryState
 ): boolean {
   return (
-    left.search === right.search &&
-    left.status === right.status &&
-    left.activeOnly === right.activeOnly &&
-    left.archivedOnly === right.archivedOnly
+    left.search === right.search
+    && left.status === right.status
+    && left.activeOnly === right.activeOnly
+    && left.archivedOnly === right.archivedOnly
   );
 }
 

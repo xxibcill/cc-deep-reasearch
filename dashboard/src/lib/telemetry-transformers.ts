@@ -502,20 +502,19 @@ function buildTimeline(events: TelemetryEvent[], phaseLookup: Map<string, string
 
     if (event.category === 'tool' || event.category === 'llm' || event.category === 'phase') {
       const key = agentId;
-      const existingMarkers = markersByAgent.get(key) ?? [];
-      const newMarker: AgentExecution['markers'][number] = {
+      const markers = markersByAgent.get(key) ?? [];
+      markers.push({
         id: event.eventId,
         label: event.name,
         timestamp: asTimestamp(event.timestamp),
         type: event.category === 'tool' ? 'tool' : event.category === 'llm' ? 'llm' : 'phase',
         status: toStatus(event.status),
         eventId: event.eventId,
-      };
-      const updatedMarkers = [...existingMarkers, newMarker];
-      markersByAgent.set(key, updatedMarkers);
+      });
+      markersByAgent.set(key, markers);
       const span = spans.get(key);
       if (span) {
-        span.markers = updatedMarkers;
+        span.markers = markers;
       }
     }
   }
@@ -823,12 +822,11 @@ export function normalizeServerMessage(message: ApiServerMessage | unknown): Ser
 
   return {
     type,
-    event: isRecord(message.event)
-      ? (() => {
-          const normalized = asApiTelemetryEvent(message.event);
-          return normalized ? normalizeEvent(normalized) : undefined;
-        })()
-      : undefined,
+    event: (() => {
+      if (!isRecord(message.event)) return undefined;
+      const normalized = asApiTelemetryEvent(message.event);
+      return normalized ? normalizeEvent(normalized) : undefined;
+    })(),
     events: Array.isArray(message.events)
       ? message.events
           .map((event) => {
