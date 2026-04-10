@@ -1353,10 +1353,39 @@ class ContentGenOrchestrator:
     async def run_performance(
         self, *, video_id: str, metrics: dict, script: str = "", hook: str = "", caption: str = ""
     ) -> Any:
+        """Run performance analysis and extract structured learnings.
+
+        This method:
+        1. Runs the performance analysis agent
+        2. Extracts structured learnings from the analysis
+        3. Stores learnings in the performance learning store for future use
+
+        Returns the PerformanceAnalysis result. Use get_performance_learnings()
+        to retrieve the extracted learnings.
+        """
+        from cc_deep_research.content_gen.storage import PerformanceLearningStore
+
         agent = self._get_agent("performance")
-        return await agent.analyze(
+        analysis = await agent.analyze(
             video_id=video_id, metrics=metrics, script=script, hook=hook, caption=caption
         )
+
+        # Extract and store learnings
+        try:
+            store = PerformanceLearningStore()
+            learning_set = store.extract_learnings_from_analysis(
+                video_id=video_id,
+                analysis=analysis,
+            )
+            logger.info(
+                "Extracted %d performance learnings from video %s",
+                len(learning_set.learnings),
+                video_id,
+            )
+        except Exception as e:
+            logger.warning("Failed to extract performance learnings: %s", e)
+
+        return analysis
 
     # ------------------------------------------------------------------
     # Legacy scripting methods (preserved exactly)
@@ -1885,9 +1914,42 @@ async def _stage_publish_queue(
 
 
 async def _stage_performance(
-    _orch: ContentGenOrchestrator, ctx: PipelineContext
+    orch: ContentGenOrchestrator, ctx: PipelineContext
 ) -> PipelineContext:
-    # Performance analysis requires metrics from the human — skip in auto pipeline
+    """Extract and store performance learnings when performance analysis is available.
+
+    This stage runs after performance_analysis and persists structured learnings
+    from the analysis into the performance learning store. Learnings are stored
+    as raw records and can later be applied to strategy guidance (operator-gated).
+
+    When ctx.performance is None, this indicates the analysis hasn't been run yet
+    (typical in automated pipelines where human metrics aren't available) — the stage
+    skips silently in that case.
+    """
+    if ctx.performance is None:
+        return ctx
+
+    # Extract and store learnings from performance analysis
+    try:
+        from cc_deep_research.content_gen.storage import PerformanceLearningStore
+
+        store = PerformanceLearningStore()
+        platform = ""
+        if ctx.publish_items:
+            platform = ctx.publish_items[0].platform if ctx.publish_items else ""
+        learning_set = store.extract_learnings_from_analysis(
+            video_id=ctx.performance.video_id or ctx.pipeline_id,
+            analysis=ctx.performance,
+            platform=platform,
+        )
+        logger.info(
+            "Extracted %d performance learnings from video %s",
+            len(learning_set.learnings),
+            ctx.performance.video_id or ctx.pipeline_id,
+        )
+    except Exception as e:
+        logger.warning("Failed to extract performance learnings: %s", e)
+
     return ctx
 
 

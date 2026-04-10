@@ -190,6 +190,22 @@ def score_ideas_user(
         parts.append(f"Niche: {strategy.niche}")
     if strategy.proof_standards:
         parts.append(f"Proof standards: {', '.join(strategy.proof_standards)}")
+
+    # Task 20: Include performance learnings in scoring context
+    pg = strategy.performance_guidance
+    if pg.winning_hooks:
+        parts.append(f"\nWinning hook patterns (prior performance): {'; '.join(pg.winning_hooks[:3])}")
+    if pg.failed_hooks:
+        parts.append(f"Failed hook patterns to avoid: {'; '.join(pg.failed_hooks[:3])}")
+    if pg.winning_framings:
+        parts.append(f"Winning framing patterns: {'; '.join(pg.winning_framings[:3])}")
+    if pg.failed_framings:
+        parts.append(f"Failed framing patterns to avoid: {'; '.join(pg.failed_framings[:3])}")
+    if pg.audience_resonance_notes:
+        parts.append(f"Confirmed audience resonance: {'; '.join(pg.audience_resonance_notes[:3])}")
+    if pg.proof_expectations:
+        parts.append(f"Proof expectations from prior content: {'; '.join(pg.proof_expectations[:3])}")
+
     parts.append("")
     for item in items:
         parts.append(f"idea_id: {item.idea_id}")

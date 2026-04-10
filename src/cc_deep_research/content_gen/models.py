@@ -761,6 +761,105 @@ class ProofRule(BaseModel):
     rationale: str = ""
 
 
+# ---------------------------------------------------------------------------
+# Task 20: Performance Learning (referenced by StrategyMemory)
+# ---------------------------------------------------------------------------
+
+
+class LearningDurability(StrEnum):
+    """Whether a learning is a durable default or a one-run observation."""
+
+    DURABLE = "durable"  # Should influence future strategy by default
+    EXPERIMENTAL = "experimental"  # One-run observation, operator-gated
+    REJECTED = "rejected"  # Explicitly failed approach, not worth retrying
+
+
+class LearningCategory(StrEnum):
+    """Category of performance learning."""
+
+    HOOK = "hook"  # Hook/opening performance
+    Framing = "framing"  # Content framing or angle
+    AUDIENCE = "audience"  # Audience resonance signals
+    PROOF = "proof"  # Evidence or proof requirements
+    FORMAT = "format"  # Content format or structure
+    PACING = "pacing"  # Pacing or retention
+    CTA = "cta"  # Call-to-action effectiveness
+    PACKAGING = "packaging"  # Thumbnail, title, caption
+    PLATFORM = "platform"  # Platform-specific lesson
+
+
+class PerformanceLearning(BaseModel):
+    """A single structured learning extracted from performance analysis.
+
+    Transforms raw performance observations into actionable guidance
+    that can be stored in strategy memory and used by downstream stages.
+    """
+
+    learning_id: str = Field(default_factory=lambda: f"learn_{uuid4().hex[:8]}")
+    category: LearningCategory = LearningCategory.HOOK
+    durability: LearningDurability = LearningDurability.EXPERIMENTAL
+    # What was observed
+    observation: str = ""
+    # Why it matters
+    implication: str = ""
+    # What to do differently
+    guidance: str = ""
+    # Which video(s) this came from
+    source_video_ids: list[str] = Field(default_factory=list)
+    # Original performance metrics that prompted this learning
+    source_metrics: dict[str, Any] = Field(default_factory=dict)
+    # Whether this learning has been reviewed by an operator
+    operator_reviewed: bool = False
+    # Whether this learning is currently active (vs. superseded or rejected)
+    is_active: bool = True
+    # What superseded this learning, if any
+    superseded_by: str = ""
+    # When this learning was created
+    created_at: str = ""
+    # When this learning was last updated
+    updated_at: str = ""
+    # Which platform this applies to (empty = cross-platform)
+    platform: str = ""
+
+
+class PerformanceLearningSet(BaseModel):
+    """A set of performance learnings from a single analysis run.
+
+    Produced immediately after PerformanceAnalysis and before any
+    persistence decision is made.
+    """
+
+    video_id: str = ""
+    learnings: list[PerformanceLearning] = Field(default_factory=list)
+    # The source analysis this was derived from
+    source_analysis: "PerformanceAnalysis | None" = None
+
+
+class StrategyPerformanceGuidance(BaseModel):
+    """Performance-derived guidance stored in strategy memory.
+
+    This is the durable, operator-reviewed subset of learnings that
+    influences future content strategy. Stored in StrategyMemory.
+    """
+
+    # Winning hook patterns
+    winning_hooks: list[str] = Field(default_factory=list)
+    # Failed hook patterns to avoid
+    failed_hooks: list[str] = Field(default_factory=list)
+    # Winning framing patterns
+    winning_framings: list[str] = Field(default_factory=list)
+    # Failed framing patterns
+    failed_framings: list[str] = Field(default_factory=list)
+    # Audience resonance notes (what resonated and why)
+    audience_resonance_notes: list[str] = Field(default_factory=list)
+    # Updated proof expectations (what level of evidence performed)
+    proof_expectations: list[str] = Field(default_factory=list)
+    # A/B test results (what to test next)
+    pending_tests: list[str] = Field(default_factory=list)
+    # Platform-specific learnings, keyed by platform
+    platform_guidance: dict[str, list[str]] = Field(default_factory=dict)
+
+
 class StrategyMemory(BaseModel):
     """Persistent strategy memory (spec stage 0).
 
@@ -783,6 +882,8 @@ class StrategyMemory(BaseModel):
     expertise_edge: str = ""
     past_winners: list[ContentExample] = Field(default_factory=list)
     past_losers: list[ContentExample] = Field(default_factory=list)
+    # Task 20: Performance-derived guidance
+    performance_guidance: StrategyPerformanceGuidance = Field(default_factory=StrategyPerformanceGuidance)
 
     @field_validator("signature_frameworks", mode="before")
     @classmethod
