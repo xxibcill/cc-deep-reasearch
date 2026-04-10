@@ -1,14 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
 import { Activity } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { CommandPalette, KeyboardHint } from '@/components/command-palette'
+import { NotificationProvider } from '@/components/ui/notification-center'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <>
+    <NotificationProvider>
       <CommandPalette />
       <KeyboardHint />
       <Link
@@ -41,6 +41,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       <main id="main-content">{children}</main>
-    </>
+    </NotificationProvider>
   )
 }
