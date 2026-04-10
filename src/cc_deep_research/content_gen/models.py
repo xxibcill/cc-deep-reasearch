@@ -818,6 +818,57 @@ class ResearchSeverity(StrEnum):
     HIGH = "high"
 
 
+class RetrievalMode(StrEnum):
+    """Retrieval strategy mode for the planner."""
+
+    BASELINE = "baseline"  # Standard breadth: 6 families, balanced
+    DEEP = "deep"  # Widen to cover gaps: additional queries per family
+    TARGETED = "targeted"  # Narrow focus: specific evidence gaps
+    CONTRARIAN = "contrarian"  # Emphasize counterevidence and pushback
+
+
+class RetrievalDecision(BaseModel):
+    """Single query decision from the retrieval planner."""
+
+    family: str = Field(..., description="Query family label (e.g. proof, contrarian)")
+    intent_tags: list[str] = Field(default_factory=list)
+    query: str = Field(..., description="The actual search query string")
+    mode: RetrievalMode = Field(default=RetrievalMode.BASELINE)
+    rationale: str = Field(default="", description="Why this query was chosen")
+    priority: int = Field(default=0, description="Higher = more important, runs first")
+
+
+class RetrievalBudget(BaseModel):
+    """Explicit budget for bounding retrieval search volume."""
+
+    max_queries: int = Field(default=6, ge=1, le=50)
+    max_sources: int = Field(default=12, ge=1, le=100)
+    max_results_per_query: int = Field(default=5, ge=1, le=20)
+    stop_if_sources_seen: int | None = Field(default=None, description="Stop early if N sources already collected")
+    stop_on_family_count: int | None = Field(
+        default=None, description="Stop per family after N queries (for deep mode)"
+    )
+
+
+class RetrievalPlan(BaseModel):
+    """Complete retrieval plan from the adaptive planner."""
+
+    decisions: list[RetrievalDecision] = Field(default_factory=list)
+    budget: RetrievalBudget = Field(default_factory=RetrievalBudget)
+    mode: RetrievalMode = Field(default=RetrievalMode.BASELINE)
+    research_hypotheses: list[str] = Field(default_factory=list)
+    coverage_notes: list[str] = Field(default_factory=list)
+    is_complete: bool = Field(default=False)
+
+    @property
+    def total_queries(self) -> int:
+        return len(self.decisions)
+
+    @property
+    def families_used(self) -> set[str]:
+        return {d.family for d in self.decisions}
+
+
 class ResearchSource(BaseModel):
     """Normalized source record retained from search retrieval."""
 
