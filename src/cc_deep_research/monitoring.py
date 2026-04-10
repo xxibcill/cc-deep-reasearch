@@ -9,7 +9,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import click
 
@@ -712,7 +712,7 @@ class ResearchMonitor:
         """Record which query families produced retrievable sources."""
         counts_by_family = {family.family: 0 for family in query_families}
         counts_by_query = {family.query: 0 for family in query_families}
-        domains_by_family = {family.family: set() for family in query_families}
+        domains_by_family: dict[str, set[str]] = {family.family: set() for family in query_families}
 
         for source in sources:
             for entry in source.query_provenance:
@@ -1298,7 +1298,7 @@ class ResearchMonitor:
         if manifest_path.exists():
             try:
                 with open(manifest_path, encoding="utf-8") as f:
-                    return json.load(f)
+                    return cast(dict[str, Any], json.load(f))
             except (json.JSONDecodeError, OSError):
                 pass
         return {"checkpoints": [], "latest_checkpoint_id": None, "latest_resume_safe_checkpoint_id": None}
@@ -1471,21 +1471,21 @@ class ResearchMonitor:
         manifest = self._load_checkpoint_manifest()
         for checkpoint in manifest.get("checkpoints", []):
             if checkpoint.get("checkpoint_id") == checkpoint_id:
-                return checkpoint
+                return cast(dict[str, Any], checkpoint)
         return None
 
     def get_checkpoints_by_phase(self, phase: str) -> list[dict[str, Any]]:
         """Get all checkpoints for a specific phase."""
         manifest = self._load_checkpoint_manifest()
         return [
-            cp for cp in manifest.get("checkpoints", [])
+            cast(dict[str, Any], cp) for cp in manifest.get("checkpoints", [])
             if cp.get("phase") == phase
         ]
 
     def get_all_checkpoints(self) -> list[dict[str, Any]]:
         """Get all checkpoints for the current session."""
         manifest = self._load_checkpoint_manifest()
-        return manifest.get("checkpoints", [])
+        return cast(list[dict[str, Any]], manifest.get("checkpoints", []))
 
     def get_checkpoint_manifest(self) -> dict[str, Any]:
         """Get the full checkpoint manifest for the current session."""

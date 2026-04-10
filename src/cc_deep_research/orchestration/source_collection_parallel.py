@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 from cc_deep_research.agents import ResearcherAgent
 from cc_deep_research.config import Config
@@ -28,7 +29,7 @@ def _emit_agent_lifecycle(
     agent_type: str,
     status: str,
     parent_event_id: str | None = None,
-    metadata: dict | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> str:
     """Emit a standardized agent lifecycle event."""
     return monitor.emit_event(

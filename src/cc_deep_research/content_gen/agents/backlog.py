@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.content_gen.models import (
     BacklogItem,
@@ -171,7 +171,7 @@ def _parse_backlog_items(text: str) -> list[BacklogItem]:
         block_text = block.strip()
         if not block_text:
             continue
-        data: dict = {}
+        data: dict[str, Any] = {}
         for field in _BACKLOG_FIELDS:
             val = _extract_block_field(block_text, field)
             if val:
@@ -256,7 +256,7 @@ def _parse_scores(text: str, _items: list[BacklogItem]) -> list[IdeaScores]:
                 total_score=total,
                 recommendation=rec,
                 reason=reason,
-                **dim_scores,  # type: ignore[arg-type]
+                **dim_scores,
             )
         )
     return scores

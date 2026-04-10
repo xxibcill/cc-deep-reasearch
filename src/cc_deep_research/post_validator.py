@@ -45,8 +45,8 @@ class PostReportValidator:
         Returns:
             Validation result with issues and warnings.
         """
-        issues = []
-        warnings = []
+        issues: list[str] = []
+        warnings: list[str] = []
 
         # Check 1: Truncation patterns
         truncation_issues = self._check_truncation(markdown)
@@ -81,8 +81,8 @@ class PostReportValidator:
         Returns:
             Dictionary with issues list and warnings list.
         """
-        issues = []
-        warnings = []
+        issues: list[str] = []
+        warnings: list[str] = []
 
         # Pattern: Word ending with "..." (e.g., "vast m...", "ut f...")
         truncation_patterns = [
@@ -106,7 +106,7 @@ class PostReportValidator:
         Returns:
             Dictionary with issues list.
         """
-        issues = []
+        issues: list[str] = []
 
         required_sections = [
             "## Key Findings",
@@ -134,7 +134,7 @@ class PostReportValidator:
         Returns:
             Dictionary with issues list.
         """
-        issues = []
+        issues: list[str] = []
 
         # Extract citations: [1], [2], etc.
         citation_pattern = r'\[(\d+)\]'
@@ -157,8 +157,8 @@ class PostReportValidator:
         Returns:
             Dictionary with issues and warnings.
         """
-        issues = []
-        warnings = []
+        issues: list[str] = []
+        warnings: list[str] = []
 
         # Extract safety section
         safety_match = re.search(

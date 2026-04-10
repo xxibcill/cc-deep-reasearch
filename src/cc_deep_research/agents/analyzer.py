@@ -186,7 +186,7 @@ class AnalyzerAgent:
 
         return cleaned
 
-    def _extract_consensus_claims(self, points: list) -> list[str]:
+    def _extract_consensus_claims(self, points: list[str]) -> list[str]:
         """Extract claim strings from consensus/contention point dicts.
 
         Args:

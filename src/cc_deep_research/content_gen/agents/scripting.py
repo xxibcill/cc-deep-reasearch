@@ -994,7 +994,7 @@ def _extract_weakest_parts(text: str) -> list[str]:
 
 def _serialize_trace_value(value: object) -> object:
     if hasattr(value, "model_dump"):
-        return value.model_dump(mode="json")  # type: ignore[union-attr]
+        return value.model_dump(mode="json")
     if isinstance(value, list):
         return [_serialize_trace_value(item) for item in value]
     if isinstance(value, dict):
