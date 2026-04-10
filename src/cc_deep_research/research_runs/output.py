@@ -16,12 +16,13 @@ from cc_deep_research.research_runs.models import (
     ResearchRunRequest,
     ResearchRunResult,
 )
+from cc_deep_research.models import ResearchSession
 from cc_deep_research.session_store import SessionStore
 
 
 def materialize_research_run_output(
     *,
-    session,
+    session: ResearchSession,
     config: Config,
     request: ResearchRunRequest,
     monitor: ResearchMonitor | None = None,

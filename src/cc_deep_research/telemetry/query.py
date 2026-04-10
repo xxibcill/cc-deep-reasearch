@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    import duckdb
 
 from .ingest import _missing_dashboard_dependency_message, get_default_dashboard_db_path
 from .live import get_default_telemetry_dir, query_live_llm_route_analytics
@@ -17,7 +20,7 @@ from .tree import (
 )
 
 
-def _load_dashboard_connection(database_path: Path):
+def _load_dashboard_connection(database_path: Path) -> "duckdb.DuckDBPyConnection":
     """Open a read-only DuckDB connection or raise a consistent dependency error."""
     try:
         import duckdb
@@ -456,7 +459,7 @@ def _serialize_timestamp(value: Any) -> str | None:
     if value is None:
         return None
     if hasattr(value, "isoformat"):
-        return value.isoformat()
+        return cast(str, value.isoformat())
     return str(value)
 
 

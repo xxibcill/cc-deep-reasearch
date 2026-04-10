@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from cc_deep_research.agents import QueryExpanderAgent, ResearchLeadAgent
 from cc_deep_research.config import Config
@@ -203,7 +203,7 @@ class ResearchPlanningService:
         query_families = normalize_query_families(
             original_query=query,
             strategy=strategy,
-            raw_families=raw_families,
+            raw_families=cast(list[QueryFamily | str], raw_families),
         )
         strategy.strategy.query_families = query_families
         self._monitor.log(f"Generated {len(query_families)} query variations")

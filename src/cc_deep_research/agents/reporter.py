@@ -454,10 +454,10 @@ class ReporterAgent:
             # Fallback to basic theme names if no detailed themes or findings
             sections.append("### Thematic Analysis\n")
             themes = analysis.themes
-            for theme in themes:
-                sections.append(f"#### {theme}")
+            for theme_name in themes:
+                sections.append(f"#### {theme_name}")
                 sections.append(
-                    f"Analysis related to {theme} is based on multiple sources. "
+                    f"Analysis related to {theme_name} is based on multiple sources. "
                     "Further investigation may provide additional insights.\n"
                 )
 

@@ -237,7 +237,7 @@ class LLMAnalysisClient:
         """Execute a routed LLM request through the injected executor."""
         start_time = time.time()
         try:
-            response_text = str(self._request_executor(operation, prompt))
+            response_text = str(self._request_executor(operation, prompt))  # type: ignore[misc]
         except Exception as exc:
             raise RuntimeError(str(exc)) from exc
 
@@ -300,9 +300,11 @@ Respond in JSON format:
 """
         # Apply prompt prefix from registry if available
         if self._prompt_registry:
-            config = self._prompt_registry.resolve_prompt(self._agent_id, "extract_themes")
-            if config.prompt_prefix:
-                return f"{config.prompt_prefix}\n\n{base_prompt}"
+            _, prompt_prefix, _ = self._prompt_registry.resolve_prompt(
+                self._agent_id, "extract_themes"
+            )
+            if prompt_prefix:
+                return f"{prompt_prefix}\n\n{base_prompt}"
         return base_prompt
 
     def _build_cross_reference_prompt(self, themes: list[dict[str, Any]], content: str) -> str:
@@ -356,9 +358,11 @@ Respond in JSON format:
 """
         # Apply prompt prefix from registry if available
         if self._prompt_registry:
-            config = self._prompt_registry.resolve_prompt(self._agent_id, "cross_reference")
-            if config.prompt_prefix:
-                return f"{config.prompt_prefix}\n\n{base_prompt}"
+            _, prompt_prefix, _ = self._prompt_registry.resolve_prompt(
+                self._agent_id, "cross_reference"
+            )
+            if prompt_prefix:
+                return f"{prompt_prefix}\n\n{base_prompt}"
         return base_prompt
 
     def _build_gap_identification_prompt(
@@ -401,9 +405,11 @@ Respond in JSON format:
 """
         # Apply prompt prefix from registry if available
         if self._prompt_registry:
-            config = self._prompt_registry.resolve_prompt(self._agent_id, "identify_gaps")
-            if config.prompt_prefix:
-                return f"{config.prompt_prefix}\n\n{base_prompt}"
+            _, prompt_prefix, _ = self._prompt_registry.resolve_prompt(
+                self._agent_id, "identify_gaps"
+            )
+            if prompt_prefix:
+                return f"{prompt_prefix}\n\n{base_prompt}"
         return base_prompt
 
     def _build_synthesis_prompt(
@@ -479,9 +485,9 @@ Respond in JSON format:
 """
         # Apply prompt prefix from registry if available
         if self._prompt_registry:
-            config = self._prompt_registry.resolve_prompt(self._agent_id, "synthesize")
-            if config.prompt_prefix:
-                return f"{config.prompt_prefix}\n\n{base_prompt}"
+            _, prompt_prefix, _ = self._prompt_registry.resolve_prompt(self._agent_id, "synthesize")
+            if prompt_prefix:
+                return f"{prompt_prefix}\n\n{base_prompt}"
         return base_prompt
 
     def _build_evidence_quality_prompt(self, themes: list[dict[str, Any]], content: str) -> str:
@@ -532,9 +538,11 @@ Respond in JSON format:
 """
         # Apply prompt prefix from registry if available
         if self._prompt_registry:
-            config = self._prompt_registry.resolve_prompt(self._agent_id, "analyze_evidence_quality")
-            if config.prompt_prefix:
-                return f"{config.prompt_prefix}\n\n{base_prompt}"
+            _, prompt_prefix, _ = self._prompt_registry.resolve_prompt(
+                self._agent_id, "analyze_evidence_quality"
+            )
+            if prompt_prefix:
+                return f"{prompt_prefix}\n\n{base_prompt}"
         return base_prompt
 
     def _parse_theme_response(

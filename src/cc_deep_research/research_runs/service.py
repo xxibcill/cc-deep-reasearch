@@ -70,7 +70,7 @@ class AsyncioResearchRunExecutionAdapter:
         self,
         *,
         phase_hook: PhaseHook | None = None,
-        runner: Callable[[Awaitable[ResearchSession]], ResearchSession] = asyncio.run,
+        runner: Callable[[Awaitable[ResearchSession]], ResearchSession] = asyncio.run,  # type: ignore[assignment]
     ) -> None:
         self._phase_hook = phase_hook
         self._runner = runner
@@ -191,6 +191,7 @@ class ResearchRunService:
             active_monitor.set_event_router(event_router)
 
         # Select orchestrator based on workflow type
+        orchestrator: TeamResearchOrchestrator | PlannerResearchOrchestrator
         if prepared.request.workflow == ResearchWorkflow.PLANNER:
             orchestrator = PlannerResearchOrchestrator(
                 config=prepared.config,
@@ -238,7 +239,7 @@ class ResearchRunService:
     async def _execute_session(
         self,
         *,
-        orchestrator: TeamResearchOrchestrator,
+        orchestrator: TeamResearchOrchestrator | PlannerResearchOrchestrator,
         request: ResearchRunRequest,
         event_router: EventRouter | None,
         phase_hook: PhaseHook | None,
@@ -264,6 +265,7 @@ class ResearchRunService:
             )
         finally:
             if router_started:
+                assert event_router is not None
                 await event_router.stop()
 
     def _check_cancelled(self, cancellation_check: CancellationCheck | None) -> None:

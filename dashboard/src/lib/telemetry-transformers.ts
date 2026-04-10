@@ -50,8 +50,23 @@ function asMetadata(value: unknown): TelemetryMetadata {
   return isRecord(value) ? value : {};
 }
 
-function asApiTelemetryEvent(value: Record<string, unknown>): ApiTelemetryEvent {
-  return value as unknown as ApiTelemetryEvent;
+function isValidApiTelemetryEvent(value: unknown): value is ApiTelemetryEvent {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.event_id === 'string' &&
+    typeof value.timestamp === 'string' &&
+    typeof value.session_id === 'string' &&
+    typeof value.event_type === 'string' &&
+    typeof value.category === 'string' &&
+    typeof value.name === 'string' &&
+    typeof value.status === 'string'
+  );
+}
+
+function asApiTelemetryEvent(value: Record<string, unknown>): ApiTelemetryEvent | null {
+  return isValidApiTelemetryEvent(value) ? value : null;
 }
 
 function asTimestamp(value: string): number {
@@ -90,8 +105,8 @@ function getSortedEvents(events: TelemetryEvent[]): TelemetryEvent[] {
   });
 }
 
-const STALL_THRESHOLD_MS = 120000;
-const SLOW_THRESHOLD_MS = 30000;
+export const STALL_THRESHOLD_MS = 120000;
+export const SLOW_THRESHOLD_MS = 30000;
 
 export function deriveOperatorInsights(
   events: TelemetryEvent[],
@@ -807,9 +822,19 @@ export function normalizeServerMessage(message: ApiServerMessage | unknown): Ser
 
   return {
     type,
-    event: isRecord(message.event) ? normalizeEvent(asApiTelemetryEvent(message.event)) : undefined,
+    event: (() => {
+      if (!isRecord(message.event)) return undefined;
+      const normalized = asApiTelemetryEvent(message.event);
+      return normalized ? normalizeEvent(normalized) : undefined;
+    })(),
     events: Array.isArray(message.events)
-      ? message.events.filter(isRecord).map((event) => normalizeEvent(asApiTelemetryEvent(event)))
+      ? message.events
+          .map((event) => {
+            if (!isRecord(event)) return null;
+            const normalized = asApiTelemetryEvent(event);
+            return normalized ? normalizeEvent(normalized) : null;
+          })
+          .filter((event): event is TelemetryEvent => event !== null)
       : undefined,
     error: typeof message.error === 'string' ? message.error : undefined,
   };
