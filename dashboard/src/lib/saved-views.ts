@@ -227,7 +227,8 @@ export function areSessionListQueriesEqual(
   return (
     left.search === right.search &&
     left.status === right.status &&
-    left.activeOnly === right.activeOnly
+    left.activeOnly === right.activeOnly &&
+    left.archivedOnly === right.archivedOnly
   );
 }
 
