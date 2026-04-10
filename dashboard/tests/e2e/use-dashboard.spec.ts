@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import useDashboardStore, {
   DEFAULT_EVENT_FILTERS,
+  DEFAULT_LIVE_STREAM_STATUS,
   MAX_BUFFERED_EVENTS,
 } from "@/hooks/useDashboard";
 import type { TelemetryEvent } from "@/types/telemetry";
@@ -30,6 +31,7 @@ function resetStore() {
     viewMode: "graph",
     selectedEvent: null,
     connected: false,
+    liveStreamStatus: DEFAULT_LIVE_STREAM_STATUS,
   });
 }
 

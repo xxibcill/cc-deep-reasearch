@@ -18,7 +18,7 @@ async function installAlwaysFailingWebSocket(page: Page) {
       static CLOSING = 2;
       static CLOSED = 3;
 
-      readyState: number;
+      readyState!: number;
       url: string;
       onopen: ((event: Event) => void) | null = null;
       onmessage: ((event: MessageEvent<string>) => void) | null = null;
@@ -186,7 +186,7 @@ async function installStalledWebSocket(page: Page) {
 
       close() {
         this.readyState = StalledWebSocket.CLOSED;
-        this.onclose?.(new Event("close"));
+        this.onclose?.(new CloseEvent("close", { code: 1000 }));
       }
     }
 
@@ -229,7 +229,7 @@ async function installPartialStreamWebSocket(page: Page) {
       static CLOSING = 2;
       static CLOSED = 3;
 
-      readyState: number;
+      readyState!: number;
       url: string;
       onopen: ((event: Event) => void) | null = null;
       onmessage: ((event: MessageEvent<string>) => void) | null = null;
@@ -293,7 +293,7 @@ async function installPartialStreamWebSocket(page: Page) {
 
       close() {
         this.readyState = PartialStreamWebSocket.CLOSED;
-        this.onclose?.(new Event("close"));
+        this.onclose?.(new CloseEvent("close", { code: 1000 }));
       }
     }
 
@@ -343,10 +343,7 @@ test("monitor shows failure state when WebSocket refuses connection but workspac
   // Wait for reconnect to exhaust (5 attempts × up to 30s backoff = lots, but real delay is small)
   await page.waitForTimeout(3000);
 
-  // One of the valid connection-state banners should be shown.
-  // We accept any valid reconnecting state because the UI transitions through multiple
-  // states during reconnection (connecting → disconnected → reconnecting → etc.) and
-  // the exact state visible at test time depends on timing within the reconnect loop.
+  // One of the valid connection-state banners should be shown
   const failureVisible = await page
     .getByText("Live stream unavailable")
     .isVisible()

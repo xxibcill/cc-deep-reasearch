@@ -26,6 +26,7 @@ interface MetricCardProps extends React.HTMLAttributes<HTMLDivElement> {
   description?: string
   tone?: MetricCardTone
   compact?: boolean
+  className?: string
   valueClassName?: string
   children?: React.ReactNode
 }

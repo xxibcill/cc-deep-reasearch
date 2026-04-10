@@ -3,8 +3,8 @@ import './globals.css';
 import { AppShell } from '@/components/app-shell';
 
 export const metadata: Metadata = {
-  title: 'CC Deep Research — Dashboard',
-  description: 'Operational dashboard for monitoring research runs, telemetry, and publishing pipelines',
+  title: 'CC Deep Research — Content Studio',
+  description: 'Content generation studio for short-form video production',
 };
 
 export default function RootLayout({

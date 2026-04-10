@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { ArrowRight, Archive, CheckCircle2, Clock3, Database, FileText, Home, Radar, Search, XCircle } from 'lucide-react';
 
+import { ArtifactExplorer } from '@/components/artifact-explorer';
 import { ResearchContentActions } from '@/components/research-content-actions';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -390,6 +391,12 @@ export function SessionOverview({ sessionId, runStatus, sessionSummary }: Sessio
           <TechnicalFacts sessionId={sessionId} session={sessionSummary} />
         </div>
 
+        <ArtifactExplorer
+          sessionId={sessionId}
+          runStatus={runStatus}
+          sessionSummary={sessionSummary}
+          onOpenBundleExport={() => setIsExportDialogOpen(true)}
+        />
       </div>
 
       <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">
