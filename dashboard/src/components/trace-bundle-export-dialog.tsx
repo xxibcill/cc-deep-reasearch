@@ -76,7 +76,7 @@ export function TraceBundleExportDialog({
             <div className="flex items-start gap-3">
               <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <div className="text-sm text-muted-foreground">
-                <p className="font-medium text-foreground">What's included</p>
+                <p className="font-medium text-foreground">{"What's"} included</p>
                 <p className="mt-1">
                   The bundle contains session metadata, telemetry events, and derived outputs
                   (decisions, failures, state changes).
