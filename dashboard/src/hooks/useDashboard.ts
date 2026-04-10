@@ -7,11 +7,23 @@ import {
   SessionListQueryState,
 } from '@/types/telemetry';
 
-const defaultSessionListQuery: SessionListQueryState = {
+export const DEFAULT_SESSION_LIST_QUERY: SessionListQueryState = {
   search: '',
   status: '',
   activeOnly: false,
 };
+
+export const DEFAULT_EVENT_FILTERS: EventFilter = {
+  phase: [],
+  agent: [],
+  tool: [],
+  provider: [],
+  status: [],
+  eventTypes: [],
+  timeRange: null,
+};
+
+export const MAX_BUFFERED_EVENTS = 4000;
 
 interface DashboardState {
   sessionId: string | null;
@@ -50,6 +62,7 @@ interface DashboardState {
   replaceEvents: (events: TelemetryEvent[]) => void;
   appendEvent: (event: TelemetryEvent) => void;
   appendEvents: (events: TelemetryEvent[]) => void;
+  appendBufferedEvents: (events: TelemetryEvent[]) => void;
   setConnected: (connected: boolean) => void;
   setSelectedEvent: (event: TelemetryEvent | null) => void;
   resetSessionState: () => void;
@@ -78,12 +91,17 @@ function sortEvents(events: TelemetryEvent[]): TelemetryEvent[] {
   });
 }
 
-function mergeEvents(existing: TelemetryEvent[], incoming: TelemetryEvent[]): TelemetryEvent[] {
+function mergeEvents(
+  existing: TelemetryEvent[],
+  incoming: TelemetryEvent[],
+  options?: { limit?: number }
+): TelemetryEvent[] {
   const byId = new Map(existing.map((event) => [event.eventId, event]));
   for (const event of incoming) {
     byId.set(event.eventId, event);
   }
-  return sortEvents(Array.from(byId.values())).slice(-4000);
+  const merged = sortEvents(Array.from(byId.values()));
+  return typeof options?.limit === 'number' ? merged.slice(-options.limit) : merged;
 }
 
 function mergeSessions(existing: Session[], incoming: Session[]): Session[] {
@@ -121,13 +139,13 @@ const useDashboardStore = create<DashboardState>((set) => ({
             connected: false,
             selectedEvent: null,
           }
-  ),
+    ),
   sessions: [],
   sessionsLoading: true,
   sessionsLoadingMore: false,
   sessionsTotal: 0,
   sessionsNextCursor: null,
-  sessionListQuery: defaultSessionListQuery,
+  sessionListQuery: DEFAULT_SESSION_LIST_QUERY,
   setSessions: (sessions, options) =>
     set((state) => {
       const nextSessions = options?.append ? mergeSessions(state.sessions, sessions) : sessions;
@@ -216,10 +234,20 @@ const useDashboardStore = create<DashboardState>((set) => ({
       if (state.events.some((existing) => existing.eventId === event.eventId)) {
         return {};
       }
-      return { events: mergeEvents(state.events, [event]) };
+      return {
+        events: mergeEvents(state.events, [event], {
+          limit: MAX_BUFFERED_EVENTS,
+        }),
+      };
     }),
   appendEvents: (events) =>
     set((state) => ({ events: mergeEvents(state.events, events) })),
+  appendBufferedEvents: (events) =>
+    set((state) => ({
+      events: mergeEvents(state.events, events, {
+        limit: MAX_BUFFERED_EVENTS,
+      }),
+    })),
   setConnected: (connected) => set({ connected }),
   setSelectedEvent: (selectedEvent) => set({ selectedEvent }),
   resetSessionState: () =>
@@ -230,15 +258,7 @@ const useDashboardStore = create<DashboardState>((set) => ({
       selectedEvent: null,
       viewMode: 'graph',
     }),
-  filters: {
-    phase: [],
-    agent: [],
-    tool: [],
-    provider: [],
-    status: [],
-    eventTypes: [],
-    timeRange: null,
-  },
+  filters: DEFAULT_EVENT_FILTERS,
   setFilters: (filters) => set((state) => ({
     filters: { ...state.filters, ...filters }
   })),
