@@ -1,3 +1,4 @@
+import * as React from 'react'
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
 
@@ -6,9 +7,14 @@ export interface BreadcrumbItem {
   href?: string;
 }
 
-export function Breadcrumb({ items }: { items: BreadcrumbItem[] }) {
+interface BreadcrumbProps {
+  items: BreadcrumbItem[];
+}
+
+const Breadcrumb = React.forwardRef<HTMLElement, BreadcrumbProps>(({ items }, ref) => {
   return (
     <nav
+      ref={ref}
       aria-label="Breadcrumb"
       className="flex flex-wrap items-center gap-1 font-mono text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground"
     >
@@ -28,4 +34,7 @@ export function Breadcrumb({ items }: { items: BreadcrumbItem[] }) {
       ))}
     </nav>
   );
-}
+})
+Breadcrumb.displayName = 'Breadcrumb'
+
+export { Breadcrumb }

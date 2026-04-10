@@ -1,3 +1,4 @@
+import * as React from 'react'
 import type { LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
@@ -18,19 +19,18 @@ const iconClasses: Record<MetricCardTone, string> = {
   success: 'text-success',
 }
 
-interface MetricCardProps {
+interface MetricCardProps extends React.HTMLAttributes<HTMLDivElement> {
   label: string
   value: React.ReactNode
   icon: LucideIcon
   description?: string
   tone?: MetricCardTone
   compact?: boolean
-  className?: string
   valueClassName?: string
   children?: React.ReactNode
 }
 
-export function MetricCard({
+const MetricCard = React.forwardRef<HTMLDivElement, MetricCardProps>(({
   label,
   value,
   icon: Icon,
@@ -40,14 +40,17 @@ export function MetricCard({
   className,
   valueClassName,
   children,
-}: MetricCardProps) {
+  ...props
+}, ref) => {
   return (
     <div
+      ref={ref}
       className={cn(
         'group rounded-[1rem] border p-4 shadow-card transition-colors',
         toneClasses[tone],
         className,
       )}
+      {...props}
     >
       <div className="flex items-center justify-between gap-3">
         <p className="eyebrow">{label}</p>
@@ -74,4 +77,7 @@ export function MetricCard({
       ) : null}
     </div>
   )
-}
+})
+MetricCard.displayName = 'MetricCard'
+
+export { MetricCard }
