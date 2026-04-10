@@ -6,6 +6,7 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
+from cc_deep_research.content_gen.agents._llm_utils import call_agent_llm_text
 from cc_deep_research.content_gen.models import ProductionBrief, VisualPlanOutput
 from cc_deep_research.content_gen.prompts import production as prompts
 from cc_deep_research.llm import LLMRouter
@@ -35,13 +36,17 @@ class ProductionAgent:
         *,
         temperature: float = 0.3,
     ) -> str:
-        response = await self._router.execute(
-            AGENT_ID,
-            user_prompt,
+        return await call_agent_llm_text(
+            router=self._router,
+            agent_id=AGENT_ID,
             system_prompt=system_prompt,
+            user_prompt=user_prompt,
             temperature=temperature,
+            workflow_name="production brief workflow",
+            cli_command="content-gen production",
+            logger=logger,
+            allow_blank=True,
         )
-        return response.content
 
     async def brief(
         self,

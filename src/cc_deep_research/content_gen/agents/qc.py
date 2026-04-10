@@ -6,6 +6,7 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
+from cc_deep_research.content_gen.agents._llm_utils import call_agent_llm_text
 from cc_deep_research.content_gen.models import HumanQCGate
 from cc_deep_research.content_gen.prompts import qc as prompts
 from cc_deep_research.llm import LLMRouter
@@ -39,13 +40,16 @@ class QCAgent:
         *,
         temperature: float = 0.2,
     ) -> str:
-        response = await self._router.execute(
-            AGENT_ID,
-            user_prompt,
+        return await call_agent_llm_text(
+            router=self._router,
+            agent_id=AGENT_ID,
             system_prompt=system_prompt,
+            user_prompt=user_prompt,
             temperature=temperature,
+            workflow_name="human QC workflow",
+            cli_command="content-gen qc review",
+            logger=logger,
         )
-        return response.content
 
     async def review(
         self,

@@ -7,6 +7,7 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any
 
+from cc_deep_research.content_gen.agents._llm_utils import call_agent_llm_text
 from cc_deep_research.content_gen.models import (
     AngleOption,
     BacklogItem,
@@ -74,13 +75,17 @@ class ResearchPackAgent:
         *,
         temperature: float = 0.3,
     ) -> str:
-        response = await self._router.execute(
-            AGENT_ID,
-            user_prompt,
+        return await call_agent_llm_text(
+            router=self._router,
+            agent_id=AGENT_ID,
             system_prompt=system_prompt,
+            user_prompt=user_prompt,
             temperature=temperature,
+            workflow_name="research pack workflow",
+            cli_command="content-gen research",
+            logger=logger,
+            allow_blank=True,
         )
-        return response.content
 
     async def build(
         self,
