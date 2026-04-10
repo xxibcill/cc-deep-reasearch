@@ -3,20 +3,27 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 
 from cc_deep_research.content_gen.models import PublishItem
+from cc_deep_research.content_gen.storage._paths import resolve_content_gen_file_path
 
-_DEFAULT_DIR = Path.home() / ".config" / "cc-deep-research"
-_DEFAULT_NAME = "publish_queue.yaml"
+if TYPE_CHECKING:
+    from cc_deep_research.config import Config
 
 
 class PublishQueueStore:
     """Load and save publish queue entries to a YAML file."""
 
-    def __init__(self, path: Path | None = None) -> None:
-        self._path = path or _DEFAULT_DIR / _DEFAULT_NAME
+    def __init__(self, path: Path | None = None, *, config: "Config | None" = None) -> None:
+        self._path = resolve_content_gen_file_path(
+            explicit_path=path,
+            config=config,
+            config_attr="publish_queue_path",
+            default_name="publish_queue.yaml",
+        )
 
     @property
     def path(self) -> Path:

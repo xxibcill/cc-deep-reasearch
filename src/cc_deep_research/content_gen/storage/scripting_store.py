@@ -13,8 +13,7 @@ from cc_deep_research.content_gen.models import (
     ScriptingIterations,
     ScriptingRunResult,
 )
-
-_DEFAULT_DIR = Path.home() / ".config" / "cc-deep-research" / "scripts"
+from cc_deep_research.content_gen.storage._paths import default_content_gen_dir
 
 
 def _serialize_saved_payload(payload: dict[str, object]) -> str:
@@ -28,7 +27,7 @@ class ScriptingStore:
     """Load and save standalone scripting runs."""
 
     def __init__(self, path: Path | None = None) -> None:
-        self._path = path or _DEFAULT_DIR
+        self._path = path or default_content_gen_dir() / "scripts"
 
     @property
     def path(self) -> Path:
