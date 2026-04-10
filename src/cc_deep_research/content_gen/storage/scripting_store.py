@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -41,12 +41,12 @@ class ScriptingStore:
         iterations: ScriptingIterations | None = None,
     ) -> SavedScriptRun:
         """Persist a scripting run and update latest pointers."""
-        saved_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-        run_id = f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
+        saved_at = datetime.now(UTC).replace(microsecond=0).isoformat()
+        run_id = f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
         run_dir = self._path / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
 
-        script = self._extract_script(ctx)
+        script = self.extract_script(ctx)
         script_path = run_dir / "script.txt"
         context_path = run_dir / "context.json"
         result_path = run_dir / "result.json"
@@ -120,7 +120,11 @@ class ScriptingStore:
         return SavedScriptRun.model_validate_json(metadata_path.read_text())
 
     @staticmethod
-    def _extract_script(ctx: ScriptingContext) -> str:
+    def extract_script(ctx: ScriptingContext) -> str:
+        """Extract the best available script from a scripting context.
+
+        Priority: QC final script → tightened content → draft content → empty string.
+        """
         if ctx.qc is not None and ctx.qc.final_script:
             return ctx.qc.final_script
         if ctx.tightened is not None and ctx.tightened.content:
