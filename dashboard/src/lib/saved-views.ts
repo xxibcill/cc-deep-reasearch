@@ -19,7 +19,6 @@ const EMPTY_SESSION_LIST_QUERY: SessionListQueryState = {
   search: '',
   status: '',
   activeOnly: false,
-  archivedOnly: false,
 };
 
 const EMPTY_EVENT_FILTERS: EventFilter = {
@@ -152,7 +151,6 @@ export function sanitizeSessionListQuery(
     search: typeof value.search === 'string' ? value.search : '',
     status,
     activeOnly: Boolean(value.activeOnly),
-    archivedOnly: Boolean(value.archivedOnly),
   };
 }
 
@@ -225,9 +223,9 @@ export function areSessionListQueriesEqual(
   right: SessionListQueryState
 ): boolean {
   return (
-    left.search === right.search
-    && left.status === right.status
-    && left.activeOnly === right.activeOnly
+    left.search === right.search &&
+    left.status === right.status &&
+    left.activeOnly === right.activeOnly
   );
 }
 

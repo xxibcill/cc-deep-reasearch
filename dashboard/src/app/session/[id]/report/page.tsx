@@ -15,7 +15,6 @@ export default function SessionReportPage({ params }: { params: { id: string } }
         <SessionReport
           sessionId={sessionId}
           runStatus={runStatus}
-          sessionSummary={sessionSummary}
           hasReport={sessionSummary?.hasReport}
         />
       )}

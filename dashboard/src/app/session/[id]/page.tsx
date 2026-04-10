@@ -1,7 +1,7 @@
 'use client';
 
 import { SessionPageFrame } from '@/components/session-page-frame';
-import { SessionOverview } from '@/components/session-static-details';
+import { SessionStaticDetails } from '@/components/session-static-details';
 
 export default function SessionPage({ params }: { params: { id: string } }) {
   return (
@@ -12,7 +12,7 @@ export default function SessionPage({ params }: { params: { id: string } }) {
       description="What this session is about, whether it succeeded, and what to do next."
     >
       {({ sessionId, runStatus, sessionSummary }) => (
-        <SessionOverview
+        <SessionStaticDetails
           sessionId={sessionId}
           runStatus={runStatus}
           sessionSummary={sessionSummary}
