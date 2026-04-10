@@ -469,7 +469,8 @@ export function CompareView({ sessionIdA, sessionIdB }: CompareViewProps) {
         setLoading(false)
       }
     }
-    void loadSessions()
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    void loadSessions() // intentionally discard promise - error handling is done inside the function
   }, [sessionIdA, sessionIdB])
 
   const pair: SessionPair = { sessionA, sessionB }
