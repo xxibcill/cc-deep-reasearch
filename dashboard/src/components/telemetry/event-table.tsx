@@ -12,7 +12,7 @@ function formatEventTime(timestamp: string): string {
 }
 
 function statusAccent(status: string) {
-  return getStatusBadgeVariant(status) as 'success' | 'warning' | 'destructive' | 'secondary' | 'default' | 'info';
+  return getStatusBadgeVariant(status) as 'success' | 'warning' | 'destructive' | 'secondary' | 'default' | 'info' | 'outline';
 }
 
 export function EventTable({
