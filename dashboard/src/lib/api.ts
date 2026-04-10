@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { type AxiosError } from 'axios';
 import { dashboardRuntimeConfig } from '@/lib/runtime-config';
 import { normalizeEvent, normalizeSession } from '@/lib/telemetry-transformers';
 import {
@@ -50,14 +50,46 @@ const SESSION_REPORT_TIMEOUT_MS = 120000;
 const SESSION_BUNDLE_TIMEOUT_MS = 120000;
 const BULK_DELETE_TIMEOUT_MS = 120000;
 
+function extractApiErrorPayload(data: unknown): string | null {
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+
+  const payload = data as Record<string, unknown>;
+  if (typeof payload.error === 'string' && payload.error.length > 0) {
+    return payload.error;
+  }
+  if (typeof payload.detail === 'string' && payload.detail.length > 0) {
+    return payload.detail;
+  }
+
+  return null;
+}
+
+function formatTimedOutRequest(error: AxiosError): string {
+  const method = error.config?.method?.toUpperCase() ?? 'REQUEST';
+  const path = error.config?.url ?? dashboardRuntimeConfig.apiBaseUrl;
+  const timeoutMs = error.config?.timeout;
+  const timeoutText =
+    typeof timeoutMs === 'number' && timeoutMs > 0
+      ? `${(timeoutMs / 1000).toFixed(timeoutMs % 1000 === 0 ? 0 : 1)}s`
+      : 'the configured timeout';
+
+  return [
+    `${method} ${path} timed out after ${timeoutText} while waiting for the dashboard backend.`,
+    'No response body was received before the browser gave up.',
+    'If this is Quick Script on the Anthropic route, the backend may still be waiting on the provider or preparing the real provider error.',
+  ].join('\n');
+}
+
 export function getApiErrorMessage(error: unknown, fallback: string): string {
   if (axios.isAxiosError(error)) {
-    const responseError = error.response?.data?.error;
-    if (typeof responseError === 'string' && responseError.length > 0) {
+    const responseError = extractApiErrorPayload(error.response?.data);
+    if (responseError) {
       return responseError;
     }
     if (error.code === 'ECONNABORTED') {
-      return 'Request timed out while waiting for the dashboard backend.';
+      return formatTimedOutRequest(error);
     }
     if (error.message) {
       return error.message;
@@ -150,6 +182,16 @@ export function getConfigUpdateErrorDetails(error: unknown): ConfigUpdateErrorDe
 export async function getSession(sessionId: string): Promise<{ session: Session }> {
   const response = await apiClient.get<SessionResponse>(`/sessions/${sessionId}`);
   return { session: normalizeSession(response.data.session) };
+}
+
+export async function getSessionPromptMetadata(
+  sessionId: string
+): Promise<SessionPromptMetadata | undefined> {
+  const response = await apiClient.get<SessionDetailResponse>(`/sessions/${sessionId}`, {
+    params: { include_derived: false },
+    timeout: SESSION_DETAIL_TIMEOUT_MS,
+  });
+  return normalizePromptMetadata(response.data.summary);
 }
 
 export interface SessionDetailResult {
@@ -247,11 +289,30 @@ export async function getSessionEvents(
 
 // Research Run API helpers
 
+const RESEARCH_RUN_TIMEOUT_MS = 10000;
+
 export async function startResearchRun(
   request: ResearchRunRequest
 ): Promise<StartResearchRunResponse> {
-  const response = await apiClient.post<StartResearchRunResponse>('/research-runs', request);
-  return response.data;
+  try {
+    const response = await apiClient.post<StartResearchRunResponse & {
+      error?: string;
+      detail?: string;
+    }>('/research-runs', request, {
+      timeout: RESEARCH_RUN_TIMEOUT_MS,
+    });
+
+    if (response.data.error || response.data.detail) {
+      throw new Error(response.data.error || response.data.detail || 'Failed to start research run.');
+    }
+
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.code === 'ECONNABORTED') {
+      throw new Error('POST /research-runs timed out after 10s while waiting for the dashboard backend.');
+    }
+    throw error;
+  }
 }
 
 export async function getResearchRunStatus(runId: string): Promise<ResearchRunStatusResponse> {
@@ -400,11 +461,86 @@ export async function restoreSession(sessionId: string): Promise<ArchiveSessionR
   }
 }
 
-export async function getSessionBundle(sessionId: string): Promise<{ bundle: TraceBundle }> {
+export interface SessionPurgeSummary {
+  archived_sessions_count: number;
+  no_artifacts_count: number;
+  active_count: number;
+  recommendations: Array<{
+    category: string;
+    description: string;
+    action: string;
+    count: number;
+  }>;
+}
+
+export interface PurgeArchivedResult {
+  dry_run: boolean;
+  deleted?: number;
+  would_delete?: number;
+  session_ids: string[];
+  message: string;
+  results?: unknown;
+}
+
+export async function getSessionPurgeSummary(): Promise<SessionPurgeSummary> {
+  const response = await apiClient.get<SessionPurgeSummary>('/sessions/purge-summary');
+  return response.data;
+}
+
+export async function purgeArchivedSessions(
+  dryRun: boolean = true,
+  force: boolean = false
+): Promise<PurgeArchivedResult> {
+  const response = await apiClient.post<PurgeArchivedResult>('/sessions/purge-archived', null, {
+    params: { dry_run: dryRun, force },
+  });
+  return response.data;
+}
+
+export interface TraceBundleOptions {
+  includePayload?: boolean;
+  includeReport?: boolean;
+}
+
+export async function getSessionBundle(
+  sessionId: string,
+  options: TraceBundleOptions = {}
+): Promise<{ bundle: TraceBundle }> {
   const response = await apiClient.get<TraceBundle>(`/sessions/${sessionId}/bundle`, {
+    params: {
+      include_payload: options.includePayload ?? false,
+      include_report: options.includeReport ?? false,
+    },
     timeout: SESSION_BUNDLE_TIMEOUT_MS,
   });
   return { bundle: response.data };
+}
+
+export interface SessionArtifactInfo {
+  present: boolean;
+  provenance: 'direct' | 'derived';
+  description: string;
+  formats?: string[];
+  count?: number;
+  latest_checkpoint_id?: string | null;
+  resume_available?: boolean;
+  reason?: string;
+}
+
+export interface SessionArtifactsResponse {
+  session_id: string;
+  provenance: Record<string, unknown>;
+  available: Record<string, SessionArtifactInfo>;
+  missing?: Record<string, Omit<SessionArtifactInfo, 'present'> & { reason: string }>;
+}
+
+export async function getSessionArtifacts(
+  sessionId: string
+): Promise<SessionArtifactsResponse> {
+  const response = await apiClient.get<SessionArtifactsResponse>(
+    `/sessions/${sessionId}/artifacts`
+  );
+  return response.data;
 }
 
 // Search Cache API helpers
@@ -437,5 +573,186 @@ export async function deleteSearchCacheEntry(cacheKey: string): Promise<SearchCa
 
 export async function clearSearchCache(): Promise<SearchCacheClearResponse> {
   const response = await apiClient.delete<SearchCacheClearResponse>('/search-cache');
+  return response.data;
+}
+
+export interface BenchmarkCorpus {
+  version: string;
+  description: string;
+  cases: BenchmarkCase[];
+}
+
+export interface BenchmarkCase {
+  case_id: string;
+  query: string;
+  category: string;
+  rationale: string;
+  date_sensitive: boolean;
+  tags: string[];
+}
+
+export interface BenchmarkRun {
+  run_id: string;
+  path: string;
+  corpus_version?: string;
+  generated_at?: string;
+  configuration?: Record<string, unknown>;
+  total_cases?: number;
+  average_validation_score?: number | null;
+  average_latency_ms?: number | null;
+}
+
+export interface BenchmarkRunReport {
+  harness_version: string;
+  corpus_version: string;
+  generated_at: string;
+  configuration: Record<string, unknown>;
+  scorecard: BenchmarkScorecard;
+  cases: BenchmarkCaseReport[];
+}
+
+export interface BenchmarkScorecard {
+  total_cases: number;
+  average_source_count: number;
+  average_unique_domains: number;
+  average_source_type_diversity: number;
+  average_iteration_count: number;
+  average_latency_ms: number;
+  average_validation_score: number | null;
+  date_sensitive_cases: number;
+  stop_reasons: Record<string, number>;
+  categories: Record<string, number>;
+}
+
+export interface BenchmarkCaseReport {
+  case_id: string;
+  query: string;
+  category: string;
+  rationale: string;
+  date_sensitive: boolean;
+  tags: string[];
+  metrics: {
+    source_count: number;
+    unique_domains: number;
+    source_type_diversity: number;
+    iteration_count: number;
+    latency_ms: number;
+    validation_score: number | null;
+  };
+  session_id?: string;
+  configured_depth: string;
+  stop_reason: string;
+  validation_issues: string[];
+  failure_modes: string[];
+  source_domains: string[];
+  source_types: string[];
+}
+
+export interface BenchmarkRunsResponse {
+  runs: BenchmarkRun[];
+  total: number;
+}
+
+export async function getBenchmarkCorpus(): Promise<BenchmarkCorpus> {
+  const response = await apiClient.get<BenchmarkCorpus>('/benchmarks/corpus');
+  return response.data;
+}
+
+export async function listBenchmarkRuns(): Promise<BenchmarkRunsResponse> {
+  const response = await apiClient.get<BenchmarkRunsResponse>('/benchmarks/runs');
+  return response.data;
+}
+
+export async function getBenchmarkRun(runId: string): Promise<BenchmarkRunReport> {
+  const response = await apiClient.get<BenchmarkRunReport>(`/benchmarks/runs/${runId}`);
+  return response.data;
+}
+
+export async function getBenchmarkCaseReport(
+  runId: string,
+  caseId: string
+): Promise<BenchmarkCaseReport> {
+  const response = await apiClient.get<BenchmarkCaseReport>(
+    `/benchmarks/runs/${runId}/cases/${caseId}`
+  );
+  return response.data;
+}
+
+export interface ResearchThemeInfo {
+  theme: string;
+  display_name: string;
+  description: string;
+  source: 'builtin' | 'custom';
+}
+
+export interface ThemesListResponse {
+  themes: ResearchThemeInfo[];
+  total: number;
+}
+
+export async function listResearchThemes(): Promise<ThemesListResponse> {
+  const response = await apiClient.get<ThemesListResponse>('/themes');
+  return response.data;
+}
+
+export interface AnalyticsSummary {
+  total_runs: number;
+  completed_runs: number;
+  failed_runs: number;
+  interrupted_runs: number;
+  avg_duration_ms: number;
+  avg_sources: number;
+  report_availability_rate: number;
+  archived_sessions: number;
+  active_sessions: number;
+}
+
+export interface StatusCount {
+  status: string;
+  count: number;
+}
+
+export interface DurationByStatus {
+  status: string;
+  avg_duration_ms: number;
+  min_duration_ms: number;
+  max_duration_ms: number;
+  count: number;
+}
+
+export interface SourcesTrend {
+  day: string | null;
+  run_count: number;
+  avg_sources: number;
+  total_sources: number;
+}
+
+export interface DailyVolume {
+  day: string | null;
+  total_runs: number;
+  completed: number;
+  failed: number;
+  interrupted: number;
+}
+
+export interface DepthDistribution {
+  depth: string;
+  count: number;
+  avg_duration_ms: number;
+}
+
+export interface AnalyticsResponse {
+  summary: AnalyticsSummary;
+  status_counts: StatusCount[];
+  duration_by_status: DurationByStatus[];
+  sources_trend: SourcesTrend[];
+  daily_volume: DailyVolume[];
+  depth_distribution: DepthDistribution[];
+}
+
+export async function getAnalytics(daysBack: number = 30): Promise<AnalyticsResponse> {
+  const response = await apiClient.get<AnalyticsResponse>('/analytics', {
+    params: { days_back: daysBack },
+  });
   return response.data;
 }
