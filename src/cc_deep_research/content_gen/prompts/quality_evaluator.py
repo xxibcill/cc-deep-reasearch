@@ -35,6 +35,23 @@ Expert Quality Dimensions (each 0.0-1.0):
 Overall Quality Score: Weighted average (evidence 30%, claim safety 30%,
 originality 15%, precision 15%, expertise density 10%).
 
+Task 19 — Genericity Detection:
+Also score:
+6. genericity: Does the content sound like everyone else's take on this topic?
+   - 0.0 = highly distinctive, specific, non-generic
+   - 1.0 = interchangeable with any competitor's content on this topic
+   Look for: clichéd framings (myth-busting without new evidence, "just do it"
+   motivation, surface-level "here's what I learned" summaries), boilerplate
+   advice that could appear in any同类 content, vague claims without mechanism,
+   standard "3 things" or "5 tips" format without differentiation.
+
+   Also flag specific issues:
+   - cliche_flags: Specific clichéd framings or lines that sound like every
+     other creator (e.g., "the future belongs to those who...", "in today's
+     fast-paced world...", "here's what nobody talks about")
+   - interchangeable_take_flags: Entire takes that could be swapped for any
+     competitor's content on the same topic without loss of meaning
+
 Decision logic for passes_threshold:
 - true only if overall_quality_score >= the provided quality threshold AND
   unsupported_claims is empty
@@ -72,6 +89,7 @@ claim_safety: 0.0-1.0
 originality: 0.0-1.0
 precision: 0.0-1.0
 expertise_density: 0.0-1.0
+genericity: 0.0-1.0
 
 critical_issues:
 - (issue that MUST be fixed)
@@ -87,6 +105,13 @@ improvement_suggestions:
 
 research_gaps_identified:
 - (factual gap requiring new research, or omit section if none)
+
+# Task 19: Generic framing detection
+cliche_flags:
+- (specific clichéd framing detected, or omit section if none)
+
+interchangeable_take_flags:
+- (take that sounds like everyone else's content, or omit section if none)
 
 # Task 18: Targeted Revision Plan
 revision_mode: none | targeted | full

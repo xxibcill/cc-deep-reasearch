@@ -51,6 +51,15 @@ Rules:
 - Every claim_id, proof_id, counterargument_id, and beat_id must be unique
 - If a beat uses no counterargument, leave counterargument_ids blank after the colon
 
+Task 19 — Competitive Differentiation Check:
+After the argument map sections above, explicitly state:
+- what_this_contributes: What this angle contributes beyond consensus or standard advice
+  (e.g., "Most content says X, but this angle shows Y by explaining Z mechanism")
+- genericity_flags: Specific generic or clichéd framings this script must avoid
+  (e.g., "Don't just say 'hard work pays off' — everyone says that without backing")
+- differentiation_strategy: How this piece will stand out from market-standard
+  content on the same topic (specific mechanism, contrarian framing, data depth, etc.)
+
 Output format:
 
 thesis: (one-sentence argument)
@@ -98,7 +107,13 @@ claim_ids: claim_1
 proof_anchor_ids: proof_1
 counterargument_ids:
 transition_note: (how this beat should move into the next one)
----"""
+---
+
+what_this_contributes: (what this angle contributes beyond consensus or standard advice)
+genericity_flags:
+- (specific generic or clichéd framing to avoid)
+- (another framing to avoid)
+differentiation_strategy: (how this piece stands out from market-standard content)"""
 
 
 def argument_map_user(

@@ -35,6 +35,7 @@ _SECTION_HEADERS = (
     "safe_claims",
     "unsafe_claims",
     "beat_claim_plan",
+    "genericity_flags",
 )
 
 
@@ -89,6 +90,12 @@ def _parse_argument_map(text: str, idea_id: str, angle_id: str) -> ArgumentMap:
     unsafe_claims = _parse_claims(_extract_named_section(text, "unsafe_claims"))
     beat_claim_plan = _parse_beats(_extract_named_section(text, "beat_claim_plan"))
 
+    # Task 19: differentiation fields
+    what_this_contributes = _extract_field(text, "what_this_contributes")
+    differentiation_strategy = _extract_field(text, "differentiation_strategy")
+    genericity_flags_section = _extract_named_section(text, "genericity_flags")
+    genericity_flags = _extract_list(genericity_flags_section, "genericity_flags") if genericity_flags_section else []
+
     if not thesis:
         raise ValueError("Argument map parsing failed: missing required field 'thesis'.")
     if not core_mechanism:
@@ -108,6 +115,9 @@ def _parse_argument_map(text: str, idea_id: str, angle_id: str) -> ArgumentMap:
             safe_claims=safe_claims,
             unsafe_claims=unsafe_claims,
             beat_claim_plan=beat_claim_plan,
+            what_this_contributes=what_this_contributes,
+            genericity_flags=genericity_flags,
+            differentiation_stategy=differentiation_strategy,
         )
     except ValidationError as exc:
         msg = f"Argument map parsing failed: {exc.errors()[0]['msg']}"
@@ -233,3 +243,31 @@ def _extract_csv_field(text: str, field_name: str) -> list[str]:
     if not value:
         return []
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _extract_list(text: str, _header: str) -> list[str]:
+    """Extract a plain '-' list from a section.
+
+    The section body may or may not include the section header line.
+    Collection starts at the first '-' or '*' item and continues until
+    a non-list, non-empty line (e.g. new field header) or end of text.
+    """
+    items: list[str] = []
+    started = False
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if stripped.startswith("- ") or stripped.startswith("* "):
+            started = True
+            items.append(stripped[2:].strip())
+        elif stripped and not stripped.startswith("-") and not stripped.startswith("*"):
+            if started:
+                # Non-list line after we've started collecting — this is a new
+                # field header or unexpected content; stop collecting
+                break
+            # Not started yet and line is not a list item — could be the
+            # section header line or a field value before the list starts
+            # (e.g. "genericity_flags:" followed by list items on next line)
+            # Keep scanning
+            continue
+        # Empty lines — skip but don't break if already started
+    return items

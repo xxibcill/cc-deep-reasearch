@@ -973,6 +973,19 @@ class AngleOption(BaseModel):
     tone: str = ""
     cta: str = ""
     why_this_version_should_exist: str = ""
+    # Task 19: Differentiation and genericity
+    differentiation_summary: str = Field(
+        default="",
+        description="Why this angle is distinct from the baseline market framing for this topic",
+    )
+    genericity_risks: list[str] = Field(
+        default_factory=list,
+        description="Known failure modes: clichéd framing, interchangeable takeaways, generic advice",
+    )
+    market_framing_challenged: str = Field(
+        default="",
+        description="What common/repeated market framing this angle reframes or contradicts",
+    )
 
 
 class AngleOutput(BaseModel):
@@ -1348,6 +1361,19 @@ class ArgumentMap(BaseModel):
     safe_claims: list[ArgumentClaim] = Field(default_factory=list)
     unsafe_claims: list[ArgumentClaim] = Field(default_factory=list)
     beat_claim_plan: list[ArgumentBeatClaim] = Field(default_factory=list)
+    # Task 19: Differentiation — what this angle contributes beyond standard advice
+    what_this_contributes: str = Field(
+        default="",
+        description="What the selected angle contributes beyond consensus or standard advice",
+    )
+    genericity_flags: list[str] = Field(
+        default_factory=list,
+        description="Specific generic or clichéd framings this script must avoid",
+    )
+    differentiation_stategy: str = Field(
+        default="",
+        description="The editorial strategy for standing out from market-standard content on this topic",
+    )
 
     @model_validator(mode="after")
     def _validate_references(self) -> ArgumentMap:
@@ -1749,11 +1775,27 @@ class QualityEvaluation(BaseModel):
     originality: float = Field(default=0.0, ge=0.0, le=1.0)
     precision: float = Field(default=0.0, ge=0.0, le=1.0)
     expertise_density: float = Field(default=0.0, ge=0.0, le=1.0)
+    # Task 19: Generic framing / undifferentiated content detection
+    genericity: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Degree to which the content sounds like everyone else — high = generic, low = distinctive",
+    )
     critical_issues: list[str] = Field(default_factory=list)
     unsupported_claims: list[str] = Field(default_factory=list)
     evidence_actions_required: list[str] = Field(default_factory=list)
     improvement_suggestions: list[str] = Field(default_factory=list)
     research_gaps_identified: list[str] = Field(default_factory=list)
+    # Task 19: Explicit genericity/cliché flags
+    cliche_flags: list[str] = Field(
+        default_factory=list,
+        description="Specific clichéd framings or interchangeable talking points detected in the script",
+    )
+    interchangeable_take_flags: list[str] = Field(
+        default_factory=list,
+        description="Content that sounds like everyone else's take on this topic",
+    )
     rationale: str = ""
     iteration_number: int = 1
     # Task 18: structured repair plan for targeted revision
