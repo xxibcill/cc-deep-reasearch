@@ -248,13 +248,18 @@ const useContentGen = create<ContentGenState>((set, get) => ({
 
   clearError: () => set({ error: null }),
 
+  /**
+   * Loads all content gen data in parallel. Errors are caught individually by each
+   * load function and set on the store's error state — this function intentionally
+   * does not throw so the UI remains usable even if some data fails to load.
+   */
   loadAll: async () => {
     await Promise.allSettled([
       get().loadPipelines(),
       get().loadScripts(),
       get().loadPublishQueue(),
       get().loadStrategy(),
-    ]);
+    ])
   },
 
   reset: () => set(initialState),
