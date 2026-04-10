@@ -15,6 +15,8 @@ from cc_deep_research.models import (
 )
 from cc_deep_research.monitoring import ResearchMonitor
 
+from .resilience import decide_subtask_retry
+
 
 class TaskDispatcher:
     """Dispatches subtasks to appropriate agents and tracks progress.
@@ -108,6 +110,7 @@ class TaskDispatcher:
                     )
                     plan.update_subtask_status(task_id, "failed")
                 else:
+                    assert isinstance(result, TaskExecutionResult)
                     self._task_results[task_id] = result
                     if result.success:
                         plan.update_subtask_status(task_id, "completed")
@@ -150,43 +153,69 @@ class TaskDispatcher:
 
         plan.update_subtask_status(task_id, "in_progress")
         start_time = time.time()
+        attempt = 1
+        while True:
+            task.retry_count = max(0, attempt - 1)
+            try:
+                dependency_outputs = self._gather_dependency_outputs(task, plan)
+                handler = self._get_handler(task.task_type)
+                if handler:
+                    result = await handler(
+                        task=task,
+                        plan=plan,
+                        dependency_outputs=dependency_outputs,
+                        cancellation_check=cancellation_check,
+                    )
+                else:
+                    result = await self._default_execute(
+                        task,
+                        plan,
+                        dependency_outputs,
+                        cancellation_check,
+                    )
 
-        try:
-            # Gather inputs from dependencies
-            dependency_outputs = self._gather_dependency_outputs(task, plan)
-
-            # Execute the task
-            handler = self._get_handler(task.task_type)
-            if handler:
-                result = await handler(
-                    task=task,
-                    plan=plan,
-                    dependency_outputs=dependency_outputs,
-                    cancellation_check=cancellation_check,
+                execution_time = time.time() - start_time
+                return TaskExecutionResult(
+                    task_id=task_id,
+                    success=True,
+                    outputs=result if isinstance(result, dict) else {"result": result},
+                    sources=result.get("sources", []) if isinstance(result, dict) else [],
+                    findings=result.get("findings", []) if isinstance(result, dict) else [],
+                    execution_time_seconds=execution_time,
                 )
-            else:
-                result = await self._default_execute(task, plan, dependency_outputs, cancellation_check)
+            except Exception as e:
+                retry_decision = decide_subtask_retry(
+                    task=task,
+                    attempt=attempt,
+                    error=e,
+                )
+                self._monitor.record_retry_decision(
+                    task_id=task.id,
+                    attempt=retry_decision.attempt,
+                    max_attempts=retry_decision.max_attempts,
+                    should_retry=retry_decision.should_retry,
+                    reason_code=retry_decision.reason_code,
+                    actor_id=task.assigned_agent,
+                    task_type=task.task_type,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+                if retry_decision.should_retry:
+                    self._monitor.log(
+                        f"  Retrying task {task_id} "
+                        f"({attempt}/{retry_decision.max_attempts}) after {type(e).__name__}: {e}"
+                    )
+                    attempt += 1
+                    continue
 
-            execution_time = time.time() - start_time
-
-            return TaskExecutionResult(
-                task_id=task_id,
-                success=True,
-                outputs=result if isinstance(result, dict) else {"result": result},
-                sources=result.get("sources", []) if isinstance(result, dict) else [],
-                findings=result.get("findings", []) if isinstance(result, dict) else [],
-                execution_time_seconds=execution_time,
-            )
-
-        except Exception as e:
-            execution_time = time.time() - start_time
-            return TaskExecutionResult(
-                task_id=task_id,
-                success=False,
-                error_message=str(e),
-                execution_time_seconds=execution_time,
-                should_retry=task.retry_count < task.max_retries,
-            )
+                execution_time = time.time() - start_time
+                return TaskExecutionResult(
+                    task_id=task_id,
+                    success=False,
+                    error_message=str(e),
+                    execution_time_seconds=execution_time,
+                    should_retry=False,
+                )
 
     def _get_handler(self, task_type: str) -> Callable[..., Awaitable[Any]] | None:
         """Get the handler for a task type."""

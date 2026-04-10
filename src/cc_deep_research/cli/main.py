@@ -8,6 +8,7 @@ import click
 
 from cc_deep_research.__about__ import __version__
 from cc_deep_research.config import Config
+from cc_deep_research.content_gen import register_content_gen_commands
 from cc_deep_research.llm.env import load_env_from_project_root
 from cc_deep_research.telemetry import ingest_telemetry_to_duckdb
 
@@ -42,5 +43,6 @@ register_dashboard_command(main)
 register_session_commands(main)
 register_anthropic_commands(main)
 register_themes_commands(main)
+register_content_gen_commands(main)  # type: ignore[no-untyped-call]
 
 __all__ = ["Config", "ingest_telemetry_to_duckdb", "main", "subprocess"]

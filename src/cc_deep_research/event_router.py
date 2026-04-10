@@ -3,17 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from contextlib import suppress
 from typing import Any
 
-from websockets.client import WebSocketClientProtocol
-from websockets.server import WebSocketServerProtocol
+from websockets.server import ServerProtocol
 
 
 class WebSocketConnection:
     """Wrapper for WebSocket connections with metadata."""
 
-    def __init__(self, websocket: WebSocketServerProtocol, session_id: str) -> None:
+    def __init__(self, websocket: ServerProtocol, session_id: str) -> None:
         """Initialize WebSocket connection wrapper.
 
         Args:
@@ -33,22 +32,31 @@ class WebSocketConnection:
         import json
 
         try:
-            await self._websocket.send(json.dumps(data))
+            if hasattr(self._websocket, "send_json"):
+                await self._websocket.send_json(data)
+            else:
+                await self._websocket.send(json.dumps(data))  # type: ignore[attr-defined]
         except Exception:
             # Connection likely closed
             self._closed = True
 
     def is_connected(self) -> bool:
         """Check if connection is still active."""
-        return not self._closed and not self._websocket.closed
+        closed = getattr(self._websocket, "closed", False)
+        client_state = getattr(self._websocket, "client_state", None)
+        application_state = getattr(self._websocket, "application_state", None)
+        return (
+            not self._closed
+            and not closed
+            and getattr(client_state, "name", None) != "DISCONNECTED"
+            and getattr(application_state, "name", None) != "DISCONNECTED"
+        )
 
     async def close(self) -> None:
         """Close the WebSocket connection."""
         self._closed = True
-        try:
-            await self._websocket.close()
-        except Exception:
-            pass
+        with suppress(Exception):
+            await self._websocket.close()  # type: ignore[attr-defined]
 
 
 class EventRouter:
@@ -73,7 +81,7 @@ class EventRouter:
         self._active = False
         async with self._lock:
             # Close all connections
-            for session_id, connections in self._subscribers.items():
+            for _session_id, connections in self._subscribers.items():
                 for connection in connections:
                     await connection.close()
             self._subscribers.clear()
@@ -118,9 +126,7 @@ class EventRouter:
             subscribers = self._subscribers.get(session_id, set()).copy()
 
         # Broadcast to all subscribers (non-blocking)
-        tasks = [
-            conn.send_json(event) for conn in subscribers if conn.is_connected()
-        ]
+        tasks = [conn.send_json(event) for conn in subscribers if conn.is_connected()]
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 

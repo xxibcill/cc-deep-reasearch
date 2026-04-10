@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 from cc_deep_research.agents import ResearcherAgent
 from cc_deep_research.config import Config
@@ -13,6 +14,12 @@ from cc_deep_research.orchestration.session_state import OrchestratorSessionStat
 from cc_deep_research.providers import ProviderSpec
 from cc_deep_research.providers.factory import build_search_provider
 
+from .resilience import (
+    ParallelCollectionError,
+    ParallelCollectionTimeoutError,
+    build_parallel_collection_policy,
+)
+
 
 def _emit_agent_lifecycle(
     monitor: ResearchMonitor,
@@ -22,7 +29,7 @@ def _emit_agent_lifecycle(
     agent_type: str,
     status: str,
     parent_event_id: str | None = None,
-    metadata: dict | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> str:
     """Emit a standardized agent lifecycle event."""
     return monitor.emit_event(
@@ -46,7 +53,9 @@ class ParallelSourceCollectionStrategy:
         monitor: ResearchMonitor,
         session_state: OrchestratorSessionState,
         num_researchers: int,
-        hydrate_sources: Callable[[list[SearchResultItem], ResearchDepth], Awaitable[list[SearchResultItem]]],
+        hydrate_sources: Callable[
+            [list[SearchResultItem], ResearchDepth], Awaitable[list[SearchResultItem]]
+        ],
         aggregate_sources: Callable[[list[SearchResultItem]], list[SearchResultItem]],
     ) -> None:
         self._config = config
@@ -67,6 +76,7 @@ class ParallelSourceCollectionStrategy:
         """Collect, aggregate, and hydrate sources in parallel."""
         self._monitor.section("Parallel Source Collection")
         queries = [family.query for family in query_families]
+        policy = build_parallel_collection_policy(self._config)
 
         if agent_pool is None:
             raise RuntimeError("Local agent pool not initialized for parallel mode")
@@ -98,6 +108,12 @@ class ParallelSourceCollectionStrategy:
 
         current_parent = self._monitor.current_parent_id
         self._monitor.log(f"Decomposed {len(queries)} queries into {len(tasks)} tasks")
+        self._monitor.record_timeout_policy(
+            scope="parallel_collection.researcher_task",
+            timeout_seconds=policy.timeouts.researcher_timeout_seconds,
+            task_count=len(tasks),
+            fallback_to_sequential=policy.fallback_to_sequential,
+        )
 
         task_agent_ids: dict[str, str] = {}
         for task in tasks:
@@ -117,14 +133,16 @@ class ParallelSourceCollectionStrategy:
                 query=task["query"],
             )
 
-        researcher_timeout = getattr(self._config.search_team, "researcher_timeout", 120)
-        results = await researcher.execute_multiple_tasks(tasks, timeout=researcher_timeout)
+        results = await researcher.execute_multiple_tasks(
+            tasks,
+            timeout=policy.timeouts.researcher_timeout_seconds,
+        )
 
         all_sources: list[SearchResultItem] = []
         families_by_query = {family.query: family for family in query_families}
         for result in results:
             task_id = result["task_id"]
-            agent_event_id = task_agent_ids.get(task_id)
+            parent_event_id = task_agent_ids.get(task_id)
 
             if result["status"] == "success":
                 family = families_by_query.get(
@@ -153,7 +171,7 @@ class ParallelSourceCollectionStrategy:
                     agent_id=task_id,
                     agent_type="researcher",
                     status="completed",
-                    parent_event_id=agent_event_id,
+                    parent_event_id=parent_event_id,
                     metadata={
                         "source_count": result["source_count"],
                         "duration_ms": int(result["execution_time_ms"]),
@@ -185,7 +203,7 @@ class ParallelSourceCollectionStrategy:
                 agent_id=task_id,
                 agent_type="researcher",
                 status=result["status"],
-                parent_event_id=agent_event_id,
+                parent_event_id=parent_event_id,
                 metadata={
                     "error": result.get("error", "Unknown error"),
                     "query": result.get("query", ""),
@@ -197,6 +215,36 @@ class ParallelSourceCollectionStrategy:
                 status=result["status"],
                 error=result.get("error", "Unknown error"),
             )
+
+        status_counts = {
+            "success": sum(1 for result in results if result.get("status") == "success"),
+            "timeout": sum(1 for result in results if result.get("status") == "timeout"),
+            "error": sum(
+                1 for result in results if result.get("status") not in {"success", "timeout"}
+            ),
+        }
+        if results and status_counts["success"] == 0:
+            reason_code = "timeout" if status_counts["timeout"] == len(results) else "fallback"
+            self._monitor.emit_decision_made(
+                decision_type="parallel_collection_outcome",
+                reason_code=reason_code,
+                chosen_option="sequential_fallback"
+                if policy.fallback_to_sequential
+                else "propagate_failure",
+                inputs={
+                    "statuses": status_counts,
+                    "task_count": len(results),
+                    "timeout_seconds": policy.timeouts.researcher_timeout_seconds,
+                },
+            )
+            if status_counts["timeout"] == len(results):
+                msg = (
+                    "Parallel source collection exhausted the researcher timeout for every task "
+                    f"after {policy.timeouts.researcher_timeout_seconds:.0f}s"
+                )
+                raise ParallelCollectionTimeoutError(msg)
+            msg = "Parallel source collection produced no successful researcher results"
+            raise ParallelCollectionError(msg)
 
         aggregated = self._aggregate_sources(all_sources)
         self._session_state.mark_parallel_collection_used()
