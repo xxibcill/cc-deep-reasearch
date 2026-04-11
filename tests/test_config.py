@@ -305,6 +305,8 @@ class TestLoadConfig:
                 os.environ,
                 {
                     "OPENROUTER_API_KEYS": "openrouter-1, openrouter-2",
+                    "OPENROUTER_API_KEY": "openrouter-1",
+                    "CEREBRAS_API_KEYS": "cerebras-1",
                     "CEREBRAS_API_KEY": "cerebras-1",
                 },
             ):
@@ -409,20 +411,21 @@ class TestConfigService:
         with tempfile.TemporaryDirectory() as tmpdir:
             config_path = Path(tmpdir) / "config.yaml"
 
-            response = update_config(
-                {
-                    "llm.openrouter.api_key": {
-                        "action": "replace",
-                        "value": "sk-secret",
-                    }
-                },
-                config_path=config_path,
-            )
-            saved = load_config(config_path)
+            with patch.dict(os.environ, {"OPENROUTER_API_KEYS": "", "OPENROUTER_API_KEY": ""}):
+                response = update_config(
+                    {
+                        "llm.openrouter.api_key": {
+                            "action": "replace",
+                            "value": "sk-secret",
+                        }
+                    },
+                    config_path=config_path,
+                )
+                saved = load_config(config_path)
 
-        assert response.persisted_config["llm"]["openrouter"]["api_key"] == "********"
-        assert response.secret_fields
-        assert saved.llm.openrouter.api_key == "sk-secret"
+            assert response.persisted_config["llm"]["openrouter"]["api_key"] == "********"
+            assert response.secret_fields
+            assert saved.llm.openrouter.api_key == "sk-secret"
 
     def test_update_config_clears_secret_fields(self) -> None:
         """Secret clear operations should remove persisted values without exposing them."""
@@ -432,18 +435,19 @@ class TestConfigService:
             config.llm.openrouter.api_key = "sk-secret"
             save_config(config, config_path)
 
-            response = update_config(
-                {
-                    "llm.openrouter.api_key": {
-                        "action": "clear",
-                    }
-                },
-                config_path=config_path,
-            )
-            saved = load_config(config_path)
+            with patch.dict(os.environ, {"OPENROUTER_API_KEYS": "", "OPENROUTER_API_KEY": ""}):
+                response = update_config(
+                    {
+                        "llm.openrouter.api_key": {
+                            "action": "clear",
+                        }
+                    },
+                    config_path=config_path,
+                )
+                saved = load_config(config_path)
 
-        assert response.persisted_config["llm"]["openrouter"]["api_key"] is None
-        assert saved.llm.openrouter.api_key is None
+            assert response.persisted_config["llm"]["openrouter"]["api_key"] is None
+            assert saved.llm.openrouter.api_key is None
 
     def test_update_config_rejects_invalid_key(self) -> None:
         """Unknown config fields should raise a structured patch error."""

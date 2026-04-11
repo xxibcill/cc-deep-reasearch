@@ -618,6 +618,219 @@ export async function mockResearchRunApi(page: Page, runId = "research-report-00
   });
 }
 
+export type MockBacklogItem = {
+  idea_id: string;
+  idea: string;
+  category?: string;
+  audience?: string;
+  problem?: string;
+  source?: string;
+  why_now?: string;
+  potential_hook?: string;
+  content_type?: string;
+  evidence?: string;
+  risk_level?: string;
+  priority_score?: number;
+  status?: string;
+  latest_score?: number;
+  latest_recommendation?: string;
+  selection_reasoning?: string;
+  expertise_reason?: string;
+  genericity_risk?: string;
+  proof_gap_note?: string;
+  source_theme?: string;
+  source_pipeline_id?: string;
+  created_at?: string;
+  updated_at?: string;
+  last_scored_at?: string;
+};
+
+type BacklogMockOptions = {
+  items?: MockBacklogItem[];
+};
+
+let backlogItems: MockBacklogItem[] = [];
+
+function createBacklogItem(data: Record<string, unknown>): MockBacklogItem {
+  const now = new Date().toISOString();
+  return {
+    idea_id: Math.random().toString(36).substring(2, 10),
+    idea: "",
+    category: "",
+    audience: "",
+    problem: "",
+    source: "",
+    why_now: "",
+    potential_hook: "",
+    content_type: "",
+    evidence: "",
+    risk_level: "medium",
+    priority_score: 0,
+    status: "backlog",
+    latest_score: undefined,
+    latest_recommendation: "",
+    selection_reasoning: "",
+    expertise_reason: "",
+    genericity_risk: "",
+    proof_gap_note: "",
+    source_theme: "",
+    source_pipeline_id: "",
+    created_at: now,
+    updated_at: now,
+    last_scored_at: "",
+    ...data,
+  };
+}
+
+export async function mockBacklogApis(
+  page: Page,
+  options: BacklogMockOptions = {}
+) {
+  backlogItems = options.items ?? [];
+
+  await page.route(/\/api\/content-gen\/backlog/, async (route) => {
+    const url = new URL(route.request().url());
+    const pathName = url.pathname;
+
+    // GET /api/content-gen/backlog - list items
+    if (pathName === "/api/content-gen/backlog" && route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          path: "/tmp/backlog.yaml",
+          items: backlogItems,
+        }),
+      });
+      return;
+    }
+
+    // POST /api/content-gen/backlog - create item
+    if (pathName === "/api/content-gen/backlog" && route.request().method() === "POST") {
+      const pd = route.request().postDataBuffer;
+      const body = pd ? JSON.parse(pd()!.toString()) : {};
+      const newItem = createBacklogItem(body);
+      backlogItems.push(newItem);
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify(newItem),
+      });
+      return;
+    }
+
+    // PATCH /api/content-gen/backlog/{idea_id} - update item
+    const patchMatch = pathName.match(/\/api\/content-gen\/backlog\/([^/]+)$/);
+    if (patchMatch && route.request().method() === "PATCH") {
+      const ideaId = patchMatch[1];
+      const pd = route.request().postDataBuffer;
+      const body = pd ? JSON.parse(pd()!.toString()) : {};
+      const patchData = body.patch || {};
+      const itemIndex = backlogItems.findIndex((item) => item.idea_id === ideaId);
+      if (itemIndex === -1) {
+        await route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "Backlog item not found" }),
+        });
+        return;
+      }
+      backlogItems[itemIndex] = {
+        ...backlogItems[itemIndex],
+        ...patchData,
+        updated_at: new Date().toISOString(),
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(backlogItems[itemIndex]),
+      });
+      return;
+    }
+
+    // POST /api/content-gen/backlog/{idea_id}/select - select item
+    const selectMatch = pathName.match(/\/api\/content-gen\/backlog\/([^/]+)\/select$/);
+    if (selectMatch && route.request().method() === "POST") {
+      const ideaId = selectMatch[1];
+      const itemIndex = backlogItems.findIndex((item) => item.idea_id === ideaId);
+      if (itemIndex === -1) {
+        await route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "Backlog item not found" }),
+        });
+        return;
+      }
+      // Clear previous selections
+      backlogItems = backlogItems.map((item) =>
+        item.status === "selected" ? { ...item, status: "backlog", selection_reasoning: "" } : item
+      );
+      // Set this item as selected
+      backlogItems[itemIndex] = {
+        ...backlogItems[itemIndex],
+        status: "selected",
+        updated_at: new Date().toISOString(),
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(backlogItems[itemIndex]),
+      });
+      return;
+    }
+
+    // POST /api/content-gen/backlog/{idea_id}/archive - archive item
+    const archiveMatch = pathName.match(/\/api\/content-gen\/backlog\/([^/]+)\/archive$/);
+    if (archiveMatch && route.request().method() === "POST") {
+      const ideaId = archiveMatch[1];
+      const itemIndex = backlogItems.findIndex((item) => item.idea_id === ideaId);
+      if (itemIndex === -1) {
+        await route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "Backlog item not found" }),
+        });
+        return;
+      }
+      backlogItems[itemIndex] = {
+        ...backlogItems[itemIndex],
+        status: "archived",
+        updated_at: new Date().toISOString(),
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(backlogItems[itemIndex]),
+      });
+      return;
+    }
+
+    // DELETE /api/content-gen/backlog/{idea_id} - delete item
+    const deleteMatch = pathName.match(/\/api\/content-gen\/backlog\/([^/]+)$/);
+    if (deleteMatch && route.request().method() === "DELETE") {
+      const ideaId = deleteMatch[1];
+      const itemIndex = backlogItems.findIndex((item) => item.idea_id === ideaId);
+      if (itemIndex === -1) {
+        await route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "Backlog item not found" }),
+        });
+        return;
+      }
+      backlogItems.splice(itemIndex, 1);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ removed: 1 }),
+      });
+      return;
+    }
+
+    await route.fallback();
+  });
+}
+
 export function screenshotPath(fileName: string) {
   return path.join(process.cwd(), "playwright-screenshots", "2026-04-06", fileName);
 }

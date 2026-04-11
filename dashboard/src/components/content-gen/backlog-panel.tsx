@@ -1,13 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { Archive, CheckCircle2, Trash2 } from 'lucide-react'
+import { Archive, CheckCircle2, Plus, Trash2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogBody, DialogFooter } from '@/components/ui/dialog'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { BacklogItemForm } from '@/components/content-gen/backlog-item-form'
 import type { BacklogItem, BacklogItemStatus } from '@/types/content-gen'
 
 const STATUS_OPTIONS: BacklogItemStatus[] = [
@@ -52,9 +54,11 @@ interface BacklogPanelProps {
   backlogPath?: string | null
   loading?: boolean
   onUpdateStatus?: (ideaId: string, patch: Record<string, unknown>) => Promise<void>
+  onEdit?: (ideaId: string, patch: Record<string, unknown>) => Promise<void>
   onSelect?: (ideaId: string) => Promise<void>
   onArchive?: (ideaId: string) => Promise<void>
   onDelete?: (ideaId: string) => Promise<void>
+  onCreate?: (data: Record<string, unknown>) => Promise<void>
 }
 
 export function BacklogPanel({
@@ -62,14 +66,17 @@ export function BacklogPanel({
   backlogPath,
   loading,
   onUpdateStatus,
+  onEdit,
   onSelect,
   onArchive,
   onDelete,
+  onCreate,
 }: BacklogPanelProps) {
   const [statusFilter, setStatusFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<{ ideaId: string; idea: string } | null>(null)
 
   const categories = [...new Set(items.map((item) => item.category).filter(Boolean))].sort()
   const filteredItems = items
@@ -116,6 +123,19 @@ export function BacklogPanel({
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
+          {onCreate && (
+            <div className="flex items-end">
+              <BacklogItemForm
+                onSubmitCreate={onCreate}
+                trigger={
+                  <Button type="button" className="h-10 gap-2">
+                    <Plus className="h-4 w-4" />
+                    New item
+                  </Button>
+                }
+              />
+            </div>
+          )}
           <div className="space-y-1">
             <label className="text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
               Status
@@ -183,24 +203,24 @@ export function BacklogPanel({
                     <TableCell>
                       <div className="space-y-2">
                         <Badge variant={statusBadgeVariant(item.status)}>{item.status}</Badge>
-                        {onUpdateStatus ? (
-                          <NativeSelect
-                            value={item.status}
-                            onChange={(event) =>
+                        <NativeSelect
+                          value={item.status}
+                          onChange={(event) => {
+                            if (onUpdateStatus) {
                               void runAction(`${rowKey}-status`, async () =>
                                 onUpdateStatus(item.idea_id, { status: event.target.value }),
                               )
                             }
-                            disabled={busyKey === `${rowKey}-status`}
-                            className="h-9 min-w-[10rem] rounded-md"
-                          >
-                            {STATUS_OPTIONS.map((status) => (
-                              <option key={status} value={status}>
-                                {status}
-                              </option>
-                            ))}
-                          </NativeSelect>
-                        ) : null}
+                          }}
+                          disabled={!onUpdateStatus || busyKey === `${rowKey}-status`}
+                          className="h-9 min-w-[10rem] rounded-md"
+                        >
+                          {STATUS_OPTIONS.map((status) => (
+                            <option key={status} value={status}>
+                              {status}
+                            </option>
+                          ))}
+                        </NativeSelect>
                       </div>
                     </TableCell>
                     <TableCell className="text-foreground/80">{item.category || '—'}</TableCell>
@@ -220,45 +240,57 @@ export function BacklogPanel({
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        {onSelect ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => void runAction(`${rowKey}-select`, () => onSelect(item.idea_id))}
-                            disabled={busyKey === `${rowKey}-select` || item.status === 'selected'}
-                            className="h-8 w-8 text-muted-foreground/60 hover:text-success"
-                            title="Select item"
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                          </Button>
-                        ) : null}
-                        {onArchive ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => void runAction(`${rowKey}-archive`, () => onArchive(item.idea_id))}
-                            disabled={busyKey === `${rowKey}-archive`}
-                            className="h-8 w-8 text-muted-foreground/60 hover:text-warning"
-                            title="Archive item"
-                          >
-                            <Archive className="h-3.5 w-3.5" />
-                          </Button>
-                        ) : null}
-                        {onDelete ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => void runAction(`${rowKey}-delete`, () => onDelete(item.idea_id))}
-                            disabled={busyKey === `${rowKey}-delete`}
-                            className="h-8 w-8 text-muted-foreground/60 hover:text-error"
-                            title="Delete item"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        ) : null}
+                        {onEdit && (
+                          <BacklogItemForm
+                            item={item}
+                            onSubmitEdit={onEdit}
+                          />
+                        )}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            if (onSelect) {
+                              void runAction(`${rowKey}-select`, () => onSelect(item.idea_id))
+                            }
+                          }}
+                          disabled={!onSelect || busyKey === `${rowKey}-select`}
+                          className="h-8 w-8 text-muted-foreground/60 hover:text-success"
+                          title="Select item"
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            if (onArchive) {
+                              void runAction(`${rowKey}-archive`, () => onArchive(item.idea_id))
+                            }
+                          }}
+                          disabled={!onArchive || busyKey === `${rowKey}-archive`}
+                          className="h-8 w-8 text-muted-foreground/60 hover:text-warning"
+                          title="Archive item"
+                        >
+                          <Archive className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            if (onDelete) {
+                              setDeleteConfirm({ ideaId: item.idea_id, idea: item.idea })
+                            }
+                          }}
+                          disabled={!onDelete || busyKey === `${rowKey}-delete`}
+                          className="h-8 w-8 text-muted-foreground/60 hover:text-error"
+                          title="Delete item"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -267,6 +299,49 @@ export function BacklogPanel({
             </TableBody>
           </Table>
         </div>
+      )}
+
+      {deleteConfirm && (
+        <Dialog open={true} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete backlog item?</DialogTitle>
+              <DialogDescription>
+                This will permanently remove &ldquo;{deleteConfirm.idea}&rdquo; from the backlog. This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogBody>
+              <p className="text-sm text-muted-foreground">
+                If this item was generated by a pipeline, its source data may still be available in that pipeline&apos;s output.
+              </p>
+            </DialogBody>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDeleteConfirm(null)}
+                disabled={busyKey === `${deleteConfirm.ideaId}-delete`}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => {
+                  void runAction(`${deleteConfirm.ideaId}-delete`, async () => {
+                    if (onDelete) {
+                      await onDelete(deleteConfirm.ideaId)
+                    }
+                  })
+                  setDeleteConfirm(null)
+                }}
+                disabled={busyKey === `${deleteConfirm.ideaId}-delete`}
+              >
+                {busyKey === `${deleteConfirm.ideaId}-delete` ? 'Deleting...' : 'Delete item'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   )
