@@ -707,9 +707,8 @@ export async function mockBacklogApis(
 
     // POST /api/content-gen/backlog - create item
     if (pathName === "/api/content-gen/backlog" && route.request().method() === "POST") {
-      const body = route.request().postDataBuffer
-        ? JSON.parse(route.request().postDataBuffer().toString())
-        : {};
+      const pd = route.request().postDataBuffer;
+      const body = pd ? JSON.parse(pd()!.toString()) : {};
       const newItem = createBacklogItem(body);
       backlogItems.push(newItem);
       await route.fulfill({
@@ -724,9 +723,8 @@ export async function mockBacklogApis(
     const patchMatch = pathName.match(/\/api\/content-gen\/backlog\/([^/]+)$/);
     if (patchMatch && route.request().method() === "PATCH") {
       const ideaId = patchMatch[1];
-      const body = route.request().postDataBuffer
-        ? JSON.parse(route.request().postDataBuffer().toString())
-        : {};
+      const pd = route.request().postDataBuffer;
+      const body = pd ? JSON.parse(pd()!.toString()) : {};
       const patchData = body.patch || {};
       const itemIndex = backlogItems.findIndex((item) => item.idea_id === ideaId);
       if (itemIndex === -1) {
