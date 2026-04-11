@@ -183,24 +183,24 @@ export function BacklogPanel({
                     <TableCell>
                       <div className="space-y-2">
                         <Badge variant={statusBadgeVariant(item.status)}>{item.status}</Badge>
-                        {onUpdateStatus ? (
-                          <NativeSelect
-                            value={item.status}
-                            onChange={(event) =>
+                        <NativeSelect
+                          value={item.status}
+                          onChange={(event) => {
+                            if (onUpdateStatus) {
                               void runAction(`${rowKey}-status`, async () =>
                                 onUpdateStatus(item.idea_id, { status: event.target.value }),
                               )
                             }
-                            disabled={busyKey === `${rowKey}-status`}
-                            className="h-9 min-w-[10rem] rounded-md"
-                          >
-                            {STATUS_OPTIONS.map((status) => (
-                              <option key={status} value={status}>
-                                {status}
-                              </option>
-                            ))}
-                          </NativeSelect>
-                        ) : null}
+                          }}
+                          disabled={!onUpdateStatus || busyKey === `${rowKey}-status`}
+                          className="h-9 min-w-[10rem] rounded-md"
+                        >
+                          {STATUS_OPTIONS.map((status) => (
+                            <option key={status} value={status}>
+                              {status}
+                            </option>
+                          ))}
+                        </NativeSelect>
                       </div>
                     </TableCell>
                     <TableCell className="text-foreground/80">{item.category || '—'}</TableCell>
@@ -220,45 +220,51 @@ export function BacklogPanel({
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        {onSelect ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => void runAction(`${rowKey}-select`, () => onSelect(item.idea_id))}
-                            disabled={busyKey === `${rowKey}-select` || item.status === 'selected'}
-                            className="h-8 w-8 text-muted-foreground/60 hover:text-success"
-                            title="Select item"
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                          </Button>
-                        ) : null}
-                        {onArchive ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => void runAction(`${rowKey}-archive`, () => onArchive(item.idea_id))}
-                            disabled={busyKey === `${rowKey}-archive`}
-                            className="h-8 w-8 text-muted-foreground/60 hover:text-warning"
-                            title="Archive item"
-                          >
-                            <Archive className="h-3.5 w-3.5" />
-                          </Button>
-                        ) : null}
-                        {onDelete ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => void runAction(`${rowKey}-delete`, () => onDelete(item.idea_id))}
-                            disabled={busyKey === `${rowKey}-delete`}
-                            className="h-8 w-8 text-muted-foreground/60 hover:text-error"
-                            title="Delete item"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        ) : null}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            if (onSelect) {
+                              void runAction(`${rowKey}-select`, () => onSelect(item.idea_id))
+                            }
+                          }}
+                          disabled={!onSelect || busyKey === `${rowKey}-select` || item.status === 'selected'}
+                          className="h-8 w-8 text-muted-foreground/60 hover:text-success"
+                          title="Select item"
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            if (onArchive) {
+                              void runAction(`${rowKey}-archive`, () => onArchive(item.idea_id))
+                            }
+                          }}
+                          disabled={!onArchive || busyKey === `${rowKey}-archive`}
+                          className="h-8 w-8 text-muted-foreground/60 hover:text-warning"
+                          title="Archive item"
+                        >
+                          <Archive className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            if (onDelete) {
+                              void runAction(`${rowKey}-delete`, () => onDelete(item.idea_id))
+                            }
+                          }}
+                          disabled={!onDelete || busyKey === `${rowKey}-delete`}
+                          className="h-8 w-8 text-muted-foreground/60 hover:text-error"
+                          title="Delete item"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
