@@ -19,7 +19,7 @@ def default_content_gen_dir() -> Path:
 def resolve_content_gen_file_path(
     *,
     explicit_path: Path | None,
-    config: "Config | None",
+    config: Config | None,
     config_attr: str,
     default_name: str,
 ) -> Path:

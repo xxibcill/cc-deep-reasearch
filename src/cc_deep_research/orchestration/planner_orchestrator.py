@@ -29,6 +29,7 @@ from cc_deep_research.models import (
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.orchestration.session_builder import SessionBuilder
 from cc_deep_research.orchestration.task_dispatcher import TaskDispatcher
+from cc_deep_research.teams.research_team import LocalResearchTeam
 
 
 class PlannerResearchOrchestrator:

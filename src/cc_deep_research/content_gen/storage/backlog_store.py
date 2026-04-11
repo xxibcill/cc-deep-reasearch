@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 class BacklogStore:
     """Load and save :class:`BacklogOutput` to a YAML file."""
 
-    def __init__(self, path: Path | None = None, *, config: "Config | None" = None) -> None:
+    def __init__(self, path: Path | None = None, *, config: Config | None = None) -> None:
         self._path = resolve_content_gen_file_path(
             explicit_path=path,
             config=config,

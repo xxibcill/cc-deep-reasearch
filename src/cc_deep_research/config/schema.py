@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings
@@ -17,7 +18,10 @@ def _normalize_api_key_list(*values: str | list[str] | None) -> list[str]:
     seen: set[str] = set()
 
     for value in values:
-        candidates = value if isinstance(value, list) else [value]
+        if isinstance(value, list):
+            candidates = cast(list[str | None], value)
+        else:
+            candidates = [value]
         for candidate in candidates:
             if candidate is None:
                 continue

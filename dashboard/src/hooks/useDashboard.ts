@@ -25,6 +25,8 @@ export const DEFAULT_EVENT_FILTERS: EventFilter = {
   timeRange: null,
 };
 
+export const MAX_BUFFERED_EVENTS = 4000;
+
 export const DEFAULT_LIVE_STREAM_STATUS: LiveStreamStatus = {
   phase: 'idle',
   connected: false,
@@ -38,8 +40,6 @@ export const DEFAULT_LIVE_STREAM_STATUS: LiveStreamStatus = {
   failureReason: null,
   canReconnect: false,
 };
-
-export const MAX_BUFFERED_EVENTS = 4000;
 
 interface DashboardState {
   sessionId: string | null;
@@ -139,6 +139,9 @@ function matchesSessionListQuery(session: Session, query: SessionListQueryState)
   if (query.activeOnly && !session.active) {
     return false;
   }
+  if (query.archivedOnly && !session.archived) {
+    return false;
+  }
   if (query.status && session.status !== query.status) {
     return false;
   }
@@ -158,7 +161,7 @@ const useDashboardStore = create<DashboardState>((set) => ({
             liveStreamStatus: DEFAULT_LIVE_STREAM_STATUS,
             selectedEvent: null,
           }
-  ),
+    ),
   sessions: [],
   sessionsLoading: true,
   sessionsLoadingMore: false,

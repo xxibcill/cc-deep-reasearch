@@ -9,7 +9,6 @@ The research lead agent is responsible for:
 """
 
 import re
-
 from typing import Any
 
 from cc_deep_research.models import (
@@ -105,7 +104,7 @@ class ResearchLeadAgent:
         Returns:
             Strategy dictionary with task plan.
         """
-        strategies = {
+        strategies: dict[ResearchDepth, dict[str, Any]] = {
             ResearchDepth.QUICK: {
                 "query_variations": 1,
                 "max_sources": 3,
@@ -129,7 +128,7 @@ class ResearchLeadAgent:
             },
         }
 
-        base_strategy = dict(strategies[depth])
+        base_strategy = strategies[depth].copy()
 
         # Adjust based on complexity
         if complexity == "simple":
@@ -221,7 +220,6 @@ class ResearchLeadAgent:
 
     def _classify_intent(self, query: str, words: list[str]) -> str:
         """Classify the primary research intent using deterministic signals."""
-        lowered = query.lower()
         comparative_terms = {
             "better",
             "compare",

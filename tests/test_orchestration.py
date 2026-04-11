@@ -10,6 +10,7 @@ from cc_deep_research.config import Config
 from cc_deep_research.models import (
     AnalysisFinding,
     AnalysisResult,
+    PlannerIterationDecision,
     QueryFamily,
     ResearchDepth,
     ResearchPlan,
@@ -18,12 +19,14 @@ from cc_deep_research.models import (
     StrategyPlan,
     StrategyResult,
     ValidationResult,
-    PlannerIterationDecision,
 )
 from cc_deep_research.models.llm import LLMProviderType, LLMTransportType
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.orchestration.analysis_workflow import AnalysisWorkflow
-from cc_deep_research.orchestration.execution import ResearchExecutionHooks, ResearchExecutionService
+from cc_deep_research.orchestration.execution import (
+    ResearchExecutionHooks,
+    ResearchExecutionService,
+)
 from cc_deep_research.orchestration.phases import PhaseRunner
 from cc_deep_research.orchestration.planning import ResearchPlanningService
 from cc_deep_research.orchestration.resilience import ParallelCollectionError

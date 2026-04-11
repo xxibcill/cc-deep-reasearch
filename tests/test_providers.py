@@ -11,8 +11,8 @@ from cc_deep_research.config import Config
 from cc_deep_research.models import SearchMode, SearchOptions, SearchResult, SearchResultItem
 from cc_deep_research.models.search import QueryFamily, ResearchDepth
 from cc_deep_research.monitoring import ResearchMonitor
-from cc_deep_research.orchestration.session_state import OrchestratorSessionState
 from cc_deep_research.orchestration.resilience import ParallelCollectionTimeoutError
+from cc_deep_research.orchestration.session_state import OrchestratorSessionState
 from cc_deep_research.orchestration.source_collection import (
     SourceAggregationService,
     SourceCollectionService,

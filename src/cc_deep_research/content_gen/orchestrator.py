@@ -44,6 +44,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _parse_timestamp_with_tz(value: str) -> datetime:
+    """Parse an ISO timestamp, ensuring it always has timezone info."""
+    if not value:
+        return datetime.now(tz=UTC)
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt
+
+
 def _active_candidate_ids(ctx: PipelineContext) -> list[str]:
     candidate_groups = [
         ctx.active_candidates,
@@ -59,12 +69,13 @@ def _active_candidate_ids(ctx: PipelineContext) -> list[str]:
 
 def _selected_idea_candidates(ctx: PipelineContext) -> list[str]:
     candidates: list[str] = []
+    # scoring.selected_idea_id takes precedence over ctx.selected_idea_id
+    if ctx.scoring and ctx.scoring.selected_idea_id:
+        candidates.append(ctx.scoring.selected_idea_id)
     if ctx.selected_idea_id:
         candidates.append(ctx.selected_idea_id)
     candidates.extend(_active_candidate_ids(ctx))
     if ctx.scoring:
-        if ctx.scoring.selected_idea_id:
-            candidates.append(ctx.scoring.selected_idea_id)
         candidates.extend(ctx.shortlist or ctx.scoring.shortlist)
         candidates.extend(ctx.scoring.produce_now)
 
@@ -80,7 +91,9 @@ def _resolve_selected_item(ctx: PipelineContext) -> Any | None:
         return None
 
     for idea_id in _selected_idea_candidates(ctx):
-        item = next((candidate for candidate in ctx.backlog.items if candidate.idea_id == idea_id), None)
+        item = next(
+            (candidate for candidate in ctx.backlog.items if candidate.idea_id == idea_id), None
+        )
         if item is not None:
             return item
     return None
@@ -99,7 +112,11 @@ def _resolve_selected_angle(ctx: PipelineContext) -> Any | None:
         return None
     if ctx.angles.selected_angle_id:
         angle = next(
-            (option for option in ctx.angles.angle_options if option.angle_id == ctx.angles.selected_angle_id),
+            (
+                option
+                for option in ctx.angles.angle_options
+                if option.angle_id == ctx.angles.selected_angle_id
+            ),
             None,
         )
         if angle is not None:
@@ -150,7 +167,11 @@ def _resolve_lane_angle(ctx: PipelineContext, idea_id: str) -> Any | None:
         return None
     if lane.angles.selected_angle_id:
         angle = next(
-            (option for option in lane.angles.angle_options if option.angle_id == lane.angles.selected_angle_id),
+            (
+                option
+                for option in lane.angles.angle_options
+                if option.angle_id == lane.angles.selected_angle_id
+            ),
             None,
         )
         if angle is not None:
@@ -216,7 +237,9 @@ def _record_lane_completion(
 
 def _lane_publish_prereqs_met(ctx: PipelineContext) -> bool:
     return any(
-        lane.packaging is not None and lane.qc_gate is not None and lane.qc_gate.approved_for_publish
+        lane.packaging is not None
+        and lane.qc_gate is not None
+        and lane.qc_gate.approved_for_publish
         for lane in ctx.lane_contexts
     )
 
@@ -490,7 +513,9 @@ class ContentGenOrchestrator:
 
         # Phase 2: Content stages (5-11) — iterative or single-pass
         if self._config.content_gen.enable_iterative_mode and end >= 7 and from_stage <= 6:
-            ctx = await self._run_iterative_loop(ctx, progress_callback, end, stage_completed_callback)
+            ctx = await self._run_iterative_loop(
+                ctx, progress_callback, end, stage_completed_callback
+            )
         else:
             for idx in range(max(5, from_stage), min(12, end + 1)):
                 ctx = await self._run_stage(idx, ctx, progress_callback, stage_completed_callback)
@@ -536,12 +561,19 @@ class ContentGenOrchestrator:
             return False, "scoring/selected idea missing"
         if stage == "build_research_pack" and ctx.backlog is None:
             return False, "backlog missing"
-        if stage == "build_research_pack" and not any(
-            _resolve_lane_item(ctx, candidate.idea_id) is not None
-            and _resolve_lane_angle(ctx, candidate.idea_id) is not None
-            for candidate in lane_candidates
-        ):
-            return False, "lane backlog/angles missing"
+        if stage == "build_research_pack":
+            has_item = any(
+                _resolve_lane_item(ctx, candidate.idea_id) is not None
+                for candidate in lane_candidates
+            )
+            has_angle = any(
+                _resolve_lane_angle(ctx, candidate.idea_id) is not None
+                for candidate in lane_candidates
+            )
+            if has_item and not has_angle:
+                return False, "selected angle missing"
+            if not has_item:
+                return False, "lane backlog/angles missing"
         if stage == "build_argument_map" and not any(
             (lane := _resolve_lane_context(ctx, candidate.idea_id)) is not None
             and lane.research_pack is not None
@@ -560,12 +592,17 @@ class ContentGenOrchestrator:
             return False, "lane backlog/angles/argument_map missing"
         if stage == "visual_translation" and not any(
             lane.scripting is not None
-            and (lane.scripting.tightened or lane.scripting.annotated_script or lane.scripting.draft) is not None
+            and (
+                lane.scripting.tightened or lane.scripting.annotated_script or lane.scripting.draft
+            )
+            is not None
             and lane.scripting.structure is not None
             for lane in ctx.lane_contexts
         ):
             return False, "lane script/structure incomplete"
-        if stage == "production_brief" and not any(lane.visual_plan is not None for lane in ctx.lane_contexts):
+        if stage == "production_brief" and not any(
+            lane.visual_plan is not None for lane in ctx.lane_contexts
+        ):
             return False, "lane visual_plan missing"
         if stage == "packaging" and not any(
             lane.scripting is not None
@@ -626,7 +663,9 @@ class ContentGenOrchestrator:
                 input_summary=input_summary,
                 output_summary=skip_reason,
                 warnings=warnings,
-                decision_summary=self._build_decision_summary(idx, ctx, status="skipped", detail=skip_reason),
+                decision_summary=self._build_decision_summary(
+                    idx, ctx, status="skipped", detail=skip_reason
+                ),
                 metadata=self._build_trace_metadata(idx, ctx),
             )
             ctx.stage_traces.append(trace)
@@ -645,6 +684,9 @@ class ContentGenOrchestrator:
             output_summary = str(e)
             warnings = self._collect_trace_warnings(idx, ctx, status=status, detail=str(e))
             completed_at = datetime.now(tz=UTC).isoformat()
+            started_dt = _parse_timestamp_with_tz(started_at)
+            completed_dt = _parse_timestamp_with_tz(completed_at)
+            duration_ms = int((completed_dt - started_dt).total_seconds() * 1000)
             trace = PipelineStageTrace(
                 stage_index=idx,
                 stage_name=stage_name,
@@ -652,15 +694,13 @@ class ContentGenOrchestrator:
                 status=status,
                 started_at=started_at,
                 completed_at=completed_at,
-                duration_ms=int(
-                    (datetime.fromisoformat(completed_at) - datetime.fromisoformat(started_at))
-                    .total_seconds()
-                    * 1000
-                ),
+                duration_ms=duration_ms,
                 input_summary=input_summary,
                 output_summary=output_summary,
                 warnings=warnings,
-                decision_summary=self._build_decision_summary(idx, ctx, status=status, detail=str(e)),
+                decision_summary=self._build_decision_summary(
+                    idx, ctx, status=status, detail=str(e)
+                ),
                 metadata=self._build_trace_metadata(idx, ctx),
             )
             ctx.stage_traces.append(trace)
@@ -669,6 +709,9 @@ class ContentGenOrchestrator:
             raise
 
         completed_at = datetime.now(tz=UTC).isoformat()
+        started_dt = _parse_timestamp_with_tz(started_at)
+        completed_dt = _parse_timestamp_with_tz(completed_at)
+        duration_ms = int((completed_dt - started_dt).total_seconds() * 1000)
         trace = PipelineStageTrace(
             stage_index=idx,
             stage_name=stage_name,
@@ -676,11 +719,7 @@ class ContentGenOrchestrator:
             status=status,
             started_at=started_at,
             completed_at=completed_at,
-            duration_ms=int(
-                (datetime.fromisoformat(completed_at) - datetime.fromisoformat(started_at))
-                .total_seconds()
-                * 1000
-            ),
+            duration_ms=duration_ms,
             input_summary=input_summary,
             output_summary=output_summary,
             warnings=warnings,
@@ -709,7 +748,9 @@ class ContentGenOrchestrator:
         while iter_state.current_iteration <= max_iter:
             iteration = iter_state.current_iteration
             logger.info(
-                "Content iteration %d/%d", iteration, max_iter,
+                "Content iteration %d/%d",
+                iteration,
+                max_iter,
             )
             if progress_callback:
                 progress_callback(-1, f"Iteration {iteration}/{max_iter}")
@@ -827,7 +868,10 @@ class ContentGenOrchestrator:
         quality_eval: QualityEvaluation,
         iter_state: IterationState,
     ) -> bool:
-        if quality_eval.has_blocking_claim_issues and iter_state.current_iteration < iter_state.max_iterations:
+        if (
+            quality_eval.has_blocking_claim_issues
+            and iter_state.current_iteration < iter_state.max_iterations
+        ):
             return False
         if quality_eval.passes_threshold:
             return True
@@ -880,7 +924,9 @@ class ContentGenOrchestrator:
             feedback_lines.extend(f"- {claim}" for claim in quality_eval.unsupported_claims)
         if quality_eval.evidence_actions_required:
             feedback_lines.append("Evidence actions required:")
-            feedback_lines.extend(f"- {action}" for action in quality_eval.evidence_actions_required)
+            feedback_lines.extend(
+                f"- {action}" for action in quality_eval.evidence_actions_required
+            )
         if quality_eval.critical_issues:
             feedback_lines.append("Critical issues to fix:")
             feedback_lines.extend(f"- {i}" for i in quality_eval.critical_issues)
@@ -1101,7 +1147,9 @@ class ContentGenOrchestrator:
             if ctx.scoring:
                 meta.selected_idea_id = ctx.scoring.selected_idea_id or ""
                 meta.shortlist_count = len(ctx.scoring.shortlist)
-                meta.active_candidate_count = len(ctx.active_candidates or ctx.scoring.active_candidates)
+                meta.active_candidate_count = len(
+                    ctx.active_candidates or ctx.scoring.active_candidates
+                )
                 meta.is_degraded = ctx.scoring.is_degraded
                 meta.degradation_reason = ctx.scoring.degradation_reason
         elif stage == "generate_angles":
@@ -1134,9 +1182,7 @@ class ContentGenOrchestrator:
                 meta.selected_angle_id = getattr(angle, "angle_id", "")
                 if ctx.scripting.step_traces:
                     meta.step_count = len(ctx.scripting.step_traces)
-                    meta.llm_call_count = sum(
-                        len(st.llm_calls) for st in ctx.scripting.step_traces
-                    )
+                    meta.llm_call_count = sum(len(st.llm_calls) for st in ctx.scripting.step_traces)
                 final_script = ""
                 if ctx.scripting.qc:
                     final_script = ctx.scripting.qc.final_script
@@ -1161,12 +1207,16 @@ class ContentGenOrchestrator:
                 meta.platforms_count = len(ctx.packaging.platform_packages)
         elif stage == "production_brief":
             if ctx.production_brief:
-                meta.selected_idea_id = ctx.production_brief.idea_id or _resolve_selected_idea_id(ctx)
+                meta.selected_idea_id = ctx.production_brief.idea_id or _resolve_selected_idea_id(
+                    ctx
+                )
                 meta.is_degraded = ctx.production_brief.is_degraded
                 meta.degradation_reason = ctx.production_brief.degradation_reason
         elif stage == "publish_queue":
             if ctx.publish_items:
-                meta.selected_idea_id = ctx.publish_items[0].idea_id or _resolve_selected_idea_id(ctx)
+                meta.selected_idea_id = ctx.publish_items[0].idea_id or _resolve_selected_idea_id(
+                    ctx
+                )
                 meta.platforms_count = len(ctx.publish_items)
             elif ctx.publish_item:
                 meta.selected_idea_id = ctx.publish_item.idea_id or _resolve_selected_idea_id(ctx)
@@ -1179,7 +1229,9 @@ class ContentGenOrchestrator:
         if ctx.iteration_state:
             meta.current_iteration = ctx.iteration_state.current_iteration
             if ctx.iteration_state.quality_history:
-                meta.latest_quality_score = ctx.iteration_state.quality_history[-1].overall_quality_score
+                meta.latest_quality_score = ctx.iteration_state.quality_history[
+                    -1
+                ].overall_quality_score
             meta.should_rerun_research = ctx.iteration_state.should_rerun_research
 
         return meta
@@ -1213,17 +1265,32 @@ class ContentGenOrchestrator:
                 f"Argument map flagged {len(ctx.argument_map.unsafe_claims)} unsafe claim(s) to avoid in scripting."
             )
         elif stage == "build_research_pack" and ctx.research_pack and ctx.research_pack.is_degraded:
-            reason = ctx.research_pack.degradation_reason or "Research pack completed with degraded output."
+            reason = (
+                ctx.research_pack.degradation_reason
+                or "Research pack completed with degraded output."
+            )
             warnings.append(f"Research pack degraded: {reason}")
-        elif stage == "production_brief" and ctx.production_brief and ctx.production_brief.is_degraded:
-            reason = ctx.production_brief.degradation_reason or "Production brief completed with degraded output."
+        elif (
+            stage == "production_brief"
+            and ctx.production_brief
+            and ctx.production_brief.is_degraded
+        ):
+            reason = (
+                ctx.production_brief.degradation_reason
+                or "Production brief completed with degraded output."
+            )
             warnings.append(f"Production brief degraded: {reason}")
         elif stage == "publish_queue":
             has_items = ctx.publish_items or (ctx.publish_item is not None)
             if not has_items:
-                warnings.append("Publish queue produced no items; upstream dependency may be incomplete.")
+                warnings.append(
+                    "Publish queue produced no items; upstream dependency may be incomplete."
+                )
         elif stage == "performance_analysis" and ctx.performance and ctx.performance.is_degraded:
-            reason = ctx.performance.degradation_reason or "Performance analysis completed with degraded output."
+            reason = (
+                ctx.performance.degradation_reason
+                or "Performance analysis completed with degraded output."
+            )
             warnings.append(f"Performance analysis degraded: {reason}")
 
         return warnings
@@ -1243,7 +1310,9 @@ class ContentGenOrchestrator:
 
         stage = PIPELINE_STAGES[idx]
         if stage == "score_ideas":
-            return ctx.selection_reasoning or (ctx.scoring.selection_reasoning if ctx.scoring else "")
+            return ctx.selection_reasoning or (
+                ctx.scoring.selection_reasoning if ctx.scoring else ""
+            )
         if stage == "generate_angles" and ctx.angles:
             return ctx.angles.selection_reasoning
         if stage == "build_research_pack" and ctx.research_pack:
@@ -1276,7 +1345,9 @@ class ContentGenOrchestrator:
         store = StrategyStore()
         strategy = store.load()
         agent = self._get_agent("backlog")
-        return await agent.build_backlog(theme, strategy, count=count, opportunity_brief=opportunity_brief)
+        return await agent.build_backlog(
+            theme, strategy, count=count, opportunity_brief=opportunity_brief
+        )
 
     async def run_scoring(self, items: list) -> Any:
         from cc_deep_research.content_gen.storage import StrategyStore
@@ -1458,7 +1529,9 @@ class ContentGenOrchestrator:
                     latest_ctx,
                     5,
                     progress_callback=progress_callback,
-                    iteration=latest_ctx.step_traces[-1].iteration + 1 if latest_ctx.step_traces else 2,
+                    iteration=latest_ctx.step_traces[-1].iteration + 1
+                    if latest_ctx.step_traces
+                    else 2,
                 )
             return latest_ctx
 
@@ -1583,7 +1656,6 @@ async def _stage_score_ideas(orch: ContentGenOrchestrator, ctx: PipelineContext)
     ctx.selection_reasoning = ctx.scoring.selection_reasoning
     ctx.runner_up_idea_ids = ctx.scoring.runner_up_idea_ids
     ctx.active_candidates = list(ctx.scoring.active_candidates)
-    ctx = PipelineContext.model_validate(ctx.model_dump())
     BacklogService(getattr(orch, "_config", None)).apply_scoring(ctx.scoring)
     return ctx
 
@@ -1621,7 +1693,11 @@ async def _stage_build_research_pack(
             continue
         feedback = ""
         research_gaps: list[str] | None = None
-        if candidate.role == "primary" and ctx.iteration_state and ctx.iteration_state.should_rerun_research:
+        if (
+            candidate.role == "primary"
+            and ctx.iteration_state
+            and ctx.iteration_state.should_rerun_research
+        ):
             if ctx.iteration_state.latest_feedback:
                 feedback = ctx.iteration_state.latest_feedback
             if ctx.iteration_state.quality_history:
@@ -1633,7 +1709,9 @@ async def _stage_build_research_pack(
                 targeted_gaps = orch._extract_retrieval_gaps(plan)
                 if targeted_gaps:
                     research_gaps = (research_gaps or []) + targeted_gaps
-        research_pack = await agent.build(item, angle, feedback=feedback, research_gaps=research_gaps)
+        research_pack = await agent.build(
+            item, angle, feedback=feedback, research_gaps=research_gaps
+        )
         _record_lane_completion(
             ctx,
             candidate,
@@ -1701,13 +1779,24 @@ async def _stage_run_scripting(
             argument_map=lane.argument_map,
             core_inputs=CoreInputs(
                 topic=item.idea if item else raw_idea,
-                outcome=((angle.primary_takeaway if angle else "") or (item.problem if item else raw_idea)),
-                audience=((angle.target_audience if angle else "") or (item.audience if item else "")),
+                outcome=(
+                    (angle.primary_takeaway if angle else "")
+                    or (item.problem if item else raw_idea)
+                ),
+                audience=(
+                    (angle.target_audience if angle else "") or (item.audience if item else "")
+                ),
             ),
             angle=AngleDefinition(
                 angle=(angle.core_promise if angle else "") or raw_idea,
-                content_type=((angle.format if angle else "") or (angle.lens if angle else "") or "Insight"),
-                core_tension=((angle.viewer_problem if angle else "") or (item.problem if item else "") or raw_idea),
+                content_type=(
+                    (angle.format if angle else "") or (angle.lens if angle else "") or "Insight"
+                ),
+                core_tension=(
+                    (angle.viewer_problem if angle else "")
+                    or (item.problem if item else "")
+                    or raw_idea
+                ),
                 why_it_works=(angle.why_this_version_should_exist if angle else ""),
             ),
             structure=_seed_structure_from_argument_map(lane.argument_map),
@@ -1831,7 +1920,9 @@ async def _stage_human_qc(orch: ContentGenOrchestrator, ctx: PipelineContext) ->
             continue
         visual_summary = ""
         if lane.visual_plan:
-            visual_summary = "; ".join(f"{bv.beat}: {bv.visual}" for bv in lane.visual_plan.visual_plan[:5])
+            visual_summary = "; ".join(
+                f"{bv.beat}: {bv.visual}" for bv in lane.visual_plan.visual_plan[:5]
+            )
         packaging_summary = ""
         if lane.packaging:
             parts = [f"{p.platform}: {p.primary_hook}" for p in lane.packaging.platform_packages]
@@ -2046,7 +2137,9 @@ def _format_qc_argument_map_summary(argument_map: ArgumentMap | None) -> str:
         if unsafe_claims:
             sections.append("Claims to qualify or avoid:\n- " + "\n- ".join(unsafe_claims))
     if argument_map.proof_anchors:
-        proof_anchors = [anchor.summary for anchor in argument_map.proof_anchors[:4] if anchor.summary]
+        proof_anchors = [
+            anchor.summary for anchor in argument_map.proof_anchors[:4] if anchor.summary
+        ]
         if proof_anchors:
             sections.append("Proof anchors:\n- " + "\n- ".join(proof_anchors))
     return "\n\n".join(sections)

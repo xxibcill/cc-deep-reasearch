@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import Any
 
 from cc_deep_research.agents.ai_agent_integration import AIAgentIntegration
+from cc_deep_research.aggregation import sanitize_url
 from cc_deep_research.credibility import (
     SourceCredibilityScorer,
     format_credibility_badge,
@@ -32,8 +33,6 @@ from cc_deep_research.models import (
     SearchResultItem,
     ValidationResult,
 )
-from cc_deep_research.aggregation import sanitize_url
-
 
 # Executive Summary constraints
 # These constants define the size and structure limits for the Executive Summary section
@@ -454,10 +453,10 @@ class ReporterAgent:
             # Fallback to basic theme names if no detailed themes or findings
             sections.append("### Thematic Analysis\n")
             themes = analysis.themes
-            for theme in themes:
-                sections.append(f"#### {theme}")
+            for theme_name in themes:
+                sections.append(f"#### {theme_name}")
                 sections.append(
-                    f"Analysis related to {theme} is based on multiple sources. "
+                    f"Analysis related to {theme_name} is based on multiple sources. "
                     "Further investigation may provide additional insights.\n"
                 )
 

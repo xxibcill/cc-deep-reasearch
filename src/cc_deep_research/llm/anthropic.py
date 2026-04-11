@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from anthropic import Anthropic, APIError, AuthenticationError, RateLimitError
 
@@ -163,8 +163,8 @@ class AnthropicAPITransport(BaseLLMTransport):
             response = self._client.messages.create(
                 model=model,
                 max_tokens=max_tokens,
-                messages=messages,
-                system=request.system_prompt,
+                messages=cast(Any, messages),
+                system=cast(Any, request.system_prompt) if request.system_prompt else None,  # type: ignore[arg-type]
                 temperature=request.temperature,
             )
 

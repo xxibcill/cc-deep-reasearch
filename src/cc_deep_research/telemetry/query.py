@@ -4,20 +4,22 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    import duckdb
 
 from .ingest import _missing_dashboard_dependency_message, get_default_dashboard_db_path
 from .live import get_default_telemetry_dir, query_live_llm_route_analytics
 from .tree import (
     build_derived_summary,
-    build_event_tree_from_rows,
     build_llm_route_streams,
     empty_decision_graph,
     is_terminal_session_event,
 )
 
 
-def _load_dashboard_connection(database_path: Path):
+def _load_dashboard_connection(database_path: Path) -> duckdb.DuckDBPyConnection:
     """Open a read-only DuckDB connection or raise a consistent dependency error."""
     try:
         import duckdb
@@ -53,9 +55,7 @@ def _normalize_event_row(row: tuple[Any, ...]) -> dict[str, Any]:
     # Infer severity
     if status in ("failed", "error", "critical"):
         severity = "error"
-    elif status in ("fallback", "degraded", "warning"):
-        severity = "warning"
-    elif "fallback" in event_type or "degraded" in event_type:
+    elif status in ("fallback", "degraded", "warning") or "fallback" in event_type or "degraded" in event_type:
         severity = "warning"
     else:
         severity = "info"
@@ -74,9 +74,7 @@ def _normalize_event_row(row: tuple[Any, ...]) -> dict[str, Any]:
     phase = None
     if "session." in event_type:
         phase = "session"
-    elif "phase." in event_type:
-        phase = name
-    elif category == "phase":
+    elif "phase." in event_type or category == "phase":
         phase = name
     elif "iteration." in event_type:
         phase = "iteration"
@@ -456,7 +454,7 @@ def _serialize_timestamp(value: Any) -> str | None:
     if value is None:
         return None
     if hasattr(value, "isoformat"):
-        return value.isoformat()
+        return cast(str, value.isoformat())
     return str(value)
 
 

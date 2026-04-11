@@ -13,7 +13,6 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-
 CHECKPOINT_SCHEMA_VERSION = "1.0.0"
 
 
