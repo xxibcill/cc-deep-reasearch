@@ -832,7 +832,7 @@ class PerformanceLearningSet(BaseModel):
     video_id: str = ""
     learnings: list[PerformanceLearning] = Field(default_factory=list)
     # The source analysis this was derived from
-    source_analysis: "PerformanceAnalysis | None" = None
+    source_analysis: PerformanceAnalysis | None = None
 
 
 class StrategyPerformanceGuidance(BaseModel):

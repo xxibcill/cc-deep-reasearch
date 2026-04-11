@@ -13,9 +13,9 @@ from cc_deep_research.content_gen.models import (
     IterationState,
     QualityEvaluation,
     RevisionMode,
+    RewriteActionType,
     TargetedRevisionPlan,
     TargetedRewriteAction,
-    RewriteActionType,
 )
 
 

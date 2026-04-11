@@ -37,13 +37,13 @@ from cc_deep_research.content_gen.models import (
     CONTENT_GEN_STAGE_CONTRACTS,
     PIPELINE_STAGES,
     SCRIPTING_STEPS,
+    AngleDefinition,
+    AngleOption,
+    AngleOutput,
     ArgumentBeatClaim,
     ArgumentClaim,
     ArgumentMap,
     ArgumentProofAnchor,
-    AngleDefinition,
-    AngleOption,
-    AngleOutput,
     BacklogItem,
     BacklogOutput,
     BeatIntent,
@@ -4653,9 +4653,10 @@ def test_evidence_directness_by_family() -> None:
 
 def test_source_freshness_from_date() -> None:
     """Source freshness should be inferred from published date."""
+    from datetime import datetime
+
     from cc_deep_research.content_gen.agents.research_pack import _infer_freshness
     from cc_deep_research.content_gen.models import SourceFreshness
-    from datetime import datetime
 
     # Current: within 6 months
     recent = datetime.now().strftime("%Y-%m-%d")
@@ -4846,7 +4847,7 @@ def test_strong_primary_source_outranks_weak_secondary() -> None:
     assert weak_source.source_authority.value in ("tertiary", "unknown")
 
 
-def _make_minimal_source(url: str) -> "ResearchSource":
+def _make_minimal_source(url: str) -> ResearchSource:
     """Helper to create a minimal ResearchSource for testing."""
     from cc_deep_research.content_gen.models import ResearchSource
 
@@ -6079,7 +6080,11 @@ Selection reasoning: Clearer differentiation from market consensus and specific 
 
 def test_performance_learning_model_defaults() -> None:
     """PerformanceLearning should have sensible defaults."""
-    from cc_deep_research.content_gen.models import PerformanceLearning, LearningCategory, LearningDurability
+    from cc_deep_research.content_gen.models import (
+        LearningCategory,
+        LearningDurability,
+        PerformanceLearning,
+    )
 
     learning = PerformanceLearning(observation="Strong hook retention")
 
@@ -6170,13 +6175,15 @@ def test_strategy_memory_performance_guidance_roundtrip() -> None:
     assert "Open with stat" in restored.performance_guidance.winning_hooks
 
 
-def test_performance_learning_store_extracts_from_analysis(tmp_path: "Path") -> None:
+def test_performance_learning_store_extracts_from_analysis(tmp_path: Path) -> None:
     """PerformanceLearningStore should extract learnings from PerformanceAnalysis."""
     from cc_deep_research.content_gen.models import (
         PerformanceAnalysis,
         PerformanceLearningSet,
     )
-    from cc_deep_research.content_gen.storage.performance_learning_store import PerformanceLearningStore
+    from cc_deep_research.content_gen.storage.performance_learning_store import (
+        PerformanceLearningStore,
+    )
 
     store = PerformanceLearningStore(path=tmp_path / "learnings.yaml")
 
@@ -6201,10 +6208,12 @@ def test_performance_learning_store_extracts_from_analysis(tmp_path: "Path") -> 
     assert len(raw) >= 5
 
 
-def test_performance_learning_store_durable_vs_experimental(tmp_path: "Path") -> None:
+def test_performance_learning_store_durable_vs_experimental(tmp_path: Path) -> None:
     """PerformanceLearningStore should infer durability from metrics strength."""
     from cc_deep_research.content_gen.models import PerformanceAnalysis
-    from cc_deep_research.content_gen.storage.performance_learning_store import PerformanceLearningStore
+    from cc_deep_research.content_gen.storage.performance_learning_store import (
+        PerformanceLearningStore,
+    )
 
     store = PerformanceLearningStore(path=tmp_path / "learnings.yaml")
 
@@ -6218,13 +6227,15 @@ def test_performance_learning_store_durable_vs_experimental(tmp_path: "Path") ->
     learning_set = store.extract_learnings_from_analysis("v_strong", strong_analysis)
 
     # At least one learning should be durable (high views + engagement)
-    durable_learnings = [l for l in learning_set.learnings if l.durability.value == "durable"]
+    durable_learnings = [learning for learning in learning_set.learnings if learning.durability.value == "durable"]
     # Note: durability depends on actual implementation thresholds
 
 
-def test_performance_learning_store_load_empty_returns_empty_list(tmp_path: "Path") -> None:
+def test_performance_learning_store_load_empty_returns_empty_list(tmp_path: Path) -> None:
     """PerformanceLearningStore.load_raw_learnings should return [] when file missing."""
-    from cc_deep_research.content_gen.storage.performance_learning_store import PerformanceLearningStore
+    from cc_deep_research.content_gen.storage.performance_learning_store import (
+        PerformanceLearningStore,
+    )
 
     store = PerformanceLearningStore(path=tmp_path / "nonexistent.yaml")
     learnings = store.load_raw_learnings()
@@ -6232,10 +6243,12 @@ def test_performance_learning_store_load_empty_returns_empty_list(tmp_path: "Pat
     assert learnings == []
 
 
-def test_performance_learning_store_strategy_guidance(tmp_path: "Path") -> None:
+def test_performance_learning_store_strategy_guidance(tmp_path: Path) -> None:
     """PerformanceLearningStore should save and load strategy guidance."""
     from cc_deep_research.content_gen.models import StrategyPerformanceGuidance
-    from cc_deep_research.content_gen.storage.performance_learning_store import PerformanceLearningStore
+    from cc_deep_research.content_gen.storage.performance_learning_store import (
+        PerformanceLearningStore,
+    )
 
     store = PerformanceLearningStore(path=tmp_path / "learnings.yaml")
 
@@ -6251,14 +6264,16 @@ def test_performance_learning_store_strategy_guidance(tmp_path: "Path") -> None:
     assert "Generic question" in loaded.failed_hooks
 
 
-def test_performance_learning_store_apply_learnings_to_strategy(tmp_path: "Path") -> None:
+def test_performance_learning_store_apply_learnings_to_strategy(tmp_path: Path) -> None:
     """PerformanceLearningStore.apply_learnings_to_strategy should promote learnings."""
     from cc_deep_research.content_gen.models import (
         LearningCategory,
         LearningDurability,
         PerformanceLearning,
     )
-    from cc_deep_research.content_gen.storage.performance_learning_store import PerformanceLearningStore
+    from cc_deep_research.content_gen.storage.performance_learning_store import (
+        PerformanceLearningStore,
+    )
 
     store = PerformanceLearningStore(path=tmp_path / "learnings.yaml")
 
@@ -6283,14 +6298,16 @@ def test_performance_learning_store_apply_learnings_to_strategy(tmp_path: "Path"
     assert "Continue using this hook" in guidance.winning_hooks or "Strong hook pattern" in guidance.winning_hooks
 
 
-def test_performance_learning_store_get_active_learnings(tmp_path: "Path") -> None:
+def test_performance_learning_store_get_active_learnings(tmp_path: Path) -> None:
     """PerformanceLearningStore should filter learnings by category/durability."""
     from cc_deep_research.content_gen.models import (
         LearningCategory,
         LearningDurability,
         PerformanceLearning,
     )
-    from cc_deep_research.content_gen.storage.performance_learning_store import PerformanceLearningStore
+    from cc_deep_research.content_gen.storage.performance_learning_store import (
+        PerformanceLearningStore,
+    )
 
     store = PerformanceLearningStore(path=tmp_path / "learnings.yaml")
 
@@ -6323,7 +6340,7 @@ def test_performance_learning_store_get_active_learnings(tmp_path: "Path") -> No
     assert durable_learnings[0].observation == "Hook 1"
 
 
-def test_performance_learning_store_get_durable_guidance_for_backlog(tmp_path: "Path") -> None:
+def test_performance_learning_store_get_durable_guidance_for_backlog(tmp_path: Path) -> None:
     """PerformanceLearningStore.get_durable_guidance_for_backlog should return scoring hints."""
     from cc_deep_research.content_gen.models import (
         LearningCategory,
@@ -6331,7 +6348,9 @@ def test_performance_learning_store_get_durable_guidance_for_backlog(tmp_path: "
         PerformanceLearning,
         StrategyPerformanceGuidance,
     )
-    from cc_deep_research.content_gen.storage.performance_learning_store import PerformanceLearningStore
+    from cc_deep_research.content_gen.storage.performance_learning_store import (
+        PerformanceLearningStore,
+    )
 
     store = PerformanceLearningStore(path=tmp_path / "learnings.yaml")
 
@@ -6366,7 +6385,11 @@ def test_performance_learning_store_get_durable_guidance_for_backlog(tmp_path: "
 
 def test_score_ideas_user_includes_performance_guidance() -> None:
     """score_ideas_user should include performance guidance from strategy."""
-    from cc_deep_research.content_gen.models import BacklogItem, StrategyMemory, StrategyPerformanceGuidance
+    from cc_deep_research.content_gen.models import (
+        BacklogItem,
+        StrategyMemory,
+        StrategyPerformanceGuidance,
+    )
     from cc_deep_research.content_gen.prompts.backlog import score_ideas_user
 
     strategy = StrategyMemory(
