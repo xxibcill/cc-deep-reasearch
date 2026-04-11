@@ -89,6 +89,74 @@ Phase 2 - Extended lifecycle management:
 - Added a dedicated dashboard decision-graph view with node inspection, filters, zoom/pan, and explicit-versus-inferred styling
 - Added fixtures, backend/API/export/UI tests, rollout phases, and operator-facing documentation for graph limits and telemetry coverage
 
+#### Decision Graph Backend Derivation (5 tasks)
+
+- Added typed graph structures for nodes, edges, and summary metadata with explicit support for inferred relationships
+- Implemented `build_decision_graph(events)` deriving nodes from `decision.made`, `state.changed`, `degradation.detected`, and failure events
+- Defined inference boundary with documented explicit versus inferred edge rules favoring correctness over graph density
+- Extended derived summary to always include `decision_graph` with stable empty graph shape for sessions without data
+
+#### Decision Graph API And Bundle (6 tasks)
+
+- Added `decision_graph` to live and historical session detail endpoints with empty graph payload for no-derived mode
+- Threaded `decision_graph` through the session detail API response with backward compatibility for existing consumers
+- Added `decision_graph` to frontend TypeScript types and API client mapping
+- Included `decision_graph` in portable trace bundle exports with schema version handling
+
+#### Decision Graph Emission Coverage (6 tasks)
+
+- Added explicit `decision.made` events for LLM routing decisions including route selection, fallback, and retry routes
+- Added decision emission for iteration control (continue/stop/follow-up), provider state changes, and planner decomposition
+- Standardized decision payload conventions across routing, planning, and iteration flows with consistent metadata fields
+- Added focused emission tests verifying explicit decision events with useful metadata and real cause event links
+
+#### Decision Graph Dashboard UI (6 tasks)
+
+- Added typed `DecisionGraphNode`, `DecisionGraphEdge`, and `DecisionGraph` to dashboard model and session-detail response types
+- Created dedicated `DecisionGraph` component with click-to-inspect, label/color by kind, inferred-edge styling, and zoom/pan
+- Exposed decision graph in session details with new view mode and shared event inspector integration
+- Added decision-specific filters for type, actor, severity, and explicit versus inferred differentiation
+
+#### Decision Graph Tests And Rollout (7 tasks)
+
+- Added backend derivation fixtures covering route selection, continue/stop iteration, degraded execution, and planner choices
+- Added backend correctness tests verifying node/edge counts, explicit/inferred flags, cause links, and empty graph output
+- Added API contract tests for session detail and trace bundle export including `include_derived=false` suppression
+- Documented rollout phases and graph limits with explicit versus inferred link guidance for operators
+
+#### Dashboard Config Editor (14 tasks)
+
+- Added shared backend config mutation service with atomic YAML patching, validation, and CLI/non-CLI helper separation
+- Added dashboard config API contract with persisted vs effective config, override metadata, and masked secret fields
+- Added `GET /api/config` and `PATCH /api/config` endpoints with partial update support and env-override conflict handling
+- Added settings page with v1 editable fields, env override state visibility, secret replace/clear flows, and post-save runtime guidance
+- Added backend and frontend test coverage with docs for config precedence, editable fields, and secret handling
+
+#### Dashboard Agent Prompt Editor (10 tasks)
+
+- Added typed `agent_prompt_overrides` contract threaded through research run preparation and runtime setup
+- Added centralized prompt registry/resolver with safe merge rules, size validation, and empty-override handling
+- Added dashboard prompt editing for LLM-backed agents (analyzer, deep_analyzer, report_quality_evaluator) in start research flow
+- Persisted prompt overrides and effective prompt configuration in session metadata with configured prompts exposed in session detail UI
+- Added backend/frontend test coverage and documented v1 boundary for heuristic-only agents (lead, expander, validator)
+
+#### Content Generation Expert Workflow (20 tasks)
+
+- Added expert strategy models with evidence requirements, structured research pack with source provenance, and source retention through pipeline
+- Added argument map models, prompts, agent, and parsing with pipeline wiring for structured argumentation
+- Added scripting grounded with proof links, expert quality evaluator metrics, and QC claim safety review
+- Added search query families, freshness metadata, multi-lane shortlist fanout, and tolerant stage degraded metadata
+- Added retrieval fanout redesign, source authority scoring, evidence ranking, end-to-end claim traceability ledger
+- Added targeted revision loop for weak beats, competitive differentiation check, and performance feedback into strategy memory and backlog
+
+#### Backlog Management (16 tasks)
+
+- Added persistent backlog source of truth with dedicated API contract and dashboard TypeScript types aligned with Python models
+- Added backlog client, store state management, and dedicated backlog page shell with list/filter experience
+- Added existing item actions (update, select, archive, delete) with edit and create flows wired to backend services
+- Added full CRUD support with create endpoint, service support, and UI flow for backlog item creation
+- Added content studio navigation cleanup, backend and frontend API/Dashboard test coverage
+
 #### Content Generation Pipeline Upgrade (7 tasks)
 
 - Added an `OpportunityBrief` planning contract, `plan_opportunity` stage, new planning agent/prompt, and supporting documentation/tests for the upgraded content-generation flow
@@ -173,6 +241,7 @@ Phase 2 - Extended lifecycle management:
 - Removed completed dashboard-upgrade planning documents `docs/tasks/11-search-cache-operations.md` through `docs/tasks/19-design-system-extraction-and-hardening.md` after consolidating their delivered work into this changelog
 - Removed completed dashboard-upgrade planning documents `docs/tasks/20-trace-bundle-export-workspace.md` through `docs/tasks/29-dashboard-fixture-and-scenario-library.md` after consolidating their delivered work into this changelog
 - Removed completed "necessary 80%" task-pack planning documents `docs/tasks/30_snapshot_session_metadata_contract.md` through `docs/tasks/47_add_canonical_necessary_80_preflight.md` and `docs/tasks/80_20_necessary_work_task_set.md` after consolidating their delivered work into this changelog
+- Removed task-pack planning documents from `docs/tasks/` after consolidating their delivered work into this changelog, including decision graph observability, dashboard config editor, dashboard agent prompt editor, content generation expert workflow, and backlog management task packs
 
 ## [0.1.0] - 2026-03-11
 
