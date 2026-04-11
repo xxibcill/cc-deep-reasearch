@@ -27,11 +27,7 @@ export default function BacklogPage() {
   }, [backlog.length, loadBacklog])
 
   if (backlogLoading) {
-    return (
-      <div className="py-8 text-center text-sm text-muted-foreground">
-        Loading backlog...
-      </div>
-    )
+    return <div className="py-8 text-center text-sm text-muted-foreground">Loading backlog...</div>
   }
 
   if (error) {
@@ -54,7 +50,7 @@ export default function BacklogPage() {
   }
 
   return (
-    <div className="w-full max-w-5xl">
+    <div className="w-full">
       <BacklogPanel
         items={backlog}
         backlogPath={backlogPath}
