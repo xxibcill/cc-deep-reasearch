@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import Any
 
 from cc_deep_research.agents.ai_agent_integration import AIAgentIntegration
+from cc_deep_research.aggregation import sanitize_url
 from cc_deep_research.credibility import (
     SourceCredibilityScorer,
     format_credibility_badge,
@@ -32,8 +33,6 @@ from cc_deep_research.models import (
     SearchResultItem,
     ValidationResult,
 )
-from cc_deep_research.aggregation import sanitize_url
-
 
 # Executive Summary constraints
 # These constants define the size and structure limits for the Executive Summary section

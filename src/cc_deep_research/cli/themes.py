@@ -6,7 +6,6 @@ import click
 
 from cc_deep_research.themes import (
     ThemeDetector,
-    ThemeRegistry,
     list_presets,
 )
 

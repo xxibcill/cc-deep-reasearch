@@ -7,11 +7,18 @@ import time
 
 from cc_deep_research.aggregation import ResultAggregator
 from cc_deep_research.config import Config
-from cc_deep_research.models.search import QueryFamily, ResearchDepth, SearchResult, SearchResultItem
+from cc_deep_research.models.search import (
+    QueryFamily,
+    ResearchDepth,
+    SearchResult,
+    SearchResultItem,
+)
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.orchestration.session_state import OrchestratorSessionState
 
-from .resilience import ParallelCollectionError, ParallelCollectionTimeoutError, build_parallel_collection_policy
+from .resilience import (
+    build_parallel_collection_policy,
+)
 from .source_collection_parallel import ParallelSourceCollectionStrategy, _emit_agent_lifecycle
 from .source_collection_sequential import SequentialSourceCollectionStrategy
 

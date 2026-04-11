@@ -9,7 +9,6 @@ The research lead agent is responsible for:
 """
 
 import re
-
 from typing import Any
 
 from cc_deep_research.models import (

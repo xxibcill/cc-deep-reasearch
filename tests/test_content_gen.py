@@ -9,9 +9,8 @@ from click.testing import CliRunner
 
 from cc_deep_research.cli import main
 from cc_deep_research.content_gen.agents import research_pack as research_pack_agent_module
-from cc_deep_research.content_gen.agents.argument_map import ArgumentMapAgent, _parse_argument_map
 from cc_deep_research.content_gen.agents.angle import AngleAgent, _parse_angle_options
-from cc_deep_research.content_gen.agents.opportunity import OpportunityPlanningAgent
+from cc_deep_research.content_gen.agents.argument_map import ArgumentMapAgent, _parse_argument_map
 from cc_deep_research.content_gen.agents.backlog import (
     BacklogAgent,
     _derive_selection,
@@ -19,6 +18,7 @@ from cc_deep_research.content_gen.agents.backlog import (
     _parse_scores,
     _validate_scores,
 )
+from cc_deep_research.content_gen.agents.opportunity import OpportunityPlanningAgent
 from cc_deep_research.content_gen.agents.packaging import PackagingAgent, _parse_platform_packages
 from cc_deep_research.content_gen.agents.qc import QCAgent, _parse_qc_gate
 from cc_deep_research.content_gen.agents.quality_evaluator import (
@@ -37,10 +37,10 @@ from cc_deep_research.content_gen.models import (
     CONTENT_GEN_STAGE_CONTRACTS,
     PIPELINE_STAGES,
     SCRIPTING_STEPS,
-    ArgumentMap,
     AngleDefinition,
-    AngleOutput,
     AngleOption,
+    AngleOutput,
+    ArgumentMap,
     BacklogItem,
     BacklogOutput,
     BeatIntent,
@@ -52,13 +52,13 @@ from cc_deep_research.content_gen.models import (
     HumanQCGate,
     IdeaScores,
     OpportunityBrief,
-    ProductionBrief,
     PackagingOutput,
-    PipelineContext,
     PipelineCandidate,
+    PipelineContext,
     PipelineLaneContext,
     PipelineStageTrace,
     PlatformPackage,
+    ProductionBrief,
     ProofRule,
     PublishItem,
     QCResult,
@@ -70,7 +70,6 @@ from cc_deep_research.content_gen.models import (
     ResearchSeverity,
     ResearchSource,
     RetrievalBudget,
-    RetrievalDecision,
     RetrievalMode,
     RetrievalPlan,
     SavedScriptRun,
@@ -83,8 +82,8 @@ from cc_deep_research.content_gen.models import (
 )
 from cc_deep_research.content_gen.orchestrator import _format_research_context
 from cc_deep_research.content_gen.progress import PipelineRunJobRegistry, PipelineRunStatus
-from cc_deep_research.content_gen.prompts import argument_map as argument_map_prompts
 from cc_deep_research.content_gen.prompts import angle as angle_prompts
+from cc_deep_research.content_gen.prompts import argument_map as argument_map_prompts
 from cc_deep_research.content_gen.prompts import backlog as backlog_prompts
 from cc_deep_research.content_gen.prompts import opportunity as opportunity_prompts
 from cc_deep_research.content_gen.prompts import packaging as packaging_prompts
@@ -785,7 +784,10 @@ def test_skipped_stage_recorded_when_prerequisites_missing() -> None:
 @pytest.mark.asyncio
 async def test_generate_angles_uses_selected_idea_over_produce_now_order() -> None:
     """Angle generation should follow the explicit selected idea."""
-    from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator, _stage_generate_angles
+    from cc_deep_research.content_gen.orchestrator import (
+        ContentGenOrchestrator,
+        _stage_generate_angles,
+    )
 
     class FakeConfig:
         content_gen = type(
@@ -851,7 +853,10 @@ async def test_generate_angles_uses_selected_idea_over_produce_now_order() -> No
 @pytest.mark.asyncio
 async def test_build_research_pack_uses_pipeline_selected_idea() -> None:
     """Research pack stage should read the chosen idea from pipeline context."""
-    from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator, _stage_build_research_pack
+    from cc_deep_research.content_gen.orchestrator import (
+        ContentGenOrchestrator,
+        _stage_build_research_pack,
+    )
 
     class FakeConfig:
         content_gen = type(
@@ -928,7 +933,10 @@ async def test_build_research_pack_uses_pipeline_selected_idea() -> None:
 @pytest.mark.asyncio
 async def test_build_argument_map_uses_selected_context_and_research_pack() -> None:
     """Argument map stage should use the selected idea, angle, and built research pack."""
-    from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator, _stage_build_argument_map
+    from cc_deep_research.content_gen.orchestrator import (
+        ContentGenOrchestrator,
+        _stage_build_argument_map,
+    )
 
     class FakeConfig:
         content_gen = type(
@@ -4491,7 +4499,13 @@ def test_research_pack_degraded_flag_partial_records() -> None:
 def test_research_pack_not_degraded_when_complete() -> None:
     """ResearchPack should not be degraded when all structured fields are populated."""
     from cc_deep_research.content_gen.agents.research_pack import _maybe_set_degraded
-    from cc_deep_research.content_gen.models import ResearchClaim, ResearchCounterpoint, ResearchFinding, ResearchPack, ResearchUncertaintyFlag
+    from cc_deep_research.content_gen.models import (
+        ResearchClaim,
+        ResearchCounterpoint,
+        ResearchFinding,
+        ResearchPack,
+        ResearchUncertaintyFlag,
+    )
 
     pack = ResearchPack(
         idea_id="test",
@@ -4639,7 +4653,11 @@ def test_performance_analysis_not_degraded_when_complete() -> None:
 
 def test_orchestrator_build_trace_metadata_research_pack_degraded() -> None:
     """Orchestrator should surface research pack degraded state in stage trace metadata."""
-    from cc_deep_research.content_gen.models import PipelineContext, ResearchPack, StageTraceMetadata
+    from cc_deep_research.content_gen.models import (
+        PipelineContext,
+        ResearchPack,
+        StageTraceMetadata,
+    )
 
     ctx = PipelineContext(
         research_pack=ResearchPack(
@@ -4662,7 +4680,11 @@ def test_orchestrator_build_trace_metadata_research_pack_degraded() -> None:
 
 def test_orchestrator_build_trace_metadata_production_brief_degraded() -> None:
     """Orchestrator should surface production brief degraded state in stage trace metadata."""
-    from cc_deep_research.content_gen.models import PipelineContext, ProductionBrief, StageTraceMetadata
+    from cc_deep_research.content_gen.models import (
+        PipelineContext,
+        ProductionBrief,
+        StageTraceMetadata,
+    )
 
     ctx = PipelineContext(
         production_brief=ProductionBrief(
@@ -4684,7 +4706,11 @@ def test_orchestrator_build_trace_metadata_production_brief_degraded() -> None:
 
 def test_orchestrator_build_trace_metadata_performance_analysis_degraded() -> None:
     """Orchestrator should surface performance analysis degraded state in stage trace metadata."""
-    from cc_deep_research.content_gen.models import PIPELINE_STAGES, PerformanceAnalysis, PipelineContext, StageTraceMetadata
+    from cc_deep_research.content_gen.models import (
+        PerformanceAnalysis,
+        PipelineContext,
+        StageTraceMetadata,
+    )
 
     ctx = PipelineContext(
         performance=PerformanceAnalysis(
