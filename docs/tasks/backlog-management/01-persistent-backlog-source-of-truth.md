@@ -1,6 +1,8 @@
 # Task 01: Establish Persistent Backlog Source Of Truth
 
-Status: Planned
+Status: Done
+
+Summary: Confirmed `/api/content-gen/backlog` as canonical read path for backlog management. Updated `page.tsx` backlog tab to use persistent backlog from `BacklogService` via the API instead of `pipelineContext.backlog`. Added backlog state and CRUD actions to `useContentGen` hook and corresponding API functions in `content-gen-api.ts`. Pipeline detail (`pipeline/[id]/page.tsx`) retains `pipelineContext.backlog` for stage output review, making the separation explicit.
 
 Phase:
 Phase 1 - Backlog Visibility
