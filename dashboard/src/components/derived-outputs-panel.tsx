@@ -147,15 +147,15 @@ function CauseChainView({
                   )}
                 </div>
               </div>
-            ))}
+          ))}
           </div>
           {criticalPath.bottleneck_event && (
-            <div className="mt-4 rounded-lg border border-yellow-200 bg-yellow-50 p-3">
-              <div className="flex items-center gap-2 text-yellow-800">
+            <div className="mt-4 rounded-lg border border-warning/25 bg-warning-muted/22 p-3">
+              <div className="flex items-center gap-2 text-warning">
                 <AlertTriangle className="h-4 w-4" />
                 <span className="font-medium">Bottleneck Detected</span>
               </div>
-              <div className="mt-1 text-sm text-yellow-700">
+              <div className="mt-1 text-sm text-warning/85">
                 {criticalPath.bottleneck_event.name} took{' '}
                 {formatDuration(criticalPath.bottleneck_event.duration_ms)}
               </div>
@@ -280,7 +280,7 @@ function IssuesView({
       {/* Failures */}
       {failures.length > 0 && (
         <div>
-          <h4 className="mb-3 flex items-center gap-2 font-semibold text-red-600">
+          <h4 className="mb-3 flex items-center gap-2 font-semibold text-error">
             <Bug className="h-4 w-4" />
             Failures ({failures.length})
           </h4>
@@ -288,7 +288,7 @@ function IssuesView({
             {failures.map((failure, index) => (
               <div
                 key={failure.event_id || index}
-                className="cursor-pointer rounded-lg border border-red-200 bg-red-50 p-3 hover:bg-red-100"
+                className="cursor-pointer rounded-lg border border-error/25 bg-error-muted/20 p-3 transition-colors hover:bg-error-muted/28"
                 onClick={() => failure.event_id && onSelectEvent(failure.event_id)}
               >
                 <div className="flex items-center gap-2">
@@ -298,9 +298,9 @@ function IssuesView({
                   <span className="font-medium">{failure.name || failure.event_type}</span>
                 </div>
                 {failure.error_message && (
-                  <div className="mt-1 text-sm text-red-700">{failure.error_message}</div>
+                  <div className="mt-1 text-sm text-error/85">{failure.error_message}</div>
                 )}
-                <div className="mt-1 text-xs text-red-600">
+                <div className="mt-1 text-xs text-error/82">
                   {failure.phase && `Phase: ${failure.phase}`}
                   {failure.actor_id && ` • Actor: ${failure.actor_id}`}
                   {failure.duration_ms !== null && ` • ${formatDuration(failure.duration_ms)}`}
@@ -314,7 +314,7 @@ function IssuesView({
       {/* Degradations */}
       {degradations.length > 0 && (
         <div>
-          <h4 className="mb-3 flex items-center gap-2 font-semibold text-yellow-600">
+          <h4 className="mb-3 flex items-center gap-2 font-semibold text-warning">
             <AlertTriangle className="h-4 w-4" />
             Degradations ({degradations.length})
           </h4>
@@ -322,7 +322,7 @@ function IssuesView({
             {degradations.map((degradation, index) => (
               <div
                 key={degradation.event_id || index}
-                className="cursor-pointer rounded-lg border border-yellow-200 bg-yellow-50 p-3 hover:bg-yellow-100"
+                className="cursor-pointer rounded-lg border border-warning/25 bg-warning-muted/20 p-3 transition-colors hover:bg-warning-muted/28"
                 onClick={() => degradation.event_id && onSelectEvent(degradation.event_id)}
               >
                 <div className="flex items-center gap-2">
@@ -346,14 +346,14 @@ function IssuesView({
                   )}
                 </div>
                 {degradation.impact && (
-                  <div className="mt-1 text-sm text-yellow-700">{degradation.impact}</div>
+                  <div className="mt-1 text-sm text-warning/85">{degradation.impact}</div>
                 )}
                 {degradation.mitigation && (
-                  <div className="mt-1 text-xs text-yellow-600">
+                  <div className="mt-1 text-xs text-warning/82">
                     Mitigation: {degradation.mitigation}
                   </div>
                 )}
-                <div className="mt-1 text-xs text-yellow-600">
+                <div className="mt-1 text-xs text-warning/82">
                   Scope: {degradation.scope || 'unknown'}
                   {degradation.recoverable !== null &&
                     ` • ${degradation.recoverable ? 'Recoverable' : 'Not recoverable'}`}

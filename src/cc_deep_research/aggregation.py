@@ -2,12 +2,11 @@
 
 from datetime import datetime
 from typing import Any
-from urllib.parse import urlparse, parse_qs, urlunparse, urlencode
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import click
 
 from cc_deep_research.models import SearchResult, SearchResultItem
-
 
 # Common tracking parameters to strip from URLs
 TRACKING_PARAMETERS = frozenset({

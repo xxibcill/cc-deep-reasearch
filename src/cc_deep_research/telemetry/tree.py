@@ -410,17 +410,15 @@ def build_critical_path(events: list[dict[str, Any]]) -> dict[str, Any]:
     """
     # Track start events and match with completions
     pending_starts: dict[str, dict[str, Any]] = {}
-    completed_chains: list[dict[str, Any]] = []
 
     for event in events:
         event_type = event.get("event_type", "")
         event_id = event.get("event_id")
-        parent_id = event.get("parent_event_id")
         duration_ms = event.get("duration_ms")
 
         # Track started events
         if event_type.endswith(".started"):
-            pending_starts[event_id] = {
+            pending_starts[event_id] = {  # type: ignore[index]
                 "start_event": event,
                 "end_event": None,
                 "duration_ms": None,
@@ -1075,7 +1073,7 @@ def build_decision_graph(events: list[dict[str, Any]]) -> dict[str, Any]:
     )
 
     for node_id, cause_ids in explicit_causes_by_node.items():
-        node = nodes.get(node_id)
+        node = nodes.get(node_id)  # type: ignore[assignment]
         if node is None:
             continue
 
@@ -1143,7 +1141,7 @@ def build_decision_graph(events: list[dict[str, Any]]) -> dict[str, Any]:
             key=lambda edge: (edge["source"], edge["target"], edge["kind"], edge["inferred"]),
         ),
     }
-    graph["summary"] = {
+    graph["summary"] = {  # type: ignore[assignment]
         "node_count": len(graph["nodes"]),
         "edge_count": len(graph["edges"]),
         "explicit_edge_count": sum(1 for edge in graph["edges"] if not edge["inferred"]),

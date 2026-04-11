@@ -8,7 +8,7 @@ Current codebase version: `0.1.0`
 
 - Multi-stage research workflow (strategy, query expansion, source collection, analysis, validation, reporting)
 - Depth modes: `quick`, `standard`, `deep` (default)
-- Parallel local researcher-task execution with optional timeline view
+- Parallel local source-collection tasks with optional timeline view
 - Source quality scoring and cross-reference analysis
 - Session persistence with list/show/export/delete commands
 - Telemetry ingestion to DuckDB and Streamlit dashboard
@@ -42,7 +42,7 @@ cc-deep-research research "What are the latest developments in quantum computing
 ## Command Overview
 
 ```bash
-cc-deep-research [COMMAND]
+cc-deep-research [OPTIONS] COMMAND [ARGS]...
 ```
 
 Available top-level commands and groups:
@@ -52,8 +52,13 @@ Available top-level commands and groups:
 - `markdown-to-pdf` - Convert an existing markdown file into a styled PDF report
 - `benchmark` - Run the versioned benchmark corpus (`run`)
 - `config` - Manage configuration (`show`, `set`, `init`)
-- `session` - Manage persisted sessions (`list`, `show`, `export`, `delete`)
+- `session` - Manage persisted sessions (`list`, `show`, `export`, `delete`, `audit`, `bundle`, `checkpoints`, `reconcile`)
 - `telemetry` - Ingest telemetry and launch dashboard (`ingest`, `dashboard`)
+- `dashboard` - Start the real-time monitoring dashboard server
+- `detect-theme` - Detect the research theme for a query
+- `list-themes` - List all available research themes
+- `content-gen` - Content generation workflow for short-form video
+- `anthropic` - Anthropic API commands
 
 ## Research Examples
 
@@ -76,7 +81,7 @@ cc-deep-research research --format json "Topic" > result.json
 # HTML output
 cc-deep-research research --format html -o reports/topic.html "Topic"
 
-# Disable team mode (sequential)
+# Force sequential source collection
 cc-deep-research research --no-team "Topic"
 
 # Parallel controls
@@ -102,8 +107,8 @@ cc-deep-research markdown-to-pdf reports/topic.md
 - `--no-cross-ref`
 - `--tavily-only`
 - `--claude-only` (accepted but no Claude search provider is implemented yet)
-- `--no-team`
-- `--team-size INTEGER`
+- `--no-team` (force sequential local source collection)
+- `--team-size INTEGER` (override compatibility metadata only)
 - `--progress`
 - `--quiet`
 - `--verbose`
@@ -112,6 +117,9 @@ cc-deep-research markdown-to-pdf reports/topic.md
 - `--num-researchers INTEGER`
 - `--show-timeline`
 - `--pdf`
+- `--enable-realtime`
+- `--workflow [staged|planner]` (research workflow to use)
+- `--theme [general|resources|trip_planning|due_diligence|market_research|business_ideas|content_creation]` (research theme for tailored workflow)
 
 ## Telemetry Dashboard
 
@@ -121,6 +129,8 @@ Telemetry files are written under:
 - `~/.config/cc-deep-research/telemetry/<session_id>/summary.json`
 
 Telemetry persistence is enabled for normal `research` runs. `--monitor` only turns on console monitoring output.
+
+`--no-team` only disables parallel local source collection. The run still goes through the same local orchestrator and specialist components.
 
 Recommended operator workflow:
 
@@ -137,6 +147,16 @@ cc-deep-research telemetry dashboard --port 8501 --refresh-seconds 5 --tail-limi
 # Optional: refresh historical analytics without opening the UI
 cc-deep-research telemetry ingest
 ```
+
+For the browser-based operator console, use the Next.js dashboard in [`dashboard/`](dashboard):
+
+```bash
+cd dashboard
+npm install
+npm run dev
+```
+
+That launcher starts the FastAPI backend on `http://localhost:8000` and the frontend on `http://localhost:3000`. If you only want the backend API, run `cc-deep-research dashboard --host localhost --port 8000`.
 
 The dashboard now reads active `events.jsonl` sessions directly, so you can inspect:
 
@@ -190,7 +210,7 @@ What works well right now:
 How good it is today:
 
 - good for understanding what each agent did and when it did it
-- good for debugging parallel researcher execution and route selection
+- good for debugging parallel local task execution and route selection
 - weaker if you want rich per-agent narrative logs, stdout-style transcripts, or a complete "agent journal" in one place
 
 How it can improve:
@@ -240,6 +260,8 @@ cc-deep-research session export <session_id> -o exported.md --format markdown
 cc-deep-research session delete <session_id>
 ```
 
+`session delete` removes the saved session record, saved summary, and saved report artifacts from the local session store. To purge telemetry directories and DuckDB analytics records as well, use the browser dashboard delete flow or the backend session-delete API.
+
 ## Configuration
 
 Configuration file path:
@@ -253,6 +275,19 @@ cc-deep-research config init
 cc-deep-research config show
 cc-deep-research config set tavily.api_keys key1,key2,key3
 ```
+
+Common environment-variable overrides:
+
+- `TAVILY_API_KEYS`
+- `CC_DEEP_RESEARCH_CONFIG`
+- `CC_DEEP_RESEARCH_DEPTH`
+- `CC_DEEP_RESEARCH_FORMAT`
+- `NO_COLOR`
+- `OPENROUTER_API_KEY` or `OPENROUTER_API_KEYS`
+- `CEREBRAS_API_KEY` or `CEREBRAS_API_KEYS`
+- `ANTHROPIC_API_KEY` or `ANTHROPIC_API_KEYS`
+
+The CLI also loads a project-root `.env` file at startup without overwriting env vars that are already set in your shell.
 
 Default highlights from current code:
 
@@ -283,6 +318,13 @@ Configure LLM routing in `~/.config/cc-deep-research/config.yaml`:
 
 ```yaml
 llm:
+  # Anthropic configuration
+  anthropic:
+    enabled: false
+    api_key: "${ANTHROPIC_API_KEY}"
+    model: "claude-sonnet-4-6"
+    base_url: "https://api.anthropic.com"
+
   # OpenRouter configuration
   openrouter:
     enabled: false
@@ -312,6 +354,8 @@ llm:
     reporter: "anthropic"       # Default route for report-generation helpers
     default: "anthropic"
 ```
+
+The provider sections above can also be populated from env vars. The runtime accepts both single-key and comma-separated multi-key forms for OpenRouter, Cerebras, and Anthropic.
 
 ### Mixed-Route Sessions
 

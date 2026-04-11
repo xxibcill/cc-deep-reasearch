@@ -1,0 +1,28 @@
+findings:
+---
+finding_type: audience_insight
+summary: Founders skim pricing pages and miss how buyers compare tiers
+source_ids: src_01
+confidence: medium
+evidence_note: Good enough to keep the script practical
+---
+
+claims:
+---
+claim_type: proof_point
+claim: Anchoring affects perceived value before full feature evaluation
+source_ids: src_02
+confidence: medium
+mechanism: The first visible comparison changes what feels expensive
+---
+
+uncertainty_flags:
+---
+flag_type: verification_required
+claim: Any statement about exact conversion lift
+reason: Search coverage was thin and did not establish a numeric effect
+severity: medium
+source_ids: src_02
+---
+
+research_stop_reason: Search coverage was thin, so keep the script qualitative

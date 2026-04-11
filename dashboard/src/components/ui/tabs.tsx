@@ -32,8 +32,8 @@ export function Tabs({
       className={cn(
         stretch ? 'grid' : 'inline-flex',
         isProminent
-          ? 'gap-2 rounded-2xl border border-slate-200/90 bg-white/75 p-2 shadow-sm backdrop-blur-sm'
-          : 'gap-0.5 rounded-lg border bg-muted/40 p-1',
+          ? 'gap-2 rounded-[1.1rem] border border-border/80 bg-surface/80 p-2 shadow-card'
+          : 'gap-1 rounded-[1rem] border border-border/70 bg-surface/65 p-1.5',
         className
       )}
       style={stretch ? { gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` } : undefined}
@@ -47,16 +47,16 @@ export function Tabs({
             key={tab.value}
             className={cn(
               isProminent
-                ? 'flex min-w-0 flex-col items-start gap-1 rounded-xl border px-3 py-3 text-left transition-all'
-                : 'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                ? 'flex min-w-0 flex-col items-start gap-1 rounded-[0.95rem] border px-3 py-3 text-left transition-all'
+                : 'flex items-center gap-2 rounded-[0.8rem] px-3 py-2 text-[0.8rem] font-semibold uppercase tracking-[0.14em] transition-all',
               isIconOnly && isProminent ? 'items-center justify-center px-0 py-3' : undefined,
               value === tab.value
                 ? isProminent
-                  ? 'border-sky-200 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(224,242,254,0.92))] text-slate-950 shadow-sm'
-                  : 'bg-background shadow-sm'
+                  ? 'border-primary/35 bg-surface-raised text-foreground shadow-sm'
+                  : 'bg-card text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
                 : isProminent
-                  ? 'border-transparent text-muted-foreground hover:border-slate-200 hover:bg-white/80 hover:text-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'border-transparent text-muted-foreground hover:border-border hover:bg-surface-raised hover:text-foreground'
+                  : 'text-muted-foreground hover:bg-surface-raised/80 hover:text-foreground'
             )}
             aria-label={tab.label}
             aria-pressed={value === tab.value}
@@ -75,12 +75,12 @@ export function Tabs({
             {!tab.hideLabel && tab.badge !== undefined && (
               <span
                 className={cn(
-                  'rounded-full px-2 py-0.5 text-[11px] font-semibold',
+                  'rounded-md px-2 py-0.5 font-mono text-[0.68rem] uppercase tracking-[0.16em]',
                   value === tab.value
                     ? isProminent
-                      ? 'bg-sky-100 text-sky-900'
-                      : 'bg-muted text-foreground'
-                    : 'bg-slate-100 text-slate-600'
+                      ? 'bg-primary/15 text-primary'
+                      : 'bg-secondary text-foreground'
+                    : 'bg-muted text-muted-foreground'
                 )}
               >
                 {tab.badge}

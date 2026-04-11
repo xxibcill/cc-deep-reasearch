@@ -12,7 +12,7 @@ import json
 import time
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -384,7 +384,7 @@ class CerebrasTransport(BaseLLMTransport):
             if "error" in data:
                 error = data["error"]
                 if isinstance(error, dict):
-                    return error.get("message", str(error))
+                    return cast(str, error.get("message", str(error)))
                 return str(error)
             return response.text[:500] or "Unknown error"
         except (json.JSONDecodeError, KeyError):

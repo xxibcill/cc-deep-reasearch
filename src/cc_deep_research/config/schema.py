@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings
@@ -17,7 +18,10 @@ def _normalize_api_key_list(*values: str | list[str] | None) -> list[str]:
     seen: set[str] = set()
 
     for value in values:
-        candidates = value if isinstance(value, list) else [value]
+        if isinstance(value, list):
+            candidates = cast(list[str | None], value)
+        else:
+            candidates = [value]
         for candidate in candidates:
             if candidate is None:
                 continue
@@ -321,6 +325,23 @@ class LLMConfig(BaseModel):
         return route_map.get(agent_id, self.route_defaults.default)
 
 
+class ContentGenConfig(BaseModel):
+    """Content generation workflow configuration."""
+
+    strategy_path: str | None = None
+    backlog_path: str | None = None
+    publish_queue_path: str | None = None
+    default_platforms: list[str] = Field(default_factory=lambda: ["tiktok", "reels", "shorts"])
+    research_max_queries: int = 6
+    scoring_threshold_produce: int = 25  # out of 35 max
+
+    # Iterative quality-check loop settings
+    enable_iterative_mode: bool = True
+    max_iterations: int = Field(default=3, ge=1, le=5)
+    quality_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
+    convergence_threshold: float = Field(default=0.05, ge=0.0, le=0.2)
+
+
 class Config(BaseModel):
     """Main configuration model."""
 
@@ -334,6 +355,7 @@ class Config(BaseModel):
     output: OutputConfig = Field(default_factory=OutputConfig)
     display: DisplayConfig = Field(default_factory=DisplayConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    content_gen: ContentGenConfig = Field(default_factory=ContentGenConfig)
 
 
 class DashboardConfig(BaseModel):

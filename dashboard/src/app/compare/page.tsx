@@ -1,49 +1,75 @@
-'use client';
+'use client'
 
-import { useSearchParams } from 'next/navigation';
-import { useEffect, useState, Suspense } from 'react';
-import { AlertCircle } from 'lucide-react';
-import { CompareView } from '@/components/compare-view';
+import Link from 'next/link'
+import { Suspense, useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { AlertCircle, ArrowLeft } from 'lucide-react'
+
+import { CompareView } from '@/components/compare-view'
+import { buttonVariants } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 function ComparePageContent() {
-  const searchParams = useSearchParams();
-  const sessionA = searchParams.get('a');
-  const sessionB = searchParams.get('b');
-  const [error, setError] = useState<string | null>(null);
+  const searchParams = useSearchParams()
+  const sessionA = searchParams.get('a')
+  const sessionB = searchParams.get('b')
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!sessionA || !sessionB) {
-      setError('Missing session IDs. Both ?a= and ?b= parameters are required.');
+      setError('Missing session IDs. Both ?a= and ?b= parameters are required.')
+      return
     }
-  }, [sessionA, sessionB]);
+    if (sessionA === sessionB) {
+      setError('Pick two different sessions so the compare summary has something to measure.')
+      return
+    }
+    setError(null)
+  }, [sessionA, sessionB])
 
   if (error) {
     return (
-      <div className="flex min-h-96 items-center justify-center">
-        <div className="max-w-md rounded-lg border border-amber-200 bg-amber-50 p-6">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" />
-            <div>
-              <p className="font-medium text-amber-800">Invalid comparison</p>
-              <p className="text-sm text-amber-700">{error}</p>
-            </div>
-          </div>
-        </div>
+      <div className="mx-auto flex min-h-96 max-w-content items-center justify-center px-page-x py-page-y">
+        <Card className="max-w-xl">
+          <CardHeader className="border-b border-border/70">
+            <CardTitle className="flex items-center gap-2 text-[1.4rem]">
+              <AlertCircle className="h-5 w-5 text-warning" />
+              Invalid comparison
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 pt-6">
+            <p className="text-sm leading-6 text-muted-foreground">{error}</p>
+            <p className="text-sm leading-6 text-muted-foreground">
+              Return to the research archive, enable compare mode, and pick one baseline session
+              plus one comparison session.
+            </p>
+            <Link href="/" className={buttonVariants({ variant: 'outline' })}>
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Sessions
+            </Link>
+          </CardContent>
+        </Card>
       </div>
-    );
+    )
   }
 
-  return <CompareView sessionIdA={sessionA!} sessionIdB={sessionB!} />;
+  return (
+    <div className="mx-auto max-w-content px-page-x py-page-y">
+      <CompareView sessionIdA={sessionA!} sessionIdB={sessionB!} />
+    </div>
+  )
 }
 
 export default function ComparePage() {
   return (
-    <Suspense fallback={
-      <div className="flex min-h-96 items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="flex min-h-96 items-center justify-center">
+          <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-primary" />
+        </div>
+      }
+    >
       <ComparePageContent />
     </Suspense>
-  );
+  )
 }

@@ -1,0 +1,5 @@
+---
+target_audience: B2B startup marketers
+core_promise: Show the missing anchor on pricing pages
+---
+note: unfinished draft without usable angle fields

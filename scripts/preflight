@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DASHBOARD_DIR="$ROOT_DIR/dashboard"
+SCRIPT_NAME="$(basename "$0")"
+
+usage() {
+    echo "Usage: $SCRIPT_NAME [options]"
+    echo ""
+    echo "Options:"
+    echo "  --python-only    Run only Python preflight checks"
+    echo "  --dashboard-only Run only dashboard build, smoke tests, and accessibility checks"
+    echo "  --quick          Run quick core checks only (orchestrator)"
+    echo "  --help           Show this help message"
+    echo ""
+    echo "Default: Run the canonical maintenance preflight"
+}
+
+fail() {
+    echo "Error: $*" >&2
+    exit 1
+}
+
+log_section() {
+    echo "=== $1 ==="
+}
+
+run_python_preflight() {
+    log_section "Running Python Preflight"
+    cd "$ROOT_DIR"
+    uv run pytest tests/test_llm_analysis_client.py tests/test_models.py tests/test_reporter.py tests/test_tavily_provider.py tests/test_providers.py tests/test_orchestrator.py tests/test_orchestration.py tests/test_cli_research.py tests/test_research_run_service.py -v --tb=short
+    log_section "Python Preflight Complete"
+}
+
+run_dashboard_preflight() {
+    log_section "Running Dashboard Build"
+    cd "$DASHBOARD_DIR"
+    npm run build
+    log_section "Dashboard Build Complete"
+
+    log_section "Running Dashboard Smoke Tests"
+    npm run test:e2e:smoke
+    log_section "Dashboard Smoke Complete"
+
+    log_section "Running Dashboard Accessibility Baseline"
+    npm run test:a11y
+    log_section "Dashboard Accessibility Complete"
+}
+
+run_quick_preflight() {
+    log_section "Running Quick Preflight (Core Only)"
+    cd "$ROOT_DIR"
+    uv run pytest tests/test_orchestrator.py tests/test_orchestration.py -v
+    log_section "Quick Preflight Complete"
+}
+
+PYTHON_ONLY=false
+DASHBOARD_ONLY=false
+QUICK=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --python-only)
+            PYTHON_ONLY=true
+            shift
+            ;;
+        --dashboard-only)
+            DASHBOARD_ONLY=true
+            shift
+            ;;
+        --quick)
+            QUICK=true
+            shift
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+if [[ "$PYTHON_ONLY" == true && "$DASHBOARD_ONLY" == true ]]; then
+    fail "--python-only and --dashboard-only cannot be combined"
+fi
+
+if [[ "$QUICK" == true && ("$PYTHON_ONLY" == true || "$DASHBOARD_ONLY" == true) ]]; then
+    fail "--quick cannot be combined with other modes"
+fi
+
+if [[ "$QUICK" == true ]]; then
+    run_quick_preflight
+elif [[ "$PYTHON_ONLY" == true ]]; then
+    run_python_preflight
+elif [[ "$DASHBOARD_ONLY" == true ]]; then
+    run_dashboard_preflight
+else
+    run_python_preflight
+    run_dashboard_preflight
+fi
+
+echo ""
+log_section "Preflight Complete"

@@ -85,7 +85,7 @@ class SearchResultItem(BaseModel):
     model_config = {"frozen": False}
 
     @model_validator(mode="after")
-    def _normalize_provenance(self) -> "SearchResultItem":
+    def _normalize_provenance(self) -> SearchResultItem:
         """Keep provenance fields synchronized with source metadata."""
         metadata = dict(self.source_metadata)
         provenance = _normalize_query_provenance_entries(self.query_provenance)
@@ -141,7 +141,7 @@ class SearchResultItem(BaseModel):
             ]
         )
         self.query_provenance = merged
-        self._normalize_provenance()
+        self._normalize_provenance()  # type: ignore[operator]
 
 
 class SearchResult(BaseModel):

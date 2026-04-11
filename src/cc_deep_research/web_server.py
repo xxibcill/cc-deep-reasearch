@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
 
@@ -16,6 +18,9 @@ from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from cc_deep_research.benchmark import (
+    load_benchmark_corpus,
+)
 from cc_deep_research.config import (
     ConfigOverrideError,
     ConfigPatchError,
@@ -25,6 +30,10 @@ from cc_deep_research.config import (
     load_config,
     update_config,
 )
+from cc_deep_research.content_gen.progress import (
+    PipelineRunJobRegistry,
+)
+from cc_deep_research.content_gen.router import register_content_gen_routes
 from cc_deep_research.event_router import EventRouter, WebSocketConnection
 from cc_deep_research.reporting import ReportGenerator
 from cc_deep_research.research_runs.jobs import ResearchRunJob, ResearchRunJobRegistry
@@ -41,6 +50,7 @@ from cc_deep_research.research_runs.session_purge import SessionPurgeService
 from cc_deep_research.search_cache import SearchCacheStore
 from cc_deep_research.session_store import SessionStore
 from cc_deep_research.telemetry import (
+    _load_dashboard_connection,
     get_default_dashboard_db_path,
     get_default_telemetry_dir,
     query_checkpoint_detail,
@@ -80,6 +90,7 @@ class DashboardBackendRuntime:
 
     event_router: EventRouter
     jobs: ResearchRunJobRegistry
+    pipeline_jobs: PipelineRunJobRegistry
 
     async def start(self) -> None:
         """Start shared realtime infrastructure."""
@@ -88,6 +99,7 @@ class DashboardBackendRuntime:
     async def stop(self) -> None:
         """Stop shared infrastructure and cancel in-flight jobs."""
         await self.jobs.cancel_all()
+        await self.pipeline_jobs.cancel_all()
         await self.event_router.stop()
 
 
@@ -206,6 +218,7 @@ def create_app(
     app.state.dashboard_runtime = DashboardBackendRuntime(
         event_router=event_router or EventRouter(),
         jobs=job_registry or ResearchRunJobRegistry(),
+        pipeline_jobs=PipelineRunJobRegistry(),
     )
 
     # Configure CORS
@@ -219,6 +232,11 @@ def create_app(
     app.add_middleware(WebSocketDiagnosticsMiddleware)
 
     register_routes(app)
+
+    # Content generation routes
+    runtime = get_backend_runtime(app)
+    register_content_gen_routes(app, runtime.event_router, runtime.pipeline_jobs)
+
     return app
 
 
@@ -247,6 +265,11 @@ def get_event_router(app: FastAPI) -> EventRouter:
 def get_job_registry(app: FastAPI) -> ResearchRunJobRegistry:
     """Return the shared job registry from app runtime state."""
     return get_backend_runtime(app).jobs
+
+
+def get_pipeline_job_registry(app: FastAPI) -> PipelineRunJobRegistry:
+    """Return the shared pipeline job registry from app runtime state."""
+    return get_backend_runtime(app).pipeline_jobs
 
 
 def _serialize_timestamp(value: Any) -> str | None:
@@ -1062,6 +1085,123 @@ def register_routes(app: FastAPI) -> None:
         response = service.delete_sessions(request)
         return JSONResponse(content=response.model_dump(mode="json"))
 
+    @app.get("/api/sessions/purge-summary")
+    async def get_purge_summary() -> JSONResponse:
+        """Return summary of sessions that could be purged.
+
+        Provides operators with a clear view of:
+        - archived sessions (safe to purge)
+        - sessions with no artifacts (may be safe to purge)
+        - active sessions (protected from purge)
+
+        Returns:
+            JSON response with purge-ready session counts and recommendations.
+        """
+        telemetry_dir = get_default_telemetry_dir()
+        session_store = SessionStore()
+
+        archived_ids = session_store.get_archived_session_ids()
+        all_saved = session_store.list_sessions()
+
+        archived_sessions = []
+        no_artifacts_sessions = []
+        active_session_ids: set[str] = set()
+
+        live_sessions = query_live_sessions(base_dir=telemetry_dir)
+        for session in live_sessions:
+            if session.get("active"):
+                active_session_ids.add(session.get("session_id", ""))
+
+        for saved in all_saved:
+            session_id = saved.get("session_id", "")
+            is_archived = session_id in archived_ids or saved.get("archived", False)
+            has_payload = saved.get("has_session_payload", False)
+            has_report = saved.get("has_report", False)
+
+            if session_id in active_session_ids:
+                continue
+
+            if is_archived:
+                archived_sessions.append({
+                    "session_id": session_id,
+                    "has_payload": has_payload,
+                    "has_report": has_report,
+                    "completed_at": saved.get("completed_at"),
+                })
+            elif not has_payload and not has_report:
+                no_artifacts_sessions.append({
+                    "session_id": session_id,
+                    "completed_at": saved.get("completed_at"),
+                })
+
+        recommendations = []
+        if archived_sessions:
+            recommendations.append({
+                "category": "archived",
+                "description": f"{len(archived_sessions)} archived session(s) are safe to purge",
+                "action": "bulk-purge-archived",
+                "count": len(archived_sessions),
+            })
+        if no_artifacts_sessions:
+            recommendations.append({
+                "category": "no-artifacts",
+                "description": f"{len(no_artifacts_sessions)} session(s) have no payload or report",
+                "action": "review-no-artifacts",
+                "count": len(no_artifacts_sessions),
+            })
+
+        return JSONResponse(content={
+            "archived_sessions_count": len(archived_sessions),
+            "no_artifacts_count": len(no_artifacts_sessions),
+            "active_count": len(active_session_ids),
+            "recommendations": recommendations,
+        })
+
+    @app.post("/api/sessions/purge-archived")
+    async def purge_archived_sessions(
+        dry_run: bool = Query(default=True, description="If true, only return what would be deleted"),
+        force: bool = Query(default=False, description="Delete even if sessions are active"),
+    ) -> JSONResponse:
+        """Purge all archived sessions.
+
+        Args:
+            dry_run: If true, simulate deletion without actually deleting.
+            force: If true, delete even if some sessions are active.
+
+        Returns:
+            JSON response with results of purge operation.
+        """
+        session_store = SessionStore()
+        service = SessionPurgeService()
+
+        archived_ids = list(session_store.get_archived_session_ids())
+
+        if dry_run:
+            return JSONResponse(content={
+                "dry_run": True,
+                "would_delete": len(archived_ids),
+                "session_ids": archived_ids,
+                "message": f"Would delete {len(archived_ids)} archived session(s)",
+            })
+
+        if not archived_ids:
+            return JSONResponse(content={
+                "deleted": 0,
+                "session_ids": [],
+                "message": "No archived sessions to purge",
+            })
+
+        request = BulkSessionDeleteRequest(session_ids=archived_ids, force=force)
+        response = service.delete_sessions(request)
+
+        return JSONResponse(content={
+            "dry_run": False,
+            "deleted": response.summary.deleted_count,
+            "failed": response.summary.failed_count,
+            "session_ids": archived_ids,
+            "results": response.model_dump(mode="json"),
+        })
+
     @app.post("/api/sessions/{session_id}/archive")
     async def archive_session(session_id: str) -> JSONResponse:
         """Archive a session, hiding it from the default session list.
@@ -1297,6 +1437,100 @@ def register_routes(app: FastAPI) -> None:
 
         return JSONResponse(content=bundle)
 
+    @app.get("/api/sessions/{session_id}/artifacts")
+    async def get_session_artifacts(session_id: str) -> JSONResponse:
+        """Get artifact inventory with provenance metadata for a session.
+
+        Provides a single view of all available artifacts with provenance info:
+        - Which artifacts are generated directly
+        - Which are derived or transformed
+        - Which are missing because the run failed or ended early
+
+        Args:
+            session_id: The session ID.
+
+        Returns:
+            JSON response with artifact inventory including provenance status.
+        """
+        store = SessionStore()
+        session = store.load_session(session_id)
+
+        if session is None:
+            return JSONResponse(
+                content={"error": f"Session not found: {session_id}"},
+                status_code=404,
+            )
+
+        artifacts: dict[str, Any] = {
+            "session_id": session_id,
+            "provenance": {},
+            "available": {},
+            "missing": {},
+        }
+
+        has_report = bool(session.metadata.get("analysis"))
+        has_payload = True
+
+        artifacts["available"]["session_payload"] = {
+            "present": has_payload,
+            "provenance": "direct",
+            "description": "Full research session data including sources and collected content",
+        }
+
+        if has_report:
+            report_formats = []
+            for fmt in [ResearchOutputFormat.MARKDOWN, ResearchOutputFormat.JSON, ResearchOutputFormat.HTML]:
+                if store.load_report(session_id, fmt) is not None:
+                    report_formats.append(fmt.value)
+                else:
+                    path = store._report_path(session_id, fmt)
+                    if path.exists():
+                        report_formats.append(fmt.value)
+
+            artifacts["available"]["reports"] = {
+                "present": True,
+                "provenance": "derived",
+                "formats": report_formats,
+                "description": "Generated research report in various formats",
+            }
+            del artifacts["missing"]
+        else:
+            artifacts["missing"]["reports"] = {
+                "present": False,
+                "provenance": "derived",
+                "reason": "Run did not complete or analysis data is not available",
+                "description": "Research report generated from analysis data",
+            }
+
+        artifacts["available"]["trace_bundle"] = {
+            "present": True,
+            "provenance": "derived",
+            "description": "Portable trace bundle with telemetry events and derived outputs",
+        }
+
+        telemetry_dir = get_default_telemetry_dir()
+        checkpoint_manifest = query_session_checkpoints(session_id, base_dir=telemetry_dir)
+        has_checkpoints = len(checkpoint_manifest.get("checkpoints", [])) > 0
+
+        if has_checkpoints:
+            artifacts["available"]["checkpoints"] = {
+                "present": True,
+                "provenance": "derived",
+                "count": len(checkpoint_manifest.get("checkpoints", [])),
+                "latest_checkpoint_id": checkpoint_manifest.get("latest_checkpoint_id"),
+                "resume_available": checkpoint_manifest.get("latest_resume_safe_checkpoint_id") is not None,
+                "description": "Session checkpoints for potential resume",
+            }
+        else:
+            artifacts["missing"]["checkpoints"] = {
+                "present": False,
+                "provenance": "derived",
+                "reason": "No checkpoints were captured during this session",
+                "description": "Session checkpoints for potential resume",
+            }
+
+        return JSONResponse(content=artifacts)
+
     @app.get("/api/sessions/{session_id}/checkpoints")
     async def get_session_checkpoints(session_id: str) -> JSONResponse:
         """Get checkpoint inventory for a session.
@@ -1383,7 +1617,7 @@ def register_routes(app: FastAPI) -> None:
         Returns:
             JSON response with resume result indicating success or failure.
         """
-        from cc_deep_research.models.checkpoint import ResumeRequest, ResumeResult
+        from cc_deep_research.models.checkpoint import ResumeResult
 
         telemetry_dir = get_default_telemetry_dir()
         session_dir = telemetry_dir / session_id
@@ -1445,22 +1679,26 @@ def register_routes(app: FastAPI) -> None:
             JSON response with rerun result.
         """
         from cc_deep_research.models.checkpoint import RerunStepRequest, RerunStepResult
+        from pydantic import ValidationError
 
-        session_id = request.get("session_id")
-        checkpoint_id = request.get("checkpoint_id")
-
-        if not session_id or not checkpoint_id:
+        try:
+            rerun_request = RerunStepRequest.model_validate(request)
+        except ValidationError:
             return JSONResponse(
                 content={"error": "session_id and checkpoint_id are required"},
                 status_code=400,
             )
 
         telemetry_dir = get_default_telemetry_dir()
-        checkpoint = query_checkpoint_detail(session_id, checkpoint_id, base_dir=telemetry_dir)
+        checkpoint = query_checkpoint_detail(
+            rerun_request.session_id,
+            rerun_request.checkpoint_id,
+            base_dir=telemetry_dir,
+        )
 
         if checkpoint is None:
             return JSONResponse(
-                content={"error": f"Checkpoint not found: {checkpoint_id}"},
+                content={"error": f"Checkpoint not found: {rerun_request.checkpoint_id}"},
                 status_code=404,
             )
 
@@ -1471,17 +1709,19 @@ def register_routes(app: FastAPI) -> None:
                 status_code=409,
             )
 
-        # Note: Actual rerun execution would require reconstructing inputs
-        # and executing the step. This endpoint validates and prepares for rerun.
         result = RerunStepResult(
-            success=True,
-            session_id=session_id,
-            checkpoint_id=checkpoint_id,
-            output_match=None,  # Would be determined after actual rerun
-            message=f"Checkpoint {checkpoint_id} is ready for rerun. Input refs: {checkpoint.get('input_ref')}",
+            success=False,
+            session_id=rerun_request.session_id,
+            checkpoint_id=rerun_request.checkpoint_id,
+            output_match=None,
+            message=(
+                f"Checkpoint {rerun_request.checkpoint_id} is replayable, "
+                "but step rerun execution is not implemented yet."
+            ),
+            error="Step rerun execution is not implemented yet.",
         )
 
-        return JSONResponse(content=result.model_dump(mode="json"))
+        return JSONResponse(content=result.model_dump(mode="json"), status_code=501)
 
     @app.websocket("/ws/session/{session_id}")
     async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
@@ -1831,6 +2071,398 @@ def register_routes(app: FastAPI) -> None:
             }
         )
 
+    @app.get("/api/benchmarks/corpus")
+    async def get_benchmark_corpus() -> JSONResponse:
+        """Get the benchmark corpus metadata.
+
+        Returns:
+            JSON response with benchmark corpus information including version and cases.
+        """
+        try:
+            corpus = load_benchmark_corpus()
+        except Exception as e:
+            return JSONResponse(
+                content={"error": f"Failed to load benchmark corpus: {str(e)}"},
+                status_code=500,
+            )
+
+        return JSONResponse(content=corpus.model_dump(mode="json"))
+
+    def _get_benchmark_runs_dir() -> Path:
+        """Return the default benchmark runs directory."""
+        return Path(os.environ.get("BENCHMARK_RUNS_DIR", "benchmark_runs"))
+
+    def _list_benchmark_runs() -> list[dict[str, Any]]:
+        """List available benchmark runs from the filesystem."""
+        runs_dir = _get_benchmark_runs_dir()
+        runs: list[dict[str, Any]] = []
+
+        if not runs_dir.exists():
+            return runs
+
+        for run_path in sorted(runs_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+            if not run_path.is_dir():
+                continue
+
+            manifest_path = run_path / "manifest.json"
+            scorecard_path = run_path / "scorecard.json"
+
+            run_info: dict[str, Any] = {
+                "run_id": run_path.name,
+                "path": str(run_path),
+            }
+
+            if manifest_path.exists():
+                try:
+                    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    run_info["corpus_version"] = manifest.get("corpus_version")
+                    run_info["generated_at"] = manifest.get("generated_at")
+                    run_info["configuration"] = manifest.get("configuration", {})
+                except Exception:
+                    pass
+
+            if scorecard_path.exists():
+                try:
+                    scorecard = json.loads(scorecard_path.read_text(encoding="utf-8"))
+                    run_info["total_cases"] = scorecard.get("total_cases", 0)
+                    run_info["average_validation_score"] = scorecard.get("average_validation_score")
+                    run_info["average_latency_ms"] = scorecard.get("average_latency_ms")
+                except Exception:
+                    pass
+
+            runs.append(run_info)
+
+        return runs
+
+    @app.get("/api/benchmarks/runs")
+    async def list_benchmark_runs() -> JSONResponse:
+        """List available benchmark runs.
+
+        Returns:
+            JSON response with list of benchmark runs with their metadata.
+        """
+        runs = _list_benchmark_runs()
+        return JSONResponse(content={
+            "runs": runs,
+            "total": len(runs),
+        })
+
+    @app.get("/api/benchmarks/runs/{run_id}")
+    async def get_benchmark_run(run_id: str) -> JSONResponse:
+        """Get details for a specific benchmark run.
+
+        Args:
+            run_id: The benchmark run identifier (directory name).
+
+        Returns:
+            JSON response with benchmark run details including scorecard and case reports.
+        """
+        runs_dir = _get_benchmark_runs_dir()
+        run_path = runs_dir / run_id
+
+        if not run_path.exists():
+            return JSONResponse(
+                content={"error": f"Benchmark run not found: {run_id}"},
+                status_code=404,
+            )
+
+        manifest_path = run_path / "manifest.json"
+        if not manifest_path.exists():
+            return JSONResponse(
+                content={"error": "Invalid benchmark run: manifest.json not found"},
+                status_code=404,
+            )
+
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            return JSONResponse(
+                content={"error": f"Failed to read benchmark run: {str(e)}"},
+                status_code=500,
+            )
+
+        return JSONResponse(content=manifest)
+
+    @app.get("/api/benchmarks/runs/{run_id}/cases/{case_id}")
+    async def get_benchmark_case_report(run_id: str, case_id: str) -> JSONResponse:
+        """Get the report for a specific benchmark case.
+
+        Args:
+            run_id: The benchmark run identifier.
+            case_id: The benchmark case identifier.
+
+        Returns:
+            JSON response with benchmark case report details.
+        """
+        runs_dir = _get_benchmark_runs_dir()
+        case_path = runs_dir / run_id / "cases" / f"{case_id}.json"
+
+        if not case_path.exists():
+            return JSONResponse(
+                content={"error": f"Benchmark case not found: {case_id}"},
+                status_code=404,
+            )
+
+        try:
+            case_report = json.loads(case_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            return JSONResponse(
+                content={"error": f"Failed to read case report: {str(e)}"},
+                status_code=500,
+            )
+
+        return JSONResponse(content=case_report)
+
+    @app.get("/api/themes")
+    async def list_research_themes() -> JSONResponse:
+        """List available research themes for the dashboard.
+
+        Returns:
+            JSON response with list of themes including display names and descriptions.
+        """
+        themes = _get_research_theme_list()
+        return JSONResponse(content={"themes": themes, "total": len(themes)})
+
+    @app.get("/api/analytics")
+    async def get_analytics(
+        days_back: int = Query(default=30, ge=1, le=365, description="Days of history to analyze"),
+    ) -> JSONResponse:
+        """Get aggregate analytics data for operational insights.
+
+        Args:
+            days_back: Number of days to look back for analytics.
+
+        Returns:
+            JSON response with aggregate analytics metrics including:
+            - Summary totals (runs, completion rate, average duration)
+            - Status distribution counts
+            - Duration metrics by status
+            - Sources trend over time
+            - Daily volume breakdown
+            - Depth distribution
+        """
+        analytics = _query_analytics_data(days_back=days_back)
+        return JSONResponse(content=analytics)
+
+
+def _get_research_theme_list() -> list[dict[str, str]]:
+    """Return list of available research themes with metadata."""
+    from cc_deep_research.themes import get_theme_registry
+
+    registry = get_theme_registry()
+    theme_info = registry.list_theme_info()
+
+    return [
+        {
+            "theme": item["theme"],
+            "display_name": item["display_name"],
+            "description": item["description"],
+            "source": item["source"],
+        }
+        for item in theme_info
+    ]
+
+
+def _query_analytics_data(
+    db_path: Path | None = None,
+    days_back: int = 30,
+) -> dict[str, Any]:
+    """Query aggregate analytics data from the telemetry database.
+
+    Args:
+        db_path: Path to the DuckDB database.
+        days_back: Number of days to look back for analytics.
+
+    Returns:
+        Dict containing aggregate analytics metrics.
+    """
+    from cc_deep_research.telemetry import get_default_dashboard_db_path
+
+    database_path = db_path or get_default_dashboard_db_path()
+    if not database_path.exists():
+        return {
+            "summary": {
+                "total_runs": 0,
+                "completed_runs": 0,
+                "failed_runs": 0,
+                "interrupted_runs": 0,
+                "avg_duration_ms": 0,
+                "avg_sources": 0,
+                "report_availability_rate": 0,
+            },
+            "status_counts": [],
+            "duration_by_status": [],
+            "sources_trend": [],
+            "daily_volume": [],
+            "depth_distribution": [],
+        }
+
+    conn = _load_dashboard_connection(database_path)
+
+    summary = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS total_runs,
+            SUM(CASE WHEN status IN ('completed', 'success') THEN 1 ELSE 0 END) AS completed_runs,
+            SUM(CASE WHEN status IN ('failed', 'error') THEN 1 ELSE 0 END) AS failed_runs,
+            SUM(CASE WHEN status IN ('interrupted', 'cancelled') THEN 1 ELSE 0 END) AS interrupted_runs,
+            COALESCE(AVG(CASE WHEN status IN ('completed', 'success') THEN total_time_ms ELSE NULL END), 0) AS avg_duration_ms,
+            COALESCE(AVG(total_sources), 0) AS avg_sources
+        FROM telemetry_sessions
+        WHERE created_at >= now() - interval '1 day' * ?
+        """,
+        [days_back],
+    ).fetchone()
+
+    report_count = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM telemetry_sessions
+        WHERE created_at >= now() - interval '1 day' * ?
+        AND summary_json->>'has_report' = 'true'
+        """,
+        [days_back],
+    ).fetchone()[0] or 0
+
+    total_with_report = summary[0] if summary else 0
+    report_rate = (report_count / total_with_report * 100) if total_with_report > 0 else 0.0
+
+    status_counts = conn.execute(
+        """
+        SELECT
+            COALESCE(status, 'unknown') AS status,
+            COUNT(*) AS count
+        FROM telemetry_sessions
+        WHERE created_at >= now() - interval '1 day' * ?
+        GROUP BY status
+        ORDER BY count DESC
+        """,
+        [days_back],
+    ).fetchall()
+
+    duration_by_status = conn.execute(
+        """
+        SELECT
+            COALESCE(status, 'unknown') AS status,
+            COALESCE(AVG(total_time_ms), 0) AS avg_duration_ms,
+            MIN(total_time_ms) AS min_duration_ms,
+            MAX(total_time_ms) AS max_duration_ms,
+            COUNT(*) AS count
+        FROM telemetry_sessions
+        WHERE created_at >= now() - interval '1 day' * ?
+        AND total_time_ms IS NOT NULL
+        GROUP BY status
+        ORDER BY count DESC
+        """,
+        [days_back],
+    ).fetchall()
+
+    sources_trend = conn.execute(
+        """
+        SELECT
+            DATE_TRUNC('day', created_at) AS day,
+            COUNT(*) AS run_count,
+            COALESCE(AVG(total_sources), 0) AS avg_sources,
+            SUM(total_sources) AS total_sources
+        FROM telemetry_sessions
+        WHERE created_at >= now() - interval '1 day' * ?
+        GROUP BY DATE_TRUNC('day', created_at)
+        ORDER BY day DESC
+        """,
+        [days_back],
+    ).fetchall()
+
+    daily_volume = conn.execute(
+        """
+        SELECT
+            DATE_TRUNC('day', created_at) AS day,
+            COUNT(*) AS total_runs,
+            SUM(CASE WHEN status IN ('completed', 'success') THEN 1 ELSE 0 END) AS completed,
+            SUM(CASE WHEN status IN ('failed', 'error') THEN 1 ELSE 0 END) AS failed,
+            SUM(CASE WHEN status IN ('interrupted', 'cancelled') THEN 1 ELSE 0 END) AS interrupted
+        FROM telemetry_sessions
+        WHERE created_at >= now() - interval '1 day' * ?
+        GROUP BY DATE_TRUNC('day', created_at)
+        ORDER BY day DESC
+        """,
+        [days_back],
+    ).fetchall()
+
+    depth_dist = conn.execute(
+        """
+        SELECT
+            COALESCE(summary_json->>'$.depth', 'unknown') AS depth,
+            COUNT(*) AS count,
+            COALESCE(AVG(total_time_ms), 0) AS avg_duration_ms
+        FROM telemetry_sessions
+        WHERE created_at >= now() - interval '1 day' * ?
+        GROUP BY depth
+        ORDER BY count DESC
+        """,
+        [days_back],
+    ).fetchall()
+
+    conn.close()
+
+    session_store = SessionStore()
+    saved_sessions = session_store.list_sessions()
+    archived_count = len(session_store.get_archived_session_ids())
+    active_count = sum(1 for s in saved_sessions if not s.get("archived", False))
+
+    return {
+        "summary": {
+            "total_runs": summary[0] if summary else 0,
+            "completed_runs": summary[1] if summary else 0,
+            "failed_runs": summary[2] if summary else 0,
+            "interrupted_runs": summary[3] if summary else 0,
+            "avg_duration_ms": float(summary[4]) if summary else 0.0,
+            "avg_sources": float(summary[5]) if summary else 0.0,
+            "report_availability_rate": round(report_rate, 1),
+            "archived_sessions": archived_count,
+            "active_sessions": active_count,
+        },
+        "status_counts": [
+            {"status": str(row[0]), "count": int(row[1])} for row in status_counts
+        ],
+        "duration_by_status": [
+            {
+                "status": str(row[0]),
+                "avg_duration_ms": float(row[1]) if row[1] else 0.0,
+                "min_duration_ms": int(row[2]) if row[2] else 0,
+                "max_duration_ms": int(row[3]) if row[3] else 0,
+                "count": int(row[4]),
+            }
+            for row in duration_by_status
+        ],
+        "sources_trend": [
+            {
+                "day": _serialize_timestamp(row[0]),
+                "run_count": int(row[1]),
+                "avg_sources": float(row[2]) if row[2] else 0.0,
+                "total_sources": int(row[3]) if row[3] else 0,
+            }
+            for row in sources_trend
+        ],
+        "daily_volume": [
+            {
+                "day": _serialize_timestamp(row[0]),
+                "total_runs": int(row[1]),
+                "completed": int(row[2]),
+                "failed": int(row[3]),
+                "interrupted": int(row[4]),
+            }
+            for row in daily_volume
+        ],
+        "depth_distribution": [
+            {
+                "depth": str(row[0]),
+                "count": int(row[1]),
+                "avg_duration_ms": float(row[2]) if row[2] else 0.0,
+            }
+            for row in depth_dist
+        ],
+    }
+
 
 def start_server(
     host: str = "localhost",
@@ -1866,6 +2498,7 @@ __all__ = [
     "get_app",
     "get_event_router",
     "get_job_registry",
+    "get_pipeline_job_registry",
     "register_routes",
     "start_server",
 ]
