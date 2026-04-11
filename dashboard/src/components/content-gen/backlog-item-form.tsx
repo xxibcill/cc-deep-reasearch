@@ -84,6 +84,10 @@ export function BacklogItemForm({
       newErrors.idea = 'Idea is required.'
     }
 
+    if (form.category && !CATEGORY_OPTIONS.includes(form.category as BacklogCategory)) {
+      newErrors.category = 'Invalid category.'
+    }
+
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }

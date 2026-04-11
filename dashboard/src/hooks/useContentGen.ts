@@ -306,9 +306,10 @@ const useContentGen = create<ContentGenState>((set, get) => ({
   },
 
   selectBacklogItem: async (ideaId) => {
-    set({ error: null });
+    const previousBacklog = get().backlog
+    set({ error: null })
     try {
-      const selected = await selectBacklogItemApi(ideaId);
+      const selected = await selectBacklogItemApi(ideaId)
       set((state) => ({
         backlog: state.backlog.map((item) =>
           item.idea_id === ideaId
@@ -317,9 +318,9 @@ const useContentGen = create<ContentGenState>((set, get) => ({
               ? { ...item, status: 'backlog' as const, selection_reasoning: '' }
               : item
         ),
-      }));
+      }))
     } catch (err) {
-      set({ error: getApiErrorMessage(err, 'Failed to select backlog item.') });
+      set({ backlog: previousBacklog, error: getApiErrorMessage(err, 'Failed to select backlog item.') })
     }
   },
 
