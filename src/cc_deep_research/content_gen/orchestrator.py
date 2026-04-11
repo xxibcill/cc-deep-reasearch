@@ -62,12 +62,13 @@ def _active_candidate_ids(ctx: PipelineContext) -> list[str]:
 
 def _selected_idea_candidates(ctx: PipelineContext) -> list[str]:
     candidates: list[str] = []
+    # scoring.selected_idea_id takes precedence over ctx.selected_idea_id
+    if ctx.scoring and ctx.scoring.selected_idea_id:
+        candidates.append(ctx.scoring.selected_idea_id)
     if ctx.selected_idea_id:
         candidates.append(ctx.selected_idea_id)
     candidates.extend(_active_candidate_ids(ctx))
     if ctx.scoring:
-        if ctx.scoring.selected_idea_id:
-            candidates.append(ctx.scoring.selected_idea_id)
         candidates.extend(ctx.shortlist or ctx.scoring.shortlist)
         candidates.extend(ctx.scoring.produce_now)
 
@@ -420,12 +421,19 @@ class ContentGenOrchestrator:
             return False, "scoring/selected idea missing"
         if stage == "build_research_pack" and ctx.backlog is None:
             return False, "backlog missing"
-        if stage == "build_research_pack" and not any(
-            _resolve_lane_item(ctx, candidate.idea_id) is not None
-            and _resolve_lane_angle(ctx, candidate.idea_id) is not None
-            for candidate in lane_candidates
-        ):
-            return False, "lane backlog/angles missing"
+        if stage == "build_research_pack":
+            has_item = any(
+                _resolve_lane_item(ctx, candidate.idea_id) is not None
+                for candidate in lane_candidates
+            )
+            has_angle = any(
+                _resolve_lane_angle(ctx, candidate.idea_id) is not None
+                for candidate in lane_candidates
+            )
+            if has_item and not has_angle:
+                return False, "selected angle missing"
+            if not has_item:
+                return False, "lane backlog/angles missing"
         if stage == "build_argument_map" and not any(
             (lane := _resolve_lane_context(ctx, candidate.idea_id)) is not None
             and lane.research_pack is not None
