@@ -139,8 +139,10 @@ class ResearchPlan(BaseModel):
     def get_current_execution_group(self) -> list[str] | None:
         """Get the current group of tasks that should be executing."""
         for group in self.execution_order:
-            if any(self.get_subtask(tid).status in ("pending", "in_progress") for tid in group if self.get_subtask(tid)):
-                return group
+            for tid in group:
+                subtask = self.get_subtask(tid)
+                if subtask and subtask.status in ("pending", "in_progress"):
+                    return group
         return None
 
     def is_complete(self) -> bool:

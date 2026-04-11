@@ -21,7 +21,6 @@ from cc_deep_research.research_runs import (
     ResearchRunService,
 )
 from cc_deep_research.session_store import SessionStore
-
 from tests.helpers.fixture_loader import load_analysis_healthy, load_tavily_search_healthy
 
 

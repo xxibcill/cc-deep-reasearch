@@ -103,7 +103,7 @@ def _build_scripting_result(
     execution_mode: Literal["single_pass", "iterative"] = "single_pass",
     iterations: ScriptingIterations | None = None,
 ) -> ScriptingRunResult:
-    script = ScriptingStore._extract_script(ctx)
+    script = ScriptingStore.extract_script(ctx)
     return ScriptingRunResult(
         run_id=run_id,
         raw_idea=ctx.raw_idea,
@@ -193,7 +193,9 @@ def register_content_gen_routes(
                             {
                                 "type": "pipeline_stage_failed",
                                 "stage_index": stage_idx,
-                                "stage_label": PIPELINE_STAGE_LABELS.get(PIPELINE_STAGES[stage_idx], ""),
+                                "stage_label": PIPELINE_STAGE_LABELS.get(
+                                    PIPELINE_STAGES[stage_idx], ""
+                                ),
                                 "error": detail,
                                 "context": serialized_context,
                                 "timestamp": datetime.now(UTC).isoformat(),
@@ -207,7 +209,9 @@ def register_content_gen_routes(
                             {
                                 "type": "pipeline_stage_skipped",
                                 "stage_index": stage_idx,
-                                "stage_label": PIPELINE_STAGE_LABELS.get(PIPELINE_STAGES[stage_idx], ""),
+                                "stage_label": PIPELINE_STAGE_LABELS.get(
+                                    PIPELINE_STAGES[stage_idx], ""
+                                ),
                                 "reason": detail,
                                 "context": serialized_context,
                                 "timestamp": datetime.now(UTC).isoformat(),
@@ -353,7 +357,9 @@ def register_content_gen_routes(
                             {
                                 "type": "pipeline_stage_failed",
                                 "stage_index": stage_idx,
-                                "stage_label": PIPELINE_STAGE_LABELS.get(PIPELINE_STAGES[stage_idx], ""),
+                                "stage_label": PIPELINE_STAGE_LABELS.get(
+                                    PIPELINE_STAGES[stage_idx], ""
+                                ),
                                 "error": detail,
                                 "context": serialized_context,
                                 "timestamp": datetime.now(UTC).isoformat(),
@@ -367,7 +373,9 @@ def register_content_gen_routes(
                             {
                                 "type": "pipeline_stage_skipped",
                                 "stage_index": stage_idx,
-                                "stage_label": PIPELINE_STAGE_LABELS.get(PIPELINE_STAGES[stage_idx], ""),
+                                "stage_label": PIPELINE_STAGE_LABELS.get(
+                                    PIPELINE_STAGES[stage_idx], ""
+                                ),
                                 "reason": detail,
                                 "context": serialized_context,
                                 "timestamp": datetime.now(UTC).isoformat(),
@@ -428,9 +436,7 @@ def register_content_gen_routes(
             return JSONResponse(status_code=400, content={"error": "No QC gate found"})
         ctx.qc_gate.approved_for_publish = True
         job_registry.update_context(pipeline_id, ctx)
-        return JSONResponse(
-            content={"pipeline_id": pipeline_id, "approved": True}
-        )
+        return JSONResponse(content={"pipeline_id": pipeline_id, "approved": True})
 
     # ------------------------------------------------------------------
     # Standalone scripting
@@ -604,17 +610,13 @@ def register_content_gen_routes(
     async def list_publish_queue() -> JSONResponse:
         store = PublishQueueStore()
         items = store.load()
-        return JSONResponse(
-            content={"items": [json.loads(i.model_dump_json()) for i in items]}
-        )
+        return JSONResponse(content={"items": [json.loads(i.model_dump_json()) for i in items]})
 
     @app.delete("/api/content-gen/publish/{idea_id}/{platform}")
     async def remove_from_queue(idea_id: str, platform: str) -> JSONResponse:
         store = PublishQueueStore()
         items = store.load()
-        filtered = [
-            i for i in items if not (i.idea_id == idea_id and i.platform == platform)
-        ]
+        filtered = [i for i in items if not (i.idea_id == idea_id and i.platform == platform)]
         store.save(filtered)
         removed = len(items) - len(filtered)
         return JSONResponse(content={"removed": removed})
@@ -639,9 +641,7 @@ def register_content_gen_routes(
                 "pipeline_id": pipeline_id,
                 "status": str(job.status),
                 "current_stage": (
-                    job.pipeline_context.current_stage
-                    if job.pipeline_context
-                    else job.from_stage
+                    job.pipeline_context.current_stage if job.pipeline_context else job.from_stage
                 ),
             }
             if job.pipeline_context is not None:

@@ -1,12 +1,15 @@
 'use client';
 
+import { use } from 'react';
 import { SessionTelemetryWorkspace } from '@/components/session-telemetry-workspace';
 import { SessionPageFrame } from '@/components/session-page-frame';
 
-export default function SessionMonitorPage({ params }: { params: { id: string } }) {
+export default function SessionMonitorPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+
   return (
     <SessionPageFrame
-      routeId={params.id}
+      routeId={id}
       view="monitor"
       title="Telemetry Monitor"
       description="Live telemetry, workflow graphs, event tables, and execution traces."

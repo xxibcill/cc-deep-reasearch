@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cc_deep_research.config import Config
+from cc_deep_research.models import ResearchSession
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.pdf_generator import PDFGenerationError, PDFGenerator
 from cc_deep_research.reporting import ReportGenerator
@@ -21,7 +22,7 @@ from cc_deep_research.session_store import SessionStore
 
 def materialize_research_run_output(
     *,
-    session,
+    session: ResearchSession,
     config: Config,
     request: ResearchRunRequest,
     monitor: ResearchMonitor | None = None,

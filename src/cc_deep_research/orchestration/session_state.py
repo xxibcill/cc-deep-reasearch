@@ -98,7 +98,7 @@ class OrchestratorSessionState:
         self.llm_fallback_events = []
         self.prompt_metadata = SessionPromptMetadata()
 
-    def set_prompt_metadata(self, prompt_registry: "PromptRegistry | None") -> None:
+    def set_prompt_metadata(self, prompt_registry: PromptRegistry | None) -> None:
         """Record prompt configuration from the registry.
 
         Args:

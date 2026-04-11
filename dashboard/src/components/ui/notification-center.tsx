@@ -83,13 +83,13 @@ function notificationIcon(variant: NotificationVariant) {
 function notificationTone(variant: NotificationVariant): string {
   switch (variant) {
     case 'success':
-      return 'border-success/30 bg-[linear-gradient(180deg,rgba(20,83,45,0.16),rgba(10,18,16,0.96))]';
+      return 'border-success/30 bg-gradient-to-b from-success/16 to-transparent'
     case 'warning':
-      return 'border-warning/30 bg-[linear-gradient(180deg,rgba(133,77,14,0.18),rgba(18,16,12,0.96))]';
+      return 'border-warning/30 bg-gradient-to-b from-warning/18 to-transparent'
     case 'destructive':
-      return 'border-error/30 bg-[linear-gradient(180deg,rgba(127,29,29,0.18),rgba(22,13,13,0.97))]';
+      return 'border-error/30 bg-gradient-to-b from-error/18 to-transparent'
     default:
-      return 'border-primary/25 bg-[linear-gradient(180deg,rgba(37,99,235,0.16),rgba(12,17,27,0.97))]';
+      return 'border-primary/25 bg-gradient-to-b from-primary/16 to-transparent'
   }
 }
 

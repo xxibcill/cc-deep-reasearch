@@ -2,8 +2,6 @@ import axios from 'axios';
 import { dashboardRuntimeConfig } from '@/lib/runtime-config';
 import { getApiErrorMessage } from '@/lib/api';
 import type {
-  BacklogItem,
-  BacklogListResponse,
   PipelineRunSummary,
   PipelineContext,
   StrategyMemory,
@@ -185,60 +183,6 @@ export async function updateStrategy(
     return response.data;
   } catch (error) {
     throw new Error(getApiErrorMessage(error, 'Failed to update strategy.'));
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Backlog endpoints
-// ---------------------------------------------------------------------------
-
-export async function listBacklog(): Promise<BacklogListResponse> {
-  try {
-    const response = await contentGenClient.get('/backlog');
-    return {
-      path: response.data.path ?? '',
-      items: response.data.items ?? [],
-    };
-  } catch (error) {
-    throw new Error(getApiErrorMessage(error, 'Failed to load backlog.'));
-  }
-}
-
-export async function updateBacklogItem(
-  ideaId: string,
-  patch: Record<string, unknown>,
-): Promise<BacklogItem> {
-  try {
-    const response = await contentGenClient.patch(`/backlog/${ideaId}`, { patch });
-    return response.data;
-  } catch (error) {
-    throw new Error(getApiErrorMessage(error, 'Failed to update backlog item.'));
-  }
-}
-
-export async function selectBacklogItem(ideaId: string): Promise<BacklogItem> {
-  try {
-    const response = await contentGenClient.post(`/backlog/${ideaId}/select`);
-    return response.data;
-  } catch (error) {
-    throw new Error(getApiErrorMessage(error, 'Failed to select backlog item.'));
-  }
-}
-
-export async function archiveBacklogItem(ideaId: string): Promise<BacklogItem> {
-  try {
-    const response = await contentGenClient.post(`/backlog/${ideaId}/archive`);
-    return response.data;
-  } catch (error) {
-    throw new Error(getApiErrorMessage(error, 'Failed to archive backlog item.'));
-  }
-}
-
-export async function deleteBacklogItem(ideaId: string): Promise<void> {
-  try {
-    await contentGenClient.delete(`/backlog/${ideaId}`);
-  } catch (error) {
-    throw new Error(getApiErrorMessage(error, 'Failed to remove backlog item.'));
   }
 }
 

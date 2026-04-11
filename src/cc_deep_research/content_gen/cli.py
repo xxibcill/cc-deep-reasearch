@@ -12,7 +12,12 @@ from cc_deep_research.config import load_config
 from cc_deep_research.content_gen.storage import ScriptingStore
 
 if TYPE_CHECKING:
-    from cc_deep_research.content_gen.models import PipelineContext, ScriptingContext
+    from cc_deep_research.content_gen.models import (
+        AngleOption,
+        PipelineContext,
+        ScriptingContext,
+        ScriptVersion,
+    )
 
 KNOWN_MODULES = frozenset(
     {
@@ -791,8 +796,8 @@ def register_content_gen_commands(cli: click.Group) -> None:
             PIPELINE_STAGES,
             BacklogItem,
             BacklogOutput,
-            PipelineContext,
             PipelineCandidate,
+            PipelineContext,
             ScoringOutput,
         )
 
@@ -1010,7 +1015,6 @@ def _load_packaging_inputs(text: str) -> tuple[ScriptVersion, AngleOption]:
     from cc_deep_research.content_gen.models import (
         AngleOption,
         PipelineContext,
-        ScriptVersion,
         ScriptingContext,
     )
 
@@ -1045,7 +1049,6 @@ def _load_packaging_inputs(text: str) -> tuple[ScriptVersion, AngleOption]:
 
 
 def _extract_script_from_pipeline_context(ctx: PipelineContext) -> ScriptVersion | None:
-    from cc_deep_research.content_gen.models import ScriptVersion
 
     if ctx.scripting is None:
         return None
@@ -1067,7 +1070,6 @@ def _extract_script_from_scripting_context(ctx: ScriptingContext) -> ScriptVersi
 
 
 def _extract_angle_from_pipeline_context(ctx: PipelineContext) -> AngleOption | None:
-    from cc_deep_research.content_gen.models import AngleOption
 
     if ctx.angles is None:
         return None

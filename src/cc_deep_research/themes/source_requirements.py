@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from .models import ResearchTheme, SourceRequirements
 
-
 # Default source requirements per theme
 THEME_SOURCE_REQUIREMENTS: dict[ResearchTheme, SourceRequirements] = {
     ResearchTheme.GENERAL: SourceRequirements(

@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { LayoutDashboard, FileText, Settings, ListVideo, Lightbulb, ArrowLeft } from 'lucide-react'
+import { LayoutDashboard, FileText, Settings, ListVideo, ArrowLeft } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { buttonVariants } from '@/components/ui/button'
 import { Tabs } from '@/components/ui/tabs'
@@ -14,7 +14,6 @@ const TAB_CONFIG = [
   { value: 'overview', label: 'Overview', icon: LayoutDashboard },
   { value: 'scripts', label: 'Scripts', icon: FileText },
   { value: 'strategy', label: 'Strategy', icon: Settings },
-  { value: 'backlog', label: 'Backlog', icon: Lightbulb },
   { value: 'queue', label: 'Queue', icon: ListVideo },
 ]
 
@@ -29,7 +28,6 @@ export function ContentGenShell({
 
   const loadAll = useContentGen((s) => s.loadAll)
   const pipelines = useContentGen((s) => s.pipelines)
-  const backlog = useContentGen((s) => s.backlog)
   const scripts = useContentGen((s) => s.scripts)
   const publishQueue = useContentGen((s) => s.publishQueue)
 
@@ -46,9 +44,6 @@ export function ContentGenShell({
     }
     if (tab.value === 'scripts' && scripts.length > 0) {
       return { ...tab, badge: scripts.length }
-    }
-    if (tab.value === 'backlog' && backlog.length > 0) {
-      return { ...tab, badge: backlog.length }
     }
     if (tab.value === 'queue' && publishQueue.length > 0) {
       return { ...tab, badge: publishQueue.length }
@@ -104,7 +99,6 @@ export function ContentGenShell({
             ) : (
               <Badge variant="secondary">No active pipelines</Badge>
             )}
-            {backlog.length > 0 ? <Badge variant="outline">{backlog.length} backlog items</Badge> : null}
             {scripts.length > 0 ? <Badge variant="outline">{scripts.length} scripts tracked</Badge> : null}
             {publishQueue.length > 0 ? <Badge variant="outline">{publishQueue.length} queued for publish</Badge> : null}
           </div>

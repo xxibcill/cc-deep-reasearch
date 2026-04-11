@@ -123,6 +123,54 @@ function getSessionTimestamp(session: Session): number {
   return Number.isFinite(timestamp) ? timestamp : 0
 }
 
+function isTerminalFailure(status: string | null | undefined): boolean {
+  return status === 'failed' || status === 'interrupted'
+}
+
+function isTerminalSuccess(status: string | null | undefined): boolean {
+  return status === 'completed'
+}
+
+function outcomeImproved(pair: SessionPair): boolean {
+  const { sessionA, sessionB } = pair
+  if (!sessionA || !sessionB) return false
+  return isTerminalFailure(sessionA.status) && isTerminalSuccess(sessionB.status)
+}
+
+function outcomeRegressed(pair: SessionPair): boolean {
+  const { sessionA, sessionB } = pair
+  if (!sessionA || !sessionB) return false
+  return isTerminalSuccess(sessionA.status) && isTerminalFailure(sessionB.status)
+}
+
+function hasSpeedImprovement(deltas: CompareDeltas): boolean {
+  return deltas.durationDelta != null && deltas.durationDelta < 0
+}
+
+function hasSpeedRegression(deltas: CompareDeltas): boolean {
+  return deltas.durationDelta != null && deltas.durationDelta > 0
+}
+
+function hasSourceImprovement(deltas: CompareDeltas): boolean {
+  return deltas.sourceCountDelta != null && deltas.sourceCountDelta > 0
+}
+
+function hasSourceRegression(deltas: CompareDeltas): boolean {
+  return deltas.sourceCountDelta != null && deltas.sourceCountDelta < 0
+}
+
+function hasMaterialDifference(pair: SessionPair, deltas: CompareDeltas): boolean {
+  const { sessionA, sessionB } = pair
+  if (!sessionA || !sessionB) return false
+  return (
+    hasSpeedImprovement(deltas) ||
+    hasSpeedRegression(deltas) ||
+    hasSourceImprovement(deltas) ||
+    hasSourceRegression(deltas) ||
+    sessionA.depth !== sessionB.depth
+  )
+}
+
 function getAssessment(pair: SessionPair, deltas: CompareDeltas): CompareNarrative['assessment'] {
   const { sessionA, sessionB } = pair
 
@@ -130,32 +178,25 @@ function getAssessment(pair: SessionPair, deltas: CompareDeltas): CompareNarrati
     return 'inconclusive'
   }
 
-  const outcomeImproved =
-    (sessionA.status === 'failed' || sessionA.status === 'interrupted') &&
-    sessionB.status === 'completed'
-  const outcomeRegressed =
-    sessionA.status === 'completed' &&
-    (sessionB.status === 'failed' || sessionB.status === 'interrupted')
-
-  if (outcomeImproved) {
+  if (outcomeImproved(pair)) {
     return 'improved'
   }
-  if (outcomeRegressed || (deltas.failureCountDelta != null && deltas.failureCountDelta > 0)) {
+  if (outcomeRegressed(pair) || (deltas.failureCountDelta != null && deltas.failureCountDelta > 0)) {
     return 'regressed'
   }
 
-  const faster = deltas.durationDelta != null && deltas.durationDelta < 0
-  const slower = deltas.durationDelta != null && deltas.durationDelta > 0
-  const broader = deltas.sourceCountDelta != null && deltas.sourceCountDelta > 0
-  const narrower = deltas.sourceCountDelta != null && deltas.sourceCountDelta < 0
+  const speedImproved = hasSpeedImprovement(deltas)
+  const speedRegressed = hasSpeedRegression(deltas)
+  const sourcesImproved = hasSourceImprovement(deltas)
+  const sourcesRegressed = hasSourceRegression(deltas)
 
-  if ((faster && broader) || (faster && sessionB.hasReport && !sessionA.hasReport)) {
+  if ((speedImproved && sourcesImproved) || (speedImproved && sessionB.hasReport && !sessionA.hasReport)) {
     return 'improved'
   }
-  if ((slower && narrower) || (!sessionB.hasReport && sessionA.hasReport)) {
+  if ((speedRegressed && sourcesRegressed) || (!sessionB.hasReport && sessionA.hasReport)) {
     return 'regressed'
   }
-  if (faster || slower || broader || narrower || sessionA.depth !== sessionB.depth) {
+  if (hasMaterialDifference(pair, deltas)) {
     return 'mixed'
   }
 
@@ -632,3 +673,4 @@ export function describeBaselineFit(
     summary: `${topSuggestion.session.label} is a better same-query, same-label, or recent-success baseline for Session B.`,
   }
 }
+

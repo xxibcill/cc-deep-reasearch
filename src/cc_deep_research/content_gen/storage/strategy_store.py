@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from cc_deep_research.content_gen.models import StrategyMemory
 from cc_deep_research.content_gen.storage._paths import resolve_content_gen_file_path
-
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
@@ -19,7 +17,7 @@ if TYPE_CHECKING:
 class StrategyStore:
     """Load and save :class:`StrategyMemory` to a YAML file."""
 
-    def __init__(self, path: Path | None = None, *, config: "Config | None" = None) -> None:
+    def __init__(self, path: Path | None = None, *, config: Config | None = None) -> None:
         self._path = resolve_content_gen_file_path(
             explicit_path=path,
             config=config,

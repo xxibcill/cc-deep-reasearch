@@ -7,7 +7,7 @@
     "dev:frontend": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "shadcn": "shadcn",
     "test:e2e": "playwright test",
     "test:e2e:smoke": "playwright test --project=chromium --grep '@smoke'",
