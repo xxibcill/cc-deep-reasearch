@@ -1678,8 +1678,9 @@ def register_routes(app: FastAPI) -> None:
         Returns:
             JSON response with rerun result.
         """
-        from cc_deep_research.models.checkpoint import RerunStepRequest, RerunStepResult
         from pydantic import ValidationError
+
+        from cc_deep_research.models.checkpoint import RerunStepRequest, RerunStepResult
 
         try:
             rerun_request = RerunStepRequest.model_validate(request)

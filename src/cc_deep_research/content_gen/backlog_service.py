@@ -181,6 +181,34 @@ class BacklogService:
             patch["source_pipeline_id"] = source_pipeline_id
         return self.update_item(idea_id, patch)
 
+    def create_item(
+        self,
+        *,
+        idea: str,
+        category: str = "",
+        audience: str = "",
+        problem: str = "",
+        source_theme: str = "",
+        selection_reasoning: str = "",
+    ) -> BacklogItem:
+        """Create a new backlog item with normalized timestamps."""
+        now = _now_iso()
+        item = BacklogItem(
+            idea=idea,
+            category=category,
+            audience=audience,
+            problem=problem,
+            source_theme=source_theme,
+            selection_reasoning=selection_reasoning,
+            status="backlog",
+            created_at=now,
+            updated_at=now,
+        )
+        backlog = self.load()
+        backlog.items.append(item)
+        self._store.save(backlog)
+        return item
+
     def delete_item(self, idea_id: str) -> bool:
         backlog = self.load()
         filtered_items = [item for item in backlog.items if item.idea_id != idea_id]

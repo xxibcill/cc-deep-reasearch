@@ -1,5 +1,5 @@
 {
-  "pipeline_id": "4184b4b807f6",
+  "pipeline_id": "f6afe6646377",
   "theme": "Direct seed",
   "created_at": "",
   "current_stage": 0,
@@ -8,7 +8,7 @@
   "backlog": {
     "items": [
       {
-        "idea_id": "a947c82d",
+        "idea_id": "c9c76347",
         "category": "",
         "idea": "Direct seed",
         "audience": "",
@@ -42,17 +42,17 @@
   "scoring": {
     "scores": [],
     "produce_now": [
-      "a947c82d"
+      "c9c76347"
     ],
     "shortlist": [
-      "a947c82d"
+      "c9c76347"
     ],
-    "selected_idea_id": "a947c82d",
+    "selected_idea_id": "c9c76347",
     "selection_reasoning": "Seeded directly from --idea.",
     "runner_up_idea_ids": [],
     "active_candidates": [
       {
-        "idea_id": "a947c82d",
+        "idea_id": "c9c76347",
         "role": "primary",
         "status": "selected"
       }
@@ -63,21 +63,21 @@
     "degradation_reason": ""
   },
   "shortlist": [
-    "a947c82d"
+    "c9c76347"
   ],
-  "selected_idea_id": "a947c82d",
+  "selected_idea_id": "c9c76347",
   "selection_reasoning": "Seeded directly from --idea.",
   "runner_up_idea_ids": [],
   "active_candidates": [
     {
-      "idea_id": "a947c82d",
+      "idea_id": "c9c76347",
       "role": "primary",
       "status": "selected"
     }
   ],
   "lane_contexts": [
     {
-      "idea_id": "a947c82d",
+      "idea_id": "c9c76347",
       "role": "primary",
       "status": "selected",
       "last_completed_stage": -1,

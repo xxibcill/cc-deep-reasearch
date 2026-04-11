@@ -54,7 +54,7 @@ class PerformanceLearningStore:
     - Querying learnings by category, durability, or platform
     """
 
-    def __init__(self, path: Path | None = None, *, config: "Config | None" = None) -> None:
+    def __init__(self, path: Path | None = None, *, config: Config | None = None) -> None:
         self._path = resolve_content_gen_file_path(
             explicit_path=path,
             config=config,
@@ -72,7 +72,7 @@ class PerformanceLearningStore:
             return []
         data = yaml.safe_load(self._path.read_text()) or {}
         learnings_data = data.get("learnings", [])
-        return [PerformanceLearning.model_validate(l) for l in learnings_data]
+        return [PerformanceLearning.model_validate(learning) for learning in learnings_data]
 
     def load_strategy_guidance(self) -> StrategyPerformanceGuidance:
         """Load the durable strategy guidance derived from learnings."""
@@ -88,7 +88,7 @@ class PerformanceLearningStore:
         # Preserve existing strategy guidance when updating learnings
         existing_guidance = self.load_strategy_guidance()
         data = {
-            "learnings": [_serialize_model_to_dict(l) for l in learnings],
+            "learnings": [_serialize_model_to_dict(learning) for learning in learnings],
             "strategy_guidance": _serialize_model_to_dict(existing_guidance),
             "last_updated": _now_iso(),
         }
@@ -100,7 +100,7 @@ class PerformanceLearningStore:
         # Preserve learnings when updating guidance
         existing_learnings = self.load_raw_learnings()
         data = {
-            "learnings": [_serialize_model_to_dict(l) for l in existing_learnings],
+            "learnings": [_serialize_model_to_dict(learning) for learning in existing_learnings],
             "strategy_guidance": _serialize_model_to_dict(guidance),
             "last_updated": _now_iso(),
         }
@@ -320,14 +320,14 @@ class PerformanceLearningStore:
     def _get_learning(self, learning_id: str) -> PerformanceLearning | None:
         """Get a learning by ID."""
         learnings = self.load_raw_learnings()
-        return next((l for l in learnings if l.learning_id == learning_id), None)
+        return next((learning for learning in learnings if learning.learning_id == learning_id), None)
 
     def _save_learnings(self, learnings: list[PerformanceLearning]) -> None:
         """Save updated learnings list."""
         existing = self.load_raw_learnings()
         # Replace updated learnings
-        updated_map = {l.learning_id: l for l in learnings}
-        merged = [updated_map.get(l.learning_id, l) for l in existing]
+        updated_map = {learning.learning_id: learning for learning in learnings}
+        merged = [updated_map.get(learning.learning_id, learning) for learning in existing]
         self.save_raw_learnings(merged)
 
     def _merge_learnings_into_guidance(
@@ -393,14 +393,14 @@ class PerformanceLearningStore:
     ) -> list[PerformanceLearning]:
         """Query learnings by optional filters."""
         learnings = self.load_raw_learnings()
-        results = [l for l in learnings if l.is_active]
+        results = [learning for learning in learnings if learning.is_active]
 
         if category is not None:
-            results = [l for l in results if l.category == category]
+            results = [learning for learning in results if learning.category == category]
         if durability is not None:
-            results = [l for l in results if l.durability == durability]
+            results = [learning for learning in results if learning.durability == durability]
         if platform:
-            results = [l for l in results if not l.platform or l.platform == platform]
+            results = [learning for learning in results if not learning.platform or learning.platform == platform]
 
         return results
 
@@ -437,8 +437,8 @@ class PerformanceLearningStore:
         )
         if experimental:
             hints["experimental_learnings"] = [
-                {"observation": l.observation, "guidance": l.guidance}
-                for l in experimental[:5]  # Limit to 5 most recent
+                {"observation": learning.observation, "guidance": learning.guidance}
+                for learning in experimental[:5]  # Limit to 5 most recent
             ]
 
         return hints
