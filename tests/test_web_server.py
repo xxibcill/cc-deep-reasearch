@@ -181,7 +181,7 @@ def test_run_scripting_endpoint_can_force_single_pass(
             )
 
         @staticmethod
-        def _extract_script(ctx: ScriptingContext) -> str:
+        def extract_script(ctx: ScriptingContext) -> str:
             return ctx.qc.final_script if ctx.qc else ""
 
     class FakeOrchestrator:
@@ -299,7 +299,7 @@ def test_run_scripting_endpoint_accepts_iteration_overrides(
             )
 
         @staticmethod
-        def _extract_script(ctx: ScriptingContext) -> str:
+        def extract_script(ctx: ScriptingContext) -> str:
             return ctx.qc.final_script if ctx.qc else ""
 
     class FakeOrchestrator:
