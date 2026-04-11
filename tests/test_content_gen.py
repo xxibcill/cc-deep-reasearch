@@ -1904,6 +1904,37 @@ def test_pipeline_job_registry_recovers_interrupted_runs_from_disk(tmp_path: Pat
     assert restored_job.stop_requested is False
 
 
+def test_pipeline_job_registry_rejects_duplicate_explicit_ids(tmp_path: Path) -> None:
+    registry = PipelineRunJobRegistry(path=tmp_path)
+
+    registry.create_job("pricing anchors", pipeline_id="cgp-duplicate")
+
+    with pytest.raises(ValueError, match="Pipeline run already exists: cgp-duplicate"):
+        registry.create_job("pricing anchors", pipeline_id="cgp-duplicate")
+
+
+def test_pipeline_job_registry_creates_unique_resume_job_ids(tmp_path: Path) -> None:
+    registry = PipelineRunJobRegistry(path=tmp_path)
+    registry.create_job("pricing anchors", pipeline_id="cgp-original")
+
+    first_resume = registry.create_resume_job(
+        "cgp-original",
+        "pricing anchors",
+        from_stage=5,
+        to_stage=12,
+    )
+    second_resume = registry.create_resume_job(
+        "cgp-original",
+        "pricing anchors",
+        from_stage=5,
+        to_stage=12,
+    )
+
+    assert first_resume.pipeline_id != second_resume.pipeline_id
+    assert first_resume.pipeline_id.startswith("cgp-original-resume-")
+    assert second_resume.pipeline_id.startswith("cgp-original-resume-")
+
+
 # ---------------------------------------------------------------------------
 # Storage layer
 # ---------------------------------------------------------------------------
@@ -6346,4 +6377,3 @@ def test_score_ideas_user_excludes_performance_guidance_when_empty() -> None:
     # Should not mention performance guidance when empty
     assert "Winning hook" not in user_prompt
     assert "Failed hook" not in user_prompt
-

@@ -174,13 +174,41 @@ class PipelineRunJobRegistry:
         pipeline_id: str | None = None,
     ) -> PipelineRunJob:
         """Create and store a queued job entry."""
-        job = PipelineRunJob(
-            pipeline_id=pipeline_id or self._generate_pipeline_id(),
-            theme=theme,
-            from_stage=from_stage,
-            to_stage=to_stage,
-        )
         with self._lock:
+            resolved_pipeline_id = pipeline_id or self._generate_pipeline_id()
+            if resolved_pipeline_id in self._jobs:
+                raise ValueError(f"Pipeline run already exists: {resolved_pipeline_id}")
+
+            job = PipelineRunJob(
+                pipeline_id=resolved_pipeline_id,
+                theme=theme,
+                from_stage=from_stage,
+                to_stage=to_stage,
+            )
+            self._jobs[job.pipeline_id] = job
+            self._persist_job(job)
+        return job
+
+    def create_resume_job(
+        self,
+        source_pipeline_id: str,
+        theme: str,
+        *,
+        from_stage: int = 0,
+        to_stage: int | None = None,
+    ) -> PipelineRunJob:
+        """Create a distinct job entry for a resumed pipeline run."""
+        with self._lock:
+            pipeline_id = self._generate_resume_pipeline_id(source_pipeline_id)
+            while pipeline_id in self._jobs:
+                pipeline_id = self._generate_resume_pipeline_id(source_pipeline_id)
+
+            job = PipelineRunJob(
+                pipeline_id=pipeline_id,
+                theme=theme,
+                from_stage=from_stage,
+                to_stage=to_stage,
+            )
             self._jobs[job.pipeline_id] = job
             self._persist_job(job)
         return job
@@ -320,6 +348,10 @@ class PipelineRunJobRegistry:
     def _generate_pipeline_id(self) -> str:
         """Create a stable local pipeline identifier."""
         return f"cgp-{uuid.uuid4().hex[:12]}"
+
+    def _generate_resume_pipeline_id(self, source_pipeline_id: str) -> str:
+        """Create a stable identifier for a resumed pipeline run."""
+        return f"{source_pipeline_id}-resume-{uuid.uuid4().hex[:8]}"
 
     def _persist_job(self, job: PipelineRunJob) -> None:
         self._store.save(job)

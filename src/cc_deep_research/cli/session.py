@@ -583,7 +583,10 @@ def register_session_commands(cli: click.Group) -> None:
                 else:
                     click.echo(f"  {key}: {value}")
 
-        click.echo("\nNote: Use the API endpoint POST /api/sessions/{session_id}/rerun-step to execute rerun.")
+        click.echo(
+            "\nNote: POST /api/sessions/{session_id}/rerun-step currently validates rerun "
+            "readiness only; full step rerun execution is not implemented yet."
+        )
 
 
 __all__ = ["register_session_commands"]

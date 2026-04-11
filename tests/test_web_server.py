@@ -154,6 +154,73 @@ def test_create_app_restores_persisted_pipeline_jobs(
     assert restored_job.pipeline_context.selected_idea_id == "idea-1"
 
 
+def test_resume_pipeline_creates_distinct_jobs_per_attempt(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Repeated resume requests should not reuse the same pipeline job id."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    class FakeOrchestrator:
+        def __init__(self, _config) -> None:
+            pass
+
+        def validate_resume_context(self, *, from_stage: int, ctx: PipelineContext) -> str | None:
+            del from_stage, ctx
+            return None
+
+        async def run_full_pipeline(
+            self,
+            theme: str,
+            *,
+            from_stage: int = 0,
+            to_stage: int | None = None,
+            initial_context: PipelineContext | None = None,
+            progress_callback=None,
+            stage_completed_callback=None,
+        ) -> PipelineContext:
+            del theme, from_stage, to_stage, progress_callback, stage_completed_callback
+            return initial_context or PipelineContext(theme="pricing anchors")
+
+    import cc_deep_research.content_gen.orchestrator as content_gen_orchestrator_module
+    import cc_deep_research.content_gen.router as content_gen_router_module
+
+    monkeypatch.setattr(content_gen_router_module, "load_config", lambda: object())
+    monkeypatch.setattr(
+        content_gen_orchestrator_module,
+        "ContentGenOrchestrator",
+        FakeOrchestrator,
+    )
+
+    app = create_app()
+    pipeline_jobs = get_pipeline_job_registry(app)
+    job = pipeline_jobs.create_job(
+        "pricing anchors",
+        from_stage=0,
+        to_stage=8,
+        pipeline_id="cgp-base",
+    )
+    ctx = PipelineContext(theme="pricing anchors", current_stage=4)
+    pipeline_jobs.update_context(job.pipeline_id, ctx)
+    pipeline_jobs.mark_failed(job.pipeline_id, error="interrupted")
+
+    client = TestClient(app)
+    first_response = client.post("/api/content-gen/pipelines/cgp-base/resume", json={"from_stage": 5})
+    second_response = client.post("/api/content-gen/pipelines/cgp-base/resume", json={"from_stage": 5})
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+
+    first_job_id = first_response.json()["pipeline_id"]
+    second_job_id = second_response.json()["pipeline_id"]
+
+    assert first_job_id != second_job_id
+    assert first_job_id.startswith("cgp-base-resume-")
+    assert second_job_id.startswith("cgp-base-resume-")
+    assert pipeline_jobs.get_job(first_job_id) is not None
+    assert pipeline_jobs.get_job(second_job_id) is not None
+
+
 def test_run_scripting_endpoint_can_force_single_pass(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2323,10 +2390,10 @@ def test_resume_endpoint_rejects_non_resumable_checkpoint(
     assert "not safe to resume" in response.json()["error"]
 
 
-def test_rerun_step_endpoint_returns_rerun_info(
+def test_rerun_step_endpoint_reports_not_implemented_for_replayable_checkpoint(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The rerun-step endpoint should return rerun information for replayable checkpoint."""
+    """Replayable checkpoints should not be reported as rerun successfully before execution exists."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     config_dir = tmp_path / "xdg" / "cc-deep-research"
     telemetry_dir = config_dir / "telemetry"
@@ -2375,10 +2442,11 @@ def test_rerun_step_endpoint_returns_rerun_info(
         json={"session_id": "rerun-session", "checkpoint_id": "cp-replayable"},
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 501
     data = response.json()
-    assert data["success"] is True
+    assert data["success"] is False
     assert data["checkpoint_id"] == "cp-replayable"
+    assert "not implemented yet" in data["error"]
 
 
 def test_rerun_step_rejects_non_replayable_checkpoint(
@@ -2688,3 +2756,50 @@ def test_search_cache_clear_removes_all_entries(
     # Verify all entries are gone
     stats_response = client.get("/api/search-cache/stats")
     assert stats_response.json()["total_entries"] == 0
+
+
+def test_benchmark_runs_endpoint_honors_env_override(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Benchmark run APIs should read from BENCHMARK_RUNS_DIR when it is set."""
+    benchmark_runs_dir = tmp_path / "custom-benchmark-runs"
+    run_dir = benchmark_runs_dir / "run-001"
+    run_dir.mkdir(parents=True)
+
+    (run_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": "run-001",
+                "corpus_version": "test-corpus",
+                "generated_at": "2026-04-11T00:00:00+00:00",
+                "configuration": {"mode": "smoke"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "scorecard.json").write_text(
+        json.dumps(
+            {
+                "total_cases": 3,
+                "average_validation_score": 0.91,
+                "average_latency_ms": 1200,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("BENCHMARK_RUNS_DIR", str(benchmark_runs_dir))
+
+    client = TestClient(create_app())
+    response = client.get("/api/benchmarks/runs")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert data["runs"][0]["run_id"] == "run-001"
+    assert data["runs"][0]["corpus_version"] == "test-corpus"
+
+    detail_response = client.get("/api/benchmarks/runs/run-001")
+    assert detail_response.status_code == 200
+    assert detail_response.json()["configuration"] == {"mode": "smoke"}

@@ -312,12 +312,13 @@ def register_content_gen_routes(
         if resume_error:
             return JSONResponse(status_code=400, content={"error": resume_error})
 
-        # Create a new job for the resumed run
-        new_job = job_registry.create_job(
+        # Create a distinct job for each resume attempt so concurrent retries
+        # cannot overwrite one another in the registry.
+        new_job = job_registry.create_resume_job(
+            pipeline_id,
             theme=job.theme,
             from_stage=request.from_stage,
             to_stage=end,
-            pipeline_id=f"{pipeline_id}-resume",
         )
         # Carry forward existing context
         job_registry.update_context(new_job.pipeline_id, ctx)

@@ -21,6 +21,7 @@ export function findSelectedIdeaId(ctx: PipelineContext): string | null {
     ctx.scoring?.selected_idea_id ||
     ctx.angles?.idea_id ||
     ctx.research_pack?.idea_id ||
+    ctx.argument_map?.idea_id ||
     ctx.visual_plan?.idea_id ||
     ctx.production_brief?.idea_id ||
     ctx.packaging?.idea_id ||
