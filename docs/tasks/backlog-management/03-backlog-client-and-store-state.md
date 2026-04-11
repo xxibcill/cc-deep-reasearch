@@ -1,6 +1,6 @@
 # Task 03: Add Backlog Client And Store State
 
-Status: Planned
+Status: Done
 
 Phase:
 Phase 1 - Backlog Visibility
