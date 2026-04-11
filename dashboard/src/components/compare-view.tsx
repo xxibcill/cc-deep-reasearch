@@ -41,13 +41,7 @@ interface MetricValueProps {
   tone?: 'default' | 'positive' | 'negative' | 'neutral'
 }
 
-function MetricValue({
-  label,
-  value,
-  delta,
-  formatter,
-  tone = 'default',
-}: MetricValueProps) {
+function MetricValue({ label, value, delta, formatter, tone = 'default' }: MetricValueProps) {
   const displayValue = value == null ? 'N/A' : value
   const displayDelta = delta == null ? null : formatter ? formatter(delta) : formatCountDelta(delta)
   const deltaColor =
@@ -68,13 +62,7 @@ function MetricValue({
   )
 }
 
-function SessionCard({
-  session,
-  title,
-}: {
-  session: Session | null
-  title: string
-}) {
+function SessionCard({ session, title }: { session: Session | null; title: string }) {
   if (!session) {
     return (
       <Card className="border-dashed">
@@ -131,7 +119,9 @@ function SessionCard({
           <MetricValue label="Status" value={session.status} />
           <MetricValue
             label="Depth"
-            value={session.depth ? session.depth.charAt(0).toUpperCase() + session.depth.slice(1) : 'N/A'}
+            value={
+              session.depth ? session.depth.charAt(0).toUpperCase() + session.depth.slice(1) : 'N/A'
+            }
           />
           <MetricValue label="Sources" value={session.totalSources} />
           <MetricValue
@@ -409,7 +399,11 @@ function DeltaColumn({
         </CardContent>
       </Card>
 
-      <ComparisonContext sessionB={pair.sessionB} baselineFit={baselineFit} suggestions={suggestions} />
+      <ComparisonContext
+        sessionB={pair.sessionB}
+        baselineFit={baselineFit}
+        suggestions={suggestions}
+      />
     </div>
   )
 }
@@ -422,8 +416,12 @@ interface CompareViewProps {
 export function CompareView({ sessionIdA, sessionIdB }: CompareViewProps) {
   const [sessionA, setSessionA] = useState<Session | null>(null)
   const [sessionB, setSessionB] = useState<Session | null>(null)
-  const [sessionAPromptMetadata, setSessionAPromptMetadata] = useState<SessionPromptMetadata | undefined>()
-  const [sessionBPromptMetadata, setSessionBPromptMetadata] = useState<SessionPromptMetadata | undefined>()
+  const [sessionAPromptMetadata, setSessionAPromptMetadata] = useState<
+    SessionPromptMetadata | undefined
+  >()
+  const [sessionBPromptMetadata, setSessionBPromptMetadata] = useState<
+    SessionPromptMetadata | undefined
+  >()
   const [recentSessions, setRecentSessions] = useState<Session[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -475,21 +473,17 @@ export function CompareView({ sessionIdA, sessionIdB }: CompareViewProps) {
 
   const pair: SessionPair = { sessionA, sessionB }
   const rankedBaselines = useMemo(
-    () =>
-      suggestBaselineSessions(
-        sessionB,
-        recentSessions,
-        { limit: 3 }
-      ),
-    [recentSessions, sessionB]
+    () => suggestBaselineSessions(sessionB, recentSessions, { limit: 3 }),
+    [recentSessions, sessionB],
   )
   const baselineSuggestions = useMemo(
-    () => rankedBaselines.filter((suggestion) => suggestion.session.sessionId !== sessionA?.sessionId),
-    [rankedBaselines, sessionA?.sessionId]
+    () =>
+      rankedBaselines.filter((suggestion) => suggestion.session.sessionId !== sessionA?.sessionId),
+    [rankedBaselines, sessionA?.sessionId],
   )
   const baselineFit = useMemo(
     () => describeBaselineFit(sessionA, sessionB, rankedBaselines),
-    [rankedBaselines, sessionA, sessionB]
+    [rankedBaselines, sessionA, sessionB],
   )
 
   if (loading) {
@@ -501,8 +495,10 @@ export function CompareView({ sessionIdA, sessionIdB }: CompareViewProps) {
             <Badge variant="outline">Loading comparison</Badge>
           </div>
           <div>
-            <CardTitle as="h1" className="text-[1.75rem]">Session Comparison</CardTitle>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+            <CardTitle as="h1" className="text-[1.75rem]">
+              Session Comparison
+            </CardTitle>
+            <p className="mt-2  text-sm leading-6 text-muted-foreground">
               Loading the baseline, comparison session, and recent-run context.
             </p>
           </div>
@@ -572,18 +568,17 @@ export function CompareView({ sessionIdA, sessionIdB }: CompareViewProps) {
                 </Badge>
               </div>
               <div>
-                <CardTitle as="h1" className="text-[1.75rem]">Session Comparison</CardTitle>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
+                <CardTitle as="h1" className="text-[1.75rem]">
+                  Session Comparison
+                </CardTitle>
+                <p className="mt-2  text-sm leading-6 text-muted-foreground">
                   Compare a baseline session against a second run without decoding raw telemetry by
                   hand first. This view now scores the baseline context, summarizes likely impact,
                   and points to the next inspection path.
                 </p>
               </div>
             </div>
-            <Link
-              href="/"
-              className={buttonVariants({ variant: 'outline', size: 'sm' })}
-            >
+            <Link href="/" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
               <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
               Back to Sessions
             </Link>

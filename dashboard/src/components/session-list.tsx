@@ -1,7 +1,7 @@
-'use client';
+'use client'
 
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import {
   Activity,
   AlertCircle,
@@ -18,24 +18,24 @@ import {
   CheckCircle2,
   ShieldAlert,
   Sparkles,
-} from 'lucide-react';
+} from 'lucide-react'
 
-import { BulkSessionDeleteResponse, Session, SessionListQueryState } from '@/types/telemetry';
-import { AlertDialog } from '@/components/ui/alert-dialog';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { EmptyState } from '@/components/ui/empty-state';
-import { SkeletonSessionCard } from '@/components/ui/skeleton';
-import { getErrorGuidance } from '@/lib/error-messages';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import { useNotifications } from '@/components/ui/notification-center';
-import { Select } from '@/components/ui/select';
-import { SavedViewControls } from '@/components/saved-view-controls';
-import { ResearchContentActions } from '@/components/research-content-actions';
-import useDashboardStore, { DEFAULT_SESSION_LIST_QUERY } from '@/hooks/useDashboard';
+import { BulkSessionDeleteResponse, Session, SessionListQueryState } from '@/types/telemetry'
+import { AlertDialog } from '@/components/ui/alert-dialog'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { EmptyState } from '@/components/ui/empty-state'
+import { SkeletonSessionCard } from '@/components/ui/skeleton'
+import { getErrorGuidance } from '@/lib/error-messages'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { useNotifications } from '@/components/ui/notification-center'
+import { Select } from '@/components/ui/select'
+import { SavedViewControls } from '@/components/saved-view-controls'
+import { ResearchContentActions } from '@/components/research-content-actions'
+import useDashboardStore, { DEFAULT_SESSION_LIST_QUERY } from '@/hooks/useDashboard'
 import {
   archiveSession,
   bulkDeleteSessions,
@@ -44,241 +44,245 @@ import {
   getSessionPurgeSummary,
   purgeArchivedSessions,
   restoreSession,
-} from '@/lib/api';
-import { buildResearchContentBridgePayloadFromSession } from '@/lib/research-content-bridge';
-import { suggestBaselineSessions } from '@/lib/compare-utils';
-import {
-  areSessionListQueriesEqual,
-  sanitizeSessionListQuery,
-} from '@/lib/saved-views';
+} from '@/lib/api'
+import { buildResearchContentBridgePayloadFromSession } from '@/lib/research-content-bridge'
+import { suggestBaselineSessions } from '@/lib/compare-utils'
+import { areSessionListQueriesEqual, sanitizeSessionListQuery } from '@/lib/saved-views'
 
-const sessionStatusOptions = ['completed', 'failed', 'interrupted', 'running', 'unknown'];
-const SESSION_LIST_VIEW_STORAGE_KEY = 'ccdr.dashboard.saved-session-list-views';
+const sessionStatusOptions = ['completed', 'failed', 'interrupted', 'running', 'unknown']
+const SESSION_LIST_VIEW_STORAGE_KEY = 'ccdr.dashboard.saved-session-list-views'
 
 function sanitizeSessionListSavedView(value: unknown): SessionListQueryState {
-  return sanitizeSessionListQuery(value, sessionStatusOptions);
+  return sanitizeSessionListQuery(value, sessionStatusOptions)
 }
 
 interface SessionListProps {
-  error?: string | null;
-  loading: boolean;
-  loadingMore: boolean;
-  loadMoreError?: string | null;
-  nextCursor: string | null;
-  onLoadMore?: () => void;
-  onRetry?: () => void;
-  onRefresh?: () => void;
-  sessions: Session[];
-  total: number;
+  error?: string | null
+  loading: boolean
+  loadingMore: boolean
+  loadMoreError?: string | null
+  nextCursor: string | null
+  onLoadMore?: () => void
+  onRetry?: () => void
+  onRefresh?: () => void
+  sessions: Session[]
+  total: number
 }
 
 interface DeleteDialogState {
-  mode: 'single' | 'bulk' | null;
-  sessions: Session[];
-  deleting: boolean;
-  forceDelete: boolean;
+  mode: 'single' | 'bulk' | null
+  sessions: Session[]
+  deleting: boolean
+  forceDelete: boolean
 }
 
 interface SessionCardProps {
-  session: Session;
-  selected: boolean;
-  compareMode: boolean;
-  compareSelected: boolean;
-  compareSlot: 'A' | 'B' | null;
-  compareLocked: boolean;
-  onDelete: (session: Session) => void;
-  onToggleSelection: (sessionId: string) => void;
-  onToggleCompare: (sessionId: string) => void;
-  onArchive?: (session: Session) => void;
-  onRestore?: (session: Session) => void;
+  session: Session
+  selected: boolean
+  compareMode: boolean
+  compareSelected: boolean
+  compareSlot: 'A' | 'B' | null
+  compareLocked: boolean
+  onDelete: (session: Session) => void
+  onToggleSelection: (sessionId: string) => void
+  onToggleCompare: (sessionId: string) => void
+  onArchive?: (session: Session) => void
+  onRestore?: (session: Session) => void
 }
 
 function formatTimestamp(value: string | null): string {
   if (!value) {
-    return 'Unknown';
+    return 'Unknown'
   }
 
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 
 function formatDepth(value: string | null): string {
   if (!value) {
-    return 'Unknown depth';
+    return 'Unknown depth'
   }
-  return value.charAt(0).toUpperCase() + value.slice(1);
+  return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
 function pluralize(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+  return `${count} ${noun}${count === 1 ? '' : 's'}`
 }
 
 function buildFilterSummary(query: SessionListQueryState): string {
-  const parts: string[] = [];
+  const parts: string[] = []
 
   if (query.search.trim()) {
-    parts.push(`search "${query.search.trim()}"`);
+    parts.push(`search "${query.search.trim()}"`)
   }
   if (query.status) {
-    parts.push(`status ${query.status}`);
+    parts.push(`status ${query.status}`)
   }
   if (query.activeOnly) {
-    parts.push('active-only view');
+    parts.push('active-only view')
   }
 
-  return parts.length > 0 ? parts.join(' • ') : 'all visible sessions';
+  return parts.length > 0 ? parts.join(' • ') : 'all visible sessions'
 }
 
 function matchesVisibleSession(session: Session, query: SessionListQueryState): boolean {
   if (query.activeOnly && !session.active) {
-    return false;
+    return false
   }
   if (query.archivedOnly && !session.archived) {
-    return false;
+    return false
   }
   if (query.status && session.status !== query.status) {
-    return false;
+    return false
   }
 
-  const search = query.search.trim().toLowerCase();
+  const search = query.search.trim().toLowerCase()
   if (!search) {
-    return true;
+    return true
   }
 
   return [session.sessionId, session.label, session.query ?? ''].some((value) =>
-    value.toLowerCase().includes(search)
-  );
+    value.toLowerCase().includes(search),
+  )
 }
 
 function buildBulkFailureSummary(
   failedCount: number,
   activeConflictCount: number,
-  partialFailureCount: number
+  partialFailureCount: number,
 ): string {
-  const parts: string[] = [];
+  const parts: string[] = []
 
   if (activeConflictCount > 0) {
-    parts.push(pluralize(activeConflictCount, 'active conflict'));
+    parts.push(pluralize(activeConflictCount, 'active conflict'))
   }
   if (partialFailureCount > 0) {
-    parts.push(pluralize(partialFailureCount, 'partial failure'));
+    parts.push(pluralize(partialFailureCount, 'partial failure'))
   }
   if (failedCount > 0) {
-    parts.push(pluralize(failedCount, 'failed delete'));
+    parts.push(pluralize(failedCount, 'failed delete'))
   }
 
-  return parts.join(', ');
+  return parts.join(', ')
 }
 
 function shouldPromptBulkForceDelete(
   response: BulkSessionDeleteResponse,
-  forceDelete: boolean
+  forceDelete: boolean,
 ): boolean {
-  return !forceDelete && response.summary.active_conflict_count > 0;
+  return !forceDelete && response.summary.active_conflict_count > 0
 }
 
 function buildBulkDeleteAttentionMessage(
   response: BulkSessionDeleteResponse,
   remainingCount: number,
   deletedCount: number,
-  forceRetryAvailable: boolean
+  forceRetryAvailable: boolean,
 ): string {
   const failureSummary = buildBulkFailureSummary(
     response.summary.failed_count,
     response.summary.active_conflict_count,
-    response.summary.partial_failure_count
-  );
-  const deletedSummary =
-    deletedCount > 0 ? `Deleted ${pluralize(deletedCount, 'session')}. ` : '';
-  const attentionSummary = `${deletedSummary}${pluralize(remainingCount, 'session')} still require attention: ${failureSummary}.`;
+    response.summary.partial_failure_count,
+  )
+  const deletedSummary = deletedCount > 0 ? `Deleted ${pluralize(deletedCount, 'session')}. ` : ''
+  const attentionSummary = `${deletedSummary}${pluralize(remainingCount, 'session')} still require attention: ${failureSummary}.`
 
   if (!forceRetryAvailable) {
-    return attentionSummary;
+    return attentionSummary
   }
 
   const retrySummary =
     response.summary.active_conflict_count === remainingCount
       ? 'Review and confirm force delete to stop the running processes.'
-      : 'Review and confirm force delete to stop any still-running sessions.';
+      : 'Review and confirm force delete to stop any still-running sessions.'
 
-  return `${attentionSummary} ${retrySummary}`;
+  return `${attentionSummary} ${retrySummary}`
 }
 
 interface SessionGroup {
-  title: string;
-  description: string;
-  icon: React.ElementType;
-  sessions: Session[];
-  variant: 'default' | 'warning' | 'success';
+  title: string
+  description: string
+  icon: React.ElementType
+  sessions: Session[]
+  variant: 'default' | 'warning' | 'success'
 }
 
 interface SessionTriageMeta {
-  label: string;
-  summary: string;
-  badgeVariant: 'info' | 'warning' | 'success' | 'outline';
+  label: string
+  summary: string
+  badgeVariant: 'info' | 'warning' | 'success' | 'outline'
 }
 
 function getSessionTriageMeta(session: Session): SessionTriageMeta {
   if (session.active) {
     return {
       label: 'Active',
-      summary: 'Live session. Best candidate for monitor-first triage or an in-flight compare baseline.',
+      summary:
+        'Live session. Best candidate for monitor-first triage or an in-flight compare baseline.',
       badgeVariant: 'info',
-    };
+    }
   }
 
   if (session.status === 'failed' || session.status === 'interrupted') {
     return {
       label: 'Needs attention',
-      summary: 'Failure-state session. Prioritize review, compare, or archive only after investigation.',
+      summary:
+        'Failure-state session. Prioritize review, compare, or archive only after investigation.',
       badgeVariant: 'warning',
-    };
+    }
   }
 
   if (session.archived) {
     return {
       label: 'Archived',
-      summary: 'Kept for record or retrospective comparison, but removed from the active working set.',
+      summary:
+        'Kept for record or retrospective comparison, but removed from the active working set.',
       badgeVariant: 'outline',
-    };
+    }
   }
 
   if (session.hasReport) {
     return {
       label: 'Report ready',
-      summary: 'Finished cleanly with artifacts available. Good candidate for compare or downstream review.',
+      summary:
+        'Finished cleanly with artifacts available. Good candidate for compare or downstream review.',
       badgeVariant: 'success',
-    };
+    }
   }
 
   return {
     label: 'Recent history',
-    summary: 'Completed session without a report artifact. Keep it for trace review or lightweight reference.',
+    summary:
+      'Completed session without a report artifact. Keep it for trace review or lightweight reference.',
     badgeVariant: 'outline',
-  };
+  }
 }
 
 function categorizeSessions(sessions: Session[]): SessionGroup[] {
-  const activeSessions = sessions.filter((s) => s.active);
+  const activeSessions = sessions.filter((s) => s.active)
   const attentionSessions = sessions.filter(
-    (s) => !s.active && (s.status === 'failed' || s.status === 'interrupted')
-  );
+    (s) => !s.active && (s.status === 'failed' || s.status === 'interrupted'),
+  )
   const reportReadySessions = sessions.filter(
-    (s) => !s.active && !s.archived && s.hasReport && s.status !== 'failed' && s.status !== 'interrupted'
-  );
-  const archivedSessions = sessions.filter(
-    (s) => !s.active && Boolean(s.archived)
-  );
+    (s) =>
+      !s.active &&
+      !s.archived &&
+      s.hasReport &&
+      s.status !== 'failed' &&
+      s.status !== 'interrupted',
+  )
+  const archivedSessions = sessions.filter((s) => !s.active && Boolean(s.archived))
   const historySessions = sessions.filter(
     (s) =>
       !s.active &&
       s.status !== 'failed' &&
       s.status !== 'interrupted' &&
       !s.archived &&
-      !s.hasReport
-  );
+      !s.hasReport,
+  )
 
-  const groups: SessionGroup[] = [];
+  const groups: SessionGroup[] = []
 
   if (activeSessions.length > 0) {
     groups.push({
@@ -287,7 +291,7 @@ function categorizeSessions(sessions: Session[]): SessionGroup[] {
       icon: Play,
       sessions: activeSessions,
       variant: 'default',
-    });
+    })
   }
 
   if (attentionSessions.length > 0) {
@@ -297,7 +301,7 @@ function categorizeSessions(sessions: Session[]): SessionGroup[] {
       icon: AlertCircle,
       sessions: attentionSessions,
       variant: 'warning',
-    });
+    })
   }
 
   if (reportReadySessions.length > 0) {
@@ -307,7 +311,7 @@ function categorizeSessions(sessions: Session[]): SessionGroup[] {
       icon: CheckCircle2,
       sessions: reportReadySessions,
       variant: 'success',
-    });
+    })
   }
 
   if (archivedSessions.length > 0) {
@@ -317,7 +321,7 @@ function categorizeSessions(sessions: Session[]): SessionGroup[] {
       icon: Archive,
       sessions: archivedSessions,
       variant: 'default',
-    });
+    })
   }
 
   if (historySessions.length > 0) {
@@ -327,10 +331,10 @@ function categorizeSessions(sessions: Session[]): SessionGroup[] {
       icon: Activity,
       sessions: historySessions,
       variant: 'default',
-    });
+    })
   }
 
-  return groups;
+  return groups
 }
 
 function SessionCard({
@@ -346,12 +350,12 @@ function SessionCard({
   onArchive,
   onRestore,
 }: SessionCardProps) {
-  const timeLabel = session.completedAt ? 'Completed' : 'Last event';
-  const timeValue = session.completedAt ?? session.lastEventAt;
-  const showsQuery = session.query && session.query !== session.label;
-  const isArchived = session.archived;
-  const [expanded, setExpanded] = useState(false);
-  const triage = getSessionTriageMeta(session);
+  const timeLabel = session.completedAt ? 'Completed' : 'Last event'
+  const timeValue = session.completedAt ?? session.lastEventAt
+  const showsQuery = session.query && session.query !== session.label
+  const isArchived = session.archived
+  const [expanded, setExpanded] = useState(false)
+  const triage = getSessionTriageMeta(session)
   const compareSelectionLabel =
     compareSlot === 'A'
       ? 'Baseline'
@@ -359,12 +363,12 @@ function SessionCard({
         ? 'Comparison'
         : compareLocked
           ? 'Selection full'
-          : 'Compare';
+          : 'Compare'
   const compareSelectionTitle = compareSelected
     ? `Remove ${session.label} from comparison`
     : compareLocked
       ? 'Two sessions are already selected. Deselect one to change the pair.'
-      : 'Select for comparison';
+      : 'Select for comparison'
 
   return (
     <article className="group relative overflow-hidden rounded-[1.2rem] border border-border/80 bg-[linear-gradient(180deg,rgba(19,34,38,0.9),rgba(16,27,31,0.94))] p-4 shadow-card transition-all duration-200 hover:-translate-y-px hover:shadow-card-raised">
@@ -429,12 +433,12 @@ function SessionCard({
                 {session.sessionId}
               </p>
 
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
-                {showsQuery ? session.query : 'Research session with telemetry, routing, and output history available for inspection.'}
+              <p className="mt-3  text-sm leading-6 text-muted-foreground">
+                {showsQuery
+                  ? session.query
+                  : 'Research session with telemetry, routing, and output history available for inspection.'}
               </p>
-              <p className="mt-2 text-sm leading-6 text-foreground/86">
-                {triage.summary}
-              </p>
+              <p className="mt-2 text-sm leading-6 text-foreground/86">{triage.summary}</p>
             </div>
           </div>
 
@@ -499,7 +503,7 @@ function SessionCard({
               payload={buildResearchContentBridgePayloadFromSession(
                 session.sessionId,
                 session,
-                'home'
+                'home',
               )}
               orientation="column"
               primaryIntent="pipeline"
@@ -576,18 +580,18 @@ function SessionCard({
         </div>
       ) : null}
     </article>
-  );
+  )
 }
 
 function SessionFilters() {
-  const query = useDashboardStore((state) => state.sessionListQuery);
-  const setSessionListQuery = useDashboardStore((state) => state.setSessionListQuery);
-  const normalizedQuery = sanitizeSessionListSavedView(query);
+  const query = useDashboardStore((state) => state.sessionListQuery)
+  const setSessionListQuery = useDashboardStore((state) => state.setSessionListQuery)
+  const normalizedQuery = sanitizeSessionListSavedView(query)
   const hasFilters =
-    normalizedQuery.search.trim().length > 0
-    || normalizedQuery.status.length > 0
-    || normalizedQuery.activeOnly
-    || normalizedQuery.archivedOnly;
+    normalizedQuery.search.trim().length > 0 ||
+    normalizedQuery.status.length > 0 ||
+    normalizedQuery.activeOnly ||
+    normalizedQuery.archivedOnly
 
   return (
     <div className="rounded-[1.2rem] border border-border/80 bg-surface/68 p-4 shadow-card">
@@ -662,7 +666,9 @@ function SessionFilters() {
               type="button"
               size="sm"
               variant={query.activeOnly ? 'default' : 'outline'}
-              onClick={() => setSessionListQuery({ activeOnly: !query.activeOnly, archivedOnly: false })}
+              onClick={() =>
+                setSessionListQuery({ activeOnly: !query.activeOnly, archivedOnly: false })
+              }
               title="Show only active sessions"
             >
               <Play className="h-3 w-3" />
@@ -671,7 +677,9 @@ function SessionFilters() {
               type="button"
               size="sm"
               variant={query.archivedOnly ? 'default' : 'outline'}
-              onClick={() => setSessionListQuery({ archivedOnly: !query.archivedOnly, activeOnly: false })}
+              onClick={() =>
+                setSessionListQuery({ archivedOnly: !query.archivedOnly, activeOnly: false })
+              }
               title="Show only archived sessions"
             >
               <Archive className="h-3 w-3" />
@@ -680,7 +688,7 @@ function SessionFilters() {
         </div>
       </div>
     </div>
-  );
+  )
 }
 
 function LoadingState() {
@@ -690,11 +698,11 @@ function LoadingState() {
         <SkeletonSessionCard key={i} />
       ))}
     </div>
-  );
+  )
 }
 
 function ErrorState({ error, onRetry }: { error: string; onRetry?: () => void }) {
-  const { guidance } = getErrorGuidance(error);
+  const { guidance } = getErrorGuidance(error)
   return (
     <Alert variant="destructive" className="rounded-[1.2rem]">
       <div className="flex items-start gap-3">
@@ -702,9 +710,7 @@ function ErrorState({ error, onRetry }: { error: string; onRetry?: () => void })
         <div className="space-y-2">
           <AlertTitle>Failed to load sessions</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
-          {guidance && (
-            <p className="text-xs text-muted-foreground">{guidance}</p>
-          )}
+          {guidance && <p className="text-xs text-muted-foreground">{guidance}</p>}
           {onRetry ? (
             <Button onClick={onRetry} type="button" variant="outline" size="sm">
               Retry
@@ -713,7 +719,7 @@ function ErrorState({ error, onRetry }: { error: string; onRetry?: () => void })
         </div>
       </div>
     </Alert>
-  );
+  )
 }
 
 export function SessionList({
@@ -728,69 +734,72 @@ export function SessionList({
   sessions,
   total,
 }: SessionListProps) {
-  const { notify } = useNotifications();
+  const { notify } = useNotifications()
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>({
     mode: null,
     sessions: [],
     deleting: false,
     forceDelete: false,
-  });
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  })
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [purgeSummary, setPurgeSummary] = useState<{
-    archived_sessions_count: number;
-    no_artifacts_count: number;
-    active_count: number;
-    recommendations: Array<{ category: string; description: string; action: string; count: number }>;
-  } | null>(null);
-  const [purgeLoading, setPurgeLoading] = useState(false);
-  const [showPurgeDialog, setShowPurgeDialog] = useState(false);
-  const [purgeDryRun, setPurgeDryRun] = useState(true);
-  const query = useDashboardStore((state) => state.sessionListQuery);
-  const selectedSessionIds = useDashboardStore((state) => state.selectedSessionIds);
-  const toggleSessionSelection = useDashboardStore((state) => state.toggleSessionSelection);
-  const setSelectedSessionIds = useDashboardStore((state) => state.setSelectedSessionIds);
-  const clearSessionSelection = useDashboardStore((state) => state.clearSessionSelection);
-  const removeSession = useDashboardStore((state) => state.removeSession);
-  const removeSessions = useDashboardStore((state) => state.removeSessions);
-  const setSessionListQuery = useDashboardStore((state) => state.setSessionListQuery);
-  const compareMode = useDashboardStore((state) => state.compareMode);
-  const setCompareMode = useDashboardStore((state) => state.setCompareMode);
-  const compareSessionIds = useDashboardStore((state) => state.compareSessionIds);
-  const setCompareSessionIds = useDashboardStore((state) => state.setCompareSessionIds);
-  const toggleCompareSessionId = useDashboardStore((state) => state.toggleCompareSessionId);
-  const clearCompareSessionIds = useDashboardStore((state) => state.clearCompareSessionIds);
+    archived_sessions_count: number
+    no_artifacts_count: number
+    active_count: number
+    recommendations: Array<{ category: string; description: string; action: string; count: number }>
+  } | null>(null)
+  const [purgeLoading, setPurgeLoading] = useState(false)
+  const [showPurgeDialog, setShowPurgeDialog] = useState(false)
+  const [purgeDryRun, setPurgeDryRun] = useState(true)
+  const query = useDashboardStore((state) => state.sessionListQuery)
+  const selectedSessionIds = useDashboardStore((state) => state.selectedSessionIds)
+  const toggleSessionSelection = useDashboardStore((state) => state.toggleSessionSelection)
+  const setSelectedSessionIds = useDashboardStore((state) => state.setSelectedSessionIds)
+  const clearSessionSelection = useDashboardStore((state) => state.clearSessionSelection)
+  const removeSession = useDashboardStore((state) => state.removeSession)
+  const removeSessions = useDashboardStore((state) => state.removeSessions)
+  const setSessionListQuery = useDashboardStore((state) => state.setSessionListQuery)
+  const compareMode = useDashboardStore((state) => state.compareMode)
+  const setCompareMode = useDashboardStore((state) => state.setCompareMode)
+  const compareSessionIds = useDashboardStore((state) => state.compareSessionIds)
+  const setCompareSessionIds = useDashboardStore((state) => state.setCompareSessionIds)
+  const toggleCompareSessionId = useDashboardStore((state) => state.toggleCompareSessionId)
+  const clearCompareSessionIds = useDashboardStore((state) => state.clearCompareSessionIds)
   const filtered =
-    query.search.trim().length > 0 || query.status.length > 0 || query.activeOnly || query.archivedOnly;
+    query.search.trim().length > 0 ||
+    query.status.length > 0 ||
+    query.activeOnly ||
+    query.archivedOnly
 
   useEffect(() => {
     async function loadPurgeSummary() {
       try {
-        const summary = await getSessionPurgeSummary();
-        setPurgeSummary(summary);
+        const summary = await getSessionPurgeSummary()
+        setPurgeSummary(summary)
       } catch {
-        setPurgeSummary(null);
+        setPurgeSummary(null)
       }
     }
-    loadPurgeSummary();
-  }, []);
+    loadPurgeSummary()
+  }, [])
 
   const handlePurgeClick = async (dryRun: boolean) => {
-    setPurgeLoading(true);
+    setPurgeLoading(true)
     try {
-      const result = await purgeArchivedSessions(dryRun, false);
+      const result = await purgeArchivedSessions(dryRun, false)
       if (dryRun) {
         notify({
           variant: 'info',
           title: 'Purge Preview',
           description: result.message,
-        });
+        })
       } else {
         notify({
           variant: 'success',
           title: 'Purge Complete',
           description: `Deleted ${result.deleted} archived session(s)`,
-        });
-        refreshSessions();
+        })
+        refreshSessions()
       }
     } catch (requestError) {
       notify({
@@ -798,71 +807,74 @@ export function SessionList({
         persistent: true,
         title: 'Purge Failed',
         description: getApiErrorMessage(requestError, 'Failed to purge archived sessions'),
-      });
+      })
     } finally {
-      setPurgeLoading(false);
-      setShowPurgeDialog(false);
+      setPurgeLoading(false)
+      setShowPurgeDialog(false)
     }
-  };
+  }
 
-  const compareSessionIdSet = new Set(compareSessionIds.filter(Boolean) as string[]);
-  const canViewComparison = compareSessionIdSet.size === 2;
-  const [sessionA, sessionB] = compareSessionIds;
-  const compareBaseline = sessions.find((session) => session.sessionId === sessionA) ?? null;
-  const compareCandidate = sessions.find((session) => session.sessionId === sessionB) ?? null;
-  const compareAssistTarget = compareSessionIdSet.size === 1 ? compareBaseline : compareCandidate;
+  const compareSessionIdSet = new Set(compareSessionIds.filter(Boolean) as string[])
+  const canViewComparison = compareSessionIdSet.size === 2
+  const [sessionA, sessionB] = compareSessionIds
+  const compareBaseline = sessions.find((session) => session.sessionId === sessionA) ?? null
+  const compareCandidate = sessions.find((session) => session.sessionId === sessionB) ?? null
+  const compareAssistTarget = compareSessionIdSet.size === 1 ? compareBaseline : compareCandidate
   const baselineSuggestions = compareMode
     ? suggestBaselineSessions(
         compareAssistTarget,
         sessions.filter((session) => session.sessionId !== sessionA),
-        { limit: 3 }
+        { limit: 3 },
       )
-    : [];
-  const suggestedBaseline = baselineSuggestions[0] ?? null;
+    : []
+  const suggestedBaseline = baselineSuggestions[0] ?? null
   const shouldOfferSuggestedBaseline =
     compareMode &&
     compareSessionIdSet.size === 1 &&
     compareBaseline &&
     suggestedBaseline &&
     suggestedBaseline.session.sessionId !== compareBaseline.sessionId &&
-    (
-      compareBaseline.active
-      || compareBaseline.status !== 'completed'
-      || !compareBaseline.hasReport
-      || suggestedBaseline.confidence === 'high'
-    );
+    (compareBaseline.active ||
+      compareBaseline.status !== 'completed' ||
+      !compareBaseline.hasReport ||
+      suggestedBaseline.confidence === 'high')
   const shouldOfferBaselineSwitch =
     compareMode &&
     compareSessionIdSet.size === 2 &&
     compareCandidate &&
     suggestedBaseline &&
     suggestedBaseline.session.sessionId !== sessionA &&
-    suggestedBaseline.confidence !== 'low';
+    suggestedBaseline.confidence !== 'low'
 
-  const visibleSessions = sessions.filter((session) => matchesVisibleSession(session, query));
-  const selectedSessionIdSet = new Set(selectedSessionIds);
-  const selectableSessions = visibleSessions.filter((session) => !session.active);
+  const visibleSessions = sessions.filter((session) => matchesVisibleSession(session, query))
+  const selectedSessionIdSet = new Set(selectedSessionIds)
+  const selectableSessions = visibleSessions.filter((session) => !session.active)
   const selectedSessions = selectableSessions.filter((session) =>
-    selectedSessionIdSet.has(session.sessionId)
-  );
+    selectedSessionIdSet.has(session.sessionId),
+  )
   const allSelectableSelected =
-    selectableSessions.length > 0 && selectedSessions.length === selectableSessions.length;
+    selectableSessions.length > 0 && selectedSessions.length === selectableSessions.length
 
   const handleDeleteClick = (session: Session) => {
-    setDeleteDialog({ mode: 'single', sessions: [session], deleting: false, forceDelete: false });
-    setDeleteError(null);
-  };
+    setDeleteDialog({ mode: 'single', sessions: [session], deleting: false, forceDelete: false })
+    setDeleteError(null)
+  }
 
   const handleBulkDeleteClick = () => {
     if (selectedSessions.length === 0) {
-      return;
+      return
     }
-    setDeleteDialog({ mode: 'bulk', sessions: selectedSessions, deleting: false, forceDelete: false });
-    setDeleteError(null);
-  };
+    setDeleteDialog({
+      mode: 'bulk',
+      sessions: selectedSessions,
+      deleting: false,
+      forceDelete: false,
+    })
+    setDeleteError(null)
+  }
 
   const handleArchive = async (session: Session) => {
-    const result = await archiveSession(session.sessionId);
+    const result = await archiveSession(session.sessionId)
     if (result.success) {
       notify({
         variant: 'success',
@@ -874,9 +886,9 @@ export function SessionList({
             href: `/session/${session.sessionId}`,
           },
         ],
-      });
-      refreshSessions();
-      return;
+      })
+      refreshSessions()
+      return
     }
 
     notify({
@@ -890,11 +902,11 @@ export function SessionList({
           href: `/session/${session.sessionId}`,
         },
       ],
-    });
-  };
+    })
+  }
 
   const handleRestore = async (session: Session) => {
-    const result = await restoreSession(session.sessionId);
+    const result = await restoreSession(session.sessionId)
     if (result.success) {
       notify({
         variant: 'success',
@@ -906,9 +918,9 @@ export function SessionList({
             href: `/session/${session.sessionId}`,
           },
         ],
-      });
-      refreshSessions();
-      return;
+      })
+      refreshSessions()
+      return
     }
 
     notify({
@@ -922,80 +934,80 @@ export function SessionList({
           href: `/session/${session.sessionId}`,
         },
       ],
-    });
-  };
+    })
+  }
 
   const refreshSessions = () => {
-    onRefresh?.();
-  };
+    onRefresh?.()
+  }
 
   const handleDeleteConfirm = async () => {
     if (deleteDialog.sessions.length === 0 || deleteDialog.mode === null) {
-      return;
+      return
     }
 
-    setDeleteDialog((previous) => ({ ...previous, deleting: true }));
-    setDeleteError(null);
+    setDeleteDialog((previous) => ({ ...previous, deleting: true }))
+    setDeleteError(null)
 
     if (deleteDialog.mode === 'single') {
-      const session = deleteDialog.sessions[0];
-      const result = await deleteSession(session.sessionId, deleteDialog.forceDelete);
+      const session = deleteDialog.sessions[0]
+      const result = await deleteSession(session.sessionId, deleteDialog.forceDelete)
 
       if (result.success) {
-        removeSession(session.sessionId);
-        setDeleteDialog({ mode: null, sessions: [], deleting: false, forceDelete: false });
+        removeSession(session.sessionId)
+        setDeleteDialog({ mode: null, sessions: [], deleting: false, forceDelete: false })
         notify({
           variant: 'success',
           title: 'Session deleted',
           description: `${session.label} and its stored artifacts were removed.`,
-        });
-        refreshSessions();
-        return;
+        })
+        refreshSessions()
+        return
       }
 
       if (result.activeConflict) {
         if (deleteDialog.forceDelete) {
-          setDeleteError('Failed to force delete: session is still active');
-          setDeleteDialog((previous) => ({ ...previous, deleting: false }));
-          return;
+          setDeleteError('Failed to force delete: session is still active')
+          setDeleteDialog((previous) => ({ ...previous, deleting: false }))
+          return
         }
-        setDeleteError(null);
-        setDeleteDialog((previous) => ({ ...previous, deleting: false, forceDelete: true }));
-        return;
+        setDeleteError(null)
+        setDeleteDialog((previous) => ({ ...previous, deleting: false, forceDelete: true }))
+        return
       }
 
-      setDeleteError(result.error || 'Failed to delete session');
+      setDeleteError(result.error || 'Failed to delete session')
       notify({
         variant: 'destructive',
         persistent: true,
         title: 'Delete failed',
         description: result.error || 'Failed to delete session.',
-      });
-      setDeleteDialog((previous) => ({ ...previous, deleting: false }));
-      return;
+      })
+      setDeleteDialog((previous) => ({ ...previous, deleting: false }))
+      return
     }
 
     try {
       const response = await bulkDeleteSessions(
         deleteDialog.sessions.map((session) => session.sessionId),
-        deleteDialog.forceDelete
-      );
+        deleteDialog.forceDelete,
+      )
       const removableIds = response.results
         .filter((result) => result.outcome === 'deleted' || result.outcome === 'not_found')
-        .map((result) => result.session_id);
+        .map((result) => result.session_id)
       const retainedIds = new Set(
         response.results
           .filter((result) => result.outcome !== 'deleted' && result.outcome !== 'not_found')
-          .map((result) => result.session_id)
-      );
+          .map((result) => result.session_id),
+      )
 
       if (removableIds.length > 0) {
-        removeSessions(removableIds);
-        refreshSessions();
+        removeSessions(removableIds)
+        refreshSessions()
       }
 
       if (retainedIds.size === 0) {
-        setDeleteDialog({ mode: null, sessions: [], deleting: false, forceDelete: false });
+        setDeleteDialog({ mode: null, sessions: [], deleting: false, forceDelete: false })
         notify({
           variant: 'success',
           title: 'Selected sessions deleted',
@@ -1003,29 +1015,29 @@ export function SessionList({
             removableIds.length > 0
               ? `Removed ${pluralize(removableIds.length, 'session')} from ${buildFilterSummary(query)}.`
               : 'The selected sessions were already gone.',
-        });
-        return;
+        })
+        return
       }
 
       const remainingSessions = deleteDialog.sessions.filter((session) =>
-        retainedIds.has(session.sessionId)
-      );
-      const forceRetryAvailable = shouldPromptBulkForceDelete(response, deleteDialog.forceDelete);
-      setSelectedSessionIds(remainingSessions.map((session) => session.sessionId));
+        retainedIds.has(session.sessionId),
+      )
+      const forceRetryAvailable = shouldPromptBulkForceDelete(response, deleteDialog.forceDelete)
+      setSelectedSessionIds(remainingSessions.map((session) => session.sessionId))
       setDeleteDialog({
         mode: 'bulk',
         sessions: remainingSessions,
         deleting: false,
         forceDelete: forceRetryAvailable,
-      });
+      })
       setDeleteError(
         buildBulkDeleteAttentionMessage(
           response,
           remainingSessions.length,
           removableIds.length,
-          forceRetryAvailable
-        )
-      );
+          forceRetryAvailable,
+        ),
+      )
       notify({
         variant:
           response.summary.active_conflict_count > 0 || response.summary.partial_failure_count > 0
@@ -1037,45 +1049,45 @@ export function SessionList({
           response,
           remainingSessions.length,
           removableIds.length,
-          forceRetryAvailable
+          forceRetryAvailable,
         ),
-      });
+      })
     } catch (requestError) {
-      const message = getApiErrorMessage(requestError, 'Failed to delete the selected sessions');
-      setDeleteError(message);
+      const message = getApiErrorMessage(requestError, 'Failed to delete the selected sessions')
+      setDeleteError(message)
       notify({
         variant: 'destructive',
         persistent: true,
         title: 'Bulk delete failed',
         description: message,
-      });
-      setDeleteDialog((previous) => ({ ...previous, deleting: false }));
+      })
+      setDeleteDialog((previous) => ({ ...previous, deleting: false }))
     }
-  };
+  }
 
   const handleDialogClose = (open: boolean) => {
     if (open) {
-      return;
+      return
     }
-    setDeleteDialog({ mode: null, sessions: [], deleting: false, forceDelete: false });
-    setDeleteError(null);
-  };
+    setDeleteDialog({ mode: null, sessions: [], deleting: false, forceDelete: false })
+    setDeleteError(null)
+  }
 
   const handleSelectVisible = () => {
     if (allSelectableSelected) {
-      clearSessionSelection();
-      return;
+      clearSessionSelection()
+      return
     }
-    setSelectedSessionIds(selectableSessions.map((session) => session.sessionId));
-  };
+    setSelectedSessionIds(selectableSessions.map((session) => session.sessionId))
+  }
 
   const renderDeleteDescription = () => {
-    const sessionCount = deleteDialog.sessions.length;
-    const previewSessions = deleteDialog.sessions.slice(0, 5);
-    const remainingCount = sessionCount - previewSessions.length;
+    const sessionCount = deleteDialog.sessions.length
+    const previewSessions = deleteDialog.sessions.slice(0, 5)
+    const remainingCount = sessionCount - previewSessions.length
 
     if (deleteDialog.mode === 'single') {
-      const session = deleteDialog.sessions[0];
+      const session = deleteDialog.sessions[0]
       return (
         <div className="space-y-3">
           {deleteDialog.forceDelete ? (
@@ -1084,16 +1096,16 @@ export function SessionList({
                 This session is currently active. Force deleting will stop the running process.
               </p>
               <p>
-                This will permanently delete <span className="font-medium">{session.label}</span> and
-                all associated telemetry, report, and analytics history.
+                This will permanently delete <span className="font-medium">{session.label}</span>{' '}
+                and all associated telemetry, report, and analytics history.
               </p>
               <p className="font-mono text-xs text-muted-foreground">{session.sessionId}</p>
             </>
           ) : (
             <>
               <p>
-                This will permanently delete <span className="font-medium">{session.label}</span> and
-                all associated telemetry, report, and analytics history.
+                This will permanently delete <span className="font-medium">{session.label}</span>{' '}
+                and all associated telemetry, report, and analytics history.
               </p>
               <p className="font-mono text-xs text-muted-foreground">{session.sessionId}</p>
               {deleteError ? (
@@ -1106,7 +1118,7 @@ export function SessionList({
             </>
           )}
         </div>
-      );
+      )
     }
 
     return (
@@ -1144,10 +1156,10 @@ export function SessionList({
           <p>This action cannot be undone.</p>
         )}
       </div>
-    );
-  };
+    )
+  }
 
-  const sessionGroups = categorizeSessions(visibleSessions);
+  const sessionGroups = categorizeSessions(visibleSessions)
 
   return (
     <>
@@ -1166,7 +1178,9 @@ export function SessionList({
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              {!compareMode && purgeSummary && (purgeSummary.archived_sessions_count > 0 || purgeSummary.no_artifacts_count > 0) ? (
+              {!compareMode &&
+              purgeSummary &&
+              (purgeSummary.archived_sessions_count > 0 || purgeSummary.no_artifacts_count > 0) ? (
                 <Button
                   type="button"
                   size="sm"
@@ -1197,12 +1211,7 @@ export function SessionList({
                 </Button>
               ) : null}
               {compareMode && compareSessionIdSet.size > 0 ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={clearCompareSessionIds}
-                >
+                <Button type="button" size="sm" variant="ghost" onClick={clearCompareSessionIds}>
                   Clear Selection
                 </Button>
               ) : null}
@@ -1213,7 +1222,10 @@ export function SessionList({
         <SessionFilters />
 
         {compareMode ? (
-          <Alert variant="info" className="flex flex-col gap-4 rounded-[1.15rem] lg:flex-row lg:items-center lg:justify-between">
+          <Alert
+            variant="info"
+            className="flex flex-col gap-4 rounded-[1.15rem] lg:flex-row lg:items-center lg:justify-between"
+          >
             <div className="space-y-2">
               <AlertTitle>
                 {compareSessionIdSet.size === 0
@@ -1309,14 +1321,15 @@ export function SessionList({
         ) : null}
 
         {selectedSessions.length > 0 ? (
-          <Alert variant="destructive" className="flex flex-col gap-3 rounded-[1.15rem] lg:flex-row lg:items-center lg:justify-between">
+          <Alert
+            variant="destructive"
+            className="flex flex-col gap-3 rounded-[1.15rem] lg:flex-row lg:items-center lg:justify-between"
+          >
             <div>
               <AlertTitle>
                 {pluralize(selectedSessions.length, 'session')} selected for deletion
               </AlertTitle>
-              <AlertDescription>
-                Scope: {buildFilterSummary(query)}
-              </AlertDescription>
+              <AlertDescription>Scope: {buildFilterSummary(query)}</AlertDescription>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" onClick={clearSessionSelection}>
@@ -1368,7 +1381,16 @@ export function SessionList({
                       </h3>
                       <p className="text-sm text-muted-foreground">{group.description}</p>
                     </div>
-                    <Badge variant={group.variant === 'warning' ? 'warning' : group.variant === 'success' ? 'success' : 'outline'} className="ml-auto">
+                    <Badge
+                      variant={
+                        group.variant === 'warning'
+                          ? 'warning'
+                          : group.variant === 'success'
+                            ? 'success'
+                            : 'outline'
+                      }
+                      className="ml-auto"
+                    >
                       {group.sessions.length}
                     </Badge>
                   </div>
@@ -1380,7 +1402,13 @@ export function SessionList({
                         selected={selectedSessionIdSet.has(session.sessionId)}
                         compareMode={compareMode}
                         compareSelected={compareSessionIdSet.has(session.sessionId)}
-                        compareSlot={session.sessionId === sessionA ? 'A' : session.sessionId === sessionB ? 'B' : null}
+                        compareSlot={
+                          session.sessionId === sessionA
+                            ? 'A'
+                            : session.sessionId === sessionB
+                              ? 'B'
+                              : null
+                        }
                         compareLocked={compareSessionIdSet.size >= 2}
                         onDelete={handleDeleteClick}
                         onToggleSelection={toggleSessionSelection}
@@ -1436,7 +1464,7 @@ export function SessionList({
         description={
           <div className="space-y-4">
             <p>Manage archived sessions and storage cleanup.</p>
-            
+
             {purgeSummary && (
               <div className="space-y-3">
                 <div className="rounded-[0.8rem] border border-border/70 bg-surface/50 p-4 space-y-3">
@@ -1510,5 +1538,5 @@ export function SessionList({
         onConfirm={() => {}}
       />
     </>
-  );
+  )
 }
