@@ -6,6 +6,7 @@ import type {
   StrategyMemory,
   PublishItem,
   SavedScriptRun,
+  BacklogItem,
 } from '@/types/content-gen';
 import {
   listPipelines,
@@ -19,6 +20,11 @@ import {
   updateStrategy as updateStrategyApi,
   listPublishQueue,
   removeFromQueue as removeFromQueueApi,
+  listBacklog,
+  updateBacklogItem as updateBacklogItemApi,
+  selectBacklogItem as selectBacklogItemApi,
+  archiveBacklogItem as archiveBacklogItemApi,
+  deleteBacklogItem as deleteBacklogItemApi,
 } from '@/lib/content-gen-api';
 import { getApiErrorMessage } from '@/lib/api';
 
@@ -42,6 +48,11 @@ interface ContentGenState {
   scripts: SavedScriptRun[];
   scriptsLoading: boolean;
 
+  // Backlog
+  backlog: BacklogItem[];
+  backlogPath: string | null;
+  backlogLoading: boolean;
+
   // Error state
   error: string | null;
 
@@ -63,6 +74,12 @@ interface ContentGenState {
   loadPublishQueue: () => Promise<void>;
   removeFromQueue: (ideaId: string, platform: string) => Promise<void>;
 
+  loadBacklog: () => Promise<void>;
+  updateBacklogItem: (ideaId: string, patch: Record<string, unknown>) => Promise<void>;
+  selectBacklogItem: (ideaId: string) => Promise<void>;
+  archiveBacklogItem: (ideaId: string) => Promise<void>;
+  deleteBacklogItem: (ideaId: string) => Promise<void>;
+
   loadAll: () => Promise<void>;
 
   clearError: () => void;
@@ -81,6 +98,9 @@ const initialState = {
   publishQueueLoading: false,
   scripts: [],
   scriptsLoading: false,
+  backlog: [],
+  backlogPath: null,
+  backlogLoading: false,
   error: null,
 };
 
@@ -246,6 +266,73 @@ const useContentGen = create<ContentGenState>((set, get) => ({
     }
   },
 
+  loadBacklog: async () => {
+    set({ backlogLoading: true, error: null });
+    try {
+      const result = await listBacklog();
+      set({ backlog: result.items, backlogPath: result.path, backlogLoading: false });
+    } catch (err) {
+      set({
+        backlogLoading: false,
+        error: getApiErrorMessage(err, 'Failed to load backlog.'),
+      });
+    }
+  },
+
+  updateBacklogItem: async (ideaId, patch) => {
+    set({ error: null });
+    try {
+      const updated = await updateBacklogItemApi(ideaId, patch);
+      set((state) => ({
+        backlog: state.backlog.map((item) => (item.idea_id === ideaId ? updated : item)),
+      }));
+    } catch (err) {
+      set({ error: getApiErrorMessage(err, 'Failed to update backlog item.') });
+    }
+  },
+
+  selectBacklogItem: async (ideaId) => {
+    set({ error: null });
+    try {
+      const selected = await selectBacklogItemApi(ideaId);
+      set((state) => ({
+        backlog: state.backlog.map((item) =>
+          item.idea_id === ideaId
+            ? selected
+            : item.status === 'selected'
+              ? { ...item, status: 'backlog' as const, selection_reasoning: '' }
+              : item
+        ),
+      }));
+    } catch (err) {
+      set({ error: getApiErrorMessage(err, 'Failed to select backlog item.') });
+    }
+  },
+
+  archiveBacklogItem: async (ideaId) => {
+    set({ error: null });
+    try {
+      const archived = await archiveBacklogItemApi(ideaId);
+      set((state) => ({
+        backlog: state.backlog.map((item) => (item.idea_id === ideaId ? archived : item)),
+      }));
+    } catch (err) {
+      set({ error: getApiErrorMessage(err, 'Failed to archive backlog item.') });
+    }
+  },
+
+  deleteBacklogItem: async (ideaId) => {
+    set({ error: null });
+    try {
+      await deleteBacklogItemApi(ideaId);
+      set((state) => ({
+        backlog: state.backlog.filter((item) => item.idea_id !== ideaId),
+      }));
+    } catch (err) {
+      set({ error: getApiErrorMessage(err, 'Failed to delete backlog item.') });
+    }
+  },
+
   clearError: () => set({ error: null }),
 
   /**
@@ -259,6 +346,7 @@ const useContentGen = create<ContentGenState>((set, get) => ({
       get().loadScripts(),
       get().loadPublishQueue(),
       get().loadStrategy(),
+      get().loadBacklog(),
     ]);
   },
 
