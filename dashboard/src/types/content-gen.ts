@@ -25,6 +25,7 @@ export type RiskLevel = 'low' | 'medium' | 'high';
 export type BacklogItemStatus =
   | 'backlog'
   | 'selected'
+  | 'runner_up'
   | 'in_production'
   | 'published'
   | 'archived';
@@ -202,6 +203,11 @@ export interface BacklogItem {
   latest_score?: number;
   latest_recommendation?: string;
   source_theme?: string;
+  expertise_reason?: string;
+  genericity_risk?: string;
+  proof_gap_note?: string;
+  source_pipeline_id?: string;
+  last_scored_at?: string;
 }
 
 export interface BacklogOutput {
@@ -210,6 +216,11 @@ export interface BacklogOutput {
   rejection_reasons: string[];
   is_degraded: boolean;
   degradation_reason: string;
+}
+
+export interface BacklogListResponse {
+  path: string;
+  items: BacklogItem[];
 }
 
 // =============================================================================

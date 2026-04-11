@@ -1,6 +1,6 @@
 # Task 02: Align Backlog API Contract And Dashboard Types
 
-Status: Planned
+Status: Done
 
 Phase:
 Phase 1 - Backlog Visibility
