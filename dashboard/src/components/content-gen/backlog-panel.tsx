@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Archive, CheckCircle2, Trash2 } from 'lucide-react'
+import { Archive, CheckCircle2, Plus, Trash2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -57,6 +57,7 @@ interface BacklogPanelProps {
   onSelect?: (ideaId: string) => Promise<void>
   onArchive?: (ideaId: string) => Promise<void>
   onDelete?: (ideaId: string) => Promise<void>
+  onCreate?: (data: Record<string, unknown>) => Promise<void>
 }
 
 export function BacklogPanel({
@@ -68,6 +69,7 @@ export function BacklogPanel({
   onSelect,
   onArchive,
   onDelete,
+  onCreate,
 }: BacklogPanelProps) {
   const [statusFilter, setStatusFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
@@ -119,6 +121,19 @@ export function BacklogPanel({
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
+          {onCreate && (
+            <div className="flex items-end">
+              <BacklogItemForm
+                onSubmitCreate={onCreate}
+                trigger={
+                  <Button type="button" className="h-10 gap-2">
+                    <Plus className="h-4 w-4" />
+                    New item
+                  </Button>
+                }
+              />
+            </div>
+          )}
           <div className="space-y-1">
             <label className="text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
               Status
@@ -226,7 +241,7 @@ export function BacklogPanel({
                         {onEdit && (
                           <BacklogItemForm
                             item={item}
-                            onSubmit={onEdit}
+                            onSubmitEdit={onEdit}
                           />
                         )}
                         <Button

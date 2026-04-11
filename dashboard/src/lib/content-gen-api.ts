@@ -268,3 +268,23 @@ export async function deleteBacklogItem(ideaId: string): Promise<void> {
     throw new Error(getApiErrorMessage(error, 'Failed to delete backlog item.'));
   }
 }
+
+export interface CreateBacklogItemRequest {
+  idea: string;
+  category?: string;
+  audience?: string;
+  problem?: string;
+  source_theme?: string;
+  selection_reasoning?: string;
+}
+
+export async function createBacklogItem(
+  data: Record<string, unknown>,
+): Promise<BacklogItem> {
+  try {
+    const response = await contentGenClient.post<BacklogItem>('/backlog', data);
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to create backlog item.'));
+  }
+}
