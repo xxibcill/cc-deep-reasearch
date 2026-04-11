@@ -1,61 +1,56 @@
-'use client';
+'use client'
 
-import Link from 'next/link';
-import { startTransition, useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
+import Link from 'next/link'
+import { startTransition, useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 
-import { ConfigSecretsPanel } from '@/components/config-secrets-panel';
-import { HelpCallout } from '@/components/ui/help-callout';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Button, buttonVariants } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { CheckboxRow, SettingFieldShell } from '@/components/ui/form-field';
-import { Input } from '@/components/ui/input';
-import { NativeSelect } from '@/components/ui/native-select';
-import { useNotifications } from '@/components/ui/notification-center';
-import {
-  getApiErrorMessage,
-  getConfig,
-  getConfigUpdateErrorDetails,
-  updateConfig,
-} from '@/lib/api';
-import type { ConfigResponse } from '@/types/config';
+import { ConfigSecretsPanel } from '@/components/config-secrets-panel'
+import { HelpCallout } from '@/components/ui/help-callout'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { CheckboxRow, SettingFieldShell } from '@/components/ui/form-field'
+import { Input } from '@/components/ui/input'
+import { NativeSelect } from '@/components/ui/native-select'
+import { useNotifications } from '@/components/ui/notification-center'
+import { getApiErrorMessage, getConfig, getConfigUpdateErrorDetails, updateConfig } from '@/lib/api'
+import type { ConfigResponse } from '@/types/config'
 
 type FormState = {
-  searchProviders: string;
-  searchDepth: string;
-  enableCrossRef: boolean;
-  teamSize: string;
-  parallelExecution: boolean;
-  outputFormat: string;
-  outputSaveDir: string;
-  routeAnalyzer: string;
-  routeDeepAnalyzer: string;
-  routeReportQualityEvaluator: string;
-  routeReporter: string;
-  routeDefault: string;
-  cacheEnabled: boolean;
-  cacheTtlSeconds: string;
-  cacheMaxEntries: string;
-};
+  searchProviders: string
+  searchDepth: string
+  enableCrossRef: boolean
+  teamSize: string
+  parallelExecution: boolean
+  outputFormat: string
+  outputSaveDir: string
+  routeAnalyzer: string
+  routeDeepAnalyzer: string
+  routeReportQualityEvaluator: string
+  routeReporter: string
+  routeDefault: string
+  cacheEnabled: boolean
+  cacheTtlSeconds: string
+  cacheMaxEntries: string
+}
 
 type FieldDefinition = {
-  path: string;
-  label: string;
-  description: string;
-};
+  path: string
+  label: string
+  description: string
+}
 
 type FormBinding = {
-  path: string;
-  key: keyof FormState;
-};
+  path: string
+  key: keyof FormState
+}
 
 type BannerState = {
-  variant: 'info' | 'success' | 'destructive';
-  title: string;
-  description: string;
-} | null;
+  variant: 'info' | 'success' | 'destructive'
+  title: string
+  description: string
+} | null
 
 const FIELD_DEFINITIONS: FieldDefinition[] = [
   {
@@ -133,7 +128,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
     label: 'Max cache entries',
     description: 'Upper limit for cached search results kept on disk.',
   },
-];
+]
 
 const FRIENDLY_FIELD_LABELS: Record<string, string> = {
   ...Object.fromEntries(FIELD_DEFINITIONS.map((definition) => [definition.path, definition.label])),
@@ -144,7 +139,7 @@ const FRIENDLY_FIELD_LABELS: Record<string, string> = {
   'llm.cerebras.api_keys': 'Cerebras API keys',
   'llm.anthropic.api_key': 'Anthropic API key',
   'llm.anthropic.api_keys': 'Anthropic API keys',
-};
+}
 
 const FORM_BINDINGS: FormBinding[] = [
   { path: 'search.providers', key: 'searchProviders' },
@@ -162,13 +157,9 @@ const FORM_BINDINGS: FormBinding[] = [
   { path: 'search_cache.enabled', key: 'cacheEnabled' },
   { path: 'search_cache.ttl_seconds', key: 'cacheTtlSeconds' },
   { path: 'search_cache.max_entries', key: 'cacheMaxEntries' },
-];
+]
 
-const RESEARCH_DEFAULT_PATHS = [
-  'search.providers',
-  'search.depth',
-  'research.enable_cross_ref',
-];
+const RESEARCH_DEFAULT_PATHS = ['search.providers', 'search.depth', 'research.enable_cross_ref']
 
 const EXECUTION_AND_OUTPUT_PATHS = [
   'search_team.team_size',
@@ -178,7 +169,7 @@ const EXECUTION_AND_OUTPUT_PATHS = [
   'search_cache.enabled',
   'search_cache.ttl_seconds',
   'search_cache.max_entries',
-];
+]
 
 const MODEL_ROUTING_PATHS = [
   'llm.route_defaults.analyzer',
@@ -186,47 +177,47 @@ const MODEL_ROUTING_PATHS = [
   'llm.route_defaults.report_quality_evaluator',
   'llm.route_defaults.reporter',
   'llm.route_defaults.default',
-];
+]
 
-const DEFAULT_ROUTE_OPTION = 'anthropic';
-const ROUTE_OPTIONS = ['openrouter', 'cerebras', 'anthropic', 'heuristic'] as const;
-const ROUTE_OPTION_SET = new Set<string>(ROUTE_OPTIONS);
-const DEPTH_OPTIONS = ['quick', 'standard', 'deep'];
-const OUTPUT_OPTIONS = ['markdown', 'json', 'html'];
+const DEFAULT_ROUTE_OPTION = 'anthropic'
+const ROUTE_OPTIONS = ['openrouter', 'cerebras', 'anthropic', 'heuristic'] as const
+const ROUTE_OPTION_SET = new Set<string>(ROUTE_OPTIONS)
+const DEPTH_OPTIONS = ['quick', 'standard', 'deep']
+const OUTPUT_OPTIONS = ['markdown', 'json', 'html']
 
 function readPath(source: Record<string, unknown>, path: string): unknown {
-  let current: unknown = source;
+  let current: unknown = source
   for (const segment of path.split('.')) {
     if (!current || typeof current !== 'object' || !(segment in current)) {
-      return undefined;
+      return undefined
     }
-    current = (current as Record<string, unknown>)[segment];
+    current = (current as Record<string, unknown>)[segment]
   }
-  return current;
+  return current
 }
 
 function formatConfigValue(value: unknown): string {
   if (Array.isArray(value)) {
-    return value.length > 0 ? value.join(', ') : 'None';
+    return value.length > 0 ? value.join(', ') : 'None'
   }
   if (typeof value === 'boolean') {
-    return value ? 'Enabled' : 'Disabled';
+    return value ? 'Enabled' : 'Disabled'
   }
   if (value === null || value === undefined) {
-    return 'Not set';
+    return 'Not set'
   }
-  const normalized = String(value).trim();
-  return normalized.length > 0 ? normalized : 'Not set';
+  const normalized = String(value).trim()
+  return normalized.length > 0 ? normalized : 'Not set'
 }
 
 function normalizeRouteOption(value: unknown): string {
-  const route = typeof value === 'string' ? value : '';
-  return ROUTE_OPTION_SET.has(route) ? route : DEFAULT_ROUTE_OPTION;
+  const route = typeof value === 'string' ? value : ''
+  return ROUTE_OPTION_SET.has(route) ? route : DEFAULT_ROUTE_OPTION
 }
 
 function normalizeFormState(config: ConfigResponse): FormState {
-  const source = config.persisted_config;
-  const searchProviders = readPath(source, 'search.providers');
+  const source = config.persisted_config
+  const searchProviders = readPath(source, 'search.providers')
   return {
     searchProviders: Array.isArray(searchProviders) ? searchProviders.join(', ') : '',
     searchDepth: String(readPath(source, 'search.depth') ?? 'deep'),
@@ -238,104 +229,112 @@ function normalizeFormState(config: ConfigResponse): FormState {
     routeAnalyzer: normalizeRouteOption(readPath(source, 'llm.route_defaults.analyzer')),
     routeDeepAnalyzer: normalizeRouteOption(readPath(source, 'llm.route_defaults.deep_analyzer')),
     routeReportQualityEvaluator: normalizeRouteOption(
-      readPath(source, 'llm.route_defaults.report_quality_evaluator')
+      readPath(source, 'llm.route_defaults.report_quality_evaluator'),
     ),
     routeReporter: normalizeRouteOption(readPath(source, 'llm.route_defaults.reporter')),
     routeDefault: normalizeRouteOption(readPath(source, 'llm.route_defaults.default')),
     cacheEnabled: Boolean(readPath(source, 'search_cache.enabled')),
     cacheTtlSeconds: String(readPath(source, 'search_cache.ttl_seconds') ?? 3600),
     cacheMaxEntries: String(readPath(source, 'search_cache.max_entries') ?? 1000),
-  };
+  }
 }
 
 function getDirtyFieldPaths(form: FormState, baseline: FormState): string[] {
-  return FORM_BINDINGS.filter(({ key }) => form[key] !== baseline[key]).map(({ path }) => path);
+  return FORM_BINDINGS.filter(({ key }) => form[key] !== baseline[key]).map(({ path }) => path)
 }
 
-function formatFieldValue(config: ConfigResponse, source: 'persisted_config' | 'effective_config', path: string): string {
-  return formatConfigValue(readPath(config[source], path));
+function formatFieldValue(
+  config: ConfigResponse,
+  source: 'persisted_config' | 'effective_config',
+  path: string,
+): string {
+  return formatConfigValue(readPath(config[source], path))
 }
 
 function summarizeDirtyFields(paths: string[]): string {
   if (paths.length === 0) {
-    return 'No unsaved changes.';
+    return 'No unsaved changes.'
   }
 
-  const labels = paths.map((path) => FRIENDLY_FIELD_LABELS[path] ?? path);
+  const labels = paths.map((path) => FRIENDLY_FIELD_LABELS[path] ?? path)
   if (labels.length <= 3) {
-    return labels.join(', ');
+    return labels.join(', ')
   }
-  return `${labels.slice(0, 3).join(', ')}, +${labels.length - 3} more`;
+  return `${labels.slice(0, 3).join(', ')}, +${labels.length - 3} more`
 }
 
 function countLockedFields(paths: string[], overriddenFields: Set<string>): number {
-  return paths.filter((path) => overriddenFields.has(path)).length;
+  return paths.filter((path) => overriddenFields.has(path)).length
 }
 
 function pluralize(count: number, singular: string, plural = `${singular}s`): string {
-  return count === 1 ? singular : plural;
+  return count === 1 ? singular : plural
 }
 
 export function ConfigEditor() {
-  const { notify } = useNotifications();
-  const [config, setConfig] = useState<ConfigResponse | null>(null);
-  const [form, setForm] = useState<FormState | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [banner, setBanner] = useState<BannerState>(null);
+  const { notify } = useNotifications()
+  const [config, setConfig] = useState<ConfigResponse | null>(null)
+  const [form, setForm] = useState<FormState | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [banner, setBanner] = useState<BannerState>(null)
 
   useEffect(() => {
-    let mounted = true;
+    let mounted = true
 
     const load = async () => {
-      setLoading(true);
-      setLoadError(null);
+      setLoading(true)
+      setLoadError(null)
 
       try {
-        const response = await getConfig();
+        const response = await getConfig()
         if (!mounted) {
-          return;
+          return
         }
         startTransition(() => {
-          setConfig(response);
-          setForm(normalizeFormState(response));
-          setFieldErrors({});
-        });
+          setConfig(response)
+          setForm(normalizeFormState(response))
+          setFieldErrors({})
+        })
       } catch (error) {
         if (mounted) {
-          setLoadError(getApiErrorMessage(error, 'Failed to load configuration.'));
+          setLoadError(getApiErrorMessage(error, 'Failed to load configuration.'))
         }
       } finally {
         if (mounted) {
-          setLoading(false);
+          setLoading(false)
         }
       }
-    };
+    }
 
-    void load();
+    void load()
 
     return () => {
-      mounted = false;
-    };
-  }, []);
+      mounted = false
+    }
+  }, [])
 
   if (loading) {
     return (
       <Card className="border-border/80 bg-card/95">
         <CardHeader>
           <CardTitle className="text-base">Settings</CardTitle>
-          <CardDescription>Loading persisted settings and runtime override metadata.</CardDescription>
+          <CardDescription>
+            Loading persisted settings and runtime override metadata.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Alert variant="default">
             <AlertTitle>Loading settings</AlertTitle>
-            <AlertDescription>The dashboard is fetching the latest settings snapshot.</AlertDescription>
+            <AlertDescription>
+              The dashboard is fetching the latest settings snapshot.
+            </AlertDescription>
           </Alert>
         </CardContent>
       </Card>
-    );
+    )
   }
 
   if (loadError || !config || !form) {
@@ -343,7 +342,9 @@ export function ConfigEditor() {
       <Card className="border-border/80 bg-card/95">
         <CardHeader>
           <CardTitle className="text-base">Settings</CardTitle>
-          <CardDescription>The settings workspace cannot render without a config payload.</CardDescription>
+          <CardDescription>
+            The settings workspace cannot render without a config payload.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Alert variant="destructive">
@@ -352,29 +353,31 @@ export function ConfigEditor() {
           </Alert>
         </CardContent>
       </Card>
-    );
+    )
   }
 
-  const overriddenFields = new Set(config.overridden_fields);
-  const overrideSources = config.override_sources;
-  const baseline = normalizeFormState(config);
-  const dirtyFieldPaths = getDirtyFieldPaths(form, baseline);
-  const dirtyFieldCount = dirtyFieldPaths.length;
-  const lockedFieldCount = FORM_BINDINGS.filter(({ path }) => overriddenFields.has(path)).length;
+  const overriddenFields = new Set(config.overridden_fields)
+  const overrideSources = config.override_sources
+  const baseline = normalizeFormState(config)
+  const dirtyFieldPaths = getDirtyFieldPaths(form, baseline)
+  const dirtyFieldCount = dirtyFieldPaths.length
+  const lockedFieldCount = FORM_BINDINGS.filter(({ path }) => overriddenFields.has(path)).length
   const overriddenSecretCount = config.secret_fields.filter((field) =>
-    overriddenFields.has(field.field)
-  ).length;
-  const configuredSecretCount = config.secret_fields.filter((field) => field.persisted_present).length;
+    overriddenFields.has(field.field),
+  ).length
+  const configuredSecretCount = config.secret_fields.filter(
+    (field) => field.persisted_present,
+  ).length
 
   const handleSave = async () => {
-    const changedFieldPaths = getDirtyFieldPaths(form, baseline);
+    const changedFieldPaths = getDirtyFieldPaths(form, baseline)
     if (changedFieldPaths.length === 0) {
-      return;
+      return
     }
 
-    setSaving(true);
-    setBanner(null);
-    setFieldErrors({});
+    setSaving(true)
+    setBanner(null)
+    setFieldErrors({})
 
     try {
       const response = await updateConfig({
@@ -398,11 +401,11 @@ export function ConfigEditor() {
           'search_cache.ttl_seconds': Number(form.cacheTtlSeconds),
           'search_cache.max_entries': Number(form.cacheMaxEntries),
         },
-      });
+      })
 
       startTransition(() => {
-        setConfig(response);
-        setForm(normalizeFormState(response));
+        setConfig(response)
+        setForm(normalizeFormState(response))
         setBanner({
           variant: 'success',
           title: 'Settings saved',
@@ -412,44 +415,44 @@ export function ConfigEditor() {
             (response.overridden_fields.length > 0
               ? ` ${response.overridden_fields.length} runtime ${pluralize(response.overridden_fields.length, 'override')} still ${response.overridden_fields.length === 1 ? 'remains' : 'remain'} in control until the environment changes.`
               : ''),
-        });
-      });
+        })
+      })
       notify({
         variant: 'success',
         title: 'Settings saved',
         description: `Saved ${changedFieldPaths.length} ${pluralize(changedFieldPaths.length, 'setting')} for future runs.`,
-      });
+      })
     } catch (error) {
-      const details = getConfigUpdateErrorDetails(error);
+      const details = getConfigUpdateErrorDetails(error)
       setBanner({
         variant: 'destructive',
         title: 'Save failed',
         description: details.message,
-      });
+      })
       notify({
         variant: 'destructive',
         persistent: true,
         title: 'Settings save failed',
         description: details.message,
-      });
+      })
 
-      const nextFieldErrors: Record<string, string> = {};
+      const nextFieldErrors: Record<string, string> = {}
       for (const item of details.fields) {
-        nextFieldErrors[item.field] = item.message;
+        nextFieldErrors[item.field] = item.message
       }
       for (const item of details.conflicts) {
-        nextFieldErrors[item.field] = `${item.message} (${item.env_vars.join(', ')})`;
+        nextFieldErrors[item.field] = `${item.message} (${item.env_vars.join(', ')})`
       }
-      setFieldErrors(nextFieldErrors);
+      setFieldErrors(nextFieldErrors)
     } finally {
-      setSaving(false);
+      setSaving(false)
     }
-  };
+  }
 
   const handleReset = () => {
-    const dirtyCountBeforeReset = dirtyFieldPaths.length;
-    setForm(baseline);
-    setFieldErrors({});
+    const dirtyCountBeforeReset = dirtyFieldPaths.length
+    setForm(baseline)
+    setFieldErrors({})
     setBanner({
       variant: 'info',
       title: 'Draft cleared',
@@ -457,12 +460,12 @@ export function ConfigEditor() {
         dirtyCountBeforeReset > 0
           ? `Reset ${dirtyCountBeforeReset} unsaved ${pluralize(dirtyCountBeforeReset, 'change')} back to the persisted config. Runtime overrides stay locked until their environment values change.`
           : 'Cleared validation feedback and restored the current persisted settings snapshot.',
-    });
-  };
+    })
+  }
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
-    setForm((current) => (current ? { ...current, [key]: value } : current));
-  };
+    setForm((current) => (current ? { ...current, [key]: value } : current))
+  }
 
   return (
     <div className="space-y-5">
@@ -474,21 +477,29 @@ export function ConfigEditor() {
       <header className="rounded-2xl border border-border bg-card/95 p-6 shadow-sm">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-2">
-            <p className="text-xs uppercase tracking-[0.28em] text-muted-foreground">Dashboard Settings</p>
+            <p className="text-xs uppercase tracking-[0.28em] text-muted-foreground">
+              Dashboard Settings
+            </p>
             <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-            <p className="max-w-3xl text-sm text-muted-foreground">
+            <p className=" text-sm text-muted-foreground">
               Manage the saved defaults used for future runs, see where runtime environment values
               still take priority, and update masked secrets without exposing them in the browser.
             </p>
           </div>
           <div className="grid gap-2 rounded-2xl border border-border bg-background/70 px-4 py-3 text-sm sm:grid-cols-2 xl:min-w-[320px]">
             <div>
-              <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Config path</div>
+              <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                Config path
+              </div>
               <div className="mt-1 break-all">{config.config_path}</div>
             </div>
             <div>
-              <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">File status</div>
-              <div className="mt-1">{config.file_exists ? 'Present' : 'Missing, defaults active'}</div>
+              <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                File status
+              </div>
+              <div className="mt-1">
+                {config.file_exists ? 'Present' : 'Missing, defaults active'}
+              </div>
             </div>
           </div>
         </div>
@@ -497,7 +508,11 @@ export function ConfigEditor() {
       <div className="grid gap-4 md:grid-cols-3">
         <SummaryTile
           eyebrow="Future runs"
-          title={dirtyFieldCount > 0 ? `${dirtyFieldCount} unsaved ${pluralize(dirtyFieldCount, 'change')}` : 'Saved defaults are current'}
+          title={
+            dirtyFieldCount > 0
+              ? `${dirtyFieldCount} unsaved ${pluralize(dirtyFieldCount, 'change')}`
+              : 'Saved defaults are current'
+          }
           description={
             dirtyFieldCount > 0
               ? `Draft edits: ${summarizeDirtyFields(dirtyFieldPaths)}`
@@ -586,8 +601,16 @@ export function ConfigEditor() {
                 overridden={overriddenFields.has('research.enable_cross_ref')}
                 dirty={dirtyFieldPaths.includes('research.enable_cross_ref')}
                 draftValue={formatConfigValue(form.enableCrossRef)}
-                effectiveValue={formatFieldValue(config, 'effective_config', 'research.enable_cross_ref')}
-                persistedValue={formatFieldValue(config, 'persisted_config', 'research.enable_cross_ref')}
+                effectiveValue={formatFieldValue(
+                  config,
+                  'effective_config',
+                  'research.enable_cross_ref',
+                )}
+                persistedValue={formatFieldValue(
+                  config,
+                  'persisted_config',
+                  'research.enable_cross_ref',
+                )}
                 overrideSource={overrideSources['research.enable_cross_ref']}
               >
                 <CheckboxRow
@@ -615,8 +638,16 @@ export function ConfigEditor() {
                 overridden={overriddenFields.has('search_team.team_size')}
                 dirty={dirtyFieldPaths.includes('search_team.team_size')}
                 draftValue={formatConfigValue(form.teamSize)}
-                effectiveValue={formatFieldValue(config, 'effective_config', 'search_team.team_size')}
-                persistedValue={formatFieldValue(config, 'persisted_config', 'search_team.team_size')}
+                effectiveValue={formatFieldValue(
+                  config,
+                  'effective_config',
+                  'search_team.team_size',
+                )}
+                persistedValue={formatFieldValue(
+                  config,
+                  'persisted_config',
+                  'search_team.team_size',
+                )}
                 overrideSource={overrideSources['search_team.team_size']}
               >
                 <Input
@@ -635,8 +666,16 @@ export function ConfigEditor() {
                 overridden={overriddenFields.has('search_team.parallel_execution')}
                 dirty={dirtyFieldPaths.includes('search_team.parallel_execution')}
                 draftValue={formatConfigValue(form.parallelExecution)}
-                effectiveValue={formatFieldValue(config, 'effective_config', 'search_team.parallel_execution')}
-                persistedValue={formatFieldValue(config, 'persisted_config', 'search_team.parallel_execution')}
+                effectiveValue={formatFieldValue(
+                  config,
+                  'effective_config',
+                  'search_team.parallel_execution',
+                )}
+                persistedValue={formatFieldValue(
+                  config,
+                  'persisted_config',
+                  'search_team.parallel_execution',
+                )}
                 overrideSource={overrideSources['search_team.parallel_execution']}
               >
                 <CheckboxRow
@@ -693,8 +732,8 @@ export function ConfigEditor() {
               <div className="space-y-1">
                 <div className="text-sm font-medium">Search cache defaults</div>
                 <div className="text-sm text-muted-foreground">
-                  Cache settings live with other execution defaults because they change how future runs
-                  fan out and reuse search work.
+                  Cache settings live with other execution defaults because they change how future
+                  runs fan out and reuse search work.
                 </div>
               </div>
               <div className="grid gap-4 sm:grid-cols-3">
@@ -705,8 +744,16 @@ export function ConfigEditor() {
                   overridden={overriddenFields.has('search_cache.enabled')}
                   dirty={dirtyFieldPaths.includes('search_cache.enabled')}
                   draftValue={formatConfigValue(form.cacheEnabled)}
-                  effectiveValue={formatFieldValue(config, 'effective_config', 'search_cache.enabled')}
-                  persistedValue={formatFieldValue(config, 'persisted_config', 'search_cache.enabled')}
+                  effectiveValue={formatFieldValue(
+                    config,
+                    'effective_config',
+                    'search_cache.enabled',
+                  )}
+                  persistedValue={formatFieldValue(
+                    config,
+                    'persisted_config',
+                    'search_cache.enabled',
+                  )}
                   overrideSource={overrideSources['search_cache.enabled']}
                 >
                   <CheckboxRow
@@ -724,8 +771,16 @@ export function ConfigEditor() {
                   overridden={overriddenFields.has('search_cache.ttl_seconds')}
                   dirty={dirtyFieldPaths.includes('search_cache.ttl_seconds')}
                   draftValue={formatConfigValue(form.cacheTtlSeconds)}
-                  effectiveValue={formatFieldValue(config, 'effective_config', 'search_cache.ttl_seconds')}
-                  persistedValue={formatFieldValue(config, 'persisted_config', 'search_cache.ttl_seconds')}
+                  effectiveValue={formatFieldValue(
+                    config,
+                    'effective_config',
+                    'search_cache.ttl_seconds',
+                  )}
+                  persistedValue={formatFieldValue(
+                    config,
+                    'persisted_config',
+                    'search_cache.ttl_seconds',
+                  )}
                   overrideSource={overrideSources['search_cache.ttl_seconds']}
                 >
                   <Input
@@ -743,8 +798,16 @@ export function ConfigEditor() {
                   overridden={overriddenFields.has('search_cache.max_entries')}
                   dirty={dirtyFieldPaths.includes('search_cache.max_entries')}
                   draftValue={formatConfigValue(form.cacheMaxEntries)}
-                  effectiveValue={formatFieldValue(config, 'effective_config', 'search_cache.max_entries')}
-                  persistedValue={formatFieldValue(config, 'persisted_config', 'search_cache.max_entries')}
+                  effectiveValue={formatFieldValue(
+                    config,
+                    'effective_config',
+                    'search_cache.max_entries',
+                  )}
+                  persistedValue={formatFieldValue(
+                    config,
+                    'persisted_config',
+                    'search_cache.max_entries',
+                  )}
                   overrideSource={overrideSources['search_cache.max_entries']}
                 >
                   <Input
@@ -851,7 +914,8 @@ export function ConfigEditor() {
                 <Alert variant="success">
                   <AlertTitle>Runtime matches saved settings</AlertTitle>
                   <AlertDescription>
-                    Operators can edit every dashboard-exposed setting. New saves will affect future runs without any env-shadowed exceptions.
+                    Operators can edit every dashboard-exposed setting. New saves will affect future
+                    runs without any env-shadowed exceptions.
                   </AlertDescription>
                 </Alert>
               ) : (
@@ -859,8 +923,8 @@ export function ConfigEditor() {
                   <Alert variant="warning">
                     <AlertTitle>Environment values still win at runtime</AlertTitle>
                     <AlertDescription>
-                      These fields stay read-only here. The dashboard keeps the saved value visible so
-                      you can see what will take over once the env override is removed.
+                      These fields stay read-only here. The dashboard keeps the saved value visible
+                      so you can see what will take over once the env override is removed.
                     </AlertDescription>
                   </Alert>
                   <div className="space-y-2">
@@ -872,18 +936,23 @@ export function ConfigEditor() {
                         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                           <div className="space-y-1">
                             <div className="flex flex-wrap items-center gap-2">
-                              <div className="font-medium">{FRIENDLY_FIELD_LABELS[field] ?? field}</div>
+                              <div className="font-medium">
+                                {FRIENDLY_FIELD_LABELS[field] ?? field}
+                              </div>
                               <Badge variant="warning">Runtime override</Badge>
                             </div>
                             <div className="text-xs text-muted-foreground break-all">{field}</div>
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {(overrideSources[field] ?? []).join(', ') || 'Environment source not reported.'}
+                            {(overrideSources[field] ?? []).join(', ') ||
+                              'Environment source not reported.'}
                           </div>
                         </div>
                         <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
                           <div className="rounded-xl border border-border/80 bg-card/80 px-3 py-2">
-                            <div className="uppercase tracking-[0.16em] text-muted-foreground">Saved config</div>
+                            <div className="uppercase tracking-[0.16em] text-muted-foreground">
+                              Saved config
+                            </div>
                             <div className="mt-1 font-medium text-foreground">
                               {formatFieldValue(config, 'persisted_config', field)}
                             </div>
@@ -909,8 +978,8 @@ export function ConfigEditor() {
                 <div>
                   <CardTitle className="text-base">Save and reset</CardTitle>
                   <CardDescription>
-                    Save writes the persisted config used for future runs. Reset clears only the draft
-                    state on this page.
+                    Save writes the persisted config used for future runs. Reset clears only the
+                    draft state on this page.
                   </CardDescription>
                 </div>
                 <Badge variant={dirtyFieldCount > 0 ? 'info' : 'secondary'}>
@@ -964,7 +1033,9 @@ export function ConfigEditor() {
                     size="sm"
                     onClick={handleReset}
                     type="button"
-                    disabled={saving || (dirtyFieldCount === 0 && Object.keys(fieldErrors).length === 0)}
+                    disabled={
+                      saving || (dirtyFieldCount === 0 && Object.keys(fieldErrors).length === 0)
+                    }
                   >
                     Reset draft
                   </Button>
@@ -986,7 +1057,9 @@ export function ConfigEditor() {
           <Card className="border-border/80 bg-card/95">
             <CardHeader>
               <CardTitle className="text-base">Operator guide</CardTitle>
-              <CardDescription>Use the same rule set across normal settings and secrets.</CardDescription>
+              <CardDescription>
+                Use the same rule set across normal settings and secrets.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-muted-foreground">
               <div className="rounded-2xl border border-border/80 bg-background/60 px-4 py-3">
@@ -995,11 +1068,15 @@ export function ConfigEditor() {
               </div>
               <div className="rounded-2xl border border-border/80 bg-background/60 px-4 py-3">
                 <div className="font-medium text-foreground">Runtime overrides</div>
-                <p className="mt-1">Read-only fields stay locked while environment values are active.</p>
+                <p className="mt-1">
+                  Read-only fields stay locked while environment values are active.
+                </p>
               </div>
               <div className="rounded-2xl border border-border/80 bg-background/60 px-4 py-3">
                 <div className="font-medium text-foreground">Secrets</div>
-                <p className="mt-1">Replace and clear flows stay masked and only update the saved config.</p>
+                <p className="mt-1">
+                  Replace and clear flows stay masked and only update the saved config.
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -1007,10 +1084,15 @@ export function ConfigEditor() {
           <Card className="border-border/80 bg-card/95">
             <CardHeader>
               <CardTitle className="text-base">Navigation</CardTitle>
-              <CardDescription>Return to the session workspace after finishing configuration updates.</CardDescription>
+              <CardDescription>
+                Return to the session workspace after finishing configuration updates.
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <Link className={`${buttonVariants({ variant: 'outline', size: 'sm' })} w-full`} href="/">
+              <Link
+                className={`${buttonVariants({ variant: 'outline', size: 'sm' })} w-full`}
+                href="/"
+              >
                 Back to sessions
               </Link>
             </CardContent>
@@ -1018,7 +1100,7 @@ export function ConfigEditor() {
         </aside>
       </div>
     </div>
-  );
+  )
 }
 
 function SummaryTile({
@@ -1026,9 +1108,9 @@ function SummaryTile({
   title,
   description,
 }: {
-  eyebrow: string;
-  title: string;
-  description: string;
+  eyebrow: string
+  title: string
+  description: string
 }) {
   return (
     <div className="rounded-2xl border border-border bg-card/95 p-4 shadow-sm">
@@ -1036,7 +1118,7 @@ function SummaryTile({
       <div className="mt-2 text-base font-semibold text-foreground">{title}</div>
       <p className="mt-1 text-sm text-muted-foreground">{description}</p>
     </div>
-  );
+  )
 }
 
 function SettingsSectionCard({
@@ -1046,11 +1128,11 @@ function SettingsSectionCard({
   lockedCount,
   children,
 }: {
-  title: string;
-  description: string;
-  totalCount: number;
-  lockedCount: number;
-  children: ReactNode;
+  title: string
+  description: string
+  totalCount: number
+  lockedCount: number
+  children: ReactNode
 }) {
   return (
     <Card className="border-border/80 bg-card/95">
@@ -1064,7 +1146,7 @@ function SettingsSectionCard({
       </CardHeader>
       <CardContent className="space-y-4">{children}</CardContent>
     </Card>
-  );
+  )
 }
 
 function RouteField({
@@ -1079,18 +1161,18 @@ function RouteField({
   config,
   overrideSources,
 }: {
-  definition: FieldDefinition;
-  field: string;
-  value: string;
-  onChange: (value: string) => void;
-  disabled: boolean;
-  error?: string;
-  dirty: boolean;
-  overriddenFields: Set<string>;
-  config: ConfigResponse;
-  overrideSources: Record<string, string[]>;
+  definition: FieldDefinition
+  field: string
+  value: string
+  onChange: (value: string) => void
+  disabled: boolean
+  error?: string
+  dirty: boolean
+  overriddenFields: Set<string>
+  config: ConfigResponse
+  overrideSources: Record<string, string[]>
 }) {
-  const overridden = overriddenFields.has(field);
+  const overridden = overriddenFields.has(field)
   return (
     <SettingFieldShell
       label={definition.label}
@@ -1116,5 +1198,5 @@ function RouteField({
         ))}
       </NativeSelect>
     </SettingFieldShell>
-  );
+  )
 }

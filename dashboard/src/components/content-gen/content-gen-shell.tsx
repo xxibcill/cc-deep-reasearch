@@ -18,11 +18,7 @@ const TAB_CONFIG = [
   { value: 'backlog', label: 'Backlog', icon: ListChecks },
 ]
 
-export function ContentGenShell({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export function ContentGenShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -36,7 +32,7 @@ export function ContentGenShell({
   const activeTab = searchParams.get('tab') || 'overview'
 
   const activePipelineCount = pipelines.filter(
-    (p) => p.status === 'running' || p.status === 'queued'
+    (p) => p.status === 'running' || p.status === 'queued',
   ).length
 
   const tabsWithBadges = TAB_CONFIG.map((tab) => {
@@ -89,9 +85,9 @@ export function ContentGenShell({
               <h1 className="font-display text-[2.8rem] font-semibold uppercase tracking-[0.02em] text-foreground">
                 Content Studio
               </h1>
-              <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-                Editorial planning, scripting, quality control, and publish queue visibility in
-                one operational surface.
+              <p className=" text-sm leading-6 text-muted-foreground">
+                Editorial planning, scripting, quality control, and publish queue visibility in one
+                operational surface.
               </p>
             </div>
           </div>
@@ -104,8 +100,12 @@ export function ContentGenShell({
             ) : (
               <Badge variant="secondary">No active pipelines</Badge>
             )}
-            {scripts.length > 0 ? <Badge variant="outline">{scripts.length} scripts tracked</Badge> : null}
-            {publishQueue.length > 0 ? <Badge variant="outline">{publishQueue.length} queued for publish</Badge> : null}
+            {scripts.length > 0 ? (
+              <Badge variant="outline">{scripts.length} scripts tracked</Badge>
+            ) : null}
+            {publishQueue.length > 0 ? (
+              <Badge variant="outline">{publishQueue.length} queued for publish</Badge>
+            ) : null}
           </div>
         </div>
 
@@ -129,9 +129,7 @@ export function ContentGenShell({
         ) : null}
       </section>
 
-      <main className="pt-8">
-        {children}
-      </main>
+      <main className="pt-8">{children}</main>
     </div>
   )
 }

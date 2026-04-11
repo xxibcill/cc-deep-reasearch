@@ -78,7 +78,8 @@ export default function ContentGenPage() {
   useEffect(() => {
     const sourceSessionId = searchParams.get('sourceSession')
     const sourceBridge = sourceSessionId
-      ? readResearchContentBridge(sourceSessionId) ?? buildResearchContentBridgeFromSearchParams(searchParams)
+      ? (readResearchContentBridge(sourceSessionId) ??
+        buildResearchContentBridgeFromSearchParams(searchParams))
       : null
 
     setResearchBridge(sourceBridge)
@@ -218,13 +219,17 @@ export default function ContentGenPage() {
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="success">Research attached</Badge>
-                    <Badge variant="outline">{formatResearchBridgeSource(researchBridge.source)}</Badge>
+                    <Badge variant="outline">
+                      {formatResearchBridgeSource(researchBridge.source)}
+                    </Badge>
                     <Badge variant="outline" className="font-mono text-[0.7rem]">
                       {researchBridge.sessionId.slice(0, 8)}
                     </Badge>
                   </div>
                   <div className="space-y-2">
-                    <CardTitle className="text-[2rem]">Research is ready for downstream work</CardTitle>
+                    <CardTitle className="text-[2rem]">
+                      Research is ready for downstream work
+                    </CardTitle>
                     <p className="text-sm leading-6 text-muted-foreground">
                       {researchBridge.sessionLabel} is attached to this studio session. Launch a
                       pipeline for a full production pass or open a quick script for a faster reuse
@@ -240,7 +245,12 @@ export default function ContentGenPage() {
                       <Play className="h-4 w-4" />
                       Start from Research
                     </Button>
-                    <Button type="button" variant="outline" onClick={() => setQuickScriptOpen(true)} className="gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setQuickScriptOpen(true)}
+                      className="gap-2"
+                    >
                       <FileText className="h-4 w-4" />
                       Open Research Script
                     </Button>
@@ -269,7 +279,9 @@ export default function ContentGenPage() {
             <p className="eyebrow">Entry points</p>
             <div className="space-y-2">
               <CardTitle className="text-[2.3rem]">
-                {researchBridge ? 'Start from attached research' : 'Start from a strong entry point'}
+                {researchBridge
+                  ? 'Start from attached research'
+                  : 'Start from a strong entry point'}
               </CardTitle>
               <p className="text-sm text-muted-foreground">
                 {researchBridge
@@ -306,23 +318,22 @@ export default function ContentGenPage() {
           </Alert>
         )}
 
-        {activePipelines.length > 0 && (
+        {activePipelines.length > 0 &&
           renderPipelineList({
             title: 'Active Pipelines',
             description: `Runs that are still moving through the ${TOTAL_PIPELINE_STAGES}-stage production flow.`,
             items: activePipelines,
             statusTone: 'active',
-          })
-        )}
+          })}
 
-        {pastPipelines.length > 0 && (
+        {pastPipelines.length > 0 &&
           renderPipelineList({
             title: 'Past Pipelines',
-            description: 'Completed, failed, and cancelled runs that are ready for review or reuse.',
+            description:
+              'Completed, failed, and cancelled runs that are ready for review or reuse.',
             items: pastPipelines,
             statusTone: 'history',
-          })
-        )}
+          })}
 
         {activePipelines.length === 0 && pastPipelines.length === 0 && (
           <EmptyState
@@ -384,7 +395,7 @@ export default function ContentGenPage() {
       )}
 
       {activeTab === 'queue' && (
-        <div className="max-w-3xl">
+        <div className="">
           <PublishQueuePanel items={publishQueue} onRemove={handleRemoveFromQueue} />
         </div>
       )}
