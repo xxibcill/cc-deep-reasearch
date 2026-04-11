@@ -351,6 +351,157 @@ test.describe('Backlog Management', () => {
     // And should not show the backlog item
     await expect(page.getByText('AI coding assistants')).not.toBeVisible()
   })
+
+  test('edit opens dialog, allows field changes, and saves updates', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.goto('/content-gen/backlog')
+
+    // Wait for items to load
+    await expect(page.getByText('3 items')).toBeVisible()
+
+    // Click the edit button (Pencil icon) for item-001
+    const editButton = page.locator('button[title="Edit item"]').first()
+    await editButton.click()
+
+    // Dialog should open
+    await expect(page.getByText('Edit Backlog Item')).toBeVisible()
+
+    // Clear the idea field and enter new text
+    const ideaTextarea = page.locator('#idea')
+    await ideaTextarea.clear()
+    await ideaTextarea.fill('Updated idea text for testing edit flow')
+
+    // Submit the form
+    await page.getByRole('button', { name: 'Save Changes' }).click()
+
+    // Wait for the PATCH request to complete
+    await page.waitForResponse('**/api/content-gen/backlog/item-001')
+
+    // Dialog should be closed
+    await expect(page.getByText('Edit Backlog Item')).not.toBeVisible()
+
+    // The updated text should appear in the table
+    await expect(page.getByText('Updated idea text for testing edit flow')).toBeVisible()
+    // The old text should not appear
+    await expect(page.getByText('AI coding assistants in enterprise software development')).not.toBeVisible()
+  })
+
+  test('delete button shows confirmation dialog and cancels deletion', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.goto('/content-gen/backlog')
+
+    // Wait for items to load
+    await expect(page.getByText('3 items')).toBeVisible()
+
+    // Click the delete button (Trash icon) for item-001
+    const deleteButton = page.locator('button[title="Delete item"]').first()
+    await deleteButton.click()
+
+    // Confirmation dialog should appear
+    await expect(page.getByText('Delete backlog item?')).toBeVisible()
+    await expect(page.getByText(/permanently remove.*AI coding assistants/)).toBeVisible()
+
+    // Click cancel
+    await page.getByRole('button', { name: 'Cancel' }).click()
+
+    // Dialog should close and item count should still be 3
+    await expect(page.getByText('Delete backlog item?')).not.toBeVisible()
+    await expect(page.getByText('3 items')).toBeVisible()
+  })
+
+  test('delete confirmation dialog confirms and removes item', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.goto('/content-gen/backlog')
+
+    // Wait for items to load
+    await expect(page.getByText('3 items')).toBeVisible()
+
+    // Click the delete button (Trash icon) for item-001
+    const deleteButton = page.locator('button[title="Delete item"]').first()
+    await deleteButton.click()
+
+    // Confirmation dialog should appear
+    await expect(page.getByText('Delete backlog item?')).toBeVisible()
+
+    // Click delete
+    await page.getByRole('button', { name: 'Delete item' }).click()
+
+    // Wait for the DELETE request to complete
+    await page.waitForResponse('**/api/content-gen/backlog/item-001')
+
+    // Dialog should close
+    await expect(page.getByText('Delete backlog item?')).not.toBeVisible()
+
+    // Count should now be 2
+    await expect(page.getByText('2 items')).toBeVisible()
+  })
+
+  test('create flow opens dialog, accepts input, and adds new item', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.goto('/content-gen/backlog')
+
+    // Wait for items to load
+    await expect(page.getByText('3 items')).toBeVisible()
+
+    // Click "New item" button
+    await page.getByRole('button', { name: 'New item' }).click()
+
+    // Dialog should open
+    await expect(page.getByText('New Backlog Item')).toBeVisible()
+
+    // Fill in the required idea field
+    const ideaTextarea = page.locator('#idea')
+    await ideaTextarea.fill('New content idea created via test')
+
+    // Fill in optional fields
+    await page.locator('#category').selectOption('trend-responsive')
+    await page.locator('#audience').fill('Content marketers')
+    await page.locator('#problem').fill('Need fresh content ideas')
+
+    // Submit the form
+    await page.getByRole('button', { name: 'Save Changes' }).click()
+
+    // Wait for the POST request to complete
+    await page.waitForResponse('**/api/content-gen/backlog')
+
+    // Dialog should be closed
+    await expect(page.getByText('New Backlog Item')).not.toBeVisible()
+
+    // The new item should appear in the list
+    await expect(page.getByText('New content idea created via test')).toBeVisible()
+
+    // Count should now be 4
+    await expect(page.getByText('4 items')).toBeVisible()
+  })
+
+  test('create flow validates required idea field', async ({ page }) => {
+    // Need at least one item so BacklogPanel is rendered (it shows EmptyState when empty)
+    await setupBacklogMocks(page, [mockBacklogItems[0]])
+
+    await page.goto('/content-gen/backlog')
+
+    // Wait for items to load
+    await expect(page.getByText('1 item')).toBeVisible()
+
+    // Click "New item" button
+    await page.getByRole('button', { name: 'New item' }).click()
+
+    // Dialog should open
+    await expect(page.getByText('New Backlog Item')).toBeVisible()
+
+    // Try to submit without filling idea field
+    await page.getByRole('button', { name: 'Save Changes' }).click()
+
+    // Error should appear
+    await expect(page.getByText('Idea is required.')).toBeVisible()
+
+    // Dialog should still be open
+    await expect(page.getByText('New Backlog Item')).toBeVisible()
+  })
 })
 
 test.describe('Backlog Management - Navigation', () => {
