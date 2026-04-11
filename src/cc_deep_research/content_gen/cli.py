@@ -12,7 +12,12 @@ from cc_deep_research.config import load_config
 from cc_deep_research.content_gen.storage import ScriptingStore
 
 if TYPE_CHECKING:
-    from cc_deep_research.content_gen.models import PipelineContext, ScriptingContext
+    from cc_deep_research.content_gen.models import (
+        AngleOption,
+        PipelineContext,
+        ScriptingContext,
+        ScriptVersion,
+    )
 
 KNOWN_MODULES = frozenset(
     {

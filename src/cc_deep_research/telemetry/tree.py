@@ -410,12 +410,10 @@ def build_critical_path(events: list[dict[str, Any]]) -> dict[str, Any]:
     """
     # Track start events and match with completions
     pending_starts: dict[str, dict[str, Any]] = {}
-    completed_chains: list[dict[str, Any]] = []
 
     for event in events:
         event_type = event.get("event_type", "")
         event_id = event.get("event_id")
-        parent_id = event.get("parent_event_id")
         duration_ms = event.get("duration_ms")
 
         # Track started events

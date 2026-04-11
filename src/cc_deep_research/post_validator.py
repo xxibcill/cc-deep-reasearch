@@ -81,7 +81,6 @@ class PostReportValidator:
         Returns:
             Dictionary with issues list and warnings list.
         """
-        issues: list[str] = []
         warnings: list[str] = []
 
         # Pattern: Word ending with "..." (e.g., "vast m...", "ut f...")
