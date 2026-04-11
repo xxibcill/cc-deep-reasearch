@@ -14,10 +14,10 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from cc_deep_research.config import load_config
+from cc_deep_research.content_gen.backlog_service import BacklogService
 from cc_deep_research.content_gen.models import (
     PIPELINE_STAGE_LABELS,
     PIPELINE_STAGES,
-    PipelineContext,
     ScriptingContext,
     ScriptingIterations,
     ScriptingIterationSummary,
@@ -72,6 +72,12 @@ class UpdateStrategyRequest(BaseModel):
     patch: dict[str, Any] = Field(default_factory=dict)
 
 
+class UpdateBacklogItemRequest(BaseModel):
+    """Request body for updating one backlog item."""
+
+    patch: dict[str, Any] = Field(default_factory=dict)
+
+
 def _build_scripting_iterations(iter_state: Any) -> ScriptingIterations | None:
     if iter_state is None:
         return None
@@ -97,7 +103,7 @@ def _build_scripting_result(
     execution_mode: Literal["single_pass", "iterative"] = "single_pass",
     iterations: ScriptingIterations | None = None,
 ) -> ScriptingRunResult:
-    script = ScriptingStore._extract_script(ctx)
+    script = ScriptingStore.extract_script(ctx)
     return ScriptingRunResult(
         run_id=run_id,
         raw_idea=ctx.raw_idea,
@@ -117,9 +123,7 @@ def _serialize_scripting_payload(result: ScriptingRunResult) -> dict[str, Any]:
 
 
 def _serialize_saved_script_run(run: Any) -> dict[str, Any]:
-    raw = run.model_dump(mode="json")
-    assert isinstance(raw, dict)
-    payload = raw
+    payload = run.model_dump(mode="json")
     if payload.get("iterations") is None:
         payload.pop("iterations", None)
     return payload
@@ -177,7 +181,7 @@ def register_content_gen_routes(
                     )
                 )
 
-            def _stage_completed(stage_idx: int, status: str, detail: str, stage_ctx: PipelineContext) -> None:
+            def _stage_completed(stage_idx: int, status: str, detail: str, stage_ctx) -> None:
                 # Update job registry with latest context after each stage
                 job_registry.update_context(job.pipeline_id, stage_ctx)
                 serialized_context = json.loads(stage_ctx.model_dump_json())
@@ -305,6 +309,12 @@ def register_content_gen_routes(
             return JSONResponse(status_code=400, content={"error": "No saved context to resume"})
 
         end = job.to_stage if job.to_stage is not None else len(PIPELINE_STAGES) - 1
+        from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
+
+        orch = ContentGenOrchestrator(config)
+        resume_error = orch.validate_resume_context(from_stage=request.from_stage, ctx=ctx)
+        if resume_error:
+            return JSONResponse(status_code=400, content={"error": resume_error})
 
         # Create a new job for the resumed run
         new_job = job_registry.create_job(
@@ -317,9 +327,6 @@ def register_content_gen_routes(
         job_registry.update_context(new_job.pipeline_id, ctx)
 
         async def _run() -> None:
-            from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
-
-            orch = ContentGenOrchestrator(config)
             job_registry.mark_running(new_job.pipeline_id)
 
             def _progress(stage_idx: int, label: str) -> None:
@@ -337,7 +344,7 @@ def register_content_gen_routes(
                     )
                 )
 
-            def _stage_completed(stage_idx: int, status: str, detail: str, stage_ctx: PipelineContext) -> None:
+            def _stage_completed(stage_idx: int, status: str, detail: str, stage_ctx) -> None:
                 # Update job registry with latest context after each stage
                 job_registry.update_context(new_job.pipeline_id, stage_ctx)
                 serialized_context = json.loads(stage_ctx.model_dump_json())
@@ -394,6 +401,7 @@ def register_content_gen_routes(
                     job.theme,
                     from_stage=request.from_stage,
                     to_stage=end,
+                    initial_context=ctx,
                     progress_callback=_progress,
                     stage_completed_callback=_stage_completed,
                 )
@@ -526,6 +534,58 @@ def register_content_gen_routes(
         return JSONResponse(content=json.loads(response.model_dump_json()))
 
     # ------------------------------------------------------------------
+    # Backlog
+    # ------------------------------------------------------------------
+
+    @app.get("/api/content-gen/backlog")
+    async def list_backlog() -> JSONResponse:
+        config = load_config()
+        service = BacklogService(config)
+        backlog = service.load()
+        return JSONResponse(
+            content={
+                "path": str(service.path),
+                "items": [json.loads(item.model_dump_json()) for item in backlog.items],
+            }
+        )
+
+    @app.patch("/api/content-gen/backlog/{idea_id}")
+    async def update_backlog_item(idea_id: str, request: UpdateBacklogItemRequest) -> JSONResponse:
+        config = load_config()
+        service = BacklogService(config)
+        updated = service.update_item(idea_id, request.patch)
+        if updated is None:
+            return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
+        return JSONResponse(content=json.loads(updated.model_dump_json()))
+
+    @app.post("/api/content-gen/backlog/{idea_id}/select")
+    async def select_backlog_item(idea_id: str) -> JSONResponse:
+        config = load_config()
+        service = BacklogService(config)
+        selected = service.select_item(idea_id)
+        if selected is None:
+            return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
+        return JSONResponse(content=json.loads(selected.model_dump_json()))
+
+    @app.post("/api/content-gen/backlog/{idea_id}/archive")
+    async def archive_backlog_item(idea_id: str) -> JSONResponse:
+        config = load_config()
+        service = BacklogService(config)
+        archived = service.archive_item(idea_id)
+        if archived is None:
+            return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
+        return JSONResponse(content=json.loads(archived.model_dump_json()))
+
+    @app.delete("/api/content-gen/backlog/{idea_id}")
+    async def delete_backlog_item(idea_id: str) -> JSONResponse:
+        config = load_config()
+        service = BacklogService(config)
+        removed = service.delete_item(idea_id)
+        if not removed:
+            return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
+        return JSONResponse(content={"removed": 1})
+
+    # ------------------------------------------------------------------
     # Strategy
     # ------------------------------------------------------------------
 
@@ -569,7 +629,7 @@ def register_content_gen_routes(
         logger.info("Pipeline WS connecting pipeline_id=%s", pipeline_id)
         await websocket.accept()
 
-        connection = WebSocketConnection(websocket, pipeline_id)  # type: ignore[arg-type]
+        connection = WebSocketConnection(websocket, pipeline_id)
         await event_router.subscribe(pipeline_id, connection)
 
         # Send initial state

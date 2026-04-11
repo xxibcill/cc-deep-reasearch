@@ -21,6 +21,7 @@ import { StartPipelineForm } from '@/components/content-gen/start-pipeline-form'
 import { QuickScriptForm } from '@/components/content-gen/quick-script-form'
 import { ScriptsPanel } from '@/components/content-gen/scripts-panel'
 import { StrategyEditor } from '@/components/content-gen/strategy-editor'
+import { BacklogPanel } from '@/components/content-gen/backlog-panel'
 import { PublishQueuePanel } from '@/components/content-gen/publish-queue-panel'
 import { OverviewSidebar } from '@/components/content-gen/overview-sidebar'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -47,6 +48,8 @@ export default function ContentGenPage() {
   const activeTab = searchParams.get('tab') || 'overview'
 
   const pipelines = useContentGen((s) => s.pipelines)
+  const activePipelineId = useContentGen((s) => s.activePipelineId)
+  const pipelineContext = useContentGen((s) => s.pipelineContext)
   const publishQueue = useContentGen((s) => s.publishQueue)
   const loadAll = useContentGen((s) => s.loadAll)
   const removeFromQueue = useContentGen((s) => s.removeFromQueue)
@@ -354,6 +357,30 @@ export default function ContentGenPage() {
               <StrategyEditor />
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {activeTab === 'backlog' && (
+        <div className="w-full">
+          {activePipelineId && pipelineContext?.backlog ? (
+            <BacklogPanel
+              items={pipelineContext.backlog.items}
+              backlogPath={null}
+              loading={false}
+              onUpdateStatus={async () => {}}
+              onSelect={async () => {}}
+              onArchive={async () => {}}
+              onDelete={async () => {}}
+            />
+          ) : (
+            <Card className="rounded-[1.3rem]">
+              <CardContent className="p-6">
+                <p className="text-sm text-muted-foreground">
+                  Select a pipeline to view its backlog. Visit the pipeline detail page to manage backlog items.
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import click
 
@@ -102,7 +102,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
             "forbidden_claims",
             "proof_standards",
         }
-        patch = {key: [v.strip() for v in value.split(",")]} if key in list_fields else {key: value}  # type: ignore[dict-item]
+        patch = {key: [v.strip() for v in value.split(",")]} if key in list_fields else {key: value}
         store.update(patch)
         click.echo(f"Updated {key} in {store.path}")
 
@@ -123,15 +123,19 @@ def register_content_gen_commands(cli: click.Group) -> None:
         config = load_config()
 
         async def _run() -> None:
+            from cc_deep_research.content_gen.backlog_service import BacklogService
             from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
 
             orch = ContentGenOrchestrator(config)
+            service = BacklogService(config)
             click.echo(f'Building backlog for: "{theme}" ({count} ideas)...')
             result = await orch.run_backlog(theme, count=count)
+            result = service.persist_generated(result, theme=theme)
 
             click.echo(f"\nGenerated {len(result.items)} ideas, rejected {result.rejected_count}")
             for item in result.items:
                 click.echo(f"  [{item.category}] {item.idea}")
+            click.echo(f"\nBacklog store: {service.path}")
 
             if output:
                 Path(output).write_text(result.model_dump_json(indent=2))
@@ -148,10 +152,12 @@ def register_content_gen_commands(cli: click.Group) -> None:
         config = load_config()
 
         async def _run() -> None:
+            from cc_deep_research.content_gen.backlog_service import BacklogService
             from cc_deep_research.content_gen.models import BacklogOutput
             from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
 
             orch = ContentGenOrchestrator(config)
+            service = BacklogService(config)
             items = []
             if from_file:
                 data = BacklogOutput.model_validate_json(Path(from_file).read_text())
@@ -162,7 +168,9 @@ def register_content_gen_commands(cli: click.Group) -> None:
                 return
 
             click.echo(f"Scoring {len(items)} ideas...")
+            service.upsert_items(items)
             result = await orch.run_scoring(items)
+            service.apply_scoring(result)
 
             click.echo(f"\nProduce now ({len(result.produce_now)}):")
             for sid in result.produce_now[:select_top]:
@@ -534,7 +542,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
         import json
 
         config = load_config()
-        metrics: dict[str, Any] = {}
+        metrics: dict = {}
         if metrics_file:
             metrics = json.loads(Path(metrics_file).read_text())
 
@@ -652,15 +660,16 @@ def register_content_gen_commands(cli: click.Group) -> None:
                     click.echo(f"Running {total}-step pipeline...\n")
                 if config.content_gen.enable_iterative_mode and not no_iterate:
                     result_ctx, iter_state = await orch.run_scripting_iterative(
-                        idea,
-                        progress_callback=progress,
+                        idea, progress_callback=progress  # type: ignore[arg-type]
                     )
                     if not quiet and iter_state.current_iteration > 1:
-                        click.echo(f"\nCompleted in {iter_state.current_iteration} iterations")
+                        click.echo(
+                            f"\nCompleted in {iter_state.current_iteration} iterations"
+                        )
                         if iter_state.is_converged:
                             click.echo(f"Convergence: {iter_state.convergence_reason}")
                     return result_ctx
-                return await orch.run_scripting(idea, progress_callback=progress)
+                return await orch.run_scripting(idea, progress_callback=progress)  # type: ignore[arg-type]
 
         try:
             result = asyncio.run(_run())
@@ -723,7 +732,9 @@ def register_content_gen_commands(cli: click.Group) -> None:
 
         click.echo(f"Saved scripting runs in {store.path}:")
         for run in runs:
-            click.echo(f"  {run.run_id} | {run.saved_at} | {run.word_count} words | {run.raw_idea}")
+            click.echo(
+                f"  {run.run_id} | {run.saved_at} | {run.word_count} words | {run.raw_idea}"
+            )
 
     @scripts.command("show")
     @click.option("--run-id", default=None, help="Saved run id")
@@ -757,8 +768,14 @@ def register_content_gen_commands(cli: click.Group) -> None:
     @content_gen.command()
     @click.option("--theme", default=None, help="Theme for backlog generation")
     @click.option("--idea", default=None, help="Skip backlog; start scripting with this idea")
-    @click.option("--from-stage", type=int, default=None, help="Resume from stage (0-11)")
+    @click.option("--from-stage", type=int, default=None, help="Resume from stage (0-13)")
     @click.option("--to-stage", type=int, default=None, help="Stop after this stage")
+    @click.option(
+        "--from-file",
+        type=click.Path(exists=True),
+        default=None,
+        help="Resume from saved PipelineContext",
+    )
     @click.option("-o", "--output", type=click.Path(), default=None)
     @click.option("--save-context", is_flag=True, help="Save pipeline context as JSON")
     @click.option("--quiet", is_flag=True, help="Only show final result")
@@ -767,6 +784,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
         idea: str | None,
         from_stage: int | None,
         to_stage: int | None,
+        from_file: str | None,
         output: str | None,
         save_context: bool,
         quiet: bool,
@@ -774,32 +792,130 @@ def register_content_gen_commands(cli: click.Group) -> None:
         """Run the full content generation pipeline."""
         config = load_config()
 
-        from cc_deep_research.content_gen.models import PIPELINE_STAGES
+        from cc_deep_research.content_gen.models import (
+            PIPELINE_STAGES,
+            BacklogItem,
+            BacklogOutput,
+            PipelineCandidate,
+            PipelineContext,
+            ScoringOutput,
+        )
 
-        start = from_stage or 0
+        ctx: PipelineContext | None = None
+        bypass_ideation = False
+
+        if from_file:
+            ctx = PipelineContext.model_validate_json(Path(from_file).read_text())
+            if theme and ctx.theme and theme != ctx.theme:
+                msg = "--theme does not match the saved context in --from-file"
+                raise click.UsageError(msg)
+            if idea:
+                selected_item = None
+                if ctx.backlog is not None:
+                    selected_idea_id = ctx.selected_idea_id or (ctx.scoring.selected_idea_id if ctx.scoring else "")
+                    selected_item = next(
+                        (item for item in ctx.backlog.items if item.idea_id == selected_idea_id),
+                        None,
+                    )
+                saved_idea = selected_item.idea if selected_item is not None else ctx.theme
+                if idea != saved_idea:
+                    msg = "--idea does not match the saved context in --from-file"
+                    raise click.UsageError(msg)
+            theme = theme or ctx.theme
+        elif idea:
+            seeded_item = BacklogItem(
+                idea=idea,
+                source="direct_idea",
+                source_theme=theme or idea,
+                status="selected",
+            )
+            ctx = PipelineContext(
+                theme=theme or idea,
+                backlog=BacklogOutput(items=[seeded_item]),
+                scoring=ScoringOutput(
+                    produce_now=[seeded_item.idea_id],
+                    shortlist=[seeded_item.idea_id],
+                    selected_idea_id=seeded_item.idea_id,
+                    selection_reasoning="Seeded directly from --idea.",
+                    active_candidates=[
+                        PipelineCandidate(idea_id=seeded_item.idea_id, role="primary", status="selected")
+                    ],
+                ),
+                shortlist=[seeded_item.idea_id],
+                selected_idea_id=seeded_item.idea_id,
+                selection_reasoning="Seeded directly from --idea.",
+                active_candidates=[
+                    PipelineCandidate(idea_id=seeded_item.idea_id, role="primary", status="selected")
+                ],
+            )
+            bypass_ideation = True
+        elif not theme:
+            msg = "--theme, --idea, or --from-file is required"
+            raise click.UsageError(msg)
+
+        start = from_stage if from_stage is not None else 0
+        if from_file and from_stage is None and ctx is not None:
+            start = ctx.current_stage + 1
+            if start >= len(PIPELINE_STAGES):
+                msg = "Saved context is already at the final stage; pass --from-stage to rerun a stage."
+                raise click.UsageError(msg)
+
         if not 0 <= start < len(PIPELINE_STAGES):
             msg = f"--from-stage must be between 0 and {len(PIPELINE_STAGES) - 1}"
             raise click.UsageError(msg)
+        if to_stage is not None and to_stage < start:
+            msg = "--to-stage must be greater than or equal to --from-stage"
+            raise click.UsageError(msg)
+
+        context_output_path = _resolve_pipeline_context_path(output, save_context)
+        latest_ctx = ctx
 
         def progress(idx: int, label: str) -> None:
             if not quiet:
                 click.echo(f"  Stage {idx + 1}/{len(PIPELINE_STAGES)}: {label}...")
 
+        def on_stage_completed(
+            _idx: int,
+            _status: str,
+            _detail: str,
+            stage_ctx: PipelineContext,
+        ) -> None:
+            nonlocal latest_ctx
+            latest_ctx = stage_ctx.model_copy(deep=True)
+            if context_output_path is not None:
+                _write_pipeline_context(stage_ctx, context_output_path)
+
         async def _run() -> PipelineContext:
             from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
 
             orch = ContentGenOrchestrator(config)
+            if ctx is not None:
+                resume_error = orch.validate_resume_context(
+                    from_stage=start,
+                    ctx=ctx,
+                    bypass_ideation=bypass_ideation,
+                )
+                if resume_error:
+                    raise click.UsageError(resume_error)
             t = theme or idea or "general"
             return await orch.run_full_pipeline(
                 t,
                 from_stage=start,
                 to_stage=to_stage,
+                initial_context=ctx,
+                bypass_ideation=bypass_ideation,
                 progress_callback=progress,
+                stage_completed_callback=on_stage_completed,
             )
 
         try:
             result = asyncio.run(_run())
         except Exception:
+            _auto_save_failed_pipeline_context(
+                latest_ctx,
+                context_output_path,
+                quiet,
+            )
             if not quiet:
                 click.echo("Pipeline failed.", err=True)
             raise
@@ -831,11 +947,10 @@ def register_content_gen_commands(cli: click.Group) -> None:
             if result.qc_gate:
                 click.echo(f"QC: approved={result.qc_gate.approved_for_publish}")
 
-        if save_context or output:
-            ctx_path = (output + ".context.json") if output else "pipeline_context.json"
-            Path(ctx_path).write_text(result.model_dump_json(indent=2))
+        if context_output_path is not None:
+            _write_pipeline_context(result, context_output_path)
             if not quiet:
-                click.echo(f"\nContext saved to: {ctx_path}")
+                click.echo(f"\nContext saved to: {context_output_path}")
 
         if output:
             # Write final script to output
@@ -864,12 +979,42 @@ def _auto_save_failed_context(
         pass  # best-effort; don't mask the original error
 
 
+def _resolve_pipeline_context_path(output: str | None, save_context: bool) -> str | None:
+    """Return the intended pipeline context path for explicit saves."""
+    if output:
+        return output + ".context.json"
+    if save_context:
+        return "pipeline_context.json"
+    return None
+
+
+def _write_pipeline_context(ctx: PipelineContext, path: str) -> None:
+    """Persist a pipeline context snapshot."""
+    Path(path).write_text(ctx.model_dump_json(indent=2))
+
+
+def _auto_save_failed_pipeline_context(
+    ctx: PipelineContext | None,
+    output_path: str | None,
+    quiet: bool,
+) -> None:
+    """Best-effort save of partial pipeline context on failure."""
+    if ctx is None:
+        return
+    try:
+        fallback_path = output_path or "pipeline_context_failed.json"
+        _write_pipeline_context(ctx, fallback_path)
+        if not quiet:
+            click.echo(f"\nPipeline failed. Partial context saved to: {fallback_path}", err=True)
+    except Exception:
+        pass
+
+
 def _load_packaging_inputs(text: str) -> tuple[ScriptVersion, AngleOption]:
     """Extract packaging inputs from workflow context JSON."""
     from cc_deep_research.content_gen.models import (
         AngleOption,
         PipelineContext,
-        ScriptVersion,
         ScriptingContext,
     )
 
@@ -904,7 +1049,6 @@ def _load_packaging_inputs(text: str) -> tuple[ScriptVersion, AngleOption]:
 
 
 def _extract_script_from_pipeline_context(ctx: PipelineContext) -> ScriptVersion | None:
-    from cc_deep_research.content_gen.models import ScriptVersion
 
     if ctx.scripting is None:
         return None
@@ -926,7 +1070,6 @@ def _extract_script_from_scripting_context(ctx: ScriptingContext) -> ScriptVersi
 
 
 def _extract_angle_from_pipeline_context(ctx: PipelineContext) -> AngleOption | None:
-    from cc_deep_research.content_gen.models import AngleOption
 
     if ctx.angles is None:
         return None

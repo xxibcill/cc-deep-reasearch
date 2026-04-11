@@ -1,6 +1,6 @@
 # Research Workflow Design
 
-This document explains how the research workflow in `cc-deep-research` is designed, how the runtime moves through each phase, which modules own each responsibility, and where the current implementation diverges from the broader multi-agent design described in comments and CLI help.
+This document explains how the research workflow in `cc-deep-research` is designed, how the runtime moves through each phase, which modules own each responsibility, and where the current implementation diverges from the broader multi-agent direction still visible in some internal naming.
 
 ## Purpose
 
@@ -24,10 +24,10 @@ The main runtime path for a CLI research run is:
 
 1. CLI parses flags and loads configuration.
 2. CLI builds a `TeamResearchOrchestrator`.
-3. Orchestrator initializes local agent objects and optional parallel coordination primitives.
+3. Orchestrator initializes local workflow components and optional parallel coordination primitives.
 4. Lead agent derives a strategy from the query and depth.
 5. Query expander produces search variations when depth requires it.
-6. Source collector or parallel researchers gather results from providers.
+6. Source collector or parallel local collection tasks gather results from providers.
 7. Results are deduplicated and top-ranked sources are enriched with fetched page content.
 8. Analyzer produces findings, themes, cross-reference output, and gaps.
 9. Deep mode adds a second analysis layer with multi-pass synthesis.
@@ -42,7 +42,7 @@ The main runtime path for a CLI research run is:
 flowchart TD
     A["CLI research command"] --> B["load_config()"]
     B --> C["TeamResearchOrchestrator.execute_research()"]
-    C --> D["Initialize agents and optional parallel coordination"]
+    C --> D["Initialize local workflow components and optional parallel coordination"]
     D --> E["ResearchLeadAgent.analyze_query()"]
     E --> F["QueryExpanderAgent.expand_query()"]
     F --> G{"Parallel mode?"}
@@ -72,7 +72,7 @@ The stable public workflow entry point is [`src/cc_deep_research/orchestrator.py
 
 - phase ordering
 - monitor events
-- team and agent initialization
+- runtime initialization for local workflow components
 - sequential versus parallel source collection
 - iterative follow-up passes
 - session assembly
@@ -108,7 +108,7 @@ The `research` command controls the workflow through flags such as:
 
 Important implementation detail:
 
-- `--no-team` forces sequential source collection. It does not switch to a separate non-agent pipeline.
+- `--no-team` forces sequential source collection. It does not switch to a separate non-agent pipeline or disable the local specialist components.
 - Parallel behavior is driven by `parallel_mode` and `config.search_team.parallel_execution`.
 
 ## Configuration That Shapes the Workflow
@@ -133,8 +133,8 @@ The most relevant settings are:
 - `research.ai_integration_method`: `heuristic`, `api`, or `hybrid`
 - routed LLM analysis is configured through `llm.route_defaults` and provider-specific `llm.*` settings
 - `search_team.parallel_execution`: default parallel collection mode
-- `search_team.num_researchers`: number of parallel tasks
-- `search_team.researcher_timeout`: timeout per parallel researcher
+- `search_team.num_researchers`: number of parallel local collection tasks
+- `search_team.researcher_timeout`: timeout per parallel local collection task
 
 ## Data Model
 
@@ -466,7 +466,199 @@ The reporting layer depends on `session.metadata["analysis"]` being the canonica
 - `execution`: parallel-mode intent, whether parallel collection actually ran, and any degraded-run reasons
 - `deep_analysis`: whether deep analysis was requested, whether it completed, and explicit degraded/not-requested state
 
-This contract applies to quick, standard, and deep runs. Degraded states are represented explicitly in `providers`, `execution`, and `deep_analysis` instead of being inferred from absent keys.
+## Session Metadata Contract
+
+This section documents the exact shape of `ResearchSession.metadata` produced by the research pipeline. This contract is stable and applies to all depth modes (quick, standard, deep).
+
+### Top-Level Structure
+
+```python
+SessionMetadataContract = {
+    "strategy": dict,           # Required: StrategyResult output
+    "analysis": dict,           # Required: AnalysisResult output
+    "validation": dict,         # Optional: ValidationResult output ({} if not available)
+    "iteration_history": list,  # Required: List of iteration records (can be empty)
+    "providers": {...},         # Required: Provider resolution metadata
+    "execution": {...},         # Required: Execution mode and degradation info
+    "deep_analysis": {...},      # Required: Deep analysis status
+    "llm_routes": {...},         # Required: LLM routing and usage summary
+    "prompts": {...},            # Required: Prompt configuration metadata
+}
+```
+
+### Field Descriptions
+
+#### `strategy` (Required)
+Type: `dict` - Output from `ResearchLeadAgent.analyze_query()`
+
+Contains the research strategy derived from the query and depth:
+- `query_profile`: Estimated query complexity and characteristics
+- `intent`: Detected intent (comparison, explanatory, etc.)
+- `estimated_sources`: Target source count
+- `task_list`: Planned task breakdown
+- `follow_up_bias`: Bias toward or against iterative search
+
+#### `analysis` (Required)
+Type: `dict` - Output from `AnalyzerAgent` (and optionally `DeepAnalyzerAgent`)
+
+Contains findings from source analysis:
+- `findings`: Key findings extracted from sources
+- `themes`: Major themes identified
+- `gaps`: Research gaps identified
+- `cross_references`: Cross-reference analysis output
+- `source_provenance`: Summary of which queries returned which sources
+- `analysis_method`: Method used ("ai", "heuristic", "hybrid", etc.)
+- `deep_analysis_complete`: Boolean indicating if deep analysis succeeded
+
+#### `validation` (Optional)
+Type: `dict` - Output from `ValidatorAgent.validate_research()`
+
+May be empty `{}` if validation was not run or failed. When present:
+- `is_valid`: Boolean quality gate result
+- `quality_score`: Numeric quality score
+- `issues`: List of identified issues
+- `warnings`: List of warnings
+- `recommendations`: Recommendations for improvement
+- `follow_up_queries`: Suggested follow-up queries
+- `needs_follow_up`: Boolean indicating if iteration is needed
+
+#### `iteration_history` (Required)
+Type: `list[dict]` - Records from iterative follow-up search
+
+Each record represents one iteration cycle:
+```python
+{
+    "iteration": int,           # Iteration number (1-indexed)
+    "query": str,                # Original query
+    "sources_before": int,       # Source count before iteration
+    "sources_after": int,        # Source count after iteration
+    "new_sources": int,          # New unique sources added
+    "follow_up_queries": list,    # Queries used for follow-up
+    "validation": dict,           # Validation result at this iteration
+    "timestamp": str,            # ISO timestamp
+}
+```
+
+#### `providers` (Required)
+Type: `SessionProvidersMetadata`
+
+```python
+{
+    "configured": list[str],     # Required: Providers configured in settings
+    "available": list[str],      # Required: Providers that resolved successfully
+    "warnings": list[str],        # Required: Warnings from provider resolution
+    "status": ProviderStatus,    # Required: "ready" | "degraded" | "unavailable"
+}
+```
+
+#### `execution` (Required)
+Type: `SessionExecutionMetadata`
+
+```python
+{
+    "parallel_requested": bool,      # Required: Whether parallel mode was requested
+    "parallel_used": bool,            # Required: Whether parallel collection ran
+    "degraded": bool,                 # Required: Whether any degradation occurred
+    "degraded_reasons": list[str],    # Required: List of degradation reasons
+}
+```
+
+#### `deep_analysis` (Required)
+Type: `SessionDeepAnalysisMetadata`
+
+```python
+{
+    "requested": bool,               # Required: Whether deep mode was requested
+    "completed": bool,               # Required: Whether deep analysis completed
+    "status": DeepAnalysisStatus,    # Required: "not_requested" | "completed" | "degraded"
+    "reason": str | None,            # Optional: Reason if degraded or not requested
+}
+```
+
+#### `llm_routes` (Required)
+Type: `dict` - Summary of LLM routing decisions
+
+```python
+{
+    "planned_routes": {               # Maps agent_id -> route config
+        "<agent_id>": {
+            "transport": str,        # e.g., "anthropic_api", "openrouter_api"
+            "provider": str,         # e.g., "claude", "openrouter"
+            "model": str,            # Model identifier
+            "source": str,           # "config" | "planner"
+        }
+    },
+    "actual_routes": {...},          # Similar structure, reflects actual usage
+    "usage_stats": {                 # Usage per agent:transport key
+        "<agent_id>:<transport>": {
+            "request_count": int,
+            "total_tokens": int,
+            "prompt_tokens": int,
+            "completion_tokens": int,
+            "error_count": int,
+            "avg_latency_ms": int,
+        }
+    },
+    "fallback_events": [...],        # List of fallback events
+    "fallback_count": int,           # Total fallback events
+}
+```
+
+#### `prompts` (Required)
+Type: `SessionPromptMetadata`
+
+```python
+{
+    "overrides_applied": bool,                    # Whether any prompt overrides were used
+    "effective_overrides": {                      # Maps agent_id -> override config
+        "<agent_id>": {
+            "system_prompt": str | None,
+            "prompt_prefix": str | None,
+        }
+    },
+    "default_prompts_used": list[str],            # List of agents using default prompts
+}
+```
+
+### Required vs Optional Fields
+
+| Field | Required | Default if Missing |
+|-------|----------|-------------------|
+| `strategy` | Yes | `{}` (should not be empty for valid session) |
+| `analysis` | Yes | `{}` (should not be empty for valid session) |
+| `validation` | No | `{}` |
+| `iteration_history` | Yes | `[]` |
+| `providers` | Yes | All fields default to empty/UNAVAILABLE |
+| `execution` | Yes | All fields default to `False`/`[]` |
+| `deep_analysis` | Yes | All fields default to not_requested |
+| `llm_routes` | Yes | All nested dicts default to `{}` |
+| `prompts` | Yes | All fields default to `False`/empty |
+
+### Source Provenance Sub-Structure
+
+The `analysis.source_provenance` field (added during metadata build) provides a compact summary:
+
+```python
+{
+    "sources_with_provenance": int,   # Count of sources with query tracking
+    "multi_query_sources": int,       # Sources returned by multiple queries
+    "queries": list[str],             # Unique queries used
+    "families": list[str],            # Unique query families used
+    "family_counts": {                # Count per family
+        "<family_name>": int,
+    }
+}
+```
+
+### Degraded States
+
+Degraded states are explicit, not inferred:
+
+1. **Provider degradation**: `providers.status != "ready"` indicates reduced functionality
+2. **Execution degradation**: `execution.degraded == True` when `execution.degraded_reasons` is non-empty
+3. **Deep analysis degradation**: `deep_analysis.status == "degraded"` when deep mode was requested but did not complete fully
+
+This contract applies to quick, standard, and deep runs. The normalization logic in `models/session.py` ensures backward compatibility with legacy session formats.
 
 ### 13. Persistence and Telemetry
 
@@ -504,7 +696,7 @@ The project uses agent-oriented naming, but the current architecture is mixed. T
 | `ValidatorAgent` | Quality gate and loop trigger | Real |
 | `ReporterAgent` | Final report assembly | Real |
 | `LocalResearchTeam` | Local lifecycle metadata wrapper | Real, local-only scaffolding |
-| `LocalAgentPool` | Track local parallel researcher-task state | Real, local-only scaffolding |
+| `LocalAgentPool` | Track local parallel collection-task state | Real, local-only scaffolding |
 | `LocalMessageBus` | Local async coordination queue | Real, local-only scaffolding |
 
 ## Design Principles Visible in the Code

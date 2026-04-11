@@ -1,15 +1,14 @@
 """Prompt templates for the research pack builder.
 
-Contract Version: 1.0.0
+Contract Version: 1.1.0
 
 Parser expectations:
-- synthesis output: Expects named section headers:
-  audience_insights, competitor_observations, key_facts, proof_points,
-  examples, case_studies, gaps_to_exploit, assets_needed,
-  claims_requiring_verification, unsafe_or_uncertain_claims,
-  research_stop_reason
-  List sections use "- " or "* " items. Missing sections stay empty on
-  purpose because this parser is intentionally tolerant.
+- synthesis output: Prefers structured sections named findings, claims,
+  counterpoints, uncertainty_flags, assets_needed, and research_stop_reason.
+  Structured sections use repeated `---` blocks with scalar fields and may
+  reference source_ids from the prompt-provided source catalog.
+- The parser remains tolerant of older legacy list sections so downstream
+  stages can continue operating during contract migration.
 
 When editing prompts, ensure output format remains compatible with
 the parser in agents/research_pack.py.
@@ -19,7 +18,7 @@ from __future__ import annotations
 
 from cc_deep_research.content_gen.models import AngleOption, BacklogItem
 
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"
 
 GLOBAL_RULES = """\
 You are building a compact research pack for a short-form video inside a modular workflow.
@@ -39,49 +38,61 @@ SYNTHESIS_SYSTEM = f"""\
 You are synthesizing search results into a compact research pack.
 
 Task:
-Using the search results provided, extract a focused research pack.
+Using the source catalog provided, extract a focused research pack.
 Do not over-research. Stop when these conditions are all met:
 - You have 3-7 useful proof points
 - You have identified 1-2 gaps in competitor coverage
 - You can support the main promise
 - You have flagged uncertain claims
+- You can point each major finding or claim to one or more source_ids when possible
+
+Rules:
+- Use source_ids from the source catalog whenever a finding or claim has support
+- Do not invent source_ids
+- If a source is weak or indirect, lower confidence or move the idea into uncertainty_flags
+- Keep findings concrete and compact
+- Use counterpoints for caveats, limits, or credible pushback
+- Keep assets_needed as a simple list
 
 Output format:
 
-audience_insights:
-- (insight 1)
-- (insight 2)
+findings:
+---
+finding_type: audience_insight | competitor_observation | example | case_study | gap_to_exploit
+summary: (finding summary)
+source_ids: src_a, src_b
+confidence: high | medium | low | unknown
+evidence_note: (optional note)
+---
 
-competitor_observations:
-- (observation 1)
-- (observation 2)
+claims:
+---
+claim_type: key_fact | proof_point
+claim: (claim text)
+source_ids: src_a, src_b
+confidence: high | medium | low | unknown
+mechanism: (optional mechanism or why it matters)
+---
 
-key_facts:
-- (fact 1)
-- (fact 2)
-
-proof_points:
-- (proof 1)
-- (proof 2)
-
-examples:
-- (example 1)
-
-case_studies:
-- (case study if found)
-
-gaps_to_exploit:
-- (gap 1)
-- (gap 2)
+counterpoints:
+---
+summary: (counterpoint or caveat)
+why_it_matters: (why the team should care)
+source_ids: src_a
+confidence: high | medium | low | unknown
+---
 
 assets_needed:
 - (asset 1)
 
-claims_requiring_verification:
-- (claim 1)
-
-unsafe_or_uncertain_claims:
-- (claim 1)
+uncertainty_flags:
+---
+flag_type: verification_required | unsafe_or_uncertain
+claim: (claim text)
+reason: (why it is uncertain or risky)
+severity: low | medium | high
+source_ids: src_a
+---
 
 research_stop_reason: (why research is sufficient)"""
 

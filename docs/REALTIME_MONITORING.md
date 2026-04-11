@@ -94,6 +94,8 @@ Important pieces:
 - API client: [`dashboard/src/lib/api.ts`](../dashboard/src/lib/api.ts)
 - WebSocket client: [`dashboard/src/lib/websocket.ts`](../dashboard/src/lib/websocket.ts)
 - runtime host configuration: [`dashboard/src/lib/runtime-config.ts`](../dashboard/src/lib/runtime-config.ts)
+- content-gen pipeline detail: [`dashboard/src/app/content-gen/pipeline/[id]/page.tsx`](../dashboard/src/app/content-gen/pipeline/[id]/page.tsx)
+- content-gen WebSocket handler: [`dashboard/src/hooks/useContentGen.ts`](../dashboard/src/hooks/useContentGen.ts)
 
 Current UX surface:
 
@@ -107,6 +109,8 @@ Current UX surface:
 - dedicated tool execution panel
 - dedicated LLM reasoning panel
 - virtualized event table and raw JSON inspection modal
+- content-generation pipeline detail page with stage-by-stage progress
+- live pipeline operator visibility via WebSocket updates
 
 ## Development Options
 
@@ -166,3 +170,6 @@ export NEXT_PUBLIC_CC_WS_BASE_URL=ws://localhost:8000/ws
 - Dashboard-related environment variables currently live in [`src/cc_deep_research/config/schema.py`](../src/cc_deep_research/config/schema.py) as settings support, but the dashboard CLI currently takes host and port directly from command flags.
 - The dashboard UI now uses local `shadcn/ui`-style primitives declared in [`dashboard/components.json`](../dashboard/components.json) and implemented in [`dashboard/src/components/ui/`](../dashboard/src/components/ui).
 - Live-session performance depends on buffered WebSocket updates, lazy-loaded heavy panels, and a virtualized event table. If a session is especially noisy, those are the first guardrails to preserve before adding more visualization work.
+- Content-generation pipelines use a separate WebSocket endpoint at `/ws/content-gen/pipeline/{pipelineId}` for live operator visibility.
+- Stage-completion, skip, and failure events include the latest pipeline-context snapshot so the detail page can render stage content progressively while a run is still active.
+- Reloading a pipeline detail page mid-run rehydrates from the latest in-memory context stored in the backend job registry.

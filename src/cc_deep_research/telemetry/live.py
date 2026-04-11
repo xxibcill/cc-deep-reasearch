@@ -12,15 +12,9 @@ from typing import Any, cast
 from cc_deep_research.config import get_default_config_path
 
 from .tree import (
-    build_critical_path,
-    build_decisions,
-    build_degradations,
     build_derived_summary,
     build_event_tree,
-    build_failures,
     build_llm_route_streams,
-    build_narrative,
-    build_state_changes,
     build_subprocess_streams,
     current_phase_from_events,
     empty_decision_graph,

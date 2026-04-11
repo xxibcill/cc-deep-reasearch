@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from .models import ResearchTheme
 
-
 # Theme-specific prompt prefixes for the analyzer agent
 ANALYZER_PROMPT_PREFIXES: dict[ResearchTheme, str] = {
     ResearchTheme.GENERAL: """You are analyzing research sources to extract comprehensive insights.

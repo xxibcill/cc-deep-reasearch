@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
+from cc_deep_research.content_gen.agents._llm_utils import call_agent_llm_text
 from cc_deep_research.content_gen.models import (
     AngleOption,
     AngleOutput,
@@ -58,13 +59,16 @@ class AngleAgent:
         *,
         temperature: float = 0.5,
     ) -> str:
-        response = await self._router.execute(
-            AGENT_ID,
-            user_prompt,
+        return await call_agent_llm_text(
+            router=self._router,
+            agent_id=AGENT_ID,
             system_prompt=system_prompt,
+            user_prompt=user_prompt,
             temperature=temperature,
+            workflow_name="angle generation workflow",
+            cli_command="content-gen angle generate",
+            logger=logger,
         )
-        return response.content
 
     async def generate(
         self,
@@ -113,7 +117,7 @@ def _parse_angle_options(text: str) -> list[AngleOption]:
         block_text = block.strip()
         if not block_text:
             continue
-        data: dict[str, Any] = {}
+        data: dict = {}
         for field in _ANGLE_FIELDS:
             val = _extract_field(block_text, field)
             if val:

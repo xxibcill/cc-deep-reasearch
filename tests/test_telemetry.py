@@ -621,7 +621,6 @@ def test_query_live_subprocess_streams_enforces_chunk_limit(tmp_path):
 
 def test_query_live_llm_route_analytics(tmp_path):
     """Live LLM route analytics should aggregate route events by transport and provider."""
-    from cc_deep_research.telemetry import query_live_llm_route_analytics
 
     monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
     monitor.set_session("live-llm-route", query="test query", depth="standard")

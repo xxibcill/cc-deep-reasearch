@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
+from cc_deep_research.content_gen.agents._llm_utils import call_agent_llm_text
 from cc_deep_research.content_gen.models import ProductionBrief, VisualPlanOutput
 from cc_deep_research.content_gen.prompts import production as prompts
 from cc_deep_research.llm import LLMRouter
@@ -16,6 +17,40 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 AGENT_ID = "content_gen_production"
+
+
+def _maybe_set_degraded(brief: ProductionBrief, text: str) -> None:
+    """Set degraded state on ProductionBrief if output is partial or empty."""
+    if not text:
+        brief.is_degraded = True
+        brief.degradation_reason = "blank LLM response after retry"
+        return
+
+    list_fields = [
+        brief.props,
+        brief.assets_to_prepare,
+        brief.audio_checks,
+        brief.battery_checks,
+        brief.storage_checks,
+        brief.pickup_lines_to_capture,
+    ]
+    scalar_fields = [brief.location, brief.setup, brief.wardrobe, brief.backup_plan]
+
+    non_empty_lists = [f for f in list_fields if f]
+    non_empty_scalars = [f for f in scalar_fields if f]
+
+    if not non_empty_lists and not non_empty_scalars:
+        brief.is_degraded = True
+        brief.degradation_reason = "parser produced zero usable records"
+        return
+
+    empty_lists = [f for f in list_fields if not f]
+    if empty_lists:
+        brief.is_degraded = True
+        list_field_names = ["props", "assets_to_prepare", "audio_checks", "battery_checks",
+                           "storage_checks", "pickup_lines_to_capture"]
+        missing = [list_field_names[i] for i, f in enumerate(list_fields) if not f]
+        brief.degradation_reason = f"parser produced partial records; missing: {', '.join(missing)}"
 
 
 class ProductionAgent:
@@ -35,13 +70,17 @@ class ProductionAgent:
         *,
         temperature: float = 0.3,
     ) -> str:
-        response = await self._router.execute(
-            AGENT_ID,
-            user_prompt,
+        return await call_agent_llm_text(
+            router=self._router,
+            agent_id=AGENT_ID,
             system_prompt=system_prompt,
+            user_prompt=user_prompt,
             temperature=temperature,
+            workflow_name="production brief workflow",
+            cli_command="content-gen production",
+            logger=logger,
+            allow_blank=True,
         )
-        return response.content
 
     async def brief(
         self,
@@ -51,7 +90,12 @@ class ProductionAgent:
         user = prompts.production_user(visual_plan)
         text = await self._call_llm(system, user, temperature=0.3)
 
-        return _parse_production_brief(text, visual_plan.idea_id)
+        brief = _parse_production_brief(text, visual_plan.idea_id)
+
+        # Detect and record degraded state
+        _maybe_set_degraded(brief, text)
+
+        return brief
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +143,7 @@ _LIST_FIELDS = [
 
 
 def _parse_production_brief(text: str, idea_id: str) -> ProductionBrief:
-    data: dict[str, Any] = {"idea_id": idea_id}
+    data: dict = {"idea_id": idea_id}
     for field in ("location", "setup", "wardrobe", "backup_plan"):
         data[field] = _extract_field(text, field)
     for field in _LIST_FIELDS:

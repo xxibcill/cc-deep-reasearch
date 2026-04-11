@@ -6,7 +6,6 @@ import pytest
 
 from cc_deep_research.content_gen.iterative_loop import (
     LoopConfig,
-    LoopResult,
     format_feedback,
     run_evaluation_loop,
     should_stop,
@@ -22,7 +21,10 @@ def _make_eval(
     score: float = 0.5,
     passes: bool = False,
     issues: list[str] | None = None,
+    unsupported_claims: list[str] | None = None,
+    evidence_actions: list[str] | None = None,
     suggestions: list[str] | None = None,
+    research_gaps: list[str] | None = None,
     rationale: str = "",
     iteration: int = 1,
 ) -> QualityEvaluation:
@@ -30,7 +32,10 @@ def _make_eval(
         overall_quality_score=score,
         passes_threshold=passes,
         critical_issues=issues or [],
+        unsupported_claims=unsupported_claims or [],
+        evidence_actions_required=evidence_actions or [],
         improvement_suggestions=suggestions or [],
+        research_gaps_identified=research_gaps or [],
         rationale=rationale,
         iteration_number=iteration,
     )
@@ -45,6 +50,12 @@ def test_should_stop_when_passes_threshold():
     ev = _make_eval(passes=True)
     state = IterationState(max_iterations=3)
     assert should_stop(ev, state, LoopConfig()) is True
+
+
+def test_should_not_stop_when_unsupported_claims_block_threshold():
+    ev = _make_eval(passes=True, unsupported_claims=["Unsupported proof claim"])
+    state = IterationState(current_iteration=1, max_iterations=3)
+    assert should_stop(ev, state, LoopConfig()) is False
 
 
 def test_should_stop_at_max_iterations():
@@ -79,6 +90,16 @@ def test_should_not_stop_single_iteration_no_threshold():
     assert should_stop(ev, state, LoopConfig()) is False
 
 
+def test_should_not_stop_on_convergence_when_claims_are_unsupported():
+    config = LoopConfig(convergence_threshold=0.1)
+    state = IterationState(current_iteration=2, max_iterations=5)
+    prev = _make_eval(score=0.55, iteration=1, unsupported_claims=["Made-up benchmark"])
+    current = _make_eval(score=0.56, iteration=2, unsupported_claims=["Made-up benchmark"])
+    state.quality_history.append(prev)
+    state.quality_history.append(current)
+    assert should_stop(current, state, config) is False
+
+
 # ---------------------------------------------------------------------------
 # format_feedback
 # ---------------------------------------------------------------------------
@@ -87,14 +108,23 @@ def test_should_not_stop_single_iteration_no_threshold():
 def test_format_feedback_with_issues_and_suggestions():
     ev = _make_eval(
         issues=["weak hook", "too long"],
+        unsupported_claims=["Claims a guaranteed result"],
+        evidence_actions=["Add the proof source under the second beat"],
         suggestions=["tighten opening", "cut filler"],
+        research_gaps=["Need a fresher benchmark"],
         rationale="needs work",
     )
     text = format_feedback(ev)
+    assert "Unsupported claims to remove, qualify, or prove:" in text
+    assert "- Claims a guaranteed result" in text
+    assert "Evidence actions required:" in text
+    assert "- Add the proof source under the second beat" in text
     assert "Critical issues:" in text
     assert "- weak hook" in text
     assert "Improvement suggestions:" in text
     assert "- tighten opening" in text
+    assert "Research gaps identified:" in text
+    assert "- Need a fresher benchmark" in text
     assert "Rationale: needs work" in text
 
 
@@ -156,6 +186,42 @@ async def test_loop_runs_to_max_iterations():
 
     assert call_count == 3
     assert len(result.iteration_state.quality_history) == 3
+
+
+@pytest.mark.asyncio
+async def test_loop_keeps_iterating_until_unsupported_claims_are_resolved():
+    """Unsupported claims should block convergence until the evaluator clears them."""
+    received_feedbacks: list[str] = []
+
+    async def producer(feedback: str) -> str:
+        received_feedbacks.append(feedback)
+        return "artifact"
+
+    async def evaluator(artifact: str, iteration: int, prev: str) -> QualityEvaluation:
+        del artifact, prev
+        if iteration == 1:
+            return _make_eval(
+                score=0.92,
+                passes=True,
+                unsupported_claims=["Benchmark claim has no support"],
+                evidence_actions=["Add the cited benchmark"],
+                iteration=iteration,
+            )
+        return _make_eval(score=0.9, passes=True, iteration=iteration)
+
+    result = await run_evaluation_loop(
+        producer=producer,
+        evaluator=evaluator,
+        config=LoopConfig(max_iterations=3),
+    )
+
+    assert len(received_feedbacks) == 2
+    assert "Benchmark claim has no support" in received_feedbacks[1]
+    assert len(result.iteration_state.quality_history) == 2
+    assert result.iteration_state.quality_history[0].unsupported_claims == [
+        "Benchmark claim has no support"
+    ]
+    assert result.iteration_state.quality_history[1].passes_threshold is True
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,6 @@
 """Prompt templates for the 10-step scripting pipeline.
 
-Contract Version: 1.0.0
+Contract Version: 1.1.0
 
 Parser expectations for each step:
 - Step 1 (define_core_inputs): Expects "Topic:", "Outcome:", "Audience:" fields
@@ -8,7 +8,8 @@ Parser expectations for each step:
   optionally "Why this angle works:"
 - Step 3 (choose_structure): Expects "Chosen Structure:", "Beat List:" and
   optionally "Why this structure fits:"
-- Step 4 (define_beat_intents): Expects numbered list with "beat_name: intent" format
+- Step 4 (define_beat_intents): Expects either legacy "beat_name: intent" lines
+  or repeated grounded beat blocks with beat/proof/claim references
 - Step 5 (generate_hooks): Expects numbered hooks with required "Best Hook:" and
   optional "Why it is strongest:"
 - Step 6 (draft_script): Expects any non-empty script body; later steps do not
@@ -31,14 +32,14 @@ from __future__ import annotations
 
 from cc_deep_research.content_gen.models import (
     AngleDefinition,
+    ArgumentMap,
     BeatIntentMap,
     CoreInputs,
     ScriptStructure,
     ScriptVersion,
 )
 
-CONTRACT_VERSION = "1.0.0"
-
+CONTRACT_VERSION = "1.1.0"
 
 def _render_research_context(research_context: str) -> str:
     if not research_context.strip():
@@ -55,6 +56,53 @@ def _render_original_brief(raw_idea: str) -> str:
     )
 
 
+def _render_argument_map(argument_map: ArgumentMap | None) -> str:
+    if argument_map is None:
+        return ""
+
+    parts = [
+        "Argument Map:",
+        f"Thesis: {argument_map.thesis}",
+        f"Audience belief to challenge: {argument_map.audience_belief_to_challenge}",
+        f"Core mechanism: {argument_map.core_mechanism}",
+    ]
+
+    if argument_map.safe_claims:
+        parts.append("Safe claims:")
+        parts.extend(
+            f"- {claim.claim_id}: {claim.claim} (proofs: {', '.join(claim.supporting_proof_ids) or 'none'})"
+            for claim in argument_map.safe_claims
+        )
+    if argument_map.proof_anchors:
+        parts.append("Proof anchors:")
+        parts.extend(
+            f"- {proof.proof_id}: {proof.summary} (use: {proof.usage_note or 'none'})"
+            for proof in argument_map.proof_anchors
+        )
+    if argument_map.counterarguments:
+        parts.append("Counterarguments:")
+        parts.extend(
+            f"- {counter.counterargument_id}: {counter.counterargument} -> {counter.response}"
+            for counter in argument_map.counterarguments
+        )
+    if argument_map.unsafe_claims:
+        parts.append("Unsafe claims to avoid as facts:")
+        parts.extend(f"- {claim.claim_id}: {claim.claim}" for claim in argument_map.unsafe_claims)
+    if argument_map.beat_claim_plan:
+        parts.append("Beat claim plan:")
+        parts.extend(
+            (
+                f"- {beat.beat_name} ({beat.beat_id}): {beat.goal} "
+                f"| claims: {', '.join(beat.claim_ids) or 'none'} "
+                f"| proofs: {', '.join(beat.proof_anchor_ids) or 'none'} "
+                f"| counters: {', '.join(beat.counterargument_ids) or 'none'} "
+                f"| next: {beat.transition_note or 'none'}"
+            )
+            for beat in argument_map.beat_claim_plan
+        )
+    return "\n".join(parts)
+
+
 def _append_context_handoff(
     parts: list[str],
     *,
@@ -63,6 +111,7 @@ def _append_context_handoff(
     angle: AngleDefinition | None = None,
     structure: ScriptStructure | None = None,
     beat_intents: BeatIntentMap | None = None,
+    argument_map: ArgumentMap | None = None,
     best_hook: str = "",
     tone: str = "",
     cta: str = "",
@@ -86,10 +135,19 @@ def _append_context_handoff(
         )
     if structure:
         beat_list = "\n".join(f"- {beat}" for beat in structure.beat_list)
-        parts.append(f"\nChosen Structure:\n{structure.chosen_structure}\nBeat List:\n{beat_list}")
+        parts.append(
+            f"\nChosen Structure:\n{structure.chosen_structure}\n"
+            f"Beat List:\n{beat_list}"
+        )
     if beat_intents:
-        beat_lines = "\n".join(f"- {b.beat_name}: {b.intent}" for b in beat_intents.beats)
+        beat_lines = "\n".join(
+            _format_beat_intent_line(beat)
+            for beat in beat_intents.beats
+        )
         parts.append(f"\nBeat Intents:\n{beat_lines}")
+    argument_map_text = _render_argument_map(argument_map)
+    if argument_map_text:
+        parts.append(f"\n{argument_map_text}")
     if best_hook:
         parts.append(f"\nSelected Hook:\n{best_hook}")
     if tone:
@@ -99,7 +157,6 @@ def _append_context_handoff(
     research = _render_research_context(research_context)
     if research:
         parts.append(research)
-
 
 GLOBAL_RULES = """\
 You are generating short-form video scripting outputs inside a modular workflow.
@@ -113,7 +170,24 @@ Important:
 - If the angle is weak, strengthen it
 - If the writing is generic, sharpen it
 - If an Original Brief is provided, preserve its constraints unless they conflict with this step's explicit task
+- If an Argument Map is provided, treat it as the grounding source of truth for what can be claimed
 - Optimize for spoken delivery, retention, and compression"""
+
+
+def _format_beat_intent_line(beat) -> str:
+    details: list[str] = []
+    if getattr(beat, "beat_id", ""):
+        details.append(f"beat_id={beat.beat_id}")
+    if getattr(beat, "claim_ids", None):
+        details.append(f"claim_ids={', '.join(beat.claim_ids)}")
+    if getattr(beat, "proof_anchor_ids", None):
+        details.append(f"proof_ids={', '.join(beat.proof_anchor_ids)}")
+    if getattr(beat, "counterargument_ids", None):
+        details.append(f"counter_ids={', '.join(beat.counterargument_ids)}")
+    if getattr(beat, "transition_note", ""):
+        details.append(f"transition={beat.transition_note}")
+    suffix = f" [{' | '.join(details)}]" if details else ""
+    return f"- {beat.beat_name}: {beat.intent}{suffix}"
 
 
 # ---------------------------------------------------------------------------
@@ -293,14 +367,22 @@ Requirements:
 - Each beat must move the viewer forward
 - Avoid vague intent like "explain more" or "add detail"
 - If a beat has no strong purpose, revise or remove it
-- If research context is provided, use it to inform beat purposes — cite specific facts, proof points, or examples where they strengthen a beat's intent
+- If an Argument Map is provided, use it as the primary grounding source
+- Map beats only to safe claims and proof anchors that support what the script can honestly say
+- Never attach an unsafe claim to a beat as if it were settled fact
+- Research context is fallback only when it helps sharpen a beat without changing the supported claim set
 
 Output format:
 
-[Beat Name]: [clear intent]
-[Beat Name]: [clear intent]
-[Beat Name]: [clear intent]
-..."""
+---
+Beat Name: Hook
+Intent: (what this beat must do)
+Claim IDs: claim_1
+Proof Anchor IDs: proof_1
+Counterargument IDs:
+Transition Note: (how this beat moves to the next beat)
+---
+(repeat for each beat)"""
 
 
 def step4_user(
@@ -309,6 +391,7 @@ def step4_user(
     structure: ScriptStructure,
     raw_idea: str = "",
     research_context: str = "",
+    argument_map: ArgumentMap | None = None,
 ) -> str:
     beats = "\n".join(f"- {b}" for b in structure.beat_list)
     parts = [
@@ -324,6 +407,9 @@ def step4_user(
     brief = _render_original_brief(raw_idea)
     if brief:
         parts.append(brief)
+    argument = _render_argument_map(argument_map)
+    if argument:
+        parts.append(argument)
     research = _render_research_context(research_context)
     if research:
         parts.append(research)
@@ -349,6 +435,8 @@ Requirements:
 - Keep hooks speakable and concise
 - Prefer specificity over abstraction
 - Vary the hook style across the set
+- If an Argument Map is provided, only imply or state safe claims that the script can support
+- Do not turn unsafe claims into bold factual hooks
 
 Use a mix of:
 - Contrarian
@@ -386,8 +474,9 @@ def step5_user(
     beat_intents: BeatIntentMap,
     raw_idea: str = "",
     research_context: str = "",
+    argument_map: ArgumentMap | None = None,
 ) -> str:
-    beat_lines = "\n".join(f"- {b.beat_name}: {b.intent}" for b in beat_intents.beats)
+    beat_lines = "\n".join(_format_beat_intent_line(beat) for beat in beat_intents.beats)
     parts = [
         f"Topic:\n{inputs.topic}",
         f"Outcome:\n{inputs.outcome}",
@@ -399,6 +488,9 @@ def step5_user(
     brief = _render_original_brief(raw_idea)
     if brief:
         parts.append(brief)
+    argument = _render_argument_map(argument_map)
+    if argument:
+        parts.append(argument)
     research = _render_research_context(research_context)
     if research:
         parts.append(research)
@@ -420,6 +512,10 @@ Write a full script using the selected hook and beat plan.
 Requirements:
 - Follow the chosen structure
 - Use the beat intents exactly
+- Use the Argument Map and beat-level claim/proof links as the source of truth for what the script can state
+- Only state claims that are supported by the mapped proof anchors for each beat
+- Do not mention citations, IDs, or source labels in the spoken script
+- Do not convert unsafe claims into confident statements
 - Use exactly one hook line and exactly one CTA line in the full script
 - The hook line must use the selected hook, not a rewritten alternate
 - Do not include multiple opening hooks, backup hooks, CTA variants, or repeated CTA lines
@@ -459,11 +555,12 @@ def step6_user(
     best_hook: str,
     raw_idea: str = "",
     research_context: str = "",
+    argument_map: ArgumentMap | None = None,
     *,
     tone: str = "",
     cta: str = "",
 ) -> str:
-    beat_lines = "\n".join(f"- {b.beat_name}: {b.intent}" for b in beat_intents.beats)
+    beat_lines = "\n".join(_format_beat_intent_line(beat) for beat in beat_intents.beats)
     parts = [
         f"Topic:\n{inputs.topic}",
         f"Outcome:\n{inputs.outcome}",
@@ -477,6 +574,9 @@ def step6_user(
     brief = _render_original_brief(raw_idea)
     if brief:
         parts.append(brief)
+    argument = _render_argument_map(argument_map)
+    if argument:
+        parts.append(argument)
     if tone:
         parts.append(f"Tone:\n{tone}")
     if cta:
@@ -510,6 +610,7 @@ Apply these retention rules:
 - Do not add fluff
 - Do not make the script longer unless the added line clearly improves retention
 - Preserve clarity and natural spoken rhythm
+- Preserve the supported-claim boundaries from the Argument Map
 - Preserve exactly one hook line and at most one CTA line
 - Do not turn the opening into multiple hook lines
 - Do not add a second CTA
@@ -536,6 +637,7 @@ def step7_user(
     angle: AngleDefinition | None = None,
     structure: ScriptStructure | None = None,
     beat_intents: BeatIntentMap | None = None,
+    argument_map: ArgumentMap | None = None,
     best_hook: str = "",
     tone: str = "",
     cta: str = "",
@@ -549,6 +651,7 @@ def step7_user(
         angle=angle,
         structure=structure,
         beat_intents=beat_intents,
+        argument_map=argument_map,
         best_hook=best_hook,
         tone=tone,
         cta=cta,
@@ -577,6 +680,7 @@ Editing rules:
 - Cut any line that does not add value
 - Preserve the core angle and flow
 - Keep natural spoken rhythm
+- Keep the script inside the supported claims established by the Argument Map
 - Do not over-polish into robotic language
 - Preserve exactly one hook line and at most one CTA line
 - If the script contains duplicate hooks or duplicate CTAs, collapse them into the single strongest version
@@ -603,6 +707,7 @@ def step8_user(
     angle: AngleDefinition | None = None,
     structure: ScriptStructure | None = None,
     beat_intents: BeatIntentMap | None = None,
+    argument_map: ArgumentMap | None = None,
     best_hook: str = "",
     core_tension: str = "",
     tone: str = "",
@@ -619,6 +724,7 @@ def step8_user(
         angle=angle,
         structure=structure,
         beat_intents=beat_intents,
+        argument_map=argument_map,
         best_hook=best_hook,
         tone=tone,
         cta=cta,
@@ -650,6 +756,7 @@ Rules:
 - Do not annotate every line
 - Only add notes where visuals strengthen delivery
 - Keep notes simple and production-friendly
+- Do not add visual annotations that imply unsupported claims
 - Keep exactly one [Hook] line and at most one [CTA] line in the annotated output
 - Do not split the hook or CTA into multiple labeled lines
 
@@ -670,6 +777,7 @@ def step9_user(
     angle: AngleDefinition | None = None,
     structure: ScriptStructure | None = None,
     beat_intents: BeatIntentMap | None = None,
+    argument_map: ArgumentMap | None = None,
     best_hook: str = "",
     tone: str = "",
     cta: str = "",
@@ -683,6 +791,7 @@ def step9_user(
         angle=angle,
         structure=structure,
         beat_intents=beat_intents,
+        argument_map=argument_map,
         best_hook=best_hook,
         tone=tone,
         cta=cta,
@@ -718,6 +827,7 @@ Checklist:
 - Script delivers on the stated outcome for the target audience
 - Core tension from the angle is preserved throughout
 - Each beat fulfills its stated intent
+- Only supported claims are stated as fact
 
 Instructions:
 - First, give a strict pass/fail for each checklist item
@@ -752,6 +862,7 @@ def step10_user(
     angle: AngleDefinition | None = None,
     structure: ScriptStructure | None = None,
     beat_intents: BeatIntentMap | None = None,
+    argument_map: ArgumentMap | None = None,
     best_hook: str = "",
     tone: str = "",
     cta: str = "",
@@ -765,6 +876,7 @@ def step10_user(
         angle=angle,
         structure=structure,
         beat_intents=beat_intents,
+        argument_map=argument_map,
         best_hook=best_hook,
         tone=tone,
         cta=cta,

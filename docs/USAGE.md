@@ -42,7 +42,7 @@ CC Deep Research is a command-line tool for staged web research. The current run
 | **Quality Scoring**                                              | Evaluates sources by credibility, relevance, freshness, diversity               |
 | **Cross-Reference Analysis**                                     | Identifies consensus points and contradictions                                  |
 | **Multiple Formats**                                             | Markdown, JSON, and HTML output options                                         |
-| **API Key Rotation** - Automatic failover with multiple API keys |
+| **API Key Rotation**                                             | Automatic failover with multiple API keys                                       |
 | **Progress Monitoring**                                          | Browser-based live monitoring, terminal monitor output, and telemetry analytics |
 
 ### Architecture Overview
@@ -192,6 +192,18 @@ export TAVILY_API_KEYS=your_api_key_here
 # Multiple API keys (comma-separated, for rotation)
 export TAVILY_API_KEYS=key1,key2,key3
 
+# Optional: OpenRouter single-key or multi-key configuration
+export OPENROUTER_API_KEY=your_openrouter_key
+export OPENROUTER_API_KEYS=key1,key2,key3
+
+# Optional: Cerebras single-key or multi-key configuration
+export CEREBRAS_API_KEY=your_cerebras_key
+export CEREBRAS_API_KEYS=key1,key2,key3
+
+# Optional: Anthropic single-key or multi-key configuration
+export ANTHROPIC_API_KEY=your_anthropic_key
+export ANTHROPIC_API_KEYS=key1,key2,key3
+
 # Optional: Override default research depth
 export CC_DEEP_RESEARCH_DEPTH=deep
 
@@ -204,6 +216,8 @@ export NO_COLOR=1
 # Optional: Specify custom config file location
 export CC_DEEP_RESEARCH_CONFIG=/path/to/config.yaml
 ```
+
+At CLI startup the project also loads a `.env` file from the repository root, if present, without overriding environment variables that are already set in your shell.
 
 ### Configuration File Structure
 
@@ -248,8 +262,8 @@ research_agent:
 search_team:
   enabled: true # Retained for compatibility with existing config
   team_size: 4 # Describes local specialist roster metadata
-  parallel_execution: true # Run source collection in parallel
-  timeout_seconds: 300 # Parallel-task timeout (30-600 seconds)
+  parallel_execution: true # Run source collection in parallel local tasks
+  timeout_seconds: 300 # Local parallel-task timeout (30-600 seconds)
   fallback_to_sequential: true # Fall back to sequential on error
 
 # Output Configuration
@@ -317,8 +331,8 @@ cc-deep-research config init --force
 | `research_agent.max_turns`         | `10`                  | Max conversation turns                    |
 | `search_team.enabled`              | `true`                | Compatibility flag for the local runtime  |
 | `search_team.team_size`            | `4`                   | Specialist roster metadata size           |
-| `search_team.parallel_execution`   | `true`                | Parallel source collection                |
-| `search_team.timeout_seconds`      | `300`                 | Parallel-task timeout                     |
+| `search_team.parallel_execution`   | `true`                | Parallel local source collection          |
+| `search_team.timeout_seconds`      | `300`                 | Local parallel-task timeout               |
 | `output.format`                    | `"markdown"`          | Output format                             |
 | `output.auto_save`                 | `true`                | Auto-save reports                         |
 | `output.save_dir`                  | `"./reports"`         | Save directory                            |
@@ -477,7 +491,7 @@ Execute a research query and generate a report.
 **Usage:**
 
 ```bash
-cc-deep-research research [QUERY] [OPTIONS]
+cc-deep-research research [OPTIONS] QUERY
 ```
 
 **Required Argument:**
@@ -495,10 +509,10 @@ cc-deep-research research [QUERY] [OPTIONS]
 | `--no-cross-ref`    |       | flag   | false         | Disable cross-reference analysis                                         |
 | `--tavily-only`     |       | flag   | false         | Use only Tavily provider                                                 |
 | `--claude-only`     |       | flag   | false         | Select only the `claude` provider (currently emits provider warnings)    |
-| `--no-team`         |       | flag   | false         | Run source collection sequentially instead of using parallel researchers |
-| `--team-size`       |       | int    | (from config) | Override default team size                                               |
-| `--parallel-mode`   |       | flag   | false         | Force parallel researcher execution for this run                         |
-| `--num-researchers` |       | int    | (from config) | Override the number of parallel researchers (1-8)                        |
+| `--no-team`         |       | flag   | false         | Run source collection sequentially instead of using parallel local tasks |
+| `--team-size`       |       | int    | (from config) | Override local roster metadata size (compatibility only)                 |
+| `--parallel-mode`   |       | flag   | false         | Force parallel local source collection for this run                      |
+| `--num-researchers` |       | int    | (from config) | Override the number of parallel local collection tasks (1-8)             |
 | `--progress`        |       | flag   | true          | Show progress indicators                                                 |
 | `--quiet`           |       | flag   | false         | Suppress output                                                          |
 | `--verbose`         |       | flag   | false         | Show detailed output                                                     |
@@ -506,6 +520,8 @@ cc-deep-research research [QUERY] [OPTIONS]
 | `--show-timeline`   |       | flag   | false         | Show the execution timeline after a parallel run                         |
 | `--pdf`             |       | flag   | false         | Generate PDF output in addition to the selected report format            |
 | `--enable-realtime` |       | flag   | false         | Enable the shared real-time event router used by dashboard-backed runs   |
+| `--workflow`        |       | choice | `staged`      | Research workflow (`staged` or `planner`)                                |
+| `--theme`           |       | choice | (auto-detect) | Research theme for tailored workflow                                     |
 
 **Examples:**
 
@@ -543,7 +559,7 @@ Set a configuration value.
 **Usage:**
 
 ```bash
-cc-deep-research config set [KEY] [VALUE] [OPTIONS]
+cc-deep-research config set [OPTIONS] KEY VALUE
 ```
 
 **Required Arguments:**
@@ -566,7 +582,7 @@ cc-deep-research config set tavily.api_keys key1,key2,key3
 # Change search mode
 cc-deep-research config set search.mode hybrid_parallel
 
-# Adjust team size
+# Adjust local roster metadata size
 cc-deep-research config set search_team.team_size 6
 
 # Disable cross-reference analysis
@@ -598,17 +614,7 @@ cc-deep-research config show [OPTIONS]
 cc-deep-research config show
 ```
 
-**Output:**
-
-```
-Current configuration:
-  Search providers: tavily, claude
-  Search mode: hybrid_parallel
-  Search depth: deep
-  Tavily API keys: 3 configured
-  Output format: markdown
-  Output directory: ./reports
-```
+The command renders a table with the current effective values for keys such as `search.providers`, `search.mode`, `search.depth`, `tavily.api_keys`, `tavily.max_results`, `search_team.enabled`, `search_team.team_size`, `output.format`, `output.save_dir`, and whether the config file exists.
 
 ### `cc-deep-research config init`
 
@@ -691,6 +697,8 @@ cc-deep-research telemetry dashboard [OPTIONS]
 cc-deep-research telemetry dashboard --port 8501 --refresh-seconds 5 --tail-limit 200
 ```
 
+This command launches the Streamlit analytics UI. It is separate from the browser-based operator console started with `cc-deep-research dashboard` plus the frontend in [`dashboard/`](../dashboard).
+
 ### `cc-deep-research dashboard`
 
 Start the FastAPI backend used by the Next.js operator console in [`dashboard/`](../dashboard).
@@ -715,6 +723,78 @@ cc-deep-research dashboard [OPTIONS]
 cc-deep-research dashboard --host localhost --port 8000
 ```
 
+### `cc-deep-research detect-theme`
+
+Detect the research theme for a query to determine the appropriate workflow.
+
+**Usage:**
+
+```bash
+cc-deep-research detect-theme [OPTIONS] QUERY
+```
+
+**Example:**
+
+```bash
+cc-deep-research detect-theme "Best restaurants in Tokyo"
+```
+
+### `cc-deep-research list-themes`
+
+List all available research themes.
+
+**Usage:**
+
+```bash
+cc-deep-research list-themes
+```
+
+### `cc-deep-research benchmark`
+
+Run the versioned benchmark corpus.
+
+**Usage:**
+
+```bash
+cc-deep-research benchmark [OPTIONS] COMMAND [ARGS]...
+```
+
+**Subcommands:**
+
+| Command  | Purpose                                      |
+| -------- | ------------------------------------------- |
+| `run`    | Execute the whole benchmark corpus         |
+
+**Options for `benchmark run`:**
+
+| Option         | Type    | Default              | Description                        |
+| -------------- | ------- | -------------------- | ---------------------------------- |
+| `--corpus-path`| path    | (default corpus)     | Benchmark corpus JSON path        |
+| `--output-dir` | path    | `benchmark_runs/latest` | Directory for benchmark outputs  |
+| `--depth`      | choice  | `standard`           | Research depth for all cases     |
+| `--sources`    | int     | (from config)        | Minimum sources override         |
+| `--monitor`    | flag    | false                | Enable monitor output             |
+
+**Example:**
+
+```bash
+cc-deep-research benchmark run --depth deep --output-dir benchmark_runs/2024
+```
+
+### `cc-deep-research anthropic`
+
+Commands for working with the Anthropic API.
+
+**Usage:**
+
+```bash
+cc-deep-research anthropic [OPTIONS] COMMAND [ARGS]...
+```
+
+**Subcommands:**
+
+Use `cc-deep-research anthropic --help` to see available subcommands.
+
 ### `cc-deep-research session`
 
 Manage saved research sessions produced by completed runs.
@@ -727,6 +807,10 @@ Manage saved research sessions produced by completed runs.
 | `session show SESSION_ID`                 | Show one saved session                      |
 | `session export SESSION_ID --output PATH` | Export a session as markdown, JSON, or HTML |
 | `session delete SESSION_ID`               | Delete a saved session                      |
+| `session audit`                           | Show audit log of session operations        |
+| `session bundle SESSION_ID`               | Export a session as a portable trace bundle |
+| `session checkpoints`                     | Manage session checkpoints for resume       |
+| `session reconcile`                       | Detect drift between sessions and telemetry |
 
 **Examples:**
 
@@ -749,26 +833,28 @@ cc-deep-research session delete SESSION_ID
 When you delete a session, the following data is permanently removed:
 
 - Session file (`~/.config/cc-deep-research/sessions/{session_id}.json`)
-- Telemetry directory (`~/.config/cc-deep-research/telemetry/{session_id}/`)
-- Historical analytics records in DuckDB
+- Session summary (`~/.config/cc-deep-research/sessions/{session_id}.summary.json`)
+- Saved report artifacts for that session (`.md`, `.html`, `.json`)
 
-**Active session protection:**
+The CLI command does not remove telemetry directories or DuckDB analytics records.
 
-If the session is currently running (active), the delete command will fail by default. Use the `--force` flag to override:
+**CLI `--force` behavior:**
+
+For `cc-deep-research session delete`, `--force` only skips the confirmation prompt:
 
 ```bash
 cc-deep-research session delete research-abc123 --force
 ```
 
-**Dashboard deletion:**
+**Dashboard and API deletion:**
 
 You can also delete sessions from the browser dashboard:
 - From the session list: click the delete button on a session card
 - From the session page: use the delete action in the session details
 
-The dashboard delete API (`DELETE /api/sessions/{session_id}`) removes the same data and supports the same `force` query parameter.
+The dashboard delete API (`DELETE /api/sessions/{session_id}`) removes the session file, telemetry directory, and DuckDB records. It returns an active-session conflict unless you pass `force=true`.
 
-**Limitation:** No bulk delete is available - sessions must be deleted one at a time.
+For bulk deletion through the backend, use `POST /api/sessions/bulk-delete`.
 
 ---
 
@@ -917,7 +1003,9 @@ cc-deep-research research --claude-only "Claude search only"
 
 #### `--no-team`
 
-Run source collection sequentially instead of using parallel local researcher tasks.
+Run source collection sequentially instead of using parallel local tasks.
+
+This only changes how source collection is scheduled. The rest of the run still uses the same local orchestrator and specialist components.
 
 **Use when:**
 
@@ -933,7 +1021,7 @@ cc-deep-research research --no-team "Simple question"
 
 #### `--team-size`
 
-Override the configured specialist roster size metadata.
+Override the configured local roster size metadata. This is a compatibility setting and does not create remote workers.
 
 **Values:** Integer between 2-8
 
@@ -945,7 +1033,7 @@ cc-deep-research research --team-size 6 "Complex topic"
 
 #### `--parallel-mode`
 
-Force parallel researcher execution for this run when you want to override the configured mode.
+Force parallel local source collection for this run when you want to override the configured mode.
 
 **Example:**
 
@@ -955,7 +1043,7 @@ cc-deep-research research --parallel-mode "Complex topic"
 
 #### `--num-researchers`
 
-Override the number of parallel researchers used during source collection.
+Override the number of parallel local collection tasks used during source collection.
 
 **Values:** Integer between 1-8
 
@@ -1293,8 +1381,8 @@ Configure local pipeline and parallel collection behavior:
 search_team:
   enabled: true # Compatibility flag
   team_size: 4 # Specialist roster metadata
-  parallel_execution: true # Run agents in parallel
-  timeout_seconds: 300 # Team timeout (30-600 seconds)
+  parallel_execution: true # Run source collection in parallel local tasks
+  timeout_seconds: 300 # Local source-collection timeout (30-600 seconds)
   fallback_to_sequential: true # Fall back on error
 ```
 
@@ -1415,10 +1503,12 @@ research:
 4. Performs additional searches (up to max_iterations)
 5. Aggregates all findings
 
-**Disable for speed:**
+**Disable iterative search:**
+
+Use the config command to disable iterative search:
 
 ```bash
-cc-deep-research research --no-iterative "Quick topic"
+cc-deep-research config set research.enable_iterative_search false
 ```
 
 ### Source Quality Scoring
@@ -1574,15 +1664,15 @@ cc-deep-research research --format json "Climate data" | \
   python analyze_data.py
 ```
 
-### Team Configuration Examples
+### Parallel Collection Configuration Examples
 
-**Small team for quick queries:**
+**Smaller local roster metadata for quick queries:**
 
 ```bash
 cc-deep-research research --team-size 2 --no-cross-ref "Quick lookup"
 ```
 
-**Large team for comprehensive research:**
+**Larger local roster metadata for comprehensive research:**
 
 ```bash
 cc-deep-research research --team-size 8 --sources 50 --depth deep \
@@ -1680,7 +1770,7 @@ Use the dashboard to answer:
 
 - what phase is running now
 - what happened most recently
-- which agent is active
+- which local component or researcher task is active
 - recent routed LLM telemetry and fallback activity
 
 Useful dashboard command options:
@@ -1795,7 +1885,7 @@ cc-deep-research config set research.ai_integration_method heuristic
 
 The dashboard will still show the failure or fallback events in the live session view.
 
-#### Issue: "Agent team errors"
+#### Issue: "Parallel collection errors"
 
 **Problem:** Parallel source collection encounters errors during execution.
 
@@ -1808,7 +1898,7 @@ cc-deep-research research --no-team "Your query"
 # Use verbose output for debugging
 cc-deep-research research --verbose --monitor "Your query"
 
-# Reduce team size
+# Reduce local roster metadata size
 cc-deep-research research --team-size 2 "Your query"
 ```
 

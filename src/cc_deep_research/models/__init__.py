@@ -31,6 +31,20 @@ from .llm import (
     LLMRouteModel,
     LLMTransportType,
 )
+from .metadata import (
+    AnalysisMetadataContract,
+    IterationHistoryEntryContract,
+    StrategyMetadataContract,
+    ValidationMetadataContract,
+)
+from .planning import (
+    PlannerIterationDecision,
+    PlannerResult,
+    PlanSynthesis,
+    ResearchPlan,
+    ResearchSubtask,
+    TaskExecutionResult,
+)
 from .quality import (
     ClaimEvidence,
     ClaimFreshness,
@@ -60,18 +74,11 @@ from .session import (
     SessionProvidersMetadata,
     normalize_session_metadata,
 )
-from .planning import (
-    PlanSynthesis,
-    PlannerIterationDecision,
-    PlannerResult,
-    ResearchPlan,
-    ResearchSubtask,
-    TaskExecutionResult,
-)
 from .support import APIKey, SearchMode
 
 __all__ = [
     "APIKey",
+    "AnalysisMetadataContract",
     "AnalysisFinding",
     "AnalysisGap",
     "AnalysisResult",
@@ -87,6 +94,7 @@ __all__ = [
     "CrossReferenceClaim",
     "DeepAnalysisStatus",
     "EvidenceType",
+    "IterationHistoryEntryContract",
     "IterationHistoryRecord",
     "LLMPlanModel",
     "LLMProviderType",
@@ -122,9 +130,11 @@ __all__ = [
     "SourceType",
     "StepInputRef",
     "StepOutputRef",
+    "StrategyMetadataContract",
     "StrategyPlan",
     "StrategyResult",
     "TaskExecutionResult",
+    "ValidationMetadataContract",
     "ValidationResult",
     "normalize_session_metadata",
 ]

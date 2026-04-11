@@ -8,9 +8,9 @@ from cc_deep_research.themes import ResearchTheme
 
 from .models import (
     ResearchArtifactKind,
-    ResearchRunCancelled,
     ResearchOutputFormat,
     ResearchRunArtifact,
+    ResearchRunCancelled,
     ResearchRunReport,
     ResearchRunRequest,
     ResearchRunResult,

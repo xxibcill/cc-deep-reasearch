@@ -515,7 +515,7 @@ def register_session_commands(cli: click.Group) -> None:
             click.echo(json_module.dumps(result, indent=2))
             return
 
-        click.echo(f"=== Resume Information ===\n")
+        click.echo("=== Resume Information ===\n")
         click.echo(f"Session: {session_id}")
         click.echo(f"Resume from: {checkpoint_id}")
         click.echo(f"Phase: {checkpoint.get('phase')}")
@@ -569,7 +569,7 @@ def register_session_commands(cli: click.Group) -> None:
             click.echo(json_module.dumps(result, indent=2))
             return
 
-        click.echo(f"=== Rerun Information ===\n")
+        click.echo("=== Rerun Information ===\n")
         click.echo(f"Session: {session_id}")
         click.echo(f"Checkpoint: {checkpoint_id}")
         click.echo(f"Phase: {checkpoint.get('phase')}")

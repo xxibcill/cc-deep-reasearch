@@ -47,9 +47,9 @@ class AIAnalysisService:
         self,
         config: dict[str, Any],
         monitor: ResearchMonitor | None = None,
-        llm_router: "LLMRouter | None" = None,
+        llm_router: LLMRouter | None = None,
         agent_id: str = "analyzer",
-        prompt_registry: "PromptRegistry | None" = None,
+        prompt_registry: PromptRegistry | None = None,
     ) -> None:
         """Initialize AI analysis service.
 

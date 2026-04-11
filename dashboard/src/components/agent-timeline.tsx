@@ -30,62 +30,18 @@ function sampleMarkers(markers: AgentExecution['markers']) {
     };
   }
 
-  const firstTimestamp = markers[0]?.timestamp ?? 0;
-  const lastTimestamp = markers[markers.length - 1]?.timestamp ?? 0;
-  const timeRange = lastTimestamp - firstTimestamp;
+  const lastIndex = markers.length - 1;
+  const selectedIndexes = new Set<number>([0, lastIndex]);
+  const targetInteriorCount = MAX_VISIBLE_MARKERS_PER_LANE - 2;
 
-  // Always include first and last markers (key checkpoints)
-  const selectedMarkers: typeof markers = [markers[0]];
-
-  if (timeRange > 0) {
-    const targetInteriorCount = MAX_VISIBLE_MARKERS_PER_LANE - 2;
-
-    // Build sorted index array by timestamp for O(log n) closest lookups
-    const sortedIndices = markers
-      .map((marker, index) => ({ index, timestamp: marker.timestamp ?? 0 }))
-      .sort((a, b) => a.timestamp - b.timestamp);
-
-    for (let step = 1; step <= targetInteriorCount; step += 1) {
-      const targetTimestamp = firstTimestamp + (step / (targetInteriorCount + 1)) * timeRange;
-
-      // Binary search for closest timestamp
-      let left = 0;
-      let right = sortedIndices.length - 1;
-      while (left < right) {
-        const mid = Math.floor((left + right) / 2);
-        if (sortedIndices[mid].timestamp < targetTimestamp) {
-          left = mid + 1;
-        } else {
-          right = mid;
-        }
-      }
-
-      // left is now the first index with timestamp >= targetTimestamp
-      // Compare with left and left-1 to find closest
-      let closestIdx: number;
-      if (left === 0) {
-        closestIdx = 0;
-      } else if (left >= sortedIndices.length) {
-        closestIdx = sortedIndices.length - 1;
-      } else {
-        const diffLeft = Math.abs(sortedIndices[left].timestamp - targetTimestamp);
-        const diffPrev = Math.abs(sortedIndices[left - 1].timestamp - targetTimestamp);
-        closestIdx = diffLeft < diffPrev ? left : left - 1;
-      }
-
-      const sortedIndex = sortedIndices[closestIdx].index;
-      // Avoid duplicates and edge positions
-      if (sortedIndex !== 0 && sortedIndex !== markers.length - 1) {
-        selectedMarkers.push(markers[sortedIndex]);
-      }
-    }
+  for (let step = 1; step <= targetInteriorCount; step += 1) {
+    const index = Math.round((step * lastIndex) / (targetInteriorCount + 1));
+    selectedIndexes.add(index);
   }
 
-  selectedMarkers.push(markers[markers.length - 1]);
-
   return {
-    markers: selectedMarkers,
-    hiddenCount: markers.length - selectedMarkers.length,
+    markers: markers.filter((_, index) => selectedIndexes.has(index)),
+    hiddenCount: markers.length - selectedIndexes.size,
   };
 }
 

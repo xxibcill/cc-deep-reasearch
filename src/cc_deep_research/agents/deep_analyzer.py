@@ -30,8 +30,8 @@ class DeepAnalyzerAgent:
         self,
         config: dict[str, Any],
         monitor: ResearchMonitor | None = None,
-        llm_router: "LLMRouter | None" = None,
-        prompt_registry: "PromptRegistry | None" = None,
+        llm_router: LLMRouter | None = None,
+        prompt_registry: PromptRegistry | None = None,
     ) -> None:
         """Initialize deep analyzer agent.
 
