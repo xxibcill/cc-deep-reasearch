@@ -418,5 +418,4 @@ __all__ = [
     "normalize_content",
     "extract_full_sentence_around_keyword",
     "is_complete_sentence",
-    "sanitize_url",
 ]
