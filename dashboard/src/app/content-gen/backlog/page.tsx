@@ -14,6 +14,10 @@ export default function BacklogPage() {
   const backlogLoading = useContentGen((s) => s.backlogLoading)
   const error = useContentGen((s) => s.error)
   const loadBacklog = useContentGen((s) => s.loadBacklog)
+  const updateBacklogItem = useContentGen((s) => s.updateBacklogItem)
+  const selectBacklogItem = useContentGen((s) => s.selectBacklogItem)
+  const archiveBacklogItem = useContentGen((s) => s.archiveBacklogItem)
+  const deleteBacklogItem = useContentGen((s) => s.deleteBacklogItem)
 
   useEffect(() => {
     void loadBacklog()
@@ -52,6 +56,10 @@ export default function BacklogPage() {
         items={backlog}
         backlogPath={backlogPath}
         loading={backlogLoading}
+        onUpdateStatus={updateBacklogItem}
+        onSelect={selectBacklogItem}
+        onArchive={archiveBacklogItem}
+        onDelete={deleteBacklogItem}
       />
     </div>
   )
