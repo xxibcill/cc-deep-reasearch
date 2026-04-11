@@ -25,8 +25,8 @@ from cc_deep_research.content_gen.models import (
     VisualNote,
 )
 from cc_deep_research.content_gen.prompts import scripting as prompts
-from cc_deep_research.llm.base import LLMResponse, LLMTransportType
 from cc_deep_research.llm import LLMRouter
+from cc_deep_research.llm.base import LLMResponse, LLMTransportType
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config

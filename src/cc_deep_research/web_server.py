@@ -18,9 +18,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from cc_deep_research.benchmark import (
-    BenchmarkCorpus,
-    BenchmarkRunReport,
-    default_benchmark_corpus_path,
     load_benchmark_corpus,
 )
 from cc_deep_research.config import (
@@ -1619,7 +1616,7 @@ def register_routes(app: FastAPI) -> None:
         Returns:
             JSON response with resume result indicating success or failure.
         """
-        from cc_deep_research.models.checkpoint import ResumeRequest, ResumeResult
+        from cc_deep_research.models.checkpoint import ResumeResult
 
         telemetry_dir = get_default_telemetry_dir()
         session_dir = telemetry_dir / session_id
@@ -1680,7 +1677,7 @@ def register_routes(app: FastAPI) -> None:
         Returns:
             JSON response with rerun result.
         """
-        from cc_deep_research.models.checkpoint import RerunStepRequest, RerunStepResult
+        from cc_deep_research.models.checkpoint import RerunStepResult
 
         session_id = request.get("session_id")
         checkpoint_id = request.get("checkpoint_id")

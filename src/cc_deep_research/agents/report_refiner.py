@@ -8,8 +8,12 @@ import logging
 import re
 from typing import Any
 
-from cc_deep_research.models import AnalysisResult, ReportEvaluationResult, ResearchSession, ValidationResult
-
+from cc_deep_research.models import (
+    AnalysisResult,
+    ReportEvaluationResult,
+    ResearchSession,
+    ValidationResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -140,9 +144,7 @@ class ReportRefinerAgent:
 
         # Improve writing quality from evaluation warnings
         for issue in evaluation_result.warnings:
-            if "short sentences" in issue.lower():
-                result = self._improve_sentence_structure(result)
-            elif "long sentences" in issue.lower():
+            if "short sentences" in issue.lower() or "long sentences" in issue.lower():
                 result = self._improve_sentence_structure(result)
             elif "very short paragraphs" in issue.lower():
                 result = self._improve_paragraph_structure(result)

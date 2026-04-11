@@ -6,7 +6,6 @@ import pytest
 
 from cc_deep_research.content_gen.iterative_loop import (
     LoopConfig,
-    LoopResult,
     format_feedback,
     run_evaluation_loop,
     should_stop,

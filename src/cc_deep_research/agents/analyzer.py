@@ -10,7 +10,8 @@ The analyzer agent is responsible for:
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any, Callable, cast
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, cast
 
 from cc_deep_research.agents.ai_analysis_service import AIAnalysisService
 from cc_deep_research.models import (
@@ -43,8 +44,8 @@ class AnalyzerAgent:
         self,
         config: dict[str, Any],
         monitor: ResearchMonitor | None = None,
-        llm_router: "LLMRouter | None" = None,
-        prompt_registry: "PromptRegistry | None" = None,
+        llm_router: LLMRouter | None = None,
+        prompt_registry: PromptRegistry | None = None,
     ) -> None:
         """Initialize the analyzer agent.
 

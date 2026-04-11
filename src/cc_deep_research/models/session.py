@@ -276,7 +276,7 @@ class ResearchSession(BaseModel):
     model_config = {"frozen": False}
 
     @model_validator(mode="after")
-    def _normalize_metadata(self) -> "ResearchSession":
+    def _normalize_metadata(self) -> ResearchSession:
         """Normalize session metadata into the stable contract."""
         self.metadata = normalize_session_metadata(
             self.metadata,
