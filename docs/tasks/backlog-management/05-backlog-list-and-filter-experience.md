@@ -1,6 +1,6 @@
 # Task 05: Deliver Read-Only Backlog List And Filters
 
-Status: Planned
+Status: Done
 
 Phase:
 Phase 1 - Backlog Visibility
