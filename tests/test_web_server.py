@@ -2803,3 +2803,321 @@ def test_benchmark_runs_endpoint_honors_env_override(
     detail_response = client.get("/api/benchmarks/runs/run-001")
     assert detail_response.status_code == 200
     assert detail_response.json()["configuration"] == {"mode": "smoke"}
+
+
+# Backlog API Tests
+
+def test_backlog_list_returns_empty_on_fresh_store(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GET /api/content-gen/backlog should return empty items list on fresh store."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    client = TestClient(create_app())
+    response = client.get("/api/content-gen/backlog")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "path" in data
+    assert data["items"] == []
+
+
+def test_backlog_create_item_returns_201_with_valid_input(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POST /api/content-gen/backlog should create item and return 201."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    client = TestClient(create_app())
+    response = client.post(
+        "/api/content-gen/backlog",
+        json={
+            "idea": "Test idea for backlog",
+            "category": "trend-responsive",
+            "audience": "Tech executives",
+            "problem": "AI adoption challenges",
+        },
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["idea"] == "Test idea for backlog"
+    assert data["category"] == "trend-responsive"
+    assert data["status"] == "backlog"
+    assert "idea_id" in data
+    assert data["created_at"] != ""
+
+
+def test_backlog_create_with_minimal_input(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POST /api/content-gen/backlog should accept idea-only input."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    client = TestClient(create_app())
+    response = client.post(
+        "/api/content-gen/backlog",
+        json={"idea": "Simple idea"},
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["idea"] == "Simple idea"
+    assert data["idea_id"] != ""
+
+
+def test_backlog_create_with_invalid_input_returns_422(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POST /api/content-gen/backlog should return 422 for missing idea."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    client = TestClient(create_app())
+    response = client.post(
+        "/api/content-gen/backlog",
+        json={},
+    )
+
+    assert response.status_code == 422
+
+
+def test_backlog_list_returns_created_items(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GET /api/content-gen/backlog should return items created via POST."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    client = TestClient(create_app())
+
+    # Create two items
+    client.post(
+        "/api/content-gen/backlog",
+        json={"idea": "First idea", "category": "evergreen"},
+    )
+    client.post(
+        "/api/content-gen/backlog",
+        json={"idea": "Second idea", "category": "authority-building"},
+    )
+
+    response = client.get("/api/content-gen/backlog")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["items"]) == 2
+    ideas = {item["idea"] for item in data["items"]}
+    assert "First idea" in ideas
+    assert "Second idea" in ideas
+
+
+def test_backlog_update_item_returns_updated_fields(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PATCH /api/content-gen/backlog/{idea_id} should update and return item."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    client = TestClient(create_app())
+
+    # Create an item
+    create_response = client.post(
+        "/api/content-gen/backlog",
+        json={"idea": "Update me"},
+    )
+    idea_id = create_response.json()["idea_id"]
+
+    # Update it (patch key wraps the fields per API contract)
+    response = client.patch(
+        f"/api/content-gen/backlog/{idea_id}",
+        json={"patch": {"idea": "Updated idea", "risk_level": "high"}},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["idea"] == "Updated idea"
+    assert data["risk_level"] == "high"
+    assert data["idea_id"] == idea_id
+
+
+def test_backlog_update_item_returns_404_for_unknown_id(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PATCH /api/content-gen/backlog/{idea_id} should return 404 for unknown ID."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    client = TestClient(create_app())
+    response = client.patch(
+        "/api/content-gen/backlog/unknown-id-123",
+        json={"idea": "Should fail"},
+    )
+
+    assert response.status_code == 404
+    assert "not found" in response.json()["error"].lower()
+
+
+def test_backlog_select_item_returns_selected_item(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POST /api/content-gen/backlog/{idea_id}/select should select the item."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    client = TestClient(create_app())
+
+    # Create two items
+    first_response = client.post(
+        "/api/content-gen/backlog",
+        json={"idea": "First item"},
+    )
+    second_response = client.post(
+        "/api/content-gen/backlog",
+        json={"idea": "Second item"},
+    )
+    first_id = first_response.json()["idea_id"]
+    second_id = second_response.json()["idea_id"]
+
+    # Select the first item
+    response = client.post(f"/api/content-gen/backlog/{first_id}/select")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["idea_id"] == first_id
+    assert data["status"] == "selected"
+
+    # Verify the second item is still in backlog
+    list_response = client.get("/api/content-gen/backlog")
+    items = {item["idea_id"]: item for item in list_response.json()["items"]}
+    assert items[second_id]["status"] == "backlog"
+
+
+def test_backlog_select_item_returns_404_for_unknown_id(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POST /api/content-gen/backlog/{idea_id}/select should return 404 for unknown ID."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    client = TestClient(create_app())
+    response = client.post("/api/content-gen/backlog/unknown-id/select")
+
+    assert response.status_code == 404
+    assert "not found" in response.json()["error"].lower()
+
+
+def test_backlog_archive_item_returns_archived_item(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POST /api/content-gen/backlog/{idea_id}/archive should archive the item."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    client = TestClient(create_app())
+
+    # Create an item
+    create_response = client.post(
+        "/api/content-gen/backlog",
+        json={"idea": "Archive me"},
+    )
+    idea_id = create_response.json()["idea_id"]
+
+    # Archive it
+    response = client.post(f"/api/content-gen/backlog/{idea_id}/archive")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["idea_id"] == idea_id
+    assert data["status"] == "archived"
+
+
+def test_backlog_archive_item_returns_404_for_unknown_id(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POST /api/content-gen/backlog/{idea_id}/archive should return 404 for unknown ID."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    client = TestClient(create_app())
+    response = client.post("/api/content-gen/backlog/unknown-id/archive")
+
+    assert response.status_code == 404
+    assert "not found" in response.json()["error"].lower()
+
+
+def test_backlog_delete_item_returns_removed(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """DELETE /api/content-gen/backlog/{idea_id} should remove the item."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    client = TestClient(create_app())
+
+    # Create an item
+    create_response = client.post(
+        "/api/content-gen/backlog",
+        json={"idea": "Delete me"},
+    )
+    idea_id = create_response.json()["idea_id"]
+
+    # Delete it
+    response = client.delete(f"/api/content-gen/backlog/{idea_id}")
+
+    assert response.status_code == 200
+    assert response.json()["removed"] == 1
+
+    # Verify it's gone from list
+    list_response = client.get("/api/content-gen/backlog")
+    items = list_response.json()["items"]
+    assert not any(item["idea_id"] == idea_id for item in items)
+
+
+def test_backlog_delete_item_returns_404_for_unknown_id(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """DELETE /api/content-gen/backlog/{idea_id} should return 404 for unknown ID."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    client = TestClient(create_app())
+    response = client.delete("/api/content-gen/backlog/unknown-id")
+
+    assert response.status_code == 404
+    assert "not found" in response.json()["error"].lower()
+
+
+def test_backlog_mutations_persist_through_store(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Backlog mutations should persist through the managed backlog store."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    client = TestClient(create_app())
+
+    # Create item
+    create_response = client.post(
+        "/api/content-gen/backlog",
+        json={"idea": "Persistent idea"},
+    )
+    idea_id = create_response.json()["idea_id"]
+
+    # Update item (patch key wraps the fields per API contract)
+    client.patch(
+        f"/api/content-gen/backlog/{idea_id}",
+        json={"patch": {"idea": "Updated persistent idea"}},
+    )
+
+    # Select item
+    client.post(f"/api/content-gen/backlog/{idea_id}/select")
+
+    # List should show updated state
+    list_response = client.get("/api/content-gen/backlog")
+    items = list_response.json()["items"]
+    item = next(i for i in items if i["idea_id"] == idea_id)
+    assert item["idea"] == "Updated persistent idea"
+    assert item["status"] == "selected"
