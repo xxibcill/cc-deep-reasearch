@@ -1,0 +1,109 @@
+{
+  "pipeline_id": "4184b4b807f6",
+  "theme": "Direct seed",
+  "created_at": "",
+  "current_stage": 0,
+  "strategy": null,
+  "opportunity_brief": null,
+  "backlog": {
+    "items": [
+      {
+        "idea_id": "a947c82d",
+        "category": "",
+        "idea": "Direct seed",
+        "audience": "",
+        "problem": "",
+        "source": "direct_idea",
+        "why_now": "",
+        "potential_hook": "",
+        "content_type": "",
+        "evidence": "",
+        "risk_level": "medium",
+        "priority_score": 0.0,
+        "status": "selected",
+        "latest_score": null,
+        "latest_recommendation": "",
+        "selection_reasoning": "",
+        "expertise_reason": "",
+        "genericity_risk": "",
+        "proof_gap_note": "",
+        "source_theme": "Direct seed",
+        "source_pipeline_id": "",
+        "created_at": "",
+        "updated_at": "",
+        "last_scored_at": ""
+      }
+    ],
+    "rejected_count": 0,
+    "rejection_reasons": [],
+    "is_degraded": false,
+    "degradation_reason": ""
+  },
+  "scoring": {
+    "scores": [],
+    "produce_now": [
+      "a947c82d"
+    ],
+    "shortlist": [
+      "a947c82d"
+    ],
+    "selected_idea_id": "a947c82d",
+    "selection_reasoning": "Seeded directly from --idea.",
+    "runner_up_idea_ids": [],
+    "active_candidates": [
+      {
+        "idea_id": "a947c82d",
+        "role": "primary",
+        "status": "selected"
+      }
+    ],
+    "hold": [],
+    "killed": [],
+    "is_degraded": false,
+    "degradation_reason": ""
+  },
+  "shortlist": [
+    "a947c82d"
+  ],
+  "selected_idea_id": "a947c82d",
+  "selection_reasoning": "Seeded directly from --idea.",
+  "runner_up_idea_ids": [],
+  "active_candidates": [
+    {
+      "idea_id": "a947c82d",
+      "role": "primary",
+      "status": "selected"
+    }
+  ],
+  "lane_contexts": [
+    {
+      "idea_id": "a947c82d",
+      "role": "primary",
+      "status": "selected",
+      "last_completed_stage": -1,
+      "angles": null,
+      "research_pack": null,
+      "argument_map": null,
+      "scripting": null,
+      "visual_plan": null,
+      "production_brief": null,
+      "packaging": null,
+      "qc_gate": null,
+      "publish_items": []
+    }
+  ],
+  "angles": null,
+  "research_pack": null,
+  "argument_map": null,
+  "scripting": null,
+  "visual_plan": null,
+  "production_brief": null,
+  "packaging": null,
+  "qc_gate": null,
+  "publish_items": [],
+  "publish_item": null,
+  "performance": null,
+  "iteration_state": null,
+  "stage_traces": [],
+  "claim_ledger": null
+}

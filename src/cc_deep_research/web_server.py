@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -1681,22 +1682,26 @@ def register_routes(app: FastAPI) -> None:
             JSON response with rerun result.
         """
         from cc_deep_research.models.checkpoint import RerunStepRequest, RerunStepResult
+        from pydantic import ValidationError
 
-        session_id = request.get("session_id")
-        checkpoint_id = request.get("checkpoint_id")
-
-        if not session_id or not checkpoint_id:
+        try:
+            rerun_request = RerunStepRequest.model_validate(request)
+        except ValidationError:
             return JSONResponse(
                 content={"error": "session_id and checkpoint_id are required"},
                 status_code=400,
             )
 
         telemetry_dir = get_default_telemetry_dir()
-        checkpoint = query_checkpoint_detail(session_id, checkpoint_id, base_dir=telemetry_dir)
+        checkpoint = query_checkpoint_detail(
+            rerun_request.session_id,
+            rerun_request.checkpoint_id,
+            base_dir=telemetry_dir,
+        )
 
         if checkpoint is None:
             return JSONResponse(
-                content={"error": f"Checkpoint not found: {checkpoint_id}"},
+                content={"error": f"Checkpoint not found: {rerun_request.checkpoint_id}"},
                 status_code=404,
             )
 
@@ -1707,17 +1712,19 @@ def register_routes(app: FastAPI) -> None:
                 status_code=409,
             )
 
-        # Note: Actual rerun execution would require reconstructing inputs
-        # and executing the step. This endpoint validates and prepares for rerun.
         result = RerunStepResult(
-            success=True,
-            session_id=session_id,
-            checkpoint_id=checkpoint_id,
-            output_match=None,  # Would be determined after actual rerun
-            message=f"Checkpoint {checkpoint_id} is ready for rerun. Input refs: {checkpoint.get('input_ref')}",
+            success=False,
+            session_id=rerun_request.session_id,
+            checkpoint_id=rerun_request.checkpoint_id,
+            output_match=None,
+            message=(
+                f"Checkpoint {rerun_request.checkpoint_id} is replayable, "
+                "but step rerun execution is not implemented yet."
+            ),
+            error="Step rerun execution is not implemented yet.",
         )
 
-        return JSONResponse(content=result.model_dump(mode="json"))
+        return JSONResponse(content=result.model_dump(mode="json"), status_code=501)
 
     @app.websocket("/ws/session/{session_id}")
     async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:
@@ -2086,7 +2093,7 @@ def register_routes(app: FastAPI) -> None:
 
     def _get_benchmark_runs_dir() -> Path:
         """Return the default benchmark runs directory."""
-        return Path("benchmark_runs")
+        return Path(os.environ.get("BENCHMARK_RUNS_DIR", "benchmark_runs"))
 
     def _list_benchmark_runs() -> list[dict[str, Any]]:
         """List available benchmark runs from the filesystem."""

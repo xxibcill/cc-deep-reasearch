@@ -47,6 +47,7 @@ export type PipelineStageName =
   | 'score_ideas'
   | 'generate_angles'
   | 'build_research_pack'
+  | 'build_argument_map'
   | 'run_scripting'
   | 'visual_translation'
   | 'production_brief'
@@ -62,6 +63,7 @@ export const PIPELINE_STAGE_ORDER: PipelineStageName[] = [
   'score_ideas',
   'generate_angles',
   'build_research_pack',
+  'build_argument_map',
   'run_scripting',
   'visual_translation',
   'production_brief',
@@ -78,6 +80,7 @@ export const PIPELINE_STAGE_SHORT_LABELS: Record<PipelineStageName, string> = {
   score_ideas: 'Score Ideas',
   generate_angles: 'Generate Angles',
   build_research_pack: 'Build Research',
+  build_argument_map: 'Argument Map',
   run_scripting: 'Run Scripting',
   visual_translation: 'Visual Translation',
   production_brief: 'Production Brief',
@@ -287,7 +290,58 @@ export interface ResearchPack {
 }
 
 // =============================================================================
-// Scripting (stage 5)
+// Argument map (stage 5)
+// =============================================================================
+
+export interface ArgumentProofAnchor {
+  proof_id: string;
+  summary: string;
+  source_ids: string[];
+  usage_note: string;
+}
+
+export interface ArgumentCounterargument {
+  counterargument_id: string;
+  counterargument: string;
+  response: string;
+  response_proof_ids: string[];
+}
+
+export interface ArgumentClaim {
+  claim_id: string;
+  claim: string;
+  supporting_proof_ids: string[];
+  note: string;
+}
+
+export interface ArgumentBeatClaim {
+  beat_id: string;
+  beat_name: string;
+  goal: string;
+  claim_ids: string[];
+  proof_anchor_ids: string[];
+  counterargument_ids: string[];
+  transition_note: string;
+}
+
+export interface ArgumentMap {
+  idea_id: string;
+  angle_id: string;
+  thesis: string;
+  audience_belief_to_challenge: string;
+  core_mechanism: string;
+  proof_anchors: ArgumentProofAnchor[];
+  counterarguments: ArgumentCounterargument[];
+  safe_claims: ArgumentClaim[];
+  unsafe_claims: ArgumentClaim[];
+  beat_claim_plan: ArgumentBeatClaim[];
+  what_this_contributes?: string;
+  genericity_flags?: string[];
+  differentiation_stategy?: string;
+}
+
+// =============================================================================
+// Scripting (stage 6)
 // =============================================================================
 
 export interface CoreInputs {
@@ -402,7 +456,7 @@ export interface SavedScriptRun {
 }
 
 // =============================================================================
-// Visual translation (stage 6)
+// Visual translation (stage 7)
 // =============================================================================
 
 export interface BeatVisual {
@@ -427,7 +481,7 @@ export interface VisualPlanOutput {
 }
 
 // =============================================================================
-// Production brief (stage 7)
+// Production brief (stage 8)
 // =============================================================================
 
 export interface ProductionBrief {
@@ -445,7 +499,7 @@ export interface ProductionBrief {
 }
 
 // =============================================================================
-// Packaging (stage 8)
+// Packaging (stage 9)
 // =============================================================================
 
 export interface PlatformPackage {
@@ -467,7 +521,7 @@ export interface PackagingOutput {
 }
 
 // =============================================================================
-// Human QC gate (stage 9)
+// Human QC gate (stage 10)
 // =============================================================================
 
 export interface HumanQCGate {
@@ -483,7 +537,7 @@ export interface HumanQCGate {
 }
 
 // =============================================================================
-// Publish queue (stage 10)
+// Publish queue (stage 11)
 // =============================================================================
 
 export interface PublishItem {
@@ -499,7 +553,7 @@ export interface PublishItem {
 }
 
 // =============================================================================
-// Performance analysis (stage 11)
+// Performance analysis (stage 12)
 // =============================================================================
 
 export interface PerformanceAnalysis {
@@ -550,6 +604,8 @@ export interface StageTraceMetadata {
   degradation_reason?: string;
   fact_count?: number;
   proof_count?: number;
+  claim_count?: number;
+  unsafe_claim_count?: number;
   cache_reused?: boolean;
   step_count?: number;
   llm_call_count?: number;
@@ -560,6 +616,7 @@ export interface StageTraceMetadata {
   beats_count?: number;
   platforms_count?: number;
   approved?: boolean;
+  active_candidate_count?: number;
 }
 
 export interface PipelineStageTrace {
@@ -596,11 +653,13 @@ export interface PipelineContext {
   runner_up_idea_ids: string[];
   angles: AngleOutput | null;
   research_pack: ResearchPack | null;
+  argument_map: ArgumentMap | null;
   scripting: ScriptingContext | null;
   visual_plan: VisualPlanOutput | null;
   production_brief: ProductionBrief | null;
   packaging: PackagingOutput | null;
   qc_gate: HumanQCGate | null;
+  publish_items?: PublishItem[];
   publish_item: PublishItem | null;
   performance: PerformanceAnalysis | null;
   iteration_state: IterationState | null;
