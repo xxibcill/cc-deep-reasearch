@@ -21,8 +21,10 @@ export default function BacklogPage() {
   const deleteBacklogItem = useContentGen((s) => s.deleteBacklogItem)
 
   useEffect(() => {
-    void loadBacklog()
-  }, [loadBacklog])
+    if (backlog.length === 0) {
+      void loadBacklog()
+    }
+  }, [backlog.length, loadBacklog])
 
   if (backlogLoading) {
     return (

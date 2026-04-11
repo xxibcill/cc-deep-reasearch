@@ -97,7 +97,7 @@ async function setupBacklogMocks(
     })
   })
 
-  // Mock backlog API routes
+  // Mock backlog API routes using local items state to avoid test pollution
   await page.route('**/api/content-gen/backlog**', async (route) => {
     const url = new URL(route.request().url())
     const pathName = url.pathname
@@ -174,7 +174,7 @@ async function setupBacklogMocks(
         })
         return
       }
-      // Clear previous selections
+      // Clear previous selections using local items copy
       items = items.map((item) =>
         item.status === 'selected'
           ? { ...item, status: 'backlog', selection_reasoning: '' }
@@ -284,6 +284,16 @@ test.describe('Backlog Management', () => {
 
     // The button should now be disabled because item-001 is now selected
     await expect(selectButton).toBeDisabled()
+  })
+
+  test('select button is enabled for already-selected item allowing re-selection', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.goto('/content-gen/backlog')
+
+    // Find the select button for item-002 (which is already in selected status)
+    const selectButton = page.locator('button[title="Select item"]').nth(1)
+    await expect(selectButton).toBeEnabled()
   })
 
   test('archive action removes item from default view', async ({ page }) => {

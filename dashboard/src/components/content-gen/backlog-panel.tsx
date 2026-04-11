@@ -253,7 +253,7 @@ export function BacklogPanel({
                               void runAction(`${rowKey}-select`, () => onSelect(item.idea_id))
                             }
                           }}
-                          disabled={!onSelect || busyKey === `${rowKey}-select` || item.status === 'selected'}
+                          disabled={!onSelect || busyKey === `${rowKey}-select`}
                           className="h-8 w-8 text-muted-foreground/60 hover:text-success"
                           title="Select item"
                         >

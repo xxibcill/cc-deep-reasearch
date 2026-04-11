@@ -60,6 +60,7 @@ export default function ContentGenPage() {
   const selectBacklogItem = useContentGen((s) => s.selectBacklogItem)
   const archiveBacklogItem = useContentGen((s) => s.archiveBacklogItem)
   const deleteBacklogItem = useContentGen((s) => s.deleteBacklogItem)
+  const createBacklogItem = useContentGen((s) => s.createBacklogItem)
   const error = useContentGen((s) => s.error)
 
   const [newPipelineOpen, setNewPipelineOpen] = useState(false)
@@ -377,6 +378,7 @@ export default function ContentGenPage() {
             onSelect={selectBacklogItem}
             onArchive={archiveBacklogItem}
             onDelete={deleteBacklogItem}
+            onCreate={createBacklogItem}
           />
         </div>
       )}
