@@ -48,15 +48,10 @@ export default function ContentGenPage() {
   const activeTab = searchParams.get('tab') || 'overview'
 
   const pipelines = useContentGen((s) => s.pipelines)
-  const backlog = useContentGen((s) => s.backlog)
-  const backlogPath = useContentGen((s) => s.backlogPath)
-  const backlogLoading = useContentGen((s) => s.backlogLoading)
+  const activePipelineId = useContentGen((s) => s.activePipelineId)
+  const pipelineContext = useContentGen((s) => s.pipelineContext)
   const publishQueue = useContentGen((s) => s.publishQueue)
   const loadAll = useContentGen((s) => s.loadAll)
-  const updateBacklogItem = useContentGen((s) => s.updateBacklogItem)
-  const selectBacklogItem = useContentGen((s) => s.selectBacklogItem)
-  const archiveBacklogItem = useContentGen((s) => s.archiveBacklogItem)
-  const deleteBacklogItem = useContentGen((s) => s.deleteBacklogItem)
   const removeFromQueue = useContentGen((s) => s.removeFromQueue)
   const error = useContentGen((s) => s.error)
 
@@ -367,15 +362,25 @@ export default function ContentGenPage() {
 
       {activeTab === 'backlog' && (
         <div className="w-full">
-          <BacklogPanel
-            items={backlog}
-            backlogPath={backlogPath}
-            loading={backlogLoading}
-            onUpdateStatus={updateBacklogItem}
-            onSelect={selectBacklogItem}
-            onArchive={archiveBacklogItem}
-            onDelete={deleteBacklogItem}
-          />
+          {activePipelineId && pipelineContext?.backlog ? (
+            <BacklogPanel
+              items={pipelineContext.backlog.items}
+              backlogPath={null}
+              loading={false}
+              onUpdateStatus={async () => {}}
+              onSelect={async () => {}}
+              onArchive={async () => {}}
+              onDelete={async () => {}}
+            />
+          ) : (
+            <Card className="rounded-[1.3rem]">
+              <CardContent className="p-6">
+                <p className="text-sm text-muted-foreground">
+                  Select a pipeline to view its backlog. Visit the pipeline detail page to manage backlog items.
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
 
