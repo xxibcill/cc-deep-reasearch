@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { LayoutDashboard, FileText, Settings, ListVideo, ArrowLeft } from 'lucide-react'
+import { LayoutDashboard, FileText, Settings, ListVideo, ArrowLeft, ListChecks } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { buttonVariants } from '@/components/ui/button'
 import { Tabs } from '@/components/ui/tabs'
@@ -15,6 +15,7 @@ const TAB_CONFIG = [
   { value: 'scripts', label: 'Scripts', icon: FileText },
   { value: 'strategy', label: 'Strategy', icon: Settings },
   { value: 'queue', label: 'Queue', icon: ListVideo },
+  { value: 'backlog', label: 'Backlog', icon: ListChecks },
 ]
 
 export function ContentGenShell({
@@ -56,6 +57,10 @@ export function ContentGenShell({
   }, [loadAll])
 
   const handleTabChange = (value: string) => {
+    if (value === 'backlog') {
+      router.push('/content-gen/backlog')
+      return
+    }
     router.push(`/content-gen${value === 'overview' ? '' : `?tab=${value}`}`)
   }
 
