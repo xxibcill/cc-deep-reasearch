@@ -260,6 +260,45 @@ class AnalysisWorkflow:
                 )
                 break
 
+            if not decision.next_queries:
+                self._monitor.log(
+                    "Follow-up requested without actionable queries; stopping iterations"
+                )
+                self._monitor.emit_decision_made(
+                    decision_type="iteration_control",
+                    reason_code="follow_up_queries_unavailable",
+                    chosen_option="stop_iteration",
+                    rejected_options=["continue_iteration"],
+                    inputs={
+                        "iteration": iteration,
+                        "quality_score": validation.quality_score if validation else None,
+                        "follow_up_queries": decision.next_queries,
+                    },
+                    confidence=decision.confidence,
+                    actor_id="planner",
+                    phase="analysis",
+                    operation="planner.iteration_control",
+                )
+                self._monitor.record_follow_up_decision(
+                    iteration=iteration,
+                    reason="follow_up_queries_unavailable",
+                    follow_up_queries=decision.next_queries,
+                    failure_modes=validation.failure_modes if validation else [],
+                    quality_score=validation.quality_score if validation else None,
+                )
+                self._monitor.record_iteration_stop(
+                    iteration=iteration,
+                    stop_reason=(
+                        "degraded_execution"
+                        if validation and validation.needs_follow_up
+                        else "success"
+                    ),
+                    detail="Planner requested follow-up but produced no follow-up queries",
+                    quality_score=validation.quality_score if validation else None,
+                    follow_up_queries=decision.next_queries,
+                )
+                break
+
             if phase_hook is not None:
                 phase_hook("iterative_search", f"Running follow-up research pass {iteration + 1}")
             self._monitor.record_reasoning_summary(

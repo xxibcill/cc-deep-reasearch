@@ -5,6 +5,7 @@ for agents based on transport availability and task requirements.
 """
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from cc_deep_research.config import Config
@@ -387,7 +388,7 @@ class LLMRoutePlanner:
                 "api_key": api_keys[0] if api_keys else None,
                 "api_keys": api_keys,
                 "base_url": self._llm_config.anthropic.base_url,
-                "max_tokens": self._llm_config.anthropic.max_tokens,
+                "max_tokens": str(self._llm_config.anthropic.max_tokens),
             }
 
         return LLMRoute(

@@ -6,8 +6,6 @@ late-stage schema or formatting failures before full orchestration.
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from cc_deep_research.agents.analyzer import AnalyzerAgent
 from cc_deep_research.models import (
     AnalysisResult,

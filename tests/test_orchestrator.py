@@ -274,6 +274,20 @@ class FakeAnalyzerAgent:
         return _make_analysis(source_count=len(sources))
 
 
+class FakePartialAnalyzerAgent(FakeAnalyzerAgent):
+    """Analysis fixture that returns a sparse but valid payload."""
+
+    def analyze_sources(self, sources: list[SearchResultItem], query: str) -> AnalysisResult:
+        self.calls.append((list(sources), query))
+        return AnalysisResult(
+            key_findings=["This is a simple string finding without structured fields"],
+            themes=["incomplete theme"],
+            gaps=["Simple string gap without structured fields"],
+            source_count=len(sources),
+            analysis_method="basic_keyword",
+        )
+
+
 class FakeDeepAnalyzerAgent:
     """Deep-analysis fixture that marks the deep phase complete."""
 
@@ -436,7 +450,7 @@ class TestTeamResearchOrchestrator:
         assert "[markdown|json|html]" in result.output
         assert "--no-team" in result.output
         assert "Run source collection sequentially instead of" in result.output
-        assert "using parallel researchers" in result.output
+        assert "using parallel local tasks" in result.output
 
     def test_no_team_override_forces_sequential_collection(self) -> None:
         assert _resolve_parallel_mode_override(no_team=True, parallel_mode=False) is False
@@ -769,8 +783,8 @@ class TestTeamResearchOrchestrator:
             query_families: list[QueryFamily],
             depth: ResearchDepth,
         ) -> list[SearchResultItem]:
-            del collector, depth
             assert [family.query for family in query_families] == ["parallel query"]
+            del collector, query_families, depth
             orchestrator._session_state.set_provider_metadata(available=["tavily"], warnings=[])
             return sources
 
@@ -824,8 +838,8 @@ class TestTeamResearchOrchestrator:
             query_families: list[QueryFamily],
             depth: ResearchDepth,
         ) -> list[SearchResultItem]:
-            del collector, depth
             assert [family.query for family in query_families] == ["sequential query"]
+            del collector, query_families, depth
             orchestrator._session_state.set_provider_metadata(available=["tavily"], warnings=[])
             return sources
 
@@ -1103,6 +1117,40 @@ class TestTeamResearchOrchestrator:
             "query conflicting evidence rebuttal",
             "query methodology criticism response",
         ]
+
+    @pytest.mark.asyncio
+    async def test_execute_research_preserves_partial_analysis_results_in_metadata(self) -> None:
+        config = Config()
+        config.search.providers = ["tavily"]
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        collector = FakeCollectorAgent(
+            available=["tavily"],
+            warnings=[],
+            results_by_query={
+                "test query": _make_sources("partial-analysis", 2),
+            },
+        )
+        _install_fake_team(
+            orchestrator,
+            collector=collector,
+            analyzer=FakePartialAnalyzerAgent(),
+        )
+
+        session = await orchestrator.execute_research(
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            min_sources=1,
+        )
+
+        assert session.metadata["analysis"]["key_findings"] == [
+            "This is a simple string finding without structured fields"
+        ]
+        assert session.metadata["analysis"]["gaps"] == [
+            "Simple string gap without structured fields"
+        ]
+        assert session.metadata["analysis"]["analysis_method"] == "basic_keyword"
+        assert session.metadata["validation"]["is_valid"] is True
 
 
 class TestQueryExpanderAgent:
@@ -1727,7 +1775,7 @@ class TestOrchestratorFailurePathRegressions:
             query_families: list[QueryFamily],
             depth: ResearchDepth,
         ) -> list[SearchResultItem]:
-            del collector, depth
+            del collector, query_families, depth
             orchestrator._session_state.set_provider_metadata(
                 available=["tavily"],
                 warnings=["Used sequential fallback due to parallel error"],
@@ -1887,3 +1935,324 @@ class TestOrchestratorFailurePathRegressions:
 
         if session.metadata["execution"]["degraded"]:
             assert len(session.metadata["execution"]["degraded_reasons"]) > 0
+
+
+class TestSessionMetadataContract:
+    """Contract tests for session metadata structure.
+
+    Task 32: Add Session Metadata Contract Tests
+    These tests pin the metadata contract so later refactors cannot drift silently.
+    They verify stable keys and nested shapes across all depths and degraded paths.
+    """
+
+    @pytest.mark.asyncio
+    async def test_quick_depth_metadata_contract_keys_and_shapes(self) -> None:
+        """QUICK depth must produce documented minimum metadata contract."""
+        config = Config()
+        config.search.providers = ["tavily"]
+        config.search_team.parallel_execution = False
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        collector = FakeCollectorAgent(available=["tavily"], warnings=[])
+        _install_fake_team(orchestrator, collector=collector)
+
+        session = await orchestrator.execute_research(
+            query="test query",
+            depth=ResearchDepth.QUICK,
+            min_sources=1,
+        )
+
+        self._assert_metadata_keys(session)
+        self._assert_execution_contract(session, expected_degraded=False)
+        self._assert_deep_analysis_contract(session, expected_status="not_requested")
+        self._assert_strategy_contract(session)
+        self._assert_analysis_contract(session)
+        self._assert_validation_contract(session)
+        self._assert_providers_contract(session)
+        self._assert_iteration_history_contract(session)
+        self._assert_llm_routes_contract(session)
+        self._assert_prompts_contract(session)
+
+    @pytest.mark.asyncio
+    async def test_standard_depth_metadata_contract_keys_and_shapes(self) -> None:
+        """STANDARD depth must produce documented minimum metadata contract."""
+        config = Config()
+        config.search.providers = ["tavily"]
+        config.search_team.parallel_execution = False
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        collector = FakeCollectorAgent(available=["tavily"], warnings=[])
+        _install_fake_team(orchestrator, collector=collector)
+
+        session = await orchestrator.execute_research(
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            min_sources=2,
+        )
+
+        self._assert_metadata_keys(session)
+        self._assert_execution_contract(session, expected_degraded=False)
+        self._assert_deep_analysis_contract(session, expected_status="not_requested")
+        self._assert_strategy_contract(session)
+        self._assert_analysis_contract(session)
+        self._assert_validation_contract(session)
+        self._assert_providers_contract(session)
+        self._assert_iteration_history_contract(session)
+        self._assert_llm_routes_contract(session)
+        self._assert_prompts_contract(session)
+
+    @pytest.mark.asyncio
+    async def test_deep_depth_metadata_contract_keys_and_shapes(self) -> None:
+        """DEEP depth must produce documented minimum metadata contract."""
+        config = Config()
+        config.search.providers = ["tavily"]
+        config.search_team.parallel_execution = False
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        collector = FakeCollectorAgent(available=["tavily"], warnings=[])
+        _install_fake_team(orchestrator, collector=collector)
+
+        session = await orchestrator.execute_research(
+            query="test query",
+            depth=ResearchDepth.DEEP,
+            min_sources=3,
+        )
+
+        self._assert_metadata_keys(session)
+        self._assert_execution_contract(session, expected_degraded=False)
+        self._assert_deep_analysis_contract(session, expected_status="completed")
+        self._assert_strategy_contract(session)
+        self._assert_analysis_contract(session)
+        self._assert_validation_contract(session)
+        self._assert_providers_contract(session)
+        self._assert_iteration_history_contract(session)
+        self._assert_llm_routes_contract(session)
+        self._assert_prompts_contract(session)
+
+    @pytest.mark.asyncio
+    async def test_degraded_provider_unavailable_minimum_contract(self) -> None:
+        """Degraded run (providers unavailable) must still produce minimum contract."""
+        config = Config()
+        config.search.providers = ["tavily", "claude"]
+
+        orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
+        collector = FakeCollectorAgent(
+            available=[],
+            warnings=["Provider unavailable"],
+            results_by_query={},
+        )
+        _install_fake_team(orchestrator, collector=collector)
+
+        session = await orchestrator.execute_research(
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            min_sources=1,
+        )
+
+        self._assert_metadata_keys(session)
+        self._assert_execution_contract(session, expected_degraded=True)
+        self._assert_deep_analysis_contract(session, expected_status="not_requested")
+        self._assert_strategy_contract(session)
+        self._assert_analysis_contract(session)
+        self._assert_validation_contract(session)
+        self._assert_providers_contract_degraded(session)
+        self._assert_iteration_history_contract(session)
+        self._assert_llm_routes_contract(session)
+        self._assert_prompts_contract(session)
+
+    @pytest.mark.asyncio
+    async def test_degraded_parallel_fallback_minimum_contract(self) -> None:
+        """Degraded run (parallel fallback) must still produce minimum contract."""
+        config = Config()
+        config.search.providers = ["tavily"]
+
+        orchestrator = TeamResearchOrchestrator(
+            config,
+            ResearchMonitor(enabled=False),
+            parallel_mode=True,
+        )
+        orchestrator._agent_pool = object()
+        orchestrator._agents = {AGENT_TYPE_COLLECTOR: object()}
+        orchestrator._monitor.set_session = MagicMock()
+        orchestrator._initialize_team = AsyncMock()
+        orchestrator._shutdown_team = AsyncMock()
+        orchestrator._phase_analyze_strategy = AsyncMock(
+            return_value=_make_strategy("test", ResearchDepth.STANDARD, 1)
+        )
+        orchestrator._phase_expand_queries = AsyncMock(return_value=["test"])
+        orchestrator._source_collection.parallel_research = AsyncMock(
+            side_effect=RuntimeError("parallel boom")
+        )
+
+        sources = _make_sources("fallback", 2)
+
+        async def collect_sources(
+            *,
+            collector: object,
+            query_families: list[QueryFamily],
+            depth: ResearchDepth,
+        ) -> list[SearchResultItem]:
+            del collector, query_families, depth
+            orchestrator._session_state.set_provider_metadata(available=["tavily"], warnings=[])
+            return sources
+
+        orchestrator._source_collection.collect_sources = AsyncMock(side_effect=collect_sources)
+        orchestrator._run_analysis_workflow = AsyncMock(
+            return_value=(
+                _make_analysis(source_count=len(sources)),
+                _make_validation(),
+                sources,
+                [IterationHistoryRecord(iteration=1, source_count=2, quality_score=0.82, gap_count=0)],
+            )
+        )
+
+        session = await orchestrator.execute_research(
+            query="test",
+            depth=ResearchDepth.STANDARD,
+            min_sources=1,
+        )
+
+        self._assert_metadata_keys(session)
+        self._assert_execution_contract(session, expected_degraded=True)
+        assert "parallel" in str(session.metadata["execution"]["degraded_reasons"]).lower()
+        self._assert_deep_analysis_contract(session, expected_status="not_requested")
+        self._assert_strategy_contract(session)
+        self._assert_analysis_contract(session)
+        self._assert_validation_contract(session)
+        self._assert_providers_contract(session)
+        self._assert_iteration_history_contract(session)
+        self._assert_llm_routes_contract(session)
+        self._assert_prompts_contract(session)
+
+    def _assert_metadata_keys(self, session: object) -> None:
+        """Assert all required top-level metadata keys exist."""
+        metadata_keys = set(session.metadata.keys())
+        expected_keys = {
+            "strategy",
+            "analysis",
+            "validation",
+            "iteration_history",
+            "providers",
+            "execution",
+            "deep_analysis",
+            "llm_routes",
+            "prompts",
+        }
+        assert metadata_keys == expected_keys, (
+            f"Top-level metadata keys mismatch. Expected: {expected_keys}, Got: {metadata_keys}"
+        )
+
+    def _assert_execution_contract(self, session: object, expected_degraded: bool) -> None:
+        """Assert execution section contract."""
+        execution = session.metadata["execution"]
+        assert "parallel_requested" in execution
+        assert "parallel_used" in execution
+        assert "degraded" in execution
+        assert "degraded_reasons" in execution
+        assert isinstance(execution["parallel_requested"], bool)
+        assert isinstance(execution["parallel_used"], bool)
+        assert isinstance(execution["degraded"], bool)
+        assert execution["degraded"] is expected_degraded
+        assert isinstance(execution["degraded_reasons"], list)
+
+    def _assert_deep_analysis_contract(self, session: object, expected_status: str) -> None:
+        """Assert deep_analysis section contract."""
+        deep = session.metadata["deep_analysis"]
+        assert "requested" in deep
+        assert "completed" in deep
+        assert "status" in deep
+        assert deep["status"] == expected_status
+
+    def _assert_strategy_contract(self, session: object) -> None:
+        """Assert strategy section contract."""
+        strategy = session.metadata["strategy"]
+        assert "profile" in strategy
+        assert "strategy" in strategy
+        assert "query" in strategy
+        assert "complexity" in strategy
+        assert "depth" in strategy
+        assert "tasks_needed" in strategy
+        assert isinstance(strategy["profile"], dict)
+        assert isinstance(strategy["strategy"], dict)
+        assert "query_variations" in strategy["strategy"]
+        assert "max_sources" in strategy["strategy"]
+        assert "query_families" in strategy["strategy"]
+
+    def _assert_analysis_contract(self, session: object) -> None:
+        """Assert analysis section contract."""
+        analysis = session.metadata["analysis"]
+        assert "key_findings" in analysis
+        assert "themes" in analysis
+        assert "source_provenance" in analysis
+        assert "source_count" in analysis
+        assert "analysis_method" in analysis
+        assert isinstance(analysis["key_findings"], list)
+        assert isinstance(analysis["themes"], list)
+        assert isinstance(analysis["source_provenance"], dict)
+        provenance = analysis["source_provenance"]
+        assert "sources_with_provenance" in provenance
+        assert "families" in provenance
+
+    def _assert_validation_contract(self, session: object) -> None:
+        """Assert validation section contract."""
+        validation = session.metadata["validation"]
+        assert "quality_score" in validation
+        assert "is_valid" in validation
+        assert "issues" in validation
+        assert "warnings" in validation
+        assert "recommendations" in validation
+        assert isinstance(validation["quality_score"], (int, float))
+        assert isinstance(validation["is_valid"], bool)
+        assert isinstance(validation["issues"], list)
+        assert isinstance(validation["warnings"], list)
+        assert isinstance(validation["recommendations"], list)
+
+    def _assert_providers_contract(self, session: object) -> None:
+        """Assert providers section contract for healthy runs."""
+        providers = session.metadata["providers"]
+        assert "configured" in providers
+        assert "available" in providers
+        assert "status" in providers
+        assert "warnings" in providers
+        assert isinstance(providers["configured"], list)
+        assert isinstance(providers["available"], list)
+        assert providers["status"] in ["ready", "unavailable", "degraded"]
+        assert isinstance(providers["warnings"], list)
+
+    def _assert_providers_contract_degraded(self, session: object) -> None:
+        """Assert providers section contract for degraded runs."""
+        providers = session.metadata["providers"]
+        assert "configured" in providers
+        assert "available" in providers
+        assert "status" in providers
+        assert "warnings" in providers
+        assert isinstance(providers["configured"], list)
+        assert isinstance(providers["available"], list)
+        assert providers["status"] == "unavailable"
+        assert isinstance(providers["warnings"], list)
+
+    def _assert_iteration_history_contract(self, session: object) -> None:
+        """Assert iteration_history section contract."""
+        history = session.metadata["iteration_history"]
+        assert isinstance(history, list)
+        if history:
+            entry = history[0]
+            assert "iteration" in entry
+            assert "source_count" in entry
+            assert "quality_score" in entry
+            assert "gap_count" in entry
+
+    def _assert_llm_routes_contract(self, session: object) -> None:
+        """Assert llm_routes section contract."""
+        routes = session.metadata["llm_routes"]
+        assert isinstance(routes, dict)
+
+    def _assert_prompts_contract(self, session: object) -> None:
+        """Assert prompts section contract."""
+        prompts = session.metadata["prompts"]
+        assert "overrides_applied" in prompts
+        assert "effective_overrides" in prompts
+        assert "default_prompts_used" in prompts
+        assert isinstance(prompts["overrides_applied"], bool)
+        assert isinstance(prompts["effective_overrides"], dict)
+        assert isinstance(prompts["default_prompts_used"], (list, set))

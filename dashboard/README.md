@@ -63,6 +63,22 @@ NEXT_PUBLIC_CC_WS_BASE_URL=ws://localhost:8000/ws
 npm run build
 \`\`\`
 
+## Testing
+
+Run the mocked dashboard smoke checks:
+
+\`\`\`bash
+npm run test:e2e:smoke
+\`\`\`
+
+Run the accessibility regression baseline used by CI and local preflight:
+
+\`\`\`bash
+npm run test:a11y
+\`\`\`
+
+The accessibility baseline runs mocked Playwright coverage in Chromium against the primary operator surfaces: Research, Monitor, Compare, and Analytics.
+
 ## Technology Stack
 
 - **Next.js 14**: React framework with App Router
@@ -94,11 +110,11 @@ The dashboard connects to the CC Deep Research backend:
 
 ## Backend Setup
 
-To use the dashboard with real-time monitoring:
+`npm run dev` already starts both the backend API and the frontend dashboard. If you want to run the backend separately, use the real CLI command and current flags:
 
 1. Start the backend server:
    \`\`\`bash
-   cc-deep-research dashboard --enable-realtime --dashboard-port 8000
+   cc-deep-research dashboard --host localhost --port 8000
    \`\`\`
 
 2. Run a research query with real-time enabled:
@@ -110,7 +126,20 @@ To use the dashboard with real-time monitoring:
 
 ## Component Foundation
 
-The dashboard now uses shared `shadcn/ui`-style primitives from [`src/components/ui/`](src/components/ui) with class merging from [`src/lib/utils.ts`](src/lib/utils.ts). The local setup is declared in [`components.json`](components.json) so later dashboard panels can reuse the same dialog, tabs, badge, select, card, and scrollable-pane vocabulary.
+The dashboard now uses shared `shadcn/ui`-style primitives from [`src/components/ui/`](src/components/ui) with class merging from [`src/lib/utils.ts`](src/lib/utils.ts). The local setup is declared in [`components.json`](components.json) so dashboard surfaces can reuse the same vocabulary for:
+
+- dialogs and confirmation flows
+- buttons, badges, tabs, and cards
+- text inputs, textareas, labels, native selects, and field messaging
+- alerts, tables, separators, and collapsible content panels
+
+Intentionally custom surfaces still keep bespoke rendering logic and only reuse the shared shell around them:
+
+- workflow graphs
+- decision graphs
+- agent timelines
+- pipeline progress visualization
+- rich script and report viewers
 
 ## Performance Notes
 

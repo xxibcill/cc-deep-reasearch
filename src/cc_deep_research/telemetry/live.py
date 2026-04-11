@@ -7,20 +7,14 @@ import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from cc_deep_research.config import get_default_config_path
 
 from .tree import (
-    build_critical_path,
-    build_decisions,
-    build_degradations,
     build_derived_summary,
     build_event_tree,
-    build_failures,
     build_llm_route_streams,
-    build_narrative,
-    build_state_changes,
     build_subprocess_streams,
     current_phase_from_events,
     empty_decision_graph,
@@ -124,15 +118,15 @@ def _infer_reason_code(event: dict[str, Any]) -> str | None:
     """Infer reason code from event data."""
     # Check explicit reason_code
     if event.get("reason_code"):
-        return event["reason_code"]
+        return cast(str | None, event["reason_code"])
 
     # Check metadata for reason
     metadata = event.get("metadata", {})
     if isinstance(metadata, dict):
         if "reason" in metadata:
-            return metadata["reason"]
+            return cast(str | None, metadata["reason"])
         if "stop_reason" in metadata:
-            return metadata["stop_reason"]
+            return cast(str | None, metadata["stop_reason"])
 
     # Infer from event_type patterns
     event_type = event.get("event_type", "")
@@ -414,7 +408,7 @@ def query_live_event_tail(
 ) -> list[dict[str, Any]]:
     """Return the latest N live events for a session."""
     detail = query_live_session_detail(session_id, base_dir=base_dir, tail_limit=limit)
-    return detail["event_tail"]
+    return cast(list[dict[str, Any]], detail["event_tail"])
 
 
 def query_live_agent_timeline(
@@ -424,7 +418,7 @@ def query_live_agent_timeline(
 ) -> list[dict[str, Any]]:
     """Return live agent events for a session."""
     detail = query_live_session_detail(session_id, base_dir=base_dir)
-    return detail["agent_timeline"]
+    return cast(list[dict[str, Any]], detail["agent_timeline"])
 
 
 def query_live_event_tree(
@@ -452,7 +446,7 @@ def query_live_subprocess_streams(
         base_dir=base_dir,
         subprocess_chunk_limit=chunk_limit,
     )
-    return detail["subprocess_streams"]
+    return cast(list[dict[str, Any]], detail["subprocess_streams"])
 
 
 def query_live_session_detail(
@@ -706,7 +700,7 @@ def query_session_checkpoints(
 
     try:
         with open(manifest_path, encoding="utf-8") as f:
-            manifest = json.load(f)
+            manifest = cast(dict[str, Any], json.load(f))
         manifest["session_id"] = session_id
         return manifest
     except (json.JSONDecodeError, OSError):
@@ -737,7 +731,7 @@ def query_checkpoint_detail(
     manifest = query_session_checkpoints(session_id, base_dir=base_dir)
     for checkpoint in manifest.get("checkpoints", []):
         if checkpoint.get("checkpoint_id") == checkpoint_id:
-            return checkpoint
+            return cast(dict[str, Any], checkpoint)
     return None
 
 
@@ -762,7 +756,7 @@ def query_latest_resumable_checkpoint(
 
     for checkpoint in manifest.get("checkpoints", []):
         if checkpoint.get("checkpoint_id") == checkpoint_id:
-            return checkpoint
+            return cast(dict[str, Any], checkpoint)
     return None
 
 

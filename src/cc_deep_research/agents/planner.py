@@ -188,7 +188,7 @@ class PlannerAgent:
         should_continue = False
         reason_code = "goal_satisfied"
         rationale = "The planner believes the current evidence is sufficient for the research goal."
-        stop_reason = STOP_REASON_SUCCESS
+        stop_reason: str | None = STOP_REASON_SUCCESS
 
         if validation_requires_follow_up and next_queries:
             should_continue = True
@@ -860,7 +860,7 @@ class PlannerAgent:
         findings: list[str] = []
         for finding in analysis.key_findings[:2]:
             title = finding.title if hasattr(finding, "title") else str(finding)
-            if title:
+            if isinstance(title, str) and title:
                 findings.append(title.strip())
         if findings:
             signals.append("Current evidence points to " + "; ".join(findings) + ".")

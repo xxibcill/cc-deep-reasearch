@@ -5,9 +5,6 @@ UI artifacts, and other noise from web-scraped content before analysis.
 """
 
 import re
-from typing import Any
-from urllib.parse import urlparse, parse_qs, urlunparse, urlencode
-
 
 # Navigation and commerce terms to filter out
 NAVIGATION_TERMS = frozenset({
@@ -421,5 +418,4 @@ __all__ = [
     "normalize_content",
     "extract_full_sentence_around_keyword",
     "is_complete_sentence",
-    "sanitize_url",
 ]

@@ -770,7 +770,6 @@ class TestExecutiveSummaryConsolidation:
 
         # Should use the canonical implementation (same as ReporterAgent)
         agent = ReporterAgent({"model": "claude-sonnet-4-6"})
-        from cc_deep_research.models import AnalysisResult
         analysis_result = AnalysisResult.model_validate(analysis)
         expected = agent._generate_executive_summary(session, analysis_result)
 
@@ -779,8 +778,8 @@ class TestExecutiveSummaryConsolidation:
     def test_executive_summary_uses_constants(self) -> None:
         """Test that _generate_executive_summary uses module constants."""
         from cc_deep_research.agents.reporter import (
-            EXECUTIVE_SUMMARY_MAX_THEMES,
             EXECUTIVE_SUMMARY_GAPS_POINTER,
+            EXECUTIVE_SUMMARY_MAX_THEMES,
         )
 
         config = {"model": "claude-sonnet-4-6"}
@@ -1078,7 +1077,7 @@ class TestReportRefinementPipeline:
 
     def test_report_refinement_invoked_when_issues_detected(self) -> None:
         """Report refinement should be invoked when quality issues are detected."""
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
         from cc_deep_research.config import Config
         from cc_deep_research.reporting import ReportGenerator
@@ -1120,7 +1119,7 @@ class TestReportRefinementPipeline:
     def test_report_refinement_preserves_sections(self) -> None:
         """Refinement should preserve required report sections and citations."""
         from cc_deep_research.agents.report_refiner import ReportRefinerAgent
-        from cc_deep_research.models import AnalysisResult, ReportEvaluationResult, ValidationResult
+        from cc_deep_research.models import ReportEvaluationResult, ValidationResult
 
         config = {"model": "claude-sonnet-4-6"}
         refiner = ReportRefinerAgent(config)
@@ -1207,7 +1206,6 @@ No safety issues identified.
         from unittest.mock import patch
 
         from cc_deep_research.config import Config
-        from cc_deep_research.models import ReportEvaluationResult
         from cc_deep_research.reporting import ReportGenerator
 
         # Create a config with refinement disabled

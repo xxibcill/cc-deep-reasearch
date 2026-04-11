@@ -12,6 +12,12 @@ from cc_deep_research.models.analysis import (
     StrategyResult,
     ValidationResult,
 )
+from cc_deep_research.models.metadata import (
+    AnalysisMetadataContract,
+    IterationHistoryEntryContract,
+    StrategyMetadataContract,
+    ValidationMetadataContract,
+)
 from cc_deep_research.models.search import ResearchDepth, SearchResultItem
 
 if TYPE_CHECKING:
@@ -92,7 +98,7 @@ class OrchestratorSessionState:
         self.llm_fallback_events = []
         self.prompt_metadata = SessionPromptMetadata()
 
-    def set_prompt_metadata(self, prompt_registry: "PromptRegistry | None") -> None:
+    def set_prompt_metadata(self, prompt_registry: PromptRegistry | None) -> None:
         """Record prompt configuration from the registry.
 
         Args:
@@ -420,11 +426,11 @@ class OrchestratorSessionState:
         analysis_payload["source_provenance"] = _summarize_source_provenance(sources)
 
         return {
-            "strategy": strategy.model_dump(mode="python"),
-            "analysis": analysis_payload,
-            "validation": validation.model_dump(mode="python") if validation else {},
+            "strategy": {**StrategyMetadataContract(), **strategy.model_dump(mode="python")},
+            "analysis": {**AnalysisMetadataContract(), **analysis_payload},
+            "validation": {**ValidationMetadataContract(), **validation.model_dump(mode="python")} if validation else ValidationMetadataContract(),
             "iteration_history": [
-                record.model_dump(mode="python") for record in iteration_history
+                {**IterationHistoryEntryContract(), **record.model_dump(mode="python")} for record in iteration_history
             ],
             "providers": self.provider_metadata,
             "execution": {

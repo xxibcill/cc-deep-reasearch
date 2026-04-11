@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from cc_deep_research.agents.ai_agent_integration import AIAgentIntegration
 from cc_deep_research.agents.ai_executor import AIExecutor
@@ -28,6 +28,8 @@ if TYPE_CHECKING:
     from cc_deep_research.llm.router import LLMRouter
     from cc_deep_research.monitoring import ResearchMonitor
     from cc_deep_research.prompts import PromptRegistry
+
+T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +47,9 @@ class AIAnalysisService:
         self,
         config: dict[str, Any],
         monitor: ResearchMonitor | None = None,
-        llm_router: "LLMRouter | None" = None,
+        llm_router: LLMRouter | None = None,
         agent_id: str = "analyzer",
-        prompt_registry: "PromptRegistry | None" = None,
+        prompt_registry: PromptRegistry | None = None,
     ) -> None:
         """Initialize AI analysis service.
 
@@ -158,6 +160,7 @@ class AIAnalysisService:
             raise RuntimeError("LLM router is not configured")
 
         async def _run() -> str:
+            assert self._llm_router is not None
             response = await self._llm_router.execute(
                 agent_id=self._agent_id,
                 prompt=prompt,
@@ -165,7 +168,7 @@ class AIAnalysisService:
             )
             return response.content
 
-        return self._run_coroutine(_run())
+        return cast(str, self._run_coroutine(_run()))
 
     @staticmethod
     def _run_coroutine(coroutine: Any) -> Any:

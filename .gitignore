@@ -38,6 +38,15 @@ __pycache__/
 **/__pycache__/
 *.pyc
 
+# Build artifacts
+dashboard/next-env.d.ts
+dashboard/tsconfig.tsbuildinfo
+
+# Test artifacts
+dashboard/playwright-report/
+dashboard/test-results/
+test-results/
+
 # Rust build (if using Rust projects)
 target/
 
@@ -50,3 +59,4 @@ target/
 # Ralph backup directories (created by migration)
 .ralph_backup_*
 .venv/
+.claude/

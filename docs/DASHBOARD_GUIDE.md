@@ -67,8 +67,11 @@ flowchart LR
 ### Frontend
 
 - home page: [`dashboard/src/app/page.tsx`](../dashboard/src/app/page.tsx)
+- content studio home: [`dashboard/src/app/content-gen/page.tsx`](../dashboard/src/app/content-gen/page.tsx)
+- content studio pipeline detail: [`dashboard/src/app/content-gen/pipeline/[id]/page.tsx`](../dashboard/src/app/content-gen/pipeline/[id]/page.tsx)
 - session page: [`dashboard/src/app/session/[id]/page.tsx`](../dashboard/src/app/session/[id]/page.tsx)
 - form to launch research: [`dashboard/src/components/start-research-form.tsx`](../dashboard/src/components/start-research-form.tsx)
+- content studio forms: [`dashboard/src/components/content-gen/start-pipeline-form.tsx`](../dashboard/src/components/content-gen/start-pipeline-form.tsx), [`dashboard/src/components/content-gen/quick-script-form.tsx`](../dashboard/src/components/content-gen/quick-script-form.tsx), [`dashboard/src/components/content-gen/strategy-editor.tsx`](../dashboard/src/components/content-gen/strategy-editor.tsx)
 - recent sessions list: [`dashboard/src/components/session-list.tsx`](../dashboard/src/components/session-list.tsx)
 - session detail surface: [`dashboard/src/components/session-details.tsx`](../dashboard/src/components/session-details.tsx)
 - report viewer: [`dashboard/src/components/session-report.tsx`](../dashboard/src/components/session-report.tsx)
@@ -77,6 +80,10 @@ flowchart LR
 - REST client: [`dashboard/src/lib/api.ts`](../dashboard/src/lib/api.ts)
 - WebSocket client: [`dashboard/src/lib/websocket.ts`](../dashboard/src/lib/websocket.ts)
 - event normalization and derived view models: [`dashboard/src/lib/telemetry-transformers.ts`](../dashboard/src/lib/telemetry-transformers.ts)
+- pipeline stage panels: [`dashboard/src/components/content-gen/stage-panels/*.tsx`](../dashboard/src/components/content-gen/stage-panels/)
+- stage trace summary: [`dashboard/src/components/content-gen/stage-trace-summary.tsx`](../dashboard/src/components/content-gen/stage-trace-summary.tsx)
+- stage result panel: [`dashboard/src/components/content-gen/stage-result-panel.tsx`](../dashboard/src/components/content-gen/stage-result-panel.tsx)
+- pipeline progress tracker: [`dashboard/src/components/content-gen/pipeline-progress-tracker.tsx`](../dashboard/src/components/content-gen/pipeline-progress-tracker.tsx)
 
 ## How To Start The Dashboard
 
@@ -156,8 +163,8 @@ Defaults:
 
 The home page in [`dashboard/src/app/page.tsx`](../dashboard/src/app/page.tsx) does two things:
 
-- renders the start form on the left
-- loads recent sessions on first mount and renders them on the right
+- renders the launch console on the right with preset-driven research start controls
+- loads recent sessions on first mount and renders triaged session groups beneath the control-room summary
 - links to the dedicated settings page at `/settings`
 
 ### Settings Page
@@ -166,9 +173,17 @@ The settings page in [`dashboard/src/app/settings/page.tsx`](../dashboard/src/ap
 
 It combines:
 
-- the config editor in [`dashboard/src/components/config-editor.tsx`](../dashboard/src/components/config-editor.tsx)
+- the sectioned settings editor in [`dashboard/src/components/config-editor.tsx`](../dashboard/src/components/config-editor.tsx)
 - masked secret controls in [`dashboard/src/components/config-secrets-panel.tsx`](../dashboard/src/components/config-secrets-panel.tsx)
 - search-cache controls in [`dashboard/src/components/search-cache-panel.tsx`](../dashboard/src/components/search-cache-panel.tsx)
+
+The editor is organized around operator concerns instead of backend structure:
+
+- research defaults
+- execution and output
+- model routing
+- secrets
+- runtime override status
 
 The config API returns both persisted and effective values:
 
@@ -178,14 +193,115 @@ The config API returns both persisted and effective values:
 
 This matters operationally because saving config does not mutate in-flight runs and does not override active environment variables. The UI makes overridden fields read-only and shows both saved and runtime values side by side.
 
-Secret handling is separate from normal settings:
+The settings UI now makes that impact explicit in three places:
+
+- each editable field calls out that saves affect future runs only
+- each overridden field explains why it is read-only and which env var is currently winning
+- the save/reset panel states exactly what reset clears and what save persists
+
+Secret handling uses the same saved-versus-runtime framing as normal settings:
 
 - secrets are never returned in plain text
-- the UI shows configured/present state instead of echoing values
+- the UI shows saved presence, runtime presence, and override state instead of echoing values
 - operators can explicitly replace or clear persisted secrets
 - clearing a secret requires confirmation
 
 All settings saves apply to future runs. Active runs keep the config that was resolved when they started.
+
+### Content Studio
+
+The content-studio workspace in [`dashboard/src/app/content-gen/page.tsx`](../dashboard/src/app/content-gen/page.tsx) now shares the same primitive layer as the rest of the dashboard for:
+
+- pipeline launch inputs
+- quick-script run controls and markdown transfer
+- strategy editing fields
+- publish-queue tables
+- expandable script history rows
+- expandable pipeline stage result panels
+
+The shared content-studio primitive set currently lives under [`dashboard/src/components/ui/`](../dashboard/src/components/ui/) and includes:
+
+- `input.tsx`
+- `textarea.tsx`
+- `label.tsx`
+- `form-field.tsx`
+- `native-select.tsx`
+- `alert.tsx`
+- `table.tsx`
+- `collapsible-panel.tsx`
+
+The migration is intentionally not forcing every visualization into generic primitives. These surfaces remain custom by design:
+
+- [`dashboard/src/components/workflow-graph.tsx`](../dashboard/src/components/workflow-graph.tsx)
+- [`dashboard/src/components/decision-graph.tsx`](../dashboard/src/components/decision-graph.tsx)
+- [`dashboard/src/components/agent-timeline.tsx`](../dashboard/src/components/agent-timeline.tsx)
+- [`dashboard/src/components/content-gen/pipeline-progress-tracker.tsx`](../dashboard/src/components/content-gen/pipeline-progress-tracker.tsx)
+- [`dashboard/src/components/content-gen/script-viewer.tsx`](../dashboard/src/components/content-gen/script-viewer.tsx)
+
+After the content-studio migration, the remaining raw form controls are concentrated in older research, settings, and session-management surfaces:
+
+- [`dashboard/src/components/start-research-form.tsx`](../dashboard/src/components/start-research-form.tsx)
+- [`dashboard/src/components/config-editor.tsx`](../dashboard/src/components/config-editor.tsx)
+- [`dashboard/src/components/config-secrets-panel.tsx`](../dashboard/src/components/config-secrets-panel.tsx)
+- [`dashboard/src/components/session-list.tsx`](../dashboard/src/components/session-list.tsx)
+
+### Pipeline Detail Page
+
+The pipeline detail page at `/content-gen/pipeline/[id]` provides a comprehensive view of a content-generation pipeline's execution:
+
+**Main Components:**
+
+- Pipeline header with theme, iteration badge, and stop control
+- Stage status badges showing completed/skipped/failed counts and warnings
+- Sidebar progress tracker showing all 13 pipeline stages
+- Expandable stage result panels with trace summaries and stage outputs
+
+**Stage Trace Summary:**
+
+Each stage displays rich metadata from the trace:
+
+- Status badge (completed/skip/failed)
+- Duration in human-readable format
+- Warning count and degradation indicators
+- Selected idea/angle identifiers
+- Metadata pills showing counts and flags (Ideas, Angles, Facts, Proofs, Cached, Steps, LLM calls, Words, Beats, Platforms, Iteration, Score, rerun-research)
+- Decision summary explaining the stage's reasoning
+- Input/output summaries
+- Warnings and degradation reasons
+
+**Stage Output Panels:**
+
+The page renders detailed output panels for each pipeline stage:
+
+- **Load Strategy**: Strategy memory configuration
+- **Plan Opportunity**: Opportunity brief with goal, audience, problem statements
+- **Build Backlog**: All backlog items with category, score, risk level, audience, why-now, and evidence
+- **Score Ideas**: Scored ideas with breakdown by dimension (relevance, novelty, authority fit, etc.), total scores, and recommendations
+- **Generate Angles**: Angle options with target audience, core promise, primary takeaway
+- **Build Research Pack**: Research findings including key facts, proof points, and gaps
+- **Run Scripting**: Script execution details including beat structure, tone, CTA, angle, hooks, final word count, the final script, and the full scripting process trace with prompts and raw responses
+- **Visual Translation**: Visual plan with beat-by-beat treatments
+- **Production Brief**: Filming checklist with locations, props, and setup notes
+- **Packaging**: Platform-specific packages with hooks, captions, and hashtags
+- **Human QC**: QC review results with issue categories and approval status
+- **Publish Queue**: Scheduled publish items
+- **Performance Analysis**: Performance metrics and lessons learned
+
+**WebSocket Live Updates:**
+
+The page connects to `/ws/content-gen/pipeline/{pipelineId}` for real-time updates:
+
+- `pipeline_stage_started`: Marks a stage as running
+- `pipeline_stage_completed`: Updates stage state and includes the latest pipeline context snapshot
+- `pipeline_stage_failed`: Marks a stage as failed and includes the latest pipeline context snapshot
+- `pipeline_stage_skipped`: Marks a stage as skipped and includes the latest pipeline context snapshot
+- `pipeline_completed` / `pipeline_cancelled`: Triggers full context refresh
+
+The WebSocket updates both the stage progress indicators and the full pipeline context when stages complete, enabling live monitoring of pipeline progress without manual refresh.
+
+**Iteration State:**
+
+When iteration mode is enabled, the header displays an iteration badge showing `iteration X/Y`. Iteration state includes quality history and convergence feedback.
 
 ### Start Research Form
 
@@ -199,19 +315,21 @@ The form in [`dashboard/src/components/start-research-form.tsx`](../dashboard/sr
 
 User workflow:
 
-1. enter a research question
-2. choose depth:
-   - `quick`
-   - `standard`
-   - `deep`
-3. optionally force a minimum source count
-4. optionally open `Advanced Settings (Agent Prompts)` and add prompt prefixes for:
+1. pick a launch preset:
+   - `Quick factual check`
+   - `Standard research pass`
+   - `Deep investigation`
+2. enter a research question
+3. optionally open `Research Plan Details` to adjust:
+   - `depth`
+   - `min_sources`
+4. optionally open `Operator Prompt Overrides` and add prompt prefixes for:
    - `analyzer`
    - `deep_analyzer`
    - `report_quality_evaluator`
 5. click `Start Research`
 
-The form sends `POST /api/research-runs` and, on success, navigates to `/session/<run_id>`.
+The form sends `POST /api/research-runs` and, on success, navigates to `/session/<run_id>/monitor`.
 
 Prompt override behavior:
 
@@ -224,23 +342,39 @@ Prompt override behavior:
 
 The session list shows cards backed by `GET /api/sessions`.
 
+The list is grouped for operator triage:
+
+- `Running`
+- `Needs Attention`
+- `Report Ready`
+- `Archived`
+- `Recent History`
+
 Each card shows:
 
 - session identifier prefix
-- current status
+- current status and triage cue
 - total sources
 - last event timestamp
 - `Live` badge if the backend marks the session as active
 
-Use the list to jump directly into a historical or active session view.
+The list also supports:
+
+- compare mode with two-slot selection (`A` baseline and `B` comparison)
+- archive, restore, and delete actions
+- direct links into the session workspace
+
+Use the list to jump directly into a historical or active session view, or to stage a side-by-side comparison at `/compare?a=<session_a>&b=<session_b>`.
 
 ### Session Page
 
-The session page in [`dashboard/src/app/session/[id]/page.tsx`](../dashboard/src/app/session/[id]/page.tsx) renders:
+Session routes now share a single workspace frame with breadcrumb navigation and three view tabs:
 
-- `RunStatusSummary`
-- `SessionReport`
-- `SessionDetails`
+- `/session/[id]` for `Session Overview`
+- `/session/[id]/monitor` for `Telemetry Monitor`
+- `/session/[id]/report` for `Session Report`
+
+The frame resolves either a session id or a run id, keeps status badges visible in the header, and exposes stable workspace navigation across overview, monitor, and report views.
 
 ### Run Status Summary
 
@@ -277,8 +411,6 @@ Available render modes:
 - JSON
 - HTML
 
-Current rendering behavior:
-
 ### Prompt Configuration In Session Monitor
 
 The telemetry monitor in [`dashboard/src/app/session/[id]/monitor/page.tsx`](../dashboard/src/app/session/[id]/monitor/page.tsx) includes a dedicated `Prompts` detail tab.
@@ -294,7 +426,7 @@ This panel is intentionally separate from the LLM reasoning panel:
 - `Prompts` shows configured run inputs
 - `LLM` shows runtime prompt previews and completions emitted through telemetry
 
-- Markdown is shown as preformatted text, not with a full markdown renderer
+- Markdown is rendered through `react-markdown`
 - JSON is pretty-printed
 - HTML is inserted directly for display
 
@@ -794,3 +926,69 @@ If a feature or bug is unclear, identify which layer owns it first. That usually
 - browser-first monitoring summary: [`docs/REALTIME_MONITORING.md`](REALTIME_MONITORING.md)
 - telemetry storage and analytics: [`docs/TELEMETRY.md`](TELEMETRY.md)
 - CLI usage and workflows: [`docs/USAGE.md`](USAGE.md)
+
+## Test Scenario Library
+
+The dashboard E2E tests use a formal scenario library to ensure consistent, reusable test data. The library is located in [`dashboard/tests/e2e/scenarios.ts`](../dashboard/tests/e2e/scenarios.ts) and [`dashboard/tests/e2e/test-fixtures.ts`](../dashboard/tests/e2e/test-fixtures.ts).
+
+### Available Scenarios
+
+| Scenario Name | Description | Tags |
+|---------------|-------------|------|
+| `healthyCompletedRun` | Completed research with full report and all telemetry | `completed`, `healthy`, `report` |
+| `liveActiveRun` | Actively running session receiving live events | `running`, `live`, `active` |
+| `failedRunWithPartialTelemetry` | Failed session with some telemetry before failure | `failed`, `partial`, `error` |
+| `completedRunWithoutReport` | Completed session that collected data but no report | `completed`, `no-report`, `telemetry` |
+| `sessionWithPromptOverrides` | Session where prompt templates were overridden | `completed`, `prompts`, `overrides` |
+| `sessionWithLargeEventVolume` | High event count session for stress testing | `completed`, `high-volume`, `stress` |
+| `mixedStateDashboard` | Multiple sessions in various states for list testing | `mixed`, `dashboard`, `list` |
+
+### Using Scenarios in Tests
+
+Import and use the scenario helpers:
+
+```typescript
+import { SCENARIOS, getScenario, getScenariosByTag } from "./scenarios";
+import { setupTestPage, setupDashboardWithActiveRun } from "./test-fixtures";
+
+// Use a named scenario
+test("my test", async ({ page }) => {
+  await setupTestPage(page, { scenario: "liveActiveRun" });
+  // test code...
+});
+
+// Use a custom scenario
+test("custom test", async ({ page }) => {
+  await setupTestPage(page, { 
+    customSessions: getScenario("mixedStateDashboard").sessions 
+  });
+  // test code...
+});
+
+// Helper for common setups
+test("active run test", async ({ page }) => {
+  await setupDashboardWithActiveRun(page);
+  // test code...
+});
+```
+
+### Querying Scenarios
+
+```typescript
+// Get all scenarios
+const all = getAllScenarios();
+
+// Filter by tag
+const running = getScenariosByTag("running");
+
+// Get session IDs from a scenario
+const ids = getScenarioSessionIds(SCENARIOS.healthyCompletedRun);
+```
+
+### Adding New Scenarios
+
+When adding new test coverage for advanced states:
+
+1. Define the scenario in `scenarios.ts` following the existing pattern
+2. Add descriptive tags for filtering
+3. Use the scenario in tests via the fixture helpers

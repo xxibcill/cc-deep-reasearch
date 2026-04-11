@@ -1,0 +1,5 @@
+hook_strength: adequate
+unsupported_claims:
+- The claim about a 40% lift is unsupported
+must_fix_items:
+- Add a concrete proof point before publish

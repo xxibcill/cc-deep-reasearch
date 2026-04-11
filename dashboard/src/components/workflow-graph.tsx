@@ -59,6 +59,9 @@ export function WorkflowGraph({
   onSelectEvent: (event: TelemetryEvent | null) => void;
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const rootRef = useRef<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null);
+  const onSelectEventRef = useRef(onSelectEvent);
+  onSelectEventRef.current = onSelectEvent;
   const positions = useMemo(() => layoutNodes(nodes), [nodes]);
 
   useEffect(() => {
@@ -75,6 +78,8 @@ export function WorkflowGraph({
     svg.attr('viewBox', `0 0 ${width} ${height}`);
 
     const root = svg.append('g');
+    rootRef.current = root;
+    svg.on('.zoom', null);
     svg.call(
       d3
         .zoom<SVGSVGElement, unknown>()
@@ -122,17 +127,16 @@ export function WorkflowGraph({
       .style('cursor', 'pointer')
       .on('click', (_event, node) => {
         const eventId = node.latestEventId ?? node.eventIds.at(-1) ?? null;
-        onSelectEvent(eventId ? eventIndex.get(eventId) ?? null : null);
+        onSelectEventRef.current(eventId ? eventIndex.get(eventId) ?? null : null);
       });
 
     nodeGroup
       .append('circle')
+      .attr('class', 'node-circle')
       .attr('r', (node) => (node.type === 'session' ? 30 : 24))
       .attr('fill', (node) => STATUS_COLORS[node.status] ?? STATUS_COLORS.unknown)
-      .attr('stroke', (node) =>
-        node.latestEventId && node.latestEventId === selectedEventId ? '#0f172a' : '#ffffff'
-      )
-      .attr('stroke-width', (node) => (node.latestEventId === selectedEventId ? 4 : 2));
+      .attr('stroke', '#44403c')
+      .attr('stroke-width', 2);
 
     nodeGroup
       .append('text')
@@ -140,6 +144,7 @@ export function WorkflowGraph({
       .attr('dy', 48)
       .attr('font-size', 13)
       .attr('font-weight', 600)
+      .attr('fill', '#f5f5f4')
       .text((node) => node.name);
 
     nodeGroup
@@ -147,9 +152,25 @@ export function WorkflowGraph({
       .attr('text-anchor', 'middle')
       .attr('dy', 64)
       .attr('font-size', 11)
-      .attr('fill', '#475569')
+      .attr('fill', '#b0a89c')
       .text((node) => node.status);
-  }, [edges, eventIndex, nodes, onSelectEvent, positions, selectedEventId]);
+  }, [edges, eventIndex, nodes, positions]);
 
-  return <svg ref={svgRef} className="h-[520px] w-full rounded-xl bg-slate-50" />;
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) {
+      return;
+    }
+
+    root
+      .selectAll<SVGCircleElement, WorkflowNode>('g.node .node-circle')
+      .attr('stroke', (node) =>
+        node.latestEventId && node.latestEventId === selectedEventId ? '#fbbf24' : '#44403c'
+      )
+      .attr('stroke-width', (node) =>
+        node.latestEventId && node.latestEventId === selectedEventId ? 4 : 2
+      );
+  }, [selectedEventId]);
+
+  return <svg ref={svgRef} className="h-[520px] w-full rounded-xl bg-surface" />;
 }

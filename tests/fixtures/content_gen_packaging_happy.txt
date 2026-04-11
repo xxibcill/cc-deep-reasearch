@@ -1,0 +1,35 @@
+---
+platform: tiktok
+primary_hook: If buyers always choose cheapest, your anchor tier is broken
+cover_text: Fix the number buyers compare first
+caption: Most pricing pages lose the sale before the feature list even matters.
+alternate_hooks:
+- Your pricing page is answering the wrong question
+- Buyers compare anchors before they compare features
+keywords:
+- pricing psychology
+- SaaS pricing page
+- anchor effect
+hashtags:
+- #pricingstrategy
+- #saasmarketing
+- #conversion
+pinned_comment: Want a teardown rubric for your pricing page? Comment anchor.
+cta: Review your middle and premium plan order today
+version_notes: Fast-talking face-to-camera with pricing page overlays
+---
+platform: linkedin
+primary_hook: Buyers rarely start with your feature grid
+cover_text: The pricing page mistake teams keep repeating
+caption: A better anchor can do more than another paragraph of copy polish.
+alternate_hooks:
+- Pricing objections often start as framing problems
+keywords:
+- b2b pricing
+- value framing
+hashtags:
+- #b2bmarketing
+- #pricing
+pinned_comment: I can post the checklist version if useful.
+cta: Run one anchor test on your pricing page this week
+version_notes: Text-first carousel with one screenshot example

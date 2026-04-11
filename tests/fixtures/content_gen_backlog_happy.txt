@@ -1,0 +1,27 @@
+---
+category: evergreen
+idea: The 10-minute weekly finance review that stops founder cash surprises
+audience: Bootstrapped SaaS founders
+problem: They notice runway issues too late because reporting is scattered
+source: Support calls and founder office hours
+why_now: Teams are cutting spend and need tighter weekly visibility
+potential_hook: If your runway math lives in your head, you are already late
+content_type: tactical walkthrough
+evidence: Repeated request pattern in founder communities and CFO teardown notes
+risk_level: low
+---
+category: authority-building
+idea: Why most pricing pages hide the one number buyers actually compare
+audience: B2B startup marketers
+problem: They optimize copy but ignore the comparison anchor buyers notice first
+source: Sales call reviews and pricing page teardowns
+why_now: Teams are reworking pricing as acquisition costs rise
+potential_hook: Buyers do not start with your features, they start with your anchor
+content_type: contrarian breakdown
+evidence: Consistent objection pattern across recent demo reviews
+risk_level: medium
+
+Rejected ideas: 2
+Rejection reasons:
+- Too broad for a single short-form video
+- Needed claims we could not verify quickly
