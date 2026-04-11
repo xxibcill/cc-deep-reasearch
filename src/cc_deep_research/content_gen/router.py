@@ -78,6 +78,17 @@ class UpdateBacklogItemRequest(BaseModel):
     patch: dict[str, Any] = Field(default_factory=dict)
 
 
+class CreateBacklogItemRequest(BaseModel):
+    """Request body for creating a new backlog item."""
+
+    idea: str = Field(min_length=1)
+    category: str = ""
+    audience: str = ""
+    problem: str = ""
+    source_theme: str = ""
+    selection_reasoning: str = ""
+
+
 def _build_scripting_iterations(iter_state: Any) -> ScriptingIterations | None:
     if iter_state is None:
         return None
@@ -537,6 +548,20 @@ def register_content_gen_routes(
     # ------------------------------------------------------------------
     # Backlog
     # ------------------------------------------------------------------
+
+    @app.post("/api/content-gen/backlog")
+    async def create_backlog_item(request: CreateBacklogItemRequest) -> JSONResponse:
+        config = load_config()
+        service = BacklogService(config)
+        item = service.create_item(
+            idea=request.idea,
+            category=request.category,
+            audience=request.audience,
+            problem=request.problem,
+            source_theme=request.source_theme,
+            selection_reasoning=request.selection_reasoning,
+        )
+        return JSONResponse(content=json.loads(item.model_dump_json()), status_code=201)
 
     @app.get("/api/content-gen/backlog")
     async def list_backlog() -> JSONResponse:

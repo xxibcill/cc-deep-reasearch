@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Pencil } from 'lucide-react'
+import { Pencil, Plus } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -19,9 +19,11 @@ const CATEGORY_OPTIONS: BacklogCategory[] = [
 ]
 
 interface BacklogItemFormProps {
-  item: BacklogItem
-  onSubmit: (ideaId: string, patch: Record<string, unknown>) => Promise<void>
+  item?: BacklogItem
+  onSubmitEdit?: (ideaId: string, patch: Record<string, unknown>) => Promise<void>
+  onSubmitCreate?: (data: Record<string, unknown>) => Promise<void>
   trigger?: React.ReactNode
+  title?: string
 }
 
 interface FormState {
@@ -38,29 +40,36 @@ interface FormErrors {
   category?: string
 }
 
-export function BacklogItemForm({ item, onSubmit, trigger }: BacklogItemFormProps) {
+export function BacklogItemForm({
+  item,
+  onSubmitEdit,
+  onSubmitCreate,
+  trigger,
+  title,
+}: BacklogItemFormProps) {
+  const isEditMode = item !== undefined
   const [open, setOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>({
-    idea: item.idea ?? '',
-    category: item.category ?? '',
-    audience: item.audience ?? '',
-    problem: item.problem ?? '',
-    source_theme: item.source_theme ?? '',
-    selection_reasoning: item.selection_reasoning ?? '',
+    idea: item?.idea ?? '',
+    category: item?.category ?? '',
+    audience: item?.audience ?? '',
+    problem: item?.problem ?? '',
+    source_theme: item?.source_theme ?? '',
+    selection_reasoning: item?.selection_reasoning ?? '',
   })
   const [errors, setErrors] = useState<FormErrors>({})
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (nextOpen) {
       setForm({
-        idea: item.idea ?? '',
-        category: item.category ?? '',
-        audience: item.audience ?? '',
-        problem: item.problem ?? '',
-        source_theme: item.source_theme ?? '',
-        selection_reasoning: item.selection_reasoning ?? '',
+        idea: item?.idea ?? '',
+        category: item?.category ?? '',
+        audience: item?.audience ?? '',
+        problem: item?.problem ?? '',
+        source_theme: item?.source_theme ?? '',
+        selection_reasoning: item?.selection_reasoning ?? '',
       })
       setErrors({})
       setSubmitError(null)
@@ -89,16 +98,30 @@ export function BacklogItemForm({ item, onSubmit, trigger }: BacklogItemFormProp
 
     try {
       setSubmitting(true)
-      const patch: Record<string, unknown> = {}
 
-      if (form.idea.trim()) patch.idea = form.idea.trim()
-      if (form.category) patch.category = form.category
-      if (form.audience.trim()) patch.audience = form.audience.trim()
-      if (form.problem.trim()) patch.problem = form.problem.trim()
-      if (form.source_theme.trim()) patch.source_theme = form.source_theme.trim()
-      if (form.selection_reasoning.trim()) patch.selection_reasoning = form.selection_reasoning.trim()
+      if (isEditMode && onSubmitEdit) {
+        const patch: Record<string, unknown> = {}
 
-      await onSubmit(item.idea_id, patch)
+        if (form.idea.trim()) patch.idea = form.idea.trim()
+        if (form.category) patch.category = form.category
+        if (form.audience.trim()) patch.audience = form.audience.trim()
+        if (form.problem.trim()) patch.problem = form.problem.trim()
+        if (form.source_theme.trim()) patch.source_theme = form.source_theme.trim()
+        if (form.selection_reasoning.trim()) patch.selection_reasoning = form.selection_reasoning.trim()
+
+        await onSubmitEdit(item.idea_id, patch)
+      } else if (onSubmitCreate) {
+        const data: Record<string, unknown> = {
+          idea: form.idea.trim(),
+        }
+        if (form.category) data.category = form.category
+        if (form.audience.trim()) data.audience = form.audience.trim()
+        if (form.problem.trim()) data.problem = form.problem.trim()
+        if (form.source_theme.trim()) data.source_theme = form.source_theme.trim()
+        if (form.selection_reasoning.trim()) data.selection_reasoning = form.selection_reasoning.trim()
+
+        await onSubmitCreate(data)
+      }
       setOpen(false)
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : String(err))
@@ -125,17 +148,19 @@ export function BacklogItemForm({ item, onSubmit, trigger }: BacklogItemFormProp
           size="icon"
           onClick={() => handleOpenChange(true)}
           className="h-8 w-8 text-muted-foreground/60 hover:text-primary"
-          title="Edit item"
+          title={isEditMode ? 'Edit item' : 'New item'}
         >
-          <Pencil className="h-3.5 w-3.5" />
+          {isEditMode ? <Pencil className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
         </Button>
       )}
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Backlog Item</DialogTitle>
+            <DialogTitle>{title ?? (isEditMode ? 'Edit Backlog Item' : 'New Backlog Item')}</DialogTitle>
             <DialogDescription>
-              Update the operator-managed fields for this backlog item. All fields are optional except the idea itself.
+              {isEditMode
+                ? 'Update the operator-managed fields for this backlog item. All fields are optional except the idea itself.'
+                : 'Create a new backlog item. The idea field is required.'}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>

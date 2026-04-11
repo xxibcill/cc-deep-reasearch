@@ -25,6 +25,7 @@ import {
   selectBacklogItem as selectBacklogItemApi,
   archiveBacklogItem as archiveBacklogItemApi,
   deleteBacklogItem as deleteBacklogItemApi,
+  createBacklogItem as createBacklogItemApi,
 } from '@/lib/content-gen-api';
 import { getApiErrorMessage } from '@/lib/api';
 
@@ -75,6 +76,7 @@ interface ContentGenState {
   removeFromQueue: (ideaId: string, platform: string) => Promise<void>;
 
   loadBacklog: () => Promise<void>;
+  createBacklogItem: (data: Record<string, unknown>) => Promise<void>;
   updateBacklogItem: (ideaId: string, patch: Record<string, unknown>) => Promise<void>;
   selectBacklogItem: (ideaId: string) => Promise<void>;
   archiveBacklogItem: (ideaId: string) => Promise<void>;
@@ -276,6 +278,18 @@ const useContentGen = create<ContentGenState>((set, get) => ({
         backlogLoading: false,
         error: getApiErrorMessage(err, 'Failed to load backlog.'),
       });
+    }
+  },
+
+  createBacklogItem: async (data) => {
+    set({ error: null });
+    try {
+      const created = await createBacklogItemApi(data);
+      set((state) => ({
+        backlog: [...state.backlog, created],
+      }));
+    } catch (err) {
+      set({ error: getApiErrorMessage(err, 'Failed to create backlog item.') });
     }
   },
 
