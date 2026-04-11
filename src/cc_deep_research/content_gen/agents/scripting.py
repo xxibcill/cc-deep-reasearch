@@ -25,8 +25,8 @@ from cc_deep_research.content_gen.models import (
     VisualNote,
 )
 from cc_deep_research.content_gen.prompts import scripting as prompts
-from cc_deep_research.llm.base import LLMResponse, LLMTransportType
 from cc_deep_research.llm import LLMRouter
+from cc_deep_research.llm.base import LLMResponse, LLMTransportType
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
@@ -400,6 +400,7 @@ class ScriptingAgent:
             ctx.structure,
             raw_idea=ctx.raw_idea,
             research_context=ctx.research_context,
+            argument_map=ctx.argument_map,
         )
         response = await self._call_llm(
             system, user, temperature=_STEP_TEMPERATURES["define_beat_intents"]
@@ -450,6 +451,7 @@ class ScriptingAgent:
             ctx.beat_intents,
             raw_idea=ctx.raw_idea,
             research_context=ctx.research_context,
+            argument_map=ctx.argument_map,
         )
         response = await self._call_llm(
             system, user, temperature=_STEP_TEMPERATURES["generate_hooks"]
@@ -509,6 +511,7 @@ class ScriptingAgent:
             ctx.hooks.best_hook,
             raw_idea=ctx.raw_idea,
             research_context=ctx.research_context,
+            argument_map=ctx.argument_map,
             tone=ctx.tone,
             cta=ctx.cta,
         )
@@ -586,6 +589,7 @@ class ScriptingAgent:
             angle=ctx.angle,
             structure=ctx.structure,
             beat_intents=ctx.beat_intents,
+            argument_map=ctx.argument_map,
             best_hook=ctx.hooks.best_hook if ctx.hooks else "",
             tone=ctx.tone,
             cta=ctx.cta,
@@ -642,6 +646,7 @@ class ScriptingAgent:
             angle=ctx.angle,
             structure=ctx.structure,
             beat_intents=ctx.beat_intents,
+            argument_map=ctx.argument_map,
             best_hook=ctx.hooks.best_hook if ctx.hooks else "",
             core_tension=ctx.angle.core_tension if ctx.angle else "",
             tone=ctx.tone,
@@ -697,6 +702,7 @@ class ScriptingAgent:
             angle=ctx.angle,
             structure=ctx.structure,
             beat_intents=ctx.beat_intents,
+            argument_map=ctx.argument_map,
             best_hook=ctx.hooks.best_hook if ctx.hooks else "",
             tone=ctx.tone,
             cta=ctx.cta,
@@ -750,6 +756,7 @@ class ScriptingAgent:
             angle=ctx.angle,
             structure=ctx.structure,
             beat_intents=ctx.beat_intents,
+            argument_map=ctx.argument_map,
             best_hook=ctx.hooks.best_hook if ctx.hooks else "",
             tone=ctx.tone,
             cta=ctx.cta,
@@ -846,8 +853,6 @@ class ScriptingAgent:
 
 async def _wrap_step0(agent: ScriptingAgent, ctx: ScriptingContext) -> ScriptingContext:
     result = await agent.define_core_inputs(ctx.raw_idea)
-    if result.core_inputs is None:
-        raise ValueError("core_inputs should not be None after define_core_inputs")
     return agent._seed_core_inputs(
         ctx,
         raw_idea=result.raw_idea,
@@ -897,6 +902,10 @@ def _extract_beat_list(text: str) -> list[str]:
 
 
 def _extract_beat_intents(text: str) -> list[BeatIntent]:
+    block_intents = _extract_grounded_beat_intents(text)
+    if block_intents:
+        return block_intents
+
     intents: list[BeatIntent] = []
     for line in text.split("\n"):
         match = re.match(r"[-•]?\s*\[?(.+?)\]?\s*:\s*(.+)", line.strip())
@@ -904,6 +913,28 @@ def _extract_beat_intents(text: str) -> list[BeatIntent]:
             intents.append(
                 BeatIntent(beat_name=match.group(1).strip(), intent=match.group(2).strip())
             )
+    return intents
+
+
+def _extract_grounded_beat_intents(text: str) -> list[BeatIntent]:
+    blocks = [block.strip() for block in re.split(r"---+", text) if block.strip()]
+    intents: list[BeatIntent] = []
+    for block in blocks:
+        beat_name = _extract_case_insensitive_field(block, "Beat Name")
+        intent = _extract_case_insensitive_field(block, "Intent")
+        if not beat_name or not intent:
+            continue
+        intents.append(
+            BeatIntent(
+                beat_id=_extract_case_insensitive_field(block, "Beat ID"),
+                beat_name=beat_name,
+                intent=intent,
+                claim_ids=_extract_csv_case_insensitive_field(block, "Claim IDs"),
+                proof_anchor_ids=_extract_csv_case_insensitive_field(block, "Proof Anchor IDs"),
+                counterargument_ids=_extract_csv_case_insensitive_field(block, "Counterargument IDs"),
+                transition_note=_extract_case_insensitive_field(block, "Transition Note"),
+            )
+        )
     return intents
 
 
@@ -994,9 +1025,22 @@ def _extract_weakest_parts(text: str) -> list[str]:
     return parts
 
 
+def _extract_case_insensitive_field(text: str, field_name: str) -> str:
+    pattern = rf"(?im)^{re.escape(field_name)}:\s*(.+?)\s*$"
+    match = re.search(pattern, text)
+    return match.group(1).strip() if match else ""
+
+
+def _extract_csv_case_insensitive_field(text: str, field_name: str) -> list[str]:
+    value = _extract_case_insensitive_field(text, field_name)
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 def _serialize_trace_value(value: object) -> object:
     if hasattr(value, "model_dump"):
-        return value.model_dump(mode="json")
+        return value.model_dump(mode="json")  # type: ignore[union-attr]
     if isinstance(value, list):
         return [_serialize_trace_value(item) for item in value]
     if isinstance(value, dict):

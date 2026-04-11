@@ -29,21 +29,6 @@ class LoopConfig:
     quality_threshold: float = 0.75
     convergence_threshold: float = 0.05
 
-    def validate(self) -> None:
-        """Validate configuration bounds.
-
-        Raises:
-            ValueError: If any configuration value is out of valid range.
-        """
-        if not isinstance(self.max_iterations, int) or self.max_iterations < 1:
-            raise ValueError(f"max_iterations must be >= 1, got {self.max_iterations}")
-        if self.max_iterations > 10:
-            raise ValueError(f"max_iterations must be <= 10, got {self.max_iterations}")
-        if not (0.0 <= self.quality_threshold <= 1.0):
-            raise ValueError(f"quality_threshold must be between 0.0 and 1.0, got {self.quality_threshold}")
-        if not (0.0 <= self.convergence_threshold <= 0.5):
-            raise ValueError(f"convergence_threshold must be between 0.0 and 0.5, got {self.convergence_threshold}")
-
 
 @dataclass
 class LoopResult(Generic[T]):
@@ -82,7 +67,6 @@ async def run_evaluation_loop(
     Returns:
         LoopResult with the final artifact and full iteration state history.
     """
-    config.validate()
     iter_state = IterationState(max_iterations=config.max_iterations)
     previous_feedback = ""
     artifact: T | None = None
@@ -122,6 +106,8 @@ def should_stop(
     config: LoopConfig,
 ) -> bool:
     """Decide whether to stop iterating."""
+    if quality_eval.has_blocking_claim_issues and iter_state.current_iteration < iter_state.max_iterations:
+        return False
     if quality_eval.passes_threshold:
         return True
     if iter_state.current_iteration >= iter_state.max_iterations:
@@ -137,12 +123,21 @@ def should_stop(
 def format_feedback(quality_eval: QualityEvaluation) -> str:
     """Format evaluation into a feedback string for the next iteration."""
     parts: list[str] = []
+    if quality_eval.unsupported_claims:
+        parts.append("Unsupported claims to remove, qualify, or prove:")
+        parts.extend(f"- {claim}" for claim in quality_eval.unsupported_claims)
+    if quality_eval.evidence_actions_required:
+        parts.append("Evidence actions required:")
+        parts.extend(f"- {action}" for action in quality_eval.evidence_actions_required)
     if quality_eval.critical_issues:
         parts.append("Critical issues:")
         parts.extend(f"- {i}" for i in quality_eval.critical_issues)
     if quality_eval.improvement_suggestions:
         parts.append("Improvement suggestions:")
         parts.extend(f"- {s}" for s in quality_eval.improvement_suggestions)
+    if quality_eval.research_gaps_identified:
+        parts.append("Research gaps identified:")
+        parts.extend(f"- {gap}" for gap in quality_eval.research_gaps_identified)
     if quality_eval.rationale:
         parts.append(f"Rationale: {quality_eval.rationale}")
     return "\n".join(parts)

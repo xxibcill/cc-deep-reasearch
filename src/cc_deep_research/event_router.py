@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import suppress
 from typing import Any
 
-from websockets.server import ServerProtocol
+from websockets.server import WebSocketServerProtocol
 
 
 class WebSocketConnection:
     """Wrapper for WebSocket connections with metadata."""
 
-    def __init__(self, websocket: ServerProtocol, session_id: str) -> None:
+    def __init__(self, websocket: WebSocketServerProtocol, session_id: str) -> None:
         """Initialize WebSocket connection wrapper.
 
         Args:
@@ -34,8 +33,10 @@ class WebSocketConnection:
         try:
             if hasattr(self._websocket, "send_json"):
                 await self._websocket.send_json(data)
+            elif hasattr(self._websocket, "send_text"):
+                await self._websocket.send_text(json.dumps(data))
             else:
-                await self._websocket.send(json.dumps(data))  # type: ignore[attr-defined]
+                await self._websocket.send(json.dumps(data))
         except Exception:
             # Connection likely closed
             self._closed = True
@@ -55,8 +56,10 @@ class WebSocketConnection:
     async def close(self) -> None:
         """Close the WebSocket connection."""
         self._closed = True
-        with suppress(Exception):
-            await self._websocket.close()  # type: ignore[attr-defined]
+        try:
+            await self._websocket.close()
+        except Exception:
+            pass
 
 
 class EventRouter:
@@ -81,7 +84,7 @@ class EventRouter:
         self._active = False
         async with self._lock:
             # Close all connections
-            for _session_id, connections in self._subscribers.items():
+            for session_id, connections in self._subscribers.items():
                 for connection in connections:
                     await connection.close()
             self._subscribers.clear()
@@ -126,7 +129,9 @@ class EventRouter:
             subscribers = self._subscribers.get(session_id, set()).copy()
 
         # Broadcast to all subscribers (non-blocking)
-        tasks = [conn.send_json(event) for conn in subscribers if conn.is_connected()]
+        tasks = [
+            conn.send_json(event) for conn in subscribers if conn.is_connected()
+        ]
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 

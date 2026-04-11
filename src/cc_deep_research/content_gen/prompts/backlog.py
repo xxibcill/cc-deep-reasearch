@@ -110,9 +110,7 @@ def build_backlog_user(
         if opportunity_brief.primary_audience_segment:
             parts.append(f"Primary audience: {opportunity_brief.primary_audience_segment}")
         if opportunity_brief.secondary_audience_segments:
-            parts.append(
-                f"Secondary audiences: {', '.join(opportunity_brief.secondary_audience_segments)}"
-            )
+            parts.append(f"Secondary audiences: {', '.join(opportunity_brief.secondary_audience_segments)}")
         if opportunity_brief.problem_statements:
             parts.append(f"Problem statements: {'; '.join(opportunity_brief.problem_statements)}")
         if opportunity_brief.content_objective:
@@ -120,9 +118,7 @@ def build_backlog_user(
         if opportunity_brief.proof_requirements:
             parts.append(f"Proof requirements: {', '.join(opportunity_brief.proof_requirements)}")
         if opportunity_brief.platform_constraints:
-            parts.append(
-                f"Platform constraints: {', '.join(opportunity_brief.platform_constraints)}"
-            )
+            parts.append(f"Platform constraints: {', '.join(opportunity_brief.platform_constraints)}")
         if opportunity_brief.risk_constraints:
             parts.append(f"Risk constraints: {', '.join(opportunity_brief.risk_constraints)}")
         if opportunity_brief.freshness_rationale:

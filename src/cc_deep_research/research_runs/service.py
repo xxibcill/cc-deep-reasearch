@@ -11,8 +11,8 @@ from cc_deep_research.config import Config, load_config
 from cc_deep_research.event_router import EventRouter
 from cc_deep_research.models import ResearchSession
 from cc_deep_research.monitoring import STOP_REASON_DEGRADED_EXECUTION, ResearchMonitor
-from cc_deep_research.orchestrator import TeamResearchOrchestrator
 from cc_deep_research.orchestration import PlannerResearchOrchestrator
+from cc_deep_research.orchestrator import TeamResearchOrchestrator
 from cc_deep_research.pdf_generator import PDFGenerator
 from cc_deep_research.prompts import PromptRegistry
 from cc_deep_research.reporting import ReportGenerator

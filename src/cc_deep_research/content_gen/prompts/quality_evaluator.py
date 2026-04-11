@@ -20,38 +20,55 @@ You are evaluating a complete short-form video package after an iteration of
 the content generation pipeline. Your job is to score quality and decide if
 another iteration is needed.
 
-Quality Dimensions (each 0.0-1.0):
-1. Hook Quality: Is the hook compelling, clear, and attention-grabbing in the
-   first 1-2 seconds?
-2. Content Clarity: Is the script coherent, well-structured, and easy to follow?
-3. Factual Accuracy: Are claims supported by research? Any unsupported assertions?
-4. Audience Alignment: Does it match the target audience's needs and language?
-5. Production Readiness: Are visuals and packaging ready for production?
+Expert Quality Dimensions (each 0.0-1.0):
+1. evidence_coverage: Do the important claims map back to proof, examples, or
+   explicit research support?
+2. claim_safety: Are claims stated with the right certainty, with no unsupported
+   or risky assertions?
+3. originality: Does the package say something specific and non-generic rather
+   than repeating interchangeable advice?
+4. precision: Is the language concrete, mechanism-driven, and free of vague
+   filler?
+5. expertise_density: Does the package contain real expert insight, tradeoffs,
+   and proof instead of surface-level commentary?
 
-Overall Quality Score: Weighted average (hook 30%, clarity 25%, accuracy 20%,
-audience 15%, production 10%).
+Overall Quality Score: Weighted average (evidence 30%, claim safety 30%,
+originality 15%, precision 15%, expertise density 10%).
 
 Decision logic for passes_threshold:
-- true if overall_quality_score >= the provided quality threshold
+- true only if overall_quality_score >= the provided quality threshold AND
+  unsupported_claims is empty
 - If iteration 1, be somewhat lenient (expect improvement)
 - If iteration 2+, verify previous feedback was addressed
 
 Only flag research_gaps_identified if there are clear factual gaps that cannot
-be fixed without new research. Most issues go in critical_issues or
-improvement_suggestions.
+be fixed without new research. Use unsupported_claims for script lines or claims
+that are not currently grounded. Use evidence_actions_required for the exact
+proof or caveat the producer should add.
+
+Keep claim-safety issues separate from style issues:
+- unsupported_claims: claims in the script that lack support or overstate certainty
+- critical_issues: other blockers such as broken logic or weak structure
+- improvement_suggestions: non-blocking improvements
 
 Output format:
 
 overall_quality_score: 0.0-1.0
 passes_threshold: true | false
-hook_quality: 0.0-1.0
-content_clarity: 0.0-1.0
-factual_accuracy: 0.0-1.0
-audience_alignment: 0.0-1.0
-production_readiness: 0.0-1.0
+evidence_coverage: 0.0-1.0
+claim_safety: 0.0-1.0
+originality: 0.0-1.0
+precision: 0.0-1.0
+expertise_density: 0.0-1.0
 
 critical_issues:
 - (issue that MUST be fixed)
+
+unsupported_claims:
+- (claim or line that is unsupported or overstated)
+
+evidence_actions_required:
+- (specific proof, qualifier, or citation action needed)
 
 improvement_suggestions:
 - (suggestion to improve quality)
@@ -68,6 +85,7 @@ def evaluator_user(
     visual_summary: str = "",
     packaging_summary: str = "",
     research_summary: str = "",
+    argument_map_summary: str = "",
     angle_summary: str = "",
     iteration_number: int,
     quality_threshold: float = 0.75,
@@ -86,6 +104,9 @@ def evaluator_user(
 
     if research_summary:
         parts.append(f"\nRESEARCH:\n{research_summary}")
+
+    if argument_map_summary:
+        parts.append(f"\nARGUMENT MAP:\n{argument_map_summary}")
 
     parts.append(f"\nSCRIPT:\n{script}")
 

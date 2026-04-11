@@ -6,6 +6,7 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
+from cc_deep_research.content_gen.agents._llm_utils import call_agent_llm_text
 from cc_deep_research.content_gen.models import HumanQCGate
 from cc_deep_research.content_gen.prompts import qc as prompts
 from cc_deep_research.llm import LLMRouter
@@ -39,13 +40,16 @@ class QCAgent:
         *,
         temperature: float = 0.2,
     ) -> str:
-        response = await self._router.execute(
-            AGENT_ID,
-            user_prompt,
+        return await call_agent_llm_text(
+            router=self._router,
+            agent_id=AGENT_ID,
             system_prompt=system_prompt,
+            user_prompt=user_prompt,
             temperature=temperature,
+            workflow_name="human QC workflow",
+            cli_command="content-gen qc review",
+            logger=logger,
         )
-        return response.content
 
     async def review(
         self,
@@ -53,12 +57,16 @@ class QCAgent:
         script: str,
         visual_summary: str = "",
         packaging_summary: str = "",
+        research_summary: str = "",
+        argument_map_summary: str = "",
     ) -> HumanQCGate:
         system = prompts.QC_SYSTEM
         user = prompts.qc_user(
             script=script,
             visual_summary=visual_summary,
             packaging_summary=packaging_summary,
+            research_summary=research_summary,
+            argument_map_summary=argument_map_summary,
         )
         text = await self._call_llm(system, user, temperature=0.2)
 
@@ -104,6 +112,13 @@ def _extract_list(text: str, header: str) -> list[str]:
 
 
 def _parse_qc_gate(text: str) -> HumanQCGate:
+    risky_claims = _extract_list(text, "risky_claims")
+    must_fix_items = _extract_list(text, "must_fix_items")
+    must_fix_items.extend(
+        f"Resolve risky claim before publish: {claim}"
+        for claim in risky_claims
+        if claim and f"Resolve risky claim before publish: {claim}" not in must_fix_items
+    )
     return HumanQCGate(
         hook_strength=_extract_field(text, "hook_strength"),
         clarity_issues=_extract_list(text, "clarity_issues"),
@@ -111,5 +126,8 @@ def _parse_qc_gate(text: str) -> HumanQCGate:
         visual_issues=_extract_list(text, "visual_issues"),
         audio_issues=_extract_list(text, "audio_issues"),
         caption_issues=_extract_list(text, "caption_issues"),
-        must_fix_items=_extract_list(text, "must_fix_items"),
+        unsupported_claims=_extract_list(text, "unsupported_claims"),
+        risky_claims=risky_claims,
+        required_fact_checks=_extract_list(text, "required_fact_checks"),
+        must_fix_items=must_fix_items,
     )

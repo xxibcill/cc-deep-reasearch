@@ -102,15 +102,7 @@ def register_research_commands(cli: click.Group) -> None:
     @click.option(
         "--theme",
         type=click.Choice(
-            [
-                "general",
-                "resources",
-                "trip_planning",
-                "due_diligence",
-                "market_research",
-                "business_ideas",
-                "content_creation",
-            ],
+            ["general", "resources", "trip_planning", "due_diligence", "market_research", "business_ideas", "content_creation"],
             case_sensitive=False,
         ),
         default=None,
@@ -205,7 +197,7 @@ def register_research_commands(cli: click.Group) -> None:
                         depth=depth,
                         output_format=output_format,
                         providers=config.search.providers,
-                        team_mode=execution_mode,
+                        execution_mode=execution_mode,
                         monitor_enabled=monitor,
                     )
                 )

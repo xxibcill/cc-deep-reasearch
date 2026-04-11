@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from cc_deep_research.llm.anthropic import AnthropicAPITransport
 from cc_deep_research.llm.base import (
     BaseLLMTransport,
     LLMError,
@@ -14,7 +15,6 @@ from cc_deep_research.llm.base import (
     LLMRoute,
     LLMTransportType,
 )
-from cc_deep_research.llm.anthropic import AnthropicAPITransport
 from cc_deep_research.llm.cerebras import CerebrasTransport
 from cc_deep_research.llm.openrouter import OpenRouterTransport
 
@@ -32,9 +32,9 @@ class LLMRouter:
 
     def __init__(
         self,
-        registry: "LLMRouteRegistry",
+        registry: LLMRouteRegistry,
         *,
-        monitor: "ResearchMonitor | None" = None,
+        monitor: ResearchMonitor | None = None,
         telemetry_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self._registry = registry

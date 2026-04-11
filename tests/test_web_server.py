@@ -38,12 +38,17 @@ from cc_deep_research.research_runs.jobs import (
     ResearchRunJobStatus,
 )
 from cc_deep_research.research_runs.models import (
-    BulkSessionDeleteRequest,
     MAX_BULK_DELETE_SESSION_IDS,
+    BulkSessionDeleteRequest,
 )
 from cc_deep_research.session_store import SessionStore
 from cc_deep_research.telemetry import ingest_telemetry_to_duckdb
-from cc_deep_research.web_server import create_app, get_event_router, get_job_registry
+from cc_deep_research.web_server import (
+    create_app,
+    get_event_router,
+    get_job_registry,
+    get_pipeline_job_registry,
+)
 
 
 def test_create_app_uses_supplied_runtime_dependencies() -> None:
@@ -114,6 +119,41 @@ def test_job_registry_can_mark_run_cancelled() -> None:
     assert job.completed_at is not None
 
 
+def test_create_app_restores_persisted_pipeline_jobs(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pipeline jobs should survive FastAPI app recreation."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    app = create_app()
+    pipeline_jobs = get_pipeline_job_registry(app)
+    job = pipeline_jobs.create_job(
+        "pricing anchors",
+        from_stage=0,
+        to_stage=8,
+        pipeline_id="cgp-restored",
+    )
+    ctx = PipelineContext(
+        theme="pricing anchors",
+        current_stage=4,
+        selected_idea_id="idea-1",
+    )
+    pipeline_jobs.mark_running(job.pipeline_id)
+    pipeline_jobs.update_context(job.pipeline_id, ctx)
+    pipeline_jobs.mark_completed(job.pipeline_id, context=ctx)
+
+    restored_app = create_app()
+    restored_jobs = get_pipeline_job_registry(restored_app)
+    restored_job = restored_jobs.get_job(job.pipeline_id)
+
+    assert restored_job is not None
+    assert restored_job.status.value == "completed"
+    assert restored_job.pipeline_context is not None
+    assert restored_job.pipeline_context.current_stage == 4
+    assert restored_job.pipeline_context.selected_idea_id == "idea-1"
+
+
 def test_run_scripting_endpoint_can_force_single_pass(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -141,7 +181,7 @@ def test_run_scripting_endpoint_can_force_single_pass(
             )
 
         @staticmethod
-        def _extract_script(ctx: ScriptingContext) -> str:
+        def extract_script(ctx: ScriptingContext) -> str:
             return ctx.qc.final_script if ctx.qc else ""
 
     class FakeOrchestrator:
@@ -259,7 +299,7 @@ def test_run_scripting_endpoint_accepts_iteration_overrides(
             )
 
         @staticmethod
-        def _extract_script(ctx: ScriptingContext) -> str:
+        def extract_script(ctx: ScriptingContext) -> str:
             return ctx.qc.final_script if ctx.qc else ""
 
     class FakeOrchestrator:
@@ -2434,8 +2474,8 @@ def test_search_cache_stats_returns_counts_when_enabled(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Cache stats should return entry counts when cache is enabled."""
+    from cc_deep_research.models import ResearchDepth, SearchOptions, SearchResult
     from cc_deep_research.search_cache import SearchCacheStore, build_search_cache_identity
-    from cc_deep_research.models import SearchOptions, ResearchDepth, SearchResult
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     config_dir = tmp_path / "xdg" / "cc-deep-research"
@@ -2478,8 +2518,8 @@ def test_search_cache_list_returns_entries_when_enabled(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Cache list should return entries when cache is enabled."""
+    from cc_deep_research.models import ResearchDepth, SearchOptions, SearchResult
     from cc_deep_research.search_cache import SearchCacheStore, build_search_cache_identity
-    from cc_deep_research.models import SearchOptions, ResearchDepth, SearchResult
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     config_dir = tmp_path / "xdg" / "cc-deep-research"
@@ -2523,8 +2563,8 @@ def test_search_cache_purge_expired_removes_old_entries(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Purge expired should remove entries past their TTL."""
+    from cc_deep_research.models import ResearchDepth, SearchOptions, SearchResult
     from cc_deep_research.search_cache import SearchCacheStore, build_search_cache_identity
-    from cc_deep_research.models import SearchOptions, ResearchDepth, SearchResult
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     config_dir = tmp_path / "xdg" / "cc-deep-research"
@@ -2563,8 +2603,8 @@ def test_search_cache_delete_entry_removes_specific_entry(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Delete entry should remove a specific cache entry."""
+    from cc_deep_research.models import ResearchDepth, SearchOptions, SearchResult
     from cc_deep_research.search_cache import SearchCacheStore, build_search_cache_identity
-    from cc_deep_research.models import SearchOptions, ResearchDepth, SearchResult
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     config_dir = tmp_path / "xdg" / "cc-deep-research"
@@ -2609,8 +2649,8 @@ def test_search_cache_clear_removes_all_entries(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Clear should remove all cache entries."""
+    from cc_deep_research.models import ResearchDepth, SearchOptions, SearchResult
     from cc_deep_research.search_cache import SearchCacheStore, build_search_cache_identity
-    from cc_deep_research.models import SearchOptions, ResearchDepth, SearchResult
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     config_dir = tmp_path / "xdg" / "cc-deep-research"

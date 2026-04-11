@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any, Any
+from typing import TYPE_CHECKING, Any
 
+from cc_deep_research.content_gen.agents._llm_utils import call_agent_llm_text
 from cc_deep_research.content_gen.models import PerformanceAnalysis
 from cc_deep_research.content_gen.prompts import performance as prompts
 from cc_deep_research.llm import LLMRouter
@@ -16,6 +17,40 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 AGENT_ID = "content_gen_performance"
+
+
+def _maybe_set_degraded(analysis: PerformanceAnalysis, text: str) -> None:
+    """Set degraded state on PerformanceAnalysis if output is partial or empty."""
+    if not text:
+        analysis.is_degraded = True
+        analysis.degradation_reason = "blank LLM response after retry"
+        return
+
+    list_fields = [
+        analysis.what_worked,
+        analysis.what_failed,
+        analysis.audience_signals,
+        analysis.dropoff_hypotheses,
+        analysis.follow_up_ideas,
+        analysis.backlog_updates,
+    ]
+    scalar_fields = [analysis.hook_diagnosis, analysis.lesson, analysis.next_test]
+
+    non_empty_lists = [f for f in list_fields if f]
+    non_empty_scalars = [f for f in scalar_fields if f]
+
+    if not non_empty_lists and not non_empty_scalars:
+        analysis.is_degraded = True
+        analysis.degradation_reason = "parser produced zero usable records"
+        return
+
+    empty_lists = [f for f in list_fields if not f]
+    if empty_lists:
+        analysis.is_degraded = True
+        list_field_names = ["what_worked", "what_failed", "audience_signals",
+                           "dropoff_hypotheses", "follow_up_ideas", "backlog_updates"]
+        missing = [list_field_names[i] for i, f in enumerate(list_fields) if not f]
+        analysis.degradation_reason = f"parser produced partial records; missing: {', '.join(missing)}"
 
 
 class PerformanceAgent:
@@ -35,13 +70,17 @@ class PerformanceAgent:
         *,
         temperature: float = 0.4,
     ) -> str:
-        response = await self._router.execute(
-            AGENT_ID,
-            user_prompt,
+        return await call_agent_llm_text(
+            router=self._router,
+            agent_id=AGENT_ID,
             system_prompt=system_prompt,
+            user_prompt=user_prompt,
             temperature=temperature,
+            workflow_name="performance analysis workflow",
+            cli_command="content-gen performance",
+            logger=logger,
+            allow_blank=True,
         )
-        return response.content
 
     async def analyze(
         self,
@@ -62,7 +101,12 @@ class PerformanceAgent:
         )
         text = await self._call_llm(system, user, temperature=0.4)
 
-        return _parse_performance(text, video_id)
+        analysis = _parse_performance(text, video_id)
+
+        # Detect and record degraded state
+        _maybe_set_degraded(analysis, text)
+
+        return analysis
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +153,7 @@ def _extract_list(text: str, header: str) -> list[str]:
 
 
 def _parse_performance(text: str, video_id: str) -> PerformanceAnalysis:
-    data: dict[str, Any] = {"video_id": video_id}
+    data: dict = {"video_id": video_id}
     for field in _LIST_FIELDS:
         data[field] = _extract_list(text, field)
     for field in ("hook_diagnosis", "lesson", "next_test"):

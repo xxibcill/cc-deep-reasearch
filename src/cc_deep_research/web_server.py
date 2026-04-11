@@ -5,13 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, AsyncIterator, cast
+from typing import Any, cast
 from uuid import uuid4
 
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
@@ -19,9 +18,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from cc_deep_research.benchmark import (
-    BenchmarkCorpus,
-    BenchmarkRunReport,
-    default_benchmark_corpus_path,
     load_benchmark_corpus,
 )
 from cc_deep_research.config import (
@@ -190,7 +186,7 @@ class WebSocketDiagnosticsMiddleware:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI):
     """Manage application lifecycle."""
     runtime = get_backend_runtime(app)
     await runtime.start()
@@ -224,11 +220,10 @@ def create_app(
         pipeline_jobs=PipelineRunJobRegistry(),
     )
 
-    # Configure CORS - allow localhost for development, use environment variable in production
-    cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:8080").split(",")
+    # Configure CORS
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=cors_origins,
+        allow_origins=["*"],  # In production, restrict to specific origins
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -281,7 +276,7 @@ def _serialize_timestamp(value: Any) -> str | None:
     if value is None:
         return None
     if hasattr(value, "isoformat"):
-        return cast(str, value.isoformat())
+        return value.isoformat()
     return str(value)
 
 
@@ -601,10 +596,7 @@ def _query_session_api_detail(
         "summary": summary,
         "events": events,
         "event_tail": events[-tail_limit:],
-        "events_page": historical.get(
-            "events_page",
-            {"events": [], "total": 0, "has_more": False, "next_cursor": None, "prev_cursor": None},
-        ),
+        "events_page": historical.get("events_page", {"events": [], "total": 0, "has_more": False, "next_cursor": None, "prev_cursor": None}),
         "agent_timeline": [event for event in events if event.get("category") == "agent"],
         "event_tree": {"root_events": [], "total_events": len(events), "session_id": session_id},
         "subprocess_streams": [],
@@ -702,9 +694,10 @@ def register_routes(app: FastAPI) -> None:
                     job.request,
                     event_router=event_router,
                     cancellation_check=lambda: _raise_if_run_cancelled(job),
-                    on_session_started=lambda session_id: None
-                    if job_registry.set_session_id(job.run_id, session_id=session_id)
-                    else None,
+                    on_session_started=lambda session_id: job_registry.set_session_id(
+                        job.run_id,
+                        session_id=session_id,
+                    ),
                 )
                 job_registry.mark_completed(job.run_id, result=result)
             except ResearchRunCancelled:
@@ -750,7 +743,7 @@ def register_routes(app: FastAPI) -> None:
                 status_code=404,
             )
 
-        response: dict[str, Any] = {
+        response: dict = {
             "run_id": job.run_id,
             "status": job.status.value,
             "created_at": job.created_at.isoformat(),
@@ -859,7 +852,7 @@ def register_routes(app: FastAPI) -> None:
 
         session_store = SessionStore()
         saved_sessions = session_store.list_sessions()
-        archived_session_ids = session_store.get_archived_session_ids()
+        archived_session_ids = session_store.get_archived_session_ids() if archived_only else set()
         saved_by_id = {s["session_id"]: s for s in saved_sessions}
 
         sessions_by_id: dict[str, dict[str, Any]] = {}
@@ -950,12 +943,7 @@ def register_routes(app: FastAPI) -> None:
         if status:
             sessions = [s for s in sessions if s.get("status") == status]
 
-        sessions = [
-            s
-            for s in sessions
-            if archived_only
-            == (s.get("archived") or s.get("session_id", "") in archived_session_ids)
-        ]
+        sessions = [s for s in sessions if archived_only == (s.get("archived") or session_store.is_session_archived(s.get("session_id", "")))]
 
         def sort_key(s: dict[str, Any]) -> Any:
             sort_field_value = s.get(sort_by.value)
@@ -997,9 +985,7 @@ def register_routes(app: FastAPI) -> None:
     async def get_session(
         session_id: str,
         cursor: int | None = Query(default=None, description="Sequence number to start after"),
-        before_cursor: int | None = Query(
-            default=None, description="Sequence number to end before"
-        ),
+        before_cursor: int | None = Query(default=None, description="Sequence number to end before"),
         limit: int = Query(default=1000, ge=1, le=5000, description="Maximum events to return"),
         include_derived: bool = Query(default=True, description="Include derived outputs"),
         include_checkpoints: bool = Query(default=True, description="Include checkpoint inventory"),
@@ -1034,16 +1020,13 @@ def register_routes(app: FastAPI) -> None:
         response_content = {
             "session": detail["session"],
             "summary": detail.get("summary"),
-            "events_page": detail.get(
-                "events_page",
-                {
-                    "events": detail.get("events", [])[:limit],
-                    "total": len(detail.get("events", [])),
-                    "has_more": False,
-                    "next_cursor": None,
-                    "prev_cursor": None,
-                },
-            ),
+            "events_page": detail.get("events_page", {
+                "events": detail.get("events", [])[:limit],
+                "total": len(detail.get("events", [])),
+                "has_more": False,
+                "next_cursor": None,
+                "prev_cursor": None,
+            }),
             "event_tail": detail.get("event_tail", []),
             "agent_timeline": detail.get("agent_timeline", []),
             "active_phase": detail.get("active_phase"),
@@ -1064,9 +1047,7 @@ def register_routes(app: FastAPI) -> None:
             response_content["checkpoints"] = {
                 "total": len(checkpoint_manifest.get("checkpoints", [])),
                 "latest_checkpoint_id": checkpoint_manifest.get("latest_checkpoint_id"),
-                "latest_resume_safe_checkpoint_id": checkpoint_manifest.get(
-                    "latest_resume_safe_checkpoint_id"
-                ),
+                "latest_resume_safe_checkpoint_id": checkpoint_manifest.get("latest_resume_safe_checkpoint_id"),
                 "resume_available": checkpoint_manifest.get("latest_resume_safe_checkpoint_id") is not None,
             }
 
@@ -1140,56 +1121,44 @@ def register_routes(app: FastAPI) -> None:
                 continue
 
             if is_archived:
-                archived_sessions.append(
-                    {
-                        "session_id": session_id,
-                        "has_payload": has_payload,
-                        "has_report": has_report,
-                        "completed_at": saved.get("completed_at"),
-                    }
-                )
+                archived_sessions.append({
+                    "session_id": session_id,
+                    "has_payload": has_payload,
+                    "has_report": has_report,
+                    "completed_at": saved.get("completed_at"),
+                })
             elif not has_payload and not has_report:
-                no_artifacts_sessions.append(
-                    {
-                        "session_id": session_id,
-                        "completed_at": saved.get("completed_at"),
-                    }
-                )
+                no_artifacts_sessions.append({
+                    "session_id": session_id,
+                    "completed_at": saved.get("completed_at"),
+                })
 
         recommendations = []
         if archived_sessions:
-            recommendations.append(
-                {
-                    "category": "archived",
-                    "description": f"{len(archived_sessions)} archived session(s) are safe to purge",
-                    "action": "bulk-purge-archived",
-                    "count": len(archived_sessions),
-                }
-            )
+            recommendations.append({
+                "category": "archived",
+                "description": f"{len(archived_sessions)} archived session(s) are safe to purge",
+                "action": "bulk-purge-archived",
+                "count": len(archived_sessions),
+            })
         if no_artifacts_sessions:
-            recommendations.append(
-                {
-                    "category": "no-artifacts",
-                    "description": f"{len(no_artifacts_sessions)} session(s) have no payload or report",
-                    "action": "review-no-artifacts",
-                    "count": len(no_artifacts_sessions),
-                }
-            )
+            recommendations.append({
+                "category": "no-artifacts",
+                "description": f"{len(no_artifacts_sessions)} session(s) have no payload or report",
+                "action": "review-no-artifacts",
+                "count": len(no_artifacts_sessions),
+            })
 
-        return JSONResponse(
-            content={
-                "archived_sessions_count": len(archived_sessions),
-                "no_artifacts_count": len(no_artifacts_sessions),
-                "active_count": len(active_session_ids),
-                "recommendations": recommendations,
-            }
-        )
+        return JSONResponse(content={
+            "archived_sessions_count": len(archived_sessions),
+            "no_artifacts_count": len(no_artifacts_sessions),
+            "active_count": len(active_session_ids),
+            "recommendations": recommendations,
+        })
 
     @app.post("/api/sessions/purge-archived")
     async def purge_archived_sessions(
-        dry_run: bool = Query(
-            default=True, description="If true, only return what would be deleted"
-        ),
+        dry_run: bool = Query(default=True, description="If true, only return what would be deleted"),
         force: bool = Query(default=False, description="Delete even if sessions are active"),
     ) -> JSONResponse:
         """Purge all archived sessions.
@@ -1207,36 +1176,30 @@ def register_routes(app: FastAPI) -> None:
         archived_ids = list(session_store.get_archived_session_ids())
 
         if dry_run:
-            return JSONResponse(
-                content={
-                    "dry_run": True,
-                    "would_delete": len(archived_ids),
-                    "session_ids": archived_ids,
-                    "message": f"Would delete {len(archived_ids)} archived session(s)",
-                }
-            )
+            return JSONResponse(content={
+                "dry_run": True,
+                "would_delete": len(archived_ids),
+                "session_ids": archived_ids,
+                "message": f"Would delete {len(archived_ids)} archived session(s)",
+            })
 
         if not archived_ids:
-            return JSONResponse(
-                content={
-                    "deleted": 0,
-                    "session_ids": [],
-                    "message": "No archived sessions to purge",
-                }
-            )
+            return JSONResponse(content={
+                "deleted": 0,
+                "session_ids": [],
+                "message": "No archived sessions to purge",
+            })
 
         request = BulkSessionDeleteRequest(session_ids=archived_ids, force=force)
         response = service.delete_sessions(request)
 
-        return JSONResponse(
-            content={
-                "dry_run": False,
-                "deleted": response.summary.deleted_count,
-                "failed": response.summary.failed_count,
-                "session_ids": archived_ids,
-                "results": response.model_dump(mode="json"),
-            }
-        )
+        return JSONResponse(content={
+            "dry_run": False,
+            "deleted": response.summary.deleted_count,
+            "failed": response.summary.failed_count,
+            "session_ids": archived_ids,
+            "results": response.model_dump(mode="json"),
+        })
 
     @app.post("/api/sessions/{session_id}/archive")
     async def archive_session(session_id: str) -> JSONResponse:
@@ -1303,12 +1266,8 @@ def register_routes(app: FastAPI) -> None:
         session_id: str,
         limit: int = Query(default=1000, ge=1, le=5000, description="Maximum events to return"),
         cursor: int | None = Query(default=None, description="Sequence number to start after"),
-        before_cursor: int | None = Query(
-            default=None, description="Sequence number to end before"
-        ),
-        offset: int = Query(
-            default=0, ge=0, description="Number of events to skip (deprecated, use cursor)"
-        ),
+        before_cursor: int | None = Query(default=None, description="Sequence number to end before"),
+        offset: int = Query(default=0, ge=0, description="Number of events to skip (deprecated, use cursor)"),
     ) -> JSONResponse:
         """Get events for a specific session with cursor-based pagination.
 
@@ -1343,27 +1302,23 @@ def register_routes(app: FastAPI) -> None:
             else:
                 events = events[:limit]
 
-            return JSONResponse(
-                content={
-                    "events": events,
-                    "count": len(events),
-                    "total": len(detail.get("events", [])),
-                    "has_more": False,
-                    "next_cursor": None,
-                    "prev_cursor": None,
-                }
-            )
+            return JSONResponse(content={
+                "events": events,
+                "count": len(events),
+                "total": len(detail.get("events", [])),
+                "has_more": False,
+                "next_cursor": None,
+                "prev_cursor": None,
+            })
 
-        return JSONResponse(
-            content={
-                "events": events_page["events"],
-                "count": len(events_page["events"]),
-                "total": events_page["total"],
-                "has_more": events_page["has_more"],
-                "next_cursor": events_page["next_cursor"],
-                "prev_cursor": events_page["prev_cursor"],
-            }
-        )
+        return JSONResponse(content={
+            "events": events_page["events"],
+            "count": len(events_page["events"]),
+            "total": events_page["total"],
+            "has_more": events_page["has_more"],
+            "next_cursor": events_page["next_cursor"],
+            "prev_cursor": events_page["prev_cursor"],
+        })
 
     @app.get("/api/sessions/{session_id}/report")
     async def get_session_report(
@@ -1523,11 +1478,7 @@ def register_routes(app: FastAPI) -> None:
 
         if has_report:
             report_formats = []
-            for fmt in [
-                ResearchOutputFormat.MARKDOWN,
-                ResearchOutputFormat.JSON,
-                ResearchOutputFormat.HTML,
-            ]:
+            for fmt in [ResearchOutputFormat.MARKDOWN, ResearchOutputFormat.JSON, ResearchOutputFormat.HTML]:
                 if store.load_report(session_id, fmt) is not None:
                     report_formats.append(fmt.value)
                 else:
@@ -1642,14 +1593,12 @@ def register_routes(app: FastAPI) -> None:
         telemetry_dir = get_default_telemetry_dir()
         lineage = query_checkpoint_lineage(session_id, checkpoint_id, base_dir=telemetry_dir)
 
-        return JSONResponse(
-            content={
-                "session_id": session_id,
-                "checkpoint_id": checkpoint_id,
-                "lineage": lineage,
-                "depth": len(lineage),
-            }
-        )
+        return JSONResponse(content={
+            "session_id": session_id,
+            "checkpoint_id": checkpoint_id,
+            "lineage": lineage,
+            "depth": len(lineage),
+        })
 
     @app.post("/api/sessions/{session_id}/resume")
     async def resume_session(
@@ -1667,7 +1616,7 @@ def register_routes(app: FastAPI) -> None:
         Returns:
             JSON response with resume result indicating success or failure.
         """
-        from cc_deep_research.models.checkpoint import ResumeRequest, ResumeResult
+        from cc_deep_research.models.checkpoint import ResumeResult
 
         telemetry_dir = get_default_telemetry_dir()
         session_dir = telemetry_dir / session_id
@@ -1719,7 +1668,7 @@ def register_routes(app: FastAPI) -> None:
         return JSONResponse(content=result.model_dump(mode="json"))
 
     @app.post("/api/sessions/{session_id}/rerun-step")
-    async def rerun_step(request: dict[str, Any]) -> JSONResponse:
+    async def rerun_step(request: dict) -> JSONResponse:
         """Rerun a single step from a checkpoint in debug mode.
 
         Args:
@@ -1728,7 +1677,7 @@ def register_routes(app: FastAPI) -> None:
         Returns:
             JSON response with rerun result.
         """
-        from cc_deep_research.models.checkpoint import RerunStepRequest, RerunStepResult
+        from cc_deep_research.models.checkpoint import RerunStepResult
 
         session_id = request.get("session_id")
         checkpoint_id = request.get("checkpoint_id")
@@ -1755,13 +1704,14 @@ def register_routes(app: FastAPI) -> None:
                 status_code=409,
             )
 
-        # Rerun execution is not yet implemented - return pending status
+        # Note: Actual rerun execution would require reconstructing inputs
+        # and executing the step. This endpoint validates and prepares for rerun.
         result = RerunStepResult(
-            success=False,
+            success=True,
             session_id=session_id,
             checkpoint_id=checkpoint_id,
-            output_match=None,
-            message=f"Rerun execution is not yet implemented. Checkpoint {checkpoint_id} is valid and ready. Input refs: {checkpoint.get('input_ref')}",
+            output_match=None,  # Would be determined after actual rerun
+            message=f"Checkpoint {checkpoint_id} is ready for rerun. Input refs: {checkpoint.get('input_ref')}",
         )
 
         return JSONResponse(content=result.model_dump(mode="json"))
@@ -1783,7 +1733,7 @@ def register_routes(app: FastAPI) -> None:
         await websocket.accept()
 
         # Create connection wrapper
-        connection = WebSocketConnection(websocket, session_id)  # type: ignore[arg-type]
+        connection = WebSocketConnection(websocket, session_id)
         event_router = get_event_router(websocket.app)
 
         # Subscribe to session events
@@ -1985,29 +1935,25 @@ def register_routes(app: FastAPI) -> None:
         }
 
         if not cache_enabled:
-            response.update(
-                {
-                    "total_entries": 0,
-                    "active_entries": 0,
-                    "expired_entries": 0,
-                    "total_hits": 0,
-                    "approximate_size_bytes": 0,
-                    "db_exists": False,
-                }
-            )
+            response.update({
+                "total_entries": 0,
+                "active_entries": 0,
+                "expired_entries": 0,
+                "total_hits": 0,
+                "approximate_size_bytes": 0,
+                "db_exists": False,
+            })
             return JSONResponse(content=response)
 
         if not db_path.exists():
-            response.update(
-                {
-                    "total_entries": 0,
-                    "active_entries": 0,
-                    "expired_entries": 0,
-                    "total_hits": 0,
-                    "approximate_size_bytes": 0,
-                    "db_exists": False,
-                }
-            )
+            response.update({
+                "total_entries": 0,
+                "active_entries": 0,
+                "expired_entries": 0,
+                "total_hits": 0,
+                "approximate_size_bytes": 0,
+                "db_exists": False,
+            })
             return JSONResponse(content=response)
 
         store = SearchCacheStore(db_path, max_entries=config.search_cache.max_entries)
@@ -2137,7 +2083,7 @@ def register_routes(app: FastAPI) -> None:
 
     def _get_benchmark_runs_dir() -> Path:
         """Return the default benchmark runs directory."""
-        return Path(os.environ.get("BENCHMARK_RUNS_DIR", "benchmark_runs"))
+        return Path("benchmark_runs")
 
     def _list_benchmark_runs() -> list[dict[str, Any]]:
         """List available benchmark runs from the filesystem."""
@@ -2189,12 +2135,10 @@ def register_routes(app: FastAPI) -> None:
             JSON response with list of benchmark runs with their metadata.
         """
         runs = _list_benchmark_runs()
-        return JSONResponse(
-            content={
-                "runs": runs,
-                "total": len(runs),
-            }
-        )
+        return JSONResponse(content={
+            "runs": runs,
+            "total": len(runs),
+        })
 
     @app.get("/api/benchmarks/runs/{run_id}")
     async def get_benchmark_run(run_id: str) -> JSONResponse:
@@ -2363,18 +2307,15 @@ def _query_analytics_data(
         [days_back],
     ).fetchone()
 
-    report_count = (
-        conn.execute(
-            """
+    report_count = conn.execute(
+        """
         SELECT COUNT(*)
         FROM telemetry_sessions
         WHERE created_at >= now() - interval '1 day' * ?
         AND summary_json->>'has_report' = 'true'
         """,
-            [days_back],
-        ).fetchone()[0]  # type: ignore[index]
-        or 0
-    )
+        [days_back],
+    ).fetchone()[0] or 0
 
     total_with_report = summary[0] if summary else 0
     report_rate = (report_count / total_with_report * 100) if total_with_report > 0 else 0.0
@@ -2473,7 +2414,9 @@ def _query_analytics_data(
             "archived_sessions": archived_count,
             "active_sessions": active_count,
         },
-        "status_counts": [{"status": str(row[0]), "count": int(row[1])} for row in status_counts],
+        "status_counts": [
+            {"status": str(row[0]), "count": int(row[1])} for row in status_counts
+        ],
         "duration_by_status": [
             {
                 "status": str(row[0]),

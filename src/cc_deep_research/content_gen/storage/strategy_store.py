@@ -3,21 +3,27 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from cc_deep_research.content_gen.models import StrategyMemory
+from cc_deep_research.content_gen.storage._paths import resolve_content_gen_file_path
 
-_DEFAULT_DIR = Path.home() / ".config" / "cc-deep-research"
-_DEFAULT_NAME = "strategy.yaml"
+if TYPE_CHECKING:
+    from cc_deep_research.config import Config
 
 
 class StrategyStore:
     """Load and save :class:`StrategyMemory` to a YAML file."""
 
-    def __init__(self, path: Path | None = None) -> None:
-        self._path = path or _DEFAULT_DIR / _DEFAULT_NAME
+    def __init__(self, path: Path | None = None, *, config: Config | None = None) -> None:
+        self._path = resolve_content_gen_file_path(
+            explicit_path=path,
+            config=config,
+            config_attr="strategy_path",
+            default_name="strategy.yaml",
+        )
 
     @property
     def path(self) -> Path:

@@ -5,6 +5,7 @@ for agents based on transport availability and task requirements.
 """
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from cc_deep_research.config import Config

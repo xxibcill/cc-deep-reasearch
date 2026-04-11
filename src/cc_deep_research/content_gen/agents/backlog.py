@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
+from cc_deep_research.content_gen.agents._llm_utils import call_agent_llm_text
 from cc_deep_research.content_gen.models import (
     BacklogItem,
     BacklogOutput,
@@ -42,13 +43,17 @@ class BacklogAgent:
         *,
         temperature: float = 0.5,
     ) -> str:
-        response = await self._router.execute(
-            AGENT_ID,
-            user_prompt,
+        return await call_agent_llm_text(
+            router=self._router,
+            agent_id=AGENT_ID,
             system_prompt=system_prompt,
+            user_prompt=user_prompt,
             temperature=temperature,
+            workflow_name="content backlog workflow",
+            cli_command="content-gen backlog",
+            logger=logger,
+            allow_blank=True,
         )
-        return response.content
 
     # ------------------------------------------------------------------
     # Build backlog
@@ -63,9 +68,7 @@ class BacklogAgent:
         opportunity_brief: OpportunityBrief | None = None,
     ) -> BacklogOutput:
         system = prompts.BUILD_BACKLOG_SYSTEM
-        user = prompts.build_backlog_user(
-            theme, strategy, count=count, opportunity_brief=opportunity_brief
-        )
+        user = prompts.build_backlog_user(theme, strategy, count=count, opportunity_brief=opportunity_brief)
         text = await self._call_llm(system, user, temperature=0.7)
 
         items = _parse_backlog_items(text)
@@ -113,9 +116,7 @@ class BacklogAgent:
         valid_scores = _validate_scores(scores)
         if len(valid_scores) != len(scores):
             invalid_count = len(scores) - len(valid_scores)
-            logger.warning(
-                f"Scoring output contained {invalid_count} invalid recommendations, defaulting to 'hold'"
-            )
+            logger.warning(f"Scoring output contained {invalid_count} invalid recommendations, defaulting to 'hold'")
 
         produce_now = [s.idea_id for s in valid_scores if s.recommendation == "produce_now"]
         shortlist, selected_idea_id, selection_reasoning, runner_up_idea_ids = _derive_selection(
@@ -171,7 +172,7 @@ def _parse_backlog_items(text: str) -> list[BacklogItem]:
         block_text = block.strip()
         if not block_text:
             continue
-        data: dict[str, Any] = {}
+        data: dict = {}
         for field in _BACKLOG_FIELDS:
             val = _extract_block_field(block_text, field)
             if val:
@@ -256,7 +257,7 @@ def _parse_scores(text: str, _items: list[BacklogItem]) -> list[IdeaScores]:
                 total_score=total,
                 recommendation=rec,
                 reason=reason,
-                **dim_scores,
+                **dim_scores,  # type: ignore[arg-type]
             )
         )
     return scores
@@ -295,9 +296,7 @@ def _derive_selection(
 
     selection_reasoning = _extract_block_field(text, "selection_reasoning").strip()
     if not selection_reasoning:
-        selected_score = next(
-            (score for score in ranked_scores if score.idea_id == selected_idea_id), None
-        )
+        selected_score = next((score for score in ranked_scores if score.idea_id == selected_idea_id), None)
         selection_reasoning = selected_score.reason if selected_score else ""
 
     runner_up_idea_ids = [idea_id for idea_id in shortlist if idea_id != selected_idea_id]

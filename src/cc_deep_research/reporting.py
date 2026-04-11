@@ -14,10 +14,10 @@ from cc_deep_research.config import Config
 from cc_deep_research.html_report_renderer import HTMLReportRenderer
 from cc_deep_research.llm import LLMRouter, LLMRouteRegistry
 from cc_deep_research.llm.base import LLMProviderType, LLMTransportType
-from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.models.analysis import AnalysisResult, ValidationResult
 from cc_deep_research.models.quality import ReportEvaluationResult
 from cc_deep_research.models.session import ResearchSession
+from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.post_validator import PostReportValidator
 
 logger = logging.getLogger(__name__)

@@ -9,7 +9,7 @@ tracking.
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
 from anthropic import Anthropic, APIError, AuthenticationError, RateLimitError

@@ -427,6 +427,11 @@ function buildAnalytics(sessions: MockSession[]) {
 export async function mockDashboardApis(page: Page, options: MockOptions = {}) {
   let sessions = [...(options.sessions ?? mockSessions)];
 
+  // Mock WebSocket connections so telemetry monitor pages render correctly in tests
+  await page.route(/\/ws\/session\/[^/]+$/, async (route) => {
+    await route.abort();
+  });
+
   await page.route("**/api/sessions**", async (route) => {
     const url = new URL(route.request().url());
     const pathName = url.pathname;

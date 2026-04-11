@@ -3,10 +3,13 @@
 import pytest
 
 from cc_deep_research.agents.report_quality_evaluator import (
-    AGENT_ID,
     ReportQualityEvaluatorAgent,
 )
-from cc_deep_research.models import AnalysisResult, ReportEvaluationResult, ResearchSession, SearchResultItem
+from cc_deep_research.models import (
+    AnalysisResult,
+    ReportEvaluationResult,
+    ResearchSession,
+)
 
 
 class TestReportQualityEvaluatorAgent:
@@ -542,7 +545,7 @@ Safe."""
     @pytest.mark.asyncio
     async def test_llm_evaluation_when_router_unavailable(self) -> None:
         """Test that evaluation falls back when router reports unavailable."""
-        from unittest.mock import AsyncMock, MagicMock
+        from unittest.mock import MagicMock
 
         mock_router = MagicMock()
         mock_router.is_available = MagicMock(return_value=False)

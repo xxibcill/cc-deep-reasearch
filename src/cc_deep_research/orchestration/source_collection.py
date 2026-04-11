@@ -17,8 +17,6 @@ from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.orchestration.session_state import OrchestratorSessionState
 
 from .resilience import (
-    ParallelCollectionError,
-    ParallelCollectionTimeoutError,
     build_parallel_collection_policy,
 )
 from .source_collection_parallel import ParallelSourceCollectionStrategy, _emit_agent_lifecycle
@@ -61,7 +59,8 @@ class SourceAggregationService:
 
         sorted_sources = sorted(
             sources,
-            key=lambda source: getattr(source, "relevance_score", 0) or getattr(source, "score", 0),
+            key=lambda source: getattr(source, "relevance_score", 0)
+            or getattr(source, "score", 0),
             reverse=True,
         )
         limited_sources = sorted_sources[:limit]
@@ -398,7 +397,7 @@ class SourceCollectionService:
     ) -> list[SearchResultItem]:
         """Run the sequential provider-backed collection strategy."""
         return await self._sequential.collect(
-            collector=collector,  # type: ignore[arg-type]
+            collector=collector,
             query_families=query_families,
             depth=depth,
         )

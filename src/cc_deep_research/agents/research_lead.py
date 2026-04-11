@@ -9,7 +9,6 @@ The research lead agent is responsible for:
 """
 
 import re
-
 from typing import Any
 
 from cc_deep_research.models import (
@@ -221,7 +220,6 @@ class ResearchLeadAgent:
 
     def _classify_intent(self, query: str, words: list[str]) -> str:
         """Classify the primary research intent using deterministic signals."""
-        lowered = query.lower()
         comparative_terms = {
             "better",
             "compare",

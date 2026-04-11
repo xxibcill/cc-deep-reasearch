@@ -27,8 +27,8 @@ class ResearchPlanningService:
         *,
         monitor: ResearchMonitor,
         config: Config | None = None,
-        registry: "LLMRouteRegistry | None" = None,
-        session_state: "OrchestratorSessionState | None" = None,
+        registry: LLMRouteRegistry | None = None,
+        session_state: OrchestratorSessionState | None = None,
     ) -> None:
         self._monitor = monitor
         self._config = config
