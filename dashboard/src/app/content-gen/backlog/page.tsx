@@ -57,6 +57,7 @@ export default function BacklogPage() {
         backlogPath={backlogPath}
         loading={backlogLoading}
         onUpdateStatus={updateBacklogItem}
+        onEdit={updateBacklogItem}
         onSelect={selectBacklogItem}
         onArchive={archiveBacklogItem}
         onDelete={deleteBacklogItem}

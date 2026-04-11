@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { BacklogItemForm } from '@/components/content-gen/backlog-item-form'
 import type { BacklogItem, BacklogItemStatus } from '@/types/content-gen'
 
 const STATUS_OPTIONS: BacklogItemStatus[] = [
@@ -52,6 +53,7 @@ interface BacklogPanelProps {
   backlogPath?: string | null
   loading?: boolean
   onUpdateStatus?: (ideaId: string, patch: Record<string, unknown>) => Promise<void>
+  onEdit?: (ideaId: string, patch: Record<string, unknown>) => Promise<void>
   onSelect?: (ideaId: string) => Promise<void>
   onArchive?: (ideaId: string) => Promise<void>
   onDelete?: (ideaId: string) => Promise<void>
@@ -62,6 +64,7 @@ export function BacklogPanel({
   backlogPath,
   loading,
   onUpdateStatus,
+  onEdit,
   onSelect,
   onArchive,
   onDelete,
@@ -220,6 +223,12 @@ export function BacklogPanel({
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
+                        {onEdit && (
+                          <BacklogItemForm
+                            item={item}
+                            onSubmit={onEdit}
+                          />
+                        )}
                         <Button
                           type="button"
                           variant="ghost"
