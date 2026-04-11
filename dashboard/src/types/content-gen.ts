@@ -193,6 +193,12 @@ export interface BacklogItem {
   risk_level: RiskLevel | string;
   priority_score: number;
   status: BacklogItemStatus | string;
+  created_at?: string;
+  updated_at?: string;
+  selection_reasoning?: string;
+  latest_score?: number;
+  latest_recommendation?: string;
+  source_theme?: string;
 }
 
 export interface BacklogOutput {
