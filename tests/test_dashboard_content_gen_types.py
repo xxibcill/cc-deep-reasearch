@@ -4,7 +4,6 @@ import ast
 import re
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_MODELS_PATH = REPO_ROOT / "src/cc_deep_research/content_gen/models.py"
 FRONTEND_TYPES_PATH = REPO_ROOT / "dashboard/src/types/content-gen.ts"
