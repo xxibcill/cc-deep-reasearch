@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Archive, CheckCircle2, LayoutGrid, List, Plus, Trash2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
@@ -10,45 +11,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { NativeSelect } from '@/components/ui/native-select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { BacklogItemForm } from '@/components/content-gen/backlog-item-form'
+import { formatTimestamp, statusBadgeVariant, recommendationBadgeVariant, STATUS_OPTIONS } from '@/components/content-gen/backlog-shared'
 import { cn } from '@/lib/utils'
-import type { BacklogItem, BacklogItemStatus } from '@/types/content-gen'
-
-const STATUS_OPTIONS: BacklogItemStatus[] = [
-  'backlog',
-  'selected',
-  'in_production',
-  'published',
-  'archived',
-]
-
-function formatTimestamp(value?: string) {
-  if (!value) {
-    return '—'
-  }
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return value
-  }
-  return date.toLocaleString()
-}
-
-function statusBadgeVariant(status: string): 'success' | 'warning' | 'info' | 'secondary' | 'outline' {
-  if (status === 'selected') return 'success'
-  if (status === 'in_production') return 'warning'
-  if (status === 'published') return 'info'
-  if (status === 'archived') return 'secondary'
-  return 'outline'
-}
-
-function recommendationBadgeVariant(
-  recommendation?: string,
-): 'success' | 'destructive' | 'secondary' | 'outline' {
-  if (recommendation === 'produce_now') return 'success'
-  if (recommendation === 'kill') return 'destructive'
-  if (recommendation === 'hold') return 'secondary'
-  return 'outline'
-}
+import type { BacklogItem } from '@/types/content-gen'
 
 interface BacklogPanelProps {
   items: BacklogItem[]
@@ -75,12 +40,18 @@ export function BacklogPanel({
   onDelete,
   onCreate,
 }: BacklogPanelProps) {
+  const router = useRouter()
   const [statusFilter, setStatusFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
   const [viewMode, setViewMode] = useState<BacklogViewMode>('grid')
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ ideaId: string; idea: string } | null>(null)
+
+  const navigateToDetail = (ideaId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    router.push(`/content-gen/backlog/${ideaId}`)
+  }
 
   const categories = [...new Set(items.map((item) => item.category).filter(Boolean))].sort()
   const filteredItems = items
@@ -291,7 +262,8 @@ export function BacklogPanel({
                 return (
                   <article
                     key={rowKey}
-                    className="group relative overflow-hidden rounded-[1.15rem] border border-border/75 bg-card/95 p-4 shadow-[0_18px_48px_rgba(0,0,0,0.18)] transition-all duration-200 hover:-translate-y-1 hover:border-primary/35 hover:shadow-[0_22px_60px_rgba(12,18,30,0.28)] motion-reduce:transform-none motion-reduce:transition-none"
+                    onClick={(e) => navigateToDetail(item.idea_id, e)}
+                    className="group relative cursor-pointer overflow-hidden rounded-[1.15rem] border border-border/75 bg-card/95 p-4 shadow-[0_18px_48px_rgba(0,0,0,0.18)] transition-all duration-200 hover:-translate-y-1 hover:border-primary/35 hover:shadow-[0_22px_60px_rgba(12,18,30,0.28)] motion-reduce:transform-none motion-reduce:transition-none"
                   >
                     <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/45 to-transparent opacity-60" />
                     <div className="flex items-start justify-between gap-3">
@@ -417,7 +389,11 @@ export function BacklogPanel({
                     const rowKey = item.idea_id
 
                     return (
-                      <TableRow key={rowKey}>
+                      <TableRow
+                        key={rowKey}
+                        onClick={(e) => navigateToDetail(item.idea_id, e)}
+                        className="cursor-pointer hover:bg-surface/50"
+                      >
                         <TableCell className="min-w-[22rem]">
                           <div className="space-y-1">
                             <p className="text-sm font-medium text-foreground">{item.idea}</p>
