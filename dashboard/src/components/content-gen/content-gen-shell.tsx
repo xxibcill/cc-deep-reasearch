@@ -31,6 +31,7 @@ export function ContentGenShell({ children }: { children: React.ReactNode }) {
   const publishQueue = useContentGen((s) => s.publishQueue)
 
   const isPipelineDetail = pathname.match(/\/content-gen\/pipeline\/[^/]+$/)
+  const isBacklogDetail = pathname.match(/\/content-gen\/backlog\/[^/]+$/)
   const activeTab = searchParams.get('tab') || 'overview'
 
   const activePipelineCount = pipelines.filter(
@@ -72,9 +73,9 @@ export function ContentGenShell({ children }: { children: React.ReactNode }) {
         <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-3">
-              {isPipelineDetail ? (
+              {isPipelineDetail || isBacklogDetail ? (
                 <Link
-                  href="/content-gen"
+                  href={isBacklogDetail ? '/content-gen/backlog' : '/content-gen'}
                   className={buttonVariants({
                     variant: 'ghost',
                     size: 'sm',
@@ -115,7 +116,7 @@ export function ContentGenShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        {!isPipelineDetail ? (
+        {!isPipelineDetail && !isBacklogDetail ? (
           <nav className="mt-5">
             <Tabs
               className={cn('w-full max-w-4xl', 'md:w-auto')}

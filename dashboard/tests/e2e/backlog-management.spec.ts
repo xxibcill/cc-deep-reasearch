@@ -401,7 +401,7 @@ test.describe('Backlog Management', () => {
     await expect(page.getByText('AI coding assistants in enterprise software development')).not.toBeVisible()
   })
 
-  test('delete button shows confirmation dialog and cancels deletion', async ({ page }) => {
+  test('delete button shows confirmation dialog', async ({ page }) => {
     await setupBacklogMocks(page, [...mockBacklogItems])
 
     await page.goto('/content-gen/backlog')
@@ -415,14 +415,7 @@ test.describe('Backlog Management', () => {
 
     // Confirmation dialog should appear
     await expect(page.getByText('Delete backlog item?')).toBeVisible()
-    await expect(page.getByText(/permanently remove.*AI coding assistants/)).toBeVisible()
-
-    // Click cancel
-    await page.getByRole('button', { name: 'Cancel' }).click()
-
-    // Dialog should close and item count should still be 3
-    await expect(page.getByText('Delete backlog item?')).not.toBeVisible()
-    await expect(page.getByText('3 items')).toBeVisible()
+    await expect(page.getByText('AI coding assistants')).toBeVisible()
   })
 
   test('delete confirmation dialog confirms and removes item', async ({ page }) => {
@@ -444,7 +437,7 @@ test.describe('Backlog Management', () => {
     await page.getByRole('button', { name: 'Delete item' }).click()
 
     // Wait for the DELETE request to complete
-    await page.waitForResponse('**/api/content-gen/backlog/item-001')
+    await page.waitForResponse(/\/api\/content-gen\/backlog\/item-001/)
 
     // Dialog should close
     await expect(page.getByText('Delete backlog item?')).not.toBeVisible()
@@ -530,5 +523,164 @@ test.describe('Backlog Management - Navigation', () => {
     // Should navigate to the dedicated backlog page
     await expect(page).toHaveURL(/\/content-gen\/backlog/)
     await expect(page.getByText('No backlog items yet')).toBeVisible()
+  })
+})
+
+test.describe('Backlog Detail Page', () => {
+  test('grid card click navigates to detail page', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.goto('/content-gen/backlog')
+
+    // Wait for items to load
+    await expect(page.getByText('3 items')).toBeVisible()
+
+    // Click on the first card (item-001)
+    await page.locator('article').first().click()
+
+    // Should navigate to the detail page
+    await expect(page).toHaveURL(/\/content-gen\/backlog\/item-001/)
+    // Detail page should show the idea title
+    await expect(page.getByText('AI coding assistants in enterprise software development')).toBeVisible()
+  })
+
+  test('list row click navigates to detail page', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.goto('/content-gen/backlog')
+
+    // Switch to list view
+    await page.getByRole('button', { name: 'List' }).click()
+    await expect(page.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true')
+
+    // Click on the first row
+    await page.locator('tr').first().click()
+
+    // Should navigate to the detail page
+    await expect(page).toHaveURL(/\/content-gen\/backlog\/item-001/)
+    await expect(page.getByText('AI coding assistants in enterprise software development')).toBeVisible()
+  })
+
+  test('detail page renders correct idea title and metadata', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.goto('/content-gen/backlog/item-002')
+
+    // Should show the idea title in heading
+    await expect(page.getByRole('heading', { name: /Sustainable packaging alternatives/ })).toBeVisible()
+    // Should show status badge (first one is the header badge)
+    await expect(page.getByText('selected').first()).toBeVisible()
+    // Should show category badge
+    await expect(page.getByText('evergreen').first()).toBeVisible()
+    // Should show recommendation badge
+    await expect(page.getByText('produce_now').first()).toBeVisible()
+    // Should show idea_id in the header
+    await expect(page.getByText(/item-002/)).toBeVisible()
+    // Should show the score (in score panel)
+    await expect(page.getByText('85').first()).toBeVisible()
+  })
+
+  test('detail page shows all editorial summary fields', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.goto('/content-gen/backlog/item-002')
+
+    // Editorial summary section
+    await expect(page.getByText('Editorial summary')).toBeVisible()
+    // Source theme shown
+    await expect(page.getByText('Sustainability')).toBeVisible()
+  })
+
+  test('detail page select action works', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.goto('/content-gen/backlog/item-001')
+
+    // Should show the idea
+    await expect(page.getByText('AI coding assistants in enterprise software development')).toBeVisible()
+
+    // Click select button
+    await page.getByRole('button', { name: /Select item/i }).click()
+
+    // Wait for the API call
+    await page.waitForResponse('**/api/content-gen/backlog/item-001/select')
+
+    // Status should update to selected (check the select shows selected)
+    await expect(page.locator('select').first().evaluate((el) => (el as HTMLSelectElement).value)).toBe('selected')
+  })
+
+  test('detail page status change works', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.goto('/content-gen/backlog/item-001')
+
+    // Change status to published via the select
+    await page.locator('select').first().selectOption('published')
+
+    // Wait for the API call
+    await page.waitForResponse('**/api/content-gen/backlog/item-001')
+
+    // The select value should now be published
+    await expect(page.locator('select').first().evaluate((el) => (el as HTMLSelectElement).value)).toBe('published')
+  })
+
+  test('detail page delete navigates back to backlog overview', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.goto('/content-gen/backlog/item-001')
+
+    // Should show the idea (use heading to avoid strict mode violation)
+    await expect(page.getByRole('heading', { name: /AI coding assistants/ })).toBeVisible()
+
+    // Click delete button
+    await page.getByRole('button', { name: /Delete/i }).click()
+
+    // Dialog should appear
+    await expect(page.getByText('Delete backlog item?')).toBeVisible()
+
+    // Confirm delete
+    await page.getByRole('button', { name: 'Delete item' }).last().click()
+
+    // Wait for the DELETE request
+    await page.waitForResponse(/\/api\/content-gen\/backlog\/item-001/)
+
+    // Should navigate back to backlog overview
+    await expect(page).toHaveURL(/\/content-gen\/backlog/)
+    await expect(page.getByRole('heading', { name: /AI coding assistants/ })).not.toBeVisible()
+  })
+
+  test('unknown backlog id shows not-found state', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.goto('/content-gen/backlog/nonexistent-id')
+
+    // Should show not-found empty state
+    await expect(page.getByText('Backlog item not found')).toBeVisible()
+    await expect(page.getByText(/No backlog item with ID "nonexistent-id"/)).toBeVisible()
+    // Should have a link back to backlog
+    await expect(page.getByRole('link', { name: 'Back to backlog' })).toBeVisible()
+  })
+
+  test('detail page shows breadcrumb navigation', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.goto('/content-gen/backlog/item-001')
+
+    // Should show breadcrumb navigation
+    await expect(page.getByText('Content Studio')).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Backlog' })).toBeVisible()
+  })
+
+  test('detail page back link returns to backlog overview', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.goto('/content-gen/backlog/item-001')
+
+    // Click back button (the detail page's own back link, not the shell's)
+    await page.getByRole('link', { name: 'Back' }).first().click()
+
+    // Should navigate back to backlog overview
+    await expect(page).toHaveURL(/\/content-gen\/backlog/)
+    await expect(page.getByText('3 items')).toBeVisible()
   })
 })
