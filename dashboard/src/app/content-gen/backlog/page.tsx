@@ -1,12 +1,20 @@
 'use client'
 
 import { useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { List } from 'lucide-react'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { EmptyState } from '@/components/ui/empty-state'
-import { BacklogPanel } from '@/components/content-gen/backlog-panel'
 import useContentGen from '@/hooks/useContentGen'
+
+const BacklogPanel = dynamic(
+  () => import('@/components/content-gen/backlog-panel').then((mod) => mod.BacklogPanel),
+  {
+    ssr: false,
+    loading: () => <div className="py-8 text-center text-sm text-muted-foreground">Loading backlog…</div>,
+  },
+)
 
 export default function BacklogPage() {
   const backlog = useContentGen((s) => s.backlog)

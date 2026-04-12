@@ -1,8 +1,30 @@
 'use client'
 
-import { QuickScriptProcessPanel } from '@/components/content-gen/quick-script-process-panel'
-import { ScriptViewer } from '@/components/content-gen/script-viewer'
+import dynamic from 'next/dynamic'
 import type { PipelineContext } from '@/types/content-gen'
+
+function ScriptingPanelLoading({ label }: { label: string }) {
+  return <div className="text-sm text-muted-foreground">{label}</div>
+}
+
+const ScriptViewer = dynamic(
+  () => import('@/components/content-gen/script-viewer').then((mod) => mod.ScriptViewer),
+  {
+    ssr: false,
+    loading: () => <ScriptingPanelLoading label="Loading final script…" />,
+  },
+)
+
+const QuickScriptProcessPanel = dynamic(
+  () =>
+    import('@/components/content-gen/quick-script-process-panel').then(
+      (mod) => mod.QuickScriptProcessPanel,
+    ),
+  {
+    ssr: false,
+    loading: () => <ScriptingPanelLoading label="Loading scripting process…" />,
+  },
+)
 
 export function RunScriptingPanel({ ctx }: { ctx: PipelineContext }) {
   if (!ctx.scripting) {
