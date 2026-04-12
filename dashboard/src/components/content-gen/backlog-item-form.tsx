@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { cloneElement, isValidElement, useState } from 'react'
 import { Pencil, Plus } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -143,20 +143,37 @@ export function BacklogItemForm({
     }
   }
 
+  const renderTrigger = () => {
+    if (trigger && isValidElement<{ onClick?: React.MouseEventHandler<HTMLElement> }>(trigger)) {
+      const originalOnClick = trigger.props.onClick
+
+      return cloneElement(trigger, {
+        onClick: (event) => {
+          originalOnClick?.(event)
+          if (!event.defaultPrevented) {
+            handleOpenChange(true)
+          }
+        },
+      })
+    }
+
+    return (
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        onClick={() => handleOpenChange(true)}
+        className="h-8 w-8 text-muted-foreground/60 hover:text-primary"
+        title={isEditMode ? 'Edit item' : 'New item'}
+      >
+        {isEditMode ? <Pencil className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+      </Button>
+    )
+  }
+
   return (
     <>
-      {trigger && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={() => handleOpenChange(true)}
-          className="h-8 w-8 text-muted-foreground/60 hover:text-primary"
-          title={isEditMode ? 'Edit item' : 'New item'}
-        >
-          {isEditMode ? <Pencil className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
-        </Button>
-      )}
+      {renderTrigger()}
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent>
           <DialogHeader>
