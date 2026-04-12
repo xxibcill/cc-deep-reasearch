@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Play, FileText, ArrowRight, Link2, X } from 'lucide-react'
@@ -17,13 +18,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { StartPipelineForm } from '@/components/content-gen/start-pipeline-form'
-import { QuickScriptForm } from '@/components/content-gen/quick-script-form'
-import { ScriptsPanel } from '@/components/content-gen/scripts-panel'
-import { StrategyEditor } from '@/components/content-gen/strategy-editor'
-import { BacklogPanel } from '@/components/content-gen/backlog-panel'
-import { PublishQueuePanel } from '@/components/content-gen/publish-queue-panel'
-import { OverviewSidebar } from '@/components/content-gen/overview-sidebar'
 import { EmptyState } from '@/components/ui/empty-state'
 import {
   createEmptyQuickScriptFields,
@@ -42,19 +36,85 @@ import {
 } from '@/lib/research-content-bridge'
 import { TOTAL_PIPELINE_STAGES } from '@/types/content-gen'
 
+function PanelLoadingMessage({ label }: { label: string }) {
+  return <div className="py-8 text-center text-sm text-muted-foreground">{label}</div>
+}
+
+const OverviewSidebar = dynamic(
+  () =>
+    import('@/components/content-gen/overview-sidebar').then((mod) => mod.OverviewSidebar),
+  {
+    ssr: false,
+    loading: () => <PanelLoadingMessage label="Loading overview…" />,
+  },
+)
+
+const ScriptsPanel = dynamic(
+  () => import('@/components/content-gen/scripts-panel').then((mod) => mod.ScriptsPanel),
+  {
+    ssr: false,
+    loading: () => <PanelLoadingMessage label="Loading scripts…" />,
+  },
+)
+
+const StrategyEditor = dynamic(
+  () => import('@/components/content-gen/strategy-editor').then((mod) => mod.StrategyEditor),
+  {
+    ssr: false,
+    loading: () => <PanelLoadingMessage label="Loading strategy…" />,
+  },
+)
+
+const BacklogPanel = dynamic(
+  () => import('@/components/content-gen/backlog-panel').then((mod) => mod.BacklogPanel),
+  {
+    ssr: false,
+    loading: () => <PanelLoadingMessage label="Loading backlog…" />,
+  },
+)
+
+const PublishQueuePanel = dynamic(
+  () =>
+    import('@/components/content-gen/publish-queue-panel').then((mod) => mod.PublishQueuePanel),
+  {
+    ssr: false,
+    loading: () => <PanelLoadingMessage label="Loading publish queue…" />,
+  },
+)
+
+const StartPipelineForm = dynamic(
+  () =>
+    import('@/components/content-gen/start-pipeline-form').then((mod) => mod.StartPipelineForm),
+  {
+    ssr: false,
+    loading: () => <PanelLoadingMessage label="Loading pipeline form…" />,
+  },
+)
+
+const QuickScriptForm = dynamic(
+  () =>
+    import('@/components/content-gen/quick-script-form').then((mod) => mod.QuickScriptForm),
+  {
+    ssr: false,
+    loading: () => <PanelLoadingMessage label="Loading script form…" />,
+  },
+)
+
 export default function ContentGenPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const activeTab = searchParams.get('tab') || 'overview'
 
   const pipelines = useContentGen((s) => s.pipelines)
-  const activePipelineId = useContentGen((s) => s.activePipelineId)
-  const pipelineContext = useContentGen((s) => s.pipelineContext)
   const publishQueue = useContentGen((s) => s.publishQueue)
   const backlog = useContentGen((s) => s.backlog)
   const backlogPath = useContentGen((s) => s.backlogPath)
   const backlogLoading = useContentGen((s) => s.backlogLoading)
-  const loadAll = useContentGen((s) => s.loadAll)
+  const loadPipelines = useContentGen((s) => s.loadPipelines)
+  const loadScripts = useContentGen((s) => s.loadScripts)
+  const loadPublishQueue = useContentGen((s) => s.loadPublishQueue)
+  const loadBacklog = useContentGen((s) => s.loadBacklog)
+  const loadStrategy = useContentGen((s) => s.loadStrategy)
   const removeFromQueue = useContentGen((s) => s.removeFromQueue)
   const updateBacklogItem = useContentGen((s) => s.updateBacklogItem)
   const selectBacklogItem = useContentGen((s) => s.selectBacklogItem)
@@ -72,8 +132,40 @@ export default function ContentGenPage() {
   )
 
   useEffect(() => {
-    void loadAll()
-  }, [loadAll])
+    if (activeTab === 'scripts') {
+      void loadScripts()
+      return
+    }
+
+    if (activeTab === 'strategy') {
+      void loadStrategy()
+      return
+    }
+
+    if (activeTab === 'queue') {
+      void loadPublishQueue()
+      return
+    }
+
+    if (activeTab === 'backlog') {
+      void loadBacklog()
+      return
+    }
+
+    void Promise.allSettled([
+      loadPipelines(),
+      loadScripts(),
+      loadPublishQueue(),
+      loadStrategy(),
+    ])
+  }, [
+    activeTab,
+    loadBacklog,
+    loadPipelines,
+    loadPublishQueue,
+    loadScripts,
+    loadStrategy,
+  ])
 
   useEffect(() => {
     const sourceSessionId = searchParams.get('sourceSession')

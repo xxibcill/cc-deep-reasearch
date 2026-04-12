@@ -1,28 +1,13 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { useParams } from 'next/navigation'
 import { StopCircle } from 'lucide-react'
 
 import { PipelineProgressTracker, type StageState } from '@/components/content-gen/pipeline-progress-tracker'
 import { StageResultPanel } from '@/components/content-gen/stage-result-panel'
 import { StageTraceSummary } from '@/components/content-gen/stage-trace-summary'
-import {
-  LoadStrategyPanel,
-  PlanOpportunityPanel,
-  BuildBacklogPanel,
-  ScoreIdeasPanel,
-  GenerateAnglesPanel,
-  BuildResearchPackPanel,
-  BuildArgumentMapPanel,
-  RunScriptingPanel,
-  VisualTranslationPanel,
-  ProductionBriefPanel,
-  PackagingPanel,
-  HumanQCPanel,
-  PublishQueuePanel,
-  PerformanceAnalysisPanel,
-} from '@/components/content-gen/stage-panels'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -40,6 +25,109 @@ function normalizeTraceState(status: string): Exclude<StageState, 'pending' | 'r
   }
   return 'completed'
 }
+
+function StagePanelLoading() {
+  return <p className="text-sm text-muted-foreground">Loading stage output...</p>
+}
+
+const LoadStrategyPanel = dynamic(
+  () =>
+    import('@/components/content-gen/stage-panels/load-strategy-panel').then(
+      (mod) => mod.LoadStrategyPanel,
+    ),
+  { ssr: false, loading: () => <StagePanelLoading /> },
+)
+const PlanOpportunityPanel = dynamic(
+  () =>
+    import('@/components/content-gen/stage-panels/plan-opportunity-panel').then(
+      (mod) => mod.PlanOpportunityPanel,
+    ),
+  { ssr: false, loading: () => <StagePanelLoading /> },
+)
+const BuildBacklogPanel = dynamic(
+  () =>
+    import('@/components/content-gen/stage-panels/build-backlog-panel').then(
+      (mod) => mod.BuildBacklogPanel,
+    ),
+  { ssr: false, loading: () => <StagePanelLoading /> },
+)
+const ScoreIdeasPanel = dynamic(
+  () =>
+    import('@/components/content-gen/stage-panels/score-ideas-panel').then(
+      (mod) => mod.ScoreIdeasPanel,
+    ),
+  { ssr: false, loading: () => <StagePanelLoading /> },
+)
+const GenerateAnglesPanel = dynamic(
+  () =>
+    import('@/components/content-gen/stage-panels/generate-angles-panel').then(
+      (mod) => mod.GenerateAnglesPanel,
+    ),
+  { ssr: false, loading: () => <StagePanelLoading /> },
+)
+const BuildResearchPackPanel = dynamic(
+  () =>
+    import('@/components/content-gen/stage-panels/build-research-pack-panel').then(
+      (mod) => mod.BuildResearchPackPanel,
+    ),
+  { ssr: false, loading: () => <StagePanelLoading /> },
+)
+const BuildArgumentMapPanel = dynamic(
+  () =>
+    import('@/components/content-gen/stage-panels/build-argument-map-panel').then(
+      (mod) => mod.BuildArgumentMapPanel,
+    ),
+  { ssr: false, loading: () => <StagePanelLoading /> },
+)
+const RunScriptingPanel = dynamic(
+  () =>
+    import('@/components/content-gen/stage-panels/run-scripting-panel').then(
+      (mod) => mod.RunScriptingPanel,
+    ),
+  { ssr: false, loading: () => <StagePanelLoading /> },
+)
+const VisualTranslationPanel = dynamic(
+  () =>
+    import('@/components/content-gen/stage-panels/visual-translation-panel').then(
+      (mod) => mod.VisualTranslationPanel,
+    ),
+  { ssr: false, loading: () => <StagePanelLoading /> },
+)
+const ProductionBriefPanel = dynamic(
+  () =>
+    import('@/components/content-gen/stage-panels/production-brief-panel').then(
+      (mod) => mod.ProductionBriefPanel,
+    ),
+  { ssr: false, loading: () => <StagePanelLoading /> },
+)
+const PackagingPanel = dynamic(
+  () =>
+    import('@/components/content-gen/stage-panels/packaging-panel').then(
+      (mod) => mod.PackagingPanel,
+    ),
+  { ssr: false, loading: () => <StagePanelLoading /> },
+)
+const HumanQCPanel = dynamic(
+  () =>
+    import('@/components/content-gen/stage-panels/human-qc-panel').then(
+      (mod) => mod.HumanQCPanel,
+    ),
+  { ssr: false, loading: () => <StagePanelLoading /> },
+)
+const PublishQueuePanel = dynamic(
+  () =>
+    import('@/components/content-gen/stage-panels/publish-queue-panel').then(
+      (mod) => mod.PublishQueuePanel,
+    ),
+  { ssr: false, loading: () => <StagePanelLoading /> },
+)
+const PerformanceAnalysisPanel = dynamic(
+  () =>
+    import('@/components/content-gen/stage-panels/performance-analysis-panel').then(
+      (mod) => mod.PerformanceAnalysisPanel,
+    ),
+  { ssr: false, loading: () => <StagePanelLoading /> },
+)
 
 const STAGE_PANEL_MAP: Record<
   PipelineStageName,

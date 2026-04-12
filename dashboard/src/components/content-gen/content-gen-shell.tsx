@@ -23,7 +23,9 @@ export function ContentGenShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  const loadAll = useContentGen((s) => s.loadAll)
+  const loadPipelines = useContentGen((s) => s.loadPipelines)
+  const loadScripts = useContentGen((s) => s.loadScripts)
+  const loadPublishQueue = useContentGen((s) => s.loadPublishQueue)
   const pipelines = useContentGen((s) => s.pipelines)
   const scripts = useContentGen((s) => s.scripts)
   const publishQueue = useContentGen((s) => s.publishQueue)
@@ -49,8 +51,12 @@ export function ContentGenShell({ children }: { children: React.ReactNode }) {
   })
 
   useEffect(() => {
-    loadAll()
-  }, [loadAll])
+    void Promise.allSettled([
+      loadPipelines(),
+      loadScripts(),
+      loadPublishQueue(),
+    ])
+  }, [loadPipelines, loadPublishQueue, loadScripts])
 
   const handleTabChange = (value: string) => {
     if (value === 'backlog') {
