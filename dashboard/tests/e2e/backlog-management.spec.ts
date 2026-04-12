@@ -268,6 +268,20 @@ test.describe('Backlog Management', () => {
     await expect(page.getByText('Sustainable packaging alternatives for direct-to-consumer brands')).toBeVisible()
   })
 
+  test('dedicated backlog page toggles between grid and list views', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.goto('/content-gen/backlog')
+
+    await expect(page.getByRole('button', { name: 'Grid' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByRole('columnheader', { name: 'Recommendation' })).toHaveCount(0)
+
+    await page.getByRole('button', { name: 'List' }).click()
+
+    await expect(page.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByRole('columnheader', { name: 'Recommendation' })).toBeVisible()
+  })
+
   test('select action marks item as selected and disables its button', async ({ page }) => {
     await setupBacklogMocks(page, [...mockBacklogItems])
 
