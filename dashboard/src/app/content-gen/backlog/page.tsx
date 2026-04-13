@@ -13,7 +13,9 @@ const BacklogPanel = dynamic(
   () => import('@/components/content-gen/backlog-panel').then((mod) => mod.BacklogPanel),
   {
     ssr: false,
-    loading: () => <div className="py-8 text-center text-sm text-muted-foreground">Loading backlog…</div>,
+    loading: () => (
+      <div className="py-8 text-center text-sm text-muted-foreground">Loading backlog…</div>
+    ),
   },
 )
 
@@ -56,11 +58,7 @@ export default function BacklogPage() {
     return (
       <div className="flex flex-col gap-4 lg:flex-row lg:gap-6 lg:items-start">
         {/* Chat panel takes full width on mobile, wider on desktop */}
-        <div className="w-full lg:w-[26rem] lg:shrink-0">
-          <div className="rounded-[1.15rem] border border-border/75 bg-card/62 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-            <BacklogChatPanel />
-          </div>
-        </div>
+
         {/* Empty state for backlog alongside chat */}
         <div className="flex-1">
           <EmptyState
@@ -75,13 +73,6 @@ export default function BacklogPage() {
 
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:gap-6 lg:items-start">
-      {/* Chat panel — narrower on desktop */}
-      <div className="w-full lg:w-[26rem] lg:shrink-0">
-        <div className="sticky top-4 rounded-[1.15rem] border border-border/75 bg-card/62 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-          <BacklogChatPanel />
-        </div>
-      </div>
-
       {/* Backlog panel */}
       <div className="flex-1 min-w-0">
         <BacklogPanel
