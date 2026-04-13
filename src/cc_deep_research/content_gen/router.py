@@ -14,10 +14,12 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from cc_deep_research.config import load_config
+from cc_deep_research.content_gen.agents.backlog_chat import BacklogChatAgent
 from cc_deep_research.content_gen.backlog_service import BacklogService
 from cc_deep_research.content_gen.models import (
     PIPELINE_STAGE_LABELS,
     PIPELINE_STAGES,
+    BacklogItem,
     ScriptingContext,
     ScriptingIterations,
     ScriptingIterationSummary,
@@ -87,6 +89,37 @@ class CreateBacklogItemRequest(BaseModel):
     problem: str = ""
     source_theme: str = ""
     selection_reasoning: str = ""
+
+
+class BacklogChatMessage(BaseModel):
+    """A single message in the backlog chat conversation."""
+
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class BacklogChatOperationInput(BaseModel):
+    """Operation proposed by the chat agent (used in apply request)."""
+
+    kind: Literal["update_item", "create_item"]
+    idea_id: str | None = None
+    reason: str = ""
+    fields: dict[str, Any] = Field(default_factory=dict)
+
+
+class BacklogChatRespondRequest(BaseModel):
+    """Request body for backlog-chat respond endpoint."""
+
+    messages: list[BacklogChatMessage] = Field(default_factory=list)
+    backlog_items: list[BacklogItem] = Field(default_factory=list)
+    strategy: dict[str, Any] | None = None
+    selected_idea_id: str | None = None
+
+
+class BacklogChatApplyRequest(BaseModel):
+    """Request body for backlog-chat apply endpoint."""
+
+    operations: list[BacklogChatOperationInput] = Field(default_factory=list)
 
 
 def _build_scripting_iterations(iter_state: Any) -> ScriptingIterations | None:
@@ -610,6 +643,85 @@ def register_content_gen_routes(
         if not removed:
             return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
         return JSONResponse(content={"removed": 1})
+
+    # ------------------------------------------------------------------
+    # Backlog chat
+    # ------------------------------------------------------------------
+
+    @app.post("/api/content-gen/backlog-chat/respond")
+    async def backlog_chat_respond(request: BacklogChatRespondRequest) -> JSONResponse:
+        """Generate a conversational response with optional backlog operations.
+
+        This endpoint is advisory only — it never writes to the backlog.
+        Use /apply to persist any proposed operations.
+        """
+        config = load_config()
+        service = BacklogService(config)
+
+        messages = [{"role": m.role, "content": m.content} for m in request.messages]
+        backlog_items = request.backlog_items if request.backlog_items else service.load().items
+
+        agent = BacklogChatAgent(config)
+        response = await agent.respond(
+            messages=messages,
+            backlog_items=backlog_items,
+            strategy=request.strategy,
+            selected_idea_id=request.selected_idea_id,
+        )
+
+        return JSONResponse(content=json.loads(response.model_dump_json()))
+
+    @app.post("/api/content-gen/backlog-chat/apply")
+    async def backlog_chat_apply(request: BacklogChatApplyRequest) -> JSONResponse:
+        """Apply a list of validated backlog operations.
+
+        This is the only write path for chat-proposed operations.
+        Returns structured errors instead of crashing on invalid operations.
+        """
+        config = load_config()
+        service = BacklogService(config)
+
+        applied = 0
+        items: list[BacklogItem] = []
+        errors: list[str] = []
+
+        # Reconstruct validated operations from input
+        from cc_deep_research.content_gen.agents.backlog_chat import (
+            BacklogChatOperation,
+            apply_operations,
+        )
+
+        operations = []
+        for op_input in request.operations:
+            kind = op_input.kind
+            if kind not in ("update_item", "create_item"):
+                errors.append(f"Unknown operation kind: {kind}")
+                continue
+            if kind == "update_item":
+                if not op_input.idea_id:
+                    errors.append("update_item requires idea_id")
+                    continue
+            if kind == "create_item":
+                if not op_input.fields.get("idea"):
+                    errors.append("create_item requires fields.idea")
+                    continue
+            operations.append(BacklogChatOperation(
+                kind=kind,
+                idea_id=op_input.idea_id,
+                reason=op_input.reason,
+                fields=op_input.fields,
+            ))
+
+        if operations:
+            applied, items, errors = await apply_operations(operations, service)
+
+        return JSONResponse(
+            content={
+                "applied": applied,
+                "items": [json.loads(item.model_dump_json()) for item in items],
+                "errors": errors,
+            }
+        )
 
     # ------------------------------------------------------------------
     # Strategy
