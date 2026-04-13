@@ -805,3 +805,44 @@ export type ContentGenWebSocketEvent =
 export interface ContentGenWebSocketMessage {
   type: 'ping' | 'get_pipeline_status';
 }
+
+// =============================================================================
+// Backlog Chat Types
+// =============================================================================
+
+export interface BacklogChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface BacklogChatOperation {
+  kind: 'update_item' | 'create_item';
+  idea_id?: string | null;
+  reason: string;
+  fields: Record<string, unknown>;
+}
+
+export interface BacklogChatRespondRequest {
+  messages: BacklogChatMessage[];
+  backlog_items: BacklogItem[];
+  strategy?: Record<string, unknown> | null;
+  selected_idea_id?: string | null;
+}
+
+export interface BacklogChatRespondResponse {
+  reply_markdown: string;
+  apply_ready: boolean;
+  warnings: string[];
+  operations: BacklogChatOperation[];
+  mentioned_idea_ids: string[];
+}
+
+export interface BacklogChatApplyRequest {
+  operations: BacklogChatOperation[];
+}
+
+export interface BacklogChatApplyResponse {
+  applied: number;
+  items: BacklogItem[];
+  errors: string[];
+}
