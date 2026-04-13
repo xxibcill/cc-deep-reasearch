@@ -1,7 +1,6 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import { BacklogChatPanel } from '@/components/content-gen/backlog-chat-panel'
 
 const BacklogChatPage = dynamic(
   () => import('@/components/content-gen/backlog-chat-panel').then((mod) => mod.BacklogChatPanel),
