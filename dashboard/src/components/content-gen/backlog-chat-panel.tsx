@@ -1,20 +1,15 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, AlertCircle, CheckCircle2, Loader2, Plus, Pencil, X } from 'lucide-react'
+import { Send, Bot, AlertCircle, CheckCircle2, Loader2, Plus, Pencil, X, ListChecks, Check } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { cn } from '@/lib/utils'
 import { backlogChatRespond, backlogChatApply } from '@/lib/content-gen-api'
-import type { BacklogChatMessage, BacklogChatOperation, BacklogItem } from '@/types/content-gen'
-
-interface BacklogChatPanelProps {
-  items: BacklogItem[]
-  selectedIdeaId?: string | null
-  onItemsChanged?: () => void
-}
+import useContentGen from '@/hooks/useContentGen'
+import type { BacklogChatMessage, BacklogChatOperation } from '@/types/content-gen'
 
 interface TranscriptEntry {
   id: string
@@ -22,7 +17,12 @@ interface TranscriptEntry {
   content: string
 }
 
-export function BacklogChatPanel({ items, selectedIdeaId, onItemsChanged }: BacklogChatPanelProps) {
+export function BacklogChatPanel() {
+  const backlog = useContentGen((s) => s.backlog)
+  const backlogLoading = useContentGen((s) => s.backlogLoading)
+  const backlogError = useContentGen((s) => s.error)
+  const loadBacklog = useContentGen((s) => s.loadBacklog)
+
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -32,6 +32,14 @@ export function BacklogChatPanel({ items, selectedIdeaId, onItemsChanged }: Back
   const [applyErrors, setApplyErrors] = useState<string[]>([])
   const transcriptEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  const selectedIdeaId = backlog.find((i) => i.status === 'selected')?.idea_id ?? null
+
+  useEffect(() => {
+    if (backlog.length === 0) {
+      void loadBacklog()
+    }
+  }, [backlog.length, loadBacklog])
 
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -63,7 +71,7 @@ export function BacklogChatPanel({ items, selectedIdeaId, onItemsChanged }: Back
     try {
       const response = await backlogChatRespond({
         messages: messagesForApi,
-        backlog_items: items,
+        backlog_items: backlog,
         selected_idea_id: selectedIdeaId,
       })
 
@@ -114,7 +122,7 @@ export function BacklogChatPanel({ items, selectedIdeaId, onItemsChanged }: Back
             }`,
           },
         ])
-        onItemsChanged?.()
+        void loadBacklog()
       }
     } catch (err) {
       setApplyErrors([err instanceof Error ? err.message : 'Apply failed.'])
@@ -137,21 +145,61 @@ export function BacklogChatPanel({ items, selectedIdeaId, onItemsChanged }: Back
     }
   }
 
+  const selectedItem = backlog.find((i) => i.status === 'selected')
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-3 pb-3 border-b border-border/60">
-        <div className="flex h-9 w-9 items-center justify-center rounded-[0.8rem] bg-primary/10 border border-primary/20">
-          <Bot className="h-4 w-4 text-primary" />
+      <div className="flex items-center justify-between pb-3 border-b border-border/60">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-[0.8rem] bg-primary/10 border border-primary/20">
+            <Bot className="h-4 w-4 text-primary" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-foreground">Backlog Assistant</p>
+            <p className="text-xs text-muted-foreground">Propose backlog changes</p>
+          </div>
         </div>
-        <div>
-          <p className="text-sm font-semibold text-foreground">Backlog Assistant</p>
-          <p className="text-xs text-muted-foreground">Propose backlog changes</p>
+
+        {/* Backlog context */}
+        <div className="flex items-center gap-2">
+          {backlogLoading ? (
+            <Badge variant="secondary" className="gap-1.5">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Loading backlog
+            </Badge>
+          ) : backlogError ? (
+            <Badge variant="destructive" className="gap-1">
+              <AlertCircle className="h-3 w-3" />
+              Backlog error
+            </Badge>
+          ) : (
+            <>
+              <Badge variant="outline" className="gap-1.5">
+                <ListChecks className="h-3 w-3" />
+                {backlog.length} item{backlog.length !== 1 ? 's' : ''}
+              </Badge>
+              {selectedItem && (
+                <Badge variant="default" className="gap-1.5 bg-primary/10 text-primary border-primary/20">
+                  <Check className="h-3 w-3" />
+                  {selectedItem.idea_id.slice(0, 8)}
+                </Badge>
+              )}
+            </>
+          )}
         </div>
       </div>
 
-      {/* Error banner */}
-      {error && (
+      {/* Backlog error banner */}
+      {backlogError && (
+        <Alert variant="destructive" className="mt-3">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>Failed to load backlog: {backlogError}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Chat error banner */}
+      {error && !backlogError && (
         <Alert variant="destructive" className="mt-3">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
