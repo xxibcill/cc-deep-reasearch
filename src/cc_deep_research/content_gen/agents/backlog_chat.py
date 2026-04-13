@@ -202,8 +202,11 @@ def _parse_chat_response(text: str) -> dict[str, Any]:
         }
 
     # Ensure required top-level keys exist
+    raw_reply = str(parsed.get("reply_markdown", "") or "I understand.")
+    if len(raw_reply) > 1000:
+        logger.warning("Backlog chat reply truncated from %d to 1000 chars", len(raw_reply))
     result: dict[str, Any] = {
-        "reply_markdown": str(parsed.get("reply_markdown", ""))[:1000] or "I understand.",
+        "reply_markdown": raw_reply[:1000],
         "apply_ready": bool(parsed.get("apply_ready", False)),
         "warnings": list(parsed.get("warnings", [])),
         "operations": list(parsed.get("operations", [])),

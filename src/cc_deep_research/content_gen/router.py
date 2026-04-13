@@ -228,7 +228,7 @@ def register_content_gen_routes(
             def _stage_completed(stage_idx: int, status: str, detail: str, stage_ctx) -> None:
                 # Update job registry with latest context after each stage
                 job_registry.update_context(job.pipeline_id, stage_ctx)
-                serialized_context = json.loads(stage_ctx.model_dump_json())
+                serialized_context = stage_ctx.model_dump(mode="json")
 
                 if status == "failed":
                     asyncio.get_running_loop().create_task(
@@ -392,7 +392,7 @@ def register_content_gen_routes(
             def _stage_completed(stage_idx: int, status: str, detail: str, stage_ctx) -> None:
                 # Update job registry with latest context after each stage
                 job_registry.update_context(new_job.pipeline_id, stage_ctx)
-                serialized_context = json.loads(stage_ctx.model_dump_json())
+                serialized_context = stage_ctx.model_dump(mode="json")
 
                 if status == "failed":
                     asyncio.get_running_loop().create_task(
