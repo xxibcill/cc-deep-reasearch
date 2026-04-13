@@ -145,7 +145,7 @@ export function BacklogItemForm({
   }
 
   const renderTrigger = () => {
-    if (trigger && isValidElement(trigger)) {
+    if (trigger && isValidElement(trigger) && typeof trigger.type !== 'string') {
       type TriggerProps = ComponentPropsWithRef<typeof trigger.type>
       const originalOnClick = (trigger.props as TriggerProps).onClick
 
