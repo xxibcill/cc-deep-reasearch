@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect } from 'react'
-import { Bot, AlertCircle, Loader2, ListChecks, Check, MessageSquare, ChevronRight, Sparkles } from 'lucide-react'
+import { useEffect, useMemo } from 'react'
+import { Bot, AlertCircle, Loader2, ListChecks, Check, MessageSquare, ChevronRight, Sparkles, AlertTriangle, Clock, TrendingUp } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -9,6 +9,96 @@ import { cn } from '@/lib/utils'
 import useContentGen from '@/hooks/useContentGen'
 import { statusBadgeVariant, recommendationBadgeVariant } from '@/components/content-gen/backlog-shared'
 import { ChatThread } from '@/components/content-gen/chat-thread'
+
+interface BacklogInsight {
+  id: string
+  icon: React.ReactNode
+  label: string
+  description: string
+  severity: 'info' | 'warning' | 'critical'
+}
+
+function deriveInsights(backlog: ReturnType<typeof useContentGen.getState>['backlog']): BacklogInsight[] {
+  const insights: BacklogInsight[] = []
+
+  // No selected item
+  const selectedCount = backlog.filter((i) => i.status === 'selected').length
+  if (backlog.length > 0 && selectedCount === 0) {
+    insights.push({
+      id: 'no-selection',
+      icon: <Sparkles className="h-3.5 w-3.5" />,
+      label: 'No item selected',
+      description: 'Select an item to focus the assistant context for editing decisions.',
+      severity: 'warning',
+    })
+  }
+
+  // Duplicate/near-duplicate idea themes
+  const ideasByTheme = new Map<string, number>()
+  for (const item of backlog) {
+    if (item.source_theme) {
+      ideasByTheme.set(item.source_theme, (ideasByTheme.get(item.source_theme) ?? 0) + 1)
+    }
+  }
+  for (const [theme, count] of ideasByTheme) {
+    if (count >= 3) {
+      insights.push({
+        id: `theme-concentration-${theme}`,
+        icon: <TrendingUp className="h-3.5 w-3.5" />,
+        label: `Theme concentration: ${theme}`,
+        description: `${count} items share this theme — consider diversifying.`,
+        severity: count >= 5 ? 'critical' : 'warning',
+      })
+    }
+  }
+
+  // Items missing evidence
+  const missingEvidence = backlog.filter((i) => !i.evidence && i.status !== 'archived')
+  if (missingEvidence.length > backlog.length * 0.5 && backlog.length >= 4) {
+    insights.push({
+      id: 'missing-evidence',
+      icon: <AlertTriangle className="h-3.5 w-3.5" />,
+      label: 'Weak evidence coverage',
+      description: `${missingEvidence.length} items lack supporting evidence — claims may be harder to defend.`,
+      severity: missingEvidence.length > backlog.length * 0.7 ? 'critical' : 'info',
+    })
+  }
+
+  // Category concentration
+  const cats = backlog.filter((i) => i.category).map((i) => i.category)
+  const catCounts = new Map<string, number>()
+  for (const c of cats) catCounts.set(c, (catCounts.get(c) ?? 0) + 1)
+  for (const [cat, count] of catCounts) {
+    if (count >= backlog.length * 0.6 && backlog.length >= 4) {
+      insights.push({
+        id: `category-concentration-${cat}`,
+        icon: <ListChecks className="h-3.5 w-3.5" />,
+        label: `Category imbalance: ${cat}`,
+        description: `${count} of ${backlog.length} items share this category — review for variety.`,
+        severity: 'info',
+      })
+      break
+    }
+  }
+
+  // Stale items (not updated in 30+ days)
+  const staleThreshold = Date.now() - 30 * 24 * 60 * 60 * 1000
+  const staleItems = backlog.filter((i) => {
+    if (!i.updated_at || i.status === 'archived') return false
+    return new Date(i.updated_at).getTime() < staleThreshold
+  })
+  if (staleItems.length >= 3) {
+    insights.push({
+      id: 'stale-items',
+      icon: <Clock className="h-3.5 w-3.5" />,
+      label: `${staleItems.length} stale items`,
+      description: 'These items have not been updated in over 30 days — review for relevance.',
+      severity: 'info',
+    })
+  }
+
+  return insights
+}
 
 interface ChatWorkspaceProps {
   className?: string
@@ -23,6 +113,15 @@ export function ChatWorkspace({ className }: ChatWorkspaceProps) {
   const selectedItem = backlog.find((i) => i.status === 'selected')
   const selectedItemCount = backlog.filter((i) => i.status === 'selected').length
   const selectedIdeaId = selectedItem?.idea_id ?? null
+
+  const insights = useMemo(() => deriveInsights(backlog), [backlog])
+
+  const starterPrompts = [
+    { label: 'Identify weak items', prompt: 'Identify items in the backlog that have weak evidence or thin justification.' },
+    { label: 'Spot duplicates', prompt: 'Check for duplicate or near-duplicate ideas in the backlog.' },
+    { label: 'Suggest reframes', prompt: 'Suggest higher-priority reframes for items that could be sharper.' },
+    { label: 'Strengthen angles', prompt: 'Suggest stronger proof angles or evidence for under-supported items.' },
+  ]
 
   useEffect(() => {
     if (backlog.length === 0) {
@@ -79,6 +178,50 @@ export function ChatWorkspace({ className }: ChatWorkspaceProps) {
             <AlertCircle className="h-4 w-4" />
             <AlertDescription className="text-xs">Failed to load backlog: {backlogError}</AlertDescription>
           </Alert>
+        )}
+
+        {/* Backlog insights */}
+        {insights.length > 0 && !backlogLoading && !backlogError && (
+          <div className="flex flex-wrap gap-2">
+            {insights.map((insight) => (
+              <div
+                key={insight.id}
+                className={cn(
+                  'flex items-center gap-2 rounded-[0.8rem] border px-3 py-1.5 text-xs',
+                  insight.severity === 'critical' && 'border-error/40 bg-error/5 text-error',
+                  insight.severity === 'warning' && 'border-warning/40 bg-warning/5 text-warning',
+                  insight.severity === 'info' && 'border-border/70 bg-card/60 text-muted-foreground',
+                )}
+              >
+                {insight.icon}
+                <span className="font-medium">{insight.label}</span>
+                <span className="opacity-80">{insight.description}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Starter prompts */}
+        {!backlogLoading && !backlogError && backlog.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            <span className="text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground/60 self-center">
+              Quick actions:
+            </span>
+            {starterPrompts.map((sp) => (
+              <button
+                key={sp.label}
+                type="button"
+                onClick={() => {
+                  // Fill the composer with the prompt text - ChatThread will be the one to handle
+                  // We dispatch a custom event that ChatThread listens to
+                  window.dispatchEvent(new CustomEvent('chat-fill-composer', { detail: sp.prompt }))
+                }}
+                className="rounded-[0.8rem] border border-border/70 bg-card/60 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors"
+              >
+                {sp.label}
+              </button>
+            ))}
+          </div>
         )}
       </div>
 
