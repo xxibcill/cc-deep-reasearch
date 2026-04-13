@@ -235,6 +235,7 @@ function makePipelineDetailResponse(): PipelineDetailResponse {
       unsafe_or_uncertain_claims: [],
       research_stop_reason: "Cached research pack was sufficient for this run.",
     },
+    argument_map: null,
     scripting: {
       raw_idea: "AI onboarding hook",
       research_context: "",

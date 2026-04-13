@@ -37,10 +37,6 @@ export default function BacklogPage() {
     }
   }, [backlog.length, loadBacklog])
 
-  const handleItemsChanged = () => {
-    void loadBacklog()
-  }
-
   if (backlogLoading) {
     return <div className="py-8 text-center text-sm text-muted-foreground">Loading backlog...</div>
   }
@@ -57,9 +53,6 @@ export default function BacklogPage() {
   if (backlog.length === 0) {
     return (
       <div className="flex flex-col gap-4 lg:flex-row lg:gap-6 lg:items-start">
-        {/* Chat panel takes full width on mobile, wider on desktop */}
-
-        {/* Empty state for backlog alongside chat */}
         <div className="flex-1">
           <EmptyState
             icon={List}
@@ -67,13 +60,15 @@ export default function BacklogPage() {
             description="Chat with the assistant to create your first item, or items will appear here once added through the research workflow."
           />
         </div>
+        <aside className="w-full shrink-0 lg:max-w-[26rem]">
+          <BacklogChatPanel />
+        </aside>
       </div>
     )
   }
 
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:gap-6 lg:items-start">
-      {/* Backlog panel */}
       <div className="flex-1 min-w-0">
         <BacklogPanel
           items={backlog}
@@ -87,6 +82,9 @@ export default function BacklogPage() {
           onCreate={createBacklogItem}
         />
       </div>
+      <aside className="w-full shrink-0 lg:max-w-[26rem]">
+        <BacklogChatPanel />
+      </aside>
     </div>
   )
 }

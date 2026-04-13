@@ -47,7 +47,14 @@ class BacklogStore:
         backlog = self.load()
         for item in backlog.items:
             if item.idea_id == idea_id:
-                updated = item.model_copy(update=patch)
+                unsupported_fields = sorted(set(patch) - set(BacklogItem.model_fields))
+                if unsupported_fields:
+                    raise ValueError(
+                        "Unsupported backlog fields: " + ", ".join(unsupported_fields)
+                    )
+                merged_item = item.model_dump(mode="python")
+                merged_item.update(patch)
+                updated = BacklogItem.model_validate(merged_item)
                 backlog.items = [updated if i.idea_id == idea_id else i for i in backlog.items]
                 self.save(backlog)
                 return updated

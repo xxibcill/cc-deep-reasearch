@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import type { MockBacklogItem } from './dashboard-mocks'
 
 const mockBacklogItems: MockBacklogItem[] = [
@@ -43,7 +43,7 @@ const mockBacklogItems: MockBacklogItem[] = [
 ]
 
 async function setupBacklogMocks(
-  page: Parameters<typeof test>[0] extends { page: infer P } ? P : never,
+  page: Page,
   backlogItems: MockBacklogItem[] = []
 ) {
   const createItem = (data: Record<string, unknown>): MockBacklogItem => {
@@ -118,9 +118,8 @@ async function setupBacklogMocks(
 
     // POST /api/content-gen/backlog - create item
     if (pathName === '/api/content-gen/backlog' && method === 'POST') {
-      const body = route.request().postDataBuffer
-        ? JSON.parse(route.request().postDataBuffer().toString())
-        : {}
+      const payload = route.request().postDataBuffer()
+      const body = payload ? JSON.parse(payload.toString()) : {}
       const newItem = createItem(body)
       items.push(newItem)
       await route.fulfill({
@@ -135,9 +134,8 @@ async function setupBacklogMocks(
     const patchMatch = pathName.match(/\/api\/content-gen\/backlog\/([^/]+)$/)
     if (patchMatch && method === 'PATCH') {
       const ideaId = patchMatch[1]
-      const body = route.request().postDataBuffer
-        ? JSON.parse(route.request().postDataBuffer().toString())
-        : {}
+      const payload = route.request().postDataBuffer()
+      const body = payload ? JSON.parse(payload.toString()) : {}
       const patchData = body.patch || {}
       const itemIndex = items.findIndex((item) => item.idea_id === ideaId)
       if (itemIndex === -1) {
@@ -922,11 +920,11 @@ test.describe('Backlog Chat Panel', () => {
   test('loading state shows while waiting for response', async ({ page }) => {
     await setupBacklogMocks(page, [...mockBacklogItems])
 
-    let respondResolve: (value: unknown) => void
+    let respondResolve: (() => void) | undefined
     await page.route('**/api/content-gen/backlog-chat/respond', async (route) => {
       // Don't resolve immediately to test loading state
       await new Promise<void>((resolve) => {
-        respondResolve = resolve as (value: unknown) => void
+        respondResolve = resolve
       })
       await route.fulfill({
         status: 200,
@@ -953,7 +951,7 @@ test.describe('Backlog Chat Panel', () => {
     await expect(page.getByRole('button', { name: 'Send' })).toBeDisabled()
 
     // Resolve the response
-    respondResolve!()
+    respondResolve?.()
 
     // Loading should disappear
     await expect(page.getByText('Thinking...')).not.toBeVisible()
