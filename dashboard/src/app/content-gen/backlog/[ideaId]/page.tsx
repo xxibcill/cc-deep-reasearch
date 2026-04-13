@@ -173,7 +173,11 @@ export default function BacklogDetailPage() {
             <div className="rounded-[0.95rem] border border-border/70 bg-background/45 px-4 py-3 text-right shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
               <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">Score</p>
               <p className="mt-1 font-mono text-2xl tabular-nums text-foreground">
-                {item.latest_score ?? item.priority_score ?? '—'}
+                {item.latest_score !== undefined || item.priority_score !== undefined ? (
+                  <span className="font-mono tabular-nums">{item.latest_score ?? item.priority_score}</span>
+                ) : (
+                  <span className="text-foreground/30">—</span>
+                )}
               </p>
             </div>
             <div className="rounded-[0.95rem] border border-border/70 bg-background/45 px-4 py-3 text-right shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">

@@ -294,7 +294,7 @@ test.describe('Backlog Management', () => {
     await selectButton.click()
 
     // Wait for the API call to complete
-    await page.waitForResponse('**/api/content-gen/backlog/item-001/select')
+    await page.waitForResponse(/\/api\/content-gen\/backlog\/item-001\/select/)
 
     // The button should now be disabled because item-001 is now selected
     await expect(selectButton).toBeDisabled()
@@ -603,7 +603,7 @@ test.describe('Backlog Detail Page', () => {
     await page.getByRole('button', { name: /Select item/i }).click()
 
     // Wait for the API call
-    await page.waitForResponse('**/api/content-gen/backlog/item-001/select')
+    await page.waitForResponse(/\/api\/content-gen\/backlog\/item-001\/select/)
 
     // Status should update to selected (check the select shows selected)
     await expect(page.locator('select').first().evaluate((el) => (el as HTMLSelectElement).value)).toBe('selected')

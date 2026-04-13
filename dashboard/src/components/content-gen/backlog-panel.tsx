@@ -262,7 +262,15 @@ export function BacklogPanel({
                 return (
                   <article
                     key={rowKey}
+                    role="button"
+                    tabIndex={0}
                     onClick={(e) => navigateToDetail(item.idea_id, e)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        router.push(`/content-gen/backlog/${item.idea_id}`)
+                      }
+                    }}
                     className="group relative cursor-pointer overflow-hidden rounded-[0.95rem] border border-border/75 bg-card/95 p-4 shadow-[0_18px_48px_rgba(0,0,0,0.18)] transition-all duration-200 hover:-translate-y-1 hover:border-primary/35 hover:shadow-[0_22px_60px_rgba(12,18,30,0.28)] motion-reduce:transform-none motion-reduce:transition-none"
                   >
                     <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/45 to-transparent opacity-60" />
@@ -290,7 +298,11 @@ export function BacklogPanel({
                           Score
                         </p>
                         <p className="mt-1 font-mono text-lg tabular-nums text-foreground">
-                          {item.latest_score ?? item.priority_score ?? '—'}
+                          {item.latest_score !== undefined || item.priority_score !== undefined ? (
+                            <span className="font-mono tabular-nums">{item.latest_score ?? item.priority_score}</span>
+                          ) : (
+                            <span className="text-foreground/30">—</span>
+                          )}
                         </p>
                       </div>
                     </div>
