@@ -58,11 +58,7 @@ export default function BacklogPage() {
         {/* Chat panel takes full width on mobile, wider on desktop */}
         <div className="w-full lg:w-[26rem] lg:shrink-0">
           <div className="rounded-[1.15rem] border border-border/75 bg-card/62 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-            <BacklogChatPanel
-              items={[]}
-              selectedIdeaId={null}
-              onItemsChanged={handleItemsChanged}
-            />
+            <BacklogChatPanel />
           </div>
         </div>
         {/* Empty state for backlog alongside chat */}
@@ -82,11 +78,7 @@ export default function BacklogPage() {
       {/* Chat panel — narrower on desktop */}
       <div className="w-full lg:w-[26rem] lg:shrink-0">
         <div className="sticky top-4 rounded-[1.15rem] border border-border/75 bg-card/62 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-          <BacklogChatPanel
-            items={backlog}
-            selectedIdeaId={backlog.find((i) => i.status === 'selected')?.idea_id ?? null}
-            onItemsChanged={handleItemsChanged}
-          />
+          <BacklogChatPanel />
         </div>
       </div>
 
