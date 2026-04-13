@@ -1,6 +1,7 @@
 'use client'
 
 import { cloneElement, isValidElement, useState } from 'react'
+import type { ComponentPropsWithRef } from 'react'
 import { Pencil, Plus } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -145,7 +146,8 @@ export function BacklogItemForm({
 
   const renderTrigger = () => {
     if (trigger && isValidElement(trigger)) {
-      const originalOnClick = (trigger.props as { onClick?: unknown }).onClick
+      type TriggerProps = ComponentPropsWithRef<typeof trigger.type>
+      const originalOnClick = (trigger.props as TriggerProps).onClick
 
       return cloneElement(trigger, {
         onClick: (event: React.MouseEvent<HTMLElement>) => {

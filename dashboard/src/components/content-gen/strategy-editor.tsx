@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, Save, Upload, Download, Copy, CheckCheck } from 'lucide-react'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -68,11 +68,14 @@ export function StrategyEditor() {
 
   const handleExport = () => {
     if (!strategy) return
+    const nicheSlug = strategy.niche
+      ? strategy.niche.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)
+      : 'strategy'
     const blob = new Blob([JSON.stringify(strategy, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `strategy-${Date.now()}.json`
+    a.download = `${nicheSlug}-${Date.now()}.json`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -191,7 +194,12 @@ export function StrategyEditor() {
                 } else {
                   try {
                     JSON.parse(val)
-                    setJsonValid(true)
+                    const parsed = JSON.parse(val) as StrategyMemory
+                    if (typeof parsed.niche !== 'string' && !Array.isArray(parsed.content_pillars)) {
+                      setJsonValid(false)
+                    } else {
+                      setJsonValid(true)
+                    }
                   } catch {
                     setJsonValid(false)
                   }
