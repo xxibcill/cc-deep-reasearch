@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, AlertCircle, Loader2, Plus, Pencil, X, CheckCircle2 } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { Send, Bot, AlertCircle, Loader2, Plus, Pencil, X, CheckCircle2, ChevronDown, ChevronUp, Trash2 } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -10,6 +11,8 @@ import { cn } from '@/lib/utils'
 import { backlogChatRespond, backlogChatApply } from '@/lib/content-gen-api'
 import useContentGen from '@/hooks/useContentGen'
 import type { BacklogChatMessage, BacklogChatOperation, BacklogItem } from '@/types/content-gen'
+
+const STORAGE_KEY = 'content-gen-chat-session'
 
 interface TranscriptEntry {
   id: string
@@ -22,6 +25,12 @@ interface ChatThreadProps {
   selectedIdeaId: string | null
   onPendingOpsChange?: (ops: BacklogChatOperation[]) => void
   onApplyErrorsChange?: (errors: string[]) => void
+}
+
+interface PersistedSession {
+  transcript: TranscriptEntry[]
+  draftInput: string
+  pendingOps: BacklogChatOperation[]
 }
 
 export function ChatThread({ backlog, selectedIdeaId, onPendingOpsChange, onApplyErrorsChange }: ChatThreadProps) {
@@ -40,6 +49,69 @@ export function ChatThread({ backlog, selectedIdeaId, onPendingOpsChange, onAppl
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [transcript, pendingOps])
+
+  // Persist session to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      const session: PersistedSession = {
+        transcript,
+        draftInput: input,
+        pendingOps,
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(session))
+    } catch {
+      // localStorage unavailable - ignore
+    }
+  }, [transcript, input, pendingOps])
+
+  // Restore session from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (stored) {
+        const session: PersistedSession = JSON.parse(stored)
+        if (session.transcript?.length) setTranscript(session.transcript)
+        if (session.draftInput) setInput(session.draftInput)
+        if (session.pendingOps?.length) setPendingOps(session.pendingOps)
+      }
+    } catch {
+      // Corrupt storage - ignore
+    }
+  }, [])
+
+  // Listen for fill-composer events from parent (e.g. starter prompts)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<string>
+      setInput(ce.detail)
+      inputRef.current?.focus()
+    }
+    window.addEventListener('chat-fill-composer', handler)
+    return () => window.removeEventListener('chat-fill-composer', handler)
+  }, [])
+
+  const clearSession = useCallback(() => {
+    setTranscript([])
+    setInput('')
+    setPendingOps([])
+    setApplyErrors([])
+    setError(null)
+    onPendingOpsChange?.([])
+    onApplyErrorsChange?.([])
+    try {
+      localStorage.removeItem(STORAGE_KEY)
+    } catch {
+      // ignore
+    }
+  }, [onPendingOpsChange, onApplyErrorsChange])
+
+  const dismissOp = useCallback((index: number) => {
+    setPendingOps((prev) => {
+      const updated = prev.filter((_, i) => i !== index)
+      onPendingOpsChange?.(updated)
+      return updated
+    })
+  }, [onPendingOpsChange])
 
   const sendMessage = async () => {
     const trimmed = input.trim()
@@ -186,7 +258,9 @@ export function ChatThread({ backlog, selectedIdeaId, onPendingOpsChange, onAppl
               <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground/70 block mb-1">
                 {entry.role === 'user' ? 'You' : 'Assistant'}
               </span>
-              <span className="whitespace-pre-wrap">{entry.content}</span>
+              <div className="prose prose-sm prose-invert max-w-none text-foreground/88">
+                <ReactMarkdown>{entry.content}</ReactMarkdown>
+              </div>
             </div>
           </div>
         ))}
@@ -206,40 +280,36 @@ export function ChatThread({ backlog, selectedIdeaId, onPendingOpsChange, onAppl
                 <CheckCircle2 className="h-4 w-4 text-primary" />
                 <span className="text-sm font-semibold text-foreground">Proposed changes</span>
               </div>
-              <button
-                onClick={clearProposal}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <X className="h-3 w-3" />
-                dismiss
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={clearSession}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  clear all
+                </button>
+                <button
+                  onClick={clearProposal}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X className="h-3 w-3" />
+                  dismiss
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-2 mb-4">
-              {pendingOps.map((op, i) => (
-                <div key={i} className="flex items-start gap-2 rounded-[0.72rem] bg-background/60 p-3 border border-border/50">
-                  <Badge variant="outline" className="shrink-0 mt-0.5 bg-primary/8 text-primary border-primary/20">
-                    {op.kind === 'create_item' ? (
-                      <><Plus className="h-3 w-3 mr-1" />create</>
-                    ) : (
-                      <><Pencil className="h-3 w-3 mr-1" />update</>
-                    )}
-                  </Badge>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-muted-foreground mb-1 line-clamp-2">{op.reason}</p>
-                    {op.kind === 'update_item' && op.idea_id && (
-                      <p className="text-xs font-mono text-muted-foreground/70 truncate">
-                        target: {op.idea_id.slice(0, 8)}
-                      </p>
-                    )}
-                    {Object.keys(op.fields).length > 0 && (
-                      <p className="text-xs text-muted-foreground/70 mt-1">
-                        fields: {Object.keys(op.fields).join(', ')}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ))}
+            <div className="space-y-3 mb-4">
+              {pendingOps.map((op, i) => {
+                const targetItem = op.idea_id ? backlog.find((b) => b.idea_id === op.idea_id) ?? null : null
+                return (
+                  <OperationCard
+                    key={i}
+                    op={op}
+                    targetItem={targetItem}
+                    onDismiss={() => dismissOp(i)}
+                  />
+                )
+              })}
             </div>
 
             {applyErrors.length > 0 && (
@@ -292,6 +362,127 @@ export function ChatThread({ backlog, selectedIdeaId, onPendingOpsChange, onAppl
           Enter to send &middot; Shift+Enter for newline
         </p>
       </div>
+    </div>
+  )
+}
+
+function OperationCard({
+  op,
+  targetItem,
+  onDismiss,
+}: {
+  op: BacklogChatOperation
+  targetItem: BacklogItem | null
+  onDismiss: () => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const changedFields = Object.keys(op.fields)
+  const isRisky =
+    op.kind === 'update_item' &&
+    (op.fields.status != null || op.fields.selection_reasoning != null)
+
+  return (
+    <div className={cn(
+      'rounded-[0.72rem] bg-background/60 border p-3',
+      isRisky ? 'border-warning/40 bg-warning/[0.03]' : 'border-border/50'
+    )}>
+      <div className="flex items-start gap-2">
+        <Badge
+          variant="outline"
+          className={cn(
+            'shrink-0 mt-0.5 bg-primary/8 text-primary border-primary/20',
+            isRisky && 'border-warning/40 text-warning bg-warning/8'
+          )}
+        >
+          {op.kind === 'create_item' ? (
+            <><Plus className="h-3 w-3 mr-1" />create</>
+          ) : (
+            <><Pencil className="h-3 w-3 mr-1" />update</>
+          )}
+        </Badge>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-muted-foreground mb-1 line-clamp-2">{op.reason}</p>
+          {op.kind === 'update_item' && op.idea_id && (
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-mono text-muted-foreground/70 truncate">
+                {op.idea_id.slice(0, 8)}
+              </p>
+              {targetItem && (
+                <span className="text-xs text-muted-foreground/50 truncate">
+                  {targetItem.idea.slice(0, 40)}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={onDismiss}
+            className="p-1 text-muted-foreground/50 hover:text-foreground transition-colors rounded"
+            title="Dismiss this operation"
+          >
+            <X className="h-3 w-3" />
+          </button>
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="p-1 text-muted-foreground/50 hover:text-foreground transition-colors rounded"
+            title={expanded ? 'Collapse' : 'Expand'}
+          >
+            {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+          </button>
+        </div>
+      </div>
+
+      {/* Compact field list */}
+      {!expanded && changedFields.length > 0 && (
+        <p className="text-xs text-muted-foreground/60 mt-1.5 pl-1">
+          {changedFields.join(', ')}
+        </p>
+      )}
+
+      {/* Expanded before/after diff */}
+      {expanded && changedFields.length > 0 && (
+        <div className="mt-3 space-y-2 pl-1">
+          {changedFields.map((field) => {
+            const current = targetItem ? String(targetItem[field as keyof BacklogItem] ?? '') : ''
+            const proposed = String(op.fields[field] ?? '')
+            const hasChange = current !== proposed
+            return (
+              <div key={field} className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-0.5 text-xs">
+                <p className="font-mono uppercase tracking-[0.1em] text-muted-foreground/70">
+                  {field}
+                </p>
+                <div className="text-muted-foreground/60">
+                  {hasChange ? (
+                    <div className="flex items-start gap-1.5">
+                      <span className="line-through opacity-50">{current || <em className="italic">empty</em>}</span>
+                      <span className="text-muted-foreground/30">→</span>
+                      <span className="text-foreground font-medium">{proposed}</span>
+                    </div>
+                  ) : (
+                    <span>{current || <em className="italic">empty</em>}</span>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+          {op.kind === 'create_item' && (
+            <div className="mt-1">
+              <p className="text-[10px] font-mono uppercase tracking-[0.1em] text-muted-foreground/50 mb-1">
+                New item preview
+              </p>
+              {changedFields.map((field) => (
+                <div key={field} className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-0.5 text-xs">
+                  <p className="font-mono uppercase tracking-[0.1em] text-muted-foreground/70">
+                    {field}
+                  </p>
+                  <p className="text-foreground/80">{String(op.fields[field] ?? '')}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
