@@ -393,3 +393,91 @@ def test_backlog_chat_apply_returns_structured_errors_on_partial_failure(
     # The error for the failed update should be reported
     assert len(data["errors"]) >= 1
     assert any("nonexistent-id" in err for err in data["errors"])
+
+
+def test_backlog_chat_apply_rejects_unsupported_or_invalid_update_fields(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """apply route should reject invalid update values and unsupported fields."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    client = TestClient(create_app())
+
+    create_resp = client.post(
+        "/api/content-gen/backlog",
+        json={"idea": "Original idea", "category": "trend-responsive"},
+    )
+    idea_id = create_resp.json()["idea_id"]
+
+    response = client.post(
+        "/api/content-gen/backlog-chat/apply",
+        json={
+            "operations": [
+                {
+                    "kind": "update_item",
+                    "idea_id": idea_id,
+                    "reason": "Inject unsupported and invalid fields",
+                    "fields": {"priority_score": "oops", "status": "bogus"},
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["applied"] == 0
+    assert len(data["errors"]) == 1
+    assert "status" in data["errors"][0]
+
+    list_resp = client.get("/api/content-gen/backlog")
+    item = next(item for item in list_resp.json()["items"] if item["idea_id"] == idea_id)
+    assert item["status"] == "backlog"
+    assert item["priority_score"] == 0.0
+
+
+def test_backlog_chat_apply_persists_all_supported_create_fields(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """apply route should persist the full supported create-item field set."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/content-gen/backlog-chat/apply",
+        json={
+            "operations": [
+                {
+                    "kind": "create_item",
+                    "reason": "Create a fully-populated item",
+                    "fields": {
+                        "idea": "New idea from chat",
+                        "category": "authority-building",
+                        "audience": "Beginner founders",
+                        "problem": "They copy advanced tactics too early.",
+                        "source": "operator interview",
+                        "why_now": "This week showed the same pattern again.",
+                        "potential_hook": "You are copying tactics two stages too early.",
+                        "content_type": "short video",
+                        "evidence": "Three customer calls",
+                        "risk_level": "high",
+                    },
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["applied"] == 1
+    assert data["errors"] == []
+
+    item = data["items"][0]
+    assert item["source"] == "operator interview"
+    assert item["why_now"] == "This week showed the same pattern again."
+    assert item["potential_hook"] == "You are copying tactics two stages too early."
+    assert item["content_type"] == "short video"
+    assert item["evidence"] == "Three customer calls"
+    assert item["risk_level"] == "high"

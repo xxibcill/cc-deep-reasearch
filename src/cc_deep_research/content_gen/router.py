@@ -16,8 +16,8 @@ from pydantic import BaseModel, Field
 from cc_deep_research.config import load_config
 from cc_deep_research.content_gen.agents.backlog_chat import (
     BacklogChatAgent,
-    BacklogChatOperation,
     apply_operations,
+    build_apply_operations,
 )
 from cc_deep_research.content_gen.backlog_service import BacklogService
 from cc_deep_research.content_gen.models import (
@@ -590,14 +590,17 @@ def register_content_gen_routes(
     async def create_backlog_item(request: CreateBacklogItemRequest) -> JSONResponse:
         config = load_config()
         service = BacklogService(config)
-        item = service.create_item(
-            idea=request.idea,
-            category=request.category,
-            audience=request.audience,
-            problem=request.problem,
-            source_theme=request.source_theme,
-            selection_reasoning=request.selection_reasoning,
-        )
+        try:
+            item = service.create_item(
+                idea=request.idea,
+                category=request.category,
+                audience=request.audience,
+                problem=request.problem,
+                source_theme=request.source_theme,
+                selection_reasoning=request.selection_reasoning,
+            )
+        except ValueError as exc:
+            return JSONResponse(status_code=400, content={"error": str(exc)})
         return JSONResponse(content=json.loads(item.model_dump_json()), status_code=201)
 
     @app.get("/api/content-gen/backlog")
@@ -616,7 +619,10 @@ def register_content_gen_routes(
     async def update_backlog_item(idea_id: str, request: UpdateBacklogItemRequest) -> JSONResponse:
         config = load_config()
         service = BacklogService(config)
-        updated = service.update_item(idea_id, request.patch)
+        try:
+            updated = service.update_item(idea_id, request.patch)
+        except ValueError as exc:
+            return JSONResponse(status_code=400, content={"error": str(exc)})
         if updated is None:
             return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
         return JSONResponse(content=json.loads(updated.model_dump_json()))
@@ -685,34 +691,16 @@ def register_content_gen_routes(
         config = load_config()
         service = BacklogService(config)
 
+        backlog_items = service.load().items
+        operations, errors = build_apply_operations(
+            [op.model_dump(mode="python") for op in request.operations],
+            backlog_items,
+        )
         applied = 0
         items: list[BacklogItem] = []
-        errors: list[str] = []
-
-        # Reconstruct validated operations from input
-        operations = []
-        for op_input in request.operations:
-            kind = op_input.kind
-            if kind not in ("update_item", "create_item"):
-                errors.append(f"Unknown operation kind: {kind}")
-                continue
-            if kind == "update_item":
-                if not op_input.idea_id:
-                    errors.append("update_item requires idea_id")
-                    continue
-            if kind == "create_item":
-                if not op_input.fields.get("idea"):
-                    errors.append("create_item requires fields.idea")
-                    continue
-            operations.append(BacklogChatOperation(
-                kind=kind,
-                idea_id=op_input.idea_id,
-                reason=op_input.reason,
-                fields=op_input.fields,
-            ))
-
         if operations:
-            applied, items, errors = await apply_operations(operations, service)
+            applied, items, apply_errors = await apply_operations(operations, service)
+            errors.extend(apply_errors)
 
         return JSONResponse(
             content={

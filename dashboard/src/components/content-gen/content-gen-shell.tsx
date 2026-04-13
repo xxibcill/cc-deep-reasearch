@@ -32,7 +32,8 @@ export function ContentGenShell({ children }: { children: React.ReactNode }) {
 
   const isPipelineDetail = pathname.match(/\/content-gen\/pipeline\/[^/]+$/)
   const isBacklogDetail = pathname.match(/\/content-gen\/backlog\/[^/]+$/)
-  const activeTab = searchParams.get('tab') || 'overview'
+  const isBacklogRoute = pathname.startsWith('/content-gen/backlog')
+  const activeTab = isBacklogRoute ? 'backlog' : searchParams.get('tab') || 'overview'
 
   const activePipelineCount = pipelines.filter(
     (p) => p.status === 'running' || p.status === 'queued',

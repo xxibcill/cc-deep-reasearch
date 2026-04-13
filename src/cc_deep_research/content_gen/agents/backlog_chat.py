@@ -265,6 +265,63 @@ def _validate_operations(
     return validated
 
 
+def build_apply_operations(
+    operations: list[dict[str, Any]],
+    backlog_items: list[BacklogItem],
+) -> tuple[list[BacklogChatOperation], list[str]]:
+    """Validate client-submitted operations using the same rules as LLM output."""
+    validated: list[BacklogChatOperation] = []
+    errors: list[str] = []
+    existing_ids = {item.idea_id for item in backlog_items}
+
+    for index, op in enumerate(operations, start=1):
+        if not isinstance(op, dict):
+            errors.append(f"Operation {index}: invalid payload")
+            continue
+
+        kind = op.get("kind", "")
+        if kind not in ("update_item", "create_item"):
+            errors.append(f"Operation {index}: unknown operation kind '{kind}'")
+            continue
+
+        if kind == "update_item":
+            idea_id = op.get("idea_id")
+            if not idea_id:
+                errors.append(f"Operation {index}: update_item requires idea_id")
+                continue
+            if idea_id not in existing_ids:
+                errors.append(f"Operation {index}: update_item {idea_id}: item not found")
+                continue
+            fields = _sanitize_update_fields(op.get("fields", {}))
+            if not fields:
+                errors.append(f"Operation {index}: update_item {idea_id}: no supported fields")
+                continue
+            validated.append(
+                BacklogChatOperation(
+                    kind="update_item",
+                    idea_id=idea_id,
+                    reason=str(op.get("reason", ""))[:500],
+                    fields=fields,
+                )
+            )
+            continue
+
+        fields = _sanitize_create_fields(op.get("fields", {}))
+        if not fields.get("idea"):
+            errors.append(f"Operation {index}: create_item requires fields.idea")
+            continue
+        validated.append(
+            BacklogChatOperation(
+                kind="create_item",
+                idea_id=None,
+                reason=str(op.get("reason", ""))[:500],
+                fields=fields,
+            )
+        )
+
+    return validated, errors
+
+
 def _sanitize_update_fields(fields: dict[str, Any]) -> dict[str, Any]:
     """Remove invalid fields from update operation."""
     from cc_deep_research.content_gen.prompts.backlog_chat import SUPPORTED_UPDATE_FIELDS
@@ -343,6 +400,12 @@ async def apply_operations(
                     category=op.fields.get("category", ""),
                     audience=op.fields.get("audience", ""),
                     problem=op.fields.get("problem", ""),
+                    source=op.fields.get("source", ""),
+                    why_now=op.fields.get("why_now", ""),
+                    potential_hook=op.fields.get("potential_hook", ""),
+                    content_type=op.fields.get("content_type", ""),
+                    evidence=op.fields.get("evidence", ""),
+                    risk_level=op.fields.get("risk_level", "medium"),
                 )
                 applied += 1
                 items.append(created)
