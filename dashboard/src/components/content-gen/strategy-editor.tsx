@@ -96,9 +96,9 @@ export function StrategyEditor() {
       setImportError(null)
       const parsed = JSON.parse(importText) as StrategyMemory
 
-      // Basic validation
+      // Basic validation - must have niche as string OR content_pillars as array
       if (typeof parsed.niche !== 'string' && !Array.isArray(parsed.content_pillars)) {
-        throw new Error('Invalid strategy format')
+        throw new Error('Invalid strategy format: must have niche (string) or content_pillars (array)')
       }
 
       setStrategy(parsed)
