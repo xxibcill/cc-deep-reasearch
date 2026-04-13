@@ -98,7 +98,7 @@ export function BacklogPanel({
             }
           }}
           disabled={!onSelect || busyKey === `${rowKey}-select`}
-          className="h-8 w-8 text-muted-foreground/60 transition-all duration-200 hover:-translate-y-0.5 hover:text-success motion-reduce:transform-none"
+          className="h-8 w-8 text-muted-foreground/60 transition-all duration-200 hover:-translate-y-0.5 hover:text-success motion-reduce:transition-none"
           title="Select item"
         >
           <CheckCircle2 className="h-3.5 w-3.5" />
@@ -113,7 +113,7 @@ export function BacklogPanel({
             }
           }}
           disabled={!onArchive || busyKey === `${rowKey}-archive`}
-          className="h-8 w-8 text-muted-foreground/60 transition-all duration-200 hover:-translate-y-0.5 hover:text-warning motion-reduce:transform-none"
+          className="h-8 w-8 text-muted-foreground/60 transition-all duration-200 hover:-translate-y-0.5 hover:text-warning motion-reduce:transition-none"
           title="Archive item"
         >
           <Archive className="h-3.5 w-3.5" />
@@ -128,7 +128,7 @@ export function BacklogPanel({
             }
           }}
           disabled={!onDelete || busyKey === `${rowKey}-delete`}
-          className="h-8 w-8 text-muted-foreground/60 transition-all duration-200 hover:-translate-y-0.5 hover:text-error motion-reduce:transform-none"
+          className="h-8 w-8 text-muted-foreground/60 transition-all duration-200 hover:-translate-y-0.5 hover:text-error motion-reduce:transition-none"
           title="Delete item"
         >
           <Trash2 className="h-3.5 w-3.5" />
@@ -337,9 +337,9 @@ export function BacklogPanel({
 
                     <div className="mt-4 flex flex-col gap-3 border-t border-border/70 pt-4">
                       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        {item.source_theme ? <span>Theme: {item.source_theme}</span> : null}
-                        {item.evidence ? <span>Evidence attached</span> : null}
-                        {item.potential_hook ? <span>Hook ready</span> : null}
+                        {item.source_theme && <span>Theme: {item.source_theme}</span>}
+                        {item.evidence && <span>Evidence attached</span>}
+                        {item.potential_hook && <span>Hook ready</span>}
                       </div>
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <NativeSelect
