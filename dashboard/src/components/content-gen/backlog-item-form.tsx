@@ -144,12 +144,14 @@ export function BacklogItemForm({
   }
 
   const renderTrigger = () => {
-    if (trigger && isValidElement<{ onClick?: React.MouseEventHandler<HTMLElement> }>(trigger)) {
-      const originalOnClick = trigger.props.onClick
+    if (trigger && isValidElement(trigger)) {
+      const originalOnClick = (trigger.props as { onClick?: unknown }).onClick
 
       return cloneElement(trigger, {
-        onClick: (event) => {
-          originalOnClick?.(event)
+        onClick: (event: React.MouseEvent<HTMLElement>) => {
+          if (typeof originalOnClick === 'function') {
+            ;(originalOnClick as (e: React.MouseEvent<HTMLElement>) => void)(event)
+          }
           if (!event.defaultPrevented) {
             handleOpenChange(true)
           }
