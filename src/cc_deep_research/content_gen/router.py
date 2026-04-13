@@ -14,7 +14,11 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from cc_deep_research.config import load_config
-from cc_deep_research.content_gen.agents.backlog_chat import BacklogChatAgent
+from cc_deep_research.content_gen.agents.backlog_chat import (
+    BacklogChatAgent,
+    BacklogChatOperation,
+    apply_operations,
+)
 from cc_deep_research.content_gen.backlog_service import BacklogService
 from cc_deep_research.content_gen.models import (
     PIPELINE_STAGE_LABELS,
@@ -686,11 +690,6 @@ def register_content_gen_routes(
         errors: list[str] = []
 
         # Reconstruct validated operations from input
-        from cc_deep_research.content_gen.agents.backlog_chat import (
-            BacklogChatOperation,
-            apply_operations,
-        )
-
         operations = []
         for op_input in request.operations:
             kind = op_input.kind

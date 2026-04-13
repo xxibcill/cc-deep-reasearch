@@ -120,7 +120,7 @@ class BacklogChatAgent:
 
             warnings = list(parsed.get("warnings", []))
             if operations:
-                _check_duplicate_warnings(operations, backlog_items, warnings)
+                warnings = _check_duplicate_warnings(operations, backlog_items, warnings)
 
             return BacklogChatResponse(
                 reply_markdown=parsed.get("reply_markdown", "I understand."),
@@ -288,19 +288,22 @@ def _sanitize_create_fields(fields: dict[str, Any]) -> dict[str, Any]:
 def _check_duplicate_warnings(
     operations: list[BacklogChatOperation],
     backlog_items: list[BacklogItem],
-    warnings: list[str],
-) -> None:
-    """Check for potential duplicate ideas and add warnings."""
+    existing_warnings: list[str],
+) -> list[str]:
+    """Check for potential duplicate ideas and return new warnings."""
     existing_by_idea: dict[str, BacklogItem] = {item.idea: item for item in backlog_items if item.idea}
+    new_warnings = list(existing_warnings)
 
     for op in operations:
         if op.kind == "create_item":
             new_idea = op.fields.get("idea", "").lower().strip()
             if new_idea in existing_by_idea:
                 existing = existing_by_idea[new_idea]
-                warnings.append(
+                new_warnings.append(
                     f"create_item may duplicate existing idea '{existing.idea_id}': {new_idea[:50]}"
                 )
+
+    return new_warnings
 
 
 # ---------------------------------------------------------------------------

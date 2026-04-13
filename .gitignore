@@ -26,6 +26,7 @@ Thumbs.db
 # Temporary files
 *.tmp
 .temp/
+pipeline_context*.json
 
 # Node modules (if using Node.js projects)
 node_modules/
