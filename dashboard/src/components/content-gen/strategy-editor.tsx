@@ -75,7 +75,7 @@ export function StrategyEditor() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${nicheSlug}-${Date.now()}.json`
+    a.download = `${nicheSlug}-${new Date().toISOString().slice(0, 10)}.json`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -99,9 +99,11 @@ export function StrategyEditor() {
       setImportError(null)
       const parsed = JSON.parse(importText) as StrategyMemory
 
-      // Basic validation - must have niche as string OR content_pillars as array
-      if (typeof parsed.niche !== 'string' && !Array.isArray(parsed.content_pillars)) {
-        throw new Error('Invalid strategy format: must have niche (string) or content_pillars (array)')
+      // Must have niche (string) with actual content OR content_pillars (array) with items
+      const hasNiche = typeof parsed.niche === 'string' && parsed.niche.trim().length > 0
+      const hasPillars = Array.isArray(parsed.content_pillars) && parsed.content_pillars.length > 0
+      if (!hasNiche && !hasPillars) {
+        throw new Error('Invalid strategy format: must have niche (non-empty string) or content_pillars (non-empty array)')
       }
 
       setStrategy(parsed)
@@ -195,7 +197,9 @@ export function StrategyEditor() {
                   try {
                     JSON.parse(val)
                     const parsed = JSON.parse(val) as StrategyMemory
-                    if (typeof parsed.niche !== 'string' && !Array.isArray(parsed.content_pillars)) {
+                    const hasNiche = typeof parsed.niche === 'string' && parsed.niche.trim().length > 0
+                    const hasPillars = Array.isArray(parsed.content_pillars) && parsed.content_pillars.length > 0
+                    if (!hasNiche && !hasPillars) {
                       setJsonValid(false)
                     } else {
                       setJsonValid(true)
