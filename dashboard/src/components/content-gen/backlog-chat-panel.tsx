@@ -53,11 +53,10 @@ export function BacklogChatPanel({ items, selectedIdeaId, onItemsChanged }: Back
     setPendingOps([])
     setApplyErrors([])
 
-    const messagesForApi: BacklogChatMessage[] = transcript.map((e) => ({
-      role: e.role,
-      content: e.content,
-    }))
-    messagesForApi.push({ role: 'user', content: trimmed })
+    const messagesForApi: BacklogChatMessage[] = [
+      ...transcript.map((e) => ({ role: e.role, content: e.content })),
+      { role: 'user', content: trimmed },
+    ]
 
     setLoading(true)
 
@@ -132,7 +131,9 @@ export function BacklogChatPanel({ items, selectedIdeaId, onItemsChanged }: Back
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      void sendMessage()
+      void sendMessage().catch((err) => {
+        console.error('sendMessage failed:', err)
+      })
     }
   }
 
