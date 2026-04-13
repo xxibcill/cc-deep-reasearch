@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from cc_deep_research.content_gen.models import BacklogItem
 from cc_deep_research.web_server import create_app
 
 
