@@ -684,3 +684,311 @@ test.describe('Backlog Detail Page', () => {
     await expect(page.getByText('3 items')).toBeVisible()
   })
 })
+
+test.describe('Backlog Chat Panel', () => {
+  test('chat panel renders on backlog page with items', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.goto('/content-gen/backlog')
+
+    // Chat panel should be visible
+    await expect(page.getByText('Backlog Assistant')).toBeVisible()
+    // Send button should be present
+    await expect(page.getByRole('button', { name: 'Send' })).toBeVisible()
+    // Empty state hint should appear
+    await expect(page.getByText(/Ask about gaps, priorities/)).toBeVisible()
+  })
+
+  test('chat panel shows empty state with chat when backlog is empty', async ({ page }) => {
+    await setupBacklogMocks(page, [])
+
+    await page.goto('/content-gen/backlog')
+
+    // Chat panel should be visible alongside empty state
+    await expect(page.getByText('Backlog Assistant')).toBeVisible()
+    await expect(page.getByText('No backlog items yet')).toBeVisible()
+  })
+
+  test('user can send a message and receive a response', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    // Mock the backlog-chat/respond endpoint
+    await page.route('**/api/content-gen/backlog-chat/respond', async (route) => {
+      const body = JSON.parse(route.request().postDataBuffer()!.toString())
+      // Verify request has correct shape
+      expect(body.messages).toBeDefined()
+      expect(body.backlog_items).toBeDefined()
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          reply_markdown: 'Here is what I would focus on first.',
+          apply_ready: true,
+          warnings: [],
+          operations: [
+            {
+              kind: 'update_item',
+              idea_id: 'item-001',
+              reason: 'Narrow the scope.',
+              fields: { idea: 'Updated idea via chat' },
+            },
+          ],
+          mentioned_idea_ids: ['item-001'],
+        }),
+      })
+    })
+
+    await page.goto('/content-gen/backlog')
+
+    // Type a message
+    const textarea = page.locator('textarea[placeholder*="Ask about"]')
+    await textarea.fill('Help me tighten this backlog.')
+
+    // Send it
+    await page.getByRole('button', { name: 'Send' }).click()
+
+    // Wait for response
+    await page.waitForResponse('**/api/content-gen/backlog-chat/respond')
+
+    // User message should appear in transcript
+    await expect(page.getByText('Help me tighten this backlog.')).toBeVisible()
+    // Assistant reply should appear
+    await expect(page.getByText('Here is what I would focus on first.')).toBeVisible()
+    // Proposal card should appear
+    await expect(page.getByText('Proposed changes')).toBeVisible()
+    await expect(page.getByText('Narrow the scope.')).toBeVisible()
+  })
+
+  test('proposal card shows apply button and dismiss', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.route('**/api/content-gen/backlog-chat/respond', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          reply_markdown: 'Consider updating item-001.',
+          apply_ready: true,
+          warnings: [],
+          operations: [
+            {
+              kind: 'update_item',
+              idea_id: 'item-001',
+              reason: 'Reframe for authority.',
+              fields: { idea: 'Reframed idea' },
+            },
+          ],
+          mentioned_idea_ids: ['item-001'],
+        }),
+      })
+    })
+
+    await page.goto('/content-gen/backlog')
+
+    // Send a message
+    await page.locator('textarea[placeholder*="Ask about"]').fill('Reframe item-001')
+    await page.getByRole('button', { name: 'Send' }).click()
+    await page.waitForResponse('**/api/content-gen/backlog-chat/respond')
+
+    // Apply changes button should be visible
+    await expect(page.getByRole('button', { name: 'Apply changes' })).toBeVisible()
+    // dismiss link should be visible
+    await expect(page.getByText('dismiss')).toBeVisible()
+
+    // Click dismiss
+    await page.getByText('dismiss').click()
+
+    // Proposal card should be gone
+    await expect(page.getByText('Proposed changes')).not.toBeVisible()
+  })
+
+  test('apply button calls apply endpoint and reloads backlog', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    // Mock respond endpoint
+    await page.route('**/api/content-gen/backlog-chat/respond', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          reply_markdown: 'I will create a new item.',
+          apply_ready: true,
+          warnings: [],
+          operations: [
+            {
+              kind: 'create_item',
+              reason: 'Fill a gap.',
+              fields: { idea: 'New chat idea', category: 'evergreen' },
+            },
+          ],
+          mentioned_idea_ids: [],
+        }),
+      })
+    })
+
+    // Mock apply endpoint
+    await page.route('**/api/content-gen/backlog-chat/apply', async (route) => {
+      const body = JSON.parse(route.request().postDataBuffer()!.toString())
+      expect(body.operations).toHaveLength(1)
+      expect(body.operations[0].kind).toBe('create_item')
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          applied: 1,
+          items: [
+            {
+              idea_id: 'chat-new-001',
+              idea: 'New chat idea',
+              category: 'evergreen',
+              status: 'backlog',
+            },
+          ],
+          errors: [],
+        }),
+      })
+    })
+
+    await page.goto('/content-gen/backlog')
+
+    // Send message
+    await page.locator('textarea[placeholder*="Ask about"]').fill('Add a new evergreen idea')
+    await page.getByRole('button', { name: 'Send' }).click()
+    await page.waitForResponse('**/api/content-gen/backlog-chat/respond')
+
+    // Apply changes
+    await page.getByRole('button', { name: 'Apply changes' }).click()
+    await page.waitForResponse('**/api/content-gen/backlog-chat/apply')
+
+    // After apply, the proposal should be cleared and backlog should reload
+    await expect(page.getByText('Proposed changes')).not.toBeVisible()
+    // The item count should update (now 4 items)
+    await expect(page.getByText('4 items')).toBeVisible()
+  })
+
+  test('apply shows inline errors on failure', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.route('**/api/content-gen/backlog-chat/respond', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          reply_markdown: 'Applying.',
+          apply_ready: true,
+          warnings: [],
+          operations: [
+            {
+              kind: 'update_item',
+              idea_id: 'item-001',
+              reason: 'Test',
+              fields: { idea: 'Updated' },
+            },
+          ],
+          mentioned_idea_ids: ['item-001'],
+        }),
+      })
+    })
+
+    await page.route('**/api/content-gen/backlog-chat/apply', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          applied: 0,
+          items: [],
+          errors: ['update_item item-001: internal error'],
+        }),
+      })
+    })
+
+    await page.goto('/content-gen/backlog')
+
+    // Send message and apply
+    await page.locator('textarea[placeholder*="Ask about"]').fill('Update item-001')
+    await page.getByRole('button', { name: 'Send' }).click()
+    await page.waitForResponse('**/api/content-gen/backlog-chat/respond')
+    await page.getByRole('button', { name: 'Apply changes' }).click()
+    await page.waitForResponse('**/api/content-gen/backlog-chat/apply')
+
+    // Error should appear inline
+    await expect(page.getByText(/update_item item-001: internal error/)).toBeVisible()
+    // Transcript should be preserved
+    await expect(page.getByText('Update item-001')).toBeVisible()
+  })
+
+  test('loading state shows while waiting for response', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    let respondResolve: (value: unknown) => void
+    await page.route('**/api/content-gen/backlog-chat/respond', async (route) => {
+      // Don't resolve immediately to test loading state
+      await new Promise<void>((resolve) => {
+        respondResolve = resolve as (value: unknown) => void
+      })
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          reply_markdown: 'Done.',
+          apply_ready: false,
+          warnings: [],
+          operations: [],
+          mentioned_idea_ids: [],
+        }),
+      })
+    })
+
+    await page.goto('/content-gen/backlog')
+
+    // Send message
+    await page.locator('textarea[placeholder*="Ask about"]').fill('Wait for me')
+    await page.getByRole('button', { name: 'Send' }).click()
+
+    // Loading spinner should appear
+    await expect(page.getByText('Thinking...')).toBeVisible()
+    // Send button should be disabled
+    await expect(page.getByRole('button', { name: 'Send' })).toBeDisabled()
+
+    // Resolve the response
+    respondResolve!()
+
+    // Loading should disappear
+    await expect(page.getByText('Thinking...')).not.toBeVisible()
+  })
+
+  test('warnings from respond are shown inline', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.route('**/api/content-gen/backlog-chat/respond', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          reply_markdown: 'Watch out.',
+          apply_ready: true,
+          warnings: ['This may duplicate an existing idea.'],
+          operations: [
+            {
+              kind: 'create_item',
+              reason: 'New idea.',
+              fields: { idea: 'Same as existing' },
+            },
+          ],
+          mentioned_idea_ids: [],
+        }),
+      })
+    })
+
+    await page.goto('/content-gen/backlog')
+
+    await page.locator('textarea[placeholder*="Ask about"]').fill('Add another idea')
+    await page.getByRole('button', { name: 'Send' }).click()
+    await page.waitForResponse('**/api/content-gen/backlog-chat/respond')
+
+    // Warning should appear
+    await expect(page.getByText('This may duplicate an existing idea.')).toBeVisible()
+  })
+})
