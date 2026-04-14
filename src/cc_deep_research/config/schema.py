@@ -334,15 +334,9 @@ class LLMConfig(BaseModel):
                     and self.openrouter.enabled
                     and self.openrouter.get_api_keys()
                 )
+                or (name == "cerebras" and self.cerebras.enabled and self.cerebras.get_api_keys())
                 or (
-                    name == "cerebras"
-                    and self.cerebras.enabled
-                    and self.cerebras.get_api_keys()
-                )
-                or (
-                    name == "anthropic"
-                    and self.anthropic.enabled
-                    and self.anthropic.get_api_keys()
+                    name == "anthropic" and self.anthropic.enabled and self.anthropic.get_api_keys()
                 )
                 or name == "heuristic"
             )
@@ -378,9 +372,11 @@ class ContentGenConfig(BaseModel):
     convergence_threshold: float = Field(default=0.05, ge=0.0, le=0.2)
 
     # Persistence backend
-    # When True, use SQLite-backed store for safe concurrent access.
-    # When False (default), use YAML store for backward compatibility.
-    use_sqlite: bool = False
+    # When True (default), use SQLite-backed store for safe concurrent access.
+    # When False, use YAML store for backward compatibility.
+    # SQLite is recommended for heavier AI-assisted usage with batch operations,
+    # concurrent sessions, or background workflows.
+    use_sqlite: bool = True
 
     # Maintenance scheduler
     # How often background maintenance jobs run, in hours (0 = disabled).

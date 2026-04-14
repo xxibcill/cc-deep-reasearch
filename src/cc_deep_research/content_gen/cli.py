@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import click
 
 from cc_deep_research.config import load_config
-from cc_deep_research.content_gen.storage import ScriptingStore
+from cc_deep_research.content_gen.storage import AuditStore, ScriptingStore
 
 if TYPE_CHECKING:
     from cc_deep_research.content_gen.models import (
@@ -660,12 +660,11 @@ def register_content_gen_commands(cli: click.Group) -> None:
                     click.echo(f"Running {total}-step pipeline...\n")
                 if config.content_gen.enable_iterative_mode and not no_iterate:
                     result_ctx, iter_state = await orch.run_scripting_iterative(
-                        idea, progress_callback=progress  # type: ignore[arg-type]
+                        idea,
+                        progress_callback=progress,  # type: ignore[arg-type]
                     )
                     if not quiet and iter_state.current_iteration > 1:
-                        click.echo(
-                            f"\nCompleted in {iter_state.current_iteration} iterations"
-                        )
+                        click.echo(f"\nCompleted in {iter_state.current_iteration} iterations")
                         if iter_state.is_converged:
                             click.echo(f"Convergence: {iter_state.convergence_reason}")
                     return result_ctx
@@ -732,9 +731,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
 
         click.echo(f"Saved scripting runs in {store.path}:")
         for run in runs:
-            click.echo(
-                f"  {run.run_id} | {run.saved_at} | {run.word_count} words | {run.raw_idea}"
-            )
+            click.echo(f"  {run.run_id} | {run.saved_at} | {run.word_count} words | {run.raw_idea}")
 
     @scripts.command("show")
     @click.option("--run-id", default=None, help="Saved run id")
@@ -812,7 +809,9 @@ def register_content_gen_commands(cli: click.Group) -> None:
             if idea:
                 selected_item = None
                 if ctx.backlog is not None:
-                    selected_idea_id = ctx.selected_idea_id or (ctx.scoring.selected_idea_id if ctx.scoring else "")
+                    selected_idea_id = ctx.selected_idea_id or (
+                        ctx.scoring.selected_idea_id if ctx.scoring else ""
+                    )
                     selected_item = next(
                         (item for item in ctx.backlog.items if item.idea_id == selected_idea_id),
                         None,
@@ -838,14 +837,18 @@ def register_content_gen_commands(cli: click.Group) -> None:
                     selected_idea_id=seeded_item.idea_id,
                     selection_reasoning="Seeded directly from --idea.",
                     active_candidates=[
-                        PipelineCandidate(idea_id=seeded_item.idea_id, role="primary", status="selected")
+                        PipelineCandidate(
+                            idea_id=seeded_item.idea_id, role="primary", status="selected"
+                        )
                     ],
                 ),
                 shortlist=[seeded_item.idea_id],
                 selected_idea_id=seeded_item.idea_id,
                 selection_reasoning="Seeded directly from --idea.",
                 active_candidates=[
-                    PipelineCandidate(idea_id=seeded_item.idea_id, role="primary", status="selected")
+                    PipelineCandidate(
+                        idea_id=seeded_item.idea_id, role="primary", status="selected"
+                    )
                 ],
             )
             bypass_ideation = True
@@ -960,6 +963,208 @@ def register_content_gen_commands(cli: click.Group) -> None:
             Path(output).write_text(final)
             if not quiet:
                 click.echo(f"Script saved to: {output}")
+
+    # ------------------------------------------------------------------
+    # Audit commands
+    # ------------------------------------------------------------------
+
+    @content_gen.group()
+    def audit() -> None:
+        """Inspect AI proposal history and governance audit trail."""
+
+    @audit.command()
+    @click.option("--limit", type=int, default=50, help="Number of entries to show")
+    @click.option("--event-type", help="Filter by event type (e.g., proposal_created)")
+    @click.option("--actor", help="Filter by actor (operator, ai_proposal, maintenance)")
+    def audit_list(limit: int, event_type: str | None, actor: str | None) -> None:
+        """Show recent audit entries."""
+        from cc_deep_research.content_gen.storage import AuditActor, AuditEventType
+
+        store = AuditStore()
+        try:
+            evt_filter = AuditEventType(event_type) if event_type else None
+        except ValueError:
+            click.echo(f"Unknown event type: {event_type}")
+            return
+        try:
+            actor_filter = AuditActor(actor) if actor else None
+        except ValueError:
+            click.echo(f"Unknown actor: {actor}")
+            return
+
+        entries = store.load_entries(event_type=evt_filter, actor=actor_filter, limit=limit)
+        if not entries:
+            click.echo("No audit entries found.")
+            return
+
+        click.echo(f"Audit log: {store.path}")
+        click.echo(f"Showing {len(entries)} entries:\n")
+        for e in entries:
+            click.echo(f"  [{e.timestamp}] {e.event_type.value}")
+            click.echo(f"    Actor: {e.actor.value} ({e.actor_label})")
+            if e.idea_id:
+                click.echo(f"    Item: {e.idea_id}")
+            if e.proposal_id:
+                click.echo(f"    Proposal: {e.proposal_id}")
+            if e.description:
+                click.echo(f"    {e.description}")
+            click.echo(f"    Outcome: {e.outcome}")
+            click.echo()
+
+    @audit.command()
+    @click.option("--idea-id", required=True, help="Filter by idea ID")
+    @click.option("--limit", type=int, default=20, help="Number of entries to show")
+    def audit_show(idea_id: str, limit: int) -> None:
+        """Show audit history for a specific backlog item."""
+        store = AuditStore()
+        entries = store.load_entries(idea_id=idea_id, limit=limit)
+        if not entries:
+            click.echo(f"No audit entries found for item: {idea_id}")
+            return
+
+        click.echo(f"Audit history for {idea_id} ({len(entries)} entries):\n")
+        for e in entries:
+            click.echo(f"  [{e.timestamp}] {e.event_type.value}")
+            click.echo(f"    Actor: {e.actor.value} ({e.actor_label})")
+            if e.description:
+                click.echo(f"    {e.description}")
+            click.echo(f"    Outcome: {e.outcome}")
+            click.echo()
+
+    # ------------------------------------------------------------------
+    # Maintenance commands
+    # ------------------------------------------------------------------
+
+    @content_gen.group()
+    def maintenance() -> None:
+        """Manage background maintenance workflows and proposals."""
+
+    @maintenance.command()
+    @click.option(
+        "--status", help="Filter by status (pending, approved, rejected, applied, expired)"
+    )
+    @click.option(
+        "--job-type",
+        help="Filter by job type (stale_item_review, gap_summary, duplicate_watchlist, rescoring_recommend)",
+    )
+    @click.option("--limit", type=int, default=50, help="Number of proposals to show")
+    def maintenance_list(status: str | None, job_type: str | None, limit: int) -> None:
+        """List maintenance proposals."""
+        from cc_deep_research.content_gen.maintenance_workflow import (
+            MaintenanceJobType,
+            MaintenanceProposalStatus,
+            MaintenanceStore,
+        )
+
+        store = MaintenanceStore()
+        try:
+            status_filter = MaintenanceProposalStatus(status) if status else None
+        except ValueError:
+            click.echo(f"Unknown status: {status}")
+            return
+        try:
+            job_filter = MaintenanceJobType(job_type) if job_type else None
+        except ValueError:
+            click.echo(f"Unknown job type: {job_type}")
+            return
+
+        proposals = store.load_proposals(status=status_filter, job_type=job_filter, limit=limit)
+        if not proposals:
+            click.echo("No maintenance proposals found.")
+            return
+
+        click.echo(f"Proposals: {store._proposals_path}")
+        click.echo(f"Showing {len(proposals)} proposals:\n")
+        for p in proposals:
+            click.echo(f"  [{p.status.value}] {p.title}")
+            click.echo(f"    Job: {p.job_type.value} | Priority: {p.priority}")
+            click.echo(f"    ID: {p.proposal_id} | Created: {p.created_at}")
+            if p.affected_idea_ids:
+                click.echo(f"    Items: {', '.join(p.affected_idea_ids[:5])}")
+            if p.description:
+                click.echo(f"    {p.description[:100]}...")
+            if p.reviewed_by:
+                click.echo(f"    Reviewed by: {p.reviewed_by} at {p.reviewed_at}")
+            click.echo()
+
+    @maintenance.command()
+    @click.option(
+        "--job-type",
+        required=True,
+        help="Job type to run (stale_item_review, gap_summary, duplicate_watchlist, rescoring_recommend)",
+    )
+    def maintenance_run(job_type: str) -> None:
+        """Trigger a maintenance job immediately."""
+        from cc_deep_research.content_gen.maintenance_workflow import (
+            MaintenanceJobType,
+            MaintenanceScheduler,
+        )
+
+        try:
+            jt = MaintenanceJobType(job_type)
+        except ValueError:
+            click.echo(f"Unknown job type: {job_type}")
+            click.echo(
+                "Valid types: stale_item_review, gap_summary, duplicate_watchlist, rescoring_recommend"
+            )
+            return
+
+        config = load_config()
+        scheduler = MaintenanceScheduler(config=config)
+        click.echo(f"Running maintenance job: {jt.value}...")
+        run = scheduler.trigger_job(jt)
+        click.echo(f"Job completed: {run.outcome}")
+        click.echo(f"Proposals generated: {run.proposals_count}")
+        click.echo(f"Duration: {run.completed_at}")
+
+    @maintenance.command()
+    @click.option("--proposal-id", required=True, help="Proposal ID to resolve")
+    @click.option(
+        "--approve",
+        "decision",
+        flag_value="approved",
+        default=True,
+        help="Approve the proposal (default)",
+    )
+    @click.option("--reject", "decision", flag_value="rejected", help="Reject the proposal")
+    @click.option("--by", "reviewed_by", default="operator", help="Reviewer identity")
+    def maintenance_resolve(proposal_id: str, decision: str, reviewed_by: str) -> None:
+        """Resolve (approve or reject) a maintenance proposal."""
+        from cc_deep_research.content_gen.maintenance_workflow import MaintenanceStore
+
+        if decision is None:
+            decision = "approved"
+
+        store = MaintenanceStore()
+        proposal = store.resolve_proposal(proposal_id, decision, reviewed_by=reviewed_by)
+        if proposal is None:
+            click.echo(f"Proposal not found: {proposal_id}")
+            return
+
+        click.echo(f"Proposal {proposal_id} {decision}")
+        click.echo(f"  Title: {proposal.title}")
+        click.echo(f"  Reviewed by: {proposal.reviewed_by} at {proposal.reviewed_at}")
+
+    @maintenance.command()
+    @click.option("--limit", type=int, default=20, help="Number of runs to show")
+    def maintenance_runs(limit: int) -> None:
+        """Show recent maintenance run history."""
+        from cc_deep_research.content_gen.maintenance_workflow import MaintenanceStore
+
+        store = MaintenanceStore()
+        runs = store.load_runs(limit=limit)
+        if not runs:
+            click.echo("No maintenance runs found.")
+            return
+
+        click.echo(f"Maintenance runs history ({len(runs)} entries):\n")
+        for r in runs:
+            click.echo(f"  [{r.outcome}] {r.job_type.value}")
+            click.echo(f"    Run: {r.run_id} | Started: {r.started_at}")
+            click.echo(f"    Proposals: {r.proposals_count} | Completed: {r.completed_at}")
+            if r.error:
+                click.echo(f"    Error: {r.error[:100]}...")
+            click.echo()
 
 
 def _auto_save_failed_context(
