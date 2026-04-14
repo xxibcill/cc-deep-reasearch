@@ -118,6 +118,7 @@ class BacklogChatRespondRequest(BaseModel):
     backlog_items: list[BacklogItem] = Field(default_factory=list)
     strategy: dict[str, Any] | None = None
     selected_idea_id: str | None = None
+    mode: Literal["conversation", "edit"] = "edit"
 
 
 class BacklogChatApplyRequest(BaseModel):
@@ -677,6 +678,7 @@ def register_content_gen_routes(
             backlog_items=backlog_items,
             strategy=request.strategy,
             selected_idea_id=request.selected_idea_id,
+            mode=request.mode,
         )
 
         return JSONResponse(content=json.loads(response.model_dump_json()))

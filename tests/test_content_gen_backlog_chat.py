@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -22,6 +24,7 @@ class _FakeBacklogChatAgent:
         *,
         strategy=None,
         selected_idea_id=None,
+        mode="edit",
     ):
         self.call_count += 1
         return self._response
@@ -52,6 +55,7 @@ def test_backlog_chat_respond_returns_proposal_from_mocked_llm(
         *,
         strategy=None,
         selected_idea_id=None,
+        mode="edit",
     ):
         from cc_deep_research.content_gen.agents.backlog_chat import BacklogChatResponse
 
@@ -126,6 +130,7 @@ def test_backlog_chat_respond_falls_back_safely_on_malformed_model_output(
         *,
         strategy=None,
         selected_idea_id=None,
+        mode="edit",
     ):
         # Simulate the agent returning a safe fallback response
         from cc_deep_research.content_gen.agents.backlog_chat import BacklogChatResponse
@@ -158,6 +163,99 @@ def test_backlog_chat_respond_falls_back_safely_on_malformed_model_output(
     assert data["apply_ready"] is False
     assert data["operations"] == []
     assert len(data["warnings"]) > 0
+
+
+def test_backlog_chat_respond_passes_conversation_mode(
+    monkeypatch,
+    tmp_path,
+):
+    """respond route should pass conversation mode through to the agent."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    from cc_deep_research.content_gen.agents.backlog_chat import BacklogChatAgent
+
+    observed: dict[str, str] = {}
+
+    async def fake_respond(
+        self,
+        messages,
+        backlog_items,
+        *,
+        strategy=None,
+        selected_idea_id=None,
+        mode="edit",
+    ):
+        from cc_deep_research.content_gen.agents.backlog_chat import BacklogChatResponse
+
+        observed["mode"] = mode
+        return BacklogChatResponse(
+            reply_markdown="Tell me more about the audience and outcome you want.",
+            apply_ready=False,
+            warnings=[],
+            operations=[],
+            mentioned_idea_ids=[],
+        )
+
+    monkeypatch.setattr(BacklogChatAgent, "respond", fake_respond)
+
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/content-gen/backlog-chat/respond",
+        json={
+            "messages": [{"role": "user", "content": "hi"}],
+            "backlog_items": [],
+            "strategy": None,
+            "selected_idea_id": None,
+            "mode": "conversation",
+        },
+    )
+
+    assert response.status_code == 200
+    assert observed["mode"] == "conversation"
+    assert response.json()["operations"] == []
+
+
+@pytest.mark.asyncio
+async def test_backlog_chat_agent_drops_operations_in_conversation_mode(
+    monkeypatch,
+    tmp_path,
+):
+    """conversation mode should never surface proposed mutations."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    from cc_deep_research.content_gen.agents.backlog_chat import BacklogChatAgent
+    from cc_deep_research.content_gen.models import BacklogItem
+
+    async def fake_call_llm(self, system_prompt, user_prompt, *, temperature=0.5):
+        return json.dumps(
+            {
+                "reply_markdown": "We should narrow the audience before we edit the backlog.",
+                "apply_ready": True,
+                "warnings": [],
+                "operations": [
+                    {
+                        "kind": "update_item",
+                        "idea_id": "item-001",
+                        "reason": "Too broad",
+                        "fields": {"audience": "Early-stage founders"},
+                    }
+                ],
+                "mentioned_idea_ids": ["item-001"],
+            }
+        )
+
+    monkeypatch.setattr(BacklogChatAgent, "_call_llm", fake_call_llm)
+
+    agent = BacklogChatAgent()
+    response = await agent.respond(
+        messages=[{"role": "user", "content": "hi"}],
+        backlog_items=[BacklogItem(idea_id="item-001", idea="AI coding assistants")],
+        mode="conversation",
+    )
+
+    assert response.apply_ready is False
+    assert response.operations == []
 
 
 # ---------------------------------------------------------------------------
