@@ -815,6 +815,8 @@ export interface BacklogChatMessage {
   content: string;
 }
 
+export type BacklogChatRespondMode = 'conversation' | 'edit';
+
 export interface BacklogChatOperation {
   kind: 'update_item' | 'create_item';
   idea_id?: string | null;
@@ -827,6 +829,7 @@ export interface BacklogChatRespondRequest {
   backlog_items?: BacklogItem[];
   strategy?: Record<string, unknown> | null;
   selected_idea_id?: string | null;
+  mode?: BacklogChatRespondMode | null;
 }
 
 export interface BacklogChatRespondResponse {

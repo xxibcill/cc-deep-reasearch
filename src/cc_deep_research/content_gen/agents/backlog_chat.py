@@ -42,6 +42,9 @@ class BacklogChatResponse(BaseModel):
     mentioned_idea_ids: list[str] = Field(default_factory=list)
 
 
+BacklogChatMode = Literal["conversation", "edit"]
+
+
 class BacklogChatAgent:
     """Conversational editorial assistant for backlog refinement."""
 
@@ -82,6 +85,7 @@ class BacklogChatAgent:
         *,
         strategy: dict[str, Any] | None = None,
         selected_idea_id: str | None = None,
+        mode: BacklogChatMode = "edit",
     ) -> BacklogChatResponse:
         """Generate a conversational response with optional backlog operations.
 
@@ -94,12 +98,17 @@ class BacklogChatAgent:
         Returns:
             BacklogChatResponse with reply, operations, and metadata
         """
-        system = prompts.BACKLOG_CHAT_SYSTEM
+        system = (
+            prompts.BACKLOG_CHAT_CONVERSATION_SYSTEM
+            if mode == "conversation"
+            else prompts.BACKLOG_CHAT_EDIT_SYSTEM
+        )
         user = prompts.build_backlog_chat_user(
             messages=messages,
             backlog_items=backlog_items,
             strategy=strategy,
             selected_idea_id=selected_idea_id,
+            mode=mode,
         )
 
         try:
@@ -113,18 +122,19 @@ class BacklogChatAgent:
                 if idea_id in valid_ids
             ]
 
-            operations = _validate_operations(
-                parsed.get("operations", []),
-                backlog_items,
-            )
-
             warnings = list(parsed.get("warnings", []))
+            operations = []
+            if mode == "edit":
+                operations = _validate_operations(
+                    parsed.get("operations", []),
+                    backlog_items,
+                )
             if operations:
                 warnings = _check_duplicate_warnings(operations, backlog_items, warnings)
 
             return BacklogChatResponse(
                 reply_markdown=parsed.get("reply_markdown", "I understand."),
-                apply_ready=bool(operations),
+                apply_ready=mode == "edit" and bool(operations),
                 warnings=warnings,
                 operations=operations,
                 mentioned_idea_ids=validated_mentioned,
