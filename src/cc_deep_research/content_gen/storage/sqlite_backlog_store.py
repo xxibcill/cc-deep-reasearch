@@ -167,16 +167,6 @@ class SqliteBacklogStore:
                     "Unsupported backlog fields: " + ", ".join(unsupported_fields)
                 )
             merged_item.update(patch)
-            # Handle legacy field sync
-            if "idea" in patch and "title" not in patch:
-                merged_item["title"] = patch["idea"]
-            if "title" in patch and "idea" not in patch:
-                merged_item["idea"] = patch["title"]
-            if "potential_hook" in patch and "hook" not in patch:
-                merged_item["hook"] = patch["potential_hook"]
-            if "hook" in patch and "potential_hook" not in patch:
-                merged_item["potential_hook"] = patch["hook"]
-
             updated = BacklogItem.model_validate(merged_item)
             json_data = _json_encoded(updated.model_dump(exclude_none=True))
             conn.execute(

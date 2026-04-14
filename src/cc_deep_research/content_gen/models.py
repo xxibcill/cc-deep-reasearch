@@ -780,7 +780,7 @@ class LearningCategory(StrEnum):
     """Category of performance learning."""
 
     HOOK = "hook"  # Hook/opening performance
-    Framing = "framing"  # Content framing or angle
+    FRAME = "frame"  # Content framing or angle
     AUDIENCE = "audience"  # Audience resonance signals
     PROOF = "proof"  # Evidence or proof requirements
     FORMAT = "format"  # Content format or structure
@@ -963,7 +963,6 @@ class IdeaCoreFields(BaseModel):
     constraints: str = ""
     source_theme: str = ""
     why_now: str = ""
-    idea: str = ""
 
 
 class AudienceProblemFitFields(BaseModel):
@@ -982,7 +981,6 @@ class ContentExecutionFields(BaseModel):
     content_type: str = ""
     format_duration: str = ""
     hook: str = ""
-    potential_hook: str = ""
     key_message: str = ""
     call_to_action: str = ""
 
@@ -1010,7 +1008,8 @@ class PrioritizationFields(BaseModel):
     latest_score: int | None = None
     latest_recommendation: Literal["", "produce_now", "hold", "kill"] = ""
     selection_reasoning: str = ""
-    status: Literal["captured", "backlog", "selected", "runner_up", "in_production", "published", "archived"] = "backlog"
+    status: Literal["captured", "backlog", "selected", "archived"] = "backlog"
+    production_status: Literal["idle", "in_production", "ready_to_publish"] = "idle"
 
 
 class BacklogItem(
@@ -1035,20 +1034,32 @@ class BacklogItem(
             return raw
 
         data = dict(raw)
-        title = str(data.get("title") or data.get("idea") or "").strip()
-        summary = str(data.get("one_line_summary") or data.get("idea") or title).strip()
-        hook = str(data.get("hook") or data.get("potential_hook") or "").strip()
+        # Handle legacy field names (map to current canonical names)
+        if data.get("idea") and not data.get("title"):
+            data["title"] = str(data["idea"])
+        if data.get("potential_hook") and not data.get("hook"):
+            data["hook"] = str(data["potential_hook"])
 
-        if title and not data.get("title"):
+        title = str(data.get("title") or "").strip()
+        summary = str(data.get("one_line_summary") or title).strip()
+        hook = str(data.get("hook") or "").strip()
+
+        if title:
             data["title"] = title
-        if summary and not data.get("one_line_summary"):
+        if summary:
             data["one_line_summary"] = summary
-        if title and not data.get("idea"):
-            data["idea"] = title
-        if hook and not data.get("hook"):
+        if hook:
             data["hook"] = hook
-        if hook and not data.get("potential_hook"):
-            data["potential_hook"] = hook
+
+        legacy_status = str(data.get("status") or "").strip()
+        if not data.get("production_status"):
+            if legacy_status == "in_production":
+                data["production_status"] = "in_production"
+            elif legacy_status == "published":
+                data["production_status"] = "ready_to_publish"
+        if legacy_status in {"runner_up", "in_production", "published"}:
+            data["status"] = "backlog"
+
         component_keys = (
             "impact_score",
             "urgency_score",
@@ -1071,18 +1082,25 @@ class BacklogItem(
 
     @model_validator(mode="after")
     def _sync_legacy_fields(self) -> BacklogItem:
-        canonical_title = self.title.strip() or self.idea.strip() or self.one_line_summary.strip()
+        canonical_title = self.title.strip() or self.one_line_summary.strip()
         canonical_summary = self.one_line_summary.strip() or canonical_title
-        canonical_hook = self.hook.strip() or self.potential_hook.strip()
+        canonical_hook = self.hook.strip()
 
         self.title = canonical_title
         self.one_line_summary = canonical_summary
-        self.idea = canonical_title or self.raw_idea.strip()
         self.hook = canonical_hook
-        self.potential_hook = canonical_hook
+        if self.status == "captured" and self.title.strip():
+            self.status = "backlog"
         if self.status == "backlog" and self.raw_idea.strip() and not self.title.strip():
             self.status = "captured"
         return self
+
+    def __getattr__(self, name: str) -> str:
+        if name == "idea":
+            return self.title
+        if name == "potential_hook":
+            return self.hook
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
 
 class BacklogOutput(BaseModel):

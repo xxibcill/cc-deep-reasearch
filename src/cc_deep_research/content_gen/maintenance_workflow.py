@@ -349,7 +349,7 @@ class MaintenanceJobs:
         watch_cutoff = now - timedelta(days=watch_days)
 
         for item in backlog.items:
-            if item.status in {"archived", "published"}:
+            if item.status == "archived" or item.production_status == "ready_to_publish":
                 continue
 
             last_updated = item.updated_at
@@ -413,7 +413,7 @@ class MaintenanceJobs:
         # Group by theme
         theme_items: dict[str, list[BacklogItem]] = {}
         for item in backlog.items:
-            if item.status in {"archived", "published"}:
+            if item.status == "archived" or item.production_status == "ready_to_publish":
                 continue
             theme = (item.source_theme or "").strip() or "_untitled_"
             if theme not in theme_items:
@@ -466,7 +466,7 @@ class MaintenanceJobs:
         active_items = [
             item
             for item in backlog.items
-            if item.status not in {"archived", "published"}
+            if item.status != "archived" and item.production_status != "ready_to_publish"
         ][:max_items]
 
         seen_pairs: set[tuple[str, str]] = set()
@@ -524,7 +524,7 @@ class MaintenanceJobs:
         stale_cutoff = now - timedelta(days=stale_score_days)
 
         for item in backlog.items:
-            if item.status in {"archived", "published", "in_production"}:
+            if item.status == "archived" or item.production_status != "idle":
                 continue
             if not item.last_scored_at:
                 continue

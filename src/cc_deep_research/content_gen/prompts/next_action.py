@@ -74,6 +74,7 @@ def build_next_action_user(
     parts.append(f"key_message: {item.key_message or '(not set)'}")
     parts.append(f"call_to_action: {item.call_to_action or '(not set)'}")
     parts.append(f"status: {item.status}")
+    parts.append(f"production_status: {item.production_status}")
     parts.append(f"risk_level: {item.risk_level}")
     parts.append(f"latest_score: {item.latest_score}")
     parts.append(f"latest_recommendation: {item.latest_recommendation or '(none)'}")

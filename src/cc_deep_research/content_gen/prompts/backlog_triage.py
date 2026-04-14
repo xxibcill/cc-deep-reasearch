@@ -106,6 +106,8 @@ def build_triage_user(
             parts.append(f"audience: {item.audience}")
             parts.append(f"problem: {item.problem}")
             parts.append(f"status: {item.status}")
+            if item.production_status and item.production_status != "idle":
+                parts.append(f"production_status: {item.production_status}")
             if item.latest_score is not None:
                 parts.append(f"score: {item.latest_score}")
             if item.latest_recommendation:
@@ -175,4 +177,3 @@ def build_triage_user(
     parts.append("Provide your response as JSON only.")
 
     return "\n".join(parts)
-

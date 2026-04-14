@@ -100,11 +100,6 @@ class BacklogService:
 
         now = _now_iso()
         score_by_id = {score.idea_id: score for score in scoring.scores}
-        active_runner_up_ids = {
-            candidate.idea_id
-            for candidate in scoring.active_candidates
-            if candidate.role == "runner_up"
-        }
         updated_items: list[BacklogItem] = []
 
         for item in backlog.items:
@@ -118,10 +113,7 @@ class BacklogService:
             if scoring.selected_idea_id and item.idea_id == scoring.selected_idea_id:
                 patch["status"] = _merge_backlog_status(item.status, "selected")
                 patch["selection_reasoning"] = scoring.selection_reasoning
-            elif item.idea_id in active_runner_up_ids:
-                patch["status"] = _merge_backlog_status(item.status, "runner_up")
-                patch["selection_reasoning"] = ""
-            elif item.status in {"selected", "runner_up"}:
+            elif item.status == "selected" and item.production_status == "idle":
                 patch["status"] = "backlog"
                 patch["selection_reasoning"] = ""
 
@@ -181,10 +173,6 @@ class BacklogService:
             reason = patch.get("selection_reasoning")
             return self.select_item(idea_id, reason=str(reason or ""))
 
-        # Capture pre-mutation snapshot for audit
-        backlog = self.load()
-        pre_item = next((item for item in backlog.items if item.idea_id == idea_id), None)
-
         normalized_patch = dict(patch)
         normalized_patch["updated_at"] = _now_iso()
         updated = self._store.update_item(idea_id, normalized_patch)
@@ -208,7 +196,7 @@ class BacklogService:
         *,
         source_pipeline_id: str = "",
     ) -> BacklogItem | None:
-        patch: dict[str, Any] = {"status": "in_production"}
+        patch: dict[str, Any] = {"production_status": "in_production"}
         if source_pipeline_id:
             patch["source_pipeline_id"] = source_pipeline_id
         item = self.update_item(idea_id, patch)
@@ -217,7 +205,7 @@ class BacklogService:
                 AuditEventType.ITEM_STATUS_CHANGED,
                 idea_id,
                 actor=AuditActor.OPERATOR,
-                patch={"status": "in_production", "source_pipeline_id": source_pipeline_id},
+                patch={"production_status": "in_production", "source_pipeline_id": source_pipeline_id},
                 item_snapshot=item,
                 outcome="success",
             )
@@ -229,7 +217,7 @@ class BacklogService:
         *,
         source_pipeline_id: str = "",
     ) -> BacklogItem | None:
-        patch: dict[str, Any] = {"status": "published"}
+        patch: dict[str, Any] = {"production_status": "ready_to_publish"}
         if source_pipeline_id:
             patch["source_pipeline_id"] = source_pipeline_id
         item = self.update_item(idea_id, patch)
@@ -238,7 +226,7 @@ class BacklogService:
                 AuditEventType.ITEM_STATUS_CHANGED,
                 idea_id,
                 actor=AuditActor.OPERATOR,
-                patch={"status": "published", "source_pipeline_id": source_pipeline_id},
+                patch={"production_status": "ready_to_publish", "source_pipeline_id": source_pipeline_id},
                 item_snapshot=item,
                 outcome="success",
             )
@@ -376,10 +364,14 @@ class BacklogService:
             status = item.status
             if existing is not None and status == "backlog":
                 status = existing.status
+            production_status = item.production_status
+            if existing is not None and production_status == "idle":
+                production_status = existing.production_status
 
             persisted = item.model_copy(
                 update={
                     "status": status or "backlog",
+                    "production_status": production_status or "idle",
                     "latest_score": item.latest_score if item.latest_score is not None else getattr(existing, "latest_score", None),
                     "latest_recommendation": item.latest_recommendation or getattr(existing, "latest_recommendation", ""),
                     "selection_reasoning": item.selection_reasoning or getattr(existing, "selection_reasoning", ""),
@@ -401,20 +393,7 @@ class BacklogService:
         return persisted_items, merged_items
 
 
-_STATUS_PRECEDENCE = {
-    "captured": 0,
-    "backlog": 1,
-    "runner_up": 2,
-    "selected": 3,
-    "in_production": 4,
-    "published": 5,
-    "archived": 6,
-}
-
-
 def _merge_backlog_status(current_status: str, desired_status: str) -> str:
-    if current_status in {"in_production", "published", "archived"}:
-        current_rank = _STATUS_PRECEDENCE.get(current_status, 0)
-        desired_rank = _STATUS_PRECEDENCE.get(desired_status, 0)
-        return current_status if current_rank > desired_rank else desired_status
+    if current_status == "archived":
+        return current_status
     return desired_status
