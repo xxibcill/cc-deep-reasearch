@@ -2021,6 +2021,29 @@ def test_backlog_store_uses_configured_path() -> None:
     assert str(store.path) == "/tmp/custom-backlog.yaml"
 
 
+def test_audit_store_uses_backlog_directory_not_backlog_file() -> None:
+    from cc_deep_research.config import Config
+    from cc_deep_research.content_gen.storage import AuditStore
+
+    config = Config()
+    config.content_gen.backlog_path = "/tmp/custom-backlog.yaml"
+
+    store = AuditStore(config=config)
+    assert str(store.path) == "/tmp/audit_log.yaml"
+
+
+def test_maintenance_store_uses_backlog_directory_not_backlog_file() -> None:
+    from cc_deep_research.config import Config
+    from cc_deep_research.content_gen.maintenance_workflow import MaintenanceStore
+
+    config = Config()
+    config.content_gen.backlog_path = "/tmp/custom-backlog.yaml"
+
+    store = MaintenanceStore(config)
+    assert str(store._proposals_path) == "/tmp/maintenance_proposals.yaml"
+    assert str(store._runs_path) == "/tmp/maintenance_runs.yaml"
+
+
 def test_backlog_store_update_item(tmp_path: Path) -> None:
     """BacklogStore.update_item should modify a single item."""
     from cc_deep_research.content_gen.storage import BacklogStore
@@ -2051,6 +2074,24 @@ def test_backlog_service_persist_generated_uses_config_path(tmp_path: Path) -> N
     assert persisted.items[0].source_theme == "pricing"
     assert persisted.items[0].created_at
     assert path.exists()
+
+
+def test_backlog_service_uses_sibling_sqlite_db_path(tmp_path: Path) -> None:
+    """SQLite mode should derive backlog.db from the configured YAML location."""
+    from types import SimpleNamespace
+
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+
+    backlog_path = tmp_path / "custom-backlog.yaml"
+    config = SimpleNamespace(
+        content_gen=SimpleNamespace(
+            backlog_path=str(backlog_path),
+            use_sqlite=True,
+        )
+    )
+
+    service = BacklogService(config)
+    assert service.path == tmp_path / "backlog.db"
 
 
 def test_backlog_service_apply_scoring_marks_selected(tmp_path: Path) -> None:
@@ -2155,6 +2196,41 @@ def test_backlog_item_normalizes_legacy_status_values() -> None:
     )
     assert legacy_publish_queue.status == "backlog"
     assert legacy_publish_queue.production_status == "ready_to_publish"
+
+
+def test_backlog_item_serializes_legacy_aliases() -> None:
+    item = BacklogItem(title="Serialized title", hook="Serialized hook")
+
+    payload = item.model_dump()
+
+    assert payload["title"] == "Serialized title"
+    assert payload["idea"] == "Serialized title"
+    assert payload["hook"] == "Serialized hook"
+    assert payload["potential_hook"] == "Serialized hook"
+
+
+def test_backlog_service_update_item_accepts_legacy_patch_fields(tmp_path: Path) -> None:
+    """Legacy patch keys should be mapped to canonical backlog fields."""
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+    from cc_deep_research.content_gen.storage import BacklogStore
+
+    store = BacklogStore(tmp_path / "backlog.yaml")
+    service = BacklogService(store=store)
+    item = service.create_item(title="Original", hook="Old hook")
+
+    updated = service.update_item(
+        item.idea_id,
+        {
+            "idea": "Updated",
+            "potential_hook": "New hook",
+        },
+    )
+
+    assert updated is not None
+    assert updated.title == "Updated"
+    assert updated.idea == "Updated"
+    assert updated.hook == "New hook"
+    assert updated.potential_hook == "New hook"
 
 
 def test_publish_queue_store_roundtrip(tmp_path: Path) -> None:

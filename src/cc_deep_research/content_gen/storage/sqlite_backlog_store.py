@@ -69,18 +69,31 @@ class SqliteBacklogStore:
 
         if path is None:
             yaml_path = resolve_content_gen_file_path(
-                explicit_path=None,
+                explicit_path=yaml_store_path,
                 config=config,
                 config_attr="backlog_path",
                 default_name="backlog.yaml",
             )
-            db_dir = yaml_path.parent
-            db_path = db_dir / "backlog.db"
+            db_path = resolve_content_gen_file_path(
+                explicit_path=None,
+                config=config,
+                config_attr="backlog_path",
+                default_name="backlog.db",
+                use_config_parent=True,
+            )
         else:
             db_path = path
+            yaml_path = yaml_store_path
+            if yaml_path is None:
+                yaml_path = resolve_content_gen_file_path(
+                    explicit_path=None,
+                    config=config,
+                    config_attr="backlog_path",
+                    default_name="backlog.yaml",
+                )
 
         self._db_path = db_path
-        self._yaml_path = yaml_store_path
+        self._yaml_path = yaml_path
         self._initialized = False
 
     @property

@@ -18,7 +18,7 @@ from enum import StrEnum
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
 from cc_deep_research.models.search import QueryProvenance
 
@@ -1093,6 +1093,18 @@ class BacklogItem(
         if name == "potential_hook":
             return self.hook
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+    @computed_field(return_type=str)
+    @property
+    def idea(self) -> str:
+        """Legacy serialized alias for title."""
+        return self.title
+
+    @computed_field(return_type=str)
+    @property
+    def potential_hook(self) -> str:
+        """Legacy serialized alias for hook."""
+        return self.hook
 
     def __setattr__(self, name: str, value: str) -> None:
         if name == "idea":

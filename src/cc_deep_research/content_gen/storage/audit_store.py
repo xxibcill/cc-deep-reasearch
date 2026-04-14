@@ -175,6 +175,7 @@ class AuditStore:
             config=config,
             config_attr="backlog_path",  # Same directory as backlog
             default_name="audit_log.yaml",
+            use_config_parent=path is None,
         )
         # Ensure parent directory exists
         self._path.parent.mkdir(parents=True, exist_ok=True)

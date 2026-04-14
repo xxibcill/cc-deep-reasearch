@@ -20,6 +20,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { backlogTitle } from '@/components/content-gen/backlog-shared'
 import { cn } from '@/lib/utils'
 import { backlogTriageRespond, backlogTriageApply } from '@/lib/content-gen-api'
 import useContentGen from '@/hooks/useContentGen'
@@ -596,8 +597,8 @@ function TriageProposalCard({
                 variant="outline"
                 className="bg-background/70 text-foreground/80 border-border/60 font-mono text-[10px]"
               >
-                {item.idea.slice(0, 30)}
-                {item.idea.length > 30 ? '…' : ''}
+                {backlogTitle(item).slice(0, 30)}
+                {backlogTitle(item).length > 30 ? '…' : ''}
               </Badge>
             ))}
           </div>
@@ -614,8 +615,10 @@ function TriageProposalCard({
             <p className="text-[10px] text-muted-foreground/70 mt-1">
               Keep:{' '}
               <span className="font-mono text-primary/80">
-                {backlog.find((b) => b.idea_id === proposal.preferred_idea_id)?.idea.slice(0, 40) ||
-                  proposal.preferred_idea_id}
+                {(() => {
+                  const survivor = backlog.find((b) => b.idea_id === proposal.preferred_idea_id)
+                  return survivor ? backlogTitle(survivor).slice(0, 40) : proposal.preferred_idea_id
+                })()}
               </span>
             </p>
           )}
