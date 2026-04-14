@@ -220,6 +220,50 @@ Phase 2 - Extended lifecycle management:
 - Added golden fixtures for backlog, angle, research-pack, scripting, packaging, and QC stages covering both happy-path and malformed inputs
 - Tightened fail-fast behavior so missing required fields on high-value stages cause clear errors rather than silent propagation
 
+#### Content Gen Backlog Details Page (2 tasks)
+
+- Added a dedicated backlog item details page at `/content-gen/backlog/<idea_id>` reachable from both grid cards and list rows
+- Added shared backlog presentation helpers (timestamp formatting, badge variants) to avoid duplication across overview and detail views
+
+#### Phase 01 - Superuser AI Triage Workspace (3 tasks)
+
+- Added backend contracts and validation for batch AI triage proposals (POST /api/content-gen/backlog-ai/triage/respond, POST /api/content-gen/backlog-ai/triage/apply)
+- Built the backlog-page triage workspace for reviewing and applying AI batch proposals with selective apply support
+- Added batch analysis and enrichment behaviors including duplicate detection, clustering, gap analysis, and sparse item enrichment
+
+#### Phase 02 - AI Decision Support And Execution Acceleration (3 tasks)
+
+- Added next-action recommendations with rationale tied to backlog fields, scoring metadata, and proof gaps (POST /api/content-gen/backlog-ai/next-action, POST /api/content-gen/backlog-ai/next-action/batch)
+- Added execution brief generation for production-readiness briefs grounded in backlog metadata (POST /api/content-gen/backlog-ai/execution-brief)
+- Added superuser bulk actions with selectAll/deselectAll per group and per-item apply/reject outcomes
+
+#### Backlog Chat Assistant (3 tasks)
+
+- Added stateless chat workflow for backlog discussion with LLM-backed assistant that returns conversational replies plus structured proposals
+- Added apply endpoint with validated operations through BacklogService (create_item, update_item, select_item, archive_item)
+- Added frontend chat panel with proposal review cards and apply workflow wired to backend services
+
+#### Content Gen Chat Page Upgrade (6 tasks)
+
+- Added ChatWorkspace component with full workspace layout, page header, and backlog context insights
+- Upgraded ChatThread with markdown rendering, localStorage transcript persistence, and slash commands (/edit, /propose)
+- Added before/after field diff in proposal review with expand/collapse and operation-level dismissal
+- Added session context and recovery with localStorage draft persistence across refreshes
+- Added operator signals including starter prompts, insights derivation, and backlog health indicators
+
+#### Backlog Single-Item Start (4 tasks)
+
+- Added dedicated backend endpoint POST /api/content-gen/backlog/{idea_id}/start with 202 Accepted response
+- Added seeded PipelineContext for single item with from_stage=4 (generate_angles) bypassing ideation and scoring
+- Added Start Production action to backlog overview and detail pages with duplicate-run guard
+- Added frontend workflow wiring with navigation to pipeline detail after start
+
+#### Opportunity Planning Improvement (12 tasks)
+
+- Added structured output contract with JSON parsing mode and legacy fallback for opportunity planning stage
+- Added semantic validation rules with BriefQualityWarning signals for audience specificity, problem observability, proof requirements, and duplicate sub-angles
+- Added validate_opportunity_brief_quality() with coerce-and-validate approach and parse mode tracking in stage traces
+
 #### CI/CD and Dashboard Reliability (8 tasks)
 
 - Added Python preflight CI workflow with lint, type check, and pytest subsets running on PRs and pushes
@@ -241,7 +285,7 @@ Phase 2 - Extended lifecycle management:
 - Removed completed dashboard-upgrade planning documents `docs/tasks/11-search-cache-operations.md` through `docs/tasks/19-design-system-extraction-and-hardening.md` after consolidating their delivered work into this changelog
 - Removed completed dashboard-upgrade planning documents `docs/tasks/20-trace-bundle-export-workspace.md` through `docs/tasks/29-dashboard-fixture-and-scenario-library.md` after consolidating their delivered work into this changelog
 - Removed completed "necessary 80%" task-pack planning documents `docs/tasks/30_snapshot_session_metadata_contract.md` through `docs/tasks/47_add_canonical_necessary_80_preflight.md` and `docs/tasks/80_20_necessary_work_task_set.md` after consolidating their delivered work into this changelog
-- Removed task-pack planning documents from `docs/tasks/` after consolidating their delivered work into this changelog, including decision graph observability, dashboard config editor, dashboard agent prompt editor, content generation expert workflow, and backlog management task packs
+- Removed task-pack planning documents from `docs/tasks/` after consolidating their delivered work into this changelog, including decision graph observability, dashboard config editor, dashboard agent prompt editor, content generation expert workflow, backlog management, content-gen backlog details page, phase 01, phase 02, backlog chat assistant, content-gen chat page upgrade, backlog single-item start, and opportunity planning improvement task packs
 
 ## [0.1.0] - 2026-03-11
 
