@@ -60,9 +60,6 @@ export default function BacklogPage() {
             description="Chat with the assistant to create your first item, or items will appear here once added through the research workflow."
           />
         </div>
-        <aside className="w-full shrink-0 lg:max-w-[26rem]">
-          <BacklogChatPanel />
-        </aside>
       </div>
     )
   }
@@ -82,9 +79,6 @@ export default function BacklogPage() {
           onCreate={createBacklogItem}
         />
       </div>
-      <aside className="w-full shrink-0 lg:max-w-[26rem]">
-        <BacklogChatPanel />
-      </aside>
     </div>
   )
 }
