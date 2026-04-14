@@ -447,3 +447,5 @@ def generate_enrichment_suggestions(
         suggestions["proof_gap_note"] = "Note what additional evidence would strengthen this"
 
     return suggestions
+
+
