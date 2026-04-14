@@ -3,6 +3,7 @@
 import { useState, useCallback, useMemo } from 'react'
 import {
   AlertCircle,
+  Check,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -59,8 +60,10 @@ export function TriageWorkspace({ onClose }: TriageWorkspaceProps) {
   const [replyMarkdown, setReplyMarkdown] = useState<string>('')
   const [dismissedSet, setDismissedSet] = useState<Set<number>>(new Set())
   const [appliedSet, setAppliedSet] = useState<Set<number>>(new Set())
+  const [selectedSet, setSelectedSet] = useState<Set<number>>(new Set())
   const [applyBusy, setApplyBusy] = useState(false)
   const [applyErrors, setApplyErrors] = useState<string[]>([])
+  const [bulkResult, setBulkResult] = useState<{ applied: number; errors: string[] } | null>(null)
 
   const runTriage = useCallback(async () => {
     setLoading(true)
@@ -68,8 +71,10 @@ export function TriageWorkspace({ onClose }: TriageWorkspaceProps) {
     setAllProposals([])
     setDismissedSet(new Set())
     setAppliedSet(new Set())
+    setSelectedSet(new Set())
     setReplyMarkdown('')
     setApplyErrors([])
+    setBulkResult(null)
 
     try {
       const response = await backlogTriageRespond({ backlog_items: backlog })
@@ -118,12 +123,46 @@ export function TriageWorkspace({ onClose }: TriageWorkspaceProps) {
 
   const dismissProposal = useCallback((index: number) => {
     setDismissedSet((prev) => new Set([...prev, index]))
+    setSelectedSet((prev) => {
+      const next = new Set(prev)
+      next.delete(index)
+      return next
+    })
+  }, [])
+
+  const toggleSelectProposal = useCallback((index: number) => {
+    setSelectedSet((prev) => {
+      const next = new Set(prev)
+      if (next.has(index)) {
+        next.delete(index)
+      } else {
+        next.add(index)
+      }
+      return next
+    })
+  }, [])
+
+  const selectAllInGroup = useCallback((group: ProposalGroup) => {
+    setSelectedSet((prev) => {
+      const next = new Set(prev)
+      group.items.forEach((item) => next.add(item.index))
+      return next
+    })
+  }, [])
+
+  const deselectAllInGroup = useCallback((group: ProposalGroup) => {
+    setSelectedSet((prev) => {
+      const next = new Set(prev)
+      group.items.forEach((item) => next.delete(item.index))
+      return next
+    })
   }, [])
 
   const applyProposal = useCallback(
     async (index: number, proposal: TriageOperation) => {
       setApplyBusy(true)
       setApplyErrors([])
+      setBulkResult(null)
 
       try {
         const result = await backlogTriageApply({ operations: [proposal] })
@@ -135,7 +174,13 @@ export function TriageWorkspace({ onClose }: TriageWorkspaceProps) {
 
         if (result.applied > 0) {
           setAppliedSet((prev) => new Set([...prev, index]))
+          setSelectedSet((prev) => {
+            const next = new Set(prev)
+            next.delete(index)
+            return next
+          })
           mergeBacklogItems(result.items)
+          setBulkResult({ applied: result.applied, errors: [] })
         }
       } catch (err) {
         setApplyErrors([err instanceof Error ? err.message : 'Apply failed.'])
@@ -152,17 +197,21 @@ export function TriageWorkspace({ onClose }: TriageWorkspaceProps) {
 
     setApplyBusy(true)
     setApplyErrors([])
+    setBulkResult(null)
 
     try {
       const result = await backlogTriageApply({ operations: visible })
 
       if (result.errors.length > 0) {
         setApplyErrors(result.errors)
+        setBulkResult({ applied: result.applied, errors: result.errors })
       }
 
       if (result.applied > 0) {
         setAppliedSet(new Set(indexedProposals.map((i) => i.index)))
+        setSelectedSet(new Set())
         mergeBacklogItems(result.items)
+        setBulkResult({ applied: result.applied, errors: result.errors })
       }
     } catch (err) {
       setApplyErrors([err instanceof Error ? err.message : 'Apply failed.'])
@@ -170,6 +219,48 @@ export function TriageWorkspace({ onClose }: TriageWorkspaceProps) {
       setApplyBusy(false)
     }
   }, [indexedProposals, applyBusy, mergeBacklogItems])
+
+  const applySelected = useCallback(async () => {
+    const selected = indexedProposals
+      .filter((p) => selectedSet.has(p.index))
+      .map((i) => i.proposal)
+    if (!selected.length || applyBusy) return
+
+    setApplyBusy(true)
+    setApplyErrors([])
+    setBulkResult(null)
+
+    try {
+      const result = await backlogTriageApply({ operations: selected })
+
+      const allErrors = [...result.errors]
+      if (result.applied > 0) {
+        const appliedIndices = indexedProposals
+          .filter((p) => selectedSet.has(p.index))
+          .map((i) => i.index)
+        setAppliedSet((prev) => new Set([...prev, ...appliedIndices]))
+        setSelectedSet(new Set())
+        mergeBacklogItems(result.items)
+      }
+      setBulkResult({ applied: result.applied, errors: allErrors })
+    } catch (err) {
+      setApplyErrors([err instanceof Error ? err.message : 'Apply failed.'])
+    } finally {
+      setApplyBusy(false)
+    }
+  }, [indexedProposals, selectedSet, applyBusy, mergeBacklogItems])
+
+  const rejectSelected = useCallback(() => {
+    const toDismiss = indexedProposals
+      .filter((p) => selectedSet.has(p.index))
+      .map((i) => i.index)
+    setDismissedSet((prev) => {
+      const next = new Set(prev)
+      toDismiss.forEach((idx) => next.add(idx))
+      return next
+    })
+    setSelectedSet(new Set())
+  }, [indexedProposals, selectedSet])
 
   return (
     <div className="flex flex-col h-full">
@@ -181,6 +272,11 @@ export function TriageWorkspace({ onClose }: TriageWorkspaceProps) {
           <Badge variant="outline" className="bg-primary/8 text-primary border-primary/20">
             {indexedProposals.length} proposal{indexedProposals.length !== 1 ? 's' : ''}
           </Badge>
+          {selectedSet.size > 0 && (
+            <Badge variant="outline" className="bg-primary/12 text-primary border-primary/30">
+              {selectedSet.size} selected
+            </Badge>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -219,10 +315,19 @@ export function TriageWorkspace({ onClose }: TriageWorkspaceProps) {
         </Alert>
       )}
 
-      {/* Apply errors */}
+      {/* Apply errors / bulk result */}
       {applyErrors.length > 0 && (
         <Alert variant="destructive" className="mt-3">
           <AlertDescription className="text-xs">{applyErrors.join('; ')}</AlertDescription>
+        </Alert>
+      )}
+
+      {bulkResult && (
+        <Alert variant={bulkResult.errors.length > 0 ? 'destructive' : 'default'} className="mt-3">
+          <AlertDescription className="text-xs">
+            {bulkResult.applied > 0 ? `Applied ${bulkResult.applied} operation${bulkResult.applied !== 1 ? 's' : ''}.` : 'No operations applied.'}
+            {bulkResult.errors.length > 0 && ` Errors: ${bulkResult.errors.join('; ')}`}
+          </AlertDescription>
         </Alert>
       )}
 
@@ -265,7 +370,11 @@ export function TriageWorkspace({ onClose }: TriageWorkspaceProps) {
             key={group.kind}
             group={group}
             backlog={backlog}
+            selectedSet={selectedSet}
             onDismiss={dismissProposal}
+            onToggleSelect={toggleSelectProposal}
+            onSelectAll={() => selectAllInGroup(group)}
+            onDeselectAll={() => deselectAllInGroup(group)}
             onApply={applyProposal}
             applyBusy={applyBusy}
           />
@@ -274,25 +383,65 @@ export function TriageWorkspace({ onClose }: TriageWorkspaceProps) {
 
       {/* Footer actions */}
       {indexedProposals.length > 0 && (
-        <div className="mt-4 pt-3 border-t border-border/60 flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">
-            {indexedProposals.length} proposal{indexedProposals.length !== 1 ? 's' : ''} pending
-          </p>
-          <Button
-            type="button"
-            variant="default"
-            size="sm"
-            onClick={() => void applyAllVisible()}
-            disabled={applyBusy || indexedProposals.length === 0}
-            className="gap-1.5"
-          >
-            {applyBusy ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <CheckCircle2 className="h-3.5 w-3.5" />
-            )}
-            Apply all visible
-          </Button>
+        <div className="mt-4 pt-3 border-t border-border/60">
+          {/* Bulk action bar - shows when items are selected */}
+          {selectedSet.size > 0 && (
+            <div className="flex items-center gap-3 mb-3 p-3 rounded-[0.8rem] border border-primary/25 bg-primary/5">
+              <span className="text-xs text-muted-foreground">
+                {selectedSet.size} selected
+              </span>
+              <div className="flex items-center gap-2 ml-auto">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void rejectSelected()}
+                  disabled={applyBusy}
+                  className="h-8 gap-1.5 text-warning border-warning/30 hover:bg-warning/10"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Reject selected
+                </Button>
+                <Button
+                  type="button"
+                  variant="default"
+                  size="sm"
+                  onClick={() => void applySelected()}
+                  disabled={applyBusy}
+                  className="h-8 gap-1.5"
+                >
+                  {applyBusy ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  )}
+                  Apply selected
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              {indexedProposals.length} proposal{indexedProposals.length !== 1 ? 's' : ''} pending
+              {selectedSet.size > 0 && ` · ${selectedSet.size} selected`}
+            </p>
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              onClick={() => void applyAllVisible()}
+              disabled={applyBusy || indexedProposals.length === 0}
+              className="gap-1.5"
+            >
+              {applyBusy ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              )}
+              Apply all visible
+            </Button>
+          </div>
         </div>
       )}
     </div>
@@ -302,7 +451,11 @@ export function TriageWorkspace({ onClose }: TriageWorkspaceProps) {
 interface ProposalGroupCardProps {
   group: ProposalGroup
   backlog: BacklogItem[]
+  selectedSet: Set<number>
   onDismiss: (index: number) => void
+  onToggleSelect: (index: number) => void
+  onSelectAll: () => void
+  onDeselectAll: () => void
   onApply: (index: number, proposal: TriageOperation) => Promise<void>
   applyBusy: boolean
 }
@@ -310,34 +463,58 @@ interface ProposalGroupCardProps {
 function ProposalGroupCard({
   group,
   backlog,
+  selectedSet,
   onDismiss,
+  onToggleSelect,
+  onSelectAll,
+  onDeselectAll,
   onApply,
   applyBusy,
 }: ProposalGroupCardProps) {
   const [expanded, setExpanded] = useState(true)
   const Icon = group.icon
 
+  const allSelected = group.items.length > 0 && group.items.every((item) => selectedSet.has(item.index))
+  const someSelected = group.items.some((item) => selectedSet.has(item.index))
+
   return (
     <div className="rounded-[0.95rem] border border-border/75 bg-card/80 shadow-sm overflow-hidden">
       {/* Group header */}
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors"
-      >
+      <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => (allSelected ? onDeselectAll() : onSelectAll())}
+            className={cn(
+              'flex items-center justify-center h-5 w-5 rounded border transition-colors',
+              allSelected
+                ? 'bg-primary border-primary text-primary-foreground'
+                : someSelected
+                  ? 'bg-primary/30 border-primary/50 text-primary'
+                  : 'border-border/60 hover:border-primary/40'
+            )}
+            title={allSelected ? 'Deselect all' : 'Select all'}
+          >
+            {allSelected && <Check className="h-3 w-3" />}
+            {someSelected && !allSelected && <div className="h-1.5 w-1.5 rounded-full bg-primary" />}
+          </button>
           <Icon className={cn('h-4 w-4', group.color)} />
           <span className="text-sm font-semibold text-foreground">{group.label}</span>
           <Badge variant="outline" className="bg-background/50 text-muted-foreground border-border/60">
             {group.items.length}
           </Badge>
         </div>
-        {expanded ? (
-          <ChevronUp className="h-4 w-4 text-muted-foreground" />
-        ) : (
-          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-        )}
-      </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="p-1 text-muted-foreground/50 hover:text-foreground transition-colors rounded"
+            title={expanded ? 'Collapse' : 'Expand'}
+          >
+            {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </button>
+        </div>
+      </div>
 
       {/* Proposal list */}
       {expanded && (
@@ -347,6 +524,8 @@ function ProposalGroupCard({
               key={index}
               proposal={proposal}
               backlog={backlog}
+              selected={selectedSet.has(index)}
+              onSelect={() => onToggleSelect(index)}
               onDismiss={() => onDismiss(index)}
               onApply={() => void onApply(index, proposal)}
               applyBusy={applyBusy}
@@ -361,6 +540,8 @@ function ProposalGroupCard({
 interface TriageProposalCardProps {
   proposal: TriageOperation
   backlog: BacklogItem[]
+  selected: boolean
+  onSelect: () => void
   onDismiss: () => void
   onApply: () => void
   applyBusy: boolean
@@ -369,6 +550,8 @@ interface TriageProposalCardProps {
 function TriageProposalCard({
   proposal,
   backlog,
+  selected,
+  onSelect,
   onDismiss,
   onApply,
   applyBusy,
@@ -382,9 +565,26 @@ function TriageProposalCard({
   const changedFields = Object.keys(proposal.fields)
 
   return (
-    <div className="rounded-[0.72rem] border border-border/70 bg-background/50 p-3">
+    <div className={cn(
+      'rounded-[0.72rem] border bg-background/50 p-3 transition-colors',
+      selected ? 'border-primary/40 bg-primary/5' : 'border-border/70'
+    )}>
       {/* Header row */}
       <div className="flex items-start gap-2">
+        <button
+          type="button"
+          onClick={onSelect}
+          className={cn(
+            'flex items-center justify-center h-5 w-5 rounded border shrink-0 mt-0.5 transition-colors',
+            selected
+              ? 'bg-primary border-primary text-primary-foreground'
+              : 'border-border/60 hover:border-primary/40'
+          )}
+          title={selected ? 'Deselect' : 'Select'}
+        >
+          {selected && <Check className="h-3 w-3" />}
+        </button>
+
         <div className="flex-1 min-w-0">
           <p className="text-xs text-muted-foreground leading-relaxed mb-2">{proposal.reason}</p>
 

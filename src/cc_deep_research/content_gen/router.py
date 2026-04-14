@@ -26,6 +26,8 @@ from cc_deep_research.content_gen.agents.backlog_triage import (
 from cc_deep_research.content_gen.agents.backlog_triage import (
     build_apply_operations as build_triage_apply_operations,
 )
+from cc_deep_research.content_gen.agents.execution_brief import ExecutionBriefAgent
+from cc_deep_research.content_gen.agents.next_action import NextActionAgent
 from cc_deep_research.content_gen.backlog_service import BacklogService
 from cc_deep_research.content_gen.models import (
     PIPELINE_STAGE_LABELS,
@@ -162,6 +164,20 @@ class TriageApplyRequest(BaseModel):
     """Request body for backlog-ai triage apply endpoint."""
 
     operations: list[TriageOperationInput] = Field(default_factory=list)
+
+
+class NextActionRequest(BaseModel):
+    """Request body for next-action recommendation endpoint."""
+
+    idea_id: str = Field(min_length=1)
+    strategy: dict[str, Any] | None = None
+
+
+class ExecutionBriefRequest(BaseModel):
+    """Request body for execution brief generation endpoint."""
+
+    idea_id: str = Field(min_length=1)
+    strategy: dict[str, Any] | None = None
 
 
 def _build_scripting_iterations(iter_state: Any) -> ScriptingIterations | None:
@@ -961,6 +977,89 @@ def register_content_gen_routes(
                 "errors": errors,
             }
         )
+
+    # ------------------------------------------------------------------
+    # Next-Action Recommendations
+    # ------------------------------------------------------------------
+
+    @app.post("/api/content-gen/backlog-ai/next-action")
+    async def get_next_action(request: NextActionRequest) -> JSONResponse:
+        """Get a next-action recommendation for a single backlog item.
+
+        This endpoint is advisory only — it never writes to the backlog.
+        """
+        config = load_config()
+        service = BacklogService(config)
+        backlog = service.load()
+
+        item = next((i for i in backlog.items if i.idea_id == request.idea_id), None)
+        if item is None:
+            return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
+
+        agent = NextActionAgent(config)
+        response = await agent.recommend(
+            item,
+            strategy_context=request.strategy,
+        )
+
+        return JSONResponse(content=json.loads(response.model_dump_json()))
+
+    @app.post("/api/content-gen/backlog-ai/next-action/batch")
+    async def get_next_action_batch(
+        request: TriageRespondRequest,
+    ) -> JSONResponse:
+        """Get next-action recommendations for multiple backlog items.
+
+        Returns recommendations for all items in the request (or all items
+        in the backlog if none provided).
+        """
+        config = load_config()
+        service = BacklogService(config)
+
+        backlog_items = request.backlog_items if request.backlog_items else service.load().items
+
+        recommendations = []
+        warnings: list[str] = []
+
+        for item in backlog_items:
+            agent = NextActionAgent(config)
+            try:
+                response = await agent.recommend(
+                    item,
+                    strategy_context=request.strategy,
+                )
+                recommendations.append(json.loads(response.model_dump_json()))
+            except Exception as exc:
+                warnings.append(f"{item.idea_id}: {exc}")
+
+        return JSONResponse(content={"recommendations": recommendations, "warnings": warnings})
+
+    # ------------------------------------------------------------------
+    # Execution Brief
+    # ------------------------------------------------------------------
+
+    @app.post("/api/content-gen/backlog-ai/execution-brief")
+    async def generate_execution_brief(request: ExecutionBriefRequest) -> JSONResponse:
+        """Generate a production-readiness brief for a single backlog item.
+
+        The brief is grounded in existing backlog metadata and AI-enriched context.
+        It helps reduce manual setup work before the pipeline starts.
+        """
+        config = load_config()
+        service = BacklogService(config)
+        backlog = service.load()
+
+        item = next((i for i in backlog.items if i.idea_id == request.idea_id), None)
+        if item is None:
+            return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
+
+        agent = ExecutionBriefAgent(config)
+        response = await agent.generate_brief(
+            item,
+            strategy_context=request.strategy,
+        )
+
+        return JSONResponse(content=json.loads(response.model_dump_json()))
 
     # ------------------------------------------------------------------
     # Strategy
