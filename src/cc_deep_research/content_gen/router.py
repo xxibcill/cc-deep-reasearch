@@ -24,7 +24,6 @@ from cc_deep_research.content_gen.models import (
     PIPELINE_STAGE_LABELS,
     PIPELINE_STAGES,
     BacklogItem,
-    PipelineCandidate,
     PipelineContext,
     ScriptingContext,
     ScriptingIterations,

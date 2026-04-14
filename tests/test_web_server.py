@@ -3199,7 +3199,6 @@ def test_start_backlog_item_returns_409_on_duplicate_active_run(
     """Starting an item that already has an active pipeline returns 409."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
 
-    from cc_deep_research.content_gen.models import PipelineContext
 
     class FakeOrchestrator:
         def __init__(self, _config) -> None:
