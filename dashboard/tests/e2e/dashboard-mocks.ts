@@ -632,6 +632,7 @@ export type MockBacklogItem = {
   risk_level?: string;
   priority_score?: number;
   status?: string;
+  production_status?: string;
   latest_score?: number;
   latest_recommendation?: string;
   selection_reasoning?: string;
@@ -667,6 +668,7 @@ function createBacklogItem(data: Record<string, unknown>): MockBacklogItem {
     risk_level: "medium",
     priority_score: 0,
     status: "backlog",
+    production_status: "idle",
     latest_score: undefined,
     latest_recommendation: "",
     selection_reasoning: "",

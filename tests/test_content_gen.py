@@ -447,7 +447,7 @@ def test_pipeline_context_roundtrip() -> None:
     assert [candidate.idea_id for candidate in restored.active_candidates] == ["idea-2", "idea-1"]
     assert [candidate.role for candidate in restored.active_candidates] == ["primary", "runner_up"]
     assert len(restored.backlog.items) == 1
-    assert restored.backlog.items[0].idea == "test idea"
+    assert restored.backlog.items[0].title == "test idea"
 
 
 def test_pipeline_context_roundtrip_with_lane_contexts_syncs_primary_fields() -> None:
@@ -2007,7 +2007,7 @@ def test_backlog_store_roundtrip(tmp_path: Path) -> None:
 
     loaded = store.load()
     assert len(loaded.items) == 2
-    assert loaded.items[0].idea == "idea 1"
+    assert loaded.items[0].title == "idea 1"
 
 
 def test_backlog_store_uses_configured_path() -> None:
@@ -2054,7 +2054,7 @@ def test_backlog_service_persist_generated_uses_config_path(tmp_path: Path) -> N
 
 
 def test_backlog_service_apply_scoring_marks_selected(tmp_path: Path) -> None:
-    """Applying scoring should attach score metadata and keep one active runner-up."""
+    """Applying scoring should attach score metadata and keep backlog status user-facing."""
     from cc_deep_research.content_gen.backlog_service import BacklogService
     from cc_deep_research.content_gen.storage import BacklogStore
 
@@ -2085,11 +2085,11 @@ def test_backlog_service_apply_scoring_marks_selected(tmp_path: Path) -> None:
     assert by_id["idea-1"].latest_score == 31
     assert by_id["idea-1"].latest_recommendation == "produce_now"
     assert by_id["idea-1"].selection_reasoning == "Best fit"
-    assert by_id["idea-2"].status == "runner_up"
+    assert by_id["idea-2"].status == "backlog"
 
 
 def test_backlog_service_multi_lane_status_transitions_preserve_progress(tmp_path: Path) -> None:
-    """Scoring should not demote lanes already in production, and publish should finalize status."""
+    """Production progress should stay separate from backlog status."""
     from cc_deep_research.content_gen.backlog_service import BacklogService
     from cc_deep_research.content_gen.storage import BacklogStore
 
@@ -2097,7 +2097,12 @@ def test_backlog_service_multi_lane_status_transitions_preserve_progress(tmp_pat
     service = BacklogService(store=store)
     service.upsert_items(
         [
-            BacklogItem(idea_id="idea-1", idea="Primary", status="in_production"),
+            BacklogItem(
+                idea_id="idea-1",
+                idea="Primary",
+                status="backlog",
+                production_status="in_production",
+            ),
             BacklogItem(idea_id="idea-2", idea="Runner-up"),
         ]
     )
@@ -2116,18 +2121,40 @@ def test_backlog_service_multi_lane_status_transitions_preserve_progress(tmp_pat
 
     scored = store.load()
     scored_by_id = {item.idea_id: item for item in scored.items}
-    assert scored_by_id["idea-1"].status == "in_production"
+    assert scored_by_id["idea-1"].status == "selected"
+    assert scored_by_id["idea-1"].production_status == "in_production"
     assert scored_by_id["idea-1"].selection_reasoning == "Keep primary lane leading."
-    assert scored_by_id["idea-2"].status == "runner_up"
+    assert scored_by_id["idea-2"].status == "backlog"
 
     published = service.mark_published("idea-1", source_pipeline_id="pipe-123")
 
     assert published is not None
-    assert published.status == "published"
+    assert published.status == "selected"
+    assert published.production_status == "ready_to_publish"
     assert published.source_pipeline_id == "pipe-123"
 
     final_state = store.load()
-    assert next(item for item in final_state.items if item.idea_id == "idea-1").status == "published"
+    final_item = next(item for item in final_state.items if item.idea_id == "idea-1")
+    assert final_item.status == "selected"
+    assert final_item.production_status == "ready_to_publish"
+
+
+def test_backlog_item_normalizes_legacy_status_values() -> None:
+    legacy_runner_up = BacklogItem.model_validate({"idea_id": "idea-1", "idea": "Legacy", "status": "runner_up"})
+    assert legacy_runner_up.status == "backlog"
+    assert legacy_runner_up.production_status == "idle"
+
+    legacy_production = BacklogItem.model_validate(
+        {"idea_id": "idea-2", "idea": "Legacy prod", "status": "in_production"}
+    )
+    assert legacy_production.status == "backlog"
+    assert legacy_production.production_status == "in_production"
+
+    legacy_publish_queue = BacklogItem.model_validate(
+        {"idea_id": "idea-3", "idea": "Legacy publish", "status": "published"}
+    )
+    assert legacy_publish_queue.status == "backlog"
+    assert legacy_publish_queue.production_status == "ready_to_publish"
 
 
 def test_publish_queue_store_roundtrip(tmp_path: Path) -> None:
@@ -3223,7 +3250,7 @@ def test_cli_pipeline_idea_seeds_direct_bypass_context(
             assert bypass_ideation is True
             assert ctx.backlog is not None
             assert len(ctx.backlog.items) == 1
-            assert ctx.backlog.items[0].idea == "Direct seed"
+            assert ctx.backlog.items[0].title == "Direct seed"
             assert ctx.selected_idea_id == ctx.backlog.items[0].idea_id
             assert [candidate.idea_id for candidate in ctx.active_candidates] == [ctx.backlog.items[0].idea_id]
             assert ctx.scoring is not None
@@ -4174,12 +4201,12 @@ async def test_quality_evaluator_raises_on_blank_response_after_retry() -> None:
 
 
 def test_parse_backlog_items_handles_partial_items() -> None:
-    """Parsing should return items that have at least an idea field."""
+    """Parsing should return items that have at least a title field."""
     text = """---
-idea: First idea
+title: First idea
 audience: Test audience
 ---
-idea: Second idea
+title: Second idea
 ---
 category: evergreen
 """
@@ -6318,7 +6345,7 @@ def test_performance_learning_store_get_active_learnings(tmp_path: Path) -> None
             observation="Hook 1",
         ),
         PerformanceLearning(
-            category=LearningCategory.Framing,
+            category=LearningCategory.FRAME,
             durability=LearningDurability.EXPERIMENTAL,
             observation="Framing 1",
         ),
@@ -6369,7 +6396,7 @@ def test_performance_learning_store_get_durable_guidance_for_backlog(tmp_path: P
             observation="Strong hook",
         ),
         PerformanceLearning(
-            category=LearningCategory.Framing,
+            category=LearningCategory.FRAME,
             durability=LearningDurability.EXPERIMENTAL,
             observation="Specific framing",
         ),
