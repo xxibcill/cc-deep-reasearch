@@ -26,6 +26,7 @@ import {
   archiveBacklogItem as archiveBacklogItemApi,
   deleteBacklogItem as deleteBacklogItemApi,
   createBacklogItem as createBacklogItemApi,
+  startBacklogItem as startBacklogItemApi,
 } from '@/lib/content-gen-api';
 import { getApiErrorMessage } from '@/lib/api';
 
@@ -82,6 +83,7 @@ interface ContentGenState {
   selectBacklogItem: (ideaId: string) => Promise<void>;
   archiveBacklogItem: (ideaId: string) => Promise<void>;
   deleteBacklogItem: (ideaId: string) => Promise<void>;
+  startBacklogItem: (ideaId: string) => Promise<string | null>;
 
   loadAll: () => Promise<void>;
 
@@ -376,6 +378,23 @@ const useContentGen = create<ContentGenState>((set, get) => ({
       }));
     } catch (err) {
       set({ error: getApiErrorMessage(err, 'Failed to delete backlog item.') });
+    }
+  },
+
+  startBacklogItem: async (ideaId) => {
+    set({ error: null });
+    try {
+      const result = await startBacklogItemApi(ideaId);
+      const pipelineId = result.pipeline_id ?? null;
+      if (pipelineId) {
+        set({ activePipelineId: pipelineId });
+        const pipelines = await listPipelines();
+        set({ pipelines });
+      }
+      return pipelineId;
+    } catch (err) {
+      set({ error: getApiErrorMessage(err, 'Failed to start backlog item.') });
+      return null;
     }
   },
 

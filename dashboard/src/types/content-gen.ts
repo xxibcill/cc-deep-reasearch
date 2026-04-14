@@ -849,3 +849,11 @@ export interface BacklogChatApplyResponse {
   items: BacklogItem[];
   errors: string[];
 }
+
+export interface StartBacklogItemResponse {
+  pipeline_id: string;
+  status: string;
+  idea_id: string;
+  from_stage: number;
+  to_stage: number;
+}

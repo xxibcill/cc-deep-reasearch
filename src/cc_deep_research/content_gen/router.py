@@ -24,6 +24,8 @@ from cc_deep_research.content_gen.models import (
     PIPELINE_STAGE_LABELS,
     PIPELINE_STAGES,
     BacklogItem,
+    PipelineCandidate,
+    PipelineContext,
     ScriptingContext,
     ScriptingIterations,
     ScriptingIterationSummary,
@@ -655,6 +657,163 @@ def register_content_gen_routes(
             return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
         return JSONResponse(content={"removed": 1})
 
+    @app.post("/api/content-gen/backlog/{idea_id}/start", status_code=202)
+    async def start_backlog_item(idea_id: str) -> JSONResponse:
+        config = load_config()
+        service = BacklogService(config)
+        backlog = service.load()
+
+        item = next((i for i in backlog.items if i.idea_id == idea_id), None)
+        if item is None:
+            return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
+
+        # Check for duplicate active run
+        for job in job_registry.active_jobs():
+            if job.pipeline_context is not None and job.pipeline_context.selected_idea_id == idea_id:
+                return JSONResponse(
+                    status_code=409,
+                    content={
+                        "error": "Backlog item is already in an active pipeline",
+                        "pipeline_id": job.pipeline_id,
+                    },
+                )
+
+        from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
+
+        orch = ContentGenOrchestrator(config)
+
+        # Create job starting at generate_angles (stage 4)
+        end = len(PIPELINE_STAGES) - 1
+        job = job_registry.create_job(
+            theme=item.source_theme or item.idea,
+            from_stage=4,
+            to_stage=end,
+        )
+
+        # Build seeded context with the single backlog item as primary candidate
+        ctx = _build_seeded_context_from_backlog_item(job.pipeline_id, item)
+        job_registry.update_context(job.pipeline_id, ctx)
+
+        async def _run() -> None:
+            job_registry.mark_running(job.pipeline_id)
+
+            def _progress(stage_idx: int, label: str) -> None:
+                if job.stop_requested:
+                    raise _PipelineCancelled(job.pipeline_id)
+                asyncio.get_running_loop().create_task(
+                    event_router.publish(
+                        job.pipeline_id,
+                        {
+                            "type": "pipeline_stage_started",
+                            "stage_index": stage_idx,
+                            "stage_label": label,
+                            "timestamp": datetime.now(UTC).isoformat(),
+                        },
+                    )
+                )
+
+            def _stage_completed(stage_idx: int, status: str, detail: str, stage_ctx) -> None:
+                job_registry.update_context(job.pipeline_id, stage_ctx)
+                serialized_context = stage_ctx.model_dump(mode="json")
+
+                if status == "failed":
+                    asyncio.get_running_loop().create_task(
+                        event_router.publish(
+                            job.pipeline_id,
+                            {
+                                "type": "pipeline_stage_failed",
+                                "stage_index": stage_idx,
+                                "stage_label": PIPELINE_STAGE_LABELS.get(
+                                    PIPELINE_STAGES[stage_idx], ""
+                                ),
+                                "error": detail,
+                                "context": serialized_context,
+                                "timestamp": datetime.now(UTC).isoformat(),
+                            },
+                        )
+                    )
+                elif status == "skipped":
+                    asyncio.get_running_loop().create_task(
+                        event_router.publish(
+                            job.pipeline_id,
+                            {
+                                "type": "pipeline_stage_skipped",
+                                "stage_index": stage_idx,
+                                "stage_label": PIPELINE_STAGE_LABELS.get(
+                                    PIPELINE_STAGES[stage_idx], ""
+                                ),
+                                "reason": detail,
+                                "context": serialized_context,
+                                "timestamp": datetime.now(UTC).isoformat(),
+                            },
+                        )
+                    )
+                else:
+                    asyncio.get_running_loop().create_task(
+                        event_router.publish(
+                            job.pipeline_id,
+                            {
+                                "type": "pipeline_stage_completed",
+                                "stage_index": stage_idx,
+                                "stage_status": status,
+                                "stage_detail": detail,
+                                "context": serialized_context,
+                                "timestamp": datetime.now(UTC).isoformat(),
+                            },
+                        )
+                    )
+
+            try:
+                result_ctx = await orch.run_full_pipeline(
+                    ctx.theme,
+                    from_stage=4,
+                    to_stage=end,
+                    initial_context=ctx,
+                    progress_callback=_progress,
+                    stage_completed_callback=_stage_completed,
+                )
+                job_registry.update_context(job.pipeline_id, result_ctx)
+                job_registry.mark_completed(job.pipeline_id, context=result_ctx)
+                await event_router.publish(
+                    job.pipeline_id,
+                    {
+                        "type": "pipeline_completed",
+                        "current_stage": result_ctx.current_stage,
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    },
+                )
+            except _PipelineCancelled:
+                job_registry.mark_cancelled(job.pipeline_id)
+                await event_router.publish(
+                    job.pipeline_id,
+                    {"type": "pipeline_cancelled", "timestamp": datetime.now(UTC).isoformat()},
+                )
+            except Exception as exc:
+                logger.exception("Pipeline %s failed", job.pipeline_id)
+                job_registry.mark_failed(job.pipeline_id, error=str(exc))
+                await event_router.publish(
+                    job.pipeline_id,
+                    {
+                        "type": "pipeline_error",
+                        "error": str(exc),
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    },
+                )
+
+        task = asyncio.create_task(_run())
+        job_registry.attach_task(job.pipeline_id, task)
+
+        return JSONResponse(
+            status_code=202,
+            content={
+                "pipeline_id": job.pipeline_id,
+                "status": str(job.status),
+                "idea_id": idea_id,
+                "from_stage": 4,
+                "to_stage": end,
+            },
+        )
+
     # ------------------------------------------------------------------
     # Backlog chat
     # ------------------------------------------------------------------
@@ -822,6 +981,46 @@ def _job_summary(job: PipelineRunJob) -> dict[str, Any]:
         "started_at": job.started_at.isoformat() if job.started_at else None,
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
     }
+
+
+def _build_seeded_context_from_backlog_item(pipeline_id: str, item: BacklogItem) -> PipelineContext:
+    """Build a minimal valid PipelineContext seeded from one backlog item.
+
+    The context is seeded so that the orchestrator can start at generate_angles
+    (stage 4) without needing upstream scoring or backlog regeneration.
+    """
+    from cc_deep_research.content_gen.models import (
+        BacklogOutput,
+        PipelineCandidate,
+        PipelineContext,
+    )
+    from cc_deep_research.content_gen.storage import StrategyStore
+
+    strategy = StrategyStore().load()
+
+    return PipelineContext(
+        pipeline_id=pipeline_id,
+        theme=item.source_theme or item.idea,
+        created_at=datetime.now(tz=UTC).isoformat(),
+        current_stage=4,
+        strategy=strategy,
+        backlog=BacklogOutput(items=[item]),
+        selected_idea_id=item.idea_id,
+        shortlist=[item.idea_id],
+        selection_reasoning=(
+            item.selection_reasoning
+            if item.selection_reasoning
+            else "Started explicitly by operator from backlog."
+        ),
+        runner_up_idea_ids=[],
+        active_candidates=[
+            PipelineCandidate(
+                idea_id=item.idea_id,
+                role="primary",
+                status="selected",
+            )
+        ],
+    )
 
 
 class _PipelineCancelled(Exception):

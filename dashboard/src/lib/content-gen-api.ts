@@ -275,6 +275,23 @@ export async function deleteBacklogItem(ideaId: string): Promise<void> {
   }
 }
 
+export async function startBacklogItem(
+  ideaId: string,
+): Promise<{ pipeline_id: string; status: string; idea_id: string; from_stage: number; to_stage: number }> {
+  try {
+    const response = await contentGenClient.post<{
+      pipeline_id: string;
+      status: string;
+      idea_id: string;
+      from_stage: number;
+      to_stage: number;
+    }>(`/backlog/${ideaId}/start`);
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to start backlog item.'));
+  }
+}
+
 export interface CreateBacklogItemRequest {
   idea: string;
   category?: string;
