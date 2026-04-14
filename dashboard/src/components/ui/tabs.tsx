@@ -52,8 +52,8 @@ export function Tabs({
               isIconOnly && isProminent ? 'items-center justify-center px-0 py-3' : undefined,
               value === tab.value
                 ? isProminent
-                  ? 'border-primary/35 bg-surface-raised text-foreground shadow-sm'
-                  : 'bg-card text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]'
+                  ? 'border-primary/50 bg-primary/20 text-foreground shadow-sm ring-1 ring-primary/20'
+                  : 'bg-primary/25 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ring-1 ring-primary/30'
                 : isProminent
                   ? 'border-transparent text-muted-foreground hover:border-border hover:bg-surface-raised hover:text-foreground'
                   : 'text-muted-foreground hover:bg-surface-raised/80 hover:text-foreground'
@@ -65,10 +65,10 @@ export function Tabs({
             type="button"
           >
             {Icon ? (
-              <Icon className={cn('h-4 w-4', isIconOnly ? 'h-[18px] w-[18px]' : undefined)} />
+              <Icon className={cn('h-4 w-4', isIconOnly ? 'h-[18px] w-[18px]' : undefined, value === tab.value && 'text-primary')} />
             ) : null}
             {!tab.hideLabel && (
-              <span className={cn('truncate', isProminent ? 'text-sm font-semibold' : undefined)}>
+              <span className={cn('truncate', isProminent ? 'text-sm font-semibold' : undefined, value === tab.value && 'text-primary')}>
                 {tab.label}
               </span>
             )}
@@ -78,8 +78,8 @@ export function Tabs({
                   'rounded-md px-2 py-0.5 font-mono text-[0.68rem] uppercase tracking-[0.16em]',
                   value === tab.value
                     ? isProminent
-                      ? 'bg-primary/15 text-primary'
-                      : 'bg-secondary text-foreground'
+                      ? 'bg-primary/30 text-primary'
+                      : 'bg-primary/25 text-primary'
                     : 'bg-muted text-muted-foreground'
                 )}
               >

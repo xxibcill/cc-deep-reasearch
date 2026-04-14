@@ -117,10 +117,10 @@ export function ChatWorkspace({ className }: ChatWorkspaceProps) {
   const insights = useMemo(() => deriveInsights(backlog), [backlog])
 
   const starterPrompts = [
-    { label: 'Identify weak items', prompt: 'Identify items in the backlog that have weak evidence or thin justification.' },
-    { label: 'Spot duplicates', prompt: 'Check for duplicate or near-duplicate ideas in the backlog.' },
-    { label: 'Suggest reframes', prompt: 'Suggest higher-priority reframes for items that could be sharper.' },
-    { label: 'Strengthen angles', prompt: 'Suggest stronger proof angles or evidence for under-supported items.' },
+    { label: 'Plan next focus', prompt: 'I want to plan what my next backlog focus should be. Help me narrow the goal first.' },
+    { label: 'Sort priorities', prompt: 'Help me sort this backlog into what should move now, later, or get reframed.' },
+    { label: 'Find audience gaps', prompt: 'Look at this backlog and help me spot audience or problem gaps before we edit anything.' },
+    { label: 'Shape rough ideas', prompt: 'I have rough ideas but not clean hooks yet. Help me shape them before we update the backlog.' },
   ]
 
   useEffect(() => {
@@ -139,8 +139,8 @@ export function ChatWorkspace({ className }: ChatWorkspaceProps) {
               <MessageSquare className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-foreground">Backlog Assistant</h1>
-              <p className="text-xs text-muted-foreground">Propose and apply backlog changes</p>
+              <h1 className="text-lg font-semibold text-foreground">Backlog Planning Chat</h1>
+              <p className="text-xs text-muted-foreground">Plan conversationally first, then use `/edit` when you want a backlog patch</p>
             </div>
           </div>
 
@@ -232,6 +232,7 @@ export function ChatWorkspace({ className }: ChatWorkspaceProps) {
           <ChatThread
             backlog={backlog}
             selectedIdeaId={selectedIdeaId}
+            variant="planner"
           />
         </div>
 
