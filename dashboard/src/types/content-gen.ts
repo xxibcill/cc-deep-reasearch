@@ -27,10 +27,9 @@ export type BacklogItemStatus =
   | 'captured'
   | 'backlog'
   | 'selected'
-  | 'runner_up'
-  | 'in_production'
-  | 'published'
   | 'archived';
+
+export type BacklogProductionStatus = 'idle' | 'in_production' | 'ready_to_publish';
 
 export type ScoreRecommendation = 'produce_now' | 'hold' | 'kill';
 
@@ -230,6 +229,7 @@ export interface Prioritization {
   conversion_score?: number | null;
   production_effort?: number | null;
   status: BacklogItemStatus | string;
+  production_status?: BacklogProductionStatus | string;
   created_at?: string;
   updated_at?: string;
   selection_reasoning?: string;

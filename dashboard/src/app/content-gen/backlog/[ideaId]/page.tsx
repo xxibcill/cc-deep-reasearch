@@ -25,6 +25,9 @@ import {
   backlogSummary,
   backlogTitle,
   formatTimestamp,
+  formatProductionStatus,
+  hasActiveProductionStatus,
+  productionStatusBadgeVariant,
   statusBadgeVariant,
   recommendationBadgeVariant,
   STATUS_OPTIONS,
@@ -423,6 +426,18 @@ export default function BacklogDetailPage() {
               <FieldRow
                 label="Status"
                 value={<Badge variant={statusBadgeVariant(item.status)}>{item.status}</Badge>}
+              />
+              <FieldRow
+                label="Pipeline"
+                value={
+                  hasActiveProductionStatus(item.production_status) ? (
+                    <Badge variant={productionStatusBadgeVariant(item.production_status)}>
+                      {formatProductionStatus(item.production_status)}
+                    </Badge>
+                  ) : (
+                    <EmptyField />
+                  )
+                }
               />
               <FieldRow
                 label="Category"

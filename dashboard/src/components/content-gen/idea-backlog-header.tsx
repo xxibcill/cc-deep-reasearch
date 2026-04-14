@@ -5,6 +5,9 @@ import {
   backlogSummary,
   backlogTitle,
   formatTimestamp,
+  formatProductionStatus,
+  hasActiveProductionStatus,
+  productionStatusBadgeVariant,
   statusBadgeVariant,
   recommendationBadgeVariant,
 } from '@/components/content-gen/backlog-shared'
@@ -17,6 +20,7 @@ interface IdeaBacklogHeaderProps {
     raw_idea?: string | null
     idea: string
     status: string
+    production_status?: string | null
     category?: string | null
     latest_recommendation?: string | null
     risk_level?: string | null
@@ -44,6 +48,18 @@ export function IdeaBacklogHeader({ item }: IdeaBacklogHeaderProps) {
 
           <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
             <KeyValue label="Status" value={<Badge variant={statusBadgeVariant(item.status)}>{item.status}</Badge>} />
+            <KeyValue
+              label="Pipeline"
+              value={
+                hasActiveProductionStatus(item.production_status) ? (
+                  <Badge variant={productionStatusBadgeVariant(item.production_status)}>
+                    {formatProductionStatus(item.production_status)}
+                  </Badge>
+                ) : (
+                  <EmptyVal />
+                )
+              }
+            />
             <KeyValue label="Category" value={item.category ? <Badge variant="outline">{item.category}</Badge> : <EmptyVal />} />
             <KeyValue
               label="Recommendation"
