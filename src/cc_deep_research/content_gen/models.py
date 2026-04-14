@@ -1038,21 +1038,10 @@ class BacklogItem(
 
         data = dict(raw)
         # Handle legacy field names (map to current canonical names)
-        if data.get("idea") and not data.get("title"):
+        if data.get("idea") and "title" not in data:
             data["title"] = str(data["idea"])
-        if data.get("potential_hook") and not data.get("hook"):
+        if data.get("potential_hook") and "hook" not in data:
             data["hook"] = str(data["potential_hook"])
-
-        title = str(data.get("title") or "").strip()
-        summary = str(data.get("one_line_summary") or title).strip()
-        hook = str(data.get("hook") or "").strip()
-
-        if title:
-            data["title"] = title
-        if summary:
-            data["one_line_summary"] = summary
-        if hook:
-            data["hook"] = hook
 
         legacy_status = str(data.get("status") or "").strip()
         if not data.get("production_status"):
@@ -1104,6 +1093,15 @@ class BacklogItem(
         if name == "potential_hook":
             return self.hook
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+    def __setattr__(self, name: str, value: str) -> None:
+        if name == "idea":
+            object.__setattr__(self, "title", value)
+            return
+        if name == "potential_hook":
+            object.__setattr__(self, "hook", value)
+            return
+        super().__setattr__(name, value)
 
 
 class BacklogOutput(BaseModel):
