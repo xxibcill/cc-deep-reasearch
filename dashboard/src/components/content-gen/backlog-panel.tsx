@@ -16,6 +16,9 @@ import {
   backlogSummary,
   backlogTitle,
   formatTimestamp,
+  formatProductionStatus,
+  hasActiveProductionStatus,
+  productionStatusBadgeVariant,
   statusBadgeVariant,
   recommendationBadgeVariant,
   STATUS_OPTIONS,
@@ -70,9 +73,9 @@ export function BacklogPanel({
     .filter((item) => (categoryFilter ? item.category === categoryFilter : true))
     .sort((left, right) => {
       const leftPriority =
-        left.status === 'selected' ? 0 : left.status === 'in_production' ? 1 : left.status === 'captured' ? 3 : 2
+        left.status === 'selected' ? 0 : left.status === 'backlog' ? 1 : left.status === 'captured' ? 2 : 3
       const rightPriority =
-        right.status === 'selected' ? 0 : right.status === 'in_production' ? 1 : right.status === 'captured' ? 3 : 2
+        right.status === 'selected' ? 0 : right.status === 'backlog' ? 1 : right.status === 'captured' ? 2 : 3
       if (leftPriority !== rightPriority) {
         return leftPriority - rightPriority
       }
@@ -193,6 +196,12 @@ export function BacklogPanel({
               <Badge variant="secondary" className="bg-secondary/50">
                 {items.filter((item) => item.status === 'archived').length} archived
               </Badge>
+              <Badge variant="warning" className="bg-warning/10 text-warning">
+                {items.filter((item) => item.production_status === 'in_production').length} in production
+              </Badge>
+              <Badge variant="info" className="bg-info/10 text-info">
+                {items.filter((item) => item.production_status === 'ready_to_publish').length} ready to publish
+              </Badge>
             </div>
           </div>
           <div className="flex flex-col gap-3 xl:items-end">
@@ -307,6 +316,11 @@ export function BacklogPanel({
                       <div className="space-y-3">
                         <div className="flex flex-wrap gap-2">
                           <Badge variant={statusBadgeVariant(item.status)}>{item.status}</Badge>
+                          {hasActiveProductionStatus(item.production_status) ? (
+                            <Badge variant={productionStatusBadgeVariant(item.production_status)}>
+                              {formatProductionStatus(item.production_status)}
+                            </Badge>
+                          ) : null}
                           <Badge variant="outline">{item.category || 'uncategorized'}</Badge>
                           <Badge variant={recommendationBadgeVariant(item.latest_recommendation)}>
                             {item.latest_recommendation || 'unscored'}
@@ -417,7 +431,8 @@ export function BacklogPanel({
                 <TableHeader className="bg-surface-raised/60">
                   <TableRow className="hover:bg-transparent">
                     <TableHead>Idea</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Backlog status</TableHead>
+                    <TableHead>Pipeline</TableHead>
                     <TableHead>Category</TableHead>
                     <TableHead>Score</TableHead>
                     <TableHead>Recommendation</TableHead>
@@ -470,6 +485,15 @@ export function BacklogPanel({
                               ))}
                             </NativeSelect>
                           </div>
+                        </TableCell>
+                        <TableCell>
+                          {hasActiveProductionStatus(item.production_status) ? (
+                            <Badge variant={productionStatusBadgeVariant(item.production_status)}>
+                              {formatProductionStatus(item.production_status)}
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">idle</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-foreground/80">{item.category || '—'}</TableCell>
                         <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">

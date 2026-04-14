@@ -1,13 +1,18 @@
-import type { BacklogItem, BacklogItemStatus } from '@/types/content-gen'
+import type { BacklogItem, BacklogItemStatus, BacklogProductionStatus } from '@/types/content-gen'
 
 export const STATUS_OPTIONS: BacklogItemStatus[] = [
   'captured',
   'backlog',
   'selected',
-  'in_production',
-  'published',
   'archived',
 ]
+
+export function formatProductionStatus(status?: string | null) {
+  if (!status || status === 'idle') {
+    return ''
+  }
+  return status.replaceAll('_', ' ')
+}
 
 export function formatTimestamp(value?: string) {
   if (!value) {
@@ -24,10 +29,22 @@ export function formatTimestamp(value?: string) {
 export function statusBadgeVariant(status: string): 'success' | 'warning' | 'info' | 'secondary' | 'outline' {
   if (status === 'captured') return 'secondary'
   if (status === 'selected') return 'success'
-  if (status === 'in_production') return 'warning'
-  if (status === 'published') return 'info'
   if (status === 'archived') return 'secondary'
   return 'outline'
+}
+
+export function productionStatusBadgeVariant(
+  status?: string | null,
+): 'success' | 'warning' | 'info' | 'secondary' | 'outline' {
+  if (status === 'in_production') return 'warning'
+  if (status === 'ready_to_publish') return 'info'
+  return 'secondary'
+}
+
+export function hasActiveProductionStatus(
+  status?: BacklogProductionStatus | string | null,
+): status is Exclude<BacklogProductionStatus, 'idle'> {
+  return status === 'in_production' || status === 'ready_to_publish'
 }
 
 export function recommendationBadgeVariant(

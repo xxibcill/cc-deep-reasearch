@@ -7,7 +7,13 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { cn } from '@/lib/utils'
 import useContentGen from '@/hooks/useContentGen'
-import { statusBadgeVariant, recommendationBadgeVariant } from '@/components/content-gen/backlog-shared'
+import {
+  formatProductionStatus,
+  hasActiveProductionStatus,
+  productionStatusBadgeVariant,
+  recommendationBadgeVariant,
+  statusBadgeVariant,
+} from '@/components/content-gen/backlog-shared'
 import { ChatThread } from '@/components/content-gen/chat-thread'
 
 interface BacklogInsight {
@@ -250,6 +256,11 @@ export function ChatWorkspace({ className }: ChatWorkspaceProps) {
                   <Badge variant={statusBadgeVariant(selectedItem.status)}>
                     {selectedItem.status}
                   </Badge>
+                  {hasActiveProductionStatus(selectedItem.production_status) ? (
+                    <Badge variant={productionStatusBadgeVariant(selectedItem.production_status)}>
+                      {formatProductionStatus(selectedItem.production_status)}
+                    </Badge>
+                  ) : null}
                   <Badge variant="outline">{selectedItem.category || 'uncategorized'}</Badge>
                   <Badge variant={recommendationBadgeVariant(selectedItem.latest_recommendation)}>
                     {selectedItem.latest_recommendation || 'unscored'}
@@ -301,13 +312,13 @@ export function ChatWorkspace({ className }: ChatWorkspaceProps) {
               <div className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">In production</span>
                 <span className="font-medium text-foreground">
-                  {backlog.filter((i) => i.status === 'in_production').length}
+                  {backlog.filter((i) => i.production_status === 'in_production').length}
                 </span>
               </div>
               <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Published</span>
+                <span className="text-muted-foreground">Ready to publish</span>
                 <span className="font-medium text-foreground">
-                  {backlog.filter((i) => i.status === 'published').length}
+                  {backlog.filter((i) => i.production_status === 'ready_to_publish').length}
                 </span>
               </div>
               <div className="flex items-center justify-between text-xs">
