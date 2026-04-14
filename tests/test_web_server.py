@@ -3121,3 +3121,253 @@ def test_backlog_mutations_persist_through_store(
     item = next(i for i in items if i["idea_id"] == idea_id)
     assert item["idea"] == "Updated persistent idea"
     assert item["status"] == "selected"
+
+
+def test_start_backlog_item_returns_202_with_pipeline_id(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POST /api/content-gen/backlog/{idea_id}/start returns 202 and pipeline_id."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    from cc_deep_research.content_gen.models import PipelineContext
+
+    class FakeOrchestrator:
+        def __init__(self, _config) -> None:
+            pass
+
+        async def run_full_pipeline(
+            self,
+            theme,
+            *,
+            from_stage: int = 0,
+            to_stage: int | None = None,
+            initial_context: PipelineContext | None = None,
+            progress_callback=None,
+            stage_completed_callback=None,
+        ) -> PipelineContext:
+            return initial_context or PipelineContext(theme=theme)
+
+    import cc_deep_research.content_gen.orchestrator as content_gen_orchestrator_module
+    import cc_deep_research.content_gen.router as content_gen_router_module
+
+    monkeypatch.setattr(content_gen_router_module, "load_config", lambda: object())
+    monkeypatch.setattr(
+        content_gen_orchestrator_module,
+        "ContentGenOrchestrator",
+        FakeOrchestrator,
+    )
+
+    client = TestClient(create_app())
+
+    # Create a backlog item
+    create_response = client.post(
+        "/api/content-gen/backlog",
+        json={"idea": "Test start item"},
+    )
+    idea_id = create_response.json()["idea_id"]
+
+    # Start production
+    response = client.post(f"/api/content-gen/backlog/{idea_id}/start")
+
+    assert response.status_code == 202
+    data = response.json()
+    assert "pipeline_id" in data
+    assert data["idea_id"] == idea_id
+    assert data["from_stage"] == 4
+    assert data["to_stage"] == 13  # last stage index (14 stages, 0-indexed)
+
+
+def test_start_backlog_item_returns_404_for_unknown_id(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POST /api/content-gen/backlog/{idea_id}/start returns 404 for unknown ID."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    client = TestClient(create_app())
+    response = client.post("/api/content-gen/backlog/nonexistent-id/start")
+
+    assert response.status_code == 404
+    assert "not found" in response.json()["error"].lower()
+
+
+def test_start_backlog_item_returns_409_on_duplicate_active_run(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Starting an item that already has an active pipeline returns 409."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    from cc_deep_research.content_gen.models import PipelineContext
+
+    class FakeOrchestrator:
+        def __init__(self, _config) -> None:
+            pass
+
+        async def run_full_pipeline(
+            self,
+            theme,
+            *,
+            from_stage: int = 0,
+            to_stage: int | None = None,
+            initial_context: PipelineContext | None = None,
+            progress_callback=None,
+            stage_completed_callback=None,
+        ) -> PipelineContext:
+            # Wait forever so the job stays "running"
+            await asyncio.Future()
+
+    import cc_deep_research.content_gen.orchestrator as content_gen_orchestrator_module
+    import cc_deep_research.content_gen.router as content_gen_router_module
+
+    monkeypatch.setattr(content_gen_router_module, "load_config", lambda: object())
+    monkeypatch.setattr(
+        content_gen_orchestrator_module,
+        "ContentGenOrchestrator",
+        FakeOrchestrator,
+    )
+
+    client = TestClient(create_app())
+
+    # Create a backlog item
+    create_response = client.post(
+        "/api/content-gen/backlog",
+        json={"idea": "Duplicate test item"},
+    )
+    idea_id = create_response.json()["idea_id"]
+
+    # Start first production run
+    first_response = client.post(f"/api/content-gen/backlog/{idea_id}/start")
+    assert first_response.status_code == 202
+    first_pipeline_id = first_response.json()["pipeline_id"]
+
+    # Attempt to start second time — should get 409
+    second_response = client.post(f"/api/content-gen/backlog/{idea_id}/start")
+    assert second_response.status_code == 409
+    data = second_response.json()
+    assert "pipeline_id" in data
+    assert data["pipeline_id"] == first_pipeline_id
+
+
+def test_start_backlog_item_seeds_context_with_selected_idea_id(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The started job's context is seeded with the item as primary selected candidate."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    from cc_deep_research.content_gen.models import PipelineContext
+
+    captured_context: dict | None = None
+
+    class FakeOrchestrator:
+        def __init__(self, _config) -> None:
+            pass
+
+        async def run_full_pipeline(
+            self,
+            theme,
+            *,
+            from_stage: int = 0,
+            to_stage: int | None = None,
+            initial_context: PipelineContext | None = None,
+            progress_callback=None,
+            stage_completed_callback=None,
+        ) -> PipelineContext:
+            nonlocal captured_context
+            captured_context = initial_context
+            return initial_context or PipelineContext(theme=theme)
+
+    import cc_deep_research.content_gen.orchestrator as content_gen_orchestrator_module
+    import cc_deep_research.content_gen.router as content_gen_router_module
+
+    monkeypatch.setattr(content_gen_router_module, "load_config", lambda: object())
+    monkeypatch.setattr(
+        content_gen_orchestrator_module,
+        "ContentGenOrchestrator",
+        FakeOrchestrator,
+    )
+
+    client = TestClient(create_app())
+
+    # Create a backlog item
+    create_response = client.post(
+        "/api/content-gen/backlog",
+        json={"idea": "Context seed test item", "selection_reasoning": "My reasoning"},
+    )
+    idea_id = create_response.json()["idea_id"]
+
+    # Start production
+    response = client.post(f"/api/content-gen/backlog/{idea_id}/start")
+    assert response.status_code == 202
+
+    # Verify captured context
+    assert captured_context is not None
+    assert captured_context.selected_idea_id == idea_id
+    assert captured_context.shortlist == [idea_id]
+    assert captured_context.backlog is not None
+    assert len(captured_context.backlog.items) == 1
+    assert captured_context.backlog.items[0].idea_id == idea_id
+    assert len(captured_context.active_candidates) == 1
+    assert captured_context.active_candidates[0].idea_id == idea_id
+    assert captured_context.active_candidates[0].role == "primary"
+    assert captured_context.active_candidates[0].status == "selected"
+    assert captured_context.selection_reasoning == "My reasoning"
+    assert captured_context.current_stage == 4  # starts at generate_angles
+
+
+def test_start_backlog_item_respects_from_stage_4(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The started run uses from_stage=4 (generate_angles)."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    from cc_deep_research.content_gen.models import PipelineContext
+
+    captured_from_stage: int | None = None
+
+    class FakeOrchestrator:
+        def __init__(self, _config) -> None:
+            pass
+
+        async def run_full_pipeline(
+            self,
+            theme,
+            *,
+            from_stage: int = 0,
+            to_stage: int | None = None,
+            initial_context: PipelineContext | None = None,
+            progress_callback=None,
+            stage_completed_callback=None,
+        ) -> PipelineContext:
+            nonlocal captured_from_stage
+            captured_from_stage = from_stage
+            return initial_context or PipelineContext(theme=theme)
+
+    import cc_deep_research.content_gen.orchestrator as content_gen_orchestrator_module
+    import cc_deep_research.content_gen.router as content_gen_router_module
+
+    monkeypatch.setattr(content_gen_router_module, "load_config", lambda: object())
+    monkeypatch.setattr(
+        content_gen_orchestrator_module,
+        "ContentGenOrchestrator",
+        FakeOrchestrator,
+    )
+
+    client = TestClient(create_app())
+
+    # Create a backlog item
+    create_response = client.post(
+        "/api/content-gen/backlog",
+        json={"idea": "Stage index test item"},
+    )
+    idea_id = create_response.json()["idea_id"]
+
+    # Start production
+    response = client.post(f"/api/content-gen/backlog/{idea_id}/start")
+    assert response.status_code == 202
+
+    assert captured_from_stage == 4
+    assert response.json()["from_stage"] == 4

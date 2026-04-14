@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Archive, CheckCircle2, Trash2 } from 'lucide-react'
+import { ArrowLeft, Archive, CheckCircle2, Play, Trash2 } from 'lucide-react'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -61,6 +61,7 @@ export default function BacklogDetailPage() {
   const selectBacklogItem = useContentGen((s) => s.selectBacklogItem)
   const archiveBacklogItem = useContentGen((s) => s.archiveBacklogItem)
   const deleteBacklogItem = useContentGen((s) => s.deleteBacklogItem)
+  const startBacklogItem = useContentGen((s) => s.startBacklogItem)
 
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -80,7 +81,8 @@ export default function BacklogDetailPage() {
       setActionError(null)
       await action()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err))
+      const msg = err instanceof Error ? err.message : String(err)
+      setActionError(msg)
     } finally {
       setBusy(false)
     }
@@ -210,6 +212,28 @@ export default function BacklogDetailPage() {
           >
             <CheckCircle2 className="h-4 w-4" />
             Select item
+          </Button>
+
+          <Button
+            type="button"
+            variant="default"
+            size="sm"
+            className="h-9 gap-2"
+            onClick={() => {
+              if (startBacklogItem) {
+                void runAction('start-production', async () => {
+                  const pipelineId = await startBacklogItem(item.idea_id)
+                  if (pipelineId) {
+                    router.push(`/content-gen/pipeline/${pipelineId}`)
+                  }
+                })
+              }
+            }}
+            disabled={busy}
+            title="Start Production"
+          >
+            <Play className="h-4 w-4" />
+            {busy ? 'Starting...' : 'Start Production'}
           </Button>
 
           <NativeSelect

@@ -30,6 +30,7 @@ export default function BacklogPage() {
   const selectBacklogItem = useContentGen((s) => s.selectBacklogItem)
   const archiveBacklogItem = useContentGen((s) => s.archiveBacklogItem)
   const deleteBacklogItem = useContentGen((s) => s.deleteBacklogItem)
+  const startBacklogItem = useContentGen((s) => s.startBacklogItem)
 
   useEffect(() => {
     if (backlog.length === 0) {
@@ -77,6 +78,7 @@ export default function BacklogPage() {
           onArchive={archiveBacklogItem}
           onDelete={deleteBacklogItem}
           onCreate={createBacklogItem}
+          onStartProduction={startBacklogItem}
         />
       </div>
     </div>

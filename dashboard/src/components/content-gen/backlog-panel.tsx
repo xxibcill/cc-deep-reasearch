@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Archive, CheckCircle2, LayoutGrid, List, Plus, Trash2 } from 'lucide-react'
+import { Archive, CheckCircle2, LayoutGrid, List, Plus, Play, Trash2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,6 +25,7 @@ interface BacklogPanelProps {
   onArchive?: (ideaId: string) => Promise<void>
   onDelete?: (ideaId: string) => Promise<void>
   onCreate?: (data: Record<string, unknown>) => Promise<void>
+  onStartProduction?: (ideaId: string) => Promise<string | null>
 }
 
 type BacklogViewMode = 'grid' | 'list'
@@ -39,6 +40,7 @@ export function BacklogPanel({
   onArchive,
   onDelete,
   onCreate,
+  onStartProduction,
 }: BacklogPanelProps) {
   const router = useRouter()
   const [statusFilter, setStatusFilter] = useState('')
@@ -47,6 +49,7 @@ export function BacklogPanel({
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ ideaId: string; idea: string } | null>(null)
+  const [startConfirm, setStartConfirm] = useState<{ ideaId: string; idea: string } | null>(null)
 
   const navigateToDetail = (ideaId: string, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -88,6 +91,19 @@ export function BacklogPanel({
     return (
       <>
         {onEdit && <BacklogItemForm item={item} onSubmitEdit={onEdit} />}
+        {onStartProduction && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setStartConfirm({ ideaId: item.idea_id, idea: item.idea })}
+            disabled={!onStartProduction || busyKey === `${rowKey}-start`}
+            className="h-8 w-8 text-primary/70 transition-all duration-200 hover:-translate-y-0.5 hover:text-primary motion-reduce:transition-none"
+            title="Start Production"
+          >
+            <Play className="h-3.5 w-3.5" />
+          </Button>
+        )}
         <Button
           type="button"
           variant="ghost"
@@ -507,6 +523,47 @@ export function BacklogPanel({
                 disabled={busyKey === `${deleteConfirm.ideaId}-delete`}
               >
                 {busyKey === `${deleteConfirm.ideaId}-delete` ? 'Deleting...' : 'Delete item'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {startConfirm && (
+        <Dialog open={true} onOpenChange={(open) => !open && setStartConfirm(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Start production?</DialogTitle>
+              <DialogDescription>
+                This will launch the pipeline for &ldquo;{startConfirm.idea}&rdquo;. The item will move to the production pipeline.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setStartConfirm(null)}
+                disabled={busyKey === `${startConfirm.ideaId}-start`}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="default"
+                onClick={() => {
+                  void runAction(`${startConfirm.ideaId}-start`, async () => {
+                    if (onStartProduction) {
+                      const pipelineId = await onStartProduction(startConfirm.ideaId)
+                      if (pipelineId) {
+                        setStartConfirm(null)
+                        router.push(`/content-gen/pipeline/${pipelineId}`)
+                      }
+                    }
+                  })
+                }}
+                disabled={busyKey === `${startConfirm.ideaId}-start`}
+              >
+                {busyKey === `${startConfirm.ideaId}-start` ? 'Starting...' : 'Start Production'}
               </Button>
             </DialogFooter>
           </DialogContent>

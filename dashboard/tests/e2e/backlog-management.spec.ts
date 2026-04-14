@@ -240,6 +240,34 @@ async function setupBacklogMocks(
       return
     }
 
+    // POST /api/content-gen/backlog/{idea_id}/start - start production
+    const startMatch = pathName.match(/\/api\/content-gen\/backlog\/([^/]+)\/start$/)
+    if (startMatch && method === 'POST') {
+      const ideaId = startMatch[1]
+      const itemIndex = items.findIndex((item) => item.idea_id === ideaId)
+      if (itemIndex === -1) {
+        await route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'Backlog item not found' }),
+        })
+        return
+      }
+      const pipelineId = `pipeline-${Math.random().toString(36).substring(2, 10)}`
+      await route.fulfill({
+        status: 202,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          pipeline_id: pipelineId,
+          status: 'running',
+          idea_id: ideaId,
+          from_stage: 4,
+          to_stage: 13,
+        }),
+      })
+      return
+    }
+
     await route.fallback()
   })
 }
@@ -507,6 +535,72 @@ test.describe('Backlog Management', () => {
     // Dialog should still be open
     await expect(page.getByText('New Backlog Item')).toBeVisible()
   })
+
+  test('start production from overview navigates to pipeline page', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.goto('/content-gen/backlog')
+
+    // Wait for items to load
+    await expect(page.getByText('3 items')).toBeVisible()
+
+    // Find and click the Start Production button (Play icon) for item-001 in grid view
+    const startButton = page.locator('button[title="Start Production"]').first()
+    await expect(startButton).toBeVisible()
+    await startButton.click()
+
+    // Confirmation dialog should appear
+    await expect(page.getByText('Start production?')).toBeVisible()
+
+    // Click the dialog confirm button
+    const dialogContent = page.locator('[data-dialog-content="true"]')
+    await expect(dialogContent).toBeVisible()
+    const confirmButton = dialogContent.locator('button').filter({ hasText: 'Start Production' }).last()
+    await confirmButton.click({ timeout: 5000 })
+
+    // Verify the API was called successfully
+    const response = await page.waitForResponse(
+      resp => resp.url().includes('/start') && resp.status() === 202,
+      { timeout: 10000 }
+    )
+    const body = await response.json()
+    expect(body.idea_id).toBe('item-001')
+    expect(body.from_stage).toBe(4)
+  })
+
+  test('start production shows conflict error for item already in active run', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    // Intercept the start endpoint to return 409 for item-001
+    await page.route('**/api/content-gen/backlog/item-001/start', async (route) => {
+      if (route.request().method() === 'POST') {
+        await route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error: 'Backlog item is already in an active pipeline',
+            pipeline_id: 'existing-pipeline-123',
+          }),
+        })
+        return
+      }
+      await route.fallback()
+    })
+
+    await page.goto('/content-gen/backlog/item-001')
+
+    // Wait for detail page to load
+    await expect(page.getByRole('heading', { name: /AI coding assistants/ })).toBeVisible()
+
+    // Click Start Production
+    await page.getByRole('button', { name: /Start Production/i }).click()
+
+    // Wait for the API call
+    await page.waitForResponse('**/api/content-gen/backlog/item-001/start')
+
+    // Error alert should appear showing the conflict
+    await expect(page.getByText(/already in an active pipeline/i)).toBeVisible()
+  })
 })
 
 test.describe('Backlog Management - Navigation', () => {
@@ -691,6 +785,24 @@ test.describe('Backlog Detail Page', () => {
     // Should navigate back to backlog overview
     await expect(page).toHaveURL(/\/content-gen\/backlog/)
     await expect(page.getByText('3 items')).toBeVisible()
+  })
+
+  test('detail page start production button navigates to pipeline page', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.goto('/content-gen/backlog/item-001')
+
+    // Wait for detail page to load
+    await expect(page.getByRole('heading', { name: /AI coding assistants/ })).toBeVisible()
+
+    // Click Start Production button
+    await page.getByRole('button', { name: /Start Production/i }).click()
+
+    // Wait for the API call
+    await page.waitForResponse('**/api/content-gen/backlog/item-001/start')
+
+    // Should navigate to pipeline detail page
+    await expect(page).toHaveURL(/\/content-gen\/pipeline\/pipeline-/)
   })
 })
 
