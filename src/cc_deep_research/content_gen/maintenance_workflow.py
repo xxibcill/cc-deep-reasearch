@@ -25,14 +25,12 @@ ContentGenConfig.maintenance_interval_hours (default: 24 hours).
 
 from __future__ import annotations
 
-import json
 import logging
 import threading
 import traceback
 from datetime import UTC, datetime, timedelta
 from difflib import SequenceMatcher
 from enum import StrEnum
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -41,7 +39,7 @@ import yaml
 from cc_deep_research.content_gen.backlog_service import BacklogService
 from cc_deep_research.content_gen.models import BacklogItem
 from cc_deep_research.content_gen.storage._paths import resolve_content_gen_file_path
-from cc_deep_research.content_gen.storage.audit_store import AuditActor, AuditEntry, AuditEventType, AuditStore
+from cc_deep_research.content_gen.storage.audit_store import AuditActor, AuditEventType, AuditStore
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
@@ -95,7 +93,7 @@ class MaintenanceProposal:
         outcome: str = "",
     ) -> None:
         self.proposal_id = proposal_id or f"mnt_{uuid4().hex[:10]}"
-        self.job_type = MaintenanceJobType(job_type) if isinstance(job_type, str) else job_type
+        self.job_type = MaintenanceJobType(job_type) if job_type and isinstance(job_type, str) else job_type
         self.title = title
         self.description = description
         self.affected_idea_ids = affected_idea_ids or []
@@ -108,9 +106,10 @@ class MaintenanceProposal:
         self.outcome = outcome
 
     def to_dict(self) -> dict[str, Any]:
+        job_type_val = self.job_type.value if isinstance(self.job_type, MaintenanceJobType) else str(self.job_type or "")
         return {
             "proposal_id": self.proposal_id,
-            "job_type": str(self.job_type.value),
+            "job_type": job_type_val,
             "title": self.title,
             "description": self.description,
             "affected_idea_ids": self.affected_idea_ids,
@@ -155,7 +154,7 @@ class MaintenanceRun:
         error: str = "",
     ) -> None:
         self.run_id = run_id or f"mntrun_{uuid4().hex[:10]}"
-        self.job_type = MaintenanceJobType(job_type) if isinstance(job_type, str) else job_type
+        self.job_type = MaintenanceJobType(job_type) if job_type and isinstance(job_type, str) else job_type
         self.proposals_count = proposals_count
         self.started_at = started_at or datetime.now(tz=UTC).isoformat()
         self.completed_at = completed_at or datetime.now(tz=UTC).isoformat()
@@ -163,9 +162,10 @@ class MaintenanceRun:
         self.error = error
 
     def to_dict(self) -> dict[str, Any]:
+        job_type_val = self.job_type.value if isinstance(self.job_type, MaintenanceJobType) else str(self.job_type or "")
         return {
             "run_id": self.run_id,
-            "job_type": str(self.job_type.value),
+            "job_type": job_type_val,
             "proposals_count": self.proposals_count,
             "started_at": self.started_at,
             "completed_at": self.completed_at,
@@ -625,10 +625,6 @@ class MaintenanceScheduler:
 
         Returns a list of MaintenanceRun records (one per job type).
         """
-        from cc_deep_research.content_gen.storage._paths import (
-            resolve_content_gen_file_path,
-        )
-
         jobs = MaintenanceJobs(self._config)
         store = MaintenanceStore(self._config)
         runs: list[MaintenanceRun] = []

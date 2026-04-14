@@ -144,7 +144,9 @@ function startBackend(port) {
 function startFrontend(frontendPort, backendPort) {
   log(COLORS.magenta, `[frontend] Starting Next.js production server on port ${frontendPort}...`);
 
-  const frontend = spawn('npm', ['run', 'start', '--', '--port', String(frontendPort)], {
+  // Use PORT env var; do not pass --port flag to next start as it may conflict
+  // with the PORT environment variable in some Next.js versions.
+  const frontend = spawn('npm', ['run', 'start'], {
     cwd: rootDir,
     stdio: 'pipe',
     env: dashboardEnv(frontendPort, backendPort),
@@ -158,6 +160,10 @@ let backend;
 let frontend;
 let isShuttingDown = false;
 
+// shutdown() is idempotent: the isShuttingDown guard prevents double-shutdown
+// when both a signal handler AND a process exit handler fire simultaneously.
+// The first call kills child processes and schedules process.exit;
+// subsequent calls are no-ops for safety.
 const shutdown = (reason, exitCode = 0) => {
   if (isShuttingDown) {
     return;
@@ -184,6 +190,8 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 function attachExitHandlers() {
+  // Exit handlers are attached before spawn so we don't miss events from
+  // processes that exit very quickly after startup.
   frontend.on('exit', (code, signal) => {
     if (isShuttingDown) {
       return;
@@ -221,12 +229,17 @@ async function main() {
   }
 
   log(COLORS.magenta, '[frontend] Building Next.js production bundle...');
-  await runCommand('npm', ['run', 'build'], {
+  const buildError = await runCommand('npm', ['run', 'build'], {
     cwd: rootDir,
     env: dashboardEnv(frontendPort, backendPort),
     label: 'frontend-build',
     color: COLORS.magenta,
-  });
+  }).then(() => null).catch((err) => err);
+
+  if (buildError) {
+    log(COLORS.reset, `Build failed: ${buildError.message}`);
+    process.exit(1);
+  }
 
   log(COLORS.green, `Backend:  http://localhost:${backendPort}`);
   log(COLORS.green, `Frontend: http://localhost:${frontendPort}`);
@@ -234,6 +247,8 @@ async function main() {
 
   backend = startBackend(backendPort);
   frontend = startFrontend(frontendPort, backendPort);
+  // Attach exit handlers AFTER spawning so they capture process events.
+  // Handlers are registered synchronously so no exit event is missed.
   attachExitHandlers();
 }
 
