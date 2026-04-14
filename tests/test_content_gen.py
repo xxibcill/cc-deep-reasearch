@@ -4460,7 +4460,8 @@ Success criteria:
 - 50k views in 48h
 - 10 code forks"""
 
-    brief = _parse_opportunity_brief(sample_response, "fallback")
+    brief, parse_mode = _parse_opportunity_brief(sample_response, "fallback")
+    assert parse_mode == "legacy"
     assert brief.theme == "Why most SaaS onboarding fails after day 1"
     assert brief.goal == "Help founders fix activation by exposing the false success moment"
     assert brief.primary_audience_segment == "Seed-stage SaaS founders"
@@ -4480,7 +4481,7 @@ def test_opportunity_brief_parsing_uses_fallback_theme() -> None:
     """Parser should fall back to the provided theme when core fields are still present."""
     from cc_deep_research.content_gen.agents.opportunity import _parse_opportunity_brief
 
-    brief = _parse_opportunity_brief(
+    brief, parse_mode = _parse_opportunity_brief(
         """Goal: something
 Primary audience segment: startup marketers
 Problem statements:
@@ -4489,7 +4490,75 @@ Content objective: show the fix
 """,
         "fallback theme",
     )
+    assert parse_mode == "legacy"
     assert brief.theme == "fallback theme"
+
+
+def test_opportunity_brief_json_parsing() -> None:
+    """Parser should extract structured fields from JSON-formatted LLM output."""
+    from cc_deep_research.content_gen.agents.opportunity import _parse_opportunity_brief
+
+    sample_response = """\
+Here is the opportunity brief:
+
+```json
+{
+  "theme": "Why most SaaS onboarding fails after day 1",
+  "goal": "Help founders fix activation by exposing the false success moment",
+  "primary_audience_segment": "Seed-stage SaaS founders",
+  "secondary_audience_segments": [
+    "Growth PMs at early-stage startups",
+    "Product designers working on onboarding flows"
+  ],
+  "problem_statements": [
+    "Activation drops after signup because onboarding celebrates the wrong moment",
+    "Users think they succeeded but never reached the real aha moment"
+  ],
+  "content_objective": "Show one concrete fix for the false success moment",
+  "proof_requirements": ["Cite a specific activation metric example", "Show a before/after onboarding flow"],
+  "platform_constraints": ["Under 60 seconds", "No jargon"],
+  "risk_constraints": ["Do not downplay churn risk", "Avoid FUD"],
+  "freshness_rationale": "Multiple SaaS companies reported Q1 2026 activation drops",
+  "sub_angles": ["Guardrails as product moat", "Safety as speed advantage", "The false success pattern"],
+  "research_hypotheses": ["Developers want safety but lack examples", "Guardrail content is underserved"],
+  "success_criteria": ["50k views in 48h", "10 code forks"]
+}
+```"""
+
+    brief, parse_mode = _parse_opportunity_brief(sample_response, "fallback")
+    assert parse_mode == "json"
+    assert brief.theme == "Why most SaaS onboarding fails after day 1"
+    assert brief.goal == "Help founders fix activation by exposing the false success moment"
+    assert brief.primary_audience_segment == "Seed-stage SaaS founders"
+    assert len(brief.secondary_audience_segments) == 2
+    assert len(brief.problem_statements) == 2
+    assert brief.content_objective == "Show one concrete fix for the false success moment"
+    assert len(brief.proof_requirements) == 2
+    assert len(brief.platform_constraints) == 2
+    assert len(brief.risk_constraints) == 2
+    assert "Q1 2026" in brief.freshness_rationale
+    assert len(brief.sub_angles) == 3
+    assert len(brief.research_hypotheses) == 2
+    assert len(brief.success_criteria) == 2
+
+
+def test_opportunity_brief_json_falls_back_to_legacy() -> None:
+    """Parser should fall back to legacy text parsing when JSON is unparseable."""
+    from cc_deep_research.content_gen.agents.opportunity import _parse_opportunity_brief
+
+    # Not valid JSON - will fall back to legacy parsing
+    sample_response = """\
+Theme: Real theme from text
+Goal: Real goal
+Primary audience segment: Real segment
+Problem statements:
+- Real problem
+Content objective: Real objective"""
+
+    brief, parse_mode = _parse_opportunity_brief(sample_response, "fallback_theme")
+    assert parse_mode == "legacy"
+    assert brief.theme == "Real theme from text"
+    assert brief.goal == "Real goal"
 
 
 @pytest.mark.asyncio
@@ -4527,6 +4596,99 @@ def test_opportunity_prompt_user_includes_strategy_fields() -> None:
     assert "spot reduction" in result
     assert "peer-reviewed" in result
     assert "no hype" in result
+
+
+def test_quality_validation_catches_generic_audience() -> None:
+    """Quality validation should flag generic audience segments."""
+    from cc_deep_research.content_gen.agents.opportunity import validate_opportunity_brief_quality
+    from cc_deep_research.content_gen.models import OpportunityBrief
+
+    brief = OpportunityBrief(
+        theme="test",
+        goal="Get more customers",
+        primary_audience_segment="marketers",  # Too generic
+        problem_statements=["Activation drops after signup"],
+        content_objective="Show how to fix activation",
+    )
+    warnings, is_acceptable = validate_opportunity_brief_quality(brief)
+    assert any(w.category == "audience_generic" for w in warnings)
+    # Should still be acceptable with caution
+    assert is_acceptable
+
+
+def test_quality_validation_catches_vague_problems() -> None:
+    """Quality validation should flag vague problem statements."""
+    from cc_deep_research.content_gen.agents.opportunity import validate_opportunity_brief_quality
+    from cc_deep_research.content_gen.models import OpportunityBrief
+
+    brief = OpportunityBrief(
+        theme="test",
+        goal="Help SaaS founders",
+        primary_audience_segment="seed-stage SaaS founders",
+        problem_statements=["The onboarding experience is not good enough"],  # Too vague
+        content_objective="Show how to improve onboarding",
+    )
+    warnings, is_acceptable = validate_opportunity_brief_quality(brief)
+    assert any(w.category == "problem_vague" for w in warnings)
+
+
+def test_quality_validation_catches_duplicate_sub_angles() -> None:
+    """Quality validation should flag duplicate sub-angles."""
+    from cc_deep_research.content_gen.agents.opportunity import validate_opportunity_brief_quality
+    from cc_deep_research.content_gen.models import OpportunityBrief
+
+    brief = OpportunityBrief(
+        theme="test",
+        goal="Help SaaS founders",
+        primary_audience_segment="seed-stage SaaS founders",
+        problem_statements=["Activation drops after signup because onboarding celebrates the wrong moment"],
+        sub_angles=["Guardrails as product moat", "Safety as speed advantage", "Guardrails as product moat"],  # Exact duplicate
+        content_objective="Show how to fix activation",
+    )
+    warnings, is_acceptable = validate_opportunity_brief_quality(brief)
+    assert any(w.category == "sub_angle_duplicate" for w in warnings)
+    # Should not be acceptable with duplicate
+    assert not is_acceptable
+
+
+def test_quality_validation_accepts_specific_brief() -> None:
+    """Quality validation should accept well-formed briefs."""
+    from cc_deep_research.content_gen.agents.opportunity import validate_opportunity_brief_quality, format_quality_summary
+    from cc_deep_research.content_gen.models import OpportunityBrief
+
+    brief = OpportunityBrief(
+        theme="Why most SaaS onboarding fails after day 1",
+        goal="Help founders fix activation by exposing the false success moment",
+        primary_audience_segment="Seed-stage SaaS founders with >$100k ARR",
+        problem_statements=[
+            "Activation drops after signup because onboarding celebrates the wrong moment",
+            "Users think they succeeded but never reached the real aha moment",
+        ],
+        content_objective="Show one concrete fix for the false success moment",
+        proof_requirements=["Specific activation metric example", "Before/after onboarding flow"],
+        sub_angles=["Guardrails as product moat", "Safety as speed advantage", "The false success pattern"],
+    )
+    warnings, is_acceptable = validate_opportunity_brief_quality(brief)
+    assert is_acceptable
+    assert len(warnings) == 0
+
+    summary = format_quality_summary(warnings)
+    assert "acceptable" in summary.lower()
+
+
+def test_quality_summary_formatting() -> None:
+    """Quality summary should group warnings by category."""
+    from cc_deep_research.content_gen.agents.opportunity import format_quality_summary, BriefQualityWarning
+
+    warnings = [
+        BriefQualityWarning("audience_generic", "Too generic audience"),
+        BriefQualityWarning("problem_vague", "Vague problem 1"),
+        BriefQualityWarning("problem_vague", "Vague problem 2"),
+    ]
+    summary = format_quality_summary(warnings)
+    assert "[audience_generic]" in summary
+    assert "[problem_vague]" in summary
+    assert "3 warning(s) found" in summary
 
 
 # ---------------------------------------------------------------------------

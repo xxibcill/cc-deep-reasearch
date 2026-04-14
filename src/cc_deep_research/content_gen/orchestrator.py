@@ -1152,6 +1152,10 @@ class ContentGenOrchestrator:
                 )
                 meta.is_degraded = ctx.scoring.is_degraded
                 meta.degradation_reason = ctx.scoring.degradation_reason
+        elif stage == "plan_opportunity":
+            if ctx.opportunity_brief:
+                parse_mode = getattr(ctx.opportunity_brief, "_parse_mode", "")
+                meta.parse_mode = parse_mode or ""
         elif stage == "generate_angles":
             if ctx.angles:
                 meta.selected_idea_id = ctx.angles.idea_id or _resolve_selected_idea_id(ctx)

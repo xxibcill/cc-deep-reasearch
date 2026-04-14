@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from cc_deep_research.models.search import QueryProvenance
 
-CONTRACT_VERSION = "1.5.0"
+CONTRACT_VERSION = "1.6.0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,10 +44,10 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "plan_opportunity": ContentGenStageContract(
         stage_name="plan_opportunity",
         prompt_module="prompts/opportunity.py",
-        contract_version="1.0.0",
-        parser_location="agents/opportunity.py::_parse_opportunity_brief",
+        contract_version="1.1.0",
+        parser_location="agents/opportunity.py::_parse_opportunity_brief (JSON first, legacy fallback)",
         output_model="OpportunityBrief",
-        format_notes="Header-based scalar fields plus '-' list sections.",
+        format_notes="JSON output (primary) with structured schema; legacy header+dash text (fallback). parse_mode recorded in trace metadata.",
         required_fields=(
             "Goal",
             "Primary audience segment",
@@ -64,6 +64,9 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
             "Sub-angles",
             "Research hypotheses",
             "Success criteria",
+            "expert_take",
+            "non_obvious_claims_to_test",
+            "genericity_risks",
         ),
         failure_mode="fail_fast",
     ),
@@ -95,7 +98,7 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "score_ideas": ContentGenStageContract(
         stage_name="score_ideas",
         prompt_module="prompts/backlog.py",
-        contract_version="1.0.0",
+        contract_version="1.1.0",
         parser_location="agents/backlog.py::_parse_scores + _derive_selection",
         output_model="ScoringOutput",
         format_notes="Repeated '---' score blocks followed by shortlist summary fields.",
@@ -2181,6 +2184,7 @@ class StageTraceMetadata(BaseModel):
     platforms_count: int = 0
     approved: bool = False
     active_candidate_count: int = 0
+    parse_mode: str = ""  # "json" | "legacy" — which parse path succeeded
 
 
 class PipelineStageTrace(BaseModel):
