@@ -150,7 +150,7 @@ class PerformanceLearningStore:
                 PerformanceLearning(
                     category=self._categorize_from_text(item, categories_guess=[
                         (LearningCategory.HOOK, ["hook", "opening", "first"]),
-                        (LearningCategory.Framing, ["framing", "angle", "perspective"]),
+                        (LearningCategory.FRAME, ["framing", "angle", "perspective"]),
                         (LearningCategory.AUDIENCE, ["audience", "resonated"]),
                         (LearningCategory.PROOF, ["proof", "evidence", "credibility"]),
                         (LearningCategory.FORMAT, ["format", "structure", "length"]),
@@ -176,7 +176,7 @@ class PerformanceLearningStore:
                 PerformanceLearning(
                     category=self._categorize_from_text(item, categories_guess=[
                         (LearningCategory.HOOK, ["hook", "opening"]),
-                        (LearningCategory.Framing, ["framing", "angle"]),
+                        (LearningCategory.FRAME, ["framing", "angle"]),
                         (LearningCategory.AUDIENCE, ["audience"]),
                         (LearningCategory.PROOF, ["proof", "evidence"]),
                         (LearningCategory.FORMAT, ["format", "length"]),
