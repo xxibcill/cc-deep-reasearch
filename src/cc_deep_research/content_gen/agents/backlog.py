@@ -157,7 +157,6 @@ _BACKLOG_FIELDS = [
     "one_line_summary",
     "raw_idea",
     "constraints",
-    "idea",
     "source_theme",
     "audience",
     "persona_detail",
@@ -166,7 +165,6 @@ _BACKLOG_FIELDS = [
     "urgency_level",
     "why_now",
     "hook",
-    "potential_hook",
     "content_type",
     "format_duration",
     "key_message",
@@ -177,6 +175,9 @@ _BACKLOG_FIELDS = [
     "genericity_risk",
     "risk_level",
     "source",
+    # Legacy field aliases (map to canonical fields in BacklogItem model)
+    "idea",
+    "potential_hook",
 ]
 
 
@@ -192,7 +193,7 @@ def _parse_backlog_items(text: str) -> list[BacklogItem]:
             val = _extract_block_field(block_text, field)
             if val:
                 data[field] = val
-        if data.get("title") or data.get("idea"):
+        if data.get("title"):
             items.append(BacklogItem(**data))
     return items
 

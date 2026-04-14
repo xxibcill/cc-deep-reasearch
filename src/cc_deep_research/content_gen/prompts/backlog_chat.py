@@ -158,6 +158,8 @@ def build_backlog_chat_user(
             parts.append(f"problem: {item.problem}")
             if item.status:
                 parts.append(f"status: {item.status}")
+            if item.production_status and item.production_status != "idle":
+                parts.append(f"production_status: {item.production_status}")
             if item.latest_score is not None:
                 parts.append(f"score: {item.latest_score}")
             if item.hook or item.potential_hook:
