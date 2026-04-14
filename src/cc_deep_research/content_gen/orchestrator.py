@@ -1254,7 +1254,16 @@ class ContentGenOrchestrator:
         if status == "failed" and detail:
             warnings.append(f"Stage failed: {detail}")
 
-        if stage == "build_backlog" and ctx.backlog and ctx.backlog.is_degraded:
+        if stage == "plan_opportunity" and ctx.opportunity_brief:
+            quality_summary = getattr(ctx.opportunity_brief, "_quality_summary", None)
+            is_acceptable = getattr(ctx.opportunity_brief, "_quality_acceptable", True)
+            if quality_summary:
+                if not is_acceptable:
+                    warnings.append(f"Brief quality issues: {quality_summary}")
+                else:
+                    # Brief is acceptable but still log the summary for trace visibility
+                    warnings.append(f"Brief quality: {quality_summary}")
+        elif stage == "build_backlog" and ctx.backlog and ctx.backlog.is_degraded:
             reason = ctx.backlog.degradation_reason or "Backlog completed with degraded output."
             warnings.append(f"Backlog degraded: {reason}")
         elif stage == "score_ideas" and ctx.scoring and ctx.scoring.is_degraded:
@@ -1612,8 +1621,18 @@ async def _stage_load_strategy(
 async def _stage_plan_opportunity(
     orch: ContentGenOrchestrator, ctx: PipelineContext
 ) -> PipelineContext:
+    from cc_deep_research.content_gen.agents.opportunity import (
+        format_quality_summary,
+        validate_opportunity_brief_quality,
+    )
+
     agent = orch._get_agent("opportunity")
     ctx.opportunity_brief = await agent.plan(ctx.theme, ctx.strategy or StrategyMemory())
+    # Validate brief quality and store summary for trace visibility
+    if ctx.opportunity_brief:
+        warnings, is_acceptable = validate_opportunity_brief_quality(ctx.opportunity_brief)
+        ctx.opportunity_brief._quality_summary = format_quality_summary(warnings)  # type: ignore[attr-defined]
+        ctx.opportunity_brief._quality_acceptable = is_acceptable  # type: ignore[attr-defined]
     return ctx
 
 
