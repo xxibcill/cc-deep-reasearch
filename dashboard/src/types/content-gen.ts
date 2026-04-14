@@ -857,3 +857,52 @@ export interface StartBacklogItemResponse {
   from_stage: number;
   to_stage: number;
 }
+
+// =============================================================================
+// Backlog AI Triage Types
+// =============================================================================
+
+export type TriageProposalKind =
+  | 'batch_enrich'
+  | 'batch_reframe'
+  | 'dedupe_recommendation'
+  | 'archive_recommendation'
+  | 'priority_recommendation';
+
+export interface TriageOperation {
+  kind: TriageProposalKind;
+  idea_ids: string[];
+  reason: string;
+  fields: Record<string, unknown>;
+  preferred_idea_id?: string | null;
+}
+
+export interface TriageRespondRequest {
+  backlog_items?: BacklogItem[];
+  strategy?: Record<string, unknown> | null;
+}
+
+export interface TriageRespondResponse {
+  reply_markdown: string;
+  proposals: TriageOperation[];
+  warnings: string[];
+  mentioned_idea_ids: string[];
+}
+
+export interface TriageOperationInput {
+  kind: TriageProposalKind;
+  idea_ids: string[];
+  reason: string;
+  fields: Record<string, unknown>;
+  preferred_idea_id?: string | null;
+}
+
+export interface TriageApplyRequest {
+  operations: TriageOperationInput[];
+}
+
+export interface TriageApplyResponse {
+  applied: number;
+  items: BacklogItem[];
+  errors: string[];
+}

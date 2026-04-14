@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { List } from 'lucide-react'
+import { List, Sparkles } from 'lucide-react'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { EmptyState } from '@/components/ui/empty-state'
+import { Button } from '@/components/ui/button'
 import useContentGen from '@/hooks/useContentGen'
-import { BacklogChatPanel } from '@/components/content-gen/backlog-chat-panel'
 
 const BacklogPanel = dynamic(
   () => import('@/components/content-gen/backlog-panel').then((mod) => mod.BacklogPanel),
@@ -15,6 +15,16 @@ const BacklogPanel = dynamic(
     ssr: false,
     loading: () => (
       <div className="py-8 text-center text-sm text-muted-foreground">Loading backlog…</div>
+    ),
+  },
+)
+
+const TriageWorkspace = dynamic(
+  () => import('@/components/content-gen/triage-workspace').then((mod) => mod.TriageWorkspace),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="py-8 text-center text-sm text-muted-foreground">Loading triage workspace…</div>
     ),
   },
 )
@@ -31,6 +41,8 @@ export default function BacklogPage() {
   const archiveBacklogItem = useContentGen((s) => s.archiveBacklogItem)
   const deleteBacklogItem = useContentGen((s) => s.deleteBacklogItem)
   const startBacklogItem = useContentGen((s) => s.startBacklogItem)
+
+  const [triageMode, setTriageMode] = useState(false)
 
   useEffect(() => {
     if (backlog.length === 0) {
@@ -67,20 +79,53 @@ export default function BacklogPage() {
 
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:gap-6 lg:items-start">
-      <div className="flex-1 min-w-0">
-        <BacklogPanel
-          items={backlog}
-          backlogPath={backlogPath}
-          loading={backlogLoading}
-          onUpdateStatus={updateBacklogItem}
-          onEdit={updateBacklogItem}
-          onSelect={selectBacklogItem}
-          onArchive={archiveBacklogItem}
-          onDelete={deleteBacklogItem}
-          onCreate={createBacklogItem}
-          onStartProduction={startBacklogItem}
-        />
-      </div>
+      {triageMode ? (
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setTriageMode(false)}
+                className="gap-1.5 h-8"
+              >
+                <List className="h-3.5 w-3.5" />
+                Back to backlog
+              </Button>
+            </div>
+          </div>
+          <TriageWorkspace onClose={() => setTriageMode(false)} />
+        </div>
+      ) : (
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between mb-4">
+            <div />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setTriageMode(true)}
+              className="gap-1.5 h-8"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              AI Triage
+            </Button>
+          </div>
+          <BacklogPanel
+            items={backlog}
+            backlogPath={backlogPath}
+            loading={backlogLoading}
+            onUpdateStatus={updateBacklogItem}
+            onEdit={updateBacklogItem}
+            onSelect={selectBacklogItem}
+            onArchive={archiveBacklogItem}
+            onDelete={deleteBacklogItem}
+            onCreate={createBacklogItem}
+            onStartProduction={startBacklogItem}
+          />
+        </div>
+      )}
     </div>
   )
 }

@@ -19,6 +19,13 @@ from cc_deep_research.content_gen.agents.backlog_chat import (
     apply_operations,
     build_apply_operations,
 )
+from cc_deep_research.content_gen.agents.backlog_triage import (
+    BatchTriageAgent,
+    apply_triage_operations,
+)
+from cc_deep_research.content_gen.agents.backlog_triage import (
+    build_apply_operations as build_triage_apply_operations,
+)
 from cc_deep_research.content_gen.backlog_service import BacklogService
 from cc_deep_research.content_gen.models import (
     PIPELINE_STAGE_LABELS,
@@ -126,6 +133,35 @@ class BacklogChatApplyRequest(BaseModel):
     """Request body for backlog-chat apply endpoint."""
 
     operations: list[BacklogChatOperationInput] = Field(default_factory=list)
+
+
+class TriageOperationInput(BaseModel):
+    """Triage operation proposed by the batch triage agent (used in apply request)."""
+
+    kind: Literal[
+        "batch_enrich",
+        "batch_reframe",
+        "dedupe_recommendation",
+        "archive_recommendation",
+        "priority_recommendation",
+    ]
+    idea_ids: list[str] = Field(default_factory=list)
+    reason: str = ""
+    fields: dict[str, Any] = Field(default_factory=dict)
+    preferred_idea_id: str | None = None
+
+
+class TriageRespondRequest(BaseModel):
+    """Request body for backlog-ai triage respond endpoint."""
+
+    backlog_items: list[BacklogItem] = Field(default_factory=list)
+    strategy: dict[str, Any] | None = None
+
+
+class TriageApplyRequest(BaseModel):
+    """Request body for backlog-ai triage apply endpoint."""
+
+    operations: list[TriageOperationInput] = Field(default_factory=list)
 
 
 def _build_scripting_iterations(iter_state: Any) -> ScriptingIterations | None:
@@ -668,7 +704,10 @@ def register_content_gen_routes(
 
         # Check for duplicate active run
         for job in job_registry.active_jobs():
-            if job.pipeline_context is not None and job.pipeline_context.selected_idea_id == idea_id:
+            if (
+                job.pipeline_context is not None
+                and job.pipeline_context.selected_idea_id == idea_id
+            ):
                 return JSONResponse(
                     status_code=409,
                     content={
@@ -860,6 +899,59 @@ def register_content_gen_routes(
         items: list[BacklogItem] = []
         if operations:
             applied, items, apply_errors = await apply_operations(operations, service)
+            errors.extend(apply_errors)
+
+        return JSONResponse(
+            content={
+                "applied": applied,
+                "items": [json.loads(item.model_dump_json()) for item in items],
+                "errors": errors,
+            }
+        )
+
+    # ------------------------------------------------------------------
+    # Backlog AI Triage
+    # ------------------------------------------------------------------
+
+    @app.post("/api/content-gen/backlog-ai/triage/respond")
+    async def backlog_triage_respond(request: TriageRespondRequest) -> JSONResponse:
+        """Generate batch triage proposals for the backlog.
+
+        This endpoint is advisory only — it never writes to the backlog.
+        Use /apply to persist any proposed operations.
+        """
+        config = load_config()
+        service = BacklogService(config)
+
+        backlog_items = request.backlog_items if request.backlog_items else service.load().items
+
+        agent = BatchTriageAgent(config)
+        response = await agent.respond(
+            backlog_items=backlog_items,
+            strategy=request.strategy,
+        )
+
+        return JSONResponse(content=json.loads(response.model_dump_json()))
+
+    @app.post("/api/content-gen/backlog-ai/triage/apply")
+    async def backlog_triage_apply(request: TriageApplyRequest) -> JSONResponse:
+        """Apply a list of validated triage operations.
+
+        This is the only write path for triage-proposed operations.
+        Returns structured errors instead of crashing on invalid operations.
+        """
+        config = load_config()
+        service = BacklogService(config)
+
+        backlog_items = service.load().items
+        operations, errors = build_triage_apply_operations(
+            [op.model_dump(mode="python") for op in request.operations],
+            backlog_items,
+        )
+        applied = 0
+        items: list[BacklogItem] = []
+        if operations:
+            applied, items, apply_errors = await apply_triage_operations(operations, service)
             errors.extend(apply_errors)
 
         return JSONResponse(
