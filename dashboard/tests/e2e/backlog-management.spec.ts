@@ -55,6 +55,7 @@ async function setupBacklogMocks(
       audience: '',
       problem: '',
       status: 'backlog',
+      production_status: 'idle',
       risk_level: 'medium',
       created_at: now,
       updated_at: now,
