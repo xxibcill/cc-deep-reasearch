@@ -76,6 +76,7 @@ interface ContentGenState {
   removeFromQueue: (ideaId: string, platform: string) => Promise<void>;
 
   loadBacklog: () => Promise<void>;
+  mergeBacklogItems: (items: BacklogItem[]) => void;
   createBacklogItem: (data: Record<string, unknown>) => Promise<void>;
   updateBacklogItem: (ideaId: string, patch: Record<string, unknown>) => Promise<void>;
   selectBacklogItem: (ideaId: string) => Promise<void>;
@@ -279,6 +280,36 @@ const useContentGen = create<ContentGenState>((set, get) => ({
         error: getApiErrorMessage(err, 'Failed to load backlog.'),
       });
     }
+  },
+
+  mergeBacklogItems: (items) => {
+    if (!items.length) {
+      return;
+    }
+
+    set((state) => {
+      const existingById = new Map(state.backlog.map((item) => [item.idea_id, item]));
+      const incomingById = new Map(items.map((item) => [item.idea_id, item]));
+      const containsSelectedItem = items.some((item) => item.status === 'selected');
+      const nextBacklog = state.backlog.map((item) => {
+        const incoming = incomingById.get(item.idea_id);
+        if (incoming) {
+          return incoming;
+        }
+        if (containsSelectedItem && item.status === 'selected') {
+          return { ...item, status: 'backlog', selection_reasoning: '' };
+        }
+        return item;
+      });
+
+      for (const item of items) {
+        if (!existingById.has(item.idea_id)) {
+          nextBacklog.push(item);
+        }
+      }
+
+      return { backlog: nextBacklog };
+    });
   },
 
   createBacklogItem: async (data) => {

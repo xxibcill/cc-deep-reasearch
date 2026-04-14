@@ -824,7 +824,7 @@ export interface BacklogChatOperation {
 
 export interface BacklogChatRespondRequest {
   messages: BacklogChatMessage[];
-  backlog_items: BacklogItem[];
+  backlog_items?: BacklogItem[];
   strategy?: Record<string, unknown> | null;
   selected_idea_id?: string | null;
 }

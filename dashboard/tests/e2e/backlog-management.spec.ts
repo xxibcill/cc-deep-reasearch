@@ -522,6 +522,17 @@ test.describe('Backlog Management - Navigation', () => {
     await expect(page).toHaveURL(/\/content-gen\/backlog/)
     await expect(page.getByText('No backlog items yet')).toBeVisible()
   })
+
+  test('assistant tab in content studio shell navigates to dedicated chat page', async ({ page }) => {
+    await setupBacklogMocks(page, [...mockBacklogItems])
+
+    await page.goto('/content-gen')
+
+    await page.getByRole('button', { name: 'Assistant' }).click()
+
+    await expect(page).toHaveURL(/\/content-gen\/chat/)
+    await expect(page.getByText('Backlog Assistant')).toBeVisible()
+  })
 })
 
 test.describe('Backlog Detail Page', () => {
@@ -715,7 +726,8 @@ test.describe('Backlog Chat Panel', () => {
       const body = JSON.parse(route.request().postDataBuffer()!.toString())
       // Verify request has correct shape
       expect(body.messages).toBeDefined()
-      expect(body.backlog_items).toBeDefined()
+      expect(body.backlog_items).toBeUndefined()
+      expect(body.selected_idea_id).toBe('item-002')
 
       await route.fulfill({
         status: 200,
@@ -744,10 +756,11 @@ test.describe('Backlog Chat Panel', () => {
     await textarea.fill('Help me tighten this backlog.')
 
     // Send it
+    const respondRequest = page.waitForResponse('**/api/content-gen/backlog-chat/respond')
     await page.getByRole('button', { name: 'Send' }).click()
 
     // Wait for response
-    await page.waitForResponse('**/api/content-gen/backlog-chat/respond')
+    await respondRequest
 
     // User message should appear in transcript
     await expect(page.getByText('Help me tighten this backlog.')).toBeVisible()
@@ -786,8 +799,9 @@ test.describe('Backlog Chat Panel', () => {
 
     // Send a message
     await page.locator('textarea[placeholder*="Ask about"]').fill('Reframe item-001')
+    const respondRequest = page.waitForResponse('**/api/content-gen/backlog-chat/respond')
     await page.getByRole('button', { name: 'Send' }).click()
-    await page.waitForResponse('**/api/content-gen/backlog-chat/respond')
+    await respondRequest
 
     // Apply changes button should be visible
     await expect(page.getByRole('button', { name: 'Apply changes' })).toBeVisible()
@@ -801,7 +815,7 @@ test.describe('Backlog Chat Panel', () => {
     await expect(page.getByText('Proposed changes')).not.toBeVisible()
   })
 
-  test('apply button calls apply endpoint and reloads backlog', async ({ page }) => {
+  test('apply button updates backlog state without a reload request', async ({ page }) => {
     await setupBacklogMocks(page, [...mockBacklogItems])
 
     // Mock respond endpoint
@@ -853,12 +867,14 @@ test.describe('Backlog Chat Panel', () => {
 
     // Send message
     await page.locator('textarea[placeholder*="Ask about"]').fill('Add a new evergreen idea')
+    const respondRequest = page.waitForResponse('**/api/content-gen/backlog-chat/respond')
     await page.getByRole('button', { name: 'Send' }).click()
-    await page.waitForResponse('**/api/content-gen/backlog-chat/respond')
+    await respondRequest
 
     // Apply changes
+    const applyRequest = page.waitForResponse('**/api/content-gen/backlog-chat/apply')
     await page.getByRole('button', { name: 'Apply changes' }).click()
-    await page.waitForResponse('**/api/content-gen/backlog-chat/apply')
+    await applyRequest
 
     // After apply, the proposal should be cleared and backlog should reload
     await expect(page.getByText('Proposed changes')).not.toBeVisible()
@@ -906,10 +922,12 @@ test.describe('Backlog Chat Panel', () => {
 
     // Send message and apply
     await page.locator('textarea[placeholder*="Ask about"]').fill('Update item-001')
+    const respondRequest = page.waitForResponse('**/api/content-gen/backlog-chat/respond')
     await page.getByRole('button', { name: 'Send' }).click()
-    await page.waitForResponse('**/api/content-gen/backlog-chat/respond')
+    await respondRequest
+    const applyRequest = page.waitForResponse('**/api/content-gen/backlog-chat/apply')
     await page.getByRole('button', { name: 'Apply changes' }).click()
-    await page.waitForResponse('**/api/content-gen/backlog-chat/apply')
+    await applyRequest
 
     // Error should appear inline
     await expect(page.getByText(/update_item item-001: internal error/)).toBeVisible()
@@ -983,8 +1001,9 @@ test.describe('Backlog Chat Panel', () => {
     await page.goto('/content-gen/backlog')
 
     await page.locator('textarea[placeholder*="Ask about"]').fill('Add another idea')
+    const respondRequest = page.waitForResponse('**/api/content-gen/backlog-chat/respond')
     await page.getByRole('button', { name: 'Send' }).click()
-    await page.waitForResponse('**/api/content-gen/backlog-chat/respond')
+    await respondRequest
 
     // Warning should appear
     await expect(page.getByText('This may duplicate an existing idea.')).toBeVisible()
@@ -1036,8 +1055,9 @@ test.describe('Backlog Chat Page (/content-gen/chat)', () => {
     await page.goto('/content-gen/chat')
 
     await page.locator('textarea[placeholder*="Ask about"]').fill('What should I focus on?')
+    const respondRequest = page.waitForResponse('**/api/content-gen/backlog-chat/respond')
     await page.getByRole('button', { name: 'Send' }).click()
-    await page.waitForResponse('**/api/content-gen/backlog-chat/respond')
+    await respondRequest
 
     // Bold markdown rendered
     await expect(page.locator('strong').filter({ hasText: 'Focus on quality over quantity' })).toBeVisible()
@@ -1070,8 +1090,9 @@ test.describe('Backlog Chat Page (/content-gen/chat)', () => {
     await page.goto('/content-gen/chat')
 
     await page.locator('textarea[placeholder*="Ask about"]').fill('Update item-001')
+    const respondRequest = page.waitForResponse('**/api/content-gen/backlog-chat/respond')
     await page.getByRole('button', { name: 'Send' }).click()
-    await page.waitForResponse('**/api/content-gen/backlog-chat/respond')
+    await respondRequest
 
     // Proposal card visible
     await expect(page.getByText('Proposed changes')).toBeVisible()
@@ -1114,8 +1135,9 @@ test.describe('Backlog Chat Page (/content-gen/chat)', () => {
     await page.goto('/content-gen/chat')
 
     await page.locator('textarea[placeholder*="Ask about"]').fill('Make two updates')
+    const respondRequest = page.waitForResponse('**/api/content-gen/backlog-chat/respond')
     await page.getByRole('button', { name: 'Send' }).click()
-    await page.waitForResponse('**/api/content-gen/backlog-chat/respond')
+    await respondRequest
 
     await expect(page.getByText('Proposed changes')).toBeVisible()
 
@@ -1154,8 +1176,9 @@ test.describe('Backlog Chat Page (/content-gen/chat)', () => {
     await page.goto('/content-gen/chat')
 
     await page.locator('textarea[placeholder*="Ask about"]').fill('Add a new idea')
+    const respondRequest = page.waitForResponse('**/api/content-gen/backlog-chat/respond')
     await page.getByRole('button', { name: 'Send' }).click()
-    await page.waitForResponse('**/api/content-gen/backlog-chat/respond')
+    await respondRequest
 
     await expect(page.getByText('Proposed changes')).toBeVisible()
 
@@ -1190,8 +1213,9 @@ test.describe('Backlog Chat Page (/content-gen/chat)', () => {
     await page.goto('/content-gen/chat')
 
     await page.locator('textarea[placeholder*="Ask about"]').fill('Add something')
+    const respondRequest = page.waitForResponse('**/api/content-gen/backlog-chat/respond')
     await page.getByRole('button', { name: 'Send' }).click()
-    await page.waitForResponse('**/api/content-gen/backlog-chat/respond')
+    await respondRequest
 
     await expect(page.getByText('Proposal.')).toBeVisible()
 
@@ -1246,8 +1270,9 @@ test.describe('Backlog Chat Page (/content-gen/chat)', () => {
 
     // Send a message
     await page.locator('textarea[placeholder*="Ask about"]').fill('Hello assistant')
+    const respondRequest = page.waitForResponse('**/api/content-gen/backlog-chat/respond')
     await page.getByRole('button', { name: 'Send' }).click()
-    await page.waitForResponse('**/api/content-gen/backlog-chat/respond')
+    await respondRequest
 
     // User message should appear
     await expect(page.getByText('Hello assistant')).toBeVisible()

@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { LayoutDashboard, FileText, Settings, ListVideo, ArrowLeft, ListChecks } from 'lucide-react'
+import { LayoutDashboard, FileText, Settings, ListVideo, ArrowLeft, ListChecks, MessageSquare } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { buttonVariants } from '@/components/ui/button'
 import { Tabs } from '@/components/ui/tabs'
@@ -16,6 +16,7 @@ const TAB_CONFIG = [
   { value: 'strategy', label: 'Strategy', icon: Settings },
   { value: 'queue', label: 'Queue', icon: ListVideo },
   { value: 'backlog', label: 'Backlog', icon: ListChecks },
+  { value: 'chat', label: 'Assistant', icon: MessageSquare },
 ]
 
 export function ContentGenShell({ children }: { children: React.ReactNode }) {
@@ -33,7 +34,12 @@ export function ContentGenShell({ children }: { children: React.ReactNode }) {
   const isPipelineDetail = pathname.match(/\/content-gen\/pipeline\/[^/]+$/)
   const isBacklogDetail = pathname.match(/\/content-gen\/backlog\/[^/]+$/)
   const isBacklogRoute = pathname.startsWith('/content-gen/backlog')
-  const activeTab = isBacklogRoute ? 'backlog' : searchParams.get('tab') || 'overview'
+  const isChatRoute = pathname.startsWith('/content-gen/chat')
+  const activeTab = isBacklogRoute
+    ? 'backlog'
+    : isChatRoute
+      ? 'chat'
+      : searchParams.get('tab') || 'overview'
 
   const activePipelineCount = pipelines.filter(
     (p) => p.status === 'running' || p.status === 'queued',
@@ -63,6 +69,10 @@ export function ContentGenShell({ children }: { children: React.ReactNode }) {
   const handleTabChange = (value: string) => {
     if (value === 'backlog') {
       router.push('/content-gen/backlog')
+      return
+    }
+    if (value === 'chat') {
+      router.push('/content-gen/chat')
       return
     }
     router.push(`/content-gen${value === 'overview' ? '' : `?tab=${value}`}`)
