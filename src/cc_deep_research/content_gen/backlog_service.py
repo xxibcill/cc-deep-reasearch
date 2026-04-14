@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -19,8 +20,20 @@ if TYPE_CHECKING:
     from cc_deep_research.config import Config
 
 
+_IDEA_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+
 def _now_iso() -> str:
     return datetime.now(tz=UTC).isoformat()
+
+
+def _validate_idea_id(idea_id: str) -> str:
+    """Validate idea_id format to prevent injection and malformed identifiers."""
+    if not idea_id or not isinstance(idea_id, str):
+        raise ValueError("idea_id must be a non-empty string")
+    if not _IDEA_ID_RE.match(idea_id):
+        raise ValueError(f"idea_id '{idea_id}' contains invalid characters; use only alphanumeric, hyphen, underscore")
+    return idea_id
 
 
 class BacklogService:
@@ -128,6 +141,7 @@ class BacklogService:
 
     def select_item(self, idea_id: str, *, reason: str = "") -> BacklogItem | None:
         """Select one backlog item and clear previous selections."""
+        _validate_idea_id(idea_id)
         backlog = self.load()
         now = _now_iso()
         selected: BacklogItem | None = None
@@ -169,6 +183,7 @@ class BacklogService:
 
     def update_item(self, idea_id: str, patch: dict[str, Any]) -> BacklogItem | None:
         """Apply a partial item update with timestamp management."""
+        _validate_idea_id(idea_id)
         normalized_patch = _normalize_backlog_patch(patch)
         if normalized_patch.get("status") == "selected":
             reason = patch.get("selection_reasoning")
@@ -188,6 +203,7 @@ class BacklogService:
         return updated
 
     def archive_item(self, idea_id: str) -> BacklogItem | None:
+        _validate_idea_id(idea_id)
         return self.update_item(idea_id, {"status": "archived"})
 
     def mark_in_production(
@@ -196,6 +212,7 @@ class BacklogService:
         *,
         source_pipeline_id: str = "",
     ) -> BacklogItem | None:
+        _validate_idea_id(idea_id)
         patch: dict[str, Any] = {"production_status": "in_production"}
         if source_pipeline_id:
             patch["source_pipeline_id"] = source_pipeline_id
@@ -217,6 +234,7 @@ class BacklogService:
         *,
         source_pipeline_id: str = "",
     ) -> BacklogItem | None:
+        _validate_idea_id(idea_id)
         patch: dict[str, Any] = {"production_status": "ready_to_publish"}
         if source_pipeline_id:
             patch["source_pipeline_id"] = source_pipeline_id
@@ -329,6 +347,7 @@ class BacklogService:
         return item
 
     def delete_item(self, idea_id: str) -> bool:
+        _validate_idea_id(idea_id)
         backlog = self.load()
         deleted_item = next((item for item in backlog.items if item.idea_id == idea_id), None)
         filtered_items = [item for item in backlog.items if item.idea_id != idea_id]
