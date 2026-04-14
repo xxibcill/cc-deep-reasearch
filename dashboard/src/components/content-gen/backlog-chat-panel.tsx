@@ -21,6 +21,7 @@ export function BacklogChatPanel() {
     <ChatThread
       backlog={backlog}
       selectedIdeaId={selectedIdeaId}
+      variant="editor"
     />
   )
 }
