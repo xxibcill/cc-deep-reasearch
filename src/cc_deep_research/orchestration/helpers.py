@@ -20,7 +20,7 @@ def normalize_query_families(
             normalized_families.append(item)
             continue
 
-        family = "baseline" if item == original_query else "baseline"
+        family = "baseline" if item == original_query else "normalized"
         normalized_families.append(
             QueryFamily(
                 query=str(item),
