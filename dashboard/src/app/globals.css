@@ -324,6 +324,36 @@ code,
   animation: shimmer 1.5s ease-in-out infinite;
 }
 
+@keyframes collapsible-slide-down {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: var(--radix-collapsible-content-height);
+    opacity: 1;
+  }
+}
+
+@keyframes collapsible-slide-up {
+  from {
+    height: var(--radix-collapsible-content-height);
+    opacity: 1;
+  }
+  to {
+    height: 0;
+    opacity: 0;
+  }
+}
+
+.animate-collapsible-down {
+  animation: collapsible-slide-down 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-collapsible-up {
+  animation: collapsible-slide-up 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
