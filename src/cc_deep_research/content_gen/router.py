@@ -9,7 +9,7 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, model_validator
 
@@ -44,9 +44,19 @@ from cc_deep_research.content_gen.progress import (
     PipelineRunJobRegistry,
 )
 from cc_deep_research.content_gen.storage import (
+    AuditActor,
+    AuditEventType,
+    AuditStore,
     PublishQueueStore,
     ScriptingStore,
     StrategyStore,
+)
+from cc_deep_research.content_gen.maintenance_workflow import (
+    MaintenanceJobType,
+    MaintenanceProposalStatus,
+    MaintenanceRun,
+    MaintenanceScheduler,
+    MaintenanceStore,
 )
 from cc_deep_research.event_router import EventRouter, WebSocketConnection
 
@@ -1139,6 +1149,167 @@ def register_content_gen_routes(
         store.save(filtered)
         removed = len(items) - len(filtered)
         return JSONResponse(content={"removed": removed})
+
+    # ------------------------------------------------------------------
+    # Audit history
+    # ------------------------------------------------------------------
+
+    @app.get("/api/content-gen/audit")
+    async def list_audit_entries(
+        idea_id: str | None = None,
+        event_type: str | None = None,
+        actor: str | None = None,
+        limit: int = 100,
+    ) -> JSONResponse:
+        """List audit log entries with optional filtering.
+
+        Query params:
+        - idea_id: filter to entries for a specific backlog item
+        - event_type: filter to a specific event type (proposal_created, item_updated, etc.)
+        - actor: filter to entries from a specific actor (operator, ai_proposal, system, maintenance)
+        - limit: max entries to return (default 100)
+        """
+        store = AuditStore()
+        event_type_enum = AuditEventType(event_type) if event_type else None
+        actor_enum = AuditActor(actor) if actor else None
+        entries = store.load_entries(
+            idea_id=idea_id,
+            event_type=event_type_enum,
+            actor=actor_enum,
+            limit=limit,
+        )
+        return JSONResponse(
+            content={
+                "items": [entry.to_dict() for entry in entries],
+                "count": len(entries),
+            }
+        )
+
+    @app.get("/api/content-gen/audit/{idea_id}")
+    async def get_audit_for_item(idea_id: str, limit: int = 50) -> JSONResponse:
+        """Get audit history for a specific backlog item."""
+        store = AuditStore()
+        entries = store.load_entries(idea_id=idea_id, limit=limit)
+        return JSONResponse(
+            content={
+                "idea_id": idea_id,
+                "items": [entry.to_dict() for entry in entries],
+                "count": len(entries),
+            }
+        )
+
+    # ------------------------------------------------------------------
+    # Maintenance workflows
+    # ------------------------------------------------------------------
+
+    @app.get("/api/content-gen/maintenance/proposals")
+    async def list_maintenance_proposals(
+        status: str | None = None,
+        job_type: str | None = None,
+        limit: int = 50,
+    ) -> JSONResponse:
+        """List maintenance proposals with optional filtering.
+
+        Query params:
+        - status: filter by status (pending, approved, rejected, applied, expired)
+        - job_type: filter by job type (stale_item_review, gap_summary, duplicate_watchlist, rescoring_recommend)
+        - limit: max proposals to return (default 50)
+        """
+        store = MaintenanceStore()
+        status_enum = MaintenanceProposalStatus(status) if status else None
+        job_type_enum = MaintenanceJobType(job_type) if job_type else None
+        proposals = store.load_proposals(status=status_enum, job_type=job_type_enum, limit=limit)
+        return JSONResponse(
+            content={
+                "items": [p.to_dict() for p in proposals],
+                "count": len(proposals),
+            }
+        )
+
+    @app.post("/api/content-gen/maintenance/proposals/{proposal_id}/resolve")
+    async def resolve_maintenance_proposal(
+        proposal_id: str,
+        decision: str,  # "approved" | "rejected"
+    ) -> JSONResponse:
+        """Resolve a maintenance proposal (approve or reject).
+
+        If approved, the suggested_patch is applied to the affected backlog items.
+        If rejected, the proposal is marked as rejected.
+
+        Query params:
+        - decision: "approved" or "rejected"
+        """
+        store = MaintenanceStore()
+        config = load_config()
+        service = BacklogService(config)
+
+        proposal = store.resolve_proposal(proposal_id, decision=decision)
+        if proposal is None:
+            return JSONResponse(status_code=404, content={"error": "Proposal not found"})
+
+        # Apply approved proposals to backlog items
+        if decision == "approved" and proposal.suggested_patch:
+            for idea_id in proposal.affected_idea_ids:
+                service.update_item(idea_id, dict(proposal.suggested_patch))
+
+        # Log to audit
+        audit_store = AuditStore(config=config)
+        for idea_id in proposal.affected_idea_ids:
+            audit_store.log_backlog_mutation(
+                event_type=AuditEventType.MAINTENANCE_PROPOSAL,
+                idea_id=idea_id,
+                actor=AuditActor.OPERATOR,
+                patch={"proposal_id": proposal_id, "decision": decision},
+                outcome=decision,
+            )
+
+        return JSONResponse(content=proposal.to_dict())
+
+    @app.post("/api/content-gen/maintenance/jobs/{job_type}/trigger")
+    async def trigger_maintenance_job(request: Request, job_type: str) -> JSONResponse:
+        """Trigger a maintenance job immediately (on-demand).
+
+        Path params:
+        - job_type: one of stale_item_review, gap_summary, duplicate_watchlist, rescoring_recommend
+        """
+        try:
+            job_type_enum = MaintenanceJobType(job_type)
+        except ValueError:
+            return JSONResponse(
+                status_code=400,
+                content={"error": f"Unknown job type: {job_type}"},
+            )
+
+        # Use app-state scheduler if available (started with app lifecycle)
+        runtime = getattr(request.app.state, "dashboard_runtime", None)
+        scheduler: MaintenanceScheduler | None = None
+        if runtime is not None:
+            scheduler = getattr(runtime, "maintenance_scheduler", None)
+        if scheduler is None:
+            scheduler = MaintenanceScheduler()
+
+        run = scheduler.trigger_job(job_type_enum)
+
+        return JSONResponse(
+            content={
+                "run": run.to_dict(),
+                "proposals_generated": run.proposals_count,
+                "outcome": run.outcome,
+                "error": run.error or None,
+            }
+        )
+
+    @app.get("/api/content-gen/maintenance/runs")
+    async def list_maintenance_runs(limit: int = 20) -> JSONResponse:
+        """List recent maintenance run records."""
+        store = MaintenanceStore()
+        runs = store.load_runs(limit=limit)
+        return JSONResponse(
+            content={
+                "items": [r.to_dict() for r in runs],
+                "count": len(runs),
+            }
+        )
 
     # ------------------------------------------------------------------
     # WebSocket for pipeline progress

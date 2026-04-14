@@ -7,7 +7,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.content_gen.models import BacklogItem, BacklogOutput, ScoringOutput
-from cc_deep_research.content_gen.storage import BacklogStore
+from cc_deep_research.content_gen.storage import (
+    AuditActor,
+    AuditEventType,
+    AuditStore,
+    BacklogStore,
+    SqliteBacklogStore,
+)
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
@@ -20,16 +26,31 @@ def _now_iso() -> str:
 class BacklogService:
     """Coordinate backlog persistence, scoring metadata, and status transitions."""
 
-    def __init__(self, config: Config | None = None, store: BacklogStore | None = None) -> None:
+    def __init__(
+        self,
+        config: Config | None = None,
+        store: BacklogStore | None = None,
+        audit_store: AuditStore | None = None,
+    ) -> None:
         if store is not None:
             self._store = store
-            return
+        else:
+            use_sqlite = getattr(getattr(config, "content_gen", None), "use_sqlite", False)
+            path: Path | None = None
+            configured_path = getattr(getattr(config, "content_gen", None), "backlog_path", None)
+            if configured_path:
+                path = Path(configured_path).expanduser()
 
-        path: Path | None = None
-        configured_path = getattr(getattr(config, "content_gen", None), "backlog_path", None)
-        if configured_path:
-            path = Path(configured_path).expanduser()
-        self._store = BacklogStore(path)
+            if use_sqlite:
+                self._store = SqliteBacklogStore(path)
+            else:
+                self._store = BacklogStore(path)
+
+        self._audit_store = audit_store
+
+    def set_audit_store(self, audit_store: AuditStore) -> None:
+        """Attach an audit store for governance tracking."""
+        self._audit_store = audit_store
 
     @property
     def path(self) -> Path:
@@ -144,6 +165,14 @@ class BacklogService:
             return None
 
         self._store.save(backlog.model_copy(update={"items": updated_items}))
+        self._audit_mutation(
+            AuditEventType.ITEM_SELECTED,
+            idea_id,
+            actor=AuditActor.OPERATOR,
+            patch={"reason": reason},
+            item_snapshot=selected,
+            outcome="success",
+        )
         return selected
 
     def update_item(self, idea_id: str, patch: dict[str, Any]) -> BacklogItem | None:
@@ -152,9 +181,23 @@ class BacklogService:
             reason = patch.get("selection_reasoning")
             return self.select_item(idea_id, reason=str(reason or ""))
 
+        # Capture pre-mutation snapshot for audit
+        backlog = self.load()
+        pre_item = next((item for item in backlog.items if item.idea_id == idea_id), None)
+
         normalized_patch = dict(patch)
         normalized_patch["updated_at"] = _now_iso()
-        return self._store.update_item(idea_id, normalized_patch)
+        updated = self._store.update_item(idea_id, normalized_patch)
+        if updated is not None:
+            self._audit_mutation(
+                AuditEventType.ITEM_UPDATED,
+                idea_id,
+                actor=AuditActor.OPERATOR,
+                patch=patch,
+                item_snapshot=updated,
+                outcome="success",
+            )
+        return updated
 
     def archive_item(self, idea_id: str) -> BacklogItem | None:
         return self.update_item(idea_id, {"status": "archived"})
@@ -168,7 +211,17 @@ class BacklogService:
         patch: dict[str, Any] = {"status": "in_production"}
         if source_pipeline_id:
             patch["source_pipeline_id"] = source_pipeline_id
-        return self.update_item(idea_id, patch)
+        item = self.update_item(idea_id, patch)
+        if item is not None:
+            self._audit_mutation(
+                AuditEventType.ITEM_STATUS_CHANGED,
+                idea_id,
+                actor=AuditActor.OPERATOR,
+                patch={"status": "in_production", "source_pipeline_id": source_pipeline_id},
+                item_snapshot=item,
+                outcome="success",
+            )
+        return item
 
     def mark_published(
         self,
@@ -179,7 +232,38 @@ class BacklogService:
         patch: dict[str, Any] = {"status": "published"}
         if source_pipeline_id:
             patch["source_pipeline_id"] = source_pipeline_id
-        return self.update_item(idea_id, patch)
+        item = self.update_item(idea_id, patch)
+        if item is not None:
+            self._audit_mutation(
+                AuditEventType.ITEM_STATUS_CHANGED,
+                idea_id,
+                actor=AuditActor.OPERATOR,
+                patch={"status": "published", "source_pipeline_id": source_pipeline_id},
+                item_snapshot=item,
+                outcome="success",
+            )
+        return item
+
+    def _audit_mutation(
+        self,
+        event_type: AuditEventType,
+        idea_id: str,
+        actor: AuditActor = AuditActor.OPERATOR,
+        patch: dict[str, Any] | None = None,
+        item_snapshot: BacklogItem | None = None,
+        outcome: str = "success",
+    ) -> None:
+        """Log a backlog mutation to audit store if configured."""
+        if self._audit_store is None:
+            return
+        self._audit_store.log_backlog_mutation(
+            event_type=event_type,
+            idea_id=idea_id,
+            actor=actor,
+            patch=patch,
+            item_snapshot=item_snapshot,
+            outcome=outcome,
+        )
 
     def create_item(
         self,
@@ -247,14 +331,30 @@ class BacklogService:
         backlog = self.load()
         backlog.items.append(item)
         self._store.save(backlog)
+        self._audit_mutation(
+            AuditEventType.ITEM_CREATED,
+            item.idea_id,
+            actor=AuditActor.OPERATOR,
+            item_snapshot=item,
+            outcome="success",
+        )
         return item
 
     def delete_item(self, idea_id: str) -> bool:
         backlog = self.load()
+        deleted_item = next((item for item in backlog.items if item.idea_id == idea_id), None)
         filtered_items = [item for item in backlog.items if item.idea_id != idea_id]
         if len(filtered_items) == len(backlog.items):
             return False
         self._store.save(backlog.model_copy(update={"items": filtered_items}))
+        if deleted_item is not None:
+            self._audit_mutation(
+                AuditEventType.ITEM_DELETED,
+                idea_id,
+                actor=AuditActor.OPERATOR,
+                item_snapshot=deleted_item,
+                outcome="success",
+            )
         return True
 
     @staticmethod
