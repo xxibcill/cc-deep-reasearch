@@ -24,7 +24,7 @@ export function StartPipelineForm({
 } = {}) {
   const router = useRouter()
   const [theme, setTheme] = useState(initialTheme ?? '')
-  const [fromStage, setFromStage] = useState(0)
+  const [fromStage, setFromStage] = useState(1)
   const [toStage, setToStage] = useState(TOTAL_PIPELINE_STAGES - 1)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -97,9 +97,9 @@ export function StartPipelineForm({
             onChange={(e) => setFromStage(Number(e.target.value))}
             disabled={isSubmitting}
           >
-            {PIPELINE_STAGE_ORDER.map((stageName, idx) => (
-              <option key={idx} value={idx}>
-                {String(idx).padStart(2, '0')} - {PIPELINE_STAGE_SHORT_LABELS[stageName]}
+            {PIPELINE_STAGE_ORDER.slice(1).map((stageName, idx) => (
+              <option key={idx + 1} value={idx + 1}>
+                {String(idx + 1).padStart(2, '0')} - {PIPELINE_STAGE_SHORT_LABELS[stageName]}
               </option>
             ))}
           </NativeSelect>
@@ -113,9 +113,9 @@ export function StartPipelineForm({
             onChange={(e) => setToStage(Number(e.target.value))}
             disabled={isSubmitting}
           >
-            {PIPELINE_STAGE_ORDER.map((stageName, idx) => (
-              <option key={idx} value={idx}>
-                {String(idx).padStart(2, '0')} - {PIPELINE_STAGE_SHORT_LABELS[stageName]}
+            {PIPELINE_STAGE_ORDER.slice(1).map((stageName, idx) => (
+              <option key={idx + 1} value={idx + 1}>
+                {String(idx + 1).padStart(2, '0')} - {PIPELINE_STAGE_SHORT_LABELS[stageName]}
               </option>
             ))}
           </NativeSelect>

@@ -24,8 +24,8 @@ export function ScriptsPanel({ onReuseInputs }: ScriptsPanelProps) {
     void loadScripts()
   }, [loadScripts])
 
-  const handleExpand = async (runId: string) => {
-    if (expandedId === runId) {
+  const handleExpand = async (runId: string, open: boolean) => {
+    if (!open) {
       setExpandedId(null)
       return
     }
@@ -91,7 +91,7 @@ export function ScriptsPanel({ onReuseInputs }: ScriptsPanelProps) {
         <CollapsiblePanel
           key={run.run_id}
           open={expandedId === run.run_id}
-          onOpenChange={() => void handleExpand(run.run_id)}
+          onOpenChange={(open) => void handleExpand(run.run_id, open)}
           summary={
             <div className="space-y-1">
               <div className="truncate text-sm font-medium text-foreground/90">
