@@ -4731,7 +4731,10 @@ def test_quality_validation_catches_duplicate_sub_angles() -> None:
 
 def test_quality_validation_accepts_specific_brief() -> None:
     """Quality validation should accept well-formed briefs."""
-    from cc_deep_research.content_gen.agents.opportunity import validate_opportunity_brief_quality, format_quality_summary
+    from cc_deep_research.content_gen.agents.opportunity import (
+        format_quality_summary,
+        validate_opportunity_brief_quality,
+    )
     from cc_deep_research.content_gen.models import OpportunityBrief
 
     brief = OpportunityBrief(
@@ -4756,7 +4759,10 @@ def test_quality_validation_accepts_specific_brief() -> None:
 
 def test_quality_summary_formatting() -> None:
     """Quality summary should group warnings by category."""
-    from cc_deep_research.content_gen.agents.opportunity import format_quality_summary, BriefQualityWarning
+    from cc_deep_research.content_gen.agents.opportunity import (
+        BriefQualityWarning,
+        format_quality_summary,
+    )
 
     warnings = [
         BriefQualityWarning("audience_generic", "Too generic audience"),
@@ -6834,8 +6840,8 @@ def test_maintenance_jobs_run_stale_item_review(tmp_path: Path) -> None:
     """run_stale_item_review flags items not updated in N days."""
     from cc_deep_research.content_gen.backlog_service import BacklogService
     from cc_deep_research.content_gen.maintenance_workflow import (
-        MaintenanceJobType,
         MaintenanceJobs,
+        MaintenanceJobType,
     )
     from cc_deep_research.content_gen.storage import BacklogStore
 
@@ -6869,8 +6875,8 @@ def test_maintenance_jobs_run_gap_summary(tmp_path: Path) -> None:
     """run_gap_summary flags underrepresented themes."""
     from cc_deep_research.content_gen.backlog_service import BacklogService
     from cc_deep_research.content_gen.maintenance_workflow import (
-        MaintenanceJobType,
         MaintenanceJobs,
+        MaintenanceJobType,
     )
     from cc_deep_research.content_gen.storage import BacklogStore
 
@@ -6899,8 +6905,8 @@ def test_maintenance_jobs_run_duplicate_watchlist(tmp_path: Path) -> None:
     """run_duplicate_watchlist finds highly similar item pairs."""
     from cc_deep_research.content_gen.backlog_service import BacklogService
     from cc_deep_research.content_gen.maintenance_workflow import (
-        MaintenanceJobType,
         MaintenanceJobs,
+        MaintenanceJobType,
     )
     from cc_deep_research.content_gen.storage import BacklogStore
 
@@ -6928,8 +6934,8 @@ def test_maintenance_jobs_run_rescoring_recommend(tmp_path: Path) -> None:
     """run_rescoring_recommend flags items with stale scores."""
     from cc_deep_research.content_gen.backlog_service import BacklogService
     from cc_deep_research.content_gen.maintenance_workflow import (
-        MaintenanceJobType,
         MaintenanceJobs,
+        MaintenanceJobType,
     )
     from cc_deep_research.content_gen.storage import BacklogStore
 
@@ -7064,8 +7070,9 @@ def test_resolve_content_gen_file_path_rejects_escaped_absolute_path(tmp_path: P
 
 def test_resolve_content_gen_file_path_rejects_escaped_config_path(tmp_path: Path) -> None:
     """resolve_content_gen_file_path rejects malicious configured paths."""
-    from cc_deep_research.content_gen.storage._paths import resolve_content_gen_file_path
     from types import SimpleNamespace
+
+    from cc_deep_research.content_gen.storage._paths import resolve_content_gen_file_path
 
     bad_config = SimpleNamespace(
         content_gen=SimpleNamespace(backlog_path="/etc/malicious.yaml")

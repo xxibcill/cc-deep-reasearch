@@ -189,8 +189,8 @@ class TestNormalizeQueryFamilies:
 
     def test_normalize_query_families_preserves_query_family_objects(self) -> None:
         """Already-typed QueryFamily objects should pass through unchanged."""
+        from cc_deep_research.models import StrategyPlan, StrategyResult
         from cc_deep_research.orchestration.helpers import normalize_query_families
-        from cc_deep_research.models import StrategyResult, StrategyPlan
 
         strategy = StrategyResult(
             query="test query",
@@ -221,8 +221,8 @@ class TestNormalizeQueryFamilies:
 
     def test_normalize_query_families_labels_string_as_normalized(self) -> None:
         """Plain strings should be wrapped as 'normalized' family."""
+        from cc_deep_research.models import StrategyPlan, StrategyResult
         from cc_deep_research.orchestration.helpers import normalize_query_families
-        from cc_deep_research.models import StrategyResult, StrategyPlan
 
         strategy = StrategyResult(
             query="test query",
@@ -253,8 +253,8 @@ class TestNormalizeQueryFamilies:
 
     def test_normalize_query_families_labels_original_query_as_baseline(self) -> None:
         """Strings matching original query should be labeled 'baseline'."""
+        from cc_deep_research.models import StrategyPlan, StrategyResult
         from cc_deep_research.orchestration.helpers import normalize_query_families
-        from cc_deep_research.models import StrategyResult, StrategyPlan
 
         strategy = StrategyResult(
             query="original",

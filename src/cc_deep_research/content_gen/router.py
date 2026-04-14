@@ -29,6 +29,12 @@ from cc_deep_research.content_gen.agents.backlog_triage import (
 from cc_deep_research.content_gen.agents.execution_brief import ExecutionBriefAgent
 from cc_deep_research.content_gen.agents.next_action import NextActionAgent
 from cc_deep_research.content_gen.backlog_service import BacklogService
+from cc_deep_research.content_gen.maintenance_workflow import (
+    MaintenanceJobType,
+    MaintenanceProposalStatus,
+    MaintenanceScheduler,
+    MaintenanceStore,
+)
 from cc_deep_research.content_gen.models import (
     PIPELINE_STAGE_LABELS,
     PIPELINE_STAGES,
@@ -50,13 +56,6 @@ from cc_deep_research.content_gen.storage import (
     PublishQueueStore,
     ScriptingStore,
     StrategyStore,
-)
-from cc_deep_research.content_gen.maintenance_workflow import (
-    MaintenanceJobType,
-    MaintenanceProposalStatus,
-    MaintenanceRun,
-    MaintenanceScheduler,
-    MaintenanceStore,
 )
 from cc_deep_research.event_router import EventRouter, WebSocketConnection
 
