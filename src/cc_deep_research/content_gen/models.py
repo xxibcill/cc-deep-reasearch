@@ -1,6 +1,6 @@
 """Data models for the content generation workflow.
 
-Contract Version: 1.4.0
+Contract Version: 1.5.0
 
 This module defines the data contracts for each pipeline stage. Each model
 represents the expected output format from its corresponding agent.
@@ -18,11 +18,11 @@ from enum import StrEnum
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
 from cc_deep_research.models.search import QueryProvenance
 
-CONTRACT_VERSION = "1.4.0"
+CONTRACT_VERSION = "1.6.0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,10 +44,10 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "plan_opportunity": ContentGenStageContract(
         stage_name="plan_opportunity",
         prompt_module="prompts/opportunity.py",
-        contract_version="1.0.0",
-        parser_location="agents/opportunity.py::_parse_opportunity_brief",
+        contract_version="1.1.0",
+        parser_location="agents/opportunity.py::_parse_opportunity_brief (JSON first, legacy fallback)",
         output_model="OpportunityBrief",
-        format_notes="Header-based scalar fields plus '-' list sections.",
+        format_notes="JSON output (primary) with structured schema; legacy header+dash text (fallback). parse_mode recorded in trace metadata.",
         required_fields=(
             "Goal",
             "Primary audience segment",
@@ -64,25 +64,30 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
             "Sub-angles",
             "Research hypotheses",
             "Success criteria",
+            "expert_take",
+            "non_obvious_claims_to_test",
+            "genericity_risks",
         ),
         failure_mode="fail_fast",
     ),
     "build_backlog": ContentGenStageContract(
         stage_name="build_backlog",
         prompt_module="prompts/backlog.py",
-        contract_version="1.0.0",
+        contract_version="1.1.0",
         parser_location="agents/backlog.py::_parse_backlog_items",
         output_model="BacklogOutput",
         format_notes="Repeated '---' blocks with field_name: value pairs.",
-        required_fields=("idea",),
+        required_fields=("title", "one_line_summary"),
         expected_sections=(
             "category",
             "audience",
+            "persona_detail",
             "problem",
-            "source",
             "why_now",
-            "potential_hook",
+            "hook",
             "content_type",
+            "key_message",
+            "call_to_action",
             "evidence",
             "risk_level",
             "Rejected ideas",
@@ -93,7 +98,7 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "score_ideas": ContentGenStageContract(
         stage_name="score_ideas",
         prompt_module="prompts/backlog.py",
-        contract_version="1.0.0",
+        contract_version="1.1.0",
         parser_location="agents/backlog.py::_parse_scores + _derive_selection",
         output_model="ScoringOutput",
         format_notes="Repeated '---' score blocks followed by shortlist summary fields.",
@@ -778,7 +783,7 @@ class LearningCategory(StrEnum):
     """Category of performance learning."""
 
     HOOK = "hook"  # Hook/opening performance
-    Framing = "framing"  # Content framing or angle
+    FRAME = "frame"  # Content framing or angle
     AUDIENCE = "audience"  # Audience resonance signals
     PROOF = "proof"  # Evidence or proof requirements
     FORMAT = "format"  # Content format or structure
@@ -951,33 +956,164 @@ class OpportunityBrief(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class BacklogItem(BaseModel):
-    """Single backlog idea (spec stage 1 output)."""
+class IdeaCoreFields(BaseModel):
+    """Identity and editorial framing for one backlog item."""
 
-    idea_id: str = Field(default_factory=lambda: uuid4().hex[:8])
     category: Literal["", "trend-responsive", "evergreen", "authority-building"] = ""
-    idea: str = ""
-    audience: str = ""
-    problem: str = ""
-    source: str = ""
+    title: str = ""
+    one_line_summary: str = ""
+    raw_idea: str = ""
+    constraints: str = ""
+    source_theme: str = ""
     why_now: str = ""
-    potential_hook: str = ""
+
+
+class AudienceProblemFitFields(BaseModel):
+    """Who the item targets and what tension it resolves."""
+
+    audience: str = ""
+    persona_detail: str = ""
+    problem: str = ""
+    emotional_driver: str = ""
+    urgency_level: Literal["", "low", "medium", "high"] = ""
+
+
+class ContentExecutionFields(BaseModel):
+    """Fields that make the idea directly producible."""
+
     content_type: str = ""
+    format_duration: str = ""
+    hook: str = ""
+    key_message: str = ""
+    call_to_action: str = ""
+
+
+class ValidationLayerFields(BaseModel):
+    """Signals that determine whether the idea is credible and differentiated."""
+
     evidence: str = ""
+    proof_gap_note: str = ""
+    expertise_reason: str = ""
+    genericity_risk: str = ""
+    source: str = ""
+
+
+class PrioritizationFields(BaseModel):
+    """Selection and queueing metadata for backlog operations."""
+
     risk_level: Literal["low", "medium", "high"] = "medium"
     priority_score: float = 0.0
-    status: Literal["backlog", "selected", "runner_up", "in_production", "published", "archived"] = "backlog"
+    impact_score: int | None = Field(default=None, ge=1, le=5)
+    urgency_score: int | None = Field(default=None, ge=1, le=5)
+    evidence_score: int | None = Field(default=None, ge=1, le=5)
+    conversion_score: int | None = Field(default=None, ge=1, le=5)
+    production_effort: int | None = Field(default=None, ge=1, le=5)
     latest_score: int | None = None
     latest_recommendation: Literal["", "produce_now", "hold", "kill"] = ""
     selection_reasoning: str = ""
-    expertise_reason: str = ""
-    genericity_risk: str = ""
-    proof_gap_note: str = ""
-    source_theme: str = ""
+    status: Literal["captured", "backlog", "selected", "archived"] = "backlog"
+    production_status: Literal["idle", "in_production", "ready_to_publish"] = "idle"
+
+
+class BacklogItem(
+    IdeaCoreFields,
+    AudienceProblemFitFields,
+    ContentExecutionFields,
+    ValidationLayerFields,
+    PrioritizationFields,
+):
+    """Single backlog idea with legacy field compatibility."""
+
+    idea_id: str = Field(default_factory=lambda: uuid4().hex[:8])
     source_pipeline_id: str = ""
     created_at: str = ""
     updated_at: str = ""
     last_scored_at: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_legacy_fields(cls, raw: Any) -> Any:
+        if not isinstance(raw, dict):
+            return raw
+
+        data = dict(raw)
+        # Handle legacy field names (map to current canonical names)
+        if data.get("idea") and "title" not in data:
+            data["title"] = str(data["idea"])
+        if data.get("potential_hook") and "hook" not in data:
+            data["hook"] = str(data["potential_hook"])
+
+        legacy_status = str(data.get("status") or "").strip()
+        if not data.get("production_status"):
+            if legacy_status == "in_production":
+                data["production_status"] = "in_production"
+            elif legacy_status == "published":
+                data["production_status"] = "ready_to_publish"
+        if legacy_status in {"runner_up", "in_production", "published"}:
+            data["status"] = "backlog"
+
+        component_keys = (
+            "impact_score",
+            "urgency_score",
+            "evidence_score",
+            "conversion_score",
+            "production_effort",
+        )
+        if not data.get("priority_score") and all(data.get(key) is not None for key in component_keys):
+            effort_score = max(1, min(5, 6 - int(data["production_effort"])))
+            weighted = (
+                int(data["impact_score"]) * 0.30
+                + int(data["urgency_score"]) * 0.20
+                + int(data["evidence_score"]) * 0.20
+                + int(data["conversion_score"]) * 0.20
+                + effort_score * 0.10
+            )
+            data["priority_score"] = round((weighted / 5) * 100, 1)
+
+        return data
+
+    @model_validator(mode="after")
+    def _sync_legacy_fields(self) -> BacklogItem:
+        canonical_title = self.title.strip() or self.one_line_summary.strip()
+        canonical_summary = self.one_line_summary.strip() or canonical_title
+        canonical_hook = self.hook.strip()
+
+        self.title = canonical_title
+        self.one_line_summary = canonical_summary
+        self.hook = canonical_hook
+        if self.status == "captured" and self.title.strip():
+            self.status = "backlog"
+        if self.status == "backlog" and self.raw_idea.strip() and not self.title.strip():
+            self.status = "captured"
+        return self
+
+    def __getattr__(self, name: str) -> str:
+        if name == "idea":
+            return self.title
+        if name == "potential_hook":
+            return self.hook
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+    @computed_field(return_type=str)
+    @property
+    def idea(self) -> str:
+        """Legacy serialized alias for title."""
+        return self.title
+
+    @computed_field(return_type=str)
+    @property
+    def potential_hook(self) -> str:
+        """Legacy serialized alias for hook."""
+        return self.hook
+
+    def __setattr__(self, name: str, value: str) -> None:
+        if name == "idea":
+            object.__setattr__(self, "title", value)
+            return
+        if name == "potential_hook":
+            object.__setattr__(self, "hook", value)
+            return
+        super().__setattr__(name, value)
 
 
 class BacklogOutput(BaseModel):
@@ -2058,6 +2194,7 @@ class StageTraceMetadata(BaseModel):
     platforms_count: int = 0
     approved: bool = False
     active_candidate_count: int = 0
+    parse_mode: str = ""  # "json" | "legacy" — which parse path succeeded
 
 
 class PipelineStageTrace(BaseModel):
@@ -2388,3 +2525,43 @@ PIPELINE_STAGE_LABELS: dict[str, str] = {
     "publish_queue": "Creating publish queue entry",
     "performance_analysis": "Analyzing performance",
 }
+
+
+# ---------------------------------------------------------------------------
+# Backlog AI Triage (batch operations)
+# ---------------------------------------------------------------------------
+
+
+class TriageOperationKind(str):
+    """Kinds of batch triage proposals."""
+
+    BATCH_ENRICH = "batch_enrich"
+    BATCH_REFRAME = "batch_reframe"
+    DEDUPE_RECOMMENDATION = "dedupe_recommendation"
+    ARCHIVE_RECOMMENDATION = "archive_recommendation"
+    PRIORITY_RECOMMENDATION = "priority_recommendation"
+
+
+class TriageOperation(BaseModel):
+    """A single triage operation proposed by the batch triage agent."""
+
+    kind: Literal[
+        "batch_enrich",
+        "batch_reframe",
+        "dedupe_recommendation",
+        "archive_recommendation",
+        "priority_recommendation",
+    ]
+    idea_ids: list[str] = Field(default_factory=list)
+    reason: str = ""
+    fields: dict[str, Any] = Field(default_factory=dict)
+    preferred_idea_id: str | None = None  # for dedupe: which item to keep
+
+
+class TriageResponse(BaseModel):
+    """Structured response from the batch triage agent."""
+
+    reply_markdown: str
+    proposals: list[TriageOperation] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    mentioned_idea_ids: list[str] = Field(default_factory=list)

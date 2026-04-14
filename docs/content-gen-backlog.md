@@ -11,7 +11,7 @@ Its job is to sit between theme-level ideation and downstream execution:
 - capture candidate ideas generated from a theme or created manually
 - preserve operator edits across reruns
 - store scoring and recommendation metadata without losing the original idea record
-- track lifecycle state as an idea moves from `backlog` to `selected`, `in_production`, `published`, or `archived`
+- track operator-managed backlog state separately from system-managed production progress
 - keep provenance so operators know where an idea came from and which pipeline touched it
 
 In practice, the backlog is not just a scratchpad of titles. It is the durable editorial queue the rest of the content-generation system reads from and writes back to.
@@ -26,8 +26,8 @@ One backlog item is a single content candidate with four layers of information:
    Scores, recommendations, selection reasoning, and genericity or proof-gap notes.
 3. Provenance
    Which theme or pipeline created the idea.
-4. Lifecycle state
-   Whether the item is just parked in the backlog, selected as the active lane, already in production, or effectively done.
+4. Workflow state
+   The operator-facing backlog state and the system-facing production progress.
 
 That separation matters. A model recommendation like `produce_now` is not the same thing as an operator or system state like `selected` or `in_production`. The backlog keeps both.
 
@@ -129,36 +129,42 @@ These fields help choose what to make next:
 ### Lifecycle fields
 
 - `idea_id`: stable item identifier
-- `status`: current lifecycle state
+- `status`: operator-facing backlog state
+- `production_status`: system-facing production progress
 - `created_at`
 - `updated_at`
 - `last_scored_at`
 
 ## Status Model
 
-Valid statuses are:
+Backlog status values are:
 
+- `captured`
 - `backlog`
 - `selected`
-- `runner_up`
-- `in_production`
-- `published`
 - `archived`
 
-### What each status means
+Production status values are:
 
+- `idle`
+- `in_production`
+- `ready_to_publish`
+
+### What each field means
+
+- `captured`: a raw idea was captured, but it still needs editorial shaping
 - `backlog`: the item exists and is available for future selection
-- `selected`: the primary idea to develop next
-- `runner_up`: a secondary active candidate kept alive by scoring
-- `in_production`: the pipeline has progressed through scripting for this idea
-- `published`: the pipeline reached publish-queue output for this idea
+- `selected`: the operator chose this as the active item to focus on
 - `archived`: intentionally removed from active circulation without deleting the record
+- `idle`: no pipeline progress is currently recorded on the item
+- `in_production`: the pipeline has progressed through scripting for this idea
+- `ready_to_publish`: the pipeline reached publish-queue output for this idea
 
 ### Important implementation details
 
 - `select_item()` enforces one selected item at a time. Selecting one item clears any previous `selected` item back to `backlog`.
-- `runner_up` is system-derived from scoring and active candidate lanes. It is not a normal manual status exposed in the shared UI dropdown.
-- Later scoring runs do not demote items that are already `in_production`, `published`, or `archived` unless the desired state has higher precedence. This protects real progress from being overwritten by fresh scoring.
+- `runner_up` is system-derived from scoring and active candidate lanes, but it is no longer stored as backlog item status.
+- Pipeline stages update `production_status`, not the operator-facing backlog `status`.
 
 The precedence rule is implemented in [`_merge_backlog_status`](../src/cc_deep_research/content_gen/backlog_service.py).
 

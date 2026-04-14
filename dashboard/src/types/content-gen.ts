@@ -21,14 +21,15 @@ export type BacklogCategory =
   | 'authority-building';
 
 export type RiskLevel = 'low' | 'medium' | 'high';
+export type UrgencyLevel = '' | 'low' | 'medium' | 'high';
 
 export type BacklogItemStatus =
+  | 'captured'
   | 'backlog'
   | 'selected'
-  | 'runner_up'
-  | 'in_production'
-  | 'published'
   | 'archived';
+
+export type BacklogProductionStatus = 'idle' | 'in_production' | 'ready_to_publish';
 
 export type ScoreRecommendation = 'produce_now' | 'hold' | 'kill';
 
@@ -183,29 +184,61 @@ export interface OpportunityBrief {
 // Backlog (stage 1)
 // =============================================================================
 
-export interface BacklogItem {
-  idea_id: string;
+export interface IdeaCore {
   category: BacklogCategory | string;
-  idea: string;
-  audience: string;
-  problem: string;
-  source: string;
+  title: string;
+  one_line_summary: string;
+  raw_idea?: string;
+  constraints?: string;
+  source_theme?: string;
   why_now: string;
-  potential_hook: string;
+  idea: string;
+}
+
+export interface AudienceProblemFit {
+  audience: string;
+  persona_detail?: string;
+  problem: string;
+  emotional_driver?: string;
+  urgency_level?: UrgencyLevel | string;
+}
+
+export interface ContentExecution {
   content_type: string;
+  format_duration?: string;
+  hook?: string;
+  potential_hook: string;
+  key_message?: string;
+  call_to_action?: string;
+}
+
+export interface ValidationLayer {
   evidence: string;
+  proof_gap_note?: string;
+  expertise_reason?: string;
+  genericity_risk?: string;
+  source: string;
+}
+
+export interface Prioritization {
   risk_level: RiskLevel | string;
   priority_score: number;
+  impact_score?: number | null;
+  urgency_score?: number | null;
+  evidence_score?: number | null;
+  conversion_score?: number | null;
+  production_effort?: number | null;
   status: BacklogItemStatus | string;
+  production_status?: BacklogProductionStatus | string;
   created_at?: string;
   updated_at?: string;
   selection_reasoning?: string;
   latest_score?: number;
   latest_recommendation?: string;
-  source_theme?: string;
-  expertise_reason?: string;
-  genericity_risk?: string;
-  proof_gap_note?: string;
+}
+
+export interface BacklogItem extends IdeaCore, AudienceProblemFit, ContentExecution, ValidationLayer, Prioritization {
+  idea_id: string;
   source_pipeline_id?: string;
   last_scored_at?: string;
 }
@@ -856,4 +889,113 @@ export interface StartBacklogItemResponse {
   idea_id: string;
   from_stage: number;
   to_stage: number;
+}
+
+// =============================================================================
+// Backlog AI Triage Types
+// =============================================================================
+
+export type TriageProposalKind =
+  | 'batch_enrich'
+  | 'batch_reframe'
+  | 'dedupe_recommendation'
+  | 'archive_recommendation'
+  | 'priority_recommendation';
+
+export interface TriageOperation {
+  kind: TriageProposalKind;
+  idea_ids: string[];
+  reason: string;
+  fields: Record<string, unknown>;
+  preferred_idea_id?: string | null;
+}
+
+export interface TriageRespondRequest {
+  backlog_items?: BacklogItem[];
+  strategy?: Record<string, unknown> | null;
+}
+
+export interface TriageRespondResponse {
+  reply_markdown: string;
+  proposals: TriageOperation[];
+  warnings: string[];
+  mentioned_idea_ids: string[];
+}
+
+export interface TriageOperationInput {
+  kind: TriageProposalKind;
+  idea_ids: string[];
+  reason: string;
+  fields: Record<string, unknown>;
+  preferred_idea_id?: string | null;
+}
+
+export interface TriageApplyRequest {
+  operations: TriageOperationInput[];
+}
+
+export interface TriageApplyResponse {
+  applied: number;
+  items: BacklogItem[];
+  errors: string[];
+}
+
+// =============================================================================
+// Next-Action Recommendations (P2-T1)
+// =============================================================================
+
+export type NextActionType = 'produce' | 'reframe' | 'gather_evidence' | 'hold' | 'archive';
+
+export interface NextActionRecommendation {
+  action: NextActionType;
+  rationale: string;
+  confidence: number;
+  blockers: string[];
+  suggested_fields: Record<string, string>;
+}
+
+export interface NextActionResponse {
+  recommendation: NextActionRecommendation;
+  item_summary: string;
+}
+
+export interface NextActionBatchResponse {
+  recommendations: NextActionResponse[];
+  warnings: string[];
+}
+
+// =============================================================================
+// Execution Brief (P2-T2)
+// =============================================================================
+
+export interface ExecutionBrief {
+  idea_id: string;
+  audience: string;
+  problem_statement: string;
+  hook_direction: string;
+  evidence_requirements: string[];
+  proof_gaps: string[];
+  research_questions: string[];
+  risks_before_production: string[];
+  is_ready_for_production: boolean;
+  readiness_summary: string;
+}
+
+export interface ExecutionBriefResponse {
+  brief: ExecutionBrief;
+  source_item_summary: string;
+}
+
+// =============================================================================
+// API Request types for P2-T1 and P2-T2
+// =============================================================================
+
+export interface NextActionRequest {
+  idea_id: string;
+  strategy?: Record<string, unknown> | null;
+}
+
+export interface ExecutionBriefRequest {
+  idea_id: string;
+  strategy?: Record<string, unknown> | null;
 }

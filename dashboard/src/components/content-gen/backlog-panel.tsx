@@ -11,7 +11,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { NativeSelect } from '@/components/ui/native-select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { BacklogItemForm } from '@/components/content-gen/backlog-item-form'
-import { formatTimestamp, statusBadgeVariant, recommendationBadgeVariant, STATUS_OPTIONS } from '@/components/content-gen/backlog-shared'
+import {
+  backlogHook,
+  backlogSummary,
+  backlogTitle,
+  formatTimestamp,
+  formatProductionStatus,
+  hasActiveProductionStatus,
+  productionStatusBadgeVariant,
+  statusBadgeVariant,
+  recommendationBadgeVariant,
+  STATUS_OPTIONS,
+} from '@/components/content-gen/backlog-shared'
 import { cn } from '@/lib/utils'
 import type { BacklogItem } from '@/types/content-gen'
 
@@ -48,8 +59,8 @@ export function BacklogPanel({
   const [viewMode, setViewMode] = useState<BacklogViewMode>('grid')
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [deleteConfirm, setDeleteConfirm] = useState<{ ideaId: string; idea: string } | null>(null)
-  const [startConfirm, setStartConfirm] = useState<{ ideaId: string; idea: string } | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<{ ideaId: string; title: string } | null>(null)
+  const [startConfirm, setStartConfirm] = useState<{ ideaId: string; title: string } | null>(null)
 
   const navigateToDetail = (ideaId: string, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -61,8 +72,10 @@ export function BacklogPanel({
     .filter((item) => (statusFilter ? item.status === statusFilter : true))
     .filter((item) => (categoryFilter ? item.category === categoryFilter : true))
     .sort((left, right) => {
-      const leftPriority = left.status === 'selected' ? 0 : left.status === 'in_production' ? 1 : 2
-      const rightPriority = right.status === 'selected' ? 0 : right.status === 'in_production' ? 1 : 2
+      const leftPriority =
+        left.status === 'selected' ? 0 : left.status === 'backlog' ? 1 : left.status === 'captured' ? 2 : 3
+      const rightPriority =
+        right.status === 'selected' ? 0 : right.status === 'backlog' ? 1 : right.status === 'captured' ? 2 : 3
       if (leftPriority !== rightPriority) {
         return leftPriority - rightPriority
       }
@@ -96,7 +109,7 @@ export function BacklogPanel({
             type="button"
             variant="ghost"
             size="icon"
-            onClick={() => setStartConfirm({ ideaId: item.idea_id, idea: item.idea })}
+            onClick={() => setStartConfirm({ ideaId: item.idea_id, title: backlogTitle(item) })}
             disabled={!onStartProduction || busyKey === `${rowKey}-start`}
             className="h-8 w-8 text-primary/70 transition-all duration-200 hover:-translate-y-0.5 hover:text-primary motion-reduce:transition-none"
             title="Start Production"
@@ -140,7 +153,7 @@ export function BacklogPanel({
           size="icon"
           onClick={() => {
             if (onDelete) {
-              setDeleteConfirm({ ideaId: item.idea_id, idea: item.idea })
+              setDeleteConfirm({ ideaId: item.idea_id, title: backlogTitle(item) })
             }
           }}
           disabled={!onDelete || busyKey === `${rowKey}-delete`}
@@ -178,7 +191,16 @@ export function BacklogPanel({
                 {items.filter((item) => item.status === 'selected').length} selected
               </Badge>
               <Badge variant="secondary" className="bg-secondary/50">
+                {items.filter((item) => item.status === 'captured').length} captured
+              </Badge>
+              <Badge variant="secondary" className="bg-secondary/50">
                 {items.filter((item) => item.status === 'archived').length} archived
+              </Badge>
+              <Badge variant="warning" className="bg-warning/10 text-warning">
+                {items.filter((item) => item.production_status === 'in_production').length} in production
+              </Badge>
+              <Badge variant="info" className="bg-info/10 text-info">
+                {items.filter((item) => item.production_status === 'ready_to_publish').length} ready to publish
               </Badge>
             </div>
           </div>
@@ -294,6 +316,11 @@ export function BacklogPanel({
                       <div className="space-y-3">
                         <div className="flex flex-wrap gap-2">
                           <Badge variant={statusBadgeVariant(item.status)}>{item.status}</Badge>
+                          {hasActiveProductionStatus(item.production_status) ? (
+                            <Badge variant={productionStatusBadgeVariant(item.production_status)}>
+                              {formatProductionStatus(item.production_status)}
+                            </Badge>
+                          ) : null}
                           <Badge variant="outline">{item.category || 'uncategorized'}</Badge>
                           <Badge variant={recommendationBadgeVariant(item.latest_recommendation)}>
                             {item.latest_recommendation || 'unscored'}
@@ -301,8 +328,9 @@ export function BacklogPanel({
                         </div>
                         <div className="space-y-2">
                           <h3 className="text-base font-semibold leading-tight text-foreground">
-                            {item.idea}
+                            {backlogTitle(item)}
                           </h3>
+                          <p className="text-sm text-foreground/72">{backlogSummary(item)}</p>
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
                             <span className="font-mono">{item.idea_id.slice(0, 8)}</span>
                             <span>{formatTimestamp(item.updated_at || item.created_at)}</span>
@@ -367,7 +395,7 @@ export function BacklogPanel({
                       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                         {item.source_theme && <span>Theme: {item.source_theme}</span>}
                         {item.evidence && <span>Evidence attached</span>}
-                        {item.potential_hook && <span>Hook ready</span>}
+                        {backlogHook(item) && <span>Hook ready</span>}
                       </div>
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <NativeSelect
@@ -403,7 +431,8 @@ export function BacklogPanel({
                 <TableHeader className="bg-surface-raised/60">
                   <TableRow className="hover:bg-transparent">
                     <TableHead>Idea</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Backlog status</TableHead>
+                    <TableHead>Pipeline</TableHead>
                     <TableHead>Category</TableHead>
                     <TableHead>Score</TableHead>
                     <TableHead>Recommendation</TableHead>
@@ -424,7 +453,8 @@ export function BacklogPanel({
                       >
                         <TableCell className="min-w-[22rem]">
                           <div className="space-y-1">
-                            <p className="text-sm font-medium text-foreground">{item.idea}</p>
+                            <p className="text-sm font-medium text-foreground">{backlogTitle(item)}</p>
+                            <p className="text-xs text-muted-foreground">{backlogSummary(item)}</p>
                             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                               <span className="font-mono">{item.idea_id.slice(0, 8)}</span>
                               {item.selection_reasoning ? (
@@ -455,6 +485,15 @@ export function BacklogPanel({
                               ))}
                             </NativeSelect>
                           </div>
+                        </TableCell>
+                        <TableCell>
+                          {hasActiveProductionStatus(item.production_status) ? (
+                            <Badge variant={productionStatusBadgeVariant(item.production_status)}>
+                              {formatProductionStatus(item.production_status)}
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">idle</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-foreground/80">{item.category || '—'}</TableCell>
                         <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">
@@ -492,7 +531,7 @@ export function BacklogPanel({
             <DialogHeader>
               <DialogTitle>Delete backlog item?</DialogTitle>
               <DialogDescription>
-                This will permanently remove &ldquo;{deleteConfirm.idea}&rdquo; from the backlog. This action cannot be undone.
+                This will permanently remove &ldquo;{deleteConfirm.title}&rdquo; from the backlog. This action cannot be undone.
               </DialogDescription>
             </DialogHeader>
             <DialogBody>
@@ -535,7 +574,7 @@ export function BacklogPanel({
             <DialogHeader>
               <DialogTitle>Start production?</DialogTitle>
               <DialogDescription>
-                This will launch the pipeline for &ldquo;{startConfirm.idea}&rdquo;. The item will move to the production pipeline.
+                This will launch the pipeline for &ldquo;{startConfirm.title}&rdquo;. The item will move to the production pipeline.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>

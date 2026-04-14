@@ -2,12 +2,13 @@
 
 import { useEffect } from 'react'
 import dynamic from 'next/dynamic'
-import { List } from 'lucide-react'
+import Link from 'next/link'
+import { List, Sparkles } from 'lucide-react'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { EmptyState } from '@/components/ui/empty-state'
+import { Button } from '@/components/ui/button'
 import useContentGen from '@/hooks/useContentGen'
-import { BacklogChatPanel } from '@/components/content-gen/backlog-chat-panel'
 
 const BacklogPanel = dynamic(
   () => import('@/components/content-gen/backlog-panel').then((mod) => mod.BacklogPanel),
@@ -68,6 +69,20 @@ export default function BacklogPage() {
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:gap-6 lg:items-start">
       <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between mb-4">
+          <div />
+          <Link href="/content-gen/triage">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5 h-8"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              AI Triage
+            </Button>
+          </Link>
+        </div>
         <BacklogPanel
           items={backlog}
           backlogPath={backlogPath}

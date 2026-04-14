@@ -30,6 +30,7 @@ from cc_deep_research.config import (
     load_config,
     update_config,
 )
+from cc_deep_research.content_gen.maintenance_workflow import MaintenanceScheduler
 from cc_deep_research.content_gen.progress import (
     PipelineRunJobRegistry,
 )
@@ -91,15 +92,20 @@ class DashboardBackendRuntime:
     event_router: EventRouter
     jobs: ResearchRunJobRegistry
     pipeline_jobs: PipelineRunJobRegistry
+    maintenance_scheduler: MaintenanceScheduler | None = None
 
     async def start(self) -> None:
         """Start shared realtime infrastructure."""
         await self.event_router.start()
+        if self.maintenance_scheduler is not None:
+            self.maintenance_scheduler.start()
 
     async def stop(self) -> None:
         """Stop shared infrastructure and cancel in-flight jobs."""
         await self.jobs.cancel_all()
         await self.pipeline_jobs.cancel_all()
+        if self.maintenance_scheduler is not None:
+            self.maintenance_scheduler.stop()
         await self.event_router.stop()
 
 
@@ -220,6 +226,17 @@ def create_app(
         jobs=job_registry or ResearchRunJobRegistry(),
         pipeline_jobs=PipelineRunJobRegistry(),
     )
+
+    # Initialize maintenance scheduler if configured
+    maintenance_scheduler: MaintenanceScheduler | None = None
+    try:
+        config = load_config()
+        interval_hours = getattr(config.content_gen, "maintenance_interval_hours", 0.0)
+        if interval_hours > 0:
+            maintenance_scheduler = MaintenanceScheduler(config=config, interval_hours=interval_hours)
+            app.state.dashboard_runtime.maintenance_scheduler = maintenance_scheduler
+    except Exception:
+        logger.exception("Failed to initialize maintenance scheduler")
 
     # Configure CORS
     app.add_middleware(

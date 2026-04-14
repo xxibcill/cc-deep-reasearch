@@ -1,8 +1,27 @@
 """Prompt templates for the opportunity planning stage.
 
-Contract Version: 1.0.0
+Contract Version: 1.1.0
 
 Parser expectations:
+- Primary: JSON output with a tightly scoped schema (structured mode).
+- Fallback: Header-based text format with exact scalar headers and '-' list sections
+  (legacy mode). Used when JSON parsing fails or LLM reverts to text.
+- Parse path is recorded in stage trace metadata via 'parse_mode' field.
+- The parser fails fast when Goal, Primary audience segment,
+  Problem statements, or Content objective are missing in either mode.
+
+Structured output schema (preferred):
+- All fields map 1:1 to OpportunityBrief model fields
+- Scalar fields: theme, goal, primary_audience_segment, content_objective,
+  freshness_rationale, expert_take
+- List fields: secondary_audience_segments, problem_statements,
+  proof_requirements, platform_constraints, risk_constraints,
+  sub_angles, research_hypotheses, success_criteria,
+  non_obvious_claims_to_test, genericity_risks
+- Output MUST be valid JSON wrapped in ```json ... ``` code fences
+- Empty lists are allowed; missing required scalars are not
+
+Legacy text format (fallback):
 - plan output: Expects exact scalar headers "Theme:", "Goal:",
   "Primary audience segment:", "Content objective:", and
   "Freshness rationale:"
@@ -10,8 +29,6 @@ Parser expectations:
   Secondary audience segments, Problem statements, Proof requirements,
   Platform constraints, Risk constraints, Sub-angles,
   Research hypotheses, Success criteria
-- the parser fails fast when Goal, Primary audience segment,
-  Problem statements, or Content objective are missing
 
 When editing prompts, ensure output format remains compatible with
 the parser in agents/opportunity.py.
@@ -21,7 +38,7 @@ from __future__ import annotations
 
 from cc_deep_research.content_gen.models import StrategyMemory
 
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"
 
 GLOBAL_RULES = """\
 You are planning a short-form content opportunity inside a modular workflow.
@@ -52,38 +69,35 @@ Requirements:
 - Research hypotheses should be testable claims, not wishes
 - Success criteria should be measurable outcomes
 
-Output format — use these exact headers:
+Output format — respond ONLY with a valid JSON object wrapped in ```json ... ```:
 
-Theme: (refined theme statement)
-Goal: (specific content goal)
-Primary audience segment: (who this is really for)
-Secondary audience segments:
-- (segment 1)
-- (segment 2)
-Problem statements:
-- (problem 1)
-- (problem 2)
-Content objective: (what the content should accomplish)
-Proof requirements:
-- (requirement 1)
-- (requirement 2)
-Platform constraints:
-- (constraint 1)
-- (constraint 2)
-Risk constraints:
-- (risk 1)
-- (risk 2)
-Freshness rationale: (why this is timely now)
-Sub-angles:
-- (angle 1)
-- (angle 2)
-- (angle 3)
-Research hypotheses:
-- (hypothesis 1)
-- (hypothesis 2)
-Success criteria:
-- (criterion 1)
-- (criterion 2)"""
+```json
+{{
+  "theme": "(refined theme statement)",
+  "goal": "(specific content goal)",
+  "primary_audience_segment": "(who this is really for)",
+  "secondary_audience_segments": ["(segment 1)", "(segment 2)"],
+  "problem_statements": ["(problem 1)", "(problem 2)"],
+  "content_objective": "(what the content should accomplish)",
+  "proof_requirements": ["(requirement 1)", "(requirement 2)"],
+  "platform_constraints": ["(constraint 1)", "(constraint 2)"],
+  "risk_constraints": ["(risk 1)", "(risk 2)"],
+  "freshness_rationale": "(why this is timely now)",
+  "sub_angles": ["(angle 1)", "(angle 2)", "(angle 3)"],
+  "research_hypotheses": ["(hypothesis 1)", "(hypothesis 2)"],
+  "success_criteria": ["(criterion 1)", "(criterion 2)"],
+  "expert_take": "(optional: non-obvious insight from the expert angle)",
+  "non_obvious_claims_to_test": ["(optional: claim 1)", "(optional: claim 2)"],
+  "genericity_risks": ["(optional: risk 1)", "(optional: risk 2)"]
+}}
+```
+
+Rules:
+- Output ONLY the JSON object inside the code fence — no extra text before or after
+- Use empty arrays [] for any list field that has no entries
+- Do not omit any required field; use empty string "" for missing scalar values
+- The JSON must be parseable by Python's json.loads()
+"""
 
 
 def plan_opportunity_user(

@@ -9,9 +9,9 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from cc_deep_research.config import load_config
 from cc_deep_research.content_gen.agents.backlog_chat import (
@@ -19,7 +19,22 @@ from cc_deep_research.content_gen.agents.backlog_chat import (
     apply_operations,
     build_apply_operations,
 )
+from cc_deep_research.content_gen.agents.backlog_triage import (
+    BatchTriageAgent,
+    apply_triage_operations,
+)
+from cc_deep_research.content_gen.agents.backlog_triage import (
+    build_apply_operations as build_triage_apply_operations,
+)
+from cc_deep_research.content_gen.agents.execution_brief import ExecutionBriefAgent
+from cc_deep_research.content_gen.agents.next_action import NextActionAgent
 from cc_deep_research.content_gen.backlog_service import BacklogService
+from cc_deep_research.content_gen.maintenance_workflow import (
+    MaintenanceJobType,
+    MaintenanceProposalStatus,
+    MaintenanceScheduler,
+    MaintenanceStore,
+)
 from cc_deep_research.content_gen.models import (
     PIPELINE_STAGE_LABELS,
     PIPELINE_STAGES,
@@ -35,6 +50,9 @@ from cc_deep_research.content_gen.progress import (
     PipelineRunJobRegistry,
 )
 from cc_deep_research.content_gen.storage import (
+    AuditActor,
+    AuditEventType,
+    AuditStore,
     PublishQueueStore,
     ScriptingStore,
     StrategyStore,
@@ -88,12 +106,37 @@ class UpdateBacklogItemRequest(BaseModel):
 class CreateBacklogItemRequest(BaseModel):
     """Request body for creating a new backlog item."""
 
-    idea: str = Field(min_length=1)
+    title: str = ""
+    one_line_summary: str = ""
+    raw_idea: str = ""
+    constraints: str = ""
+    idea: str = ""
     category: str = ""
     audience: str = ""
+    persona_detail: str = ""
     problem: str = ""
+    emotional_driver: str = ""
+    urgency_level: str = ""
+    source: str = ""
+    why_now: str = ""
+    hook: str = ""
+    content_type: str = ""
+    format_duration: str = ""
+    key_message: str = ""
+    call_to_action: str = ""
+    evidence: str = ""
+    proof_gap_note: str = ""
+    expertise_reason: str = ""
+    genericity_risk: str = ""
+    risk_level: str = "medium"
     source_theme: str = ""
     selection_reasoning: str = ""
+
+    @model_validator(mode="after")
+    def _require_title_or_idea(self) -> CreateBacklogItemRequest:
+        if not (self.title or self.idea or self.raw_idea):
+            raise ValueError("One of 'title', legacy 'idea', or 'raw_idea' is required")
+        return self
 
 
 class BacklogChatMessage(BaseModel):
@@ -126,6 +169,49 @@ class BacklogChatApplyRequest(BaseModel):
     """Request body for backlog-chat apply endpoint."""
 
     operations: list[BacklogChatOperationInput] = Field(default_factory=list)
+
+
+class TriageOperationInput(BaseModel):
+    """Triage operation proposed by the batch triage agent (used in apply request)."""
+
+    kind: Literal[
+        "batch_enrich",
+        "batch_reframe",
+        "dedupe_recommendation",
+        "archive_recommendation",
+        "priority_recommendation",
+    ]
+    idea_ids: list[str] = Field(default_factory=list)
+    reason: str = ""
+    fields: dict[str, Any] = Field(default_factory=dict)
+    preferred_idea_id: str | None = None
+
+
+class TriageRespondRequest(BaseModel):
+    """Request body for backlog-ai triage respond endpoint."""
+
+    backlog_items: list[BacklogItem] = Field(default_factory=list)
+    strategy: dict[str, Any] | None = None
+
+
+class TriageApplyRequest(BaseModel):
+    """Request body for backlog-ai triage apply endpoint."""
+
+    operations: list[TriageOperationInput] = Field(default_factory=list)
+
+
+class NextActionRequest(BaseModel):
+    """Request body for next-action recommendation endpoint."""
+
+    idea_id: str = Field(min_length=1)
+    strategy: dict[str, Any] | None = None
+
+
+class ExecutionBriefRequest(BaseModel):
+    """Request body for execution brief generation endpoint."""
+
+    idea_id: str = Field(min_length=1)
+    strategy: dict[str, Any] | None = None
 
 
 def _build_scripting_iterations(iter_state: Any) -> ScriptingIterations | None:
@@ -594,10 +680,29 @@ def register_content_gen_routes(
         service = BacklogService(config)
         try:
             item = service.create_item(
+                title=request.title,
+                one_line_summary=request.one_line_summary,
+                raw_idea=request.raw_idea,
+                constraints=request.constraints,
                 idea=request.idea,
                 category=request.category,
                 audience=request.audience,
+                persona_detail=request.persona_detail,
                 problem=request.problem,
+                emotional_driver=request.emotional_driver,
+                urgency_level=request.urgency_level,
+                source=request.source,
+                why_now=request.why_now,
+                hook=request.hook,
+                content_type=request.content_type,
+                format_duration=request.format_duration,
+                key_message=request.key_message,
+                call_to_action=request.call_to_action,
+                evidence=request.evidence,
+                proof_gap_note=request.proof_gap_note,
+                expertise_reason=request.expertise_reason,
+                genericity_risk=request.genericity_risk,
+                risk_level=request.risk_level,
                 source_theme=request.source_theme,
                 selection_reasoning=request.selection_reasoning,
             )
@@ -668,7 +773,10 @@ def register_content_gen_routes(
 
         # Check for duplicate active run
         for job in job_registry.active_jobs():
-            if job.pipeline_context is not None and job.pipeline_context.selected_idea_id == idea_id:
+            if (
+                job.pipeline_context is not None
+                and job.pipeline_context.selected_idea_id == idea_id
+            ):
                 return JSONResponse(
                     status_code=409,
                     content={
@@ -684,7 +792,7 @@ def register_content_gen_routes(
         # Create job starting at generate_angles (stage 4)
         end = len(PIPELINE_STAGES) - 1
         job = job_registry.create_job(
-            theme=item.source_theme or item.idea,
+            theme=item.source_theme or item.title or item.idea,
             from_stage=4,
             to_stage=end,
         )
@@ -871,6 +979,142 @@ def register_content_gen_routes(
         )
 
     # ------------------------------------------------------------------
+    # Backlog AI Triage
+    # ------------------------------------------------------------------
+
+    @app.post("/api/content-gen/backlog-ai/triage/respond")
+    async def backlog_triage_respond(request: TriageRespondRequest) -> JSONResponse:
+        """Generate batch triage proposals for the backlog.
+
+        This endpoint is advisory only — it never writes to the backlog.
+        Use /apply to persist any proposed operations.
+        """
+        config = load_config()
+        service = BacklogService(config)
+
+        backlog_items = request.backlog_items if request.backlog_items else service.load().items
+
+        agent = BatchTriageAgent(config)
+        response = await agent.respond(
+            backlog_items=backlog_items,
+            strategy=request.strategy,
+        )
+
+        return JSONResponse(content=json.loads(response.model_dump_json()))
+
+    @app.post("/api/content-gen/backlog-ai/triage/apply")
+    async def backlog_triage_apply(request: TriageApplyRequest) -> JSONResponse:
+        """Apply a list of validated triage operations.
+
+        This is the only write path for triage-proposed operations.
+        Returns structured errors instead of crashing on invalid operations.
+        """
+        config = load_config()
+        service = BacklogService(config)
+
+        backlog_items = service.load().items
+        operations, errors = build_triage_apply_operations(
+            [op.model_dump(mode="python") for op in request.operations],
+            backlog_items,
+        )
+        applied = 0
+        items: list[BacklogItem] = []
+        if operations:
+            applied, items, apply_errors = await apply_triage_operations(operations, service)
+            errors.extend(apply_errors)
+
+        return JSONResponse(
+            content={
+                "applied": applied,
+                "items": [json.loads(item.model_dump_json()) for item in items],
+                "errors": errors,
+            }
+        )
+
+    # ------------------------------------------------------------------
+    # Next-Action Recommendations
+    # ------------------------------------------------------------------
+
+    @app.post("/api/content-gen/backlog-ai/next-action")
+    async def get_next_action(request: NextActionRequest) -> JSONResponse:
+        """Get a next-action recommendation for a single backlog item.
+
+        This endpoint is advisory only — it never writes to the backlog.
+        """
+        config = load_config()
+        service = BacklogService(config)
+        backlog = service.load()
+
+        item = next((i for i in backlog.items if i.idea_id == request.idea_id), None)
+        if item is None:
+            return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
+
+        agent = NextActionAgent(config)
+        response = await agent.recommend(
+            item,
+            strategy_context=request.strategy,
+        )
+
+        return JSONResponse(content=json.loads(response.model_dump_json()))
+
+    @app.post("/api/content-gen/backlog-ai/next-action/batch")
+    async def get_next_action_batch(
+        request: TriageRespondRequest,
+    ) -> JSONResponse:
+        """Get next-action recommendations for multiple backlog items.
+
+        Returns recommendations for all items in the request (or all items
+        in the backlog if none provided).
+        """
+        config = load_config()
+        service = BacklogService(config)
+
+        backlog_items = request.backlog_items if request.backlog_items else service.load().items
+
+        recommendations = []
+        warnings: list[str] = []
+
+        for item in backlog_items:
+            agent = NextActionAgent(config)
+            try:
+                response = await agent.recommend(
+                    item,
+                    strategy_context=request.strategy,
+                )
+                recommendations.append(json.loads(response.model_dump_json()))
+            except Exception as exc:
+                warnings.append(f"{item.idea_id}: {exc}")
+
+        return JSONResponse(content={"recommendations": recommendations, "warnings": warnings})
+
+    # ------------------------------------------------------------------
+    # Execution Brief
+    # ------------------------------------------------------------------
+
+    @app.post("/api/content-gen/backlog-ai/execution-brief")
+    async def generate_execution_brief(request: ExecutionBriefRequest) -> JSONResponse:
+        """Generate a production-readiness brief for a single backlog item.
+
+        The brief is grounded in existing backlog metadata and AI-enriched context.
+        It helps reduce manual setup work before the pipeline starts.
+        """
+        config = load_config()
+        service = BacklogService(config)
+        backlog = service.load()
+
+        item = next((i for i in backlog.items if i.idea_id == request.idea_id), None)
+        if item is None:
+            return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
+
+        agent = ExecutionBriefAgent(config)
+        response = await agent.generate_brief(
+            item,
+            strategy_context=request.strategy,
+        )
+
+        return JSONResponse(content=json.loads(response.model_dump_json()))
+
+    # ------------------------------------------------------------------
     # Strategy
     # ------------------------------------------------------------------
 
@@ -904,6 +1148,167 @@ def register_content_gen_routes(
         store.save(filtered)
         removed = len(items) - len(filtered)
         return JSONResponse(content={"removed": removed})
+
+    # ------------------------------------------------------------------
+    # Audit history
+    # ------------------------------------------------------------------
+
+    @app.get("/api/content-gen/audit")
+    async def list_audit_entries(
+        idea_id: str | None = None,
+        event_type: str | None = None,
+        actor: str | None = None,
+        limit: int = 100,
+    ) -> JSONResponse:
+        """List audit log entries with optional filtering.
+
+        Query params:
+        - idea_id: filter to entries for a specific backlog item
+        - event_type: filter to a specific event type (proposal_created, item_updated, etc.)
+        - actor: filter to entries from a specific actor (operator, ai_proposal, system, maintenance)
+        - limit: max entries to return (default 100)
+        """
+        store = AuditStore()
+        event_type_enum = AuditEventType(event_type) if event_type else None
+        actor_enum = AuditActor(actor) if actor else None
+        entries = store.load_entries(
+            idea_id=idea_id,
+            event_type=event_type_enum,
+            actor=actor_enum,
+            limit=limit,
+        )
+        return JSONResponse(
+            content={
+                "items": [entry.to_dict() for entry in entries],
+                "count": len(entries),
+            }
+        )
+
+    @app.get("/api/content-gen/audit/{idea_id}")
+    async def get_audit_for_item(idea_id: str, limit: int = 50) -> JSONResponse:
+        """Get audit history for a specific backlog item."""
+        store = AuditStore()
+        entries = store.load_entries(idea_id=idea_id, limit=limit)
+        return JSONResponse(
+            content={
+                "idea_id": idea_id,
+                "items": [entry.to_dict() for entry in entries],
+                "count": len(entries),
+            }
+        )
+
+    # ------------------------------------------------------------------
+    # Maintenance workflows
+    # ------------------------------------------------------------------
+
+    @app.get("/api/content-gen/maintenance/proposals")
+    async def list_maintenance_proposals(
+        status: str | None = None,
+        job_type: str | None = None,
+        limit: int = 50,
+    ) -> JSONResponse:
+        """List maintenance proposals with optional filtering.
+
+        Query params:
+        - status: filter by status (pending, approved, rejected, applied, expired)
+        - job_type: filter by job type (stale_item_review, gap_summary, duplicate_watchlist, rescoring_recommend)
+        - limit: max proposals to return (default 50)
+        """
+        store = MaintenanceStore()
+        status_enum = MaintenanceProposalStatus(status) if status else None
+        job_type_enum = MaintenanceJobType(job_type) if job_type else None
+        proposals = store.load_proposals(status=status_enum, job_type=job_type_enum, limit=limit)
+        return JSONResponse(
+            content={
+                "items": [p.to_dict() for p in proposals],
+                "count": len(proposals),
+            }
+        )
+
+    @app.post("/api/content-gen/maintenance/proposals/{proposal_id}/resolve")
+    async def resolve_maintenance_proposal(
+        proposal_id: str,
+        decision: str,  # "approved" | "rejected"
+    ) -> JSONResponse:
+        """Resolve a maintenance proposal (approve or reject).
+
+        If approved, the suggested_patch is applied to the affected backlog items.
+        If rejected, the proposal is marked as rejected.
+
+        Query params:
+        - decision: "approved" or "rejected"
+        """
+        store = MaintenanceStore()
+        config = load_config()
+        service = BacklogService(config)
+
+        proposal = store.resolve_proposal(proposal_id, decision=decision)
+        if proposal is None:
+            return JSONResponse(status_code=404, content={"error": "Proposal not found"})
+
+        # Apply approved proposals to backlog items
+        if decision == "approved" and proposal.suggested_patch:
+            for idea_id in proposal.affected_idea_ids:
+                service.update_item(idea_id, dict(proposal.suggested_patch))
+
+        # Log to audit
+        audit_store = AuditStore(config=config)
+        for idea_id in proposal.affected_idea_ids:
+            audit_store.log_backlog_mutation(
+                event_type=AuditEventType.MAINTENANCE_PROPOSAL,
+                idea_id=idea_id,
+                actor=AuditActor.OPERATOR,
+                patch={"proposal_id": proposal_id, "decision": decision},
+                outcome=decision,
+            )
+
+        return JSONResponse(content=proposal.to_dict())
+
+    @app.post("/api/content-gen/maintenance/jobs/{job_type}/trigger")
+    async def trigger_maintenance_job(request: Request, job_type: str) -> JSONResponse:
+        """Trigger a maintenance job immediately (on-demand).
+
+        Path params:
+        - job_type: one of stale_item_review, gap_summary, duplicate_watchlist, rescoring_recommend
+        """
+        try:
+            job_type_enum = MaintenanceJobType(job_type)
+        except ValueError:
+            return JSONResponse(
+                status_code=400,
+                content={"error": f"Unknown job type: {job_type}"},
+            )
+
+        # Use app-state scheduler if available (started with app lifecycle)
+        runtime = getattr(request.app.state, "dashboard_runtime", None)
+        scheduler: MaintenanceScheduler | None = None
+        if runtime is not None:
+            scheduler = getattr(runtime, "maintenance_scheduler", None)
+        if scheduler is None:
+            scheduler = MaintenanceScheduler()
+
+        run = scheduler.trigger_job(job_type_enum)
+
+        return JSONResponse(
+            content={
+                "run": run.to_dict(),
+                "proposals_generated": run.proposals_count,
+                "outcome": run.outcome,
+                "error": run.error or None,
+            }
+        )
+
+    @app.get("/api/content-gen/maintenance/runs")
+    async def list_maintenance_runs(limit: int = 20) -> JSONResponse:
+        """List recent maintenance run records."""
+        store = MaintenanceStore()
+        runs = store.load_runs(limit=limit)
+        return JSONResponse(
+            content={
+                "items": [r.to_dict() for r in runs],
+                "count": len(runs),
+            }
+        )
 
     # ------------------------------------------------------------------
     # WebSocket for pipeline progress
@@ -999,7 +1404,7 @@ def _build_seeded_context_from_backlog_item(pipeline_id: str, item: BacklogItem)
 
     return PipelineContext(
         pipeline_id=pipeline_id,
-        theme=item.source_theme or item.idea,
+        theme=item.source_theme or item.title or item.idea,
         created_at=datetime.now(tz=UTC).isoformat(),
         current_stage=4,
         strategy=strategy,

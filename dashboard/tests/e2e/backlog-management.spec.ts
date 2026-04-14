@@ -55,6 +55,7 @@ async function setupBacklogMocks(
       audience: '',
       problem: '',
       status: 'backlog',
+      production_status: 'idle',
       risk_level: 'medium',
       created_at: now,
       updated_at: now,
@@ -1395,5 +1396,276 @@ test.describe('Backlog Chat Page (/content-gen/chat)', () => {
     // Message should be restored from localStorage
     await expect(page.getByText('Hello assistant')).toBeVisible()
     await expect(page.getByText('Here is my reply.')).toBeVisible()
+  })
+})
+
+// ─── PR #16: New component and feature tests ─────────────────────────────────
+
+test.describe('IdeaBacklogHeader component', () => {
+  const fullItem: MockBacklogItem = {
+    idea_id: 'item-header-test',
+    idea: 'Enterprise AI governance frameworks for 2026',
+    audience: 'Enterprise CTOs and compliance officers',
+    problem: 'Lack of structured AI governance leads to compliance risks and reputational damage',
+    why_now: 'EU AI Act enforcement begins mid-2026',
+    potential_hook: 'What your board needs to know about AI governance NOW',
+    content_type: 'guide',
+    evidence: 'PwC 2025 AI Governance Survey, Gartner compliance report',
+    status: 'selected',
+    production_status: 'in_production',
+    category: 'authority-building',
+    latest_score: 88,
+    priority_score: 9.1,
+    latest_recommendation: 'produce_now',
+    risk_level: 'medium',
+    source_theme: 'AI & Automation',
+    created_at: '2026-03-15T10:00:00Z',
+    updated_at: '2026-04-10T14:30:00Z',
+  }
+
+  test('renders idea title and one-line summary', async ({ page }) => {
+    await setupBacklogMocks(page, [fullItem])
+    await page.goto('/content-gen/backlog/item-header-test')
+
+    // Title shown via backlogTitle() which falls back to idea
+    await expect(page.getByRole('heading', { name: /Enterprise AI governance frameworks for 2026/i })).toBeVisible()
+    // Summary shown via backlogSummary() which falls back to idea
+    await expect(page.getByText('Enterprise AI governance frameworks for 2026')).toBeVisible()
+  })
+
+  test('shows production status badge when in_production', async ({ page }) => {
+    await setupBacklogMocks(page, [fullItem])
+    await page.goto('/content-gen/backlog/item-header-test')
+
+    // Production status badge should be visible
+    await expect(page.getByText('In Production', { exact: true })).toBeVisible()
+  })
+
+  test('shows score cards with latest_score and priority_score', async ({ page }) => {
+    await setupBacklogMocks(page, [fullItem])
+    await page.goto('/content-gen/backlog/item-header-test')
+
+    // Score card shows latest_score (88)
+    await expect(page.getByText('88', { exact: true }).first()).toBeVisible()
+    // Priority card shows priority_score (9.1)
+    await expect(page.getByText('9.1', { exact: true })).toBeVisible()
+  })
+
+  test('shows all metadata fields in header grid', async ({ page }) => {
+    await setupBacklogMocks(page, [fullItem])
+    await page.goto('/content-gen/backlog/item-header-test')
+
+    await expect(page.getByText('Status')).toBeVisible()
+    await expect(page.getByText('Pipeline')).toBeVisible()
+    await expect(page.getByText('Category')).toBeVisible()
+    await expect(page.getByText('Recommendation')).toBeVisible()
+    await expect(page.getByText('Risk')).toBeVisible()
+    await expect(page.getByText('Content type')).toBeVisible()
+    await expect(page.getByText('Last updated')).toBeVisible()
+
+    // Badges rendered
+    await expect(page.getByText('selected')).toBeVisible()
+    await expect(page.getByText('produce_now')).toBeVisible()
+    await expect(page.getByText('medium')).toBeVisible()
+    await expect(page.getByText('guide')).toBeVisible()
+  })
+
+  test('shows idea_id in footer', async ({ page }) => {
+    await setupBacklogMocks(page, [fullItem])
+    await page.goto('/content-gen/backlog/item-header-test')
+
+    await expect(page.getByText('item-header-test', { exact: true })).toBeVisible()
+  })
+
+  test('shows empty dash for missing optional fields', async ({ page }) => {
+    const minimalItem: MockBacklogItem = {
+      idea_id: 'item-minimal',
+      idea: 'Minimal idea',
+      status: 'backlog',
+    }
+    await setupBacklogMocks(page, [minimalItem])
+    await page.goto('/content-gen/backlog/item-minimal')
+
+    // Risk and Content type should show empty dash
+    await expect(page.getByText('—', { exact: true })).toBeVisible()
+  })
+})
+
+test.describe('BacklogDetailToolbar component', () => {
+  const itemWithAllFields: MockBacklogItem = {
+    idea_id: 'item-toolbar-test',
+    idea: 'Test idea for toolbar',
+    status: 'backlog',
+    production_status: 'idle',
+    source_theme: 'Testing',
+  }
+
+  test('shows breadcrumb with Content Studio and Backlog links', async ({ page }) => {
+    await setupBacklogMocks(page, [itemWithAllFields])
+    await page.goto('/content-gen/backlog/item-toolbar-test')
+
+    await expect(page.getByText('Content Studio')).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Backlog' })).toBeVisible()
+  })
+
+  test('shows all action buttons (edit, select, start, archive, delete)', async ({ page }) => {
+    await setupBacklogMocks(page, [itemWithAllFields])
+    await page.goto('/content-gen/backlog/item-toolbar-test')
+
+    // The toolbar renders as a flex row of icon+label buttons
+    await expect(page.getByRole('button', { name: /Edit/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Select/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Start/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Archive/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Delete/i })).toBeVisible()
+  })
+
+  test('archive action transitions item to archived status', async ({ page }) => {
+    await setupBacklogMocks(page, [itemWithAllFields])
+    await page.goto('/content-gen/backlog/item-toolbar-test')
+
+    await page.getByRole('button', { name: /Archive/i }).click()
+    await page.waitForResponse(/\/api\/content-gen\/backlog\/item-toolbar-test/)
+
+    // Status should be archived
+    await expect(page.locator('select').first().evaluate((el) => (el as HTMLSelectElement).value)).toBe('archived')
+  })
+
+  test('delete action shows confirmation dialog', async ({ page }) => {
+    await setupBacklogMocks(page, [itemWithAllFields])
+    await page.goto('/content-gen/backlog/item-toolbar-test')
+
+    await page.getByRole('button', { name: /Delete/i }).click()
+
+    await expect(page.getByText('Delete backlog item?')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Delete item' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible()
+  })
+})
+
+test.describe('Detail page extended editorial summary fields', () => {
+  const fullEditorialItem: MockBacklogItem = {
+    idea_id: 'item-editorial-full',
+    idea: 'Complete editorial fields test',
+    audience: 'CTOs at 500+ employee companies concerned about AI compliance',
+    why_now: 'Desire to stay ahead of regulatory requirements',
+    content_type: 'whitepaper',
+    status: 'backlog',
+  }
+
+  test('shows all extended editorial summary fields', async ({ page }) => {
+    await setupBacklogMocks(page, [fullEditorialItem])
+    await page.goto('/content-gen/backlog/item-editorial-full')
+
+    await expect(page.getByText('Audience')).toBeVisible()
+    await expect(page.getByText('CTOs at 500+ employee companies concerned about AI compliance')).toBeVisible()
+
+    await expect(page.getByText('Why now')).toBeVisible()
+    await expect(page.getByText('Desire to stay ahead of regulatory requirements')).toBeVisible()
+  })
+
+  test('shows empty field placeholder for missing editorial fields', async ({ page }) => {
+    const minimalItem: MockBacklogItem = {
+      idea_id: 'item-editorial-empty',
+      idea: 'Minimal idea',
+      status: 'backlog',
+    }
+    await setupBacklogMocks(page, [minimalItem])
+    await page.goto('/content-gen/backlog/item-editorial-empty')
+
+    // Empty fields should show placeholder (not crash)
+    const emptyFieldCount = await page.locator('text="—"').count()
+    expect(emptyFieldCount).toBeGreaterThan(0)
+  })
+})
+
+test.describe('Detail page Copy JSON button', () => {
+  const copyItem: MockBacklogItem = {
+    idea_id: 'item-copy-test',
+    idea: 'Copy JSON test idea',
+    status: 'backlog',
+  }
+
+  test('shows Copy JSON button in editorial summary section', async ({ page }) => {
+    await setupBacklogMocks(page, [copyItem])
+    await page.goto('/content-gen/backlog/item-copy-test')
+
+    await expect(page.getByRole('button', { name: 'Copy JSON' })).toBeVisible()
+  })
+
+  test('clicking Copy JSON button shows Copied confirmation', async ({ page }) => {
+    await setupBacklogMocks(page, [copyItem])
+    await page.goto('/content-gen/backlog/item-copy-test')
+
+    // Grant clipboard permissions
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+
+    await page.getByRole('button', { name: 'Copy JSON' }).click()
+
+    // Should show "Copied" feedback
+    await expect(page.getByText('Copied')).toBeVisible({ timeout: 5000 })
+  })
+})
+
+test.describe('Production status vs backlog status separation', () => {
+  test('in_production production_status shows In Production badge in header', async ({ page }) => {
+    const inProdItem: MockBacklogItem = {
+      idea_id: 'item-inprod',
+      idea: 'In production item',
+      status: 'selected',
+      production_status: 'in_production',
+      source_theme: 'Testing',
+    }
+    await setupBacklogMocks(page, [inProdItem])
+    await page.goto('/content-gen/backlog/item-inprod')
+
+    await expect(page.getByText('In Production', { exact: true })).toBeVisible()
+  })
+
+  test('ready_to_publish shows Ready to Publish badge in header', async ({ page }) => {
+    const publishedItem: MockBacklogItem = {
+      idea_id: 'item-published',
+      idea: 'Published item',
+      status: 'selected',
+      production_status: 'ready_to_publish',
+      source_theme: 'Testing',
+    }
+    await setupBacklogMocks(page, [publishedItem])
+    await page.goto('/content-gen/backlog/item-published')
+
+    await expect(page.getByText('Ready to Publish', { exact: true })).toBeVisible()
+  })
+
+  test('idle production_status shows empty pipeline badge', async ({ page }) => {
+    const idleItem: MockBacklogItem = {
+      idea_id: 'item-idle',
+      idea: 'Idle item',
+      status: 'backlog',
+      production_status: 'idle',
+    }
+    await setupBacklogMocks(page, [idleItem])
+    await page.goto('/content-gen/backlog/item-idle')
+
+    // Pipeline label should exist but show empty value (not crash)
+    await expect(page.getByText('Pipeline')).toBeVisible()
+  })
+
+  test('start production button transitions status to in_production', async ({ page }) => {
+    const startItem: MockBacklogItem = {
+      idea_id: 'item-start-test',
+      idea: 'Start production test',
+      status: 'backlog',
+      production_status: 'idle',
+      source_theme: 'Testing',
+    }
+    await setupBacklogMocks(page, [startItem])
+    await page.goto('/content-gen/backlog/item-start-test')
+
+    // Click Start (start production)
+    await page.getByRole('button', { name: /Start/i }).click()
+    await page.waitForResponse(/\/api\/content-gen\/backlog\/item-start-test\/start/)
+
+    // Production status should now be in_production
+    await expect(page.getByText('In Production', { exact: true })).toBeVisible()
   })
 })

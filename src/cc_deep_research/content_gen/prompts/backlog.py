@@ -1,13 +1,15 @@
 """Prompt templates for the backlog builder and idea scorer.
 
-Contract Version: 1.0.0
+Contract Version: 1.1.0
 
 Parser expectations:
 - build_backlog output: Uses `---` as block delimiter. The parser keeps a
-  block only when it can extract `idea`. Other parsed fields are optional:
-  category, audience, problem, source, why_now, potential_hook,
-  content_type, evidence, risk_level. It also reads "Rejected ideas:" and
-  "Rejection reasons:" summary fields.
+  block only when it can extract `title` or legacy `idea`. Other parsed fields
+  are optional: one_line_summary, raw_idea, constraints, category, source_theme, audience,
+  persona_detail, problem, emotional_driver, urgency_level, why_now, hook,
+  content_type, format_duration, key_message, call_to_action, evidence,
+  proof_gap_note, expertise_reason, genericity_risk, risk_level. It also reads
+  "Rejected ideas:" and "Rejection reasons:" summary fields.
 - score_ideas output: Uses `---` as block delimiter, expects fields:
   idea_id, relevance, novelty, authority_fit, production_ease,
   evidence_strength, hook_strength, repurposing, total_score,
@@ -28,7 +30,7 @@ from cc_deep_research.content_gen.models import (
     StrategyMemory,
 )
 
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"
 
 GLOBAL_RULES = """\
 You are generating short-form video content ideas inside a modular workflow.
@@ -55,9 +57,11 @@ Task:
 Generate content ideas across three categories: trend-responsive, evergreen, and authority-building.
 
 Requirements:
+- Each idea must have a specific title and one-line summary
 - Each idea must target a specific audience with a specific problem
+- Each idea should narrow the persona and emotional driver when possible
 - Each idea must have a clear why_now reason
-- Each idea must include a potential hook
+- Each idea must include a hook, key message, and CTA
 - Reject ideas that are vague, unprovable, or too broad
 - Keep only ideas with a clear audience + clear payoff + at least one evidence source
 
@@ -66,14 +70,26 @@ Output format — repeat this block for each idea:
 ---
 idea_id: (leave blank)
 category: trend-responsive | evergreen | authority-building
-idea: (one sentence)
+title: (specific editorial title)
+one_line_summary: (one sentence summary)
+raw_idea: (optional raw memo text if the idea is still rough)
+constraints: (optional production, compliance, or brand constraints)
+source_theme: (origin theme or source cluster)
 audience: (specific audience)
+persona_detail: (narrow persona detail)
 problem: (specific problem)
-source: (where this idea came from)
+emotional_driver: (fear, aspiration, frustration, urgency, etc.)
+urgency_level: low | medium | high
 why_now: (why this is timely)
-potential_hook: (opening line idea)
+hook: (opening line idea)
 content_type: (format type)
+format_duration: (for example 60_seconds)
+key_message: (main takeaway)
+call_to_action: (what to ask the viewer to do next)
 evidence: (what supports this)
+proof_gap_note: (what still needs proof or sourcing)
+expertise_reason: (why this fits the creator's authority)
+genericity_risk: low | medium | high
 risk_level: low | medium | high
 ---
 
@@ -210,10 +226,18 @@ def score_ideas_user(
     for item in items:
         parts.append(f"idea_id: {item.idea_id}")
         parts.append(f"category: {item.category}")
-        parts.append(f"idea: {item.idea}")
+        parts.append(f"title: {item.title or item.idea}")
+        parts.append(f"one_line_summary: {item.one_line_summary or item.idea}")
+        parts.append(f"raw_idea: {item.raw_idea}")
+        parts.append(f"constraints: {item.constraints}")
         parts.append(f"audience: {item.audience}")
+        parts.append(f"persona_detail: {item.persona_detail}")
         parts.append(f"problem: {item.problem}")
-        parts.append(f"potential_hook: {item.potential_hook}")
+        parts.append(f"emotional_driver: {item.emotional_driver}")
+        parts.append(f"urgency_level: {item.urgency_level}")
+        parts.append(f"hook: {item.hook or item.potential_hook}")
+        parts.append(f"key_message: {item.key_message}")
+        parts.append(f"call_to_action: {item.call_to_action}")
         parts.append(f"evidence: {item.evidence}")
         parts.append("---")
     return "\n".join(parts)

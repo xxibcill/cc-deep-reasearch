@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { CollapsiblePanel } from '@/components/ui/collapsible-panel'
@@ -21,12 +21,19 @@ export function StageResultPanel({
   defaultOpen = false,
 }: StageResultPanelProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen || status === 'completed')
+  const hasUserToggled = useRef(false)
 
   useEffect(() => {
-    if (status === 'running' || status === 'completed' || status === 'skipped' || status === 'failed') {
+    // Only auto-open on status transition to non-pending if user hasn't manually toggled
+    if (!hasUserToggled.current && (status === 'running' || status === 'completed' || status === 'skipped' || status === 'failed')) {
       setIsOpen(true)
     }
   }, [status])
+
+  const handleOpenChange = (open: boolean) => {
+    hasUserToggled.current = true
+    setIsOpen(open)
+  }
 
   const stateStyles: Record<StageResultPanelProps['status'], string> = {
     completed: 'border-success/30',
@@ -39,7 +46,7 @@ export function StageResultPanel({
   return (
     <CollapsiblePanel
       open={isOpen}
-      onOpenChange={setIsOpen}
+      onOpenChange={handleOpenChange}
       className={stateStyles[status]}
       summary={
         <div className="flex items-center gap-3">

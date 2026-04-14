@@ -18,6 +18,15 @@ import type {
   BacklogChatRespondResponse,
   BacklogChatApplyRequest,
   BacklogChatApplyResponse,
+  TriageRespondRequest,
+  TriageRespondResponse,
+  TriageApplyRequest,
+  TriageApplyResponse,
+  NextActionRequest,
+  NextActionResponse,
+  NextActionBatchResponse,
+  ExecutionBriefRequest,
+  ExecutionBriefResponse,
 } from '@/types/content-gen';
 
 interface PipelineRunDetailResponse extends PipelineRunSummary {
@@ -293,10 +302,29 @@ export async function startBacklogItem(
 }
 
 export interface CreateBacklogItemRequest {
-  idea: string;
+  title?: string;
+  one_line_summary?: string;
+  raw_idea?: string;
+  constraints?: string;
+  idea?: string;
   category?: string;
   audience?: string;
+  persona_detail?: string;
   problem?: string;
+  emotional_driver?: string;
+  urgency_level?: string;
+  source?: string;
+  why_now?: string;
+  hook?: string;
+  content_type?: string;
+  format_duration?: string;
+  key_message?: string;
+  call_to_action?: string;
+  evidence?: string;
+  proof_gap_note?: string;
+  expertise_reason?: string;
+  genericity_risk?: string;
+  risk_level?: string;
   source_theme?: string;
   selection_reasoning?: string;
 }
@@ -344,5 +372,97 @@ export async function backlogChatApply(
     return response.data;
   } catch (error) {
     throw new Error(getApiErrorMessage(error, 'Failed to apply chat proposal.'));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Backlog AI Triage endpoints
+// ---------------------------------------------------------------------------
+
+const BACKLOG_TRIAGE_TIMEOUT_MS = 60000;
+
+export async function backlogTriageRespond(
+  req: TriageRespondRequest,
+): Promise<TriageRespondResponse> {
+  try {
+    const response = await contentGenClient.post<TriageRespondResponse>(
+      '/backlog-ai/triage/respond',
+      req,
+      { timeout: BACKLOG_TRIAGE_TIMEOUT_MS },
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to run triage analysis.'));
+  }
+}
+
+export async function backlogTriageApply(
+  req: TriageApplyRequest,
+): Promise<TriageApplyResponse> {
+  try {
+    const response = await contentGenClient.post<TriageApplyResponse>(
+      '/backlog-ai/triage/apply',
+      req,
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to apply triage proposals.'));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Next-Action Recommendations (P2-T1)
+// ---------------------------------------------------------------------------
+
+const NEXT_ACTION_TIMEOUT_MS = 45000;
+
+export async function getNextAction(
+  req: NextActionRequest,
+): Promise<NextActionResponse> {
+  try {
+    const response = await contentGenClient.post<NextActionResponse>(
+      '/backlog-ai/next-action',
+      req,
+      { timeout: NEXT_ACTION_TIMEOUT_MS },
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to get next-action recommendation.'));
+  }
+}
+
+export async function getNextActionBatch(
+  req: TriageRespondRequest,
+): Promise<NextActionBatchResponse> {
+  try {
+    const response = await contentGenClient.post<NextActionBatchResponse>(
+      '/backlog-ai/next-action/batch',
+      req,
+      { timeout: BACKLOG_TRIAGE_TIMEOUT_MS * 2 },
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to get batch next-action recommendations.'));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Execution Brief (P2-T2)
+// ---------------------------------------------------------------------------
+
+const EXECUTION_BRIEF_TIMEOUT_MS = 45000;
+
+export async function generateExecutionBrief(
+  req: ExecutionBriefRequest,
+): Promise<ExecutionBriefResponse> {
+  try {
+    const response = await contentGenClient.post<ExecutionBriefResponse>(
+      '/backlog-ai/execution-brief',
+      req,
+      { timeout: EXECUTION_BRIEF_TIMEOUT_MS },
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to generate execution brief.'));
   }
 }

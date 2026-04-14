@@ -2,34 +2,68 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.content_gen.models import BacklogItem, BacklogOutput, ScoringOutput
-from cc_deep_research.content_gen.storage import BacklogStore
+from cc_deep_research.content_gen.storage import (
+    AuditActor,
+    AuditEventType,
+    AuditStore,
+    BacklogStore,
+    SqliteBacklogStore,
+)
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
+
+
+_IDEA_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 def _now_iso() -> str:
     return datetime.now(tz=UTC).isoformat()
 
 
+def _validate_idea_id(idea_id: str) -> str:
+    """Validate idea_id format to prevent injection and malformed identifiers."""
+    if not idea_id or not isinstance(idea_id, str):
+        raise ValueError("idea_id must be a non-empty string")
+    if not _IDEA_ID_RE.match(idea_id):
+        raise ValueError(f"idea_id '{idea_id}' contains invalid characters; use only alphanumeric, hyphen, underscore")
+    return idea_id
+
+
 class BacklogService:
     """Coordinate backlog persistence, scoring metadata, and status transitions."""
 
-    def __init__(self, config: Config | None = None, store: BacklogStore | None = None) -> None:
+    def __init__(
+        self,
+        config: Config | None = None,
+        store: BacklogStore | None = None,
+        audit_store: AuditStore | None = None,
+    ) -> None:
         if store is not None:
             self._store = store
-            return
+        else:
+            use_sqlite = getattr(getattr(config, "content_gen", None), "use_sqlite", False)
+            path: Path | None = None
+            configured_path = getattr(getattr(config, "content_gen", None), "backlog_path", None)
+            if configured_path:
+                path = Path(configured_path).expanduser()
 
-        path: Path | None = None
-        configured_path = getattr(getattr(config, "content_gen", None), "backlog_path", None)
-        if configured_path:
-            path = Path(configured_path).expanduser()
-        self._store = BacklogStore(path)
+            if use_sqlite:
+                self._store = SqliteBacklogStore(config=config)
+            else:
+                self._store = BacklogStore(path)
+
+        self._audit_store = audit_store
+
+    def set_audit_store(self, audit_store: AuditStore) -> None:
+        """Attach an audit store for governance tracking."""
+        self._audit_store = audit_store
 
     @property
     def path(self) -> Path:
@@ -79,11 +113,6 @@ class BacklogService:
 
         now = _now_iso()
         score_by_id = {score.idea_id: score for score in scoring.scores}
-        active_runner_up_ids = {
-            candidate.idea_id
-            for candidate in scoring.active_candidates
-            if candidate.role == "runner_up"
-        }
         updated_items: list[BacklogItem] = []
 
         for item in backlog.items:
@@ -97,10 +126,7 @@ class BacklogService:
             if scoring.selected_idea_id and item.idea_id == scoring.selected_idea_id:
                 patch["status"] = _merge_backlog_status(item.status, "selected")
                 patch["selection_reasoning"] = scoring.selection_reasoning
-            elif item.idea_id in active_runner_up_ids:
-                patch["status"] = _merge_backlog_status(item.status, "runner_up")
-                patch["selection_reasoning"] = ""
-            elif item.status in {"selected", "runner_up"}:
+            elif item.status == "selected" and item.production_status == "idle":
                 patch["status"] = "backlog"
                 patch["selection_reasoning"] = ""
 
@@ -115,6 +141,7 @@ class BacklogService:
 
     def select_item(self, idea_id: str, *, reason: str = "") -> BacklogItem | None:
         """Select one backlog item and clear previous selections."""
+        _validate_idea_id(idea_id)
         backlog = self.load()
         now = _now_iso()
         selected: BacklogItem | None = None
@@ -144,19 +171,39 @@ class BacklogService:
             return None
 
         self._store.save(backlog.model_copy(update={"items": updated_items}))
+        self._audit_mutation(
+            AuditEventType.ITEM_SELECTED,
+            idea_id,
+            actor=AuditActor.OPERATOR,
+            patch={"reason": reason},
+            item_snapshot=selected,
+            outcome="success",
+        )
         return selected
 
     def update_item(self, idea_id: str, patch: dict[str, Any]) -> BacklogItem | None:
         """Apply a partial item update with timestamp management."""
-        if patch.get("status") == "selected":
+        _validate_idea_id(idea_id)
+        normalized_patch = _normalize_backlog_patch(patch)
+        if normalized_patch.get("status") == "selected":
             reason = patch.get("selection_reasoning")
             return self.select_item(idea_id, reason=str(reason or ""))
 
-        normalized_patch = dict(patch)
         normalized_patch["updated_at"] = _now_iso()
-        return self._store.update_item(idea_id, normalized_patch)
+        updated = self._store.update_item(idea_id, normalized_patch)
+        if updated is not None:
+            self._audit_mutation(
+                AuditEventType.ITEM_UPDATED,
+                idea_id,
+                actor=AuditActor.OPERATOR,
+                patch=patch,
+                item_snapshot=updated,
+                outcome="success",
+            )
+        return updated
 
     def archive_item(self, idea_id: str) -> BacklogItem | None:
+        _validate_idea_id(idea_id)
         return self.update_item(idea_id, {"status": "archived"})
 
     def mark_in_production(
@@ -165,10 +212,21 @@ class BacklogService:
         *,
         source_pipeline_id: str = "",
     ) -> BacklogItem | None:
-        patch: dict[str, Any] = {"status": "in_production"}
+        _validate_idea_id(idea_id)
+        patch: dict[str, Any] = {"production_status": "in_production"}
         if source_pipeline_id:
             patch["source_pipeline_id"] = source_pipeline_id
-        return self.update_item(idea_id, patch)
+        item = self.update_item(idea_id, patch)
+        if item is not None:
+            self._audit_mutation(
+                AuditEventType.ITEM_STATUS_CHANGED,
+                idea_id,
+                actor=AuditActor.OPERATOR,
+                patch={"production_status": "in_production", "source_pipeline_id": source_pipeline_id},
+                item_snapshot=item,
+                outcome="success",
+            )
+        return item
 
     def mark_published(
         self,
@@ -176,23 +234,69 @@ class BacklogService:
         *,
         source_pipeline_id: str = "",
     ) -> BacklogItem | None:
-        patch: dict[str, Any] = {"status": "published"}
+        _validate_idea_id(idea_id)
+        patch: dict[str, Any] = {"production_status": "ready_to_publish"}
         if source_pipeline_id:
             patch["source_pipeline_id"] = source_pipeline_id
-        return self.update_item(idea_id, patch)
+        item = self.update_item(idea_id, patch)
+        if item is not None:
+            self._audit_mutation(
+                AuditEventType.ITEM_STATUS_CHANGED,
+                idea_id,
+                actor=AuditActor.OPERATOR,
+                patch={"production_status": "ready_to_publish", "source_pipeline_id": source_pipeline_id},
+                item_snapshot=item,
+                outcome="success",
+            )
+        return item
+
+    def _audit_mutation(
+        self,
+        event_type: AuditEventType,
+        idea_id: str,
+        actor: AuditActor = AuditActor.OPERATOR,
+        patch: dict[str, Any] | None = None,
+        item_snapshot: BacklogItem | None = None,
+        outcome: str = "success",
+    ) -> None:
+        """Log a backlog mutation to audit store if configured."""
+        if self._audit_store is None:
+            return
+        self._audit_store.log_backlog_mutation(
+            event_type=event_type,
+            idea_id=idea_id,
+            actor=actor,
+            patch=patch,
+            item_snapshot=item_snapshot,
+            outcome=outcome,
+        )
 
     def create_item(
         self,
         *,
-        idea: str,
+        title: str = "",
+        one_line_summary: str = "",
+        raw_idea: str = "",
+        constraints: str = "",
+        idea: str = "",
         category: str = "",
         audience: str = "",
+        persona_detail: str = "",
         problem: str = "",
+        emotional_driver: str = "",
+        urgency_level: str = "",
         source: str = "",
         why_now: str = "",
+        hook: str = "",
         potential_hook: str = "",
         content_type: str = "",
+        format_duration: str = "",
+        key_message: str = "",
+        call_to_action: str = "",
         evidence: str = "",
+        proof_gap_note: str = "",
+        expertise_reason: str = "",
+        genericity_risk: str = "",
         risk_level: str = "medium",
         source_theme: str = "",
         selection_reasoning: str = "",
@@ -200,33 +304,64 @@ class BacklogService:
         """Create a new backlog item with normalized timestamps."""
         now = _now_iso()
         item = BacklogItem(
-            idea=idea,
+            title=title or idea,
+            one_line_summary=one_line_summary or title or idea,
+            raw_idea=raw_idea,
+            constraints=constraints,
+            idea=idea or title,
             category=category,
             audience=audience,
+            persona_detail=persona_detail,
             problem=problem,
+            emotional_driver=emotional_driver,
+            urgency_level=urgency_level,
             source=source,
             why_now=why_now,
+            hook=hook or potential_hook,
             potential_hook=potential_hook,
             content_type=content_type,
+            format_duration=format_duration,
+            key_message=key_message,
+            call_to_action=call_to_action,
             evidence=evidence,
+            proof_gap_note=proof_gap_note,
+            expertise_reason=expertise_reason,
+            genericity_risk=genericity_risk,
             risk_level=risk_level,
             source_theme=source_theme,
             selection_reasoning=selection_reasoning,
-            status="backlog",
+            status="captured" if raw_idea and not (title or idea) else "backlog",
             created_at=now,
             updated_at=now,
         )
         backlog = self.load()
         backlog.items.append(item)
         self._store.save(backlog)
+        self._audit_mutation(
+            AuditEventType.ITEM_CREATED,
+            item.idea_id,
+            actor=AuditActor.OPERATOR,
+            item_snapshot=item,
+            outcome="success",
+        )
         return item
 
     def delete_item(self, idea_id: str) -> bool:
+        _validate_idea_id(idea_id)
         backlog = self.load()
+        deleted_item = next((item for item in backlog.items if item.idea_id == idea_id), None)
         filtered_items = [item for item in backlog.items if item.idea_id != idea_id]
         if len(filtered_items) == len(backlog.items):
             return False
         self._store.save(backlog.model_copy(update={"items": filtered_items}))
+        if deleted_item is not None:
+            self._audit_mutation(
+                AuditEventType.ITEM_DELETED,
+                idea_id,
+                actor=AuditActor.OPERATOR,
+                item_snapshot=deleted_item,
+                outcome="success",
+            )
         return True
 
     @staticmethod
@@ -248,10 +383,14 @@ class BacklogService:
             status = item.status
             if existing is not None and status == "backlog":
                 status = existing.status
+            production_status = item.production_status
+            if existing is not None and production_status == "idle":
+                production_status = existing.production_status
 
             persisted = item.model_copy(
                 update={
                     "status": status or "backlog",
+                    "production_status": production_status or "idle",
                     "latest_score": item.latest_score if item.latest_score is not None else getattr(existing, "latest_score", None),
                     "latest_recommendation": item.latest_recommendation or getattr(existing, "latest_recommendation", ""),
                     "selection_reasoning": item.selection_reasoning or getattr(existing, "selection_reasoning", ""),
@@ -273,19 +412,24 @@ class BacklogService:
         return persisted_items, merged_items
 
 
-_STATUS_PRECEDENCE = {
-    "backlog": 0,
-    "runner_up": 1,
-    "selected": 2,
-    "in_production": 3,
-    "published": 4,
-    "archived": 5,
-}
-
-
 def _merge_backlog_status(current_status: str, desired_status: str) -> str:
-    if current_status in {"in_production", "published", "archived"}:
-        current_rank = _STATUS_PRECEDENCE.get(current_status, 0)
-        desired_rank = _STATUS_PRECEDENCE.get(desired_status, 0)
-        return current_status if current_rank > desired_rank else desired_status
+    if current_status == "archived":
+        return current_status
     return desired_status
+
+
+def _normalize_backlog_patch(patch: dict[str, Any]) -> dict[str, Any]:
+    """Map legacy patch keys onto canonical backlog fields."""
+    normalized_patch = dict(patch)
+
+    if "idea" in normalized_patch:
+        legacy_idea = str(normalized_patch.pop("idea") or "")
+        if not normalized_patch.get("title"):
+            normalized_patch["title"] = legacy_idea
+
+    if "potential_hook" in normalized_patch:
+        legacy_hook = str(normalized_patch.pop("potential_hook") or "")
+        if not normalized_patch.get("hook"):
+            normalized_patch["hook"] = legacy_hook
+
+    return normalized_patch

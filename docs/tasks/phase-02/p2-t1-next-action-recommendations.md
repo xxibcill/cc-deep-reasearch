@@ -27,6 +27,16 @@ Add AI guidance that tells the superuser what should happen next for each backlo
 - Recommendation explanations reference meaningful item context instead of generic AI prose.
 - The output is structured enough to drive later apply flows and automation.
 
+## Status
+
+**Done** — Implemented in:
+- `src/cc_deep_research/content_gen/agents/next_action.py` — NextActionAgent with heuristic fallback
+- `src/cc_deep_research/content_gen/prompts/next_action.py` — prompt templates
+- `src/cc_deep_research/content_gen/router.py` — POST /api/content-gen/backlog-ai/next-action endpoints
+- `dashboard/src/components/content-gen/next-action-card.tsx` — recommendation card UI
+- `dashboard/src/app/content-gen/backlog/[ideaId]/page.tsx` — embedded in backlog detail page
+- `dashboard/src/types/content-gen.ts` + `dashboard/src/lib/content-gen-api.ts` — TypeScript types and API client
+
 ## Advice For The Smaller Coding Agent
 
 - Reuse the existing scoring and selection metadata instead of inventing a parallel ranking model.

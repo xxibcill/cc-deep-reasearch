@@ -2,6 +2,7 @@
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
+import { backlogHook, backlogSummary, backlogTitle } from '@/components/content-gen/backlog-shared'
 import type { BacklogItem, PipelineContext } from '@/types/content-gen'
 import { SectionList } from './ui'
 import { findSelectedIdea } from './shared'
@@ -35,7 +36,8 @@ function BacklogItemCard({ item, isSelected }: { item: BacklogItem; isSelected: 
           {item.risk_level} risk
         </Badge>
       </div>
-      <p className="text-sm font-medium text-foreground">{item.idea}</p>
+      <p className="text-sm font-medium text-foreground">{backlogTitle(item)}</p>
+      <p className="mt-1 text-xs text-foreground/72">{backlogSummary(item)}</p>
       <p className="mt-1 text-xs text-foreground/72">
         <span className="font-medium">Audience:</span> {item.audience}
       </p>
@@ -47,8 +49,8 @@ function BacklogItemCard({ item, isSelected }: { item: BacklogItem; isSelected: 
           <span className="font-medium">Evidence:</span> {item.evidence}
         </p>
       )}
-      {item.potential_hook && !isSelected && (
-        <p className="mt-2 text-xs text-foreground/65 italic">Hook: {item.potential_hook}</p>
+      {backlogHook(item) && !isSelected && (
+        <p className="mt-2 text-xs text-foreground/65 italic">Hook: {backlogHook(item)}</p>
       )}
     </div>
   )

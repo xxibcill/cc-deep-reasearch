@@ -447,7 +447,7 @@ def test_pipeline_context_roundtrip() -> None:
     assert [candidate.idea_id for candidate in restored.active_candidates] == ["idea-2", "idea-1"]
     assert [candidate.role for candidate in restored.active_candidates] == ["primary", "runner_up"]
     assert len(restored.backlog.items) == 1
-    assert restored.backlog.items[0].idea == "test idea"
+    assert restored.backlog.items[0].title == "test idea"
 
 
 def test_pipeline_context_roundtrip_with_lane_contexts_syncs_primary_fields() -> None:
@@ -2007,7 +2007,7 @@ def test_backlog_store_roundtrip(tmp_path: Path) -> None:
 
     loaded = store.load()
     assert len(loaded.items) == 2
-    assert loaded.items[0].idea == "idea 1"
+    assert loaded.items[0].title == "idea 1"
 
 
 def test_backlog_store_uses_configured_path() -> None:
@@ -2019,6 +2019,31 @@ def test_backlog_store_uses_configured_path() -> None:
 
     store = BacklogStore(config=config)
     assert str(store.path) == "/tmp/custom-backlog.yaml"
+
+
+def test_audit_store_uses_backlog_directory_not_backlog_file() -> None:
+    from cc_deep_research.config import Config
+    from cc_deep_research.content_gen.storage import AuditStore
+
+    config = Config()
+    config.content_gen.backlog_path = "/tmp/custom-backlog.yaml"
+
+    store = AuditStore(config=config)
+    # Use resolve() to handle macOS symlink (/tmp -> /private/tmp)
+    assert store.path.resolve() == Path("/tmp/audit_log.yaml").resolve()
+
+
+def test_maintenance_store_uses_backlog_directory_not_backlog_file() -> None:
+    from cc_deep_research.config import Config
+    from cc_deep_research.content_gen.maintenance_workflow import MaintenanceStore
+
+    config = Config()
+    config.content_gen.backlog_path = "/tmp/custom-backlog.yaml"
+
+    store = MaintenanceStore(config)
+    # Use resolve() to handle macOS symlink (/tmp -> /private/tmp)
+    assert store._proposals_path.resolve() == Path("/tmp/maintenance_proposals.yaml").resolve()
+    assert store._runs_path.resolve() == Path("/tmp/maintenance_runs.yaml").resolve()
 
 
 def test_backlog_store_update_item(tmp_path: Path) -> None:
@@ -2053,8 +2078,26 @@ def test_backlog_service_persist_generated_uses_config_path(tmp_path: Path) -> N
     assert path.exists()
 
 
+def test_backlog_service_uses_sibling_sqlite_db_path(tmp_path: Path) -> None:
+    """SQLite mode should derive backlog.db from the configured YAML location."""
+    from types import SimpleNamespace
+
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+
+    backlog_path = tmp_path / "custom-backlog.yaml"
+    config = SimpleNamespace(
+        content_gen=SimpleNamespace(
+            backlog_path=str(backlog_path),
+            use_sqlite=True,
+        )
+    )
+
+    service = BacklogService(config)
+    assert service.path == tmp_path / "backlog.db"
+
+
 def test_backlog_service_apply_scoring_marks_selected(tmp_path: Path) -> None:
-    """Applying scoring should attach score metadata and keep one active runner-up."""
+    """Applying scoring should attach score metadata and keep backlog status user-facing."""
     from cc_deep_research.content_gen.backlog_service import BacklogService
     from cc_deep_research.content_gen.storage import BacklogStore
 
@@ -2085,11 +2128,11 @@ def test_backlog_service_apply_scoring_marks_selected(tmp_path: Path) -> None:
     assert by_id["idea-1"].latest_score == 31
     assert by_id["idea-1"].latest_recommendation == "produce_now"
     assert by_id["idea-1"].selection_reasoning == "Best fit"
-    assert by_id["idea-2"].status == "runner_up"
+    assert by_id["idea-2"].status == "backlog"
 
 
 def test_backlog_service_multi_lane_status_transitions_preserve_progress(tmp_path: Path) -> None:
-    """Scoring should not demote lanes already in production, and publish should finalize status."""
+    """Production progress should stay separate from backlog status."""
     from cc_deep_research.content_gen.backlog_service import BacklogService
     from cc_deep_research.content_gen.storage import BacklogStore
 
@@ -2097,7 +2140,12 @@ def test_backlog_service_multi_lane_status_transitions_preserve_progress(tmp_pat
     service = BacklogService(store=store)
     service.upsert_items(
         [
-            BacklogItem(idea_id="idea-1", idea="Primary", status="in_production"),
+            BacklogItem(
+                idea_id="idea-1",
+                idea="Primary",
+                status="backlog",
+                production_status="in_production",
+            ),
             BacklogItem(idea_id="idea-2", idea="Runner-up"),
         ]
     )
@@ -2116,18 +2164,75 @@ def test_backlog_service_multi_lane_status_transitions_preserve_progress(tmp_pat
 
     scored = store.load()
     scored_by_id = {item.idea_id: item for item in scored.items}
-    assert scored_by_id["idea-1"].status == "in_production"
+    assert scored_by_id["idea-1"].status == "selected"
+    assert scored_by_id["idea-1"].production_status == "in_production"
     assert scored_by_id["idea-1"].selection_reasoning == "Keep primary lane leading."
-    assert scored_by_id["idea-2"].status == "runner_up"
+    assert scored_by_id["idea-2"].status == "backlog"
 
     published = service.mark_published("idea-1", source_pipeline_id="pipe-123")
 
     assert published is not None
-    assert published.status == "published"
+    assert published.status == "selected"
+    assert published.production_status == "ready_to_publish"
     assert published.source_pipeline_id == "pipe-123"
 
     final_state = store.load()
-    assert next(item for item in final_state.items if item.idea_id == "idea-1").status == "published"
+    final_item = next(item for item in final_state.items if item.idea_id == "idea-1")
+    assert final_item.status == "selected"
+    assert final_item.production_status == "ready_to_publish"
+
+
+def test_backlog_item_normalizes_legacy_status_values() -> None:
+    legacy_runner_up = BacklogItem.model_validate({"idea_id": "idea-1", "idea": "Legacy", "status": "runner_up"})
+    assert legacy_runner_up.status == "backlog"
+    assert legacy_runner_up.production_status == "idle"
+
+    legacy_production = BacklogItem.model_validate(
+        {"idea_id": "idea-2", "idea": "Legacy prod", "status": "in_production"}
+    )
+    assert legacy_production.status == "backlog"
+    assert legacy_production.production_status == "in_production"
+
+    legacy_publish_queue = BacklogItem.model_validate(
+        {"idea_id": "idea-3", "idea": "Legacy publish", "status": "published"}
+    )
+    assert legacy_publish_queue.status == "backlog"
+    assert legacy_publish_queue.production_status == "ready_to_publish"
+
+
+def test_backlog_item_serializes_legacy_aliases() -> None:
+    item = BacklogItem(title="Serialized title", hook="Serialized hook")
+
+    payload = item.model_dump()
+
+    assert payload["title"] == "Serialized title"
+    assert payload["idea"] == "Serialized title"
+    assert payload["hook"] == "Serialized hook"
+    assert payload["potential_hook"] == "Serialized hook"
+
+
+def test_backlog_service_update_item_accepts_legacy_patch_fields(tmp_path: Path) -> None:
+    """Legacy patch keys should be mapped to canonical backlog fields."""
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+    from cc_deep_research.content_gen.storage import BacklogStore
+
+    store = BacklogStore(tmp_path / "backlog.yaml")
+    service = BacklogService(store=store)
+    item = service.create_item(title="Original", hook="Old hook")
+
+    updated = service.update_item(
+        item.idea_id,
+        {
+            "idea": "Updated",
+            "potential_hook": "New hook",
+        },
+    )
+
+    assert updated is not None
+    assert updated.title == "Updated"
+    assert updated.idea == "Updated"
+    assert updated.hook == "New hook"
+    assert updated.potential_hook == "New hook"
 
 
 def test_publish_queue_store_roundtrip(tmp_path: Path) -> None:
@@ -3223,7 +3328,7 @@ def test_cli_pipeline_idea_seeds_direct_bypass_context(
             assert bypass_ideation is True
             assert ctx.backlog is not None
             assert len(ctx.backlog.items) == 1
-            assert ctx.backlog.items[0].idea == "Direct seed"
+            assert ctx.backlog.items[0].title == "Direct seed"
             assert ctx.selected_idea_id == ctx.backlog.items[0].idea_id
             assert [candidate.idea_id for candidate in ctx.active_candidates] == [ctx.backlog.items[0].idea_id]
             assert ctx.scoring is not None
@@ -4174,12 +4279,12 @@ async def test_quality_evaluator_raises_on_blank_response_after_retry() -> None:
 
 
 def test_parse_backlog_items_handles_partial_items() -> None:
-    """Parsing should return items that have at least an idea field."""
+    """Parsing should return items that have at least a title field."""
     text = """---
-idea: First idea
+title: First idea
 audience: Test audience
 ---
-idea: Second idea
+title: Second idea
 ---
 category: evergreen
 """
@@ -4433,7 +4538,8 @@ Success criteria:
 - 50k views in 48h
 - 10 code forks"""
 
-    brief = _parse_opportunity_brief(sample_response, "fallback")
+    brief, parse_mode = _parse_opportunity_brief(sample_response, "fallback")
+    assert parse_mode == "legacy"
     assert brief.theme == "Why most SaaS onboarding fails after day 1"
     assert brief.goal == "Help founders fix activation by exposing the false success moment"
     assert brief.primary_audience_segment == "Seed-stage SaaS founders"
@@ -4453,7 +4559,7 @@ def test_opportunity_brief_parsing_uses_fallback_theme() -> None:
     """Parser should fall back to the provided theme when core fields are still present."""
     from cc_deep_research.content_gen.agents.opportunity import _parse_opportunity_brief
 
-    brief = _parse_opportunity_brief(
+    brief, parse_mode = _parse_opportunity_brief(
         """Goal: something
 Primary audience segment: startup marketers
 Problem statements:
@@ -4462,7 +4568,75 @@ Content objective: show the fix
 """,
         "fallback theme",
     )
+    assert parse_mode == "legacy"
     assert brief.theme == "fallback theme"
+
+
+def test_opportunity_brief_json_parsing() -> None:
+    """Parser should extract structured fields from JSON-formatted LLM output."""
+    from cc_deep_research.content_gen.agents.opportunity import _parse_opportunity_brief
+
+    sample_response = """\
+Here is the opportunity brief:
+
+```json
+{
+  "theme": "Why most SaaS onboarding fails after day 1",
+  "goal": "Help founders fix activation by exposing the false success moment",
+  "primary_audience_segment": "Seed-stage SaaS founders",
+  "secondary_audience_segments": [
+    "Growth PMs at early-stage startups",
+    "Product designers working on onboarding flows"
+  ],
+  "problem_statements": [
+    "Activation drops after signup because onboarding celebrates the wrong moment",
+    "Users think they succeeded but never reached the real aha moment"
+  ],
+  "content_objective": "Show one concrete fix for the false success moment",
+  "proof_requirements": ["Cite a specific activation metric example", "Show a before/after onboarding flow"],
+  "platform_constraints": ["Under 60 seconds", "No jargon"],
+  "risk_constraints": ["Do not downplay churn risk", "Avoid FUD"],
+  "freshness_rationale": "Multiple SaaS companies reported Q1 2026 activation drops",
+  "sub_angles": ["Guardrails as product moat", "Safety as speed advantage", "The false success pattern"],
+  "research_hypotheses": ["Developers want safety but lack examples", "Guardrail content is underserved"],
+  "success_criteria": ["50k views in 48h", "10 code forks"]
+}
+```"""
+
+    brief, parse_mode = _parse_opportunity_brief(sample_response, "fallback")
+    assert parse_mode == "json"
+    assert brief.theme == "Why most SaaS onboarding fails after day 1"
+    assert brief.goal == "Help founders fix activation by exposing the false success moment"
+    assert brief.primary_audience_segment == "Seed-stage SaaS founders"
+    assert len(brief.secondary_audience_segments) == 2
+    assert len(brief.problem_statements) == 2
+    assert brief.content_objective == "Show one concrete fix for the false success moment"
+    assert len(brief.proof_requirements) == 2
+    assert len(brief.platform_constraints) == 2
+    assert len(brief.risk_constraints) == 2
+    assert "Q1 2026" in brief.freshness_rationale
+    assert len(brief.sub_angles) == 3
+    assert len(brief.research_hypotheses) == 2
+    assert len(brief.success_criteria) == 2
+
+
+def test_opportunity_brief_json_falls_back_to_legacy() -> None:
+    """Parser should fall back to legacy text parsing when JSON is unparseable."""
+    from cc_deep_research.content_gen.agents.opportunity import _parse_opportunity_brief
+
+    # Not valid JSON - will fall back to legacy parsing
+    sample_response = """\
+Theme: Real theme from text
+Goal: Real goal
+Primary audience segment: Real segment
+Problem statements:
+- Real problem
+Content objective: Real objective"""
+
+    brief, parse_mode = _parse_opportunity_brief(sample_response, "fallback_theme")
+    assert parse_mode == "legacy"
+    assert brief.theme == "Real theme from text"
+    assert brief.goal == "Real goal"
 
 
 @pytest.mark.asyncio
@@ -4500,6 +4674,105 @@ def test_opportunity_prompt_user_includes_strategy_fields() -> None:
     assert "spot reduction" in result
     assert "peer-reviewed" in result
     assert "no hype" in result
+
+
+def test_quality_validation_catches_generic_audience() -> None:
+    """Quality validation should flag generic audience segments."""
+    from cc_deep_research.content_gen.agents.opportunity import validate_opportunity_brief_quality
+    from cc_deep_research.content_gen.models import OpportunityBrief
+
+    brief = OpportunityBrief(
+        theme="test",
+        goal="Get more customers",
+        primary_audience_segment="marketers",  # Too generic
+        problem_statements=["Activation drops after signup"],
+        content_objective="Show how to fix activation",
+    )
+    warnings, is_acceptable = validate_opportunity_brief_quality(brief)
+    assert any(w.category == "audience_generic" for w in warnings)
+    # Should still be acceptable with caution
+    assert is_acceptable
+
+
+def test_quality_validation_catches_vague_problems() -> None:
+    """Quality validation should flag vague problem statements."""
+    from cc_deep_research.content_gen.agents.opportunity import validate_opportunity_brief_quality
+    from cc_deep_research.content_gen.models import OpportunityBrief
+
+    brief = OpportunityBrief(
+        theme="test",
+        goal="Help SaaS founders",
+        primary_audience_segment="seed-stage SaaS founders",
+        problem_statements=["The onboarding experience is not good enough"],  # Too vague
+        content_objective="Show how to improve onboarding",
+    )
+    warnings, is_acceptable = validate_opportunity_brief_quality(brief)
+    assert any(w.category == "problem_vague" for w in warnings)
+
+
+def test_quality_validation_catches_duplicate_sub_angles() -> None:
+    """Quality validation should flag duplicate sub-angles."""
+    from cc_deep_research.content_gen.agents.opportunity import validate_opportunity_brief_quality
+    from cc_deep_research.content_gen.models import OpportunityBrief
+
+    brief = OpportunityBrief(
+        theme="test",
+        goal="Help SaaS founders",
+        primary_audience_segment="seed-stage SaaS founders",
+        problem_statements=["Activation drops after signup because onboarding celebrates the wrong moment"],
+        sub_angles=["Guardrails as product moat", "Safety as speed advantage", "Guardrails as product moat"],  # Exact duplicate
+        content_objective="Show how to fix activation",
+    )
+    warnings, is_acceptable = validate_opportunity_brief_quality(brief)
+    assert any(w.category == "sub_angle_duplicate" for w in warnings)
+    # Should not be acceptable with duplicate
+    assert not is_acceptable
+
+
+def test_quality_validation_accepts_specific_brief() -> None:
+    """Quality validation should accept well-formed briefs."""
+    from cc_deep_research.content_gen.agents.opportunity import (
+        format_quality_summary,
+        validate_opportunity_brief_quality,
+    )
+    from cc_deep_research.content_gen.models import OpportunityBrief
+
+    brief = OpportunityBrief(
+        theme="Why most SaaS onboarding fails after day 1",
+        goal="Help founders fix activation by exposing the false success moment",
+        primary_audience_segment="Seed-stage SaaS founders with >$100k ARR",
+        problem_statements=[
+            "Activation drops after signup because onboarding celebrates the wrong moment",
+            "Users think they succeeded but never reached the real aha moment",
+        ],
+        content_objective="Show one concrete fix for the false success moment",
+        proof_requirements=["Specific activation metric example", "Before/after onboarding flow"],
+        sub_angles=["Guardrails as product moat", "Safety as speed advantage", "The false success pattern"],
+    )
+    warnings, is_acceptable = validate_opportunity_brief_quality(brief)
+    assert is_acceptable
+    assert len(warnings) == 0
+
+    summary = format_quality_summary(warnings)
+    assert "acceptable" in summary.lower()
+
+
+def test_quality_summary_formatting() -> None:
+    """Quality summary should group warnings by category."""
+    from cc_deep_research.content_gen.agents.opportunity import (
+        BriefQualityWarning,
+        format_quality_summary,
+    )
+
+    warnings = [
+        BriefQualityWarning("audience_generic", "Too generic audience"),
+        BriefQualityWarning("problem_vague", "Vague problem 1"),
+        BriefQualityWarning("problem_vague", "Vague problem 2"),
+    ]
+    summary = format_quality_summary(warnings)
+    assert "[audience_generic]" in summary
+    assert "[problem_vague]" in summary
+    assert "3 warning(s) found" in summary
 
 
 # ---------------------------------------------------------------------------
@@ -6318,7 +6591,7 @@ def test_performance_learning_store_get_active_learnings(tmp_path: Path) -> None
             observation="Hook 1",
         ),
         PerformanceLearning(
-            category=LearningCategory.Framing,
+            category=LearningCategory.FRAME,
             durability=LearningDurability.EXPERIMENTAL,
             observation="Framing 1",
         ),
@@ -6369,7 +6642,7 @@ def test_performance_learning_store_get_durable_guidance_for_backlog(tmp_path: P
             observation="Strong hook",
         ),
         PerformanceLearning(
-            category=LearningCategory.Framing,
+            category=LearningCategory.FRAME,
             durability=LearningDurability.EXPERIMENTAL,
             observation="Specific framing",
         ),
@@ -6427,3 +6700,481 @@ def test_score_ideas_user_excludes_performance_guidance_when_empty() -> None:
     # Should not mention performance guidance when empty
     assert "Winning hook" not in user_prompt
     assert "Failed hook" not in user_prompt
+
+
+# ---------------------------------------------------------------------------
+# Tests for maintenance_workflow.py
+# ---------------------------------------------------------------------------
+
+
+def test_maintenance_proposal_to_dict_from_dict() -> None:
+    """MaintenanceProposal serializes and deserializes correctly."""
+    from cc_deep_research.content_gen.maintenance_workflow import (
+        MaintenanceProposal,
+        MaintenanceProposalStatus,
+    )
+
+    proposal = MaintenanceProposal(
+        proposal_id="mnt_test123",
+        job_type="stale_item_review",
+        title="Stale item",
+        description="Item is old",
+        affected_idea_ids=["idea-1", "idea-2"],
+        suggested_patch={"status": "archived"},
+        priority=3,
+        status=MaintenanceProposalStatus.PENDING,
+    )
+
+    as_dict = proposal.to_dict()
+    assert as_dict["proposal_id"] == "mnt_test123"
+    assert as_dict["job_type"] == "stale_item_review"
+    assert as_dict["priority"] == 3
+    assert as_dict["affected_idea_ids"] == ["idea-1", "idea-2"]
+
+    restored = MaintenanceProposal.from_dict(as_dict)
+    assert restored.proposal_id == proposal.proposal_id
+    assert restored.title == proposal.title
+    assert restored.status == MaintenanceProposalStatus.PENDING
+
+
+def test_maintenance_proposal_defaults() -> None:
+    """MaintenanceProposal auto-generates ID and timestamps."""
+    from cc_deep_research.content_gen.maintenance_workflow import MaintenanceProposal
+
+    proposal = MaintenanceProposal(title="Test", job_type="stale_item_review")
+    assert proposal.proposal_id.startswith("mnt_")
+    assert proposal.created_at
+    assert proposal.status.value == "pending"
+
+
+def test_maintenance_run_to_dict() -> None:
+    """MaintenanceRun serializes correctly."""
+    from cc_deep_research.content_gen.maintenance_workflow import (
+        MaintenanceJobType,
+        MaintenanceRun,
+    )
+
+    run = MaintenanceRun(
+        run_id="mntrun_abc123",
+        job_type=MaintenanceJobType.STALE_ITEM_REVIEW,
+        proposals_count=5,
+    )
+
+    as_dict = run.to_dict()
+    assert as_dict["run_id"] == "mntrun_abc123"
+    assert as_dict["job_type"] == "stale_item_review"
+    assert as_dict["proposals_count"] == 5
+    assert as_dict["outcome"] == "success"
+
+
+def test_maintenance_store_save_and_load_proposals(tmp_path: Path) -> None:
+    """MaintenanceStore persists and retrieves proposals."""
+    from cc_deep_research.config import Config
+    from cc_deep_research.content_gen.maintenance_workflow import (
+        MaintenanceProposal,
+        MaintenanceProposalStatus,
+        MaintenanceStore,
+    )
+
+    config = Config()
+    config.content_gen.backlog_path = str(tmp_path / "backlog.yaml")
+
+    store = MaintenanceStore(config=config)
+    proposal = MaintenanceProposal(
+        title="Test proposal",
+        job_type="stale_item_review",
+        priority=2,
+    )
+    store.save_proposal(proposal)
+
+    loaded = store.load_proposals()
+    assert len(loaded) == 1
+    assert loaded[0].title == "Test proposal"
+    assert loaded[0].status == MaintenanceProposalStatus.PENDING
+
+
+def test_maintenance_store_resolve_proposal(tmp_path: Path) -> None:
+    """MaintenanceStore.resolve_proposal approves or rejects proposals."""
+    from cc_deep_research.config import Config
+    from cc_deep_research.content_gen.maintenance_workflow import (
+        MaintenanceProposal,
+        MaintenanceProposalStatus,
+        MaintenanceStore,
+    )
+
+    config = Config()
+    config.content_gen.backlog_path = str(tmp_path / "backlog.yaml")
+
+    store = MaintenanceStore(config=config)
+    proposal = MaintenanceProposal(title="To approve")
+    store.save_proposal(proposal)
+
+    resolved = store.resolve_proposal(proposal.proposal_id, "approved", reviewed_by="tester")
+    assert resolved is not None
+    assert resolved.status == MaintenanceProposalStatus.APPROVED
+    assert resolved.reviewed_by == "tester"
+
+
+def test_maintenance_store_resolve_proposal_rejects(tmp_path: Path) -> None:
+    """MaintenanceStore.resolve_proposal rejects proposals correctly."""
+    from cc_deep_research.config import Config
+    from cc_deep_research.content_gen.maintenance_workflow import (
+        MaintenanceProposal,
+        MaintenanceProposalStatus,
+        MaintenanceStore,
+    )
+
+    config = Config()
+    config.content_gen.backlog_path = str(tmp_path / "backlog.yaml")
+
+    store = MaintenanceStore(config=config)
+    proposal = MaintenanceProposal(title="To reject")
+    store.save_proposal(proposal)
+
+    resolved = store.resolve_proposal(proposal.proposal_id, "rejected")
+    assert resolved is not None
+    assert resolved.status == MaintenanceProposalStatus.REJECTED
+
+
+def test_maintenance_jobs_run_stale_item_review(tmp_path: Path) -> None:
+    """run_stale_item_review flags items not updated in N days."""
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+    from cc_deep_research.content_gen.maintenance_workflow import (
+        MaintenanceJobs,
+        MaintenanceJobType,
+    )
+    from cc_deep_research.content_gen.storage import BacklogStore
+
+    store = BacklogStore(tmp_path / "backlog.yaml")
+    service = BacklogService(store=store)
+
+    now = "2026-04-01T00:00:00Z"
+    old_date = "2025-01-01T00:00:00Z"
+    # Create items directly in the store so updated_at is preserved
+    # (upsert_items overwrites updated_at with current time)
+    backlog = BacklogOutput(items=[
+        BacklogItem(idea_id="stale-1", idea="Stale idea", updated_at=old_date),
+        BacklogItem(idea_id="stale-2", idea="Old but OK", updated_at="2026-03-01T00:00:00Z"),
+        BacklogItem(idea_id="recent-1", idea="Recent idea", updated_at=now),
+        BacklogItem(idea_id="archived-1", idea="Archived", updated_at=old_date, status="archived"),
+    ])
+    store.save(backlog)
+
+    jobs = MaintenanceJobs()
+    jobs._backlog_service = service
+
+    proposals = jobs.run_stale_item_review(stale_days=60, watch_days=30)
+
+    stale_proposals = [p for p in proposals if p.job_type == MaintenanceJobType.STALE_ITEM_REVIEW]
+    assert len(stale_proposals) >= 1
+    stale_ids = [p.affected_idea_ids for p in stale_proposals]
+    assert any("stale-1" in ids for ids in stale_ids)
+
+
+def test_maintenance_jobs_run_gap_summary(tmp_path: Path) -> None:
+    """run_gap_summary flags underrepresented themes."""
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+    from cc_deep_research.content_gen.maintenance_workflow import (
+        MaintenanceJobs,
+        MaintenanceJobType,
+    )
+    from cc_deep_research.content_gen.storage import BacklogStore
+
+    store = BacklogStore(tmp_path / "backlog.yaml")
+    service = BacklogService(store=store)
+
+    # Add items under a common theme - enough to NOT trigger gap
+    service.upsert_items([
+        BacklogItem(idea_id="gap-1", idea="Idea A", source_theme="Tech"),
+        BacklogItem(idea_id="gap-2", idea="Idea B", source_theme="Tech"),
+        BacklogItem(idea_id="gap-3", idea="Idea C", source_theme="Tech"),
+        BacklogItem(idea_id="gap-4", idea="Idea D", source_theme="Solo"),
+    ])
+
+    jobs = MaintenanceJobs()
+    jobs._backlog_service = service
+
+    proposals = jobs.run_gap_summary(min_items_per_theme=3)
+
+    gap_proposals = [p for p in proposals if p.job_type == MaintenanceJobType.GAP_SUMMARY]
+    gap_themes = [p.title for p in gap_proposals]
+    assert any("Solo" in t for t in gap_themes)
+
+
+def test_maintenance_jobs_run_duplicate_watchlist(tmp_path: Path) -> None:
+    """run_duplicate_watchlist finds highly similar item pairs."""
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+    from cc_deep_research.content_gen.maintenance_workflow import (
+        MaintenanceJobs,
+        MaintenanceJobType,
+    )
+    from cc_deep_research.content_gen.storage import BacklogStore
+
+    store = BacklogStore(tmp_path / "backlog.yaml")
+    service = BacklogService(store=store)
+
+    # Two very similar titles
+    service.upsert_items([
+        BacklogItem(idea_id="dup-1", idea="10 tips to save money on hosting"),
+        BacklogItem(idea_id="dup-2", idea="10 tips to save money on web hosting"),
+    ])
+
+    jobs = MaintenanceJobs()
+    jobs._backlog_service = service
+
+    proposals = jobs.run_duplicate_watchlist(similarity_threshold=0.85)
+
+    dup_proposals = [p for p in proposals if p.job_type == MaintenanceJobType.DUPLICATE_WATCHLIST]
+    assert len(dup_proposals) >= 1
+    assert "dup-1" in dup_proposals[0].affected_idea_ids
+    assert "dup-2" in dup_proposals[0].affected_idea_ids
+
+
+def test_maintenance_jobs_run_rescoring_recommend(tmp_path: Path) -> None:
+    """run_rescoring_recommend flags items with stale scores."""
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+    from cc_deep_research.content_gen.maintenance_workflow import (
+        MaintenanceJobs,
+        MaintenanceJobType,
+    )
+    from cc_deep_research.content_gen.storage import BacklogStore
+
+    store = BacklogStore(tmp_path / "backlog.yaml")
+    service = BacklogService(store=store)
+
+    old_score_date = "2025-01-01T00:00:00Z"
+    service.upsert_items([
+        BacklogItem(idea_id="score-1", idea="Stale scored", last_scored_at=old_score_date),
+        BacklogItem(idea_id="score-2", idea="Fresh scored", last_scored_at="2026-04-01T00:00:00Z"),
+        BacklogItem(idea_id="score-3", idea="Never scored"),
+    ])
+
+    jobs = MaintenanceJobs()
+    jobs._backlog_service = service
+
+    proposals = jobs.run_rescoring_recommend(stale_score_days=30)
+
+    rescoring_proposals = [p for p in proposals if p.job_type == MaintenanceJobType.RESCORING_RECOMMEND]
+    assert any("score-1" in p.affected_idea_ids for p in rescoring_proposals)
+    assert not any("score-2" in p.affected_idea_ids for p in rescoring_proposals)
+
+
+def test_maintenance_scheduler_start_stop() -> None:
+    """MaintenanceScheduler starts and stops without error."""
+    from cc_deep_research.content_gen.maintenance_workflow import MaintenanceScheduler
+
+    scheduler = MaintenanceScheduler(interval_hours=0.001)
+    scheduler.start()
+    assert scheduler._running is True
+
+    scheduler.stop()
+    assert scheduler._running is False
+
+
+def test_maintenance_scheduler_trigger_job(tmp_path: Path) -> None:
+    """trigger_job runs a job and returns a MaintenanceRun."""
+    from cc_deep_research.config import Config
+    from cc_deep_research.content_gen.maintenance_workflow import (
+        MaintenanceJobType,
+        MaintenanceScheduler,
+    )
+
+    config = Config()
+    config.content_gen.backlog_path = str(tmp_path / "backlog.yaml")
+
+    scheduler = MaintenanceScheduler(config=config, interval_hours=24)
+    run = scheduler.trigger_job(MaintenanceJobType.STALE_ITEM_REVIEW)
+
+    assert run.job_type == MaintenanceJobType.STALE_ITEM_REVIEW
+    assert run.outcome in ("success", "error")  # May succeed or error on empty backlog
+
+
+# ---------------------------------------------------------------------------
+# Tests for SQLite migration edge cases
+# ---------------------------------------------------------------------------
+
+
+def test_sqlite_migration_malformed_yaml(tmp_path: Path) -> None:
+    """SQLite store handles malformed YAML gracefully during migration."""
+    from cc_deep_research.content_gen.storage.sqlite_backlog_store import SqliteBacklogStore
+
+    # Write a malformed YAML file
+    yaml_path = tmp_path / "backlog.yaml"
+    yaml_path.write_text("not: valid [yaml ::::}{")
+
+    store = SqliteBacklogStore(path=tmp_path / "backlog.db", yaml_store_path=yaml_path)
+    # Should not raise; YAML import fails gracefully and returns empty backlog
+    backlog = store.load()
+    assert len(backlog.items) == 0
+
+
+def test_sqlite_migration_empty_yaml(tmp_path: Path) -> None:
+    """SQLite store handles empty YAML during migration."""
+    from cc_deep_research.content_gen.storage.sqlite_backlog_store import SqliteBacklogStore
+
+    yaml_path = tmp_path / "backlog.yaml"
+    yaml_path.write_text("")
+
+    store = SqliteBacklogStore(path=tmp_path / "backlog.db", yaml_store_path=yaml_path)
+    backlog = store.load()
+    assert len(backlog.items) == 0
+
+
+def test_sqlite_store_incremental_update_preserves_items(tmp_path: Path) -> None:
+    """SQLite save() with incremental updates preserves all items."""
+    from cc_deep_research.content_gen.models import BacklogOutput
+    from cc_deep_research.content_gen.storage.sqlite_backlog_store import SqliteBacklogStore
+
+    store = SqliteBacklogStore(path=tmp_path / "backlog.db")
+
+    item1 = BacklogItem(idea_id="item-1", idea="First item")
+    item2 = BacklogItem(idea_id="item-2", idea="Second item")
+
+    store.save(BacklogOutput(items=[item1]))
+    store.save(BacklogOutput(items=[item1, item2]))
+
+    backlog = store.load()
+    assert len(backlog.items) == 2
+    ids = {item.idea_id for item in backlog.items}
+    assert ids == {"item-1", "item-2"}
+
+
+def test_sqlite_update_item_validates_unsupported_fields(tmp_path: Path) -> None:
+    """SqliteBacklogStore.update_item rejects unknown fields."""
+    from cc_deep_research.content_gen.storage.sqlite_backlog_store import SqliteBacklogStore
+
+    store = SqliteBacklogStore(path=tmp_path / "backlog.db")
+    store.save(BacklogOutput(items=[BacklogItem(idea_id="test-1", idea="Test")]))
+
+    with pytest.raises(ValueError, match="Unsupported backlog fields"):
+        store.update_item("test-1", {"not_a_real_field": "value"})
+
+
+# ---------------------------------------------------------------------------
+# Tests for path validation security
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_content_gen_file_path_rejects_escaped_absolute_path(tmp_path: Path) -> None:
+    """resolve_content_gen_file_path rejects paths outside allowed directories."""
+    from cc_deep_research.content_gen.storage._paths import resolve_content_gen_file_path
+
+    with pytest.raises(ValueError, match="escapes allowed directories"):
+        resolve_content_gen_file_path(
+            explicit_path=Path("/etc/passwd"),
+            config=None,
+            config_attr="backlog_path",
+            default_name="backlog.yaml",
+        )
+
+
+def test_resolve_content_gen_file_path_rejects_escaped_config_path(tmp_path: Path) -> None:
+    """resolve_content_gen_file_path rejects malicious configured paths."""
+    from types import SimpleNamespace
+
+    from cc_deep_research.content_gen.storage._paths import resolve_content_gen_file_path
+
+    bad_config = SimpleNamespace(
+        content_gen=SimpleNamespace(backlog_path="/etc/malicious.yaml")
+    )
+
+    with pytest.raises(ValueError, match="escapes allowed directories"):
+        resolve_content_gen_file_path(
+            explicit_path=None,
+            config=bad_config,
+            config_attr="backlog_path",
+            default_name="backlog.yaml",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests for idea_id validation
+# ---------------------------------------------------------------------------
+
+
+def test_backlog_service_rejects_invalid_idea_id_select(tmp_path: Path) -> None:
+    """select_item rejects malformed idea_id."""
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+    from cc_deep_research.content_gen.storage import BacklogStore
+
+    store = BacklogStore(tmp_path / "backlog.yaml")
+    service = BacklogService(store=store)
+    service.create_item(title="Test")
+
+    with pytest.raises(ValueError, match="invalid characters"):
+        service.select_item("idea/with/slashes")
+
+    with pytest.raises(ValueError, match="invalid characters"):
+        service.select_item("idea with space")
+
+    with pytest.raises(ValueError, match="non-empty string"):
+        service.select_item("")
+
+
+def test_backlog_service_rejects_invalid_idea_id_update(tmp_path: Path) -> None:
+    """update_item rejects malformed idea_id."""
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+    from cc_deep_research.content_gen.storage import BacklogStore
+
+    store = BacklogStore(tmp_path / "backlog.yaml")
+    service = BacklogService(store=store)
+    service.create_item(title="Test")
+
+    with pytest.raises(ValueError, match="invalid characters"):
+        service.update_item("bad@idea", {"title": "Updated"})
+
+
+def test_backlog_service_rejects_invalid_idea_id_delete(tmp_path: Path) -> None:
+    """delete_item rejects malformed idea_id."""
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+    from cc_deep_research.content_gen.storage import BacklogStore
+
+    store = BacklogStore(tmp_path / "backlog.yaml")
+    service = BacklogService(store=store)
+    service.create_item(title="Test")
+
+    with pytest.raises(ValueError, match="non-empty string"):
+        service.delete_item("")
+
+    with pytest.raises(ValueError, match="invalid characters"):
+        service.delete_item("bad;idea")
+
+
+def test_backlog_service_rejects_invalid_idea_id_archive(tmp_path: Path) -> None:
+    """archive_item rejects malformed idea_id."""
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+    from cc_deep_research.content_gen.storage import BacklogStore
+
+    store = BacklogStore(tmp_path / "backlog.yaml")
+    service = BacklogService(store=store)
+    service.create_item(title="Test")
+
+    with pytest.raises(ValueError, match="invalid characters"):
+        service.archive_item("bad~idea")
+
+
+def test_backlog_service_rejects_invalid_idea_id_mark_in_production(tmp_path: Path) -> None:
+    """mark_in_production rejects malformed idea_id."""
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+    from cc_deep_research.content_gen.storage import BacklogStore
+
+    store = BacklogStore(tmp_path / "backlog.yaml")
+    service = BacklogService(store=store)
+    service.create_item(title="Test")
+
+    with pytest.raises(ValueError, match="invalid characters"):
+        service.mark_in_production("bad^idea")
+
+
+def test_backlog_service_rejects_invalid_idea_id_mark_published(tmp_path: Path) -> None:
+    """mark_published rejects malformed idea_id."""
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+    from cc_deep_research.content_gen.storage import BacklogStore
+
+    store = BacklogStore(tmp_path / "backlog.yaml")
+    service = BacklogService(store=store)
+    service.create_item(title="Test")
+
+    with pytest.raises(ValueError, match="invalid characters"):
+        service.mark_published("bad$idea")
+
