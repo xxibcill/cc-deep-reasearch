@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Send, Bot, AlertCircle, Loader2, Plus, Pencil, X, CheckCircle2, ChevronDown, ChevronUp, Trash2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
@@ -10,9 +10,10 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { cn } from '@/lib/utils'
 import { backlogChatRespond, backlogChatApply } from '@/lib/content-gen-api'
 import useContentGen from '@/hooks/useContentGen'
-import type { BacklogChatMessage, BacklogChatOperation, BacklogItem } from '@/types/content-gen'
+import type { BacklogChatMessage, BacklogChatOperation, BacklogChatRespondMode, BacklogItem } from '@/types/content-gen'
 
 const STORAGE_KEY = 'content-gen-chat-session'
+const EDIT_COMMANDS = new Set(['/edit', '/propose'])
 
 interface TranscriptEntry {
   id: string
@@ -20,11 +21,14 @@ interface TranscriptEntry {
   content: string
 }
 
+type ChatThreadVariant = 'editor' | 'planner'
+
 interface ChatThreadProps {
   backlog: BacklogItem[]
   selectedIdeaId: string | null
   onPendingOpsChange?: (ops: BacklogChatOperation[]) => void
   onApplyErrorsChange?: (errors: string[]) => void
+  variant?: ChatThreadVariant
 }
 
 interface PersistedSession {
@@ -33,7 +37,61 @@ interface PersistedSession {
   pendingOps: BacklogChatOperation[]
 }
 
-export function ChatThread({ backlog, selectedIdeaId, onPendingOpsChange, onApplyErrorsChange }: ChatThreadProps) {
+function parseUserCommand(
+  content: string,
+  defaultMode: BacklogChatRespondMode,
+): {
+  mode: BacklogChatRespondMode
+  normalizedContent: string
+  error: string | null
+} {
+  const trimmed = content.trim()
+  if (!trimmed.startsWith('/')) {
+    return {
+      mode: defaultMode,
+      normalizedContent: trimmed,
+      error: null,
+    }
+  }
+
+  const [command, ...rest] = trimmed.split(/\s+/)
+  const body = rest.join(' ').trim()
+
+  if (EDIT_COMMANDS.has(command.toLowerCase())) {
+    return {
+      mode: 'edit',
+      normalizedContent:
+        body || 'Draft backlog edits from the planning conversation so far.',
+      error: null,
+    }
+  }
+
+  return {
+    mode: defaultMode,
+    normalizedContent: trimmed,
+    error: `Unknown slash command "${command}". Try /edit or /propose.`,
+  }
+}
+
+function normalizeTranscriptEntry(
+  entry: TranscriptEntry,
+  defaultMode: BacklogChatRespondMode,
+): BacklogChatMessage {
+  if (entry.role === 'assistant') {
+    return { role: 'assistant', content: entry.content }
+  }
+
+  const parsed = parseUserCommand(entry.content, defaultMode)
+  return { role: 'user', content: parsed.normalizedContent }
+}
+
+export function ChatThread({
+  backlog,
+  selectedIdeaId,
+  onPendingOpsChange,
+  onApplyErrorsChange,
+  variant = 'editor',
+}: ChatThreadProps) {
   const mergeBacklogItems = useContentGen((s) => s.mergeBacklogItems)
 
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([])
@@ -45,6 +103,9 @@ export function ChatThread({ backlog, selectedIdeaId, onPendingOpsChange, onAppl
   const [applyErrors, setApplyErrors] = useState<string[]>([])
   const transcriptEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const isPlanner = variant === 'planner'
+  const defaultRespondMode: BacklogChatRespondMode = isPlanner ? 'conversation' : 'edit'
+  const storageKey = useMemo(() => `${STORAGE_KEY}:${variant}`, [variant])
 
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -58,16 +119,16 @@ export function ChatThread({ backlog, selectedIdeaId, onPendingOpsChange, onAppl
         draftInput: input,
         pendingOps,
       }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(session))
+      localStorage.setItem(storageKey, JSON.stringify(session))
     } catch {
       // localStorage unavailable - ignore
     }
-  }, [transcript, input, pendingOps])
+  }, [input, pendingOps, storageKey, transcript, variant])
 
   // Restore session from localStorage on mount
   useEffect(() => {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY)
+      const stored = localStorage.getItem(storageKey)
       if (stored) {
         const session: PersistedSession = JSON.parse(stored)
         if (session.transcript?.length) setTranscript(session.transcript)
@@ -77,7 +138,7 @@ export function ChatThread({ backlog, selectedIdeaId, onPendingOpsChange, onAppl
     } catch {
       // Corrupt storage - ignore
     }
-  }, [])
+  }, [storageKey])
 
   // Listen for fill-composer events from parent (e.g. starter prompts)
   useEffect(() => {
@@ -99,11 +160,11 @@ export function ChatThread({ backlog, selectedIdeaId, onPendingOpsChange, onAppl
     onPendingOpsChange?.([])
     onApplyErrorsChange?.([])
     try {
-      localStorage.removeItem(STORAGE_KEY)
+      localStorage.removeItem(storageKey)
     } catch {
       // ignore
     }
-  }, [onPendingOpsChange, onApplyErrorsChange])
+  }, [onApplyErrorsChange, onPendingOpsChange, storageKey])
 
   const dismissOp = useCallback((index: number) => {
     setPendingOps((prev) => {
@@ -116,6 +177,12 @@ export function ChatThread({ backlog, selectedIdeaId, onPendingOpsChange, onAppl
   const sendMessage = async () => {
     const trimmed = input.trim()
     if (!trimmed || loading) return
+
+    const parsedInput = parseUserCommand(trimmed, defaultRespondMode)
+    if (parsedInput.error) {
+      setError(parsedInput.error)
+      return
+    }
 
     const userEntry: TranscriptEntry = {
       id: `user-${Date.now()}`,
@@ -130,8 +197,8 @@ export function ChatThread({ backlog, selectedIdeaId, onPendingOpsChange, onAppl
     setApplyErrors([])
 
     const messagesForApi: BacklogChatMessage[] = [
-      ...transcript.map((e) => ({ role: e.role, content: e.content })),
-      { role: 'user', content: trimmed },
+      ...transcript.map((entry) => normalizeTranscriptEntry(entry, defaultRespondMode)),
+      { role: 'user', content: parsedInput.normalizedContent },
     ]
 
     setLoading(true)
@@ -140,6 +207,7 @@ export function ChatThread({ backlog, selectedIdeaId, onPendingOpsChange, onAppl
       const response = await backlogChatRespond({
         messages: messagesForApi,
         selected_idea_id: selectedIdeaId,
+        mode: parsedInput.mode,
       })
 
       const assistantEntry: TranscriptEntry = {
@@ -237,8 +305,9 @@ export function ChatThread({ backlog, selectedIdeaId, onPendingOpsChange, onAppl
           <div className="flex flex-col items-center justify-center h-full text-center py-8">
             <Bot className="h-8 w-8 text-muted-foreground/50 mb-3" />
             <p className="text-sm text-muted-foreground max-w-[18rem]">
-              Ask about gaps, priorities, or reframes in your backlog.
-              Changes require explicit apply.
+              {isPlanner
+                ? 'Start a planning conversation about what you want to make next. Use /edit when you want a backlog patch drafted from the discussion.'
+                : 'Ask about gaps, priorities, or reframes in your backlog. Changes require explicit apply.'}
             </p>
           </div>
         )}
@@ -247,17 +316,36 @@ export function ChatThread({ backlog, selectedIdeaId, onPendingOpsChange, onAppl
           <div
             key={entry.id}
             className={cn(
-              'flex gap-2 rounded-[0.8rem] p-3 text-sm',
+              'flex w-full',
               entry.role === 'user'
-                ? 'bg-primary/5 border border-primary/10'
-                : 'bg-card border border-border/60',
+                ? 'justify-end'
+                : 'justify-start',
             )}
           >
-            <div className="flex-1 text-foreground/88">
-              <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground/70 block mb-1">
+            <div
+              className={cn(
+                'max-w-[88%] rounded-[1rem] border px-4 py-3 text-sm shadow-[0_10px_30px_rgba(0,0,0,0.14)]',
+                entry.role === 'user'
+                  ? 'border-primary/30 bg-[linear-gradient(180deg,hsl(var(--primary)/0.2),hsl(var(--primary)/0.12))] text-primary-foreground/95'
+                  : 'border-border/70 bg-[linear-gradient(180deg,hsl(var(--card)),hsl(var(--muted)/0.38))] text-foreground/88',
+              )}
+            >
+              <span
+                className={cn(
+                  'mb-2 inline-flex rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.15em]',
+                  entry.role === 'user'
+                    ? 'border-primary/35 bg-primary/15 text-primary-foreground/80'
+                    : 'border-border/80 bg-background/55 text-muted-foreground/80',
+                )}
+              >
                 {entry.role === 'user' ? 'You' : 'Assistant'}
               </span>
-              <div className="prose prose-sm prose-invert max-w-none text-foreground/88">
+              <div
+                className={cn(
+                  'prose prose-sm prose-invert max-w-none',
+                  entry.role === 'user' ? 'text-primary-foreground/95' : 'text-foreground/88',
+                )}
+              >
                 <ReactMarkdown>{entry.content}</ReactMarkdown>
               </div>
             </div>
@@ -265,9 +353,11 @@ export function ChatThread({ backlog, selectedIdeaId, onPendingOpsChange, onAppl
         ))}
 
         {loading && (
-          <div className="flex items-center gap-2 rounded-[0.8rem] p-3 bg-card border border-border/60">
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">Thinking...</span>
+          <div className="flex justify-start">
+            <div className="flex items-center gap-2 rounded-[1rem] border border-border/70 bg-[linear-gradient(180deg,hsl(var(--card)),hsl(var(--muted)/0.35))] px-4 py-3 shadow-[0_10px_30px_rgba(0,0,0,0.12)]">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Thinking...</span>
+            </div>
           </div>
         )}
 
@@ -343,7 +433,11 @@ export function ChatThread({ backlog, selectedIdeaId, onPendingOpsChange, onAppl
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask about your backlog..."
+            placeholder={
+              isPlanner
+                ? 'Talk through your plan... use /edit when you want a backlog proposal.'
+                : 'Ask about your backlog...'
+            }
             disabled={loading}
             rows={2}
             className="flex-1 resize-none rounded-[0.8rem] border border-border/70 bg-background/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40 disabled:opacity-50"
@@ -358,7 +452,9 @@ export function ChatThread({ backlog, selectedIdeaId, onPendingOpsChange, onAppl
           </Button>
         </div>
         <p className="text-[10px] text-muted-foreground/60 mt-1.5 text-right">
-          Enter to send &middot; Shift+Enter for newline
+          {isPlanner
+            ? 'Enter to send · Shift+Enter for newline · /edit or /propose drafts backlog changes from this conversation'
+            : 'Enter to send · Shift+Enter for newline'}
         </p>
       </div>
     </div>
