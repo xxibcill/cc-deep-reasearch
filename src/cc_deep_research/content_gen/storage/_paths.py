@@ -22,6 +22,7 @@ def resolve_content_gen_file_path(
     config: Config | None,
     config_attr: str,
     default_name: str,
+    use_config_parent: bool = False,
 ) -> Path:
     """Resolve a content-generation file path from explicit, config, or default sources."""
     if explicit_path is not None:
@@ -30,7 +31,10 @@ def resolve_content_gen_file_path(
     resolved_config = config or load_config()
     configured_path = getattr(resolved_config.content_gen, config_attr, None)
     if configured_path:
-        return Path(configured_path).expanduser()
+        path = Path(configured_path).expanduser()
+        if use_config_parent:
+            return path.parent / default_name
+        return path
     return default_content_gen_dir() / default_name
 
 

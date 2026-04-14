@@ -162,7 +162,6 @@ export function BacklogItemForm({
 
         if (form.title.trim()) {
           patch.title = form.title.trim()
-          patch.idea = form.title.trim()
         }
         if (form.one_line_summary.trim()) patch.one_line_summary = form.one_line_summary.trim()
         if (form.raw_idea.trim()) patch.raw_idea = form.raw_idea.trim()
@@ -176,7 +175,6 @@ export function BacklogItemForm({
         if (form.why_now.trim()) patch.why_now = form.why_now.trim()
         if (form.hook.trim()) {
           patch.hook = form.hook.trim()
-          patch.potential_hook = form.hook.trim()
         }
         if (form.content_type.trim()) patch.content_type = form.content_type.trim()
         if (form.format_duration.trim()) patch.format_duration = form.format_duration.trim()
@@ -194,7 +192,6 @@ export function BacklogItemForm({
       } else if (onSubmitCreate) {
         const data: Record<string, unknown> = {
           title: form.title.trim(),
-          idea: form.title.trim(),
         }
         if (form.one_line_summary.trim()) data.one_line_summary = form.one_line_summary.trim()
         if (form.raw_idea.trim()) data.raw_idea = form.raw_idea.trim()
@@ -208,7 +205,6 @@ export function BacklogItemForm({
         if (form.why_now.trim()) data.why_now = form.why_now.trim()
         if (form.hook.trim()) {
           data.hook = form.hook.trim()
-          data.potential_hook = form.hook.trim()
         }
         if (form.content_type.trim()) data.content_type = form.content_type.trim()
         if (form.format_duration.trim()) data.format_duration = form.format_duration.trim()

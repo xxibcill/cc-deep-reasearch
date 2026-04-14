@@ -193,12 +193,14 @@ class MaintenanceStore:
             config=config,
             config_attr="backlog_path",
             default_name="maintenance_proposals.yaml",
+            use_config_parent=True,
         )
         self._runs_path = resolve_content_gen_file_path(
             explicit_path=None,
             config=config,
             config_attr="backlog_path",
             default_name="maintenance_runs.yaml",
+            use_config_parent=True,
         )
         self._proposals_path.parent.mkdir(parents=True, exist_ok=True)
 

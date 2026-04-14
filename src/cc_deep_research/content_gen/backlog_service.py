@@ -42,7 +42,7 @@ class BacklogService:
                 path = Path(configured_path).expanduser()
 
             if use_sqlite:
-                self._store = SqliteBacklogStore(path)
+                self._store = SqliteBacklogStore(config=config)
             else:
                 self._store = BacklogStore(path)
 
@@ -169,11 +169,11 @@ class BacklogService:
 
     def update_item(self, idea_id: str, patch: dict[str, Any]) -> BacklogItem | None:
         """Apply a partial item update with timestamp management."""
-        if patch.get("status") == "selected":
+        normalized_patch = _normalize_backlog_patch(patch)
+        if normalized_patch.get("status") == "selected":
             reason = patch.get("selection_reasoning")
             return self.select_item(idea_id, reason=str(reason or ""))
 
-        normalized_patch = dict(patch)
         normalized_patch["updated_at"] = _now_iso()
         updated = self._store.update_item(idea_id, normalized_patch)
         if updated is not None:
@@ -397,3 +397,20 @@ def _merge_backlog_status(current_status: str, desired_status: str) -> str:
     if current_status == "archived":
         return current_status
     return desired_status
+
+
+def _normalize_backlog_patch(patch: dict[str, Any]) -> dict[str, Any]:
+    """Map legacy patch keys onto canonical backlog fields."""
+    normalized_patch = dict(patch)
+
+    if "idea" in normalized_patch:
+        legacy_idea = str(normalized_patch.pop("idea") or "")
+        if not normalized_patch.get("title"):
+            normalized_patch["title"] = legacy_idea
+
+    if "potential_hook" in normalized_patch:
+        legacy_hook = str(normalized_patch.pop("potential_hook") or "")
+        if not normalized_patch.get("hook"):
+            normalized_patch["hook"] = legacy_hook
+
+    return normalized_patch
