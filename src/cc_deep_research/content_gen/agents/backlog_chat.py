@@ -263,7 +263,7 @@ def _validate_operations(
 
         elif kind == "create_item":
             fields = _sanitize_create_fields(op.get("fields", {}))
-            if not fields.get("idea"):
+            if not (fields.get("title") or fields.get("idea")):
                 continue
             validated.append(BacklogChatOperation(
                 kind="create_item",
@@ -317,8 +317,10 @@ def build_apply_operations(
             continue
 
         fields = _sanitize_create_fields(op.get("fields", {}))
-        if not fields.get("idea"):
-            errors.append(f"Operation {index}: create_item requires fields.idea")
+        if not (fields.get("title") or fields.get("idea")):
+            errors.append(
+                f"Operation {index}: create_item requires fields.title, fields.idea, or fields.raw_idea"
+            )
             continue
         validated.append(
             BacklogChatOperation(
@@ -358,12 +360,14 @@ def _check_duplicate_warnings(
     existing_warnings: list[str],
 ) -> list[str]:
     """Check for potential duplicate ideas and return new warnings."""
-    existing_by_idea: dict[str, BacklogItem] = {item.idea: item for item in backlog_items if item.idea}
+    existing_by_idea: dict[str, BacklogItem] = {
+        (item.title or item.idea): item for item in backlog_items if (item.title or item.idea)
+    }
     new_warnings = list(existing_warnings)
 
     for op in operations:
         if op.kind == "create_item":
-            new_idea = op.fields.get("idea", "").lower().strip()
+            new_idea = (op.fields.get("title") or op.fields.get("idea") or "").lower().strip()
             if new_idea in existing_by_idea:
                 existing = existing_by_idea[new_idea]
                 new_warnings.append(
@@ -406,16 +410,32 @@ async def apply_operations(
                     errors.append(f"update_item {op.idea_id}: item not found")
             elif op.kind == "create_item":
                 created = service.create_item(
+                    title=op.fields.get("title", ""),
+                    one_line_summary=op.fields.get("one_line_summary", ""),
+                    raw_idea=op.fields.get("raw_idea", ""),
+                    constraints=op.fields.get("constraints", ""),
                     idea=op.fields.get("idea", ""),
                     category=op.fields.get("category", ""),
                     audience=op.fields.get("audience", ""),
+                    persona_detail=op.fields.get("persona_detail", ""),
                     problem=op.fields.get("problem", ""),
+                    emotional_driver=op.fields.get("emotional_driver", ""),
+                    urgency_level=op.fields.get("urgency_level", ""),
                     source=op.fields.get("source", ""),
                     why_now=op.fields.get("why_now", ""),
+                    hook=op.fields.get("hook", ""),
                     potential_hook=op.fields.get("potential_hook", ""),
                     content_type=op.fields.get("content_type", ""),
+                    format_duration=op.fields.get("format_duration", ""),
+                    key_message=op.fields.get("key_message", ""),
+                    call_to_action=op.fields.get("call_to_action", ""),
                     evidence=op.fields.get("evidence", ""),
+                    proof_gap_note=op.fields.get("proof_gap_note", ""),
+                    expertise_reason=op.fields.get("expertise_reason", ""),
+                    genericity_risk=op.fields.get("genericity_risk", ""),
                     risk_level=op.fields.get("risk_level", "medium"),
+                    source_theme=op.fields.get("source_theme", ""),
+                    selection_reasoning=op.fields.get("selection_reasoning", ""),
                 )
                 applied += 1
                 items.append(created)

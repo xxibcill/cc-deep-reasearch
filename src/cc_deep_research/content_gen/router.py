@@ -11,7 +11,7 @@ from typing import Any, Literal
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from cc_deep_research.config import load_config
 from cc_deep_research.content_gen.agents.backlog_chat import (
@@ -97,12 +97,37 @@ class UpdateBacklogItemRequest(BaseModel):
 class CreateBacklogItemRequest(BaseModel):
     """Request body for creating a new backlog item."""
 
-    idea: str = Field(min_length=1)
+    title: str = ""
+    one_line_summary: str = ""
+    raw_idea: str = ""
+    constraints: str = ""
+    idea: str = ""
     category: str = ""
     audience: str = ""
+    persona_detail: str = ""
     problem: str = ""
+    emotional_driver: str = ""
+    urgency_level: str = ""
+    source: str = ""
+    why_now: str = ""
+    hook: str = ""
+    content_type: str = ""
+    format_duration: str = ""
+    key_message: str = ""
+    call_to_action: str = ""
+    evidence: str = ""
+    proof_gap_note: str = ""
+    expertise_reason: str = ""
+    genericity_risk: str = ""
+    risk_level: str = "medium"
     source_theme: str = ""
     selection_reasoning: str = ""
+
+    @model_validator(mode="after")
+    def _require_title_or_idea(self) -> CreateBacklogItemRequest:
+        if not (self.title or self.idea or self.raw_idea):
+            raise ValueError("One of 'title', legacy 'idea', or 'raw_idea' is required")
+        return self
 
 
 class BacklogChatMessage(BaseModel):
@@ -646,10 +671,29 @@ def register_content_gen_routes(
         service = BacklogService(config)
         try:
             item = service.create_item(
+                title=request.title,
+                one_line_summary=request.one_line_summary,
+                raw_idea=request.raw_idea,
+                constraints=request.constraints,
                 idea=request.idea,
                 category=request.category,
                 audience=request.audience,
+                persona_detail=request.persona_detail,
                 problem=request.problem,
+                emotional_driver=request.emotional_driver,
+                urgency_level=request.urgency_level,
+                source=request.source,
+                why_now=request.why_now,
+                hook=request.hook,
+                content_type=request.content_type,
+                format_duration=request.format_duration,
+                key_message=request.key_message,
+                call_to_action=request.call_to_action,
+                evidence=request.evidence,
+                proof_gap_note=request.proof_gap_note,
+                expertise_reason=request.expertise_reason,
+                genericity_risk=request.genericity_risk,
+                risk_level=request.risk_level,
                 source_theme=request.source_theme,
                 selection_reasoning=request.selection_reasoning,
             )
@@ -739,7 +783,7 @@ def register_content_gen_routes(
         # Create job starting at generate_angles (stage 4)
         end = len(PIPELINE_STAGES) - 1
         job = job_registry.create_job(
-            theme=item.source_theme or item.idea,
+            theme=item.source_theme or item.title or item.idea,
             from_stage=4,
             to_stage=end,
         )
@@ -1190,7 +1234,7 @@ def _build_seeded_context_from_backlog_item(pipeline_id: str, item: BacklogItem)
 
     return PipelineContext(
         pipeline_id=pipeline_id,
-        theme=item.source_theme or item.idea,
+        theme=item.source_theme or item.title or item.idea,
         created_at=datetime.now(tz=UTC).isoformat(),
         current_stage=4,
         strategy=strategy,

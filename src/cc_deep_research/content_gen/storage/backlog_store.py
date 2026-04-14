@@ -54,6 +54,14 @@ class BacklogStore:
                     )
                 merged_item = item.model_dump(mode="python")
                 merged_item.update(patch)
+                if "idea" in patch and "title" not in patch:
+                    merged_item["title"] = patch["idea"]
+                if "title" in patch and "idea" not in patch:
+                    merged_item["idea"] = patch["title"]
+                if "potential_hook" in patch and "hook" not in patch:
+                    merged_item["hook"] = patch["potential_hook"]
+                if "hook" in patch and "potential_hook" not in patch:
+                    merged_item["potential_hook"] = patch["hook"]
                 updated = BacklogItem.model_validate(merged_item)
                 backlog.items = [updated if i.idea_id == idea_id else i for i in backlog.items]
                 self.save(backlog)

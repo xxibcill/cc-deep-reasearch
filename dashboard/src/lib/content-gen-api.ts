@@ -302,10 +302,29 @@ export async function startBacklogItem(
 }
 
 export interface CreateBacklogItemRequest {
-  idea: string;
+  title?: string;
+  one_line_summary?: string;
+  raw_idea?: string;
+  constraints?: string;
+  idea?: string;
   category?: string;
   audience?: string;
+  persona_detail?: string;
   problem?: string;
+  emotional_driver?: string;
+  urgency_level?: string;
+  source?: string;
+  why_now?: string;
+  hook?: string;
+  content_type?: string;
+  format_duration?: string;
+  key_message?: string;
+  call_to_action?: string;
+  evidence?: string;
+  proof_gap_note?: string;
+  expertise_reason?: string;
+  genericity_risk?: string;
+  risk_level?: string;
   source_theme?: string;
   selection_reasoning?: string;
 }
