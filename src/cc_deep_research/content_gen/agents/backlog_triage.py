@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
-from cc_deep_research.content_gen.agents._llm_utils import call_agent_llm_text
 from cc_deep_research.content_gen.agents import batch_analysis
+from cc_deep_research.content_gen.agents._llm_utils import call_agent_llm_text
 from cc_deep_research.content_gen.backlog_service import BacklogService
 from cc_deep_research.content_gen.models import BacklogItem, TriageOperation
 from cc_deep_research.content_gen.prompts import backlog_triage as prompts
@@ -35,7 +35,7 @@ ENRICHABLE_FIELDS = frozenset(
 )
 
 # Fields that can be reframed
-REFREAME_ELIGIBLE_FIELDS = frozenset(
+REFRAME_ELIGIBLE_FIELDS = frozenset(
     {
         "idea",
         "problem",
@@ -413,6 +413,9 @@ async def apply_triage_operations(
     items: list[BacklogItem] = []
     errors: list[str] = []
 
+    # Cache backlog items once before the loop to avoid O(n) lookups per operation
+    backlog_items_by_id = {item.idea_id: item for item in service.load().items}
+
     for op in operations:
         try:
             if op.kind == "archive_recommendation":
@@ -437,7 +440,7 @@ async def apply_triage_operations(
             elif op.kind in ("batch_enrich", "batch_reframe"):
                 # Only apply to sparse/weak items, not overwriting strong operator content
                 for idea_id in op.idea_ids:
-                    target = next((i for i in service.load().items if i.idea_id == idea_id), None)
+                    target = backlog_items_by_id.get(idea_id)
                     if target is None:
                         errors.append(f"{op.kind} {idea_id}: item not found")
                         continue
@@ -485,3 +488,4 @@ def _is_well_reframed(item: BacklogItem) -> bool:
     strong_fields = ["idea", "problem", "potential_hook"]
     non_empty = sum(1 for f in strong_fields if getattr(item, f, ""))
     return non_empty >= 2
+

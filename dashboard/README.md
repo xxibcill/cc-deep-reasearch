@@ -40,6 +40,20 @@ If you prefer running from inside the dashboard directory, use:
 npm run dev
 \`\`\`
 
+### Production-Style Startup
+
+Build the frontend and run the backend plus `next start` together:
+
+\`\`\`bash
+../scripts/dashboard-start
+\`\`\`
+
+From inside `dashboard/`, the equivalent command is:
+
+\`\`\`bash
+npm run start:stack
+\`\`\`
+
 ### Frontend-Only Development
 
 For frontend-only debugging without the backend:

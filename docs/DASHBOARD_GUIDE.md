@@ -113,6 +113,21 @@ Current caveat:
 - the launcher currently exports `NEXT_PUBLIC_API_BASE_URL`, which the runtime config does not read
 - if the backend falls back to a non-`8000` port, set `NEXT_PUBLIC_CC_BACKEND_ORIGIN` manually before starting the frontend or use fixed ports
 
+### Production-Style Startup
+
+From the repository root:
+
+```bash
+./scripts/dashboard-start
+```
+
+This launcher:
+
+- resolves backend and frontend ports before build time
+- builds the Next.js frontend with matching `NEXT_PUBLIC_CC_*` variables
+- starts the FastAPI backend without reload
+- starts the frontend with `next start`
+
 ### Equivalent Manual Startup
 
 Backend:
