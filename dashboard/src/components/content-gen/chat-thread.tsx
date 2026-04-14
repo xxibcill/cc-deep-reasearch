@@ -34,7 +34,7 @@ interface PersistedSession {
 }
 
 export function ChatThread({ backlog, selectedIdeaId, onPendingOpsChange, onApplyErrorsChange }: ChatThreadProps) {
-  const loadBacklog = useContentGen((s) => s.loadBacklog)
+  const mergeBacklogItems = useContentGen((s) => s.mergeBacklogItems)
 
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([])
   const [input, setInput] = useState('')
@@ -139,7 +139,6 @@ export function ChatThread({ backlog, selectedIdeaId, onPendingOpsChange, onAppl
     try {
       const response = await backlogChatRespond({
         messages: messagesForApi,
-        backlog_items: backlog,
         selected_idea_id: selectedIdeaId,
       })
 
@@ -195,7 +194,7 @@ export function ChatThread({ backlog, selectedIdeaId, onPendingOpsChange, onAppl
             }`,
           },
         ])
-        void loadBacklog()
+        mergeBacklogItems(result.items)
       }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Apply failed.'
