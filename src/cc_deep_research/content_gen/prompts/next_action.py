@@ -56,14 +56,23 @@ def build_next_action_user(
     parts = ["=== BACKLOG ITEM TO ANALYZE ==="]
 
     parts.append(f"idea_id: {item.idea_id}")
-    parts.append(f"idea: {item.idea}")
+    parts.append(f"title: {item.title or item.idea}")
+    parts.append(f"one_line_summary: {item.one_line_summary or item.idea}")
+    parts.append(f"raw_idea: {item.raw_idea or '(not set)'}")
+    parts.append(f"constraints: {item.constraints or '(not set)'}")
     parts.append(f"category: {item.category}")
     parts.append(f"audience: {item.audience or '(not set)'}")
+    parts.append(f"persona_detail: {item.persona_detail or '(not set)'}")
     parts.append(f"problem: {item.problem or '(not set)'}")
+    parts.append(f"emotional_driver: {item.emotional_driver or '(not set)'}")
+    parts.append(f"urgency_level: {item.urgency_level or '(not set)'}")
     parts.append(f"why_now: {item.why_now or '(not set)'}")
-    parts.append(f"potential_hook: {item.potential_hook or '(not set)'}")
+    parts.append(f"hook: {item.hook or item.potential_hook or '(not set)'}")
     parts.append(f"evidence: {item.evidence or '(not set)'}")
     parts.append(f"content_type: {item.content_type or '(not set)'}")
+    parts.append(f"format_duration: {item.format_duration or '(not set)'}")
+    parts.append(f"key_message: {item.key_message or '(not set)'}")
+    parts.append(f"call_to_action: {item.call_to_action or '(not set)'}")
     parts.append(f"status: {item.status}")
     parts.append(f"risk_level: {item.risk_level}")
     parts.append(f"latest_score: {item.latest_score}")
@@ -88,4 +97,3 @@ def build_next_action_user(
     parts.append("Provide your recommendation as JSON only.")
 
     return "\n".join(parts)
-

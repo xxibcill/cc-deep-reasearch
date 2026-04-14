@@ -88,7 +88,10 @@ Output format — return ONLY this JSON structure, no additional text:
       "kind": "create_item",
       "reason": "why this new item is needed",
       "fields": {{
-        "idea": "the idea text",
+        "title": "the backlog title",
+        "one_line_summary": "one sentence summary",
+        "raw_idea": "optional messy memo text",
+        "constraints": "optional constraints or must-avoid notes",
         "category": "authority-building",
         "audience": "who this is for",
         "problem": "the specific problem it solves"
@@ -106,7 +109,7 @@ Rules:
 - warnings can flag risks (for example duplicates or overly broad scope)
 - operations.kind must be "update_item" or "create_item" only
 - update_item requires idea_id and at least one field to change
-- create_item requires idea in fields; other fields are optional
+- create_item requires title or legacy idea in fields; other fields are optional
 - mentioned_idea_ids lists all idea IDs referenced in your reply or operations
 - If no operations are warranted, set operations=[] and apply_ready=false"""
 
@@ -145,15 +148,20 @@ def build_backlog_chat_user(
             parts.append("---")
             parts.append(f"idea_id: {item.idea_id}{status_marker}")
             parts.append(f"category: {item.category}")
-            parts.append(f"idea: {item.idea}")
+            parts.append(f"title: {item.title or item.idea}")
+            parts.append(f"summary: {item.one_line_summary or item.idea}")
+            if item.raw_idea:
+                parts.append(f"raw_idea: {item.raw_idea}")
+            if item.constraints:
+                parts.append(f"constraints: {item.constraints}")
             parts.append(f"audience: {item.audience}")
             parts.append(f"problem: {item.problem}")
             if item.status:
                 parts.append(f"status: {item.status}")
             if item.latest_score is not None:
                 parts.append(f"score: {item.latest_score}")
-            if item.potential_hook:
-                parts.append(f"hook: {item.potential_hook}")
+            if item.hook or item.potential_hook:
+                parts.append(f"hook: {item.hook or item.potential_hook}")
             if item.evidence:
                 parts.append(f"evidence: {item.evidence}")
 
@@ -176,29 +184,59 @@ def build_backlog_chat_user(
 # ---------------------------------------------------------------------------
 
 SUPPORTED_UPDATE_FIELDS = frozenset({
+    "title",
+    "one_line_summary",
+    "raw_idea",
+    "constraints",
     "idea",
     "category",
     "audience",
+    "persona_detail",
     "problem",
+    "emotional_driver",
+    "urgency_level",
     "source",
+    "source_theme",
     "why_now",
+    "hook",
     "potential_hook",
     "content_type",
+    "format_duration",
+    "key_message",
+    "call_to_action",
     "evidence",
+    "proof_gap_note",
+    "expertise_reason",
+    "genericity_risk",
     "risk_level",
     "status",
     "selection_reasoning",
 })
 
 SUPPORTED_CREATE_FIELDS = frozenset({
+    "title",
+    "one_line_summary",
+    "raw_idea",
+    "constraints",
     "idea",
     "category",
     "audience",
+    "persona_detail",
     "problem",
+    "emotional_driver",
+    "urgency_level",
     "source",
+    "source_theme",
     "why_now",
+    "hook",
     "potential_hook",
     "content_type",
+    "format_duration",
+    "key_message",
+    "call_to_action",
     "evidence",
+    "proof_gap_note",
+    "expertise_reason",
+    "genericity_risk",
     "risk_level",
 })

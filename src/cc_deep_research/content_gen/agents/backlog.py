@@ -153,15 +153,30 @@ class BacklogAgent:
 
 _BACKLOG_FIELDS = [
     "category",
+    "title",
+    "one_line_summary",
+    "raw_idea",
+    "constraints",
     "idea",
+    "source_theme",
     "audience",
+    "persona_detail",
     "problem",
-    "source",
+    "emotional_driver",
+    "urgency_level",
     "why_now",
+    "hook",
     "potential_hook",
     "content_type",
+    "format_duration",
+    "key_message",
+    "call_to_action",
     "evidence",
+    "proof_gap_note",
+    "expertise_reason",
+    "genericity_risk",
     "risk_level",
+    "source",
 ]
 
 
@@ -177,7 +192,7 @@ def _parse_backlog_items(text: str) -> list[BacklogItem]:
             val = _extract_block_field(block_text, field)
             if val:
                 data[field] = val
-        if data.get("idea"):
+        if data.get("title") or data.get("idea"):
             items.append(BacklogItem(**data))
     return items
 

@@ -21,8 +21,10 @@ export type BacklogCategory =
   | 'authority-building';
 
 export type RiskLevel = 'low' | 'medium' | 'high';
+export type UrgencyLevel = '' | 'low' | 'medium' | 'high';
 
 export type BacklogItemStatus =
+  | 'captured'
   | 'backlog'
   | 'selected'
   | 'runner_up'
@@ -183,29 +185,60 @@ export interface OpportunityBrief {
 // Backlog (stage 1)
 // =============================================================================
 
-export interface BacklogItem {
-  idea_id: string;
+export interface IdeaCore {
   category: BacklogCategory | string;
-  idea: string;
-  audience: string;
-  problem: string;
-  source: string;
+  title: string;
+  one_line_summary: string;
+  raw_idea?: string;
+  constraints?: string;
+  source_theme?: string;
   why_now: string;
-  potential_hook: string;
+  idea: string;
+}
+
+export interface AudienceProblemFit {
+  audience: string;
+  persona_detail?: string;
+  problem: string;
+  emotional_driver?: string;
+  urgency_level?: UrgencyLevel | string;
+}
+
+export interface ContentExecution {
   content_type: string;
+  format_duration?: string;
+  hook?: string;
+  potential_hook: string;
+  key_message?: string;
+  call_to_action?: string;
+}
+
+export interface ValidationLayer {
   evidence: string;
+  proof_gap_note?: string;
+  expertise_reason?: string;
+  genericity_risk?: string;
+  source: string;
+}
+
+export interface Prioritization {
   risk_level: RiskLevel | string;
   priority_score: number;
+  impact_score?: number | null;
+  urgency_score?: number | null;
+  evidence_score?: number | null;
+  conversion_score?: number | null;
+  production_effort?: number | null;
   status: BacklogItemStatus | string;
   created_at?: string;
   updated_at?: string;
   selection_reasoning?: string;
   latest_score?: number;
   latest_recommendation?: string;
-  source_theme?: string;
-  expertise_reason?: string;
-  genericity_risk?: string;
-  proof_gap_note?: string;
+}
+
+export interface BacklogItem extends IdeaCore, AudienceProblemFit, ContentExecution, ValidationLayer, Prioritization {
+  idea_id: string;
   source_pipeline_id?: string;
   last_scored_at?: string;
 }
