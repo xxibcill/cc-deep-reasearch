@@ -142,10 +142,23 @@ class AuditEntry:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AuditEntry:
+        # Safely parse enum fields, falling back to defaults if invalid
+        event_type_str = data.get("event_type", "")
+        try:
+            event_type = AuditEventType(event_type_str) if event_type_str else AuditEventType.PROPOSAL_CREATED
+        except ValueError:
+            event_type = AuditEventType.PROPOSAL_CREATED
+
+        actor_str = data.get("actor", "")
+        try:
+            actor = AuditActor(actor_str) if actor_str else AuditActor.SYSTEM
+        except ValueError:
+            actor = AuditActor.SYSTEM
+
         return cls(
             event_id=data.get("event_id", ""),
-            event_type=data.get("event_type", ""),
-            actor=data.get("actor", ""),
+            event_type=event_type,
+            actor=actor,
             actor_label=data.get("actor_label", ""),
             idea_id=data.get("idea_id", ""),
             proposal_id=data.get("proposal_id", ""),

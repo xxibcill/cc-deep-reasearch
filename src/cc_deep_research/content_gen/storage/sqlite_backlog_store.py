@@ -32,6 +32,7 @@ Concurrency Model
 from __future__ import annotations
 
 import json
+import sqlite3
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
@@ -55,8 +56,6 @@ class SqliteBacklogStore:
     Implements the same load/save/update_item interface as BacklogStore
     but persists to a SQLite database instead of YAML.
     """
-
-    _lock = threading.RLock()
 
     def __init__(
         self,
@@ -95,6 +94,8 @@ class SqliteBacklogStore:
         self._db_path = db_path
         self._yaml_path = yaml_path
         self._initialized = False
+        self._lock = threading.RLock()
+        self._conn: sqlite3.Connection | None = None
 
     @property
     def path(self) -> Path:
@@ -136,9 +137,7 @@ class SqliteBacklogStore:
             self._ensure_initialized()
             conn = self._get_conn()
             # Replace all rows transactionally
-            existing_ids = set(
-                r[0] for r in conn.execute("SELECT idea_id FROM backlog_items").fetchall()
-            )
+            existing_ids = {r[0] for r in conn.execute("SELECT idea_id FROM backlog_items").fetchall()}
             new_ids = {item.idea_id for item in backlog.items}
 
             to_delete = existing_ids - new_ids
@@ -193,11 +192,9 @@ class SqliteBacklogStore:
     # Internal helpers
     # -------------------------------------------------------------------------
 
-    def _get_conn(self):
+    def _get_conn(self) -> sqlite3.Connection:
         """Return a cached connection (caller must hold lock)."""
-        if not hasattr(self, "_conn"):
-            import sqlite3
-
+        if self._conn is None:
             # WAL mode allows concurrent readers while one writer holds the lock
             self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
             self._conn.execute("PRAGMA journal_mode=WAL")
