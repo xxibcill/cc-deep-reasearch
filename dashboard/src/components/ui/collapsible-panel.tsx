@@ -1,7 +1,10 @@
-import { useId, useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+"use client"
 
-import { cn } from '@/lib/utils'
+import * as CollapsiblePrimitive from "@radix-ui/react-collapsible"
+import { ChevronDown } from "lucide-react"
+import { useId, useState } from "react"
+
+import { cn } from "@/lib/utils"
 
 interface CollapsiblePanelProps {
   summary: React.ReactNode
@@ -41,43 +44,50 @@ export function CollapsiblePanel({
   }
 
   return (
-    <div className={cn('overflow-hidden rounded-xl border border-border bg-surface', className)}>
-      <button
-        type="button"
+    <CollapsiblePrimitive.Root
+      open={isOpen}
+      onOpenChange={setOpen}
+      className={cn(
+        "group overflow-hidden rounded-xl border border-border bg-surface transition-all duration-200",
+        "hover:border-border/80 hover:bg-surface-raised/30",
+        isOpen && "bg-surface-raised/40",
+        className
+      )}
+    >
+      <CollapsiblePrimitive.Trigger
         className={cn(
-          'flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-surface-raised/50',
-          triggerClassName,
+          "flex w-full items-center justify-between gap-4 px-4 py-3 text-left",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
+          "data-[state=open]:border-b data-[state=open]:border-border/60",
+          triggerClassName
         )}
-        aria-expanded={isOpen}
-        aria-controls={contentId}
-        onClick={() => setOpen(!isOpen)}
       >
         <div className="flex min-w-0 items-start gap-3">
-          {isOpen ? (
-            <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-          )}
+          <ChevronDown
+            className={cn(
+              "mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-all duration-300 ease-out",
+              "group-hover:text-foreground/70",
+              isOpen ? "rotate-0" : "-rotate-90"
+            )}
+          />
           <div className="min-w-0">{summary}</div>
         </div>
         <div className="flex shrink-0 items-center gap-3">
           {meta}
           {actions}
         </div>
-      </button>
-      <div
-        id={contentId}
+      </CollapsiblePrimitive.Trigger>
+
+      <CollapsiblePrimitive.Content
         className={cn(
-          'grid transition-[grid-template-rows] duration-200 ease-out',
-          isOpen ? 'grid-template-rows-[1fr]' : 'grid-template-rows-[0fr]',
+          "overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down",
+          contentClassName
         )}
       >
-        <div className="overflow-hidden">
-          <div className={cn('border-t border-border px-4 py-4 text-sm', contentClassName)}>
-            {children}
-          </div>
+        <div className="border-t border-border/60 px-4 py-4 text-sm">
+          {children}
         </div>
-      </div>
-    </div>
+      </CollapsiblePrimitive.Content>
+    </CollapsiblePrimitive.Root>
   )
 }

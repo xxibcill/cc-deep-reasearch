@@ -39,11 +39,11 @@ export function recommendationBadgeVariant(
   return 'outline'
 }
 
-export function backlogTitle(item: Pick<BacklogItem, 'title' | 'idea' | 'raw_idea'>): string {
+export function backlogTitle(item: { title?: string; idea?: string; raw_idea?: string | null }): string {
   return item.title?.trim() || item.idea?.trim() || item.raw_idea?.trim() || 'Untitled idea'
 }
 
-export function backlogSummary(item: Pick<BacklogItem, 'one_line_summary' | 'idea' | 'raw_idea'>): string {
+export function backlogSummary(item: { one_line_summary?: string; idea?: string; raw_idea?: string | null }): string {
   return item.one_line_summary?.trim() || item.raw_idea?.trim() || item.idea?.trim() || 'No summary yet.'
 }
 
