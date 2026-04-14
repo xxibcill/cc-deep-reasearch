@@ -361,12 +361,48 @@ def test_content_gen_stage_contract_registry_tracks_expert_workflow_shapes() -> 
     assert "unsafe_claims" in argument_contract.expected_sections
     assert "beat_claim_plan" in argument_contract.expected_sections
 
-    assert scripting_contract.contract_version == "1.1.0"
+    assert scripting_contract.contract_version == "1.2.0"
     assert "Step 4: at least one beat intent" in scripting_contract.required_fields
 
-    assert qc_contract.contract_version == "1.1.0"
+    assert qc_contract.contract_version == "1.2.0"
     assert "unsupported_claims" in qc_contract.expected_sections
     assert "required_fact_checks" in qc_contract.expected_sections
+
+
+def test_scripting_prompt_uses_refined_short_form_format_library() -> None:
+    """Scripting prompts should expose the broader short-form format set."""
+    assert "Tutorial / How-To" in scripting_prompts.STEP2_SYSTEM
+    assert "Result-First / Case Study" in scripting_prompts.STEP2_SYSTEM
+    assert "Opinion / Hot Take" in scripting_prompts.STEP2_SYSTEM
+    assert "Before vs After" in scripting_prompts.STEP2_SYSTEM
+
+    assert "Common pitfall" in scripting_prompts.STEP3_SYSTEM
+    assert "Why most people disagree" in scripting_prompts.STEP3_SYSTEM
+    assert "What changed" in scripting_prompts.STEP3_SYSTEM
+
+
+def test_scripting_prompt_applies_expert_short_form_rules() -> None:
+    """Universal retention and payoff rules should be visible in scripting prompts."""
+    assert "The hook must create tension" in scripting_prompts.STEP3_SYSTEM
+    assert "The second beat must justify attention fast" in scripting_prompts.STEP3_SYSTEM
+    assert "One video = one core idea" in scripting_prompts.STEP3_SYSTEM
+
+    assert (
+        "The second beat must quickly add tension, pain, proof, or surprise"
+        in scripting_prompts.STEP6_SYSTEM
+    )
+    assert "Make the payoff specific and observable" in scripting_prompts.STEP6_SYSTEM
+    assert "If the payoff lands late, move proof or example earlier" in scripting_prompts.STEP7_SYSTEM
+
+
+def test_backlog_and_angle_prompts_prefer_specific_format_led_ideas() -> None:
+    """Upstream prompt stages should steer toward distinct formats and non-generic ideas."""
+    assert "Use refined short-form formats where possible" in backlog_prompts.BUILD_BACKLOG_SYSTEM
+    assert "Best fit between the idea and a proven short-form format" in angle_prompts.ANGLE_SYSTEM
+    assert (
+        "Reaction / Response and List / Roundup are allowed only when the idea genuinely"
+        in angle_prompts.ANGLE_SYSTEM
+    )
 
 
 def test_pipeline_context_default_values() -> None:
@@ -3507,7 +3543,8 @@ def test_scoring_output_roundtrip_with_shortlist() -> None:
                 evidence_strength=4,
                 hook_strength=5,
                 repurposing=4,
-                total_score=31,
+                opportunity_fit=4,
+                total_score=35,
                 recommendation="produce_now",
             )
         ],
@@ -4309,7 +4346,7 @@ idea_id: id2
     result = _parse_scores(text, items)
     assert len(result) == 2
     assert result[0].total_score == 15
-    assert result[1].total_score == 7
+    assert result[1].total_score == 8
 
 
 def test_validate_scores_filters_invalid_recommendations() -> None:
@@ -7177,4 +7214,3 @@ def test_backlog_service_rejects_invalid_idea_id_mark_published(tmp_path: Path) 
 
     with pytest.raises(ValueError, match="invalid characters"):
         service.mark_published("bad$idea")
-

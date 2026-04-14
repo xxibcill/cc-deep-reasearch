@@ -77,6 +77,7 @@ class RetrievalPlanner:
         feedback: str = "",
         research_gaps: list[str] | None = None,
         mode: RetrievalMode = RetrievalMode.BASELINE,
+        research_hypotheses: list[str] | None = None,
     ) -> None:
         self.item = item
         self.angle = angle
@@ -85,6 +86,7 @@ class RetrievalPlanner:
         self.research_gaps = research_gaps or []
         self.mode = mode
         self._seen_queries: set[str] = set()
+        self._research_hypotheses = research_hypotheses or []
 
     def build_plan(self) -> RetrievalPlan:
         """Build a complete retrieval plan based on item, angle, and context."""
@@ -150,7 +152,7 @@ class RetrievalPlanner:
 
     def _extract_hypotheses(self) -> list[str]:
         """Extract research hypotheses from opportunity brief if available."""
-        return []
+        return self._research_hypotheses
 
     def _build_baseline_queries(self) -> tuple[list[RetrievalDecision], list[str]]:
         """Build the standard 6-family baseline query set."""
@@ -503,14 +505,22 @@ class ResearchPackAgent:
         max_queries: int | None = None,
         feedback: str = "",
         research_gaps: list[str] | None = None,
+        research_hypotheses: list[str] | None = None,
     ) -> ResearchPack:
         budget = RetrievalBudget(max_queries=max_queries or self._config.content_gen.research_max_queries)
         search_context, supporting_sources = await self._run_searches(
-            item, angle, budget=budget, feedback=feedback, research_gaps=research_gaps
+            item,
+            angle,
+            budget=budget,
+            feedback=feedback,
+            research_gaps=research_gaps,
+            research_hypotheses=research_hypotheses,
         )
 
         system = prompts.SYNTHESIS_SYSTEM
-        user = prompts.synthesis_user(item, angle, search_context, feedback=feedback)
+        user = prompts.synthesis_user(
+            item, angle, search_context, feedback=feedback, research_hypotheses=research_hypotheses
+        )
         text = await self._call_llm(system, user, temperature=0.3)
 
         pack = _parse_research_pack(
@@ -533,6 +543,7 @@ class ResearchPackAgent:
         budget: RetrievalBudget,
         feedback: str = "",
         research_gaps: list[str] | None = None,
+        research_hypotheses: list[str] | None = None,
     ) -> tuple[str, list[ResearchSource]]:
         planner = RetrievalPlanner(
             item,
@@ -540,6 +551,7 @@ class ResearchPackAgent:
             budget=budget,
             feedback=feedback,
             research_gaps=research_gaps,
+            research_hypotheses=research_hypotheses,
         )
         plan = planner.build_plan()
 

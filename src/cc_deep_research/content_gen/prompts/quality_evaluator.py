@@ -26,11 +26,18 @@ Expert Quality Dimensions (each 0.0-1.0):
 2. claim_safety: Are claims stated with the right certainty, with no unsupported
    or risky assertions?
 3. originality: Does the package say something specific and non-generic rather
-   than repeating interchangeable advice?
+   than repeating interchangeable advice or overlapping educational framings?
 4. precision: Is the language concrete, mechanism-driven, and free of vague
    filler?
 5. expertise_density: Does the package contain real expert insight, tradeoffs,
    and proof instead of surface-level commentary?
+
+Short-form performance checks to apply inside the scoring:
+- The hook should create immediate tension
+- The second beat should earn attention fast
+- The package should stay focused on one core idea
+- The payoff should be specific and observable
+- Important claims should be supported with proof, example, or demonstration when possible
 
 Overall Quality Score: Weighted average (evidence 30%, claim safety 30%,
 originality 15%, precision 15%, expertise density 10%).
@@ -43,7 +50,9 @@ Also score:
    Look for: clichéd framings (myth-busting without new evidence, "just do it"
    motivation, surface-level "here's what I learned" summaries), boilerplate
    advice that could appear in any同类 content, vague claims without mechanism,
-   standard "3 things" or "5 tips" format without differentiation.
+   standard "3 things" or "5 tips" format without differentiation, and
+   overlapping educational formats that are effectively the same video with
+   different labels.
 
    Also flag specific issues:
    - cliche_flags: Specific clichéd framings or lines that sound like every

@@ -1,6 +1,6 @@
 """Prompt templates for the opportunity planning stage.
 
-Contract Version: 1.1.0
+Contract Version: 1.2.0
 
 Parser expectations:
 - Primary: JSON output with a tightly scoped schema (structured mode).
@@ -38,7 +38,7 @@ from __future__ import annotations
 
 from cc_deep_research.content_gen.models import StrategyMemory
 
-CONTRACT_VERSION = "1.1.0"
+CONTRACT_VERSION = "1.2.0"
 
 GLOBAL_RULES = """\
 You are planning a short-form content opportunity inside a modular workflow.
@@ -63,9 +63,14 @@ Requirements:
 - The goal must be specific and measurable
 - Audience segments must be concrete (not "everyone" or "marketers")
 - Problem statements must be real, observable problems
-- Platform constraints should reflect short-form video realities
+- Platform constraints should reflect short-form video realities:
+  sharp hooks, fast second beats, specificity, proof/example needs, and one core idea
 - Risk constraints should flag claims that need proof
-- Sub-angles should be distinct editorial directions, not restatements
+- Sub-angles should be distinct editorial directions, not restatements or overlapping educational variants
+- When helpful, sub-angles should map to distinct short-form formats such as
+  Insight Breakdown, Mistake to Fix, Story-Based, Myth vs Truth,
+  Tutorial / How-To, Result-First / Case Study, Opinion / Hot Take,
+  or Before vs After
 - Research hypotheses should be testable claims, not wishes
 - Success criteria should be measurable outcomes
 

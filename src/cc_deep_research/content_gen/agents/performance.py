@@ -90,6 +90,9 @@ class PerformanceAgent:
         script: str = "",
         hook: str = "",
         caption: str = "",
+        opportunity_brief_summary: str = "",
+        success_criteria: list[str] | None = None,
+        research_hypotheses: list[str] | None = None,
     ) -> PerformanceAnalysis:
         system = prompts.PERFORMANCE_SYSTEM
         user = prompts.performance_user(
@@ -98,6 +101,9 @@ class PerformanceAgent:
             script=script,
             hook=hook,
             caption=caption,
+            opportunity_brief_summary=opportunity_brief_summary,
+            success_criteria=success_criteria,
+            research_hypotheses=research_hypotheses,
         )
         text = await self._call_llm(system, user, temperature=0.4)
 
@@ -120,6 +126,8 @@ _LIST_FIELDS = [
     "dropoff_hypotheses",
     "follow_up_ideas",
     "backlog_updates",
+    "brief_success_criteria_results",
+    "brief_hypothesis_results",
 ]
 
 
@@ -156,6 +164,6 @@ def _parse_performance(text: str, video_id: str) -> PerformanceAnalysis:
     data: dict = {"video_id": video_id}
     for field in _LIST_FIELDS:
         data[field] = _extract_list(text, field)
-    for field in ("hook_diagnosis", "lesson", "next_test"):
+    for field in ("hook_diagnosis", "lesson", "next_test", "opportunity_brief_comparison"):
         data[field] = _extract_field(text, field)
     return PerformanceAnalysis(**data)

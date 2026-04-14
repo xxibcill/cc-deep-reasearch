@@ -1,6 +1,6 @@
 """Prompt templates for the human QC gate stage.
 
-Contract Version: 1.1.0
+Contract Version: 1.2.0
 
 Parser expectations:
 - review output: Expects `hook_strength:` plus issue buckets named
@@ -8,6 +8,9 @@ Parser expectations:
   caption_issues, unsupported_claims, risky_claims, required_fact_checks,
   and must_fix_items. Each issue bucket is parsed as a "- " or "* " list.
   `approved_for_publish` is never parsed from model output.
+- If success criteria from the opportunity brief are provided, the QC
+  should evaluate whether the script satisfies each criterion and flag
+  any criteria that are not met.
 
 When editing prompts, ensure output format remains compatible with
 the parser in agents/qc.py.
@@ -15,7 +18,7 @@ the parser in agents/qc.py.
 
 from __future__ import annotations
 
-CONTRACT_VERSION = "1.1.0"
+CONTRACT_VERSION = "1.2.0"
 
 GLOBAL_RULES = """\
 You are performing quality control on a short-form video package inside a modular workflow.
@@ -40,8 +43,12 @@ that decision belongs to the human.
 
 Checklist:
 - Is the hook clear in the first 1-2 seconds?
+- Does the second beat create momentum instead of stalling in setup?
 - Is there any factual nonsense, unsupported claim, or overstated certainty?
 - Is there weak or generic wording?
+- Is the payoff specific, not generic?
+- Does the package stay on one core idea instead of stacking random advice?
+- Is there proof, example, comparison, or concrete specificity where the claim needs it?
 - Are captions readable?
 - Do visuals support the point?
 - Is audio direction clear?
@@ -55,6 +62,12 @@ Call out:
 - required_fact_checks for checks a human must verify before publish
 
 Put severe unsupported or risky claims into must_fix_items too.
+If the first two beats are weak or slow, include that in must_fix_items.
+
+Success Criteria Evaluation (if criteria are provided):
+- For each success criterion, evaluate whether the script satisfies it
+- If a criterion is not satisfied, note it in clarity_issues or factual_issues
+- Record which criteria are met and which are not in the output
 
 Output format:
 
@@ -86,6 +99,9 @@ required_fact_checks:
 must_fix_items:
 - (item 1)
 
+success_criteria_evaluation:
+- (if criteria were provided: list each criterion and whether it is met or unmet)
+
 Note: approved_for_publish is always false until a human sets it."""
 
 
@@ -96,6 +112,7 @@ def qc_user(
     packaging_summary: str = "",
     research_summary: str = "",
     argument_map_summary: str = "",
+    success_criteria: list[str] | None = None,
 ) -> str:
     parts = [f"Script:\n{script}"]
     if research_summary:
@@ -106,4 +123,6 @@ def qc_user(
         parts.append(f"\nVisual plan summary:\n{visual_summary}")
     if packaging_summary:
         parts.append(f"\nPackaging summary:\n{packaging_summary}")
+    if success_criteria:
+        parts.append("\nSuccess criteria to evaluate:\n- " + "\n- ".join(success_criteria))
     return "\n".join(parts)

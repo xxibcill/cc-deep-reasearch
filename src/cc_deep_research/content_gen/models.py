@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field, computed_field, field_validator, model_va
 
 from cc_deep_research.models.search import QueryProvenance
 
-CONTRACT_VERSION = "1.6.0"
+CONTRACT_VERSION = "1.7.0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,10 +44,10 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "plan_opportunity": ContentGenStageContract(
         stage_name="plan_opportunity",
         prompt_module="prompts/opportunity.py",
-        contract_version="1.1.0",
+        contract_version="1.2.0",
         parser_location="agents/opportunity.py::_parse_opportunity_brief (JSON first, legacy fallback)",
         output_model="OpportunityBrief",
-        format_notes="JSON output (primary) with structured schema; legacy header+dash text (fallback). parse_mode recorded in trace metadata.",
+        format_notes="JSON output (primary) with structured schema; legacy header+dash text (fallback). parse_mode recorded in trace metadata. P3-T2 adds version/is_generated/is_approved/revision_history tracking.",
         required_fields=(
             "Goal",
             "Primary audience segment",
@@ -73,7 +73,7 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "build_backlog": ContentGenStageContract(
         stage_name="build_backlog",
         prompt_module="prompts/backlog.py",
-        contract_version="1.1.0",
+        contract_version="1.2.0",
         parser_location="agents/backlog.py::_parse_backlog_items",
         output_model="BacklogOutput",
         format_notes="Repeated '---' blocks with field_name: value pairs.",
@@ -98,7 +98,7 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "score_ideas": ContentGenStageContract(
         stage_name="score_ideas",
         prompt_module="prompts/backlog.py",
-        contract_version="1.1.0",
+        contract_version="1.2.0",
         parser_location="agents/backlog.py::_parse_scores + _derive_selection",
         output_model="ScoringOutput",
         format_notes="Repeated '---' score blocks followed by shortlist summary fields.",
@@ -123,7 +123,7 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "generate_angles": ContentGenStageContract(
         stage_name="generate_angles",
         prompt_module="prompts/angle.py",
-        contract_version="1.0.0",
+        contract_version="1.1.0",
         parser_location="agents/angle.py::_parse_angle_options",
         output_model="AngleOutput",
         format_notes="Repeated '---' blocks plus trailing best-angle summary fields.",
@@ -194,7 +194,7 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "run_scripting": ContentGenStageContract(
         stage_name="run_scripting",
         prompt_module="prompts/scripting.py",
-        contract_version="1.1.0",
+        contract_version="1.2.0",
         parser_location="agents/scripting.py::_STEP_HANDLERS and _extract_* helpers",
         output_model="ScriptingContext",
         format_notes=(
@@ -283,7 +283,7 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "human_qc": ContentGenStageContract(
         stage_name="human_qc",
         prompt_module="prompts/qc.py",
-        contract_version="1.1.0",
+        contract_version="1.2.0",
         parser_location="agents/qc.py::_parse_qc_gate",
         output_model="HumanQCGate",
         format_notes="Named issue buckets with '-' lists; AI review never sets approval to true.",
@@ -315,7 +315,7 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "performance_analysis": ContentGenStageContract(
         stage_name="performance_analysis",
         prompt_module="prompts/performance.py",
-        contract_version="1.0.0",
+        contract_version="1.1.0",
         parser_location="agents/performance.py::_parse_performance",
         output_model="PerformanceAnalysis",
         format_notes="Named diagnostic sections with '-' lists plus scalar summary fields.",
@@ -933,6 +933,7 @@ class OpportunityBrief(BaseModel):
     backlog generation and later scoring.
     """
 
+    brief_id: str = Field(default_factory=lambda: f"brief_{uuid4().hex[:8]}")
     theme: str = ""
     goal: str = ""
     primary_audience_segment: str = ""
@@ -949,6 +950,17 @@ class OpportunityBrief(BaseModel):
     expert_take: str = ""
     non_obvious_claims_to_test: list[str] = Field(default_factory=list)
     genericity_risks: list[str] = Field(default_factory=list)
+    # P3-T2: Version tracking
+    version: int = 1
+    # P3-T2: Source tracking — original generated vs operator-revised
+    is_generated: bool = True  # True = AI-generated, False = operator-created or heavily edited
+    # P3-T2: Revision state
+    is_approved: bool = False
+    # P3-T2: Revision history
+    revision_history: list[str] = Field(
+        default_factory=list,
+        description="Change log entries describing what was revised",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1029,6 +1041,11 @@ class BacklogItem(
     created_at: str = ""
     updated_at: str = ""
     last_scored_at: str = ""
+    # P2-T1: Reference back to the opportunity brief that generated this idea
+    opportunity_brief_id: str = Field(
+        default="",
+        description="ID of the OpportunityBrief that this idea traces back to",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -1142,9 +1159,14 @@ class IdeaScores(BaseModel):
     evidence_strength: int = Field(default=0, ge=1, le=5)
     hook_strength: int = Field(default=0, ge=1, le=5)
     repurposing: int = Field(default=0, ge=1, le=5)
+    opportunity_fit: int = Field(default=1, ge=1, le=5, description="How well this idea fits opportunity brief constraints")
     total_score: int = 0
     recommendation: str = "hold"  # produce_now | hold | kill
     reason: str = ""
+    opportunity_fit_reason: str = Field(
+        default="",
+        description="Brief explanation of how this idea satisfies the opportunity brief",
+    )
 
 
 class ScoringOutput(BaseModel):
@@ -1893,6 +1915,11 @@ class HumanQCGate(BaseModel):
     required_fact_checks: list[str] = Field(default_factory=list)
     must_fix_items: list[str] = Field(default_factory=list)
     approved_for_publish: bool = False
+    # P2-T3: Success criteria evaluation from opportunity brief
+    success_criteria_results: list[str] = Field(
+        default_factory=list,
+        description="Per-criterion evaluation: whether each planned success criterion is met or unmet",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2159,6 +2186,116 @@ class PerformanceAnalysis(BaseModel):
     backlog_updates: list[str] = Field(default_factory=list)
     is_degraded: bool = False
     degradation_reason: str = ""
+    # P2-T3: Opportunity brief comparison results
+    opportunity_brief_comparison: str = Field(
+        default="",
+        description="How the actual outcomes compared against the original opportunity brief intent",
+    )
+    brief_success_criteria_results: list[str] = Field(
+        default_factory=list,
+        description="Per-criterion results: whether each planned success criterion was met or unmet",
+    )
+    brief_hypothesis_results: list[str] = Field(
+        default_factory=list,
+        description="Per-hypothesis results: whether each planned research hypothesis was supported or contradicted",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 03 - Learning Store and Planning Metrics (P3-T3)
+# ---------------------------------------------------------------------------
+
+
+class PlanningLearningCategory(StrEnum):
+    """Category of opportunity planning learning."""
+
+    BRIEF_SPECIFICITY = "brief_specificity"  # How specific vs generic the brief was
+    AUDIENCE_DEFINITION = "audience_definition"  # How well audience was defined
+    HYPOTHESIS_QUALITY = "hypothesis_quality"  # Quality of research hypotheses
+    SUCCESS_CRITERIA = "success_criteria"  # How measurable the criteria were
+    PROOF_REQUIREMENTS = "proof_requirements"  # How actionable proof requirements were
+    SUB_ANGLE_DISTINCTION = "sub_angle_distinction"  # How distinct sub-angles were
+
+
+class PlanningLearning(BaseModel):
+    """A reusable opportunity-planning pattern extracted from runs.
+
+    Stores validated lessons that can influence future planning.
+    """
+
+    learning_id: str = Field(default_factory=lambda: f"planlearn_{uuid4().hex[:8]}")
+    category: PlanningLearningCategory = PlanningLearningCategory.BRIEF_SPECIFICITY
+    # What pattern was observed
+    pattern: str = ""
+    # Why it matters for planning quality
+    implication: str = ""
+    # What to do differently in future briefs
+    guidance: str = ""
+    # Which brief(s) this learning came from
+    source_brief_ids: list[str] = Field(default_factory=list)
+    # Whether this learning has been operator-reviewed
+    operator_reviewed: bool = False
+    # Whether this learning is currently active
+    is_active: bool = True
+    # When this learning was created
+    created_at: str = ""
+
+
+class PlanningMetrics(BaseModel):
+    """Tracking metrics for opportunity planning quality over time.
+
+    These metrics help operators understand whether planning is improving.
+    """
+
+    total_briefs: int = 0
+    acceptable_briefs: int = 0  # Passed quality validation
+    rewritten_briefs: int = 0  # Required at least one revision
+    approved_briefs: int = 0  # Passed operator review
+    converted_to_production: int = 0  # Successfully produced content
+
+    @computed_field(return_type=float)
+    @property
+    def pass_rate(self) -> float:
+        """Brief acceptance rate."""
+        if not self.total_briefs:
+            return 0.0
+        return round(self.acceptable_briefs / self.total_briefs, 3)
+
+    @computed_field(return_type=float)
+    @property
+    def rewrite_rate(self) -> float:
+        """Rate of briefs needing revision."""
+        if not self.total_briefs:
+            return 0.0
+        return round(self.rewritten_briefs / self.total_briefs, 3)
+
+    @computed_field(return_type=float)
+    @property
+    def approval_rate(self) -> float:
+        """Rate of briefs passing operator review."""
+        if not self.total_briefs:
+            return 0.0
+        return round(self.approved_briefs / self.total_briefs, 3)
+
+    @computed_field(return_type=float)
+    @property
+    def production_conversion_rate(self) -> float:
+        """Rate of approved briefs that went to production."""
+        if not self.approved_briefs:
+            return 0.0
+        return round(self.converted_to_production / self.approved_briefs, 3)
+
+    def to_summary(self) -> str:
+        """Human-readable metrics summary."""
+        lines = [
+            "Planning Metrics:",
+            f"  Total briefs: {self.total_briefs}",
+            f"  Acceptable (passed validation): {self.acceptable_briefs} ({self.pass_rate:.1%})",
+            f"  Required rewrite: {self.rewritten_briefs} ({self.rewrite_rate:.1%})",
+            f"  Approved: {self.approved_briefs} ({self.approval_rate:.1%})",
+            f"  Converted to production: {self.converted_to_production} ({self.production_conversion_rate:.1%})",
+        ]
+        return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------

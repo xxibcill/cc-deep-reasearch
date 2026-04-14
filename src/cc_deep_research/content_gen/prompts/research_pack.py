@@ -1,6 +1,6 @@
 """Prompt templates for the research pack builder.
 
-Contract Version: 1.1.0
+Contract Version: 1.2.0
 
 Parser expectations:
 - synthesis output: Prefers structured sections named findings, claims,
@@ -9,6 +9,9 @@ Parser expectations:
   reference source_ids from the prompt-provided source catalog.
 - The parser remains tolerant of older legacy list sections so downstream
   stages can continue operating during contract migration.
+- Hypothesis tracking: The synthesis should explicitly address each hypothesis
+  from the opportunity brief and note whether it is supported, unsupported,
+  or unresolved by the gathered evidence.
 
 When editing prompts, ensure output format remains compatible with
 the parser in agents/research_pack.py.
@@ -72,6 +75,13 @@ Rules:
 - Use counterpoints for caveats, limits, or credible pushback
 - Keep assets_needed as a simple list
 
+Hypothesis Testing (if hypotheses are provided):
+- For each hypothesis, evaluate whether the gathered evidence supports,
+  contradicts, or is inconclusive about the claim
+- Record the hypothesis verdict in the findings or claims section with
+  a confidence level reflecting the evidence strength
+- Flag any hypothesis with insufficient evidence or contradictory signals
+
 Output format:
 
 findings:
@@ -81,6 +91,7 @@ summary: (finding summary)
 source_ids: src_a, src_b
 confidence: high | medium | low | unknown
 evidence_note: (optional note)
+hypothesis_verdict: (optional: supported | unsupported | unresolved — only if hypotheses were provided)
 ---
 
 claims:
@@ -90,6 +101,7 @@ claim: (claim text)
 source_ids: src_a, src_b
 confidence: high | medium | low | unknown
 mechanism: (optional mechanism or why it matters)
+hypothesis_verdict: (optional: supported | unsupported | unresolved — only if hypotheses were provided)
 ---
 
 counterpoints:
@@ -121,6 +133,7 @@ def synthesis_user(
     search_context: str,
     *,
     feedback: str = "",
+    research_hypotheses: list[str] | None = None,
 ) -> str:
     parts = [
         f"Idea: {item.idea}",
@@ -129,6 +142,8 @@ def synthesis_user(
         f"Viewer Problem: {angle.viewer_problem}",
         f"\nSearch results:\n{search_context}",
     ]
+    if research_hypotheses:
+        parts.append("\nResearch hypotheses to test:\n- " + "\n- ".join(research_hypotheses))
     if feedback:
         parts.append(f"\nPrevious iteration feedback to address:\n{feedback}")
     return "\n".join(parts)
