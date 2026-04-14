@@ -22,6 +22,11 @@ import type {
   TriageRespondResponse,
   TriageApplyRequest,
   TriageApplyResponse,
+  NextActionRequest,
+  NextActionResponse,
+  NextActionBatchResponse,
+  ExecutionBriefRequest,
+  ExecutionBriefResponse,
 } from '@/types/content-gen';
 
 interface PipelineRunDetailResponse extends PipelineRunSummary {
@@ -383,5 +388,62 @@ export async function backlogTriageApply(
     return response.data;
   } catch (error) {
     throw new Error(getApiErrorMessage(error, 'Failed to apply triage proposals.'));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Next-Action Recommendations (P2-T1)
+// ---------------------------------------------------------------------------
+
+const NEXT_ACTION_TIMEOUT_MS = 45000;
+
+export async function getNextAction(
+  req: NextActionRequest,
+): Promise<NextActionResponse> {
+  try {
+    const response = await contentGenClient.post<NextActionResponse>(
+      '/backlog-ai/next-action',
+      req,
+      { timeout: NEXT_ACTION_TIMEOUT_MS },
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to get next-action recommendation.'));
+  }
+}
+
+export async function getNextActionBatch(
+  req: TriageRespondRequest,
+): Promise<NextActionBatchResponse> {
+  try {
+    const response = await contentGenClient.post<NextActionBatchResponse>(
+      '/backlog-ai/next-action/batch',
+      req,
+      { timeout: BACKLOG_TRIAGE_TIMEOUT_MS * 2 },
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to get batch next-action recommendations.'));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Execution Brief (P2-T2)
+// ---------------------------------------------------------------------------
+
+const EXECUTION_BRIEF_TIMEOUT_MS = 45000;
+
+export async function generateExecutionBrief(
+  req: ExecutionBriefRequest,
+): Promise<ExecutionBriefResponse> {
+  try {
+    const response = await contentGenClient.post<ExecutionBriefResponse>(
+      '/backlog-ai/execution-brief',
+      req,
+      { timeout: EXECUTION_BRIEF_TIMEOUT_MS },
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to generate execution brief.'));
   }
 }

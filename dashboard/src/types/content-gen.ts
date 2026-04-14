@@ -906,3 +906,63 @@ export interface TriageApplyResponse {
   items: BacklogItem[];
   errors: string[];
 }
+
+// =============================================================================
+// Next-Action Recommendations (P2-T1)
+// =============================================================================
+
+export type NextActionType = 'produce' | 'reframe' | 'gather_evidence' | 'hold' | 'archive';
+
+export interface NextActionRecommendation {
+  action: NextActionType;
+  rationale: string;
+  confidence: number;
+  blockers: string[];
+  suggested_fields: Record<string, string>;
+}
+
+export interface NextActionResponse {
+  recommendation: NextActionRecommendation;
+  item_summary: string;
+}
+
+export interface NextActionBatchResponse {
+  recommendations: NextActionResponse[];
+  warnings: string[];
+}
+
+// =============================================================================
+// Execution Brief (P2-T2)
+// =============================================================================
+
+export interface ExecutionBrief {
+  idea_id: string;
+  audience: string;
+  problem_statement: string;
+  hook_direction: string;
+  evidence_requirements: string[];
+  proof_gaps: string[];
+  research_questions: string[];
+  risks_before_production: string[];
+  is_ready_for_production: boolean;
+  readiness_summary: string;
+}
+
+export interface ExecutionBriefResponse {
+  brief: ExecutionBrief;
+  source_item_summary: string;
+}
+
+// =============================================================================
+// API Request types for P2-T1 and P2-T2
+// =============================================================================
+
+export interface NextActionRequest {
+  idea_id: string;
+  strategy?: Record<string, unknown> | null;
+}
+
+export interface ExecutionBriefRequest {
+  idea_id: string;
+  strategy?: Record<string, unknown> | null;
+}

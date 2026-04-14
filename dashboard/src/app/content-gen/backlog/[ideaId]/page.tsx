@@ -14,6 +14,8 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { NativeSelect } from '@/components/ui/native-select'
 import { formatTimestamp, statusBadgeVariant, recommendationBadgeVariant, STATUS_OPTIONS } from '@/components/content-gen/backlog-shared'
 import { BacklogItemForm } from '@/components/content-gen/backlog-item-form'
+import { NextActionCard } from '@/components/content-gen/next-action-card'
+import { ExecutionBriefPanel } from '@/components/content-gen/execution-brief-panel'
 import useContentGen from '@/hooks/useContentGen'
 
 function DetailSection({
@@ -62,6 +64,7 @@ export default function BacklogDetailPage() {
   const archiveBacklogItem = useContentGen((s) => s.archiveBacklogItem)
   const deleteBacklogItem = useContentGen((s) => s.deleteBacklogItem)
   const startBacklogItem = useContentGen((s) => s.startBacklogItem)
+  const strategy = useContentGen((s) => s.strategy)
 
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -335,6 +338,33 @@ export default function BacklogDetailPage() {
               ) : (
                 <FieldRow label="Source pipeline" value={<EmptyField />} />
               )}
+            </div>
+          </DetailSection>
+
+          <DetailSection title="AI Recommendations">
+            <div className="space-y-4">
+              <NextActionCard
+                ideaId={item.idea_id}
+                strategy={strategy as unknown as Record<string, unknown> | null}
+                onApplySuggestedFields={async (ideaId, fields) => {
+                  if (updateBacklogItem) {
+                    await updateBacklogItem(ideaId, fields)
+                  }
+                }}
+              />
+              <ExecutionBriefPanel
+                ideaId={item.idea_id}
+                strategy={strategy as unknown as Record<string, unknown> | null}
+                onStartProduction={async (id) => {
+                  if (startBacklogItem) {
+                    const pipelineId = await startBacklogItem(id)
+                    if (pipelineId) {
+                      router.push(`/content-gen/pipeline/${pipelineId}`)
+                    }
+                  }
+                  return null
+                }}
+              />
             </div>
           </DetailSection>
 

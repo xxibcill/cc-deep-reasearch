@@ -20,6 +20,11 @@ Let superusers act on AI recommendations across many backlog items without editi
 - Batch execution surfaces per-item outcomes clearly.
 - Bulk actions reduce repeated manual CRUD without weakening validation rules.
 
+## Status
+
+**Done** — Implemented in:
+- `dashboard/src/components/content-gen/triage-workspace.tsx` — bulk checkbox selection, selectAll/deselectAll per group, applySelected/rejectSelected with per-item outcomes
+
 ## Advice For The Smaller Coding Agent
 
 - Keep the first bulk-action set narrow and tied to validated item operations.
