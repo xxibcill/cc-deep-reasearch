@@ -12,6 +12,12 @@ import type {
   RunScriptingRequest,
   RunScriptingResponse,
   BacklogItem,
+  BacklogChatMessage,
+  BacklogChatOperation,
+  BacklogChatRespondRequest,
+  BacklogChatRespondResponse,
+  BacklogChatApplyRequest,
+  BacklogChatApplyResponse,
 } from '@/types/content-gen';
 
 interface PipelineRunDetailResponse extends PipelineRunSummary {
@@ -269,6 +275,23 @@ export async function deleteBacklogItem(ideaId: string): Promise<void> {
   }
 }
 
+export async function startBacklogItem(
+  ideaId: string,
+): Promise<{ pipeline_id: string; status: string; idea_id: string; from_stage: number; to_stage: number }> {
+  try {
+    const response = await contentGenClient.post<{
+      pipeline_id: string;
+      status: string;
+      idea_id: string;
+      from_stage: number;
+      to_stage: number;
+    }>(`/backlog/${ideaId}/start`);
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to start backlog item.'));
+  }
+}
+
 export interface CreateBacklogItemRequest {
   idea: string;
   category?: string;
@@ -286,5 +309,40 @@ export async function createBacklogItem(
     return response.data;
   } catch (error) {
     throw new Error(getApiErrorMessage(error, 'Failed to create backlog item.'));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Backlog chat endpoints
+// ---------------------------------------------------------------------------
+
+const BACKLOG_CHAT_TIMEOUT_MS = 45000;
+
+export async function backlogChatRespond(
+  req: BacklogChatRespondRequest,
+): Promise<BacklogChatRespondResponse> {
+  try {
+    const response = await contentGenClient.post<BacklogChatRespondResponse>(
+      '/backlog-chat/respond',
+      req,
+      { timeout: BACKLOG_CHAT_TIMEOUT_MS },
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to get chat response.'));
+  }
+}
+
+export async function backlogChatApply(
+  req: BacklogChatApplyRequest,
+): Promise<BacklogChatApplyResponse> {
+  try {
+    const response = await contentGenClient.post<BacklogChatApplyResponse>(
+      '/backlog-chat/apply',
+      req,
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to apply chat proposal.'));
   }
 }

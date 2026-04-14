@@ -26,6 +26,7 @@ import {
   archiveBacklogItem as archiveBacklogItemApi,
   deleteBacklogItem as deleteBacklogItemApi,
   createBacklogItem as createBacklogItemApi,
+  startBacklogItem as startBacklogItemApi,
 } from '@/lib/content-gen-api';
 import { getApiErrorMessage } from '@/lib/api';
 
@@ -76,11 +77,13 @@ interface ContentGenState {
   removeFromQueue: (ideaId: string, platform: string) => Promise<void>;
 
   loadBacklog: () => Promise<void>;
+  mergeBacklogItems: (items: BacklogItem[]) => void;
   createBacklogItem: (data: Record<string, unknown>) => Promise<void>;
   updateBacklogItem: (ideaId: string, patch: Record<string, unknown>) => Promise<void>;
   selectBacklogItem: (ideaId: string) => Promise<void>;
   archiveBacklogItem: (ideaId: string) => Promise<void>;
   deleteBacklogItem: (ideaId: string) => Promise<void>;
+  startBacklogItem: (ideaId: string) => Promise<string | null>;
 
   loadAll: () => Promise<void>;
 
@@ -281,6 +284,36 @@ const useContentGen = create<ContentGenState>((set, get) => ({
     }
   },
 
+  mergeBacklogItems: (items) => {
+    if (!items.length) {
+      return;
+    }
+
+    set((state) => {
+      const existingById = new Map(state.backlog.map((item) => [item.idea_id, item]));
+      const incomingById = new Map(items.map((item) => [item.idea_id, item]));
+      const containsSelectedItem = items.some((item) => item.status === 'selected');
+      const nextBacklog = state.backlog.map((item) => {
+        const incoming = incomingById.get(item.idea_id);
+        if (incoming) {
+          return incoming;
+        }
+        if (containsSelectedItem && item.status === 'selected') {
+          return { ...item, status: 'backlog', selection_reasoning: '' };
+        }
+        return item;
+      });
+
+      for (const item of items) {
+        if (!existingById.has(item.idea_id)) {
+          nextBacklog.push(item);
+        }
+      }
+
+      return { backlog: nextBacklog };
+    });
+  },
+
   createBacklogItem: async (data) => {
     set({ error: null });
     try {
@@ -345,6 +378,23 @@ const useContentGen = create<ContentGenState>((set, get) => ({
       }));
     } catch (err) {
       set({ error: getApiErrorMessage(err, 'Failed to delete backlog item.') });
+    }
+  },
+
+  startBacklogItem: async (ideaId) => {
+    set({ error: null });
+    try {
+      const result = await startBacklogItemApi(ideaId);
+      const pipelineId = result.pipeline_id ?? null;
+      if (pipelineId) {
+        set({ activePipelineId: pipelineId });
+        const pipelines = await listPipelines();
+        set({ pipelines });
+      }
+      return pipelineId;
+    } catch (err) {
+      set({ error: getApiErrorMessage(err, 'Failed to start backlog item.') });
+      return null;
     }
   },
 
