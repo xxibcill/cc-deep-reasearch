@@ -5,6 +5,7 @@ import { Archive, CheckCircle2, Play, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { BacklogItemForm } from '@/components/content-gen/backlog-item-form'
+import { backlogTitle } from '@/components/content-gen/backlog-shared'
 import type { BacklogItem } from '@/types/content-gen'
 
 interface BacklogDetailToolbarProps {
@@ -38,8 +39,8 @@ export function BacklogDetailToolbar({
         </Link>
         <span>/</span>
         <span className="text-foreground">
-          {item.idea.slice(0, 40)}
-          {item.idea.length > 40 ? '…' : ''}
+          {backlogTitle(item).slice(0, 40)}
+          {backlogTitle(item).length > 40 ? '…' : ''}
         </span>
       </nav>
 

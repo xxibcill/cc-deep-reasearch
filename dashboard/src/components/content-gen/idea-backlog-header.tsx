@@ -2,6 +2,8 @@
 
 import { Badge } from '@/components/ui/badge'
 import {
+  backlogSummary,
+  backlogTitle,
   formatTimestamp,
   statusBadgeVariant,
   recommendationBadgeVariant,
@@ -10,6 +12,9 @@ import {
 interface IdeaBacklogHeaderProps {
   item: {
     idea_id: string
+    title: string
+    one_line_summary: string
+    raw_idea?: string | null
     idea: string
     status: string
     category?: string | null
@@ -31,9 +36,10 @@ export function IdeaBacklogHeader({ item }: IdeaBacklogHeaderProps) {
         <div className="space-y-4">
           <div className="space-y-1.5">
             <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
-              Idea
+              Backlog item
             </p>
-            <h1 className="text-2xl font-semibold leading-tight text-foreground">{item.idea}</h1>
+            <h1 className="text-2xl font-semibold leading-tight text-foreground">{backlogTitle(item)}</h1>
+            <p className="max-w-3xl text-sm text-foreground/72">{backlogSummary(item)}</p>
           </div>
 
           <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
