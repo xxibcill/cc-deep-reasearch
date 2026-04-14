@@ -2388,3 +2388,43 @@ PIPELINE_STAGE_LABELS: dict[str, str] = {
     "publish_queue": "Creating publish queue entry",
     "performance_analysis": "Analyzing performance",
 }
+
+
+# ---------------------------------------------------------------------------
+# Backlog AI Triage (batch operations)
+# ---------------------------------------------------------------------------
+
+
+class TriageOperationKind(str):
+    """Kinds of batch triage proposals."""
+
+    BATCH_ENRICH = "batch_enrich"
+    BATCH_REFRAME = "batch_reframe"
+    DEDUPE_RECOMMENDATION = "dedupe_recommendation"
+    ARCHIVE_RECOMMENDATION = "archive_recommendation"
+    PRIORITY_RECOMMENDATION = "priority_recommendation"
+
+
+class TriageOperation(BaseModel):
+    """A single triage operation proposed by the batch triage agent."""
+
+    kind: Literal[
+        "batch_enrich",
+        "batch_reframe",
+        "dedupe_recommendation",
+        "archive_recommendation",
+        "priority_recommendation",
+    ]
+    idea_ids: list[str] = Field(default_factory=list)
+    reason: str = ""
+    fields: dict[str, Any] = Field(default_factory=dict)
+    preferred_idea_id: str | None = None  # for dedupe: which item to keep
+
+
+class TriageResponse(BaseModel):
+    """Structured response from the batch triage agent."""
+
+    reply_markdown: str
+    proposals: list[TriageOperation] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    mentioned_idea_ids: list[str] = Field(default_factory=list)

@@ -18,6 +18,10 @@ import type {
   BacklogChatRespondResponse,
   BacklogChatApplyRequest,
   BacklogChatApplyResponse,
+  TriageRespondRequest,
+  TriageRespondResponse,
+  TriageApplyRequest,
+  TriageApplyResponse,
 } from '@/types/content-gen';
 
 interface PipelineRunDetailResponse extends PipelineRunSummary {
@@ -344,5 +348,40 @@ export async function backlogChatApply(
     return response.data;
   } catch (error) {
     throw new Error(getApiErrorMessage(error, 'Failed to apply chat proposal.'));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Backlog AI Triage endpoints
+// ---------------------------------------------------------------------------
+
+const BACKLOG_TRIAGE_TIMEOUT_MS = 60000;
+
+export async function backlogTriageRespond(
+  req: TriageRespondRequest,
+): Promise<TriageRespondResponse> {
+  try {
+    const response = await contentGenClient.post<TriageRespondResponse>(
+      '/backlog-ai/triage/respond',
+      req,
+      { timeout: BACKLOG_TRIAGE_TIMEOUT_MS },
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to run triage analysis.'));
+  }
+}
+
+export async function backlogTriageApply(
+  req: TriageApplyRequest,
+): Promise<TriageApplyResponse> {
+  try {
+    const response = await contentGenClient.post<TriageApplyResponse>(
+      '/backlog-ai/triage/apply',
+      req,
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to apply triage proposals.'));
   }
 }
