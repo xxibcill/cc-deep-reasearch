@@ -21,6 +21,9 @@ import {
 import { EmptyState } from '@/components/ui/empty-state'
 import { NativeSelect } from '@/components/ui/native-select'
 import {
+  backlogHook,
+  backlogSummary,
+  backlogTitle,
   formatTimestamp,
   statusBadgeVariant,
   recommendationBadgeVariant,
@@ -94,12 +97,22 @@ export default function BacklogDetailPage() {
   const copyEditorialSummary = async () => {
     if (!item) return
     const summary = {
-      idea: item.idea,
+      title: backlogTitle(item),
+      one_line_summary: backlogSummary(item),
+      raw_idea: item.raw_idea ?? null,
+      constraints: item.constraints ?? null,
       audience: item.audience ?? null,
+      persona_detail: item.persona_detail ?? null,
       problem: item.problem ?? null,
+      emotional_driver: item.emotional_driver ?? null,
+      urgency_level: item.urgency_level ?? null,
       why_now: item.why_now ?? null,
-      potential_hook: item.potential_hook ?? null,
+      hook: backlogHook(item) || null,
       content_type: item.content_type ?? null,
+      format_duration: item.format_duration ?? null,
+      key_message: item.key_message ?? null,
+      call_to_action: item.call_to_action ?? null,
+      evidence: item.evidence ?? null,
     }
     try {
       setEditorialCopying(true)
@@ -211,28 +224,64 @@ export default function BacklogDetailPage() {
           >
             <div className="space-y-4">
               <FieldRow
-                label="Idea"
-                value={<span className="text-base font-medium">{item.idea}</span>}
+                label="Title"
+                value={<span className="text-base font-medium">{backlogTitle(item)}</span>}
+              />
+              <FieldRow
+                label="One-line summary"
+                value={<span>{backlogSummary(item)}</span>}
+              />
+              <FieldRow
+                label="Raw idea"
+                value={item.raw_idea ? <span>{item.raw_idea}</span> : <EmptyField />}
+              />
+              <FieldRow
+                label="Constraints"
+                value={item.constraints ? <span>{item.constraints}</span> : <EmptyField />}
               />
               <FieldRow
                 label="Audience"
                 value={item.audience ? <span>{item.audience}</span> : <EmptyField />}
               />
               <FieldRow
+                label="Persona detail"
+                value={item.persona_detail ? <span>{item.persona_detail}</span> : <EmptyField />}
+              />
+              <FieldRow
                 label="Problem"
                 value={item.problem ? <span>{item.problem}</span> : <EmptyField />}
+              />
+              <FieldRow
+                label="Emotional driver"
+                value={item.emotional_driver ? <span>{item.emotional_driver}</span> : <EmptyField />}
+              />
+              <FieldRow
+                label="Urgency level"
+                value={item.urgency_level ? <span>{item.urgency_level}</span> : <EmptyField />}
               />
               <FieldRow
                 label="Why now"
                 value={item.why_now ? <span>{item.why_now}</span> : <EmptyField />}
               />
               <FieldRow
-                label="Potential hook"
-                value={item.potential_hook ? <span>{item.potential_hook}</span> : <EmptyField />}
+                label="Hook"
+                value={backlogHook(item) ? <span>{backlogHook(item)}</span> : <EmptyField />}
               />
               <FieldRow
                 label="Content type"
                 value={item.content_type ? <span>{item.content_type}</span> : <EmptyField />}
+              />
+              <FieldRow
+                label="Format duration"
+                value={item.format_duration ? <span>{item.format_duration}</span> : <EmptyField />}
+              />
+              <FieldRow
+                label="Key message"
+                value={item.key_message ? <span>{item.key_message}</span> : <EmptyField />}
+              />
+              <FieldRow
+                label="Call to action"
+                value={item.call_to_action ? <span>{item.call_to_action}</span> : <EmptyField />}
               />
             </div>
           </DetailSection>
@@ -425,8 +474,8 @@ export default function BacklogDetailPage() {
             <DialogHeader>
               <DialogTitle>Delete backlog item?</DialogTitle>
               <DialogDescription>
-                This will permanently remove &ldquo;{item.idea}&rdquo; from the backlog. This action
-                cannot be undone.
+                This will permanently remove &ldquo;{backlogTitle(item)}&rdquo; from the backlog.
+                This action cannot be undone.
               </DialogDescription>
             </DialogHeader>
             <DialogBody>

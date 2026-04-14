@@ -1,6 +1,7 @@
-import type { BacklogItemStatus } from '@/types/content-gen'
+import type { BacklogItem, BacklogItemStatus } from '@/types/content-gen'
 
 export const STATUS_OPTIONS: BacklogItemStatus[] = [
+  'captured',
   'backlog',
   'selected',
   'in_production',
@@ -21,6 +22,7 @@ export function formatTimestamp(value?: string) {
 }
 
 export function statusBadgeVariant(status: string): 'success' | 'warning' | 'info' | 'secondary' | 'outline' {
+  if (status === 'captured') return 'secondary'
   if (status === 'selected') return 'success'
   if (status === 'in_production') return 'warning'
   if (status === 'published') return 'info'
@@ -35,4 +37,16 @@ export function recommendationBadgeVariant(
   if (recommendation === 'kill') return 'destructive'
   if (recommendation === 'hold') return 'secondary'
   return 'outline'
+}
+
+export function backlogTitle(item: Pick<BacklogItem, 'title' | 'idea' | 'raw_idea'>): string {
+  return item.title?.trim() || item.idea?.trim() || item.raw_idea?.trim() || 'Untitled idea'
+}
+
+export function backlogSummary(item: Pick<BacklogItem, 'one_line_summary' | 'idea' | 'raw_idea'>): string {
+  return item.one_line_summary?.trim() || item.raw_idea?.trim() || item.idea?.trim() || 'No summary yet.'
+}
+
+export function backlogHook(item: Pick<BacklogItem, 'hook' | 'potential_hook'>): string {
+  return item.hook?.trim() || item.potential_hook?.trim() || ''
 }
