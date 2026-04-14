@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react';
+import { useCallback, useEffect, useId, useRef } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -24,9 +24,9 @@ export function Select({
   const fallbackId = useId();
   const selectId = testId ? `${testId}-input` : fallbackId;
   const selectRef = useRef<HTMLSelectElement | null>(null);
-  const handleValueChange = (value: string) => {
+  const handleValueChange = useCallback((value: string) => {
     onChange(value);
-  };
+  }, [onChange]);
 
   useEffect(() => {
     const element = selectRef.current;
@@ -44,7 +44,7 @@ export function Select({
       element.removeEventListener('change', syncValue);
       element.removeEventListener('input', syncValue);
     };
-  }, [onChange]);
+  }, [handleValueChange]);
 
   return (
     <div

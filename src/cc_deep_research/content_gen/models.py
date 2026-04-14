@@ -955,7 +955,7 @@ class BacklogItem(BaseModel):
     """Single backlog idea (spec stage 1 output)."""
 
     idea_id: str = Field(default_factory=lambda: uuid4().hex[:8])
-    category: str = ""  # trend-responsive | evergreen | authority-building
+    category: Literal["", "trend-responsive", "evergreen", "authority-building"] = ""
     idea: str = ""
     audience: str = ""
     problem: str = ""
@@ -964,11 +964,11 @@ class BacklogItem(BaseModel):
     potential_hook: str = ""
     content_type: str = ""
     evidence: str = ""
-    risk_level: str = "medium"  # low | medium | high
+    risk_level: Literal["low", "medium", "high"] = "medium"
     priority_score: float = 0.0
-    status: str = "backlog"  # backlog | selected | runner_up | in_production | published | archived
+    status: Literal["backlog", "selected", "runner_up", "in_production", "published", "archived"] = "backlog"
     latest_score: int | None = None
-    latest_recommendation: str = ""
+    latest_recommendation: Literal["", "produce_now", "hold", "kill"] = ""
     selection_reasoning: str = ""
     expertise_reason: str = ""
     genericity_risk: str = ""

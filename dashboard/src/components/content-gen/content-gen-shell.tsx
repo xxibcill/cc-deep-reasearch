@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { LayoutDashboard, FileText, Settings, ListVideo, ArrowLeft, ListChecks } from 'lucide-react'
+import { LayoutDashboard, FileText, Settings, ListVideo, ArrowLeft, ListChecks, MessageSquare } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { buttonVariants } from '@/components/ui/button'
 import { Tabs } from '@/components/ui/tabs'
@@ -16,6 +16,7 @@ const TAB_CONFIG = [
   { value: 'strategy', label: 'Strategy', icon: Settings },
   { value: 'queue', label: 'Queue', icon: ListVideo },
   { value: 'backlog', label: 'Backlog', icon: ListChecks },
+  { value: 'chat', label: 'Assistant', icon: MessageSquare },
 ]
 
 export function ContentGenShell({ children }: { children: React.ReactNode }) {
@@ -31,7 +32,14 @@ export function ContentGenShell({ children }: { children: React.ReactNode }) {
   const publishQueue = useContentGen((s) => s.publishQueue)
 
   const isPipelineDetail = pathname.match(/\/content-gen\/pipeline\/[^/]+$/)
-  const activeTab = searchParams.get('tab') || 'overview'
+  const isBacklogDetail = pathname.match(/\/content-gen\/backlog\/[^/]+$/)
+  const isBacklogRoute = pathname.startsWith('/content-gen/backlog')
+  const isChatRoute = pathname.startsWith('/content-gen/chat')
+  const activeTab = isBacklogRoute
+    ? 'backlog'
+    : isChatRoute
+      ? 'chat'
+      : searchParams.get('tab') || 'overview'
 
   const activePipelineCount = pipelines.filter(
     (p) => p.status === 'running' || p.status === 'queued',
@@ -63,39 +71,38 @@ export function ContentGenShell({ children }: { children: React.ReactNode }) {
       router.push('/content-gen/backlog')
       return
     }
+    if (value === 'chat') {
+      router.push('/content-gen/chat')
+      return
+    }
     router.push(`/content-gen${value === 'overview' ? '' : `?tab=${value}`}`)
   }
 
   return (
     <div className="mx-auto max-w-content px-page-x py-page-y">
-      <section className="panel-shell rounded-[1.45rem] p-6">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center gap-3">
-              {isPipelineDetail ? (
-                <Link
-                  href="/content-gen"
-                  className={buttonVariants({
-                    variant: 'ghost',
-                    size: 'sm',
-                    className: 'px-3',
-                  })}
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  Back
-                </Link>
-              ) : null}
-              <p className="eyebrow">Content production workspace</p>
-            </div>
-            <div className="space-y-3">
-              <h1 className="font-display text-[2.8rem] font-semibold uppercase tracking-[0.02em] text-foreground">
-                Content Studio
-              </h1>
-              <p className=" text-sm leading-6 text-muted-foreground">
-                Editorial planning, scripting, quality control, and publish queue visibility in one
-                operational surface.
-              </p>
-            </div>
+      <section className="panel-shell rounded-[1.45rem] p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            {isPipelineDetail || isBacklogDetail ? (
+              <Link
+                href={isBacklogDetail ? '/content-gen/backlog' : '/content-gen'}
+                className={buttonVariants({
+                  variant: 'ghost',
+                  size: 'sm',
+                  className: 'px-2',
+                })}
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
+            ) : null}
+            <nav>
+              <Tabs
+                className={cn('w-full max-w-4xl', 'md:w-auto')}
+                value={activeTab}
+                onValueChange={handleTabChange}
+                tabs={tabsWithBadges}
+              />
+            </nav>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -107,35 +114,23 @@ export function ContentGenShell({ children }: { children: React.ReactNode }) {
               <Badge variant="secondary">No active pipelines</Badge>
             )}
             {scripts.length > 0 ? (
-              <Badge variant="outline">{scripts.length} scripts tracked</Badge>
+              <Badge variant="outline">{scripts.length} scripts</Badge>
             ) : null}
             {publishQueue.length > 0 ? (
-              <Badge variant="outline">{publishQueue.length} queued for publish</Badge>
+              <Badge variant="outline">{publishQueue.length} queued</Badge>
             ) : null}
           </div>
         </div>
 
-        {!isPipelineDetail ? (
-          <nav className="mt-5">
-            <Tabs
-              className={cn('w-full max-w-4xl', 'md:w-auto')}
-              value={activeTab}
-              onValueChange={handleTabChange}
-              tabs={tabsWithBadges}
-              stretch
-            />
-          </nav>
-        ) : null}
-
         {isPipelineDetail && activePipelineCount > 0 ? (
-          <div className="mt-4 flex items-center gap-2 text-xs text-warning">
+          <div className="mt-3 flex items-center gap-2 text-xs text-warning">
             <span className="h-1.5 w-1.5 rounded-full bg-warning animate-stage-pulse" />
             Monitoring active content runs while viewing pipeline history.
           </div>
         ) : null}
       </section>
 
-      <main className="pt-8">{children}</main>
+      <main className="pt-6">{children}</main>
     </div>
   )
 }
