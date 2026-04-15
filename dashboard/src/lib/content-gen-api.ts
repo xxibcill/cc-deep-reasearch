@@ -27,6 +27,10 @@ import type {
   NextActionBatchResponse,
   ExecutionBriefRequest,
   ExecutionBriefResponse,
+  ManagedOpportunityBrief,
+  BriefRevision,
+  BriefAuditResponse,
+  BriefAuditEntry,
 } from '@/types/content-gen';
 
 interface PipelineRunDetailResponse extends PipelineRunSummary {
@@ -470,13 +474,6 @@ export async function generateExecutionBrief(
 // ---------------------------------------------------------------------------
 // Managed Brief endpoints (Phase 04)
 // ---------------------------------------------------------------------------
-
-import type {
-  ManagedOpportunityBrief,
-  BriefRevision,
-  BriefAuditResponse,
-  BriefAuditEntry,
-} from '@/types/content-gen';
 
 export interface CreateBriefRequest {
   brief: Record<string, unknown>;

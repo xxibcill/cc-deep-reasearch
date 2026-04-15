@@ -1,12 +1,8 @@
 'use client'
 
-import Link from 'next/link'
-import { FileText } from 'lucide-react'
-
 import type { PipelineContext } from '@/types/content-gen'
-import { Badge } from '@/components/ui/badge'
 import { SummaryField, SectionList } from './ui'
-import { lifecycleStateBadgeVariant, lifecycleStateLabel } from '@/components/content-gen/brief-shared'
+import { BriefReferenceCard } from './plan-opportunity-panel'
 
 export function ProductionBriefPanel({ ctx }: { ctx: PipelineContext }) {
   const briefRef = ctx.brief_reference
@@ -14,37 +10,11 @@ export function ProductionBriefPanel({ ctx }: { ctx: PipelineContext }) {
   return (
     <div className="space-y-4">
       {briefRef && (
-        <div className="rounded-[0.95rem] border border-border/75 bg-surface/45 p-3 flex items-start justify-between gap-4">
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2">
-              <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
-                Source Brief
-              </span>
-            </div>
-            <p className="text-sm font-medium text-foreground/90">
-              {briefRef.brief_id || 'Inline brief'}
-            </p>
-            {briefRef.revision_id && (
-              <p className="text-xs font-mono text-muted-foreground">
-                Rev {briefRef.revision_version} · {briefRef.reference_type}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <Badge variant={lifecycleStateBadgeVariant(briefRef.lifecycle_state)}>
-              {lifecycleStateLabel(briefRef.lifecycle_state)}
-            </Badge>
-            {briefRef.brief_id && (
-              <Link
-                href={`/content-gen/briefs/${briefRef.brief_id}`}
-                className="text-xs text-muted-foreground underline decoration-border underline-offset-2 hover:text-foreground transition-colors"
-              >
-                Open brief
-              </Link>
-            )}
-          </div>
-        </div>
+        <BriefReferenceCard
+          label="Source Brief"
+          subLabel={briefRef.revision_id ? `Rev ${briefRef.revision_version} · ${briefRef.reference_type}` : undefined}
+          briefRef={briefRef}
+        />
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">

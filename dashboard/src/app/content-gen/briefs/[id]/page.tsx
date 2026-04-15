@@ -26,7 +26,6 @@ import {
   lifecycleStateLabel,
   provenanceLabel,
   formatBriefTimestamp,
-  formatBriefTimestamp as formatTimestamp,
   briefRevisionSummary,
   LIFECYCLE_STATE_OPTIONS,
 } from '@/components/content-gen/brief-shared'
@@ -59,16 +58,20 @@ export default function BriefDetailPage() {
   const [revisionNotes, setRevisionNotes] = useState('')
   const [compareOpen, setCompareOpen] = useState(false)
   const [compareRevisions, setCompareRevisions] = useState<[string, string] | null>(null)
-  const [activeTab, setActiveTab] = useState<'content' | 'revisions' | 'audit'>('content')
+  const [activeTab, setActiveTab] = useState<'content' | 'revisions'>('content')
   const [editingField, setEditingField] = useState<string | null>(null)
   const [editedContent, setEditedContent] = useState<Record<string, unknown> | null>(null)
+
+  function isManagedBrief(b: unknown): b is ManagedOpportunityBrief & { current_revision?: BriefRevision } {
+    return typeof b === 'object' && b !== null && 'brief_id' in b
+  }
 
   useEffect(() => {
     if (!briefId) return
     setLoading(true)
     Promise.all([loadBrief(briefId), loadBriefRevisions(briefId)]).then((results) => {
       const b = results[0]
-      setBrief((b && typeof b === 'object' && 'brief_id' in b) ? b as ManagedOpportunityBrief & { current_revision?: BriefRevision } : null)
+      setBrief(isManagedBrief(b) ? b : null)
       setLoading(false)
     })
   }, [briefId, loadBrief, loadBriefRevisions])
@@ -268,7 +271,7 @@ export default function BriefDetailPage() {
       </div>
 
       <div className="flex gap-1 border-b border-border">
-        {(['content', 'revisions', 'audit'] as const).map((tab) => (
+        {(['content', 'revisions'] as const).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -466,7 +469,7 @@ export default function BriefDetailPage() {
                               v{rev.version} {isHead ? '(head)' : ''}
                             </Badge>
                             <span className="text-xs font-mono text-muted-foreground">{rev.revision_id.slice(0, 12)}</span>
-                            <span className="text-xs text-muted-foreground">{formatTimestamp(rev.created_at)}</span>
+                            <span className="text-xs text-muted-foreground">{formatBriefTimestamp(rev.created_at)}</span>
                           </div>
                           <p className="text-sm text-foreground/88 truncate">{rev.theme || 'No theme'}</p>
                           {rev.revision_notes && (
@@ -512,12 +515,7 @@ export default function BriefDetailPage() {
         </div>
       )}
 
-      {activeTab === 'audit' && (
-        <div className="rounded-xl border border-dashed border-border bg-card/70 py-16 text-center">
-          <p className="text-sm text-muted-foreground">Audit history coming soon.</p>
-        </div>
-      )}
-
+      
       {editingField && editedContent && (
         <Dialog open={true} onOpenChange={(open) => !open && setEditingField(null)}>
           <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
@@ -597,13 +595,13 @@ export default function BriefDetailPage() {
                       <div className="grid grid-cols-2 gap-4">
                         <div className={`rounded-lg border p-3 ${changed ? 'border-warning/50 bg-warning/5' : 'border-border'}`}>
                           <p className="text-[10px] font-mono text-muted-foreground mb-1">
-                            v{rev0?.version} ({formatTimestamp(rev0?.created_at)})
+                            v{rev0?.version} ({formatBriefTimestamp(rev0?.created_at)})
                           </p>
                           <p className="text-sm whitespace-pre-wrap">{val0 || '—'}</p>
                         </div>
                         <div className={`rounded-lg border p-3 ${changed ? 'border-primary/50 bg-primary/5' : 'border-border'}`}>
                           <p className="text-[10px] font-mono text-muted-foreground mb-1">
-                            v{rev1?.version} ({formatTimestamp(rev1?.created_at)})
+                            v{rev1?.version} ({formatBriefTimestamp(rev1?.created_at)})
                           </p>
                           <p className="text-sm whitespace-pre-wrap">{val1 || '—'}</p>
                         </div>

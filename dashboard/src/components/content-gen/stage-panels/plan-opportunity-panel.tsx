@@ -1,12 +1,55 @@
 'use client'
 
-import Link from 'next/link'
 import { FileText } from 'lucide-react'
 
 import type { PipelineContext } from '@/types/content-gen'
 import { Badge } from '@/components/ui/badge'
 import { SummaryField, SectionList } from './ui'
 import { lifecycleStateBadgeVariant, lifecycleStateLabel } from '@/components/content-gen/brief-shared'
+import type { PipelineBriefReference } from '@/types/content-gen'
+
+interface BriefReferenceCardProps {
+  label: string
+  subLabel?: string
+  briefRef: PipelineBriefReference
+}
+
+export function BriefReferenceCard({ label, subLabel, briefRef }: BriefReferenceCardProps) {
+  const detailText = subLabel ?? (briefRef.revision_id ? `${briefRef.revision_version} · ${briefRef.revision_id.slice(0, 12)}` : undefined)
+  return (
+    <div className="rounded-[0.95rem] border border-border/75 bg-surface/45 p-3 flex items-start justify-between gap-4">
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-2">
+          <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+            {label}
+          </span>
+        </div>
+        <p className="text-sm font-medium text-foreground/90">
+          {briefRef.brief_id || 'Inline brief'}
+        </p>
+        {detailText && (
+          <p className="text-xs font-mono text-muted-foreground">
+            {detailText}
+          </p>
+        )}
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <Badge variant={lifecycleStateBadgeVariant(briefRef.lifecycle_state)}>
+          {lifecycleStateLabel(briefRef.lifecycle_state)}
+        </Badge>
+        {briefRef.brief_id && (
+          <a
+            href={`/content-gen/briefs/${briefRef.brief_id}`}
+            className="text-xs text-muted-foreground underline decoration-border underline-offset-2 hover:text-foreground transition-colors"
+          >
+            Open brief
+          </a>
+        )}
+      </div>
+    </div>
+  )
+}
 
 export function PlanOpportunityPanel({ ctx }: { ctx: PipelineContext }) {
   const briefRef = ctx.brief_reference
@@ -14,37 +57,7 @@ export function PlanOpportunityPanel({ ctx }: { ctx: PipelineContext }) {
   return (
     <div className="space-y-4">
       {briefRef && (
-        <div className="rounded-[0.95rem] border border-border/75 bg-surface/45 p-3 flex items-start justify-between gap-4">
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2">
-              <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
-                Managed Brief
-              </span>
-            </div>
-            <p className="text-sm font-medium text-foreground/90">
-              {briefRef.brief_id || 'Inline brief'}
-            </p>
-            {briefRef.revision_id && (
-              <p className="text-xs font-mono text-muted-foreground">
-                Rev {briefRef.revision_version} · {briefRef.revision_id.slice(0, 12)}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <Badge variant={lifecycleStateBadgeVariant(briefRef.lifecycle_state)}>
-              {lifecycleStateLabel(briefRef.lifecycle_state)}
-            </Badge>
-            {briefRef.brief_id && (
-              <Link
-                href={`/content-gen/briefs/${briefRef.brief_id}`}
-                className="text-xs text-muted-foreground underline decoration-border underline-offset-2 hover:text-foreground transition-colors"
-              >
-                Open brief
-              </Link>
-            )}
-          </div>
-        </div>
+        <BriefReferenceCard label="Managed Brief" briefRef={briefRef} />
       )}
 
       <div className="grid gap-3 lg:grid-cols-2">
