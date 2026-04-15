@@ -2739,13 +2739,15 @@ class BriefProvenance(StrEnum):
 
     generated      - Created by the AI pipeline (stage 1 output).
     imported       - Hydrated from a legacy saved PipelineContext payload.
-    cloned         - Copied from an existing managed brief.
+    cloned         - Copied from an existing managed brief for reuse.
+    branched       - Created as a derivative for a different theme/channel.
     operator_created - Manually authored by an operator.
     """
 
     GENERATED = "generated"
     IMPORTED = "imported"
     CLONED = "cloned"
+    BRANCHED = "branched"
     OPERATOR_CREATED = "operator_created"
 
 
@@ -2942,6 +2944,15 @@ class ManagedOpportunityBrief(BaseModel):
     revision_history: list[str] = Field(
         default_factory=list,
         description="Change log entries describing what was revised.",
+    )
+    # Lineage tracking for branched/cloned briefs
+    source_brief_id: str = Field(
+        default="",
+        description="The brief_id this was branched or cloned from, if any.",
+    )
+    branch_reason: str = Field(
+        default="",
+        description="Why this brief was branched (e.g., 'different channel', 'experiment').",
     )
 
     def head_revision(self, revisions: list[BriefRevision]) -> BriefRevision | None:

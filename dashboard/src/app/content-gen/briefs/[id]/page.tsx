@@ -6,11 +6,13 @@ import {
   ArrowLeft,
   CheckCircle2,
   Copy,
+  GitBranch,
   GitCompare,
   History,
   Play,
   RotateCcw,
   Save,
+  Sparkles,
   Trash2,
 } from 'lucide-react'
 
@@ -29,6 +31,8 @@ import {
   briefRevisionSummary,
   LIFECYCLE_STATE_OPTIONS,
 } from '@/components/content-gen/brief-shared'
+import { BriefAssistantPanel } from '@/components/content-gen/brief-assistant-panel'
+import { BriefToBacklogPanel } from '@/components/content-gen/brief-to-backlog-panel'
 import useContentGen from '@/hooks/useContentGen'
 import type { BriefRevision, ManagedOpportunityBrief } from '@/types/content-gen'
 
@@ -58,7 +62,7 @@ export default function BriefDetailPage() {
   const [revisionNotes, setRevisionNotes] = useState('')
   const [compareOpen, setCompareOpen] = useState(false)
   const [compareRevisions, setCompareRevisions] = useState<[string, string] | null>(null)
-  const [activeTab, setActiveTab] = useState<'content' | 'revisions'>('content')
+  const [activeTab, setActiveTab] = useState<'content' | 'revisions' | 'assistant' | 'backlog'>('content')
   const [editingField, setEditingField] = useState<string | null>(null)
   const [editedContent, setEditedContent] = useState<Record<string, unknown> | null>(null)
 
@@ -271,7 +275,7 @@ export default function BriefDetailPage() {
       </div>
 
       <div className="flex gap-1 border-b border-border">
-        {(['content', 'revisions'] as const).map((tab) => (
+        {(['content', 'revisions', 'assistant', 'backlog'] as const).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -282,7 +286,19 @@ export default function BriefDetailPage() {
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            {tab}
+            {tab === 'assistant' ? (
+              <span className="flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5" />
+                Assistant
+              </span>
+            ) : tab === 'backlog' ? (
+              <span className="flex items-center gap-1.5">
+                <GitBranch className="h-3.5 w-3.5" />
+                Backlog
+              </span>
+            ) : (
+              tab
+            )}
           </button>
         ))}
       </div>
@@ -515,7 +531,29 @@ export default function BriefDetailPage() {
         </div>
       )}
 
-      
+      {activeTab === 'assistant' && currentBrief && currentRevision && (
+        <BriefAssistantPanel
+          briefId={currentBrief.brief_id}
+          briefName={currentBrief.title}
+          revisionId={currentRevision.revision_id}
+          onRevisionSaved={async () => {
+            const updated = await loadBrief(currentBrief.brief_id)
+            if (updated) setBrief(updated as ManagedOpportunityBrief & { current_revision?: BriefRevision })
+            await loadBriefRevisions(currentBrief.brief_id)
+          }}
+        />
+      )}
+
+      {activeTab === 'backlog' && currentBrief && currentRevision && (
+        <BriefToBacklogPanel
+          briefId={currentBrief.brief_id}
+          briefName={currentBrief.title}
+          onItemsApplied={() => {
+            void router.push('/content-gen/backlog')
+          }}
+        />
+      )}
+
       {editingField && editedContent && (
         <Dialog open={true} onOpenChange={(open) => !open && setEditingField(null)}>
           <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">

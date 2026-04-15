@@ -31,6 +31,16 @@ import type {
   BriefRevision,
   BriefAuditResponse,
   BriefAuditEntry,
+  BriefAssistantRespondRequest,
+  BriefAssistantRespondResponse,
+  BriefAssistantApplyRequest,
+  BriefAssistantApplyResponse,
+  GeneratedBacklogItem,
+  BriefToBacklogResponse,
+  ApplyBacklogFromBriefResponse,
+  BranchBriefRequest,
+  SiblingBriefsResponse,
+  CompareBriefsResponse,
 } from '@/types/content-gen';
 
 interface PipelineRunDetailResponse extends PipelineRunSummary {
@@ -707,5 +717,124 @@ export async function getBriefAuditHistory(
     return response.data;
   } catch (error) {
     throw new Error(getApiErrorMessage(error, 'Failed to get brief audit history.'));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Brief Assistant endpoints (Phase 05 - P5-T1)
+// ---------------------------------------------------------------------------
+
+const BRIEF_ASSISTANT_TIMEOUT_MS = 45000;
+
+export async function briefAssistantRespond(
+  briefId: string,
+  req: BriefAssistantRespondRequest,
+): Promise<BriefAssistantRespondResponse> {
+  try {
+    const response = await contentGenClient.post<BriefAssistantRespondResponse>(
+      `/briefs/${briefId}/assistant/respond`,
+      req,
+      { timeout: BRIEF_ASSISTANT_TIMEOUT_MS },
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to get brief assistant response.'));
+  }
+}
+
+export async function briefAssistantApply(
+  briefId: string,
+  req: BriefAssistantApplyRequest,
+): Promise<BriefAssistantApplyResponse> {
+  try {
+    const response = await contentGenClient.post<BriefAssistantApplyResponse>(
+      `/briefs/${briefId}/assistant/apply`,
+      req,
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to apply brief assistant proposals.'));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Brief-to-Backlog endpoints (Phase 05 - P5-T2)
+// ---------------------------------------------------------------------------
+
+const BRIEF_TO_BACKLOG_TIMEOUT_MS = 60000;
+
+export async function generateBacklogFromBrief(
+  briefId: string,
+): Promise<BriefToBacklogResponse> {
+  try {
+    const response = await contentGenClient.post<BriefToBacklogResponse>(
+      `/briefs/${briefId}/generate-backlog`,
+      {},
+      { timeout: BRIEF_TO_BACKLOG_TIMEOUT_MS },
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to generate backlog from brief.'));
+  }
+}
+
+export async function applyBacklogFromBrief(
+  briefId: string,
+  items: GeneratedBacklogItem[],
+): Promise<ApplyBacklogFromBriefResponse> {
+  try {
+    const response = await contentGenClient.post<ApplyBacklogFromBriefResponse>(
+      `/briefs/${briefId}/apply-backlog`,
+      items,
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to apply backlog items.'));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Brief Branching endpoints (Phase 05 - P5-T3)
+// ---------------------------------------------------------------------------
+
+export async function branchBrief(
+  briefId: string,
+  req: BranchBriefRequest,
+): Promise<ManagedOpportunityBrief> {
+  try {
+    const response = await contentGenClient.post<ManagedOpportunityBrief>(
+      `/briefs/${briefId}/branch`,
+      req,
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to branch brief.'));
+  }
+}
+
+export async function listSiblingBriefs(
+  briefId: string,
+): Promise<SiblingBriefsResponse> {
+  try {
+    const response = await contentGenClient.get<SiblingBriefsResponse>(
+      `/briefs/${briefId}/siblings`,
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to list sibling briefs.'));
+  }
+}
+
+export async function compareBriefs(
+  briefId: string,
+  otherBriefId: string,
+): Promise<CompareBriefsResponse> {
+  try {
+    const response = await contentGenClient.get<CompareBriefsResponse>(
+      `/briefs/${briefId}/compare/${otherBriefId}`,
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to compare briefs.'));
   }
 }

@@ -518,6 +518,115 @@ class BriefService:
 
         return managed
 
+    def branch_brief(
+        self,
+        brief_id: str,
+        *,
+        new_title: str | None = None,
+        branch_reason: str = "",
+    ) -> ManagedOpportunityBrief | None:
+        """Create a branched copy of an existing brief for a different theme/channel.
+
+        Unlike clone (which is for reuse), branch creates a derivative brief
+        that tracks its lineage back to the source. The branched brief
+        starts in DRAFT state with a copy of the current head revision.
+        """
+        _validate_brief_id(brief_id)
+        output = self._store.load()
+        original = next((b for b in output.briefs if b.brief_id == brief_id), None)
+        if original is None:
+            return None
+
+        now = _now_iso()
+        new_brief_id = f"mbrief_{now[:10]}_{original.brief_id}_branch"
+
+        # Copy current revision content
+        current_revision = self._revision_store.get_revision(original.current_revision_id)
+        if current_revision is None:
+            return None
+
+        # Create new revision based on current head
+        new_revision = BriefRevision(
+            brief_id=new_brief_id,
+            version=1,
+            theme=current_revision.theme,
+            goal=current_revision.goal,
+            primary_audience_segment=current_revision.primary_audience_segment,
+            secondary_audience_segments=current_revision.secondary_audience_segments,
+            problem_statements=current_revision.problem_statements,
+            content_objective=current_revision.content_objective,
+            proof_requirements=current_revision.proof_requirements,
+            platform_constraints=current_revision.platform_constraints,
+            risk_constraints=current_revision.risk_constraints,
+            freshness_rationale=current_revision.freshness_rationale,
+            sub_angles=current_revision.sub_angles,
+            research_hypotheses=current_revision.research_hypotheses,
+            success_criteria=current_revision.success_criteria,
+            expert_take=current_revision.expert_take,
+            non_obvious_claims_to_test=current_revision.non_obvious_claims_to_test,
+            genericity_risks=current_revision.genericity_risks,
+            provenance=BriefProvenance.BRANCHED,
+            is_generated=current_revision.is_generated,
+            revision_notes=f"Branched from {brief_id} (revision {current_revision.version}): {branch_reason}",
+            source_pipeline_id=current_revision.source_pipeline_id,
+            created_at=now,
+        )
+
+        # Build the managed brief resource with lineage tracking
+        managed = ManagedOpportunityBrief(
+            brief_id=new_brief_id,
+            title=new_title or f"{original.title} (branch)",
+            lifecycle_state=BriefLifecycleState.DRAFT,
+            current_revision_id=new_revision.revision_id,
+            latest_revision_id=new_revision.revision_id,
+            revision_count=1,
+            provenance=BriefProvenance.BRANCHED,
+            created_at=now,
+            updated_at=now,
+            revision_history=[f"v1: {new_revision.revision_notes}"],
+            source_brief_id=brief_id,
+            branch_reason=branch_reason,
+        )
+
+        # Persist revision and brief
+        self._revision_store.save_revision(new_revision)
+        output.briefs.append(managed)
+        self._store.save(output)
+
+        self._audit_mutation(
+            AuditEventType.BRIEF_CREATED,
+            new_brief_id,
+            actor=AuditActor.OPERATOR,
+            patch={
+                "source_brief_id": brief_id,
+                "provenance": BriefProvenance.BRANCHED.value,
+                "branch_reason": branch_reason,
+            },
+            brief_snapshot=managed,
+            outcome="success",
+        )
+
+        return managed
+
+    def list_sibling_briefs(self, brief_id: str) -> list[ManagedOpportunityBrief]:
+        """List all briefs that were branched from the same source.
+
+        Returns briefs that share the same source_brief_id.
+        """
+        output = self._store.load()
+        source = next((b for b in output.briefs if b.brief_id == brief_id), None)
+        if source is None:
+            return []
+
+        # If this brief has a source, find siblings of the same source
+        # If this is a source itself, find its branches
+        search_id = source.source_brief_id if source.source_brief_id else brief_id
+        siblings = [
+            b for b in output.briefs
+            if b.source_brief_id == search_id and b.brief_id != brief_id
+        ]
+        return siblings
+
     # -------------------------------------------------------------------------
     # Audit
     # -------------------------------------------------------------------------

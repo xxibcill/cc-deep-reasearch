@@ -27,6 +27,7 @@ export function provenanceLabel(provenance: string): string {
     operator_created: 'Operator Created',
     operator_edited: 'Operator Edited',
     cloned: 'Cloned',
+    branched: 'Branched',
   }
   return labels[provenance] || provenance
 }

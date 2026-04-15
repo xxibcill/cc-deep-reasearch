@@ -1091,3 +1091,111 @@ export interface BriefAuditResponse {
   items: BriefAuditEntry[];
   count: number;
 }
+
+// =============================================================================
+// Brief Assistant Types (Phase 05 - P5-T1)
+// =============================================================================
+
+export interface BriefAssistantMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export type BriefAssistantMode = 'conversation' | 'edit';
+
+export interface BriefAssistantProposal {
+  reason: string;
+  fields: Record<string, unknown>;
+}
+
+export interface BriefAssistantRespondRequest {
+  messages: BriefAssistantMessage[];
+  revision_id?: string | null;
+  mode?: BriefAssistantMode | null;
+}
+
+export interface BriefAssistantRespondResponse {
+  reply_markdown: string;
+  apply_ready: boolean;
+  warnings: string[];
+  proposals: BriefAssistantProposal[];
+  mentioned_fields: string[];
+}
+
+export interface BriefAssistantProposalInput {
+  reason?: string;
+  fields: Record<string, unknown>;
+}
+
+export interface BriefAssistantApplyRequest {
+  proposals: BriefAssistantProposalInput[];
+  revision_notes?: string;
+}
+
+export interface BriefAssistantApplyResponse {
+  applied: number;
+  revision?: BriefRevision | null;
+  errors: string[];
+}
+
+// =============================================================================
+// Brief-to-Backlog Types (Phase 05 - P5-T2)
+// =============================================================================
+
+export interface GeneratedBacklogItem {
+  title: string;
+  one_line_summary: string;
+  raw_idea: string;
+  constraints: string;
+  category: string;
+  audience: string;
+  problem: string;
+  emotional_driver: string;
+  urgency_level: string;
+  why_now: string;
+  hook: string;
+  content_type: string;
+  key_message: string;
+  call_to_action: string;
+  evidence: string;
+  risk_level: string;
+  source_theme: string;
+  reason: string;
+}
+
+export interface BriefToBacklogResponse {
+  reply_markdown: string;
+  items: GeneratedBacklogItem[];
+  warnings: string[];
+}
+
+export interface ApplyBacklogFromBriefRequest {
+  items: GeneratedBacklogItem[];
+}
+
+export interface ApplyBacklogFromBriefResponse {
+  applied: number;
+  items: BacklogItem[];
+  errors: string[];
+}
+
+// =============================================================================
+// Brief Branching Types (Phase 05 - P5-T3)
+// =============================================================================
+
+export interface BranchBriefRequest {
+  new_title?: string | null;
+  branch_reason?: string;
+}
+
+export interface SiblingBriefsResponse {
+  items: ManagedOpportunityBrief[];
+  count: number;
+}
+
+export interface CompareBriefsResponse {
+  brief_a: ManagedOpportunityBrief;
+  brief_b: ManagedOpportunityBrief;
+  revision_a: BriefRevision | null;
+  revision_b: BriefRevision | null;
+}
