@@ -57,6 +57,13 @@ class AuditEventType(StrEnum):
     MAINTENANCE_JOB_RUN = "maintenance_job_run"
     MAINTENANCE_PROPOSAL = "maintenance_proposal"
 
+    # Brief management events
+    BRIEF_CREATED = "brief_created"
+    BRIEF_UPDATED = "brief_updated"
+    BRIEF_REVISION_SAVED = "brief_revision_saved"
+    BRIEF_HEAD_UPDATED = "brief_head_updated"
+    BRIEF_LIFECYCLE_CHANGED = "brief_lifecycle_changed"
+
 
 class AuditActor(StrEnum):
     """Who or what initiated the event."""

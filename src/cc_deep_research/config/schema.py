@@ -360,6 +360,7 @@ class ContentGenConfig(BaseModel):
 
     strategy_path: str | None = None
     backlog_path: str | None = None
+    brief_path: str | None = None
     publish_queue_path: str | None = None
     planning_learning_path: str | None = None
     default_platforms: list[str] = Field(default_factory=lambda: ["tiktok", "reels", "shorts"])

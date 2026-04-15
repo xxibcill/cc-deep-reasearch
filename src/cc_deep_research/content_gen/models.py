@@ -2702,3 +2702,171 @@ class TriageResponse(BaseModel):
     proposals: list[TriageOperation] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     mentioned_idea_ids: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Managed Brief Domain (Phase 01 - Persistent Brief)
+# ---------------------------------------------------------------------------
+
+
+class BriefLifecycleState(StrEnum):
+    """Lifecycle states for a managed opportunity brief.
+
+    draft       - Initial state; AI-generated or operator-created, not yet approved.
+    approved    - Reviewed and approved; ready to drive backlog generation.
+    superseded  - Replaced by a newer approved brief (rare; for long-running campaigns).
+    archived    - No longer active; retained for audit trail.
+    """
+
+    DRAFT = "draft"
+    APPROVED = "approved"
+    SUPERSEDED = "superseded"
+    ARCHIVED = "archived"
+
+
+class BriefProvenance(StrEnum):
+    """How a brief entered the managed brief system.
+
+    generated      - Created by the AI pipeline (stage 1 output).
+    imported       - Hydrated from a legacy saved PipelineContext payload.
+    cloned         - Copied from an existing managed brief.
+    operator_created - Manually authored by an operator.
+    """
+
+    GENERATED = "generated"
+    IMPORTED = "imported"
+    CLONED = "cloned"
+    OPERATOR_CREATED = "operator_created"
+
+
+class BriefRevision(BaseModel):
+    """An immutable snapshot of an OpportunityBrief at a point in time.
+
+    Each revision captures the full editorial state plus provenance metadata
+    for that specific revision. Revisions are never modified after creation.
+    """
+
+    revision_id: str = Field(
+        default_factory=lambda: f"rev_{uuid4().hex[:10]}",
+        description="Unique identifier for this specific revision.",
+    )
+    brief_id: str = Field(
+        description="The managed brief resource this revision belongs to.",
+    )
+    version: int = Field(
+        description="Monotonically increasing version number within the brief.",
+    )
+    # Full snapshot of OpportunityBrief content at this revision
+    theme: str = ""
+    goal: str = ""
+    primary_audience_segment: str = ""
+    secondary_audience_segments: list[str] = Field(default_factory=list)
+    problem_statements: list[str] = Field(default_factory=list)
+    content_objective: str = ""
+    proof_requirements: list[str] = Field(default_factory=list)
+    platform_constraints: list[str] = Field(default_factory=list)
+    risk_constraints: list[str] = Field(default_factory=list)
+    freshness_rationale: str = ""
+    sub_angles: list[str] = Field(default_factory=list)
+    research_hypotheses: list[str] = Field(default_factory=list)
+    success_criteria: list[str] = Field(default_factory=list)
+    expert_take: str = ""
+    non_obvious_claims_to_test: list[str] = Field(default_factory=list)
+    genericity_risks: list[str] = Field(default_factory=list)
+    # Provenance
+    provenance: BriefProvenance = Field(
+        default=BriefProvenance.GENERATED,
+        description="How this revision was created.",
+    )
+    # Source tracking (original generated vs operator-edited)
+    is_generated: bool = Field(
+        default=True,
+        description="True = AI-generated content, False = operator-created or heavily edited.",
+    )
+    # Revision metadata
+    revision_notes: str = Field(
+        default="",
+        description="Human-readable description of what changed in this revision.",
+    )
+    source_pipeline_id: str = Field(
+        default="",
+        description="Pipeline ID that generated this revision, if applicable.",
+    )
+    created_at: str = Field(
+        default="",
+        description="ISO timestamp when this revision was created.",
+    )
+
+
+class ManagedOpportunityBrief(BaseModel):
+    """A durable, version-aware opportunity brief resource.
+
+    This is the canonical persisted shape for an opportunity brief, separated
+    from any single pipeline run. It tracks lifecycle state, maintains a revision
+    history, and owns the current head pointer.
+
+    Design principles
+    ------------------
+    - Immutable revisions: each BriefRevision is append-only and never modified.
+    - Current head: ``current_revision_id`` points to the active revision.
+    - Lifecycle is on the resource, not individual revisions.
+    - Provenance tracks how the first revision entered the system.
+    """
+
+    brief_id: str = Field(
+        default_factory=lambda: f"mbrief_{uuid4().hex[:8]}",
+        description="Stable resource identifier, unique across the system.",
+    )
+    title: str = Field(
+        default="",
+        description="Short human-readable title for the brief.",
+    )
+    # Lifecycle
+    lifecycle_state: BriefLifecycleState = Field(
+        default=BriefLifecycleState.DRAFT,
+        description="Current lifecycle state of this brief resource.",
+    )
+    # Revision tracking
+    current_revision_id: str = Field(
+        default="",
+        description="ID of the currently active revision (head).",
+    )
+    latest_revision_id: str = Field(
+        default="",
+        description="ID of the most recently created revision (may differ from current_revision_id during review).",
+    )
+    revision_count: int = Field(
+        default=0,
+        description="Total number of revisions this brief has had.",
+    )
+    # Provenance of the first revision
+    provenance: BriefProvenance = Field(
+        default=BriefProvenance.GENERATED,
+        description="How the initial brief entered the system.",
+    )
+    # Timestamps - set by service layer when persisting
+    created_at: str = Field(
+        default="",
+        description="ISO timestamp when this brief resource was first created.",
+    )
+    updated_at: str = Field(
+        default="",
+        description="ISO timestamp when this brief or its head revision was last modified.",
+    )
+    # Human-readable change log (revision summaries)
+    revision_history: list[str] = Field(
+        default_factory=list,
+        description="Change log entries describing what was revised.",
+    )
+
+    def head_revision(self, revisions: list[BriefRevision]) -> BriefRevision | None:
+        """Return the current head revision from a list of known revisions."""
+        if not self.current_revision_id:
+            return None
+        return next((r for r in revisions if r.revision_id == self.current_revision_id), None)
+
+
+class ManagedBriefOutput(BaseModel):
+    """Container for listing and loading managed briefs."""
+
+    briefs: list[ManagedOpportunityBrief] = Field(default_factory=list)
