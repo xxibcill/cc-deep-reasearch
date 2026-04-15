@@ -6,6 +6,7 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from cc_deep_research.content_gen.models import (
     BriefLifecycleState,
@@ -454,7 +455,7 @@ class BriefService:
             return None
 
         now = _now_iso()
-        new_brief_id = f"mbrief_{now[:10]}_{original.brief_id}_clone"
+        new_brief_id = f"mbrief_{now[:10]}_{original.brief_id}_clone_{uuid4().hex[:6]}"
 
         # Copy current revision content
         current_revision = self._revision_store.get_revision(original.current_revision_id)
@@ -538,7 +539,7 @@ class BriefService:
             return None
 
         now = _now_iso()
-        new_brief_id = f"mbrief_{now[:10]}_{original.brief_id}_branch"
+        new_brief_id = f"mbrief_{now[:10]}_{original.brief_id}_branch_{uuid4().hex[:6]}"
 
         # Copy current revision content
         current_revision = self._revision_store.get_revision(original.current_revision_id)

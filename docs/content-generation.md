@@ -269,6 +269,8 @@ Pipeline behavior:
 - runs after strategy load and before backlog generation
 - the backlog builder can read the brief for richer context, though it does not require every field
 
+**Brief persistence**: Starting from Phase 01, opportunity briefs created in stage 1 are persisted as managed `ManagedOpportunityBrief` resources with full revision history, lifecycle state tracking, and approval workflows. See [`brief-management.md`](brief-management.md) for the operator guide.
+
 ### Stage 2: Backlog Builder
 
 Implementation:
@@ -743,6 +745,9 @@ Default persisted files:
 - scripting runs: `~/.config/cc-deep-research/scripts/`
 - publish queue: `~/.config/cc-deep-research/publish_queue.yaml`
 - browser-started pipeline jobs: `~/.config/cc-deep-research/content-gen/pipelines/`
+- managed briefs (SQLite): `~/.config/cc-deep-research/content-gen/briefs.db`
+- brief revisions (SQLite): `~/.config/cc-deep-research/content-gen/briefs_revisions.db`
+- legacy briefs (YAML): `~/.config/cc-deep-research/content-gen/briefs.yaml`
 
 Optional operator-managed files:
 
@@ -764,6 +769,8 @@ Storage classes exist for:
 - scripting runs
 - publish queue
 - browser-started pipeline jobs
+- managed briefs (SQLite + legacy YAML)
+- brief revisions (SQLite)
 
 What is wired into normal workflow behavior today:
 
@@ -895,9 +902,11 @@ Primary implementation files:
 - orchestrator: [`src/cc_deep_research/content_gen/orchestrator.py`](../src/cc_deep_research/content_gen/orchestrator.py)
 - CLI: [`src/cc_deep_research/content_gen/cli.py`](../src/cc_deep_research/content_gen/cli.py)
 - models: [`src/cc_deep_research/content_gen/models.py`](../src/cc_deep_research/content_gen/models.py)
+- brief service: [`src/cc_deep_research/content_gen/brief_service.py`](../src/cc_deep_research/content_gen/brief_service.py)
+- brief migration: [`src/cc_deep_research/content_gen/brief_migration.py`](../src/cc_deep_research/content_gen/brief_migration.py)
 - agents: [`src/cc_deep_research/content_gen/agents/`](../src/cc_deep_research/content_gen/agents/)
 - prompts: [`src/cc_deep_research/content_gen/prompts/`](../src/cc_deep_research/content_gen/prompts/)
 - storage: [`src/cc_deep_research/content_gen/storage/`](../src/cc_deep_research/content_gen/storage/)
-- tests: [`tests/test_content_gen.py`](../tests/test_content_gen.py)
+- tests: [`tests/test_content_gen.py`](../tests/test_content_gen.py) and [`tests/test_content_gen_briefs.py`](../tests/test_content_gen_briefs.py)
 
 If you are changing workflow behavior, update the prompts, parsers, CLI contract, and this document together. They are tightly coupled.

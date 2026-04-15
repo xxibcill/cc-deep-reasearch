@@ -1032,6 +1032,168 @@ def register_content_gen_commands(cli: click.Group) -> None:
             click.echo()
 
     # ------------------------------------------------------------------
+    # Brief commands
+    # ------------------------------------------------------------------
+
+    @content_gen.group()
+    def briefs() -> None:
+        """Manage persistent opportunity briefs."""
+
+    @briefs.command()
+    def briefs_list() -> None:
+        """List all managed briefs."""
+        from cc_deep_research.content_gen.brief_service import BriefService
+
+        service = BriefService()
+        output = service.load()
+        if not output.briefs:
+            click.echo("No briefs found.")
+            return
+
+        click.echo(f"Briefs ({len(output.briefs)}):\n")
+        for b in output.briefs:
+            state = b.lifecycle_state.value.upper()
+            click.echo(f"  [{state}] {b.brief_id}")
+            click.echo(f"    Title: {b.title or '(untitled)'}")
+            click.echo(f"    Revisions: {b.revision_count}")
+            click.echo(f"    Updated: {b.updated_at or b.created_at}")
+            click.echo()
+
+    @briefs.command()
+    def briefs_migrate() -> None:
+        """Force-migrate YAML brief data to SQLite.
+
+        Runs the one-time YAML import even if SQLite already has data.
+        Existing SQLite records are preserved; only missing briefs are added.
+        """
+        from cc_deep_research.content_gen.storage import SqliteBriefStore
+
+        click.echo("Running YAML -> SQLite brief migration...")
+
+        store = SqliteBriefStore()
+        yaml_path = store._yaml_path
+
+        if yaml_path is None or not yaml_path.exists():
+            click.echo("No YAML brief file found. Nothing to migrate.")
+            return
+
+        click.echo(f"YAML source: {yaml_path}")
+        click.echo(f"SQLite destination: {store.path}")
+
+        # Count before
+        before = store.load()
+        count_before = len(before.briefs)
+
+        # Force re-import by temporarily renaming
+        # We use the internal import method directly
+        imported = store._import_from_yaml()
+        if imported is None:
+            click.echo("No briefs found in YAML file to migrate.")
+            return
+
+        count_imported = len(imported.briefs)
+        after = store.load()
+        count_after = len(after.briefs)
+
+        click.echo("\nMigration complete.")
+        click.echo(f"  Briefs in YAML: {count_imported}")
+        click.echo(f"  Briefs before migration: {count_before}")
+        click.echo(f"  Briefs after migration: {count_after}")
+        click.echo(f"  New briefs added: {count_after - count_before}")
+
+    @briefs.command()
+    def briefs_health() -> None:
+        """Check consistency between YAML and SQLite brief stores.
+
+        Reports any discrepancies between the two stores and identifies
+        briefs that exist only in one store or the other.
+        """
+        from cc_deep_research.content_gen.storage import BriefStore, SqliteBriefStore
+
+        click.echo("Checking brief store health...\n")
+
+        yaml_store = BriefStore()
+        sqlite_store = SqliteBriefStore()
+
+        yaml_output = yaml_store.load()
+        sqlite_output = sqlite_store.load()
+
+        yaml_ids = {b.brief_id for b in yaml_output.briefs}
+        sqlite_ids = {b.brief_id for b in sqlite_output.briefs}
+
+        yaml_only = yaml_ids - sqlite_ids
+        sqlite_only = sqlite_ids - yaml_ids
+        common = yaml_ids & sqlite_ids
+
+        click.echo(f"YAML store: {len(yaml_output.briefs)} briefs")
+        click.echo(f"SQLite store: {len(sqlite_output.briefs)} briefs")
+        click.echo(f"Common: {len(common)}")
+        click.echo()
+
+        if yaml_only:
+            click.echo(f"Only in YAML ({len(yaml_only)}):")
+            for bid in sorted(yaml_only):
+                click.echo(f"  - {bid}")
+            click.echo()
+
+        if sqlite_only:
+            click.echo(f"Only in SQLite ({len(sqlite_only)}):")
+            for bid in sorted(sqlite_only):
+                click.echo(f"  - {bid}")
+            click.echo()
+
+        if not yaml_only and not sqlite_only:
+            click.echo("Stores are in sync.")
+        else:
+            click.echo("Run 'briefs migrate' to sync SQLite from YAML.")
+
+    @briefs.command()
+    @click.option("--brief-id", required=True, help="Brief ID to inspect")
+    def briefs_show(brief_id: str) -> None:
+        """Show details of a specific brief."""
+        from cc_deep_research.content_gen.brief_service import BriefService
+
+        service = BriefService()
+        managed = service.get_brief(brief_id)
+        if managed is None:
+            click.echo(f"Brief not found: {brief_id}")
+            raise click.Abort()
+
+        click.echo(f"Brief: {managed.brief_id}")
+        click.echo(f"  Title: {managed.title or '(untitled)'}")
+        click.echo(f"  State: {managed.lifecycle_state.value.upper()}")
+        click.echo(f"  Provenance: {managed.provenance.value}")
+        click.echo(f"  Revisions: {managed.revision_count}")
+        click.echo(f"  Current: {managed.current_revision_id}")
+        click.echo(f"  Latest: {managed.latest_revision_id}")
+        click.echo(f"  Created: {managed.created_at}")
+        click.echo(f"  Updated: {managed.updated_at}")
+        if managed.source_brief_id:
+            click.echo(f"  Source: {managed.source_brief_id}")
+        if managed.branch_reason:
+            click.echo(f"  Branch reason: {managed.branch_reason}")
+        if managed.revision_history:
+            click.echo("  Revision history:")
+            for entry in managed.revision_history:
+                click.echo(f"    - {entry}")
+
+        # Show current revision content
+        if managed.current_revision_id:
+            rev = service.get_revision(managed.current_revision_id)
+            if rev:
+                click.echo(f"\n  Current revision ({rev.revision_id}):")
+                click.echo(f"    Version: {rev.version}")
+                click.echo(f"    Theme: {rev.theme or '(none)'}")
+                click.echo(f"    Goal: {rev.goal or '(none)'}")
+                click.echo(f"    Audience: {rev.primary_audience_segment or '(none)'}")
+                if rev.problem_statements:
+                    click.echo(f"    Problems ({len(rev.problem_statements)}):")
+                    for p in rev.problem_statements[:3]:
+                        click.echo(f"      - {p[:80]}...")
+                if rev.sub_angles:
+                    click.echo(f"    Sub-angles ({len(rev.sub_angles)}): {', '.join(rev.sub_angles[:3])}")
+
+    # ------------------------------------------------------------------
     # Maintenance commands
     # ------------------------------------------------------------------
 

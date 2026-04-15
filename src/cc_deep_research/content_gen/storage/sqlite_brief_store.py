@@ -223,7 +223,15 @@ class SqliteBriefStore:
         self._initialized = True
 
     def _import_from_yaml(self) -> ManagedBriefOutput | None:
-        """One-time import from YAML if YAML file exists and SQLite is empty."""
+        """One-time import from YAML if YAML file exists and SQLite is empty.
+
+        Validates each brief record during import. Malformed records are skipped
+        with a warning rather than crashing the entire import.
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+
         yaml_path = self._yaml_path
         if yaml_path is None:
             from cc_deep_research.content_gen.storage._paths import (
@@ -240,18 +248,65 @@ class SqliteBriefStore:
         if not yaml_path.exists():
             return None
 
-        data = yaml.safe_load(yaml_path.read_text()) or {}
-        output = ManagedBriefOutput.model_validate(data)
+        # Load and validate YAML structure
+        raw_data: dict | list | None = None
+        try:
+            raw_data = yaml.safe_load(yaml_path.read_text())
+        except yaml.YAMLError as exc:
+            logger.error("Failed to parse YAML brief file %s: %s", yaml_path, exc)
+            return None
+
+        if raw_data is None:
+            return None
+
+        # Handle both dict with 'briefs' key and raw list
+        if isinstance(raw_data, list):
+            data = {"briefs": raw_data}
+        elif isinstance(raw_data, dict):
+            data = raw_data
+        else:
+            logger.error("Unexpected YAML structure in %s: expected dict or list, got %s", yaml_path, type(raw_data).__name__)
+            return None
+
+        # Validate the output structure
+        try:
+            output = ManagedBriefOutput.model_validate(data)
+        except Exception as exc:
+            logger.error("Failed to validate brief data from %s: %s", yaml_path, exc)
+            return None
+
         if not output.briefs:
             return None
 
-        # Persist to SQLite
+        # Persist to SQLite with validation per-record
         conn = self._get_conn()
+        imported_count = 0
+        skipped_count = 0
+        valid_briefs: list[ManagedOpportunityBrief] = []
+
         for brief in output.briefs:
-            json_data = _json_encoded(brief.model_dump(exclude_none=True))
-            conn.execute(
-                "INSERT OR IGNORE INTO briefs (brief_id, data, created_at, updated_at) VALUES (?, ?, ?, ?)",
-                (brief.brief_id, json_data, brief.created_at or _now_iso(), _now_iso()),
-            )
+            # Validate brief has required fields
+            if not brief.brief_id:
+                logger.warning("Skipping brief with empty brief_id during YAML import")
+                skipped_count += 1
+                continue
+
+            try:
+                json_data = _json_encoded(brief.model_dump(exclude_none=True))
+                conn.execute(
+                    "INSERT OR IGNORE INTO briefs (brief_id, data, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                    (brief.brief_id, json_data, brief.created_at or _now_iso(), _now_iso()),
+                )
+                imported_count += 1
+                valid_briefs.append(brief)
+            except Exception as exc:
+                logger.warning("Failed to import brief %s from YAML: %s", brief.brief_id, exc)
+                skipped_count += 1
+
         conn.commit()
-        return output
+
+        if skipped_count > 0:
+            logger.warning("YAML import: %d briefs imported, %d skipped", imported_count, skipped_count)
+
+        # Return output containing only the briefs that were actually imported
+        return ManagedBriefOutput(briefs=valid_briefs)

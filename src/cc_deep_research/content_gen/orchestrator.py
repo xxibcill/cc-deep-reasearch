@@ -612,12 +612,35 @@ class ContentGenOrchestrator:
     ) -> OpportunityBrief | None:
         """Load the OpportunityBrief content for a specific revision.
 
-        This is a placeholder - in the full P1 implementation, revisions are
-        stored separately and loaded by revision_id.
+        Loads the revision from the BriefRevisionStore and converts it back
+        to an OpportunityBrief for use in pipeline execution.
         """
-        # P1 revision storage is out of scope for P2-T1
-        # Return None to indicate content wasn't loaded - caller should use snapshot
-        return None
+        service = self._get_brief_service()
+        revision = service.get_revision(revision_id)
+        if revision is None:
+            return None
+
+        # Convert BriefRevision back to OpportunityBrief
+        return OpportunityBrief(
+            brief_id=managed.brief_id,
+            theme=revision.theme,
+            goal=revision.goal,
+            primary_audience_segment=revision.primary_audience_segment,
+            secondary_audience_segments=revision.secondary_audience_segments,
+            problem_statements=revision.problem_statements,
+            content_objective=revision.content_objective,
+            proof_requirements=revision.proof_requirements,
+            platform_constraints=revision.platform_constraints,
+            risk_constraints=revision.risk_constraints,
+            freshness_rationale=revision.freshness_rationale,
+            sub_angles=revision.sub_angles,
+            research_hypotheses=revision.research_hypotheses,
+            success_criteria=revision.success_criteria,
+            expert_take=revision.expert_take,
+            non_obvious_claims_to_test=revision.non_obvious_claims_to_test,
+            genericity_risks=revision.genericity_risks,
+            is_generated=revision.is_generated,
+        )
 
     # ------------------------------------------------------------------
     # P2-T3: Resume, Clone, and Seeded Run Flows
