@@ -38,6 +38,9 @@ import {
   supersedeBrief as supersedeBriefApi,
   revertBriefToDraft as revertBriefToDraftApi,
   cloneBrief as cloneBriefApi,
+  branchBrief as branchBriefApi,
+  listSiblingBriefs as listSiblingBriefsApi,
+  compareBriefs as compareBriefsApi,
   listBriefRevisions,
   getBriefRevision,
   saveBriefRevision,
@@ -105,6 +108,7 @@ interface ContentGenState {
   briefsLoading: boolean;
   activeBriefId: string | null;
   activeBriefRevisions: BriefRevision[];
+  siblingBriefs: ManagedOpportunityBrief[];
   loadBriefs: (lifecycleState?: string) => Promise<void>;
   loadBrief: (briefId: string) => Promise<ManagedOpportunityBrief | null>;
   createBrief: (brief: Record<string, unknown>) => Promise<void>;
@@ -114,6 +118,8 @@ interface ContentGenState {
   supersedeBrief: (briefId: string, expectedUpdatedAt?: string) => Promise<void>;
   revertBriefToDraft: (briefId: string, expectedUpdatedAt?: string) => Promise<void>;
   cloneBrief: (briefId: string, newTitle?: string) => Promise<string | null>;
+  branchBrief: (briefId: string, newTitle?: string, branchReason?: string) => Promise<string | null>;
+  loadSiblingBriefs: (briefId: string) => Promise<void>;
   loadBriefRevisions: (briefId: string) => Promise<void>;
   saveBriefRevision: (
     briefId: string,
@@ -148,6 +154,7 @@ const initialState = {
   briefsLoading: false,
   activeBriefId: null,
   activeBriefRevisions: [],
+  siblingBriefs: [],
   error: null,
 };
 
@@ -544,6 +551,31 @@ const useContentGen = create<ContentGenState>((set, get) => ({
     } catch (err) {
       set({ error: getApiErrorMessage(err, 'Failed to clone brief.') });
       return null;
+    }
+  },
+
+  branchBrief: async (briefId: string, newTitle?: string, branchReason?: string) => {
+    set({ error: null });
+    try {
+      const branched = await branchBriefApi(briefId, {
+        new_title: newTitle,
+        branch_reason: branchReason,
+      });
+      set((state) => ({ briefs: [...state.briefs, branched] }));
+      return branched.brief_id;
+    } catch (err) {
+      set({ error: getApiErrorMessage(err, 'Failed to branch brief.') });
+      return null;
+    }
+  },
+
+  loadSiblingBriefs: async (briefId: string) => {
+    set({ error: null });
+    try {
+      const result = await listSiblingBriefsApi(briefId);
+      set({ siblingBriefs: result.items });
+    } catch (err) {
+      set({ error: getApiErrorMessage(err, 'Failed to load sibling briefs.') });
     }
   },
 

@@ -1070,6 +1070,9 @@ export interface ManagedOpportunityBrief {
   updated_at: string;
   revision_history: string[];
   current_revision?: BriefRevision;
+  // Lineage tracking for branched/cloned briefs
+  source_brief_id?: string;
+  branch_reason?: string;
 }
 
 export interface ManagedBriefOutput {

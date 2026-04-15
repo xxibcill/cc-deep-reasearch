@@ -9,6 +9,7 @@ import {
   GitBranch,
   GitCompare,
   History,
+  Loader2,
   Play,
   RotateCcw,
   Save,
@@ -23,6 +24,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogBody, DialogFooter } from '@/components/ui/dialog'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
 import {
   lifecycleStateBadgeVariant,
   lifecycleStateLabel,
@@ -33,6 +35,8 @@ import {
 } from '@/components/content-gen/brief-shared'
 import { BriefAssistantPanel } from '@/components/content-gen/brief-assistant-panel'
 import { BriefToBacklogPanel } from '@/components/content-gen/brief-to-backlog-panel'
+import { LineagePanel } from '@/components/content-gen/lineage-panel'
+import { CompareBriefsDialog } from '@/components/content-gen/compare-briefs-dialog'
 import useContentGen from '@/hooks/useContentGen'
 import type { BriefRevision, ManagedOpportunityBrief } from '@/types/content-gen'
 
@@ -48,10 +52,13 @@ export default function BriefDetailPage() {
   const supersedeBrief = useContentGen((s) => s.supersedeBrief)
   const revertBriefToDraft = useContentGen((s) => s.revertBriefToDraft)
   const cloneBrief = useContentGen((s) => s.cloneBrief)
+  const branchBrief = useContentGen((s) => s.branchBrief)
+  const loadSiblingBriefs = useContentGen((s) => s.loadSiblingBriefs)
   const saveBriefRevision = useContentGen((s) => s.saveBriefRevision)
   const applyRevision = useContentGen((s) => s.applyRevision)
   const briefs = useContentGen((s) => s.briefs)
   const activeBriefRevisions = useContentGen((s) => s.activeBriefRevisions)
+  const siblingBriefs = useContentGen((s) => s.siblingBriefs)
   const error = useContentGen((s) => s.error)
 
   const [brief, setBrief] = useState<(ManagedOpportunityBrief & { current_revision?: BriefRevision }) | null>(null)
@@ -62,9 +69,14 @@ export default function BriefDetailPage() {
   const [revisionNotes, setRevisionNotes] = useState('')
   const [compareOpen, setCompareOpen] = useState(false)
   const [compareRevisions, setCompareRevisions] = useState<[string, string] | null>(null)
-  const [activeTab, setActiveTab] = useState<'content' | 'revisions' | 'assistant' | 'backlog'>('content')
+  const [activeTab, setActiveTab] = useState<'content' | 'revisions' | 'assistant' | 'backlog' | 'lineage'>('content')
   const [editingField, setEditingField] = useState<string | null>(null)
   const [editedContent, setEditedContent] = useState<Record<string, unknown> | null>(null)
+  const [branchOpen, setBranchOpen] = useState(false)
+  const [branchTitle, setBranchTitle] = useState('')
+  const [branchReason, setBranchReason] = useState('')
+  const [compareBriefOpen, setCompareBriefOpen] = useState(false)
+  const [compareWithBriefId, setCompareWithBriefId] = useState<string | null>(null)
 
   function isManagedBrief(b: unknown): b is ManagedOpportunityBrief & { current_revision?: BriefRevision } {
     return typeof b === 'object' && b !== null && 'brief_id' in b
@@ -135,6 +147,23 @@ export default function BriefDetailPage() {
     void runAction('clone', async () => {
       const newId = await cloneBrief(currentBrief.brief_id)
       if (newId) {
+        router.push(`/content-gen/briefs/${newId}`)
+      }
+    })
+  }
+
+  const handleBranch = () => {
+    if (!currentBrief) return
+    void runAction('branch', async () => {
+      const newId = await branchBrief(
+        currentBrief.brief_id,
+        branchTitle || undefined,
+        branchReason || undefined,
+      )
+      if (newId) {
+        setBranchOpen(false)
+        setBranchTitle('')
+        setBranchReason('')
         router.push(`/content-gen/briefs/${newId}`)
       }
     })
@@ -265,6 +294,10 @@ export default function BriefDetailPage() {
             <Copy className="h-3.5 w-3.5" />
             Clone
           </Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => setBranchOpen(true)} disabled={!!busyKey} className="gap-2">
+            <GitBranch className="h-3.5 w-3.5" />
+            Branch
+          </Button>
           {currentBrief.lifecycle_state !== 'archived' && (
             <Button type="button" variant="outline" size="sm" onClick={handleArchive} disabled={!!busyKey} className="gap-2">
               <Trash2 className="h-3.5 w-3.5" />
@@ -275,7 +308,7 @@ export default function BriefDetailPage() {
       </div>
 
       <div className="flex gap-1 border-b border-border">
-        {(['content', 'revisions', 'assistant', 'backlog'] as const).map((tab) => (
+        {(['content', 'revisions', 'assistant', 'backlog', 'lineage'] as const).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -554,6 +587,21 @@ export default function BriefDetailPage() {
         />
       )}
 
+      {activeTab === 'lineage' && currentBrief && (
+        <div className="space-y-6">
+          <LineagePanel
+            brief={currentBrief}
+            siblingBriefs={siblingBriefs}
+            onLoadSiblings={() => loadSiblingBriefs(currentBrief.brief_id)}
+            onCompareWith={(otherBriefId) => {
+              setCompareWithBriefId(otherBriefId)
+              setCompareBriefOpen(true)
+            }}
+            onNavigateToBrief={(id) => router.push(`/content-gen/briefs/${id}`)}
+          />
+        </div>
+      )}
+
       {editingField && editedContent && (
         <Dialog open={true} onOpenChange={(open) => !open && setEditingField(null)}>
           <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
@@ -656,6 +704,80 @@ export default function BriefDetailPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      )}
+
+      {branchOpen && (
+        <Dialog open={true} onOpenChange={(open) => !open && setBranchOpen(false)}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Branch Brief</DialogTitle>
+              <DialogDescription>
+                Create a derivative brief for a different theme, channel, or experiment.
+                The branched brief tracks its lineage back to this source.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogBody className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                  New Brief Title (optional)
+                </label>
+                <input
+                  type="text"
+                  value={branchTitle}
+                  onChange={(e) => setBranchTitle(e.target.value)}
+                  placeholder={`${currentBrief?.title || 'Brief'} (branch)`}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                  Branch Reason
+                </label>
+                <Textarea
+                  value={branchReason}
+                  onChange={(e) => setBranchReason(e.target.value)}
+                  placeholder="Why are you branching this brief? (e.g., 'different channel - TikTok', 'experiment for Q2 campaign')"
+                  className="min-h-[80px]"
+                />
+              </div>
+            </DialogBody>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setBranchOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="default"
+                onClick={() => void handleBranch()}
+                disabled={!!busyKey}
+                className="gap-1.5"
+              >
+                {busyKey === 'branch' ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Branching...
+                  </>
+                ) : (
+                  <>
+                    <GitBranch className="h-3.5 w-3.5" />
+                    Create Branch
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {compareBriefOpen && compareWithBriefId && (
+        <CompareBriefsDialog
+          briefId={currentBrief?.brief_id || ''}
+          otherBriefId={compareWithBriefId}
+          onClose={() => {
+            setCompareBriefOpen(false)
+            setCompareWithBriefId(null)
+          }}
+        />
       )}
     </div>
   )
