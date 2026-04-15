@@ -276,6 +276,12 @@ Phase 03 - Close the learning loop:
 - Added operator revision and versioning support for opportunity briefs with generated, edited, and approved version states
 - Added learning store and planning metrics persisting reusable patterns and tracking brief pass rate, rewrite rate, and conversion to production
 
+#### Phase 03 - Scale, Governance, And Reliability (3 tasks)
+
+- Added backlog persistence and concurrency handling upgraded for heavier AI-assisted usage with SQLite or Postgres-backed storage
+- Added audit history for AI proposals, approvals, and applied backlog mutations with operator-visible change records
+- Added background AI maintenance workflows for stale review, gap summaries, duplicate watchlists, and rescoring recommendations
+
 #### CI/CD and Dashboard Reliability (8 tasks)
 
 - Added Python preflight CI workflow with lint, type check, and pytest subsets running on PRs and pushes
@@ -297,7 +303,7 @@ Phase 03 - Close the learning loop:
 - Removed completed dashboard-upgrade planning documents `docs/tasks/11-search-cache-operations.md` through `docs/tasks/19-design-system-extraction-and-hardening.md` after consolidating their delivered work into this changelog
 - Removed completed dashboard-upgrade planning documents `docs/tasks/20-trace-bundle-export-workspace.md` through `docs/tasks/29-dashboard-fixture-and-scenario-library.md` after consolidating their delivered work into this changelog
 - Removed completed "necessary 80%" task-pack planning documents `docs/tasks/30_snapshot_session_metadata_contract.md` through `docs/tasks/47_add_canonical_necessary_80_preflight.md` and `docs/tasks/80_20_necessary_work_task_set.md` after consolidating their delivered work into this changelog
-- Removed task-pack planning documents from `docs/tasks/` after consolidating their delivered work into this changelog, including decision graph observability, dashboard config editor, dashboard agent prompt editor, content generation expert workflow, backlog management, content-gen backlog details page, phase 01, phase 02, backlog chat assistant, content-gen chat page upgrade, backlog single-item start, and opportunity planning improvement task packs
+- Removed task-pack planning documents from `docs/tasks/` after consolidating their delivered work into this changelog, including decision graph observability, dashboard config editor, dashboard agent prompt editor, content generation expert workflow, backlog management, content-gen backlog details page, phase 01, phase 02, phase 03, backlog chat assistant, content-gen chat page upgrade, backlog single-item start, and opportunity planning improvement task packs
 
 ## [0.1.0] - 2026-03-11
 
