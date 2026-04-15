@@ -2371,6 +2371,11 @@ class PipelineContext(BaseModel):
 
     strategy: StrategyMemory | None = None
     opportunity_brief: OpportunityBrief | None = None
+    # P2-T1: Managed brief reference for controlled handoff between planning and execution
+    brief_reference: PipelineBriefReference | None = Field(
+        default=None,
+        description="Reference to the managed brief resource and revision used by this run.",
+    )
     backlog: BacklogOutput | None = None
     scoring: ScoringOutput | None = None
     shortlist: list[str] = Field(default_factory=list)
@@ -2393,6 +2398,11 @@ class PipelineContext(BaseModel):
     iteration_state: IterationState | None = None
     stage_traces: list[PipelineStageTrace] = Field(default_factory=list)
     claim_ledger: ClaimTraceLedger | None = None
+    # P2-T2: Approval-aware execution gate for brief-controlled pipelines
+    brief_gate: BriefExecutionGate | None = Field(
+        default=None,
+        description="Gate that enforces brief approval requirements for downstream stages.",
+    )
 
     @model_validator(mode="after")
     def _populate_candidate_queue(self) -> PipelineContext:
@@ -2739,6 +2749,81 @@ class BriefProvenance(StrEnum):
     OPERATOR_CREATED = "operator_created"
 
 
+# ---------------------------------------------------------------------------
+# Phase 02 - Pipeline Brief Reference
+# ---------------------------------------------------------------------------
+
+
+class PipelineBriefReference(BaseModel):
+    """Reference to a managed opportunity brief used by a pipeline run.
+
+    This establishes an explicit, auditable link between a pipeline run and
+    the specific managed brief revision it used. The snapshot field preserves
+    the brief content for portability and inspection even if the managed brief
+    later changes.
+
+    Design principles
+    ------------------
+    - The reference is authoritative: if set, downstream work should prefer
+      the managed brief revision over any inline snapshot.
+    - The snapshot is for observability: it lets operators inspect what the
+      run actually used without loading the managed brief store.
+    - Revision pinning is explicit: a run always records which revision_id it
+      used, preventing silent rebinding to newer heads during resume.
+    """
+
+    brief_id: str = Field(
+        default="",
+        description="The managed brief resource ID (e.g. 'mbrief_abc123').",
+    )
+    revision_id: str = Field(
+        default="",
+        description="The specific revision ID this run referenced.",
+    )
+    revision_version: int = Field(
+        default=0,
+        description="Human-readable version number for display (e.g. 3 for 'v3').",
+    )
+    # Snapshot of the brief content at the time of reference for portability
+    snapshot: OpportunityBrief | None = Field(
+        default=None,
+        description="Inline brief snapshot for observability and portability.",
+    )
+    # Lifecycle state at the time this reference was created
+    lifecycle_state: BriefLifecycleState = Field(
+        default=BriefLifecycleState.DRAFT,
+        description="Brief lifecycle state at time of pipeline run.",
+    )
+    # Source of this reference
+    reference_type: Literal["managed", "inline_fallback", "imported"] = Field(
+        default="managed",
+        description="Whether this run was started from managed brief, inline payload, or legacy import.",
+    )
+    # For resume/clone flows: which brief revision was explicitly selected
+    seeded_from_revision_id: str = Field(
+        default="",
+        description="For seeded runs: the revision ID that was explicitly chosen to seed this run.",
+    )
+    created_at: str = Field(
+        default="",
+        description="ISO timestamp when this reference was created.",
+    )
+    # P2-T2: Whether this brief was generated in the same pipeline run
+    # If True, gate will not block since the brief is being actively developed
+    was_generated_in_run: bool = Field(
+        default=False,
+        description="True if this brief was generated in the current pipeline run.",
+    )
+
+    def is_approved(self) -> bool:
+        """Return True if this brief reference was approved at time of use."""
+        return self.lifecycle_state == BriefLifecycleState.APPROVED
+
+    def is_draft(self) -> bool:
+        """Return True if this brief reference was in draft state at time of use."""
+        return self.lifecycle_state == BriefLifecycleState.DRAFT
+
+
 class BriefRevision(BaseModel):
     """An immutable snapshot of an OpportunityBrief at a point in time.
 
@@ -2870,3 +2955,158 @@ class ManagedBriefOutput(BaseModel):
     """Container for listing and loading managed briefs."""
 
     briefs: list[ManagedOpportunityBrief] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Phase 02 - Brief Execution Gates
+# ---------------------------------------------------------------------------
+
+
+class BriefExecutionPolicyMode(StrEnum):
+    """Policy modes for brief approval gates.
+
+    These modes control whether downstream execution can proceed based on
+    the brief's lifecycle state at pipeline start.
+
+    DEFAULT_APPROVED    - Only approved briefs can proceed past planning.
+                          Draft briefs are blocked with a clear error.
+    ALLOW_DRAFT         - Draft briefs can proceed through all stages.
+                          Warnings are issued but execution continues.
+    ALLOW_ANY           - Any brief state can proceed. No gates, no warnings.
+                          Use for development and debugging only.
+    """
+
+    DEFAULT_APPROVED = "default_approved"  # Default for production
+    ALLOW_DRAFT = "allow_draft"  # For internal iterations
+    ALLOW_ANY = "allow_any"  # For development/debugging
+
+
+class BriefExecutionGate(BaseModel):
+    """Approval-aware execution gate for brief-controlled pipelines.
+
+    This gate is checked at pipeline start and at key stage transitions
+    to enforce brief approval requirements. It provides explicit,
+    operator-visible signals about the brief state used for each run.
+
+    Design principles
+    ------------------
+    - Gate is checked at pipeline initialization, not just at stage transitions.
+    - Warnings surface at the start so operators know what state they're using.
+    - Errors are clear and actionable, not silently ignored.
+    - Policy modes are few and explicit to avoid hidden surprises.
+    """
+
+    # Current policy mode
+    policy_mode: BriefExecutionPolicyMode = Field(
+        default=BriefExecutionPolicyMode.DEFAULT_APPROVED,
+        description="Current gate enforcement policy.",
+    )
+    # Brief state at pipeline start
+    brief_state_at_start: BriefLifecycleState = Field(
+        default=BriefLifecycleState.DRAFT,
+        description="Brief lifecycle state when the pipeline was initialized.",
+    )
+    # Whether the gate has been satisfied for this run
+    is_satisfied: bool = Field(
+        default=False,
+        description="True if the current brief state satisfies the policy requirements.",
+    )
+    # Warning messages for operator visibility
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Warning messages when running with non-approved brief.",
+    )
+    # Error message if gate failed
+    error_message: str = Field(
+        default="",
+        description="Error message if the gate blocked execution.",
+    )
+    # Stage index where gate was checked
+    checked_at_stage: int = Field(
+        default=-1,
+        description="Stage index where the gate was last checked.",
+    )
+    # Whether execution was blocked by this gate
+    was_blocked: bool = Field(
+        default=False,
+        description="True if execution was blocked by this gate.",
+    )
+
+    def get_gate_status(self) -> str:
+        """Return a human-readable gate status for display."""
+        if self.was_blocked:
+            return f"BLOCKED: {self.error_message}"
+        if self.is_satisfied:
+            return f"SATISFIED (brief is {self.brief_state_at_start.value})"
+        if self.warnings:
+            return f"WARNINGS ({len(self.warnings)}): running with {self.brief_state_at_start.value} brief"
+        return f"UNKNOWN (brief is {self.brief_state_at_start.value})"
+
+    def requires_approval_for_stage(self, stage_name: str) -> bool:
+        """Return True if the given stage requires an approved brief.
+
+        Stages before build_backlog (planning stages) don't require approval.
+        Stages from build_backlog onward should use approved briefs in
+        DEFAULT_APPROVED mode.
+        """
+        approval_stages = {
+            "build_backlog",
+            "score_ideas",
+            "generate_angles",
+            "build_research_pack",
+            "build_argument_map",
+            "run_scripting",
+            "visual_translation",
+            "production_brief",
+            "packaging",
+            "human_qc",
+            "publish_queue",
+            "performance_analysis",
+        }
+        return stage_name in approval_stages
+
+    def check_gate(self, brief_state: BriefLifecycleState, stage_name: str) -> tuple[bool, str]:
+        """Check if execution can proceed given the brief state.
+
+        Args:
+            brief_state: Current brief lifecycle state.
+            stage_name: Name of the current pipeline stage.
+
+        Returns:
+            Tuple of (can_proceed, message) where:
+            - can_proceed is True if execution can continue
+            - message is a human-readable reason for the decision
+        """
+        self.brief_state_at_start = brief_state
+
+        if self.policy_mode == BriefExecutionPolicyMode.ALLOW_ANY:
+            self.is_satisfied = True
+            return True, "Gate is open (ALLOW_ANY mode)"
+
+        if self.policy_mode == BriefExecutionPolicyMode.ALLOW_DRAFT:
+            if brief_state == BriefLifecycleState.APPROVED:
+                self.is_satisfied = True
+                return True, "Approved brief accepted"
+            self.warnings.append(f"Running with {brief_state.value} brief in ALLOW_DRAFT mode")
+            self.is_satisfied = True
+            return True, f"Gate waived for {brief_state.value} brief"
+
+        # DEFAULT_APPROVED mode
+        if brief_state == BriefLifecycleState.APPROVED:
+            self.is_satisfied = True
+            return True, "Approved brief confirmed"
+
+        if not self.requires_approval_for_stage(stage_name):
+            self.is_satisfied = True
+            return True, f"Stage {stage_name} does not require approval"
+
+        # Blocked
+        self.is_satisfied = False
+        self.was_blocked = True
+        self.error_message = (
+            f"Execution blocked: brief is in '{brief_state.value}' state. "
+            f"Stage '{stage_name}' requires an approved brief. "
+            f"Please approve the brief before proceeding, or use --brief-policy allow_draft "
+            f"to run with draft briefs (not recommended for production)."
+        )
+        return False, self.error_message
