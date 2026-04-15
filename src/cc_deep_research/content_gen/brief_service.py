@@ -81,9 +81,10 @@ class BriefService:
         if store is not None:
             self._store = store
         else:
-            use_sqlite = getattr(getattr(config, "content_gen", None), "use_sqlite", False)
+            content_gen_cfg = getattr(config, "content_gen", None) or type("Empty", (), {})()
+            use_sqlite = getattr(content_gen_cfg, "use_sqlite", False)
             path: Path | None = None
-            configured_path = getattr(getattr(config, "content_gen", None), "brief_path", None)
+            configured_path = getattr(content_gen_cfg, "brief_path", None)
             if configured_path:
                 path = Path(configured_path).expanduser()
 

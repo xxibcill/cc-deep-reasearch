@@ -466,3 +466,249 @@ export async function generateExecutionBrief(
     throw new Error(getApiErrorMessage(error, 'Failed to generate execution brief.'));
   }
 }
+
+// ---------------------------------------------------------------------------
+// Managed Brief endpoints (Phase 04)
+// ---------------------------------------------------------------------------
+
+import type {
+  ManagedOpportunityBrief,
+  BriefRevision,
+  BriefAuditResponse,
+  BriefAuditEntry,
+} from '@/types/content-gen';
+
+export interface CreateBriefRequest {
+  brief: Record<string, unknown>;
+  provenance?: string;
+  source_pipeline_id?: string;
+  revision_notes?: string;
+}
+
+export interface SaveRevisionRequest {
+  brief: Record<string, unknown>;
+  revision_notes?: string;
+  source_pipeline_id?: string;
+  expected_updated_at?: string | null;
+}
+
+export interface ApplyRevisionRequest {
+  revision_id: string;
+  expected_updated_at?: string | null;
+}
+
+export interface UpdateBriefRequest {
+  patch: Record<string, unknown>;
+  expected_updated_at?: string | null;
+}
+
+export async function listBriefs(
+  lifecycleState?: string,
+  limit = 50,
+): Promise<{ items: ManagedOpportunityBrief[]; count: number }> {
+  try {
+    const params = new URLSearchParams();
+    if (lifecycleState) params.set('lifecycle_state', lifecycleState);
+    params.set('limit', String(limit));
+    const response = await contentGenClient.get<{ items: ManagedOpportunityBrief[]; count: number }>(
+      `/briefs?${params.toString()}`,
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to list briefs.'));
+  }
+}
+
+export async function getBrief(
+  briefId: string,
+): Promise<ManagedOpportunityBrief & { current_revision?: BriefRevision }> {
+  try {
+    const response = await contentGenClient.get<
+      ManagedOpportunityBrief & { current_revision?: BriefRevision }
+    >(`/briefs/${briefId}`);
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to get brief.'));
+  }
+}
+
+export async function createBrief(req: CreateBriefRequest): Promise<ManagedOpportunityBrief> {
+  try {
+    const response = await contentGenClient.post<ManagedOpportunityBrief>('/briefs', req);
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to create brief.'));
+  }
+}
+
+export async function updateBrief(
+  briefId: string,
+  req: UpdateBriefRequest,
+): Promise<ManagedOpportunityBrief> {
+  try {
+    const response = await contentGenClient.patch<ManagedOpportunityBrief>(
+      `/briefs/${briefId}`,
+      req,
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to update brief.'));
+  }
+}
+
+export async function listBriefRevisions(
+  briefId: string,
+  limit = 50,
+): Promise<{ items: BriefRevision[]; count: number }> {
+  try {
+    const response = await contentGenClient.get<{ items: BriefRevision[]; count: number }>(
+      `/briefs/${briefId}/revisions?limit=${limit}`,
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to list brief revisions.'));
+  }
+}
+
+export async function getBriefRevision(
+  briefId: string,
+  revisionId: string,
+): Promise<BriefRevision> {
+  try {
+    const response = await contentGenClient.get<BriefRevision>(
+      `/briefs/${briefId}/revisions/${revisionId}`,
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to get brief revision.'));
+  }
+}
+
+export async function saveBriefRevision(
+  briefId: string,
+  req: SaveRevisionRequest,
+): Promise<BriefRevision> {
+  try {
+    const response = await contentGenClient.post<BriefRevision>(
+      `/briefs/${briefId}/revisions`,
+      req,
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to save brief revision.'));
+  }
+}
+
+export async function applyRevision(
+  briefId: string,
+  req: ApplyRevisionRequest,
+): Promise<ManagedOpportunityBrief> {
+  try {
+    const response = await contentGenClient.post<ManagedOpportunityBrief>(
+      `/briefs/${briefId}/apply-revision`,
+      req,
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to apply revision.'));
+  }
+}
+
+export async function approveBrief(
+  briefId: string,
+  expectedUpdatedAt?: string | null,
+): Promise<ManagedOpportunityBrief> {
+  try {
+    const response = await contentGenClient.post<ManagedOpportunityBrief>(
+      `/briefs/${briefId}/approve`,
+      {},
+      { params: expectedUpdatedAt ? { expected_updated_at: expectedUpdatedAt } : undefined },
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to approve brief.'));
+  }
+}
+
+export async function archiveBrief(
+  briefId: string,
+  expectedUpdatedAt?: string | null,
+): Promise<ManagedOpportunityBrief> {
+  try {
+    const response = await contentGenClient.post<ManagedOpportunityBrief>(
+      `/briefs/${briefId}/archive`,
+      {},
+      { params: expectedUpdatedAt ? { expected_updated_at: expectedUpdatedAt } : undefined },
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to archive brief.'));
+  }
+}
+
+export async function supersedeBrief(
+  briefId: string,
+  expectedUpdatedAt?: string | null,
+): Promise<ManagedOpportunityBrief> {
+  try {
+    const response = await contentGenClient.post<ManagedOpportunityBrief>(
+      `/briefs/${briefId}/supersede`,
+      {},
+      { params: expectedUpdatedAt ? { expected_updated_at: expectedUpdatedAt } : undefined },
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to supersede brief.'));
+  }
+}
+
+export async function revertBriefToDraft(
+  briefId: string,
+  expectedUpdatedAt?: string | null,
+): Promise<ManagedOpportunityBrief> {
+  try {
+    const response = await contentGenClient.post<ManagedOpportunityBrief>(
+      `/briefs/${briefId}/revert-to-draft`,
+      {},
+      { params: expectedUpdatedAt ? { expected_updated_at: expectedUpdatedAt } : undefined },
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to revert brief to draft.'));
+  }
+}
+
+export async function cloneBrief(
+  briefId: string,
+  newTitle?: string,
+): Promise<ManagedOpportunityBrief> {
+  try {
+    const response = await contentGenClient.post<ManagedOpportunityBrief>(
+      `/briefs/${briefId}/clone`,
+      { new_title: newTitle },
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to clone brief.'));
+  }
+}
+
+export async function getBriefAuditHistory(
+  briefId: string,
+  eventType?: string,
+  actor?: string,
+  limit = 100,
+): Promise<BriefAuditResponse> {
+  try {
+    const params = new URLSearchParams();
+    if (eventType) params.set('event_type', eventType);
+    if (actor) params.set('actor', actor);
+    params.set('limit', String(limit));
+    const response = await contentGenClient.get<BriefAuditResponse>(
+      `/briefs/${briefId}/audit?${params.toString()}`,
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to get brief audit history.'));
+  }
+}

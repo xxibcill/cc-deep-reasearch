@@ -58,4 +58,5 @@ class BriefStore:
                 output.briefs = [updated if b.brief_id == brief_id else b for b in output.briefs]
                 self.save(output)
                 return updated
+        # brief_id not found — return None (caller should handle this case)
         return None

@@ -706,6 +706,30 @@ export interface PipelineContext {
   performance: PerformanceAnalysis | null;
   iteration_state: IterationState | null;
   stage_traces: PipelineStageTrace[];
+  // Managed brief reference (Phase 04)
+  brief_reference?: PipelineBriefReference | null;
+  brief_gate?: BriefExecutionGate | null;
+}
+
+export interface PipelineBriefReference {
+  brief_id: string;
+  revision_id: string;
+  revision_version: number;
+  snapshot: OpportunityBrief | null;
+  lifecycle_state: BriefLifecycleState | string;
+  reference_type: string;
+  seeded_from_revision_id: string;
+  created_at: string;
+  was_generated_in_run?: boolean;
+}
+
+export interface BriefExecutionGate {
+  policy_mode: string;
+  is_satisfied: boolean;
+  was_blocked: boolean;
+  error_message: string;
+  checked_at_stage: number;
+  brief_state_at_start: BriefLifecycleState | string;
 }
 
 // =============================================================================
@@ -998,4 +1022,72 @@ export interface NextActionRequest {
 export interface ExecutionBriefRequest {
   idea_id: string;
   strategy?: Record<string, unknown> | null;
+}
+
+// =============================================================================
+// Managed Brief Types (Phase 04)
+// =============================================================================
+
+export type BriefLifecycleState = 'draft' | 'approved' | 'superseded' | 'archived';
+export type BriefProvenance = 'generated' | 'operator_created' | 'operator_edited' | 'cloned';
+
+export interface BriefRevision {
+  revision_id: string;
+  brief_id: string;
+  version: number;
+  theme: string;
+  goal: string;
+  primary_audience_segment: string;
+  secondary_audience_segments: string[];
+  problem_statements: string[];
+  content_objective: string;
+  proof_requirements: string[];
+  platform_constraints: string[];
+  risk_constraints: string[];
+  freshness_rationale: string;
+  sub_angles: string[];
+  research_hypotheses: string[];
+  success_criteria: string[];
+  expert_take: string;
+  non_obvious_claims_to_test: string[];
+  genericity_risks: string[];
+  provenance: BriefProvenance | string;
+  is_generated: boolean;
+  revision_notes: string;
+  source_pipeline_id: string;
+  created_at: string;
+}
+
+export interface ManagedOpportunityBrief {
+  brief_id: string;
+  title: string;
+  lifecycle_state: BriefLifecycleState | string;
+  current_revision_id: string;
+  latest_revision_id: string;
+  revision_count: number;
+  provenance: BriefProvenance | string;
+  created_at: string;
+  updated_at: string;
+  revision_history: string[];
+  current_revision?: BriefRevision;
+}
+
+export interface ManagedBriefOutput {
+  items: ManagedOpportunityBrief[];
+  count: number;
+}
+
+export interface BriefAuditEntry {
+  event_type: string;
+  brief_id: string;
+  actor: string;
+  patch: Record<string, unknown> | null;
+  outcome: string;
+  timestamp: string;
+}
+
+export interface BriefAuditResponse {
+  brief_id: string;
+  items: BriefAuditEntry[];
+  count: number;
 }

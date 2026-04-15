@@ -188,11 +188,24 @@ class AuditStore:
 
     All entries are stored in a single YAML list. New entries are
     appended to the list without modifying existing entries.
+
+    To prevent unbounded growth, the log is automatically compacted
+    when appending would exceed ``max_entries`` entries: the oldest
+    25% of entries are dropped.
     """
 
     _lock: Any = None  # threading.Lock set in __init__ per subclass
 
-    def __init__(self, path: Any = None, *, config: Config | None = None) -> None:
+    # Compact when log reaches this size (0 = disabled)
+    _default_max_entries: int = 50_000
+
+    def __init__(
+        self,
+        path: Any = None,
+        *,
+        config: Config | None = None,
+        max_entries: int = 0,
+    ) -> None:
         import threading
 
         self._lock = threading.Lock()
@@ -205,6 +218,7 @@ class AuditStore:
         )
         # Ensure parent directory exists
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._max_entries = max_entries if max_entries > 0 else self._default_max_entries
 
     @property
     def path(self) -> Any:
@@ -259,13 +273,23 @@ class AuditStore:
         return entries[:limit]
 
     def append(self, entry: AuditEntry) -> None:
-        """Append a new audit entry to the log (thread-safe)."""
+        """Append a new audit entry to the log (thread-safe).
+
+        When the log exceeds ``max_entries`` entries, the oldest 25%
+        are silently dropped to bound file size.
+        """
         with self._lock:
             data: list[dict[str, Any]] = []
             if self._path.exists():
                 data = yaml.safe_load(self._path.read_text()) or []
 
             data.append(entry.to_dict())
+
+            # Compact if we're about to exceed the limit
+            if self._max_entries > 0 and len(data) > self._max_entries:
+                keep = int(self._max_entries * 0.75)  # keep newest 75%
+                data = data[keep:]
+
             self._path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
 
     def log_proposal(
