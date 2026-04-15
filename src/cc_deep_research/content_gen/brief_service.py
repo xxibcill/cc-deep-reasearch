@@ -247,12 +247,6 @@ class BriefService:
         if managed is None:
             return None
 
-        if not any(r.revision_id == revision_id for r in [self._get_revision(managed, output, revision_id)]):
-            # Revision doesn't belong to this brief or doesn't exist
-            existing_rev_ids = [r.revision_id for r in [self._get_revision(managed, output, rid) for rid in [managed.current_revision_id, managed.latest_revision_id]] if r is not None]
-            if revision_id not in existing_rev_ids:
-                return None
-
         now = _now_iso()
         managed.current_revision_id = revision_id
         managed.updated_at = now
@@ -267,14 +261,6 @@ class BriefService:
             outcome="success",
         )
         return managed
-
-    def _get_revision(
-        self, brief: ManagedOpportunityBrief, output: ManagedBriefOutput, revision_id: str
-    ) -> BriefRevision | None:
-        """Get a revision by ID from the output (placeholder - revisions are stored separately)."""
-        # In a full implementation, revisions would be stored in their own store/table
-        # For now, return None - the revision store is out of scope for P1
-        return None
 
     # -------------------------------------------------------------------------
     # Lifecycle transitions
@@ -365,12 +351,12 @@ class BriefService:
         """Log a brief mutation to audit store if configured."""
         if self._audit_store is None:
             return
-        self._audit_store.log_backlog_mutation(
+        self._audit_store.log_brief_mutation(
             event_type=event_type,
-            idea_id=brief_id,  # Reuse idea_id field for brief_id
+            brief_id=brief_id,
             actor=actor,
             patch=patch,
-            item_snapshot=None,  # AuditStore.log_backlog_mutation expects BacklogItem
+            brief_snapshot=brief_snapshot,
             outcome=outcome,
         )
 

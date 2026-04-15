@@ -24,6 +24,7 @@ from cc_deep_research.content_gen.storage._paths import resolve_content_gen_file
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
+    from cc_deep_research.content_gen.models import ManagedOpportunityBrief
 
 
 class AuditEventType(StrEnum):
@@ -89,6 +90,8 @@ class AuditEntry:
         Human-readable label for the actor (operator name, AI model, etc.).
     idea_id : str
         The backlog idea this event relates to (empty if not item-specific).
+    brief_id : str
+        The managed brief this event relates to (empty if not brief-specific).
     proposal_id : str
         The proposal ID this event relates to (for proposal events).
     pipeline_id : str
@@ -110,6 +113,7 @@ class AuditEntry:
         *,
         actor_label: str = "",
         idea_id: str = "",
+        brief_id: str = "",
         proposal_id: str = "",
         pipeline_id: str = "",
         description: str = "",
@@ -139,6 +143,7 @@ class AuditEntry:
             "actor": str(self.actor.value),
             "actor_label": self.actor_label,
             "idea_id": self.idea_id,
+            "brief_id": self.brief_id,
             "proposal_id": self.proposal_id,
             "pipeline_id": self.pipeline_id,
             "description": self.description,
@@ -168,6 +173,7 @@ class AuditEntry:
             actor=actor,
             actor_label=data.get("actor_label", ""),
             idea_id=data.get("idea_id", ""),
+            brief_id=data.get("brief_id", ""),
             proposal_id=data.get("proposal_id", ""),
             pipeline_id=data.get("pipeline_id", ""),
             description=data.get("description", ""),
@@ -334,6 +340,34 @@ class AuditStore:
             idea_id=idea_id,
             description=f"{event_type.value}: {idea_id}",
             payload={"patch": patch or {}, "item_snapshot": snapshot},
+            outcome=outcome,
+        )
+        self.append(entry)
+        return entry
+
+    def log_brief_mutation(
+        self,
+        event_type: AuditEventType,
+        brief_id: str,
+        actor: AuditActor,
+        *,
+        actor_label: str = "",
+        patch: dict[str, Any] | None = None,
+        brief_snapshot: ManagedOpportunityBrief | None = None,
+        outcome: str = "success",
+    ) -> AuditEntry:
+        """Record a mutation to a managed brief."""
+        snapshot: dict[str, Any] = {}
+        if brief_snapshot is not None:
+            snapshot = brief_snapshot.model_dump(exclude_none=True)
+
+        entry = AuditEntry(
+            event_type=event_type,
+            actor=actor,
+            actor_label=actor_label,
+            brief_id=brief_id,
+            description=f"{event_type.value}: {brief_id}",
+            payload={"patch": patch or {}, "brief_snapshot": snapshot},
             outcome=outcome,
         )
         self.append(entry)
