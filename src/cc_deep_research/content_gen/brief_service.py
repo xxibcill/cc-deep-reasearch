@@ -19,12 +19,31 @@ from cc_deep_research.content_gen.storage import (
     AuditActor,
     AuditEventType,
     AuditStore,
+    BriefRevisionStore,
     BriefStore,
     SqliteBriefStore,
 )
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
+
+
+class ConcurrentModificationError(ValueError):
+    """Raised when a brief was modified by another actor since it was loaded.
+
+    This enables optimistic concurrency: the caller should re-load the brief
+    and retry the operation with the fresh updated_at value.
+    """
+
+    def __init__(self, brief_id: str, expected: str, actual: str) -> None:
+        self.brief_id = brief_id
+        self.expected_updated_at = expected
+        self.actual_updated_at = actual
+        super().__init__(
+            f"Brief '{brief_id}' was modified by another actor since it was last read. "
+            f"Expected updated_at='{expected}', got '{actual}'. "
+            f"Re-load the brief and retry the operation."
+        )
 
 
 _BRIEF_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
@@ -56,6 +75,7 @@ class BriefService:
         self,
         config: Config | None = None,
         store: BriefStore | None = None,
+        revision_store: BriefRevisionStore | None = None,
         audit_store: AuditStore | None = None,
     ) -> None:
         if store is not None:
@@ -71,6 +91,11 @@ class BriefService:
                 self._store = SqliteBriefStore(config=config)
             else:
                 self._store = BriefStore(path)
+
+        if revision_store is not None:
+            self._revision_store = revision_store
+        else:
+            self._revision_store = BriefRevisionStore(config=config)
 
         self._audit_store = audit_store
 
@@ -152,13 +177,16 @@ class BriefService:
             revision_history=[f"v1: {revision.revision_notes}"],
         )
 
-        # Persist
+        # Persist revision first
+        self._revision_store.save_revision(revision)
+
+        # Persist managed brief
         output = self._store.load()
         output.briefs.append(managed)
         self._store.save(output)
 
         self._audit_mutation(
-            AuditEventType.ITEM_CREATED,
+            AuditEventType.BRIEF_CREATED,
             brief_id,
             actor=AuditActor.SYSTEM,
             patch={"provenance": provenance.value, "source_pipeline_id": source_pipeline_id},
@@ -179,17 +207,24 @@ class BriefService:
         *,
         revision_notes: str = "",
         source_pipeline_id: str = "",
+        expected_updated_at: str | None = None,
     ) -> BriefRevision | None:
         """Save a new revision of an existing managed brief.
 
         Creates an immutable revision snapshot and advances the latest_revision_id.
         Does NOT change the current_revision_id (head) - use update_head for that.
+
+        Raises ConcurrentModificationError if expected_updated_at doesn't match.
         """
         _validate_brief_id(brief_id)
         output = self._store.load()
         managed = next((b for b in output.briefs if b.brief_id == brief_id), None)
         if managed is None:
             return None
+
+        # Optimistic concurrency check
+        if expected_updated_at is not None and managed.updated_at != expected_updated_at:
+            raise ConcurrentModificationError(brief_id, expected_updated_at, managed.updated_at)
 
         now = _now_iso()
         new_version = managed.revision_count + 1
@@ -222,6 +257,9 @@ class BriefService:
             created_at=now,
         )
 
+        # Persist revision to revision store
+        self._revision_store.save_revision(revision)
+
         # Update managed brief metadata (not the head)
         managed.revision_count = new_version
         managed.latest_revision_id = revision.revision_id
@@ -229,6 +267,16 @@ class BriefService:
         managed.revision_history = managed.revision_history + [f"v{new_version}: {revision.revision_notes}"]
 
         self._store.save(output)
+
+        self._audit_mutation(
+            AuditEventType.BRIEF_REVISION_SAVED,
+            brief_id,
+            actor=AuditActor.OPERATOR,
+            patch={"revision_id": revision.revision_id, "version": new_version},
+            brief_snapshot=managed,
+            outcome="success",
+        )
+
         return revision
 
     def update_head(
@@ -236,10 +284,13 @@ class BriefService:
         brief_id: str,
         revision_id: str,
         actor: AuditActor = AuditActor.OPERATOR,
+        expected_updated_at: str | None = None,
     ) -> ManagedOpportunityBrief | None:
         """Update the current_revision_id (head) to an existing revision.
 
         This is how approved revisions become active.
+
+        Raises ConcurrentModificationError if expected_updated_at doesn't match.
         """
         _validate_brief_id(brief_id)
         output = self._store.load()
@@ -247,13 +298,17 @@ class BriefService:
         if managed is None:
             return None
 
+        # Optimistic concurrency check
+        if expected_updated_at is not None and managed.updated_at != expected_updated_at:
+            raise ConcurrentModificationError(brief_id, expected_updated_at, managed.updated_at)
+
         now = _now_iso()
         managed.current_revision_id = revision_id
         managed.updated_at = now
 
         self._store.save(output)
         self._audit_mutation(
-            AuditEventType.ITEM_STATUS_CHANGED,
+            AuditEventType.BRIEF_HEAD_UPDATED,
             brief_id,
             actor=actor,
             patch={"current_revision_id": revision_id},
@@ -266,29 +321,43 @@ class BriefService:
     # Lifecycle transitions
     # -------------------------------------------------------------------------
 
-    def approve(self, brief_id: str) -> ManagedOpportunityBrief | None:
+    def approve(self, brief_id: str, expected_updated_at: str | None = None) -> ManagedOpportunityBrief | None:
         """Transition a brief to the approved state."""
-        return self._transition_lifecycle(brief_id, BriefLifecycleState.APPROVED)
+        return self._transition_lifecycle(brief_id, BriefLifecycleState.APPROVED, expected_updated_at)
 
-    def archive(self, brief_id: str) -> ManagedOpportunityBrief | None:
+    def archive(self, brief_id: str, expected_updated_at: str | None = None) -> ManagedOpportunityBrief | None:
         """Archive a brief."""
-        return self._transition_lifecycle(brief_id, BriefLifecycleState.ARCHIVED)
+        return self._transition_lifecycle(brief_id, BriefLifecycleState.ARCHIVED, expected_updated_at)
 
-    def supersede(self, brief_id: str) -> ManagedOpportunityBrief | None:
+    def supersede(self, brief_id: str, expected_updated_at: str | None = None) -> ManagedOpportunityBrief | None:
         """Mark a brief as superseded by a newer version."""
-        return self._transition_lifecycle(brief_id, BriefLifecycleState.SUPERSEDED)
+        return self._transition_lifecycle(brief_id, BriefLifecycleState.SUPERSEDED, expected_updated_at)
 
-    def revert_to_draft(self, brief_id: str) -> ManagedOpportunityBrief | None:
+    def revert_to_draft(self, brief_id: str, expected_updated_at: str | None = None) -> ManagedOpportunityBrief | None:
         """Revert a brief back to draft state."""
-        return self._transition_lifecycle(brief_id, BriefLifecycleState.DRAFT)
+        return self._transition_lifecycle(brief_id, BriefLifecycleState.DRAFT, expected_updated_at)
 
     def _transition_lifecycle(
         self,
         brief_id: str,
         target_state: BriefLifecycleState,
+        expected_updated_at: str | None = None,
     ) -> ManagedOpportunityBrief | None:
-        """Apply a lifecycle state transition."""
+        """Apply a lifecycle state transition.
+
+        Raises ConcurrentModificationError if expected_updated_at doesn't match.
+        """
         _validate_brief_id(brief_id)
+
+        # Load and check concurrency
+        output = self._store.load()
+        managed = next((b for b in output.briefs if b.brief_id == brief_id), None)
+        if managed is None:
+            return None
+
+        if expected_updated_at is not None and managed.updated_at != expected_updated_at:
+            raise ConcurrentModificationError(brief_id, expected_updated_at, managed.updated_at)
+
         now = _now_iso()
         updated = self._store.update_brief(
             brief_id,
@@ -296,7 +365,7 @@ class BriefService:
         )
         if updated is not None:
             self._audit_mutation(
-                AuditEventType.ITEM_STATUS_CHANGED,
+                AuditEventType.BRIEF_LIFECYCLE_CHANGED,
                 brief_id,
                 actor=AuditActor.OPERATOR,
                 patch={"lifecycle_state": target_state.value},
@@ -313,15 +382,29 @@ class BriefService:
         self,
         brief_id: str,
         patch: dict[str, Any],
+        expected_updated_at: str | None = None,
     ) -> ManagedOpportunityBrief | None:
-        """Apply a partial brief update with timestamp management."""
+        """Apply a partial brief update with timestamp management.
+
+        Raises ConcurrentModificationError if expected_updated_at doesn't match.
+        """
         _validate_brief_id(brief_id)
+
+        # Load and check concurrency
+        output = self._store.load()
+        managed = next((b for b in output.briefs if b.brief_id == brief_id), None)
+        if managed is None:
+            return None
+
+        if expected_updated_at is not None and managed.updated_at != expected_updated_at:
+            raise ConcurrentModificationError(brief_id, expected_updated_at, managed.updated_at)
+
         normalized = _normalize_brief_patch(patch)
         normalized["updated_at"] = _now_iso()
         updated = self._store.update_brief(brief_id, normalized)
         if updated is not None:
             self._audit_mutation(
-                AuditEventType.ITEM_UPDATED,
+                AuditEventType.BRIEF_UPDATED,
                 brief_id,
                 actor=AuditActor.OPERATOR,
                 patch=patch,
@@ -334,6 +417,105 @@ class BriefService:
         """Archive a brief instead of hard delete to preserve audit trail."""
         _validate_brief_id(brief_id)
         return self.archive(brief_id) is not None
+
+    # -------------------------------------------------------------------------
+    # Revision access
+    # -------------------------------------------------------------------------
+
+    def get_revision(self, revision_id: str) -> BriefRevision | None:
+        """Load a single brief revision by ID."""
+        return self._revision_store.get_revision(revision_id)
+
+    def list_revisions(self, brief_id: str, *, limit: int = 50) -> list[BriefRevision]:
+        """List all revisions for a brief, most recent first."""
+        _validate_brief_id(brief_id)
+        return self._revision_store.list_revisions(brief_id, limit=limit)
+
+    # -------------------------------------------------------------------------
+    # Clone
+    # -------------------------------------------------------------------------
+
+    def clone_brief(
+        self,
+        brief_id: str,
+        *,
+        new_title: str | None = None,
+    ) -> ManagedOpportunityBrief | None:
+        """Create a clone of an existing brief with a new brief_id.
+
+        The clone starts with the same current head revision but is otherwise
+        independent. All revisions are copied.
+        """
+        _validate_brief_id(brief_id)
+        output = self._store.load()
+        original = next((b for b in output.briefs if b.brief_id == brief_id), None)
+        if original is None:
+            return None
+
+        now = _now_iso()
+        new_brief_id = f"mbrief_{now[:10]}_{original.brief_id}_clone"
+
+        # Copy current revision content
+        current_revision = self._revision_store.get_revision(original.current_revision_id)
+        if current_revision is None:
+            return None
+
+        # Create new revision based on current head
+        new_revision = BriefRevision(
+            brief_id=new_brief_id,
+            version=1,
+            theme=current_revision.theme,
+            goal=current_revision.goal,
+            primary_audience_segment=current_revision.primary_audience_segment,
+            secondary_audience_segments=current_revision.secondary_audience_segments,
+            problem_statements=current_revision.problem_statements,
+            content_objective=current_revision.content_objective,
+            proof_requirements=current_revision.proof_requirements,
+            platform_constraints=current_revision.platform_constraints,
+            risk_constraints=current_revision.risk_constraints,
+            freshness_rationale=current_revision.freshness_rationale,
+            sub_angles=current_revision.sub_angles,
+            research_hypotheses=current_revision.research_hypotheses,
+            success_criteria=current_revision.success_criteria,
+            expert_take=current_revision.expert_take,
+            non_obvious_claims_to_test=current_revision.non_obvious_claims_to_test,
+            genericity_risks=current_revision.genericity_risks,
+            provenance=BriefProvenance.CLONED,
+            is_generated=current_revision.is_generated,
+            revision_notes=f"Cloned from {brief_id} (revision {current_revision.version})",
+            source_pipeline_id=current_revision.source_pipeline_id,
+            created_at=now,
+        )
+
+        # Build the managed brief resource
+        managed = ManagedOpportunityBrief(
+            brief_id=new_brief_id,
+            title=new_title or f"{original.title} (clone)",
+            lifecycle_state=BriefLifecycleState.DRAFT,
+            current_revision_id=new_revision.revision_id,
+            latest_revision_id=new_revision.revision_id,
+            revision_count=1,
+            provenance=BriefProvenance.CLONED,
+            created_at=now,
+            updated_at=now,
+            revision_history=[f"v1: {new_revision.revision_notes}"],
+        )
+
+        # Persist revision and brief
+        self._revision_store.save_revision(new_revision)
+        output.briefs.append(managed)
+        self._store.save(output)
+
+        self._audit_mutation(
+            AuditEventType.BRIEF_CREATED,
+            new_brief_id,
+            actor=AuditActor.OPERATOR,
+            patch={"source_brief_id": brief_id, "provenance": BriefProvenance.CLONED.value},
+            brief_snapshot=managed,
+            outcome="success",
+        )
+
+        return managed
 
     # -------------------------------------------------------------------------
     # Audit

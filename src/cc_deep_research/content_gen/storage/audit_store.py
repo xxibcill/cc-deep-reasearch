@@ -214,6 +214,7 @@ class AuditStore:
         self,
         *,
         idea_id: str | None = None,
+        brief_id: str | None = None,
         event_type: AuditEventType | None = None,
         actor: AuditActor | None = None,
         limit: int = 100,
@@ -246,6 +247,8 @@ class AuditStore:
 
         if idea_id:
             entries = [e for e in entries if e.idea_id == idea_id]
+        if brief_id:
+            entries = [e for e in entries if e.brief_id == brief_id]
         if event_type:
             entries = [e for e in entries if e.event_type == event_type]
         if actor:
