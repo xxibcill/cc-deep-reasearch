@@ -938,8 +938,9 @@ async def test_build_research_pack_uses_pipeline_selected_idea() -> None:
             *,
             feedback: str = "",
             research_gaps: list[str] | None = None,
+            research_hypotheses: list[str] | None = None,
         ) -> ResearchPack:
-            del feedback, research_gaps
+            del feedback, research_gaps, research_hypotheses
             self.seen_item_id = item.idea_id
             self.seen_angle_id = angle.angle_id
             return ResearchPack(idea_id=item.idea_id, angle_id=angle.angle_id)
@@ -1405,6 +1406,7 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
             *,
             feedback: str = "",
             research_gaps: list[str] | None = None,
+            research_hypotheses: list[str] | None = None,
         ) -> ResearchPack:
             assert feedback == ""
             assert research_gaps is None
@@ -1497,6 +1499,7 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
             packaging_summary: str,
             research_summary: str = "",
             argument_map_summary: str = "",
+            success_criteria: list[str] | None = None,
         ) -> HumanQCGate:
             if "anchor tier is broken" in script:
                 assert "Hook: Highlight the cheapest plan selection on a pricing page" in visual_summary

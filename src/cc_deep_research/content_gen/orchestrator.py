@@ -1732,8 +1732,10 @@ async def _stage_build_research_pack(
                 targeted_gaps = orch._extract_retrieval_gaps(plan)
                 if targeted_gaps:
                     research_gaps = (research_gaps or []) + targeted_gaps
+        research_hypotheses = list(ctx.opportunity_brief.research_hypotheses) if ctx.opportunity_brief else None
         research_pack = await agent.build(
-            item, angle, feedback=feedback, research_gaps=research_gaps
+            item, angle, feedback=feedback, research_gaps=research_gaps,
+            research_hypotheses=research_hypotheses,
         )
         _record_lane_completion(
             ctx,
@@ -1974,12 +1976,14 @@ async def _stage_human_qc(orch: ContentGenOrchestrator, ctx: PipelineContext) ->
         # Combine summaries, with claim traceability first as it's most important for QC
         full_research_summary = claim_trace_summary + "\n\n" + research_summary if claim_trace_summary else research_summary
 
+        success_criteria = list(ctx.opportunity_brief.success_criteria) if ctx.opportunity_brief else None
         qc_gate = await agent.review(
             script=script,
             visual_summary=visual_summary,
             packaging_summary=packaging_summary,
             research_summary=full_research_summary,
             argument_map_summary=argument_map_summary,
+            success_criteria=success_criteria,
         )
         _record_lane_completion(
             ctx,
