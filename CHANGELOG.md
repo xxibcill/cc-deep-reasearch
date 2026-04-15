@@ -260,9 +260,21 @@ Phase 2 - Extended lifecycle management:
 
 #### Opportunity Planning Improvement (12 tasks)
 
+Phase 01 - Stabilize contract and validation:
 - Added structured output contract with JSON parsing mode and legacy fallback for opportunity planning stage
 - Added semantic validation rules with BriefQualityWarning signals for audience specificity, problem observability, proof requirements, and duplicate sub-angles
 - Added validate_opportunity_brief_quality() with coerce-and-validate approach and parse mode tracking in stage traces
+- Reconciled OpportunityBrief fields with what the stage actually produces and stores
+
+Phase 02 - Expand downstream consumption:
+- Added backlog and scoring traceability linking generated and shortlisted ideas back to audience, problem, sub-angle, and proof constraints from the brief
+- Added research hypothesis integration feeding opportunity-stage hypotheses into research-pack generation so evidence gathering tests planned claims
+- Added success criteria integration in QC and post-publish evaluation flows so results are measured against original opportunity intent
+
+Phase 03 - Close the learning loop:
+- Added brief versus outcome analysis comparing original opportunity assumptions against downstream and post-publish results
+- Added operator revision and versioning support for opportunity briefs with generated, edited, and approved version states
+- Added learning store and planning metrics persisting reusable patterns and tracking brief pass rate, rewrite rate, and conversion to production
 
 #### CI/CD and Dashboard Reliability (8 tasks)
 
