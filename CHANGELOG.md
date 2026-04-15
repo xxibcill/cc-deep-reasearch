@@ -290,6 +290,38 @@ Phase 03 - Close the learning loop:
 - Added WebSocket resilience tests verifying dashboard usability under connection failures, reconnects, and partial event streams
 - Expanded mocked accessibility and contrast coverage across Research, Monitor, Compare, and Analytics surfaces with `npm run test:a11y` wired into CI and local preflight
 
+#### Opportunity Brief Persistence and Dashboard Management (18 tasks)
+
+Phase 1 - Establish persistent brief domain:
+- Defined `ManagedOpportunityBrief` resource model with lifecycle states (DRAFT, APPROVED, SUPERSEDED, ARCHIVED), revision history, and provenance fields
+- Added `BriefService` and dual-store persistence layer (`BriefStore` YAML / `SqliteBriefStore` SQLite) for brief lifecycle management
+- Added `BriefMigration` utility and `BriefRevisionStore` for version history and migration from legacy briefs
+
+Phase 2 - Integrate briefs into pipeline execution:
+- Added `PipelineBriefReference` to `PipelineContext` linking runs to managed brief resources with explicit revision pinning
+- Added `BriefExecutionGate` with approval-aware execution policies (DEFAULT_APPROVED, ALLOW_DRAFT, ALLOW_ANY) and stage-level enforcement
+- Added seeded run support with `seeded_from_revision_id` tracking and revision pinning for resume flows
+
+Phase 3 - Expose brief management backend:
+- Added complete CRUD API routes for briefs with list, detail, revision, approve, archive, supersede, clone, and revert operations
+- Added audit store with append-only event log, optimistic concurrency control (`ConcurrentModificationError`), and conflict detection
+- Defined AI advisory / operator persistence separation with explicit `/respond` (advisory) and `/apply` (write) routes
+
+Phase 4 - Build dashboard brief workspace:
+- Added briefs index page with lifecycle filtering, revision counts, and action buttons (View, Approve, Clone, Archive)
+- Added brief detail page with full content display, revision history, approval controls, and edit dialog
+- Integrated managed brief references into pipeline stage panels with "Open brief" links and lifecycle badges
+
+Phase 5 - Add AI-assisted brief operations:
+- Added `BriefAssistantAgent` with conversational and structured proposal flows for brief refinement
+- Added brief-to-backlog apply flow with `generate_backlog_from_brief()` and explicit apply semantics
+- Added clone, branch, and compare workflows with lineage tracking (`source_brief_id`) and side-by-side diff UI
+
+Phase 6 - Harden, migrate, and roll out:
+- Added `BriefMigration` for YAML-to-SQLite migration, CLI commands (`briefs_migrate`, `briefs_health`), and inline fallback resolution
+- Added comprehensive test coverage for brief service, store, migration, and orchestrator integration
+- Added operator documentation covering lifecycle states, CLI commands, workflows, and rollout invariants
+
 #### Documentation and Release Hygiene (4 tasks)
 
 - Removed drift between docs and CLI by aligning `README.md`, `docs/USAGE.md`, and `docs/README.md` with actual command registration and flags
