@@ -24,6 +24,7 @@ from cc_deep_research.content_gen.storage._paths import resolve_content_gen_file
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
+    from cc_deep_research.content_gen.models import ManagedOpportunityBrief
 
 
 class AuditEventType(StrEnum):
@@ -57,6 +58,13 @@ class AuditEventType(StrEnum):
     MAINTENANCE_JOB_RUN = "maintenance_job_run"
     MAINTENANCE_PROPOSAL = "maintenance_proposal"
 
+    # Brief management events
+    BRIEF_CREATED = "brief_created"
+    BRIEF_UPDATED = "brief_updated"
+    BRIEF_REVISION_SAVED = "brief_revision_saved"
+    BRIEF_HEAD_UPDATED = "brief_head_updated"
+    BRIEF_LIFECYCLE_CHANGED = "brief_lifecycle_changed"
+
 
 class AuditActor(StrEnum):
     """Who or what initiated the event."""
@@ -82,6 +90,8 @@ class AuditEntry:
         Human-readable label for the actor (operator name, AI model, etc.).
     idea_id : str
         The backlog idea this event relates to (empty if not item-specific).
+    brief_id : str
+        The managed brief this event relates to (empty if not brief-specific).
     proposal_id : str
         The proposal ID this event relates to (for proposal events).
     pipeline_id : str
@@ -103,6 +113,7 @@ class AuditEntry:
         *,
         actor_label: str = "",
         idea_id: str = "",
+        brief_id: str = "",
         proposal_id: str = "",
         pipeline_id: str = "",
         description: str = "",
@@ -132,6 +143,7 @@ class AuditEntry:
             "actor": str(self.actor.value),
             "actor_label": self.actor_label,
             "idea_id": self.idea_id,
+            "brief_id": self.brief_id,
             "proposal_id": self.proposal_id,
             "pipeline_id": self.pipeline_id,
             "description": self.description,
@@ -161,6 +173,7 @@ class AuditEntry:
             actor=actor,
             actor_label=data.get("actor_label", ""),
             idea_id=data.get("idea_id", ""),
+            brief_id=data.get("brief_id", ""),
             proposal_id=data.get("proposal_id", ""),
             pipeline_id=data.get("pipeline_id", ""),
             description=data.get("description", ""),
@@ -175,11 +188,24 @@ class AuditStore:
 
     All entries are stored in a single YAML list. New entries are
     appended to the list without modifying existing entries.
+
+    To prevent unbounded growth, the log is automatically compacted
+    when appending would exceed ``max_entries`` entries: the oldest
+    25% of entries are dropped.
     """
 
     _lock: Any = None  # threading.Lock set in __init__ per subclass
 
-    def __init__(self, path: Any = None, *, config: Config | None = None) -> None:
+    # Compact when log reaches this size (0 = disabled)
+    _default_max_entries: int = 50_000
+
+    def __init__(
+        self,
+        path: Any = None,
+        *,
+        config: Config | None = None,
+        max_entries: int = 0,
+    ) -> None:
         import threading
 
         self._lock = threading.Lock()
@@ -192,6 +218,7 @@ class AuditStore:
         )
         # Ensure parent directory exists
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._max_entries = max_entries if max_entries > 0 else self._default_max_entries
 
     @property
     def path(self) -> Any:
@@ -201,6 +228,7 @@ class AuditStore:
         self,
         *,
         idea_id: str | None = None,
+        brief_id: str | None = None,
         event_type: AuditEventType | None = None,
         actor: AuditActor | None = None,
         limit: int = 100,
@@ -233,6 +261,8 @@ class AuditStore:
 
         if idea_id:
             entries = [e for e in entries if e.idea_id == idea_id]
+        if brief_id:
+            entries = [e for e in entries if e.brief_id == brief_id]
         if event_type:
             entries = [e for e in entries if e.event_type == event_type]
         if actor:
@@ -243,13 +273,23 @@ class AuditStore:
         return entries[:limit]
 
     def append(self, entry: AuditEntry) -> None:
-        """Append a new audit entry to the log (thread-safe)."""
+        """Append a new audit entry to the log (thread-safe).
+
+        When the log exceeds ``max_entries`` entries, the oldest 25%
+        are silently dropped to bound file size.
+        """
         with self._lock:
             data: list[dict[str, Any]] = []
             if self._path.exists():
                 data = yaml.safe_load(self._path.read_text()) or []
 
             data.append(entry.to_dict())
+
+            # Compact if we're about to exceed the limit
+            if self._max_entries > 0 and len(data) > self._max_entries:
+                keep = int(self._max_entries * 0.75)  # keep newest 75%
+                data = data[keep:]
+
             self._path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
 
     def log_proposal(
@@ -327,6 +367,34 @@ class AuditStore:
             idea_id=idea_id,
             description=f"{event_type.value}: {idea_id}",
             payload={"patch": patch or {}, "item_snapshot": snapshot},
+            outcome=outcome,
+        )
+        self.append(entry)
+        return entry
+
+    def log_brief_mutation(
+        self,
+        event_type: AuditEventType,
+        brief_id: str,
+        actor: AuditActor,
+        *,
+        actor_label: str = "",
+        patch: dict[str, Any] | None = None,
+        brief_snapshot: ManagedOpportunityBrief | None = None,
+        outcome: str = "success",
+    ) -> AuditEntry:
+        """Record a mutation to a managed brief."""
+        snapshot: dict[str, Any] = {}
+        if brief_snapshot is not None:
+            snapshot = brief_snapshot.model_dump(exclude_none=True)
+
+        entry = AuditEntry(
+            event_type=event_type,
+            actor=actor,
+            actor_label=actor_label,
+            brief_id=brief_id,
+            description=f"{event_type.value}: {brief_id}",
+            payload={"patch": patch or {}, "brief_snapshot": snapshot},
             outcome=outcome,
         )
         self.append(entry)

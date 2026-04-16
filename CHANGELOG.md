@@ -260,9 +260,27 @@ Phase 2 - Extended lifecycle management:
 
 #### Opportunity Planning Improvement (12 tasks)
 
+Phase 01 - Stabilize contract and validation:
 - Added structured output contract with JSON parsing mode and legacy fallback for opportunity planning stage
 - Added semantic validation rules with BriefQualityWarning signals for audience specificity, problem observability, proof requirements, and duplicate sub-angles
 - Added validate_opportunity_brief_quality() with coerce-and-validate approach and parse mode tracking in stage traces
+- Reconciled OpportunityBrief fields with what the stage actually produces and stores
+
+Phase 02 - Expand downstream consumption:
+- Added backlog and scoring traceability linking generated and shortlisted ideas back to audience, problem, sub-angle, and proof constraints from the brief
+- Added research hypothesis integration feeding opportunity-stage hypotheses into research-pack generation so evidence gathering tests planned claims
+- Added success criteria integration in QC and post-publish evaluation flows so results are measured against original opportunity intent
+
+Phase 03 - Close the learning loop:
+- Added brief versus outcome analysis comparing original opportunity assumptions against downstream and post-publish results
+- Added operator revision and versioning support for opportunity briefs with generated, edited, and approved version states
+- Added learning store and planning metrics persisting reusable patterns and tracking brief pass rate, rewrite rate, and conversion to production
+
+#### Phase 03 - Scale, Governance, And Reliability (3 tasks)
+
+- Added backlog persistence and concurrency handling upgraded for heavier AI-assisted usage with SQLite or Postgres-backed storage
+- Added audit history for AI proposals, approvals, and applied backlog mutations with operator-visible change records
+- Added background AI maintenance workflows for stale review, gap summaries, duplicate watchlists, and rescoring recommendations
 
 #### CI/CD and Dashboard Reliability (8 tasks)
 
@@ -271,6 +289,38 @@ Phase 2 - Extended lifecycle management:
 - Stabilized dashboard smoke tests against mocked data for home, session, compare, and config surfaces
 - Added WebSocket resilience tests verifying dashboard usability under connection failures, reconnects, and partial event streams
 - Expanded mocked accessibility and contrast coverage across Research, Monitor, Compare, and Analytics surfaces with `npm run test:a11y` wired into CI and local preflight
+
+#### Opportunity Brief Persistence and Dashboard Management (18 tasks)
+
+Phase 1 - Establish persistent brief domain:
+- Defined `ManagedOpportunityBrief` resource model with lifecycle states (DRAFT, APPROVED, SUPERSEDED, ARCHIVED), revision history, and provenance fields
+- Added `BriefService` and dual-store persistence layer (`BriefStore` YAML / `SqliteBriefStore` SQLite) for brief lifecycle management
+- Added `BriefMigration` utility and `BriefRevisionStore` for version history and migration from legacy briefs
+
+Phase 2 - Integrate briefs into pipeline execution:
+- Added `PipelineBriefReference` to `PipelineContext` linking runs to managed brief resources with explicit revision pinning
+- Added `BriefExecutionGate` with approval-aware execution policies (DEFAULT_APPROVED, ALLOW_DRAFT, ALLOW_ANY) and stage-level enforcement
+- Added seeded run support with `seeded_from_revision_id` tracking and revision pinning for resume flows
+
+Phase 3 - Expose brief management backend:
+- Added complete CRUD API routes for briefs with list, detail, revision, approve, archive, supersede, clone, and revert operations
+- Added audit store with append-only event log, optimistic concurrency control (`ConcurrentModificationError`), and conflict detection
+- Defined AI advisory / operator persistence separation with explicit `/respond` (advisory) and `/apply` (write) routes
+
+Phase 4 - Build dashboard brief workspace:
+- Added briefs index page with lifecycle filtering, revision counts, and action buttons (View, Approve, Clone, Archive)
+- Added brief detail page with full content display, revision history, approval controls, and edit dialog
+- Integrated managed brief references into pipeline stage panels with "Open brief" links and lifecycle badges
+
+Phase 5 - Add AI-assisted brief operations:
+- Added `BriefAssistantAgent` with conversational and structured proposal flows for brief refinement
+- Added brief-to-backlog apply flow with `generate_backlog_from_brief()` and explicit apply semantics
+- Added clone, branch, and compare workflows with lineage tracking (`source_brief_id`) and side-by-side diff UI
+
+Phase 6 - Harden, migrate, and roll out:
+- Added `BriefMigration` for YAML-to-SQLite migration, CLI commands (`briefs_migrate`, `briefs_health`), and inline fallback resolution
+- Added comprehensive test coverage for brief service, store, migration, and orchestrator integration
+- Added operator documentation covering lifecycle states, CLI commands, workflows, and rollout invariants
 
 #### Documentation and Release Hygiene (4 tasks)
 
@@ -285,7 +335,7 @@ Phase 2 - Extended lifecycle management:
 - Removed completed dashboard-upgrade planning documents `docs/tasks/11-search-cache-operations.md` through `docs/tasks/19-design-system-extraction-and-hardening.md` after consolidating their delivered work into this changelog
 - Removed completed dashboard-upgrade planning documents `docs/tasks/20-trace-bundle-export-workspace.md` through `docs/tasks/29-dashboard-fixture-and-scenario-library.md` after consolidating their delivered work into this changelog
 - Removed completed "necessary 80%" task-pack planning documents `docs/tasks/30_snapshot_session_metadata_contract.md` through `docs/tasks/47_add_canonical_necessary_80_preflight.md` and `docs/tasks/80_20_necessary_work_task_set.md` after consolidating their delivered work into this changelog
-- Removed task-pack planning documents from `docs/tasks/` after consolidating their delivered work into this changelog, including decision graph observability, dashboard config editor, dashboard agent prompt editor, content generation expert workflow, backlog management, content-gen backlog details page, phase 01, phase 02, backlog chat assistant, content-gen chat page upgrade, backlog single-item start, and opportunity planning improvement task packs
+- Removed task-pack planning documents from `docs/tasks/` after consolidating their delivered work into this changelog, including decision graph observability, dashboard config editor, dashboard agent prompt editor, content generation expert workflow, backlog management, content-gen backlog details page, phase 01, phase 02, phase 03, backlog chat assistant, content-gen chat page upgrade, backlog single-item start, and opportunity planning improvement task packs
 
 ## [0.1.0] - 2026-03-11
 

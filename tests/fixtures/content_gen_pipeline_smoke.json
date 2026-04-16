@@ -120,7 +120,8 @@
         "evidence_strength": 4,
         "hook_strength": 4,
         "repurposing": 4,
-        "total_score": 28,
+        "opportunity_fit": 4,
+        "total_score": 32,
         "recommendation": "produce_now",
         "reason": "Strong teardown potential"
       },
@@ -133,7 +134,8 @@
         "evidence_strength": 4,
         "hook_strength": 5,
         "repurposing": 5,
-        "total_score": 33,
+        "opportunity_fit": 4,
+        "total_score": 37,
         "recommendation": "produce_now",
         "reason": "Best mix of clarity, proof, and distribution"
       }

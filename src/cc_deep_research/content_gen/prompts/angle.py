@@ -1,6 +1,6 @@
 """Prompt templates for the angle generator.
 
-Contract Version: 1.0.0
+Contract Version: 1.1.0
 
 Parser expectations:
 - generate output: Uses `---` as block delimiter, expects fields:
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from cc_deep_research.content_gen.models import BacklogItem, StrategyMemory
 
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"
 
 GLOBAL_RULES = """\
 You are generating editorial angles for short-form video inside a modular workflow.
@@ -46,6 +46,20 @@ Selection criteria for the strongest angle:
 - Clearest promise
 - Highest contrast from competitor content
 - Easiest visual expression
+- Best fit between the idea and a proven short-form format
+
+Refined short-form format library:
+- Insight Breakdown
+- Mistake to Fix
+- Story-Based
+- Myth vs Truth
+- Tutorial / How-To
+- Result-First / Case Study
+- Opinion / Hot Take
+- Before vs After
+
+Reaction / Response and List / Roundup are allowed only when the idea genuinely
+needs them; do not default to them when one of the refined formats is stronger.
 
 Task 19 — Competitive Differentiation:
 For each angle, explicitly address:
@@ -63,8 +77,8 @@ angle_id: (leave blank)
 target_audience: (specific audience for this angle)
 viewer_problem: (what problem does the viewer have)
 core_promise: (what will they get from watching)
-primary_takeaway: (the one thing they should remember)
-lens: (editorial lens: contrarian, how-to, myth-bust, story, etc.)
+primary_takeaway: (the one specific thing they should remember)
+lens: (editorial lens: use one refined short-form format name or a close variant)
 format: (delivery format: talking head, screen recording, demonstration, etc.)
 tone: (tone: direct, conversational, urgent, playful, etc.)
 cta: (call to action)

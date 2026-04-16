@@ -214,6 +214,87 @@ class ExecutionBriefRequest(BaseModel):
     strategy: dict[str, Any] | None = None
 
 
+# ---------------------------------------------------------------------------
+# Brief management request / response models
+# ---------------------------------------------------------------------------
+
+
+class CreateBriefRequest(BaseModel):
+    """Request body for creating a brief from an OpportunityBrief payload."""
+
+    brief: dict[str, Any] = Field(..., description="OpportunityBrief fields as a dictionary")
+    provenance: str = Field(default="generated")
+    source_pipeline_id: str = Field(default="")
+    revision_notes: str = Field(default="")
+
+
+class SaveRevisionRequest(BaseModel):
+    """Request body for saving a new revision of an existing brief."""
+
+    brief: dict[str, Any] = Field(..., description="OpportunityBrief fields as a dictionary")
+    revision_notes: str = Field(default="")
+    source_pipeline_id: str = Field(default="")
+    expected_updated_at: str | None = Field(
+        default=None,
+        description="Expected updated_at for optimistic concurrency. If provided and mismatched, returns 409.",
+    )
+
+
+class ApplyRevisionRequest(BaseModel):
+    """Request body for applying a revision as the current head."""
+
+    revision_id: str = Field(min_length=1, description="The revision_id to set as current head")
+    expected_updated_at: str | None = Field(
+        default=None,
+        description="Expected updated_at for optimistic concurrency.",
+    )
+
+
+class UpdateBriefRequest(BaseModel):
+    """Request body for updating brief metadata (title, etc.)."""
+
+    patch: dict[str, Any] = Field(..., description="Fields to update")
+    expected_updated_at: str | None = Field(
+        default=None,
+        description="Expected updated_at for optimistic concurrency.",
+    )
+
+
+class CloneBriefRequest(BaseModel):
+    """Request body for cloning an existing brief."""
+
+    new_title: str | None = Field(default=None, description="Optional new title for the clone")
+
+
+class BriefAssistantMessage(BaseModel):
+    """A single message in the brief assistant conversation."""
+
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class BriefAssistantProposalInput(BaseModel):
+    """Proposal from the brief assistant (used in apply request)."""
+
+    reason: str = ""
+    fields: dict[str, Any] = Field(default_factory=dict)
+
+
+class BriefAssistantRespondRequest(BaseModel):
+    """Request body for brief-assistant respond endpoint."""
+
+    messages: list[BriefAssistantMessage] = Field(default_factory=list)
+    revision_id: str | None = Field(default=None, description="Specific revision to discuss (defaults to current head)")
+    mode: Literal["conversation", "edit"] = "edit"
+
+
+class BriefAssistantApplyRequest(BaseModel):
+    """Request body for brief-assistant apply endpoint."""
+
+    proposals: list[BriefAssistantProposalInput] = Field(default_factory=list)
+    revision_notes: str = Field(default="", description="Notes about what changed in this revision")
+
+
 def _build_scripting_iterations(iter_state: Any) -> ScriptingIterations | None:
     if iter_state is None:
         return None
@@ -920,6 +1001,633 @@ def register_content_gen_routes(
                 "to_stage": end,
             },
         )
+
+    # ------------------------------------------------------------------
+    # Brief management
+    # ------------------------------------------------------------------
+
+    from cc_deep_research.content_gen.brief_service import BriefService, ConcurrentModificationError
+    from cc_deep_research.content_gen.models import (
+        BriefLifecycleState,
+        BriefProvenance,
+        OpportunityBrief,
+    )
+
+    def _brief_service() -> BriefService:
+        config = load_config()
+        service = BriefService(config)
+        service.set_audit_store(AuditStore(config=config))
+        return service
+
+    @app.get("/api/content-gen/briefs")
+    async def list_briefs(
+        lifecycle_state: str | None = None,
+        limit: int = 50,
+    ) -> JSONResponse:
+        """List all managed briefs with optional lifecycle state filtering.
+
+        Query params:
+        - lifecycle_state: filter by state (draft, approved, superseded, archived)
+        - limit: max briefs to return (default 50)
+        """
+        service = _brief_service()
+        output = service.load()
+        briefs = output.briefs
+
+        if lifecycle_state:
+            try:
+                state = BriefLifecycleState(lifecycle_state)
+                briefs = [b for b in briefs if b.lifecycle_state == state]
+            except ValueError:
+                return JSONResponse(status_code=400, content={"error": f"Invalid lifecycle_state: {lifecycle_state}"})
+
+        # Sort by updated_at desc, take limit
+        briefs = sorted(briefs, key=lambda b: b.updated_at, reverse=True)[:limit]
+
+        return JSONResponse(content={
+            "items": [json.loads(b.model_dump_json()) for b in briefs],
+            "count": len(briefs),
+        })
+
+    @app.post("/api/content-gen/briefs", status_code=201)
+    async def create_brief(request: CreateBriefRequest) -> JSONResponse:
+        """Create a new managed brief from an OpportunityBrief payload.
+
+        This creates a new brief resource with a single initial revision.
+        The brief starts in DRAFT state.
+        """
+        service = _brief_service()
+        try:
+            brief_data = request.brief
+            if isinstance(brief_data, dict):
+                opportunity = OpportunityBrief.model_validate(brief_data)
+            else:
+                return JSONResponse(status_code=400, content={"error": "brief must be a dictionary"})
+
+            provenance = BriefProvenance(request.provenance) if request.provenance else BriefProvenance.GENERATED
+
+            managed = service.create_from_opportunity(
+                opportunity,
+                provenance=provenance,
+                source_pipeline_id=request.source_pipeline_id,
+                revision_notes=request.revision_notes,
+            )
+            return JSONResponse(content=json.loads(managed.model_dump_json()))
+        except ValueError as exc:
+            return JSONResponse(status_code=400, content={"error": str(exc)})
+
+    @app.get("/api/content-gen/briefs/{brief_id}")
+    async def get_brief(brief_id: str) -> JSONResponse:
+        """Get a single brief with its current head revision content."""
+        service = _brief_service()
+        managed = service.get_brief(brief_id)
+        if managed is None:
+            return JSONResponse(status_code=404, content={"error": "Brief not found"})
+
+        # Attach current head revision content
+        current_revision = service.get_revision(managed.current_revision_id)
+        response = json.loads(managed.model_dump_json())
+        if current_revision:
+            response["current_revision"] = json.loads(current_revision.model_dump_json())
+
+        return JSONResponse(content=response)
+
+    @app.patch("/api/content-gen/briefs/{brief_id}")
+    async def update_brief(brief_id: str, request: UpdateBriefRequest) -> JSONResponse:
+        """Update brief metadata (title, etc.).
+
+        Note: Use save_revision() to create new content revisions.
+        """
+        service = _brief_service()
+        try:
+            updated = service.update_brief(
+                brief_id,
+                request.patch,
+                expected_updated_at=request.expected_updated_at,
+            )
+        except ConcurrentModificationError as exc:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": str(exc),
+                    "expected_updated_at": exc.expected_updated_at,
+                    "actual_updated_at": exc.actual_updated_at,
+                },
+            )
+        if updated is None:
+            return JSONResponse(status_code=404, content={"error": "Brief not found"})
+        return JSONResponse(content=json.loads(updated.model_dump_json()))
+
+    @app.get("/api/content-gen/briefs/{brief_id}/revisions")
+    async def list_brief_revisions(brief_id: str, limit: int = 50) -> JSONResponse:
+        """List all revisions for a brief, most recent first."""
+        service = _brief_service()
+        revisions = service.list_revisions(brief_id, limit=limit)
+        return JSONResponse(content={
+            "items": [json.loads(r.model_dump_json()) for r in revisions],
+            "count": len(revisions),
+        })
+
+    @app.get("/api/content-gen/briefs/{brief_id}/revisions/{revision_id}")
+    async def get_brief_revision(brief_id: str, revision_id: str) -> JSONResponse:
+        """Get a specific revision by ID."""
+        service = _brief_service()
+        revision = service.get_revision(revision_id)
+        if revision is None or revision.brief_id != brief_id:
+            return JSONResponse(status_code=404, content={"error": "Revision not found"})
+        return JSONResponse(content=json.loads(revision.model_dump_json()))
+
+    @app.post("/api/content-gen/briefs/{brief_id}/revisions")
+    async def save_brief_revision(brief_id: str, request: SaveRevisionRequest) -> JSONResponse:
+        """Save a new revision of an existing brief.
+
+        The current_revision_id (head) is NOT changed by this operation.
+        Use /apply-revision to promote a revision to head.
+        """
+        service = _brief_service()
+        try:
+            brief_data = request.brief
+            if isinstance(brief_data, dict):
+                opportunity = OpportunityBrief.model_validate(brief_data)
+            else:
+                return JSONResponse(status_code=400, content={"error": "brief must be a dictionary"})
+
+            revision = service.save_revision(
+                brief_id,
+                opportunity,
+                revision_notes=request.revision_notes,
+                source_pipeline_id=request.source_pipeline_id,
+                expected_updated_at=request.expected_updated_at,
+            )
+        except ConcurrentModificationError as exc:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": str(exc),
+                    "expected_updated_at": exc.expected_updated_at,
+                    "actual_updated_at": exc.actual_updated_at,
+                },
+            )
+        if revision is None:
+            return JSONResponse(status_code=404, content={"error": "Brief not found"})
+        return JSONResponse(content=json.loads(revision.model_dump_json()), status_code=201)
+
+    @app.post("/api/content-gen/briefs/{brief_id}/apply-revision")
+    async def apply_revision(brief_id: str, request: ApplyRevisionRequest) -> JSONResponse:
+        """Apply a revision as the current head (promote it to active)."""
+        service = _brief_service()
+        try:
+            updated = service.update_head(
+                brief_id,
+                request.revision_id,
+                expected_updated_at=request.expected_updated_at,
+            )
+        except ConcurrentModificationError as exc:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": str(exc),
+                    "expected_updated_at": exc.expected_updated_at,
+                    "actual_updated_at": exc.actual_updated_at,
+                },
+            )
+        if updated is None:
+            return JSONResponse(status_code=404, content={"error": "Brief not found"})
+        return JSONResponse(content=json.loads(updated.model_dump_json()))
+
+    @app.post("/api/content-gen/briefs/{brief_id}/approve")
+    async def approve_brief(brief_id: str, expected_updated_at: str | None = None) -> JSONResponse:
+        """Transition a brief to the approved state."""
+        service = _brief_service()
+        try:
+            updated = service.approve(brief_id, expected_updated_at=expected_updated_at)
+        except ConcurrentModificationError as exc:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": str(exc),
+                    "expected_updated_at": exc.expected_updated_at,
+                    "actual_updated_at": exc.actual_updated_at,
+                },
+            )
+        if updated is None:
+            return JSONResponse(status_code=404, content={"error": "Brief not found"})
+        return JSONResponse(content=json.loads(updated.model_dump_json()))
+
+    @app.post("/api/content-gen/briefs/{brief_id}/archive")
+    async def archive_brief(brief_id: str, expected_updated_at: str | None = None) -> JSONResponse:
+        """Archive a brief."""
+        service = _brief_service()
+        try:
+            updated = service.archive(brief_id, expected_updated_at=expected_updated_at)
+        except ConcurrentModificationError as exc:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": str(exc),
+                    "expected_updated_at": exc.expected_updated_at,
+                    "actual_updated_at": exc.actual_updated_at,
+                },
+            )
+        if updated is None:
+            return JSONResponse(status_code=404, content={"error": "Brief not found"})
+        return JSONResponse(content=json.loads(updated.model_dump_json()))
+
+    @app.post("/api/content-gen/briefs/{brief_id}/supersede")
+    async def supersede_brief(brief_id: str, expected_updated_at: str | None = None) -> JSONResponse:
+        """Mark a brief as superseded."""
+        service = _brief_service()
+        try:
+            updated = service.supersede(brief_id, expected_updated_at=expected_updated_at)
+        except ConcurrentModificationError as exc:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": str(exc),
+                    "expected_updated_at": exc.expected_updated_at,
+                    "actual_updated_at": exc.actual_updated_at,
+                },
+            )
+        if updated is None:
+            return JSONResponse(status_code=404, content={"error": "Brief not found"})
+        return JSONResponse(content=json.loads(updated.model_dump_json()))
+
+    @app.post("/api/content-gen/briefs/{brief_id}/revert-to-draft")
+    async def revert_brief_to_draft(brief_id: str, expected_updated_at: str | None = None) -> JSONResponse:
+        """Revert a brief back to draft state."""
+        service = _brief_service()
+        try:
+            updated = service.revert_to_draft(brief_id, expected_updated_at=expected_updated_at)
+        except ConcurrentModificationError as exc:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": str(exc),
+                    "expected_updated_at": exc.expected_updated_at,
+                    "actual_updated_at": exc.actual_updated_at,
+                },
+            )
+        if updated is None:
+            return JSONResponse(status_code=404, content={"error": "Brief not found"})
+        return JSONResponse(content=json.loads(updated.model_dump_json()))
+
+    @app.post("/api/content-gen/briefs/{brief_id}/clone")
+    async def clone_brief(brief_id: str, request: CloneBriefRequest) -> JSONResponse:
+        """Clone an existing brief.
+
+        The clone starts with the same current head revision but is otherwise
+        independent. Returns the new brief in DRAFT state.
+        """
+        service = _brief_service()
+        cloned = service.clone_brief(brief_id, new_title=request.new_title)
+        if cloned is None:
+            return JSONResponse(status_code=404, content={"error": "Brief not found"})
+        return JSONResponse(content=json.loads(cloned.model_dump_json()), status_code=201)
+
+    @app.get("/api/content-gen/briefs/{brief_id}/audit")
+    async def get_brief_audit_history(
+        brief_id: str,
+        event_type: str | None = None,
+        actor: str | None = None,
+        limit: int = 100,
+    ) -> JSONResponse:
+        """Get audit history for a specific brief.
+
+        Query params:
+        - event_type: filter by event type (brief_created, brief_updated, etc.)
+        - actor: filter by actor (operator, ai_proposal, system, maintenance)
+        - limit: max entries to return (default 100)
+        """
+        store = AuditStore()
+        event_type_enum = AuditEventType(event_type) if event_type else None
+        actor_enum = AuditActor(actor) if actor else None
+        entries = store.load_entries(
+            brief_id=brief_id,
+            event_type=event_type_enum,
+            actor=actor_enum,
+            limit=limit,
+        )
+        return JSONResponse(content={
+            "brief_id": brief_id,
+            "items": [entry.to_dict() for entry in entries],
+            "count": len(entries),
+        })
+
+    # ------------------------------------------------------------------
+    # Brief Assistant (Phase 05)
+    # ------------------------------------------------------------------
+
+    from cc_deep_research.content_gen.agents.brief_assistant import (
+        BriefAssistantAgent,
+        build_apply_proposals,
+    )
+
+    @app.post("/api/content-gen/briefs/{brief_id}/assistant/respond")
+    async def brief_assistant_respond(brief_id: str, request: BriefAssistantRespondRequest) -> JSONResponse:
+        """Generate a conversational response with optional brief revision proposals.
+
+        This endpoint is advisory only — it never writes to persistent state.
+        Use /apply to persist any proposed revisions.
+        """
+        service = _brief_service()
+        managed = service.get_brief(brief_id)
+        if managed is None:
+            return JSONResponse(status_code=404, content={"error": "Brief not found"})
+
+        # Load the revision to discuss
+        revision_id = request.revision_id or managed.current_revision_id
+        revision = service.get_revision(revision_id)
+        if revision is None or revision.brief_id != brief_id:
+            return JSONResponse(status_code=404, content={"error": "Revision not found"})
+
+        agent = BriefAssistantAgent(config=load_config())
+        messages = [{"role": m.role, "content": m.content} for m in request.messages]
+
+        response = await agent.respond(
+            messages=messages,
+            brief_revision=revision,
+            mode=request.mode,
+        )
+
+        return JSONResponse(content=json.loads(response.model_dump_json()))
+
+    @app.post("/api/content-gen/briefs/{brief_id}/assistant/apply")
+    async def brief_assistant_apply(brief_id: str, request: BriefAssistantApplyRequest) -> JSONResponse:
+        """Apply a list of validated brief revision proposals.
+
+        This is the only write path for assistant-proposed revisions.
+        Returns structured errors instead of crashing on invalid proposals.
+        """
+        service = _brief_service()
+        managed = service.get_brief(brief_id)
+        if managed is None:
+            return JSONResponse(status_code=404, content={"error": "Brief not found"})
+
+        # Build the opportunity from merged proposals
+        current_revision = service.get_revision(managed.current_revision_id)
+        if current_revision is None:
+            return JSONResponse(status_code=400, content={"error": "No current revision to base changes on"})
+
+        # Start with current revision content
+        opportunity_data: dict[str, Any] = {
+            "theme": current_revision.theme,
+            "goal": current_revision.goal,
+            "primary_audience_segment": current_revision.primary_audience_segment,
+            "secondary_audience_segments": current_revision.secondary_audience_segments,
+            "problem_statements": current_revision.problem_statements,
+            "content_objective": current_revision.content_objective,
+            "proof_requirements": current_revision.proof_requirements,
+            "platform_constraints": current_revision.platform_constraints,
+            "risk_constraints": current_revision.risk_constraints,
+            "freshness_rationale": current_revision.freshness_rationale,
+            "sub_angles": current_revision.sub_angles,
+            "research_hypotheses": current_revision.research_hypotheses,
+            "success_criteria": current_revision.success_criteria,
+            "expert_take": current_revision.expert_take,
+            "non_obvious_claims_to_test": current_revision.non_obvious_claims_to_test,
+            "genericity_risks": current_revision.genericity_risks,
+        }
+
+        # Apply validated proposals
+        validated, errors = build_apply_proposals(
+            [p.model_dump(mode="python") for p in request.proposals]
+        )
+        applied_count = 0
+        for proposal in validated:
+            for key, value in proposal.fields.items():
+                if key in opportunity_data:
+                    opportunity_data[key] = value
+            applied_count += 1
+
+        if applied_count == 0 and errors:
+            return JSONResponse(
+                status_code=400,
+                content={"applied": 0, "errors": errors, "revision": None},
+            )
+
+        # Create a new revision with the merged opportunity
+        try:
+            opportunity = OpportunityBrief.model_validate(opportunity_data)
+            revision = service.save_revision(
+                brief_id,
+                opportunity,
+                revision_notes=request.revision_notes or "AI-assisted revision",
+                source_pipeline_id="",
+            )
+        except Exception as exc:
+            return JSONResponse(status_code=400, content={"error": str(exc), "applied": 0})
+
+        # Log the assistant origin
+        if service._audit_store is not None:
+            from cc_deep_research.content_gen.storage import AuditActor, AuditEventType
+
+            service._audit_mutation(
+                AuditEventType.BRIEF_REVISION_SAVED,
+                brief_id,
+                actor=AuditActor.AI_PROPOSAL,
+                patch={"revision_id": revision.revision_id, "proposals_count": applied_count},
+                brief_snapshot=managed,
+                outcome="success",
+            )
+
+        return JSONResponse(
+            status_code=201,
+            content={
+                "applied": applied_count,
+                "revision": json.loads(revision.model_dump_json()) if revision else None,
+                "errors": errors,
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # Brief-to-Backlog Generation (Phase 05 - P5-T2)
+    # ------------------------------------------------------------------
+
+    from cc_deep_research.content_gen.agents.brief_to_backlog import (
+        generate_backlog_from_brief,
+    )
+
+    @app.post("/api/content-gen/briefs/{brief_id}/generate-backlog")
+    async def generate_backlog_from_brief_endpoint(
+        brief_id: str,
+    ) -> JSONResponse:
+        """Generate backlog item candidates from an approved brief revision.
+
+        This endpoint is advisory only — it never writes to the backlog.
+        Use /apply-backlog to persist any proposed items.
+        """
+        service = _brief_service()
+        managed = service.get_brief(brief_id)
+        if managed is None:
+            return JSONResponse(status_code=404, content={"error": "Brief not found"})
+
+        # Load the current head revision
+        revision = service.get_revision(managed.current_revision_id)
+        if revision is None:
+            return JSONResponse(status_code=400, content={"error": "No current revision found"})
+
+        result = await generate_backlog_from_brief(revision)
+
+        return JSONResponse(content=json.loads(result.model_dump_json()))
+
+    @app.post("/api/content-gen/briefs/{brief_id}/apply-backlog")
+    async def apply_backlog_from_brief(
+        brief_id: str,
+        items: list[dict[str, Any]],
+    ) -> JSONResponse:
+        """Apply generated backlog items from a brief to the persistent backlog.
+
+        This persists items to the backlog with trace links back to the brief.
+        """
+        service = _brief_service()
+        managed = service.get_brief(brief_id)
+        if managed is None:
+            return JSONResponse(status_code=404, content={"error": "Brief not found"})
+
+        revision = service.get_revision(managed.current_revision_id)
+        if revision is None:
+            return JSONResponse(status_code=400, content={"error": "No current revision found"})
+
+        backlog_service = BacklogService(load_config())
+        applied_count = 0
+        created_items: list[BacklogItem] = []
+        errors: list[str] = []
+
+        for index, item_data in enumerate(items, start=1):
+            try:
+                if not item_data.get("title") and not item_data.get("idea"):
+                    errors.append(f"Item {index}: missing title or idea")
+                    continue
+
+                created = backlog_service.create_item(
+                    title=str(item_data.get("title", "")),
+                    one_line_summary=str(item_data.get("one_line_summary", "")),
+                    raw_idea=str(item_data.get("raw_idea", "")),
+                    constraints=str(item_data.get("constraints", "")),
+                    idea=str(item_data.get("idea", item_data.get("title", ""))),
+                    category=str(item_data.get("category", "authority-building")),
+                    audience=str(item_data.get("audience", "")),
+                    persona_detail=str(item_data.get("persona_detail", "")),
+                    problem=str(item_data.get("problem", "")),
+                    emotional_driver=str(item_data.get("emotional_driver", "")),
+                    urgency_level=str(item_data.get("urgency_level", "medium")),
+                    source=str(item_data.get("source", "")),
+                    why_now=str(item_data.get("why_now", "")),
+                    hook=str(item_data.get("hook", "")),
+                    content_type=str(item_data.get("content_type", "")),
+                    key_message=str(item_data.get("key_message", "")),
+                    call_to_action=str(item_data.get("call_to_action", "")),
+                    evidence=str(item_data.get("evidence", "")),
+                    risk_level=str(item_data.get("risk_level", "medium")),
+                    source_theme=str(item_data.get("source_theme", managed.title or brief_id)),
+                    selection_reasoning=str(item_data.get("reason", "")),
+                )
+                applied_count += 1
+                created_items.append(created)
+
+                # Log brief origin on the backlog item
+                audit_store = AuditStore(config=load_config())
+                audit_store.log_backlog_mutation(
+                    event_type=AuditEventType.ITEM_CREATED,
+                    idea_id=created.idea_id,
+                    actor=AuditActor.OPERATOR,
+                    patch={
+                        "source_brief_id": brief_id,
+                        "source_revision_id": revision.revision_id,
+                        "source_revision_version": revision.version,
+                        "brief_theme": managed.title,
+                    },
+                    outcome="success",
+                )
+            except Exception as exc:
+                errors.append(f"Item {index}: {exc}")
+
+        return JSONResponse(
+            content={
+                "applied": applied_count,
+                "items": [json.loads(item.model_dump_json()) for item in created_items],
+                "errors": errors,
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # Brief Branching & Sibling Comparison (Phase 05 - P5-T3)
+    # ------------------------------------------------------------------
+
+    class BranchBriefRequest(BaseModel):
+        """Request body for branching an existing brief."""
+
+        new_title: str | None = Field(default=None, description="Optional new title for the branch")
+        branch_reason: str = Field(default="", description="Why this brief is being branched")
+
+
+    @app.post("/api/content-gen/briefs/{brief_id}/branch")
+    async def branch_brief(brief_id: str, request: BranchBriefRequest) -> JSONResponse:
+        """Create a branched copy of an existing brief.
+
+        Branch creates a derivative brief that tracks its lineage back to the source.
+        Unlike clone (for reuse), branch is for creating variants for different
+        themes, channels, or experiments.
+        """
+        service = _brief_service()
+        branched = service.branch_brief(
+            brief_id,
+            new_title=request.new_title,
+            branch_reason=request.branch_reason,
+        )
+        if branched is None:
+            return JSONResponse(status_code=404, content={"error": "Brief not found"})
+        return JSONResponse(content=json.loads(branched.model_dump_json()), status_code=201)
+
+    @app.get("/api/content-gen/briefs/{brief_id}/siblings")
+    async def list_sibling_briefs(brief_id: str) -> JSONResponse:
+        """List briefs that share the same source brief.
+
+        Returns all briefs that were branched from the same source,
+        including the source brief itself.
+        """
+        service = _brief_service()
+        managed = service.get_brief(brief_id)
+        if managed is None:
+            return JSONResponse(status_code=404, content={"error": "Brief not found"})
+
+        siblings = service.list_sibling_briefs(brief_id)
+
+        # Include the source brief itself if this is a branch
+        result_briefs = [managed]
+        if managed.source_brief_id:
+            source = service.get_brief(managed.source_brief_id)
+            if source:
+                result_briefs = [source] + siblings
+
+        return JSONResponse(content={
+            "items": [json.loads(b.model_dump_json()) for b in result_briefs],
+            "count": len(result_briefs),
+        })
+
+    @app.get("/api/content-gen/briefs/{brief_id}/compare/{other_brief_id}")
+    async def compare_briefs(brief_id: str, other_brief_id: str) -> JSONResponse:
+        """Compare two briefs side by side.
+
+        Returns both briefs with their current head revisions for comparison.
+        """
+        service = _brief_service()
+
+        brief_a = service.get_brief(brief_id)
+        brief_b = service.get_brief(other_brief_id)
+
+        if brief_a is None or brief_b is None:
+            return JSONResponse(status_code=404, content={"error": "One or both briefs not found"})
+
+        revision_a = service.get_revision(brief_a.current_revision_id)
+        revision_b = service.get_revision(brief_b.current_revision_id)
+
+        return JSONResponse(content={
+            "brief_a": json.loads(brief_a.model_dump_json()),
+            "brief_b": json.loads(brief_b.model_dump_json()),
+            "revision_a": json.loads(revision_a.model_dump_json()) if revision_a else None,
+            "revision_b": json.loads(revision_b.model_dump_json()) if revision_b else None,
+        })
 
     # ------------------------------------------------------------------
     # Backlog chat

@@ -81,6 +81,11 @@ class BacklogAgent:
             is_degraded = True
             degradation_reason = "zero valid ideas parsed from LLM response"
 
+        brief_id = opportunity_brief.brief_id if opportunity_brief else ""
+        if brief_id:
+            for item in items:
+                item.opportunity_brief_id = brief_id
+
         return BacklogOutput(
             items=items,
             rejected_count=rejected_count,
@@ -238,6 +243,7 @@ _SCORE_FIELDS = [
     "evidence_strength",
     "hook_strength",
     "repurposing",
+    "opportunity_fit",
 ]
 
 
@@ -267,12 +273,14 @@ def _parse_scores(text: str, _items: list[BacklogItem]) -> list[IdeaScores]:
         if rec not in ("produce_now", "hold", "kill"):
             rec = "hold"
         reason = _extract_block_field(block_text, "reason")
+        opportunity_fit_reason = _extract_block_field(block_text, "opportunity_fit_reason")
         scores.append(
             IdeaScores(
                 idea_id=idea_id,
                 total_score=total,
                 recommendation=rec,
                 reason=reason,
+                opportunity_fit_reason=opportunity_fit_reason,
                 **dim_scores,  # type: ignore[arg-type]
             )
         )

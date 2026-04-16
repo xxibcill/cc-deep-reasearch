@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field, computed_field, field_validator, model_va
 
 from cc_deep_research.models.search import QueryProvenance
 
-CONTRACT_VERSION = "1.6.0"
+CONTRACT_VERSION = "1.7.0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,10 +44,10 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "plan_opportunity": ContentGenStageContract(
         stage_name="plan_opportunity",
         prompt_module="prompts/opportunity.py",
-        contract_version="1.1.0",
+        contract_version="1.2.0",
         parser_location="agents/opportunity.py::_parse_opportunity_brief (JSON first, legacy fallback)",
         output_model="OpportunityBrief",
-        format_notes="JSON output (primary) with structured schema; legacy header+dash text (fallback). parse_mode recorded in trace metadata.",
+        format_notes="JSON output (primary) with structured schema; legacy header+dash text (fallback). parse_mode recorded in trace metadata. P3-T2 adds version/is_generated/is_approved/revision_history tracking.",
         required_fields=(
             "Goal",
             "Primary audience segment",
@@ -73,7 +73,7 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "build_backlog": ContentGenStageContract(
         stage_name="build_backlog",
         prompt_module="prompts/backlog.py",
-        contract_version="1.1.0",
+        contract_version="1.2.0",
         parser_location="agents/backlog.py::_parse_backlog_items",
         output_model="BacklogOutput",
         format_notes="Repeated '---' blocks with field_name: value pairs.",
@@ -98,7 +98,7 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "score_ideas": ContentGenStageContract(
         stage_name="score_ideas",
         prompt_module="prompts/backlog.py",
-        contract_version="1.1.0",
+        contract_version="1.2.0",
         parser_location="agents/backlog.py::_parse_scores + _derive_selection",
         output_model="ScoringOutput",
         format_notes="Repeated '---' score blocks followed by shortlist summary fields.",
@@ -123,7 +123,7 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "generate_angles": ContentGenStageContract(
         stage_name="generate_angles",
         prompt_module="prompts/angle.py",
-        contract_version="1.0.0",
+        contract_version="1.1.0",
         parser_location="agents/angle.py::_parse_angle_options",
         output_model="AngleOutput",
         format_notes="Repeated '---' blocks plus trailing best-angle summary fields.",
@@ -194,7 +194,7 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "run_scripting": ContentGenStageContract(
         stage_name="run_scripting",
         prompt_module="prompts/scripting.py",
-        contract_version="1.1.0",
+        contract_version="1.2.0",
         parser_location="agents/scripting.py::_STEP_HANDLERS and _extract_* helpers",
         output_model="ScriptingContext",
         format_notes=(
@@ -283,7 +283,7 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "human_qc": ContentGenStageContract(
         stage_name="human_qc",
         prompt_module="prompts/qc.py",
-        contract_version="1.1.0",
+        contract_version="1.2.0",
         parser_location="agents/qc.py::_parse_qc_gate",
         output_model="HumanQCGate",
         format_notes="Named issue buckets with '-' lists; AI review never sets approval to true.",
@@ -315,7 +315,7 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "performance_analysis": ContentGenStageContract(
         stage_name="performance_analysis",
         prompt_module="prompts/performance.py",
-        contract_version="1.0.0",
+        contract_version="1.1.0",
         parser_location="agents/performance.py::_parse_performance",
         output_model="PerformanceAnalysis",
         format_notes="Named diagnostic sections with '-' lists plus scalar summary fields.",
@@ -933,6 +933,7 @@ class OpportunityBrief(BaseModel):
     backlog generation and later scoring.
     """
 
+    brief_id: str = Field(default_factory=lambda: f"brief_{uuid4().hex[:8]}")
     theme: str = ""
     goal: str = ""
     primary_audience_segment: str = ""
@@ -949,6 +950,17 @@ class OpportunityBrief(BaseModel):
     expert_take: str = ""
     non_obvious_claims_to_test: list[str] = Field(default_factory=list)
     genericity_risks: list[str] = Field(default_factory=list)
+    # P3-T2: Version tracking
+    version: int = 1
+    # P3-T2: Source tracking — original generated vs operator-revised
+    is_generated: bool = True  # True = AI-generated, False = operator-created or heavily edited
+    # P3-T2: Revision state
+    is_approved: bool = False
+    # P3-T2: Revision history
+    revision_history: list[str] = Field(
+        default_factory=list,
+        description="Change log entries describing what was revised",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1029,6 +1041,11 @@ class BacklogItem(
     created_at: str = ""
     updated_at: str = ""
     last_scored_at: str = ""
+    # P2-T1: Reference back to the opportunity brief that generated this idea
+    opportunity_brief_id: str = Field(
+        default="",
+        description="ID of the OpportunityBrief that this idea traces back to",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -1142,9 +1159,14 @@ class IdeaScores(BaseModel):
     evidence_strength: int = Field(default=0, ge=1, le=5)
     hook_strength: int = Field(default=0, ge=1, le=5)
     repurposing: int = Field(default=0, ge=1, le=5)
+    opportunity_fit: int = Field(default=1, ge=1, le=5, description="How well this idea fits opportunity brief constraints")
     total_score: int = 0
     recommendation: str = "hold"  # produce_now | hold | kill
     reason: str = ""
+    opportunity_fit_reason: str = Field(
+        default="",
+        description="Brief explanation of how this idea satisfies the opportunity brief",
+    )
 
 
 class ScoringOutput(BaseModel):
@@ -1893,6 +1915,11 @@ class HumanQCGate(BaseModel):
     required_fact_checks: list[str] = Field(default_factory=list)
     must_fix_items: list[str] = Field(default_factory=list)
     approved_for_publish: bool = False
+    # P2-T3: Success criteria evaluation from opportunity brief
+    success_criteria_results: list[str] = Field(
+        default_factory=list,
+        description="Per-criterion evaluation: whether each planned success criterion is met or unmet",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2159,6 +2186,116 @@ class PerformanceAnalysis(BaseModel):
     backlog_updates: list[str] = Field(default_factory=list)
     is_degraded: bool = False
     degradation_reason: str = ""
+    # P2-T3: Opportunity brief comparison results
+    opportunity_brief_comparison: str = Field(
+        default="",
+        description="How the actual outcomes compared against the original opportunity brief intent",
+    )
+    brief_success_criteria_results: list[str] = Field(
+        default_factory=list,
+        description="Per-criterion results: whether each planned success criterion was met or unmet",
+    )
+    brief_hypothesis_results: list[str] = Field(
+        default_factory=list,
+        description="Per-hypothesis results: whether each planned research hypothesis was supported or contradicted",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 03 - Learning Store and Planning Metrics (P3-T3)
+# ---------------------------------------------------------------------------
+
+
+class PlanningLearningCategory(StrEnum):
+    """Category of opportunity planning learning."""
+
+    BRIEF_SPECIFICITY = "brief_specificity"  # How specific vs generic the brief was
+    AUDIENCE_DEFINITION = "audience_definition"  # How well audience was defined
+    HYPOTHESIS_QUALITY = "hypothesis_quality"  # Quality of research hypotheses
+    SUCCESS_CRITERIA = "success_criteria"  # How measurable the criteria were
+    PROOF_REQUIREMENTS = "proof_requirements"  # How actionable proof requirements were
+    SUB_ANGLE_DISTINCTION = "sub_angle_distinction"  # How distinct sub-angles were
+
+
+class PlanningLearning(BaseModel):
+    """A reusable opportunity-planning pattern extracted from runs.
+
+    Stores validated lessons that can influence future planning.
+    """
+
+    learning_id: str = Field(default_factory=lambda: f"planlearn_{uuid4().hex[:8]}")
+    category: PlanningLearningCategory = PlanningLearningCategory.BRIEF_SPECIFICITY
+    # What pattern was observed
+    pattern: str = ""
+    # Why it matters for planning quality
+    implication: str = ""
+    # What to do differently in future briefs
+    guidance: str = ""
+    # Which brief(s) this learning came from
+    source_brief_ids: list[str] = Field(default_factory=list)
+    # Whether this learning has been operator-reviewed
+    operator_reviewed: bool = False
+    # Whether this learning is currently active
+    is_active: bool = True
+    # When this learning was created
+    created_at: str = ""
+
+
+class PlanningMetrics(BaseModel):
+    """Tracking metrics for opportunity planning quality over time.
+
+    These metrics help operators understand whether planning is improving.
+    """
+
+    total_briefs: int = 0
+    acceptable_briefs: int = 0  # Passed quality validation
+    rewritten_briefs: int = 0  # Required at least one revision
+    approved_briefs: int = 0  # Passed operator review
+    converted_to_production: int = 0  # Successfully produced content
+
+    @computed_field(return_type=float)
+    @property
+    def pass_rate(self) -> float:
+        """Brief acceptance rate."""
+        if not self.total_briefs:
+            return 0.0
+        return round(self.acceptable_briefs / self.total_briefs, 3)
+
+    @computed_field(return_type=float)
+    @property
+    def rewrite_rate(self) -> float:
+        """Rate of briefs needing revision."""
+        if not self.total_briefs:
+            return 0.0
+        return round(self.rewritten_briefs / self.total_briefs, 3)
+
+    @computed_field(return_type=float)
+    @property
+    def approval_rate(self) -> float:
+        """Rate of briefs passing operator review."""
+        if not self.total_briefs:
+            return 0.0
+        return round(self.approved_briefs / self.total_briefs, 3)
+
+    @computed_field(return_type=float)
+    @property
+    def production_conversion_rate(self) -> float:
+        """Rate of approved briefs that went to production."""
+        if not self.approved_briefs:
+            return 0.0
+        return round(self.converted_to_production / self.approved_briefs, 3)
+
+    def to_summary(self) -> str:
+        """Human-readable metrics summary."""
+        lines = [
+            "Planning Metrics:",
+            f"  Total briefs: {self.total_briefs}",
+            f"  Acceptable (passed validation): {self.acceptable_briefs} ({self.pass_rate:.1%})",
+            f"  Required rewrite: {self.rewritten_briefs} ({self.rewrite_rate:.1%})",
+            f"  Approved: {self.approved_briefs} ({self.approval_rate:.1%})",
+            f"  Converted to production: {self.converted_to_production} ({self.production_conversion_rate:.1%})",
+        ]
+        return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -2234,6 +2371,11 @@ class PipelineContext(BaseModel):
 
     strategy: StrategyMemory | None = None
     opportunity_brief: OpportunityBrief | None = None
+    # P2-T1: Managed brief reference for controlled handoff between planning and execution
+    brief_reference: PipelineBriefReference | None = Field(
+        default=None,
+        description="Reference to the managed brief resource and revision used by this run.",
+    )
     backlog: BacklogOutput | None = None
     scoring: ScoringOutput | None = None
     shortlist: list[str] = Field(default_factory=list)
@@ -2256,6 +2398,11 @@ class PipelineContext(BaseModel):
     iteration_state: IterationState | None = None
     stage_traces: list[PipelineStageTrace] = Field(default_factory=list)
     claim_ledger: ClaimTraceLedger | None = None
+    # P2-T2: Approval-aware execution gate for brief-controlled pipelines
+    brief_gate: BriefExecutionGate | None = Field(
+        default=None,
+        description="Gate that enforces brief approval requirements for downstream stages.",
+    )
 
     @model_validator(mode="after")
     def _populate_candidate_queue(self) -> PipelineContext:
@@ -2565,3 +2712,412 @@ class TriageResponse(BaseModel):
     proposals: list[TriageOperation] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     mentioned_idea_ids: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Managed Brief Domain (Phase 01 - Persistent Brief)
+# ---------------------------------------------------------------------------
+
+
+class BriefLifecycleState(StrEnum):
+    """Lifecycle states for a managed opportunity brief.
+
+    draft       - Initial state; AI-generated or operator-created, not yet approved.
+    approved    - Reviewed and approved; ready to drive backlog generation.
+    superseded  - Replaced by a newer approved brief (rare; for long-running campaigns).
+    archived    - No longer active; retained for audit trail.
+    """
+
+    DRAFT = "draft"
+    APPROVED = "approved"
+    SUPERSEDED = "superseded"
+    ARCHIVED = "archived"
+
+
+class BriefProvenance(StrEnum):
+    """How a brief entered the managed brief system.
+
+    generated      - Created by the AI pipeline (stage 1 output).
+    imported       - Hydrated from a legacy saved PipelineContext payload.
+    cloned         - Copied from an existing managed brief for reuse.
+    branched       - Created as a derivative for a different theme/channel.
+    operator_created - Manually authored by an operator.
+    """
+
+    GENERATED = "generated"
+    IMPORTED = "imported"
+    CLONED = "cloned"
+    BRANCHED = "branched"
+    OPERATOR_CREATED = "operator_created"
+
+
+# ---------------------------------------------------------------------------
+# Phase 02 - Pipeline Brief Reference
+# ---------------------------------------------------------------------------
+
+
+class PipelineBriefReference(BaseModel):
+    """Reference to a managed opportunity brief used by a pipeline run.
+
+    This establishes an explicit, auditable link between a pipeline run and
+    the specific managed brief revision it used. The snapshot field preserves
+    the brief content for portability and inspection even if the managed brief
+    later changes.
+
+    Design principles
+    ------------------
+    - The reference is authoritative: if set, downstream work should prefer
+      the managed brief revision over any inline snapshot.
+    - The snapshot is for observability: it lets operators inspect what the
+      run actually used without loading the managed brief store.
+    - Revision pinning is explicit: a run always records which revision_id it
+      used, preventing silent rebinding to newer heads during resume.
+    """
+
+    brief_id: str = Field(
+        default="",
+        description="The managed brief resource ID (e.g. 'mbrief_abc123').",
+    )
+    revision_id: str = Field(
+        default="",
+        description="The specific revision ID this run referenced.",
+    )
+    revision_version: int = Field(
+        default=0,
+        description="Human-readable version number for display (e.g. 3 for 'v3').",
+    )
+    # Snapshot of the brief content at the time of reference for portability
+    snapshot: OpportunityBrief | None = Field(
+        default=None,
+        description="Inline brief snapshot for observability and portability.",
+    )
+    # Lifecycle state at the time this reference was created
+    lifecycle_state: BriefLifecycleState = Field(
+        default=BriefLifecycleState.DRAFT,
+        description="Brief lifecycle state at time of pipeline run.",
+    )
+    # Source of this reference
+    reference_type: Literal["managed", "inline_fallback", "imported"] = Field(
+        default="managed",
+        description="Whether this run was started from managed brief, inline payload, or legacy import.",
+    )
+    # For resume/clone flows: which brief revision was explicitly selected
+    seeded_from_revision_id: str = Field(
+        default="",
+        description="For seeded runs: the revision ID that was explicitly chosen to seed this run.",
+    )
+    created_at: str = Field(
+        default="",
+        description="ISO timestamp when this reference was created.",
+    )
+    # P2-T2: Whether this brief was generated in the same pipeline run
+    # If True, gate will not block since the brief is being actively developed
+    was_generated_in_run: bool = Field(
+        default=False,
+        description="True if this brief was generated in the current pipeline run.",
+    )
+
+    def is_approved(self) -> bool:
+        """Return True if this brief reference was approved at time of use."""
+        return self.lifecycle_state == BriefLifecycleState.APPROVED
+
+    def is_draft(self) -> bool:
+        """Return True if this brief reference was in draft state at time of use."""
+        return self.lifecycle_state == BriefLifecycleState.DRAFT
+
+
+class BriefRevision(BaseModel):
+    """An immutable snapshot of an OpportunityBrief at a point in time.
+
+    Each revision captures the full editorial state plus provenance metadata
+    for that specific revision. Revisions are never modified after creation.
+    """
+
+    revision_id: str = Field(
+        default_factory=lambda: f"rev_{uuid4().hex[:10]}",
+        description="Unique identifier for this specific revision.",
+    )
+    brief_id: str = Field(
+        description="The managed brief resource this revision belongs to.",
+    )
+    version: int = Field(
+        description="Monotonically increasing version number within the brief.",
+    )
+    # Full snapshot of OpportunityBrief content at this revision
+    theme: str = ""
+    goal: str = ""
+    primary_audience_segment: str = ""
+    secondary_audience_segments: list[str] = Field(default_factory=list)
+    problem_statements: list[str] = Field(default_factory=list)
+    content_objective: str = ""
+    proof_requirements: list[str] = Field(default_factory=list)
+    platform_constraints: list[str] = Field(default_factory=list)
+    risk_constraints: list[str] = Field(default_factory=list)
+    freshness_rationale: str = ""
+    sub_angles: list[str] = Field(default_factory=list)
+    research_hypotheses: list[str] = Field(default_factory=list)
+    success_criteria: list[str] = Field(default_factory=list)
+    expert_take: str = ""
+    non_obvious_claims_to_test: list[str] = Field(default_factory=list)
+    genericity_risks: list[str] = Field(default_factory=list)
+    # Provenance
+    provenance: BriefProvenance = Field(
+        default=BriefProvenance.GENERATED,
+        description="How this revision was created.",
+    )
+    # Source tracking (original generated vs operator-edited)
+    is_generated: bool = Field(
+        default=True,
+        description="True = AI-generated content, False = operator-created or heavily edited.",
+    )
+    # Revision metadata
+    revision_notes: str = Field(
+        default="",
+        description="Human-readable description of what changed in this revision.",
+    )
+    source_pipeline_id: str = Field(
+        default="",
+        description="Pipeline ID that generated this revision, if applicable.",
+    )
+    created_at: str = Field(
+        default="",
+        description="ISO timestamp when this revision was created.",
+    )
+
+
+class ManagedOpportunityBrief(BaseModel):
+    """A durable, version-aware opportunity brief resource.
+
+    This is the canonical persisted shape for an opportunity brief, separated
+    from any single pipeline run. It tracks lifecycle state, maintains a revision
+    history, and owns the current head pointer.
+
+    Design principles
+    ------------------
+    - Immutable revisions: each BriefRevision is append-only and never modified.
+    - Current head: ``current_revision_id`` points to the active revision.
+    - Lifecycle is on the resource, not individual revisions.
+    - Provenance tracks how the first revision entered the system.
+    """
+
+    brief_id: str = Field(
+        default_factory=lambda: f"mbrief_{uuid4().hex[:8]}",
+        description="Stable resource identifier, unique across the system.",
+    )
+    title: str = Field(
+        default="",
+        description="Short human-readable title for the brief.",
+    )
+    # Lifecycle
+    lifecycle_state: BriefLifecycleState = Field(
+        default=BriefLifecycleState.DRAFT,
+        description="Current lifecycle state of this brief resource.",
+    )
+    # Revision tracking
+    current_revision_id: str = Field(
+        default="",
+        description="ID of the currently active revision (head).",
+    )
+    latest_revision_id: str = Field(
+        default="",
+        description="ID of the most recently created revision (may differ from current_revision_id during review).",
+    )
+    revision_count: int = Field(
+        default=0,
+        description="Total number of revisions this brief has had.",
+    )
+    # Provenance of the first revision
+    provenance: BriefProvenance = Field(
+        default=BriefProvenance.GENERATED,
+        description="How the initial brief entered the system.",
+    )
+    # Timestamps - set by service layer when persisting
+    created_at: str = Field(
+        default="",
+        description="ISO timestamp when this brief resource was first created.",
+    )
+    updated_at: str = Field(
+        default="",
+        description="ISO timestamp when this brief or its head revision was last modified.",
+    )
+    # Human-readable change log (revision summaries)
+    revision_history: list[str] = Field(
+        default_factory=list,
+        description="Change log entries describing what was revised.",
+    )
+    # Lineage tracking for branched/cloned briefs
+    source_brief_id: str = Field(
+        default="",
+        description="The brief_id this was branched or cloned from, if any.",
+    )
+    branch_reason: str = Field(
+        default="",
+        description="Why this brief was branched (e.g., 'different channel', 'experiment').",
+    )
+
+    def head_revision(self, revisions: list[BriefRevision]) -> BriefRevision | None:
+        """Return the current head revision from a list of known revisions."""
+        if not self.current_revision_id:
+            return None
+        return next((r for r in revisions if r.revision_id == self.current_revision_id), None)
+
+
+class ManagedBriefOutput(BaseModel):
+    """Container for listing and loading managed briefs."""
+
+    briefs: list[ManagedOpportunityBrief] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Phase 02 - Brief Execution Gates
+# ---------------------------------------------------------------------------
+
+
+class BriefExecutionPolicyMode(StrEnum):
+    """Policy modes for brief approval gates.
+
+    These modes control whether downstream execution can proceed based on
+    the brief's lifecycle state at pipeline start.
+
+    DEFAULT_APPROVED    - Only approved briefs can proceed past planning.
+                          Draft briefs are blocked with a clear error.
+    ALLOW_DRAFT         - Draft briefs can proceed through all stages.
+                          Warnings are issued but execution continues.
+    ALLOW_ANY           - Any brief state can proceed. No gates, no warnings.
+                          Use for development and debugging only.
+    """
+
+    DEFAULT_APPROVED = "default_approved"  # Default for production
+    ALLOW_DRAFT = "allow_draft"  # For internal iterations
+    ALLOW_ANY = "allow_any"  # For development/debugging
+
+
+class BriefExecutionGate(BaseModel):
+    """Approval-aware execution gate for brief-controlled pipelines.
+
+    This gate is checked at pipeline start and at key stage transitions
+    to enforce brief approval requirements. It provides explicit,
+    operator-visible signals about the brief state used for each run.
+
+    Design principles
+    ------------------
+    - Gate is checked at pipeline initialization, not just at stage transitions.
+    - Warnings surface at the start so operators know what state they're using.
+    - Errors are clear and actionable, not silently ignored.
+    - Policy modes are few and explicit to avoid hidden surprises.
+    """
+
+    # Current policy mode
+    policy_mode: BriefExecutionPolicyMode = Field(
+        default=BriefExecutionPolicyMode.DEFAULT_APPROVED,
+        description="Current gate enforcement policy.",
+    )
+    # Brief state at pipeline start
+    brief_state_at_start: BriefLifecycleState = Field(
+        default=BriefLifecycleState.DRAFT,
+        description="Brief lifecycle state when the pipeline was initialized.",
+    )
+    # Whether the gate has been satisfied for this run
+    is_satisfied: bool = Field(
+        default=False,
+        description="True if the current brief state satisfies the policy requirements.",
+    )
+    # Warning messages for operator visibility
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Warning messages when running with non-approved brief.",
+    )
+    # Error message if gate failed
+    error_message: str = Field(
+        default="",
+        description="Error message if the gate blocked execution.",
+    )
+    # Stage index where gate was checked
+    checked_at_stage: int = Field(
+        default=-1,
+        description="Stage index where the gate was last checked.",
+    )
+    # Whether execution was blocked by this gate
+    was_blocked: bool = Field(
+        default=False,
+        description="True if execution was blocked by this gate.",
+    )
+
+    def get_gate_status(self) -> str:
+        """Return a human-readable gate status for display."""
+        if self.was_blocked:
+            return f"BLOCKED: {self.error_message}"
+        if self.is_satisfied:
+            return f"SATISFIED (brief is {self.brief_state_at_start.value})"
+        if self.warnings:
+            return f"WARNINGS ({len(self.warnings)}): running with {self.brief_state_at_start.value} brief"
+        return f"UNKNOWN (brief is {self.brief_state_at_start.value})"
+
+    def requires_approval_for_stage(self, stage_name: str) -> bool:
+        """Return True if the given stage requires an approved brief.
+
+        Stages before build_backlog (planning stages) don't require approval.
+        Stages from build_backlog onward should use approved briefs in
+        DEFAULT_APPROVED mode.
+        """
+        approval_stages = {
+            "build_backlog",
+            "score_ideas",
+            "generate_angles",
+            "build_research_pack",
+            "build_argument_map",
+            "run_scripting",
+            "visual_translation",
+            "production_brief",
+            "packaging",
+            "human_qc",
+            "publish_queue",
+            "performance_analysis",
+        }
+        return stage_name in approval_stages
+
+    def check_gate(self, brief_state: BriefLifecycleState, stage_name: str) -> tuple[bool, str]:
+        """Check if execution can proceed given the brief state.
+
+        Args:
+            brief_state: Current brief lifecycle state.
+            stage_name: Name of the current pipeline stage.
+
+        Returns:
+            Tuple of (can_proceed, message) where:
+            - can_proceed is True if execution can continue
+            - message is a human-readable reason for the decision
+        """
+        self.brief_state_at_start = brief_state
+
+        if self.policy_mode == BriefExecutionPolicyMode.ALLOW_ANY:
+            self.is_satisfied = True
+            return True, "Gate is open (ALLOW_ANY mode)"
+
+        if self.policy_mode == BriefExecutionPolicyMode.ALLOW_DRAFT:
+            if brief_state == BriefLifecycleState.APPROVED:
+                self.is_satisfied = True
+                return True, "Approved brief accepted"
+            self.warnings.append(f"Running with {brief_state.value} brief in ALLOW_DRAFT mode")
+            self.is_satisfied = True
+            return True, f"Gate waived for {brief_state.value} brief"
+
+        # DEFAULT_APPROVED mode
+        if brief_state == BriefLifecycleState.APPROVED:
+            self.is_satisfied = True
+            return True, "Approved brief confirmed"
+
+        if not self.requires_approval_for_stage(stage_name):
+            self.is_satisfied = True
+            return True, f"Stage {stage_name} does not require approval"
+
+        # Blocked
+        self.is_satisfied = False
+        self.was_blocked = True
+        self.error_message = (
+            f"Execution blocked: brief is in '{brief_state.value}' state. "
+            f"Stage '{stage_name}' requires an approved brief. "
+            f"Please approve the brief before proceeding, or use --brief-policy allow_draft "
+            f"to run with draft briefs (not recommended for production)."
+        )
+        return False, self.error_message

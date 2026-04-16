@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { LayoutDashboard, FileText, Settings, ListVideo, ArrowLeft, ListChecks, MessageSquare } from 'lucide-react'
+import { LayoutDashboard, FileText, Settings, ListVideo, ArrowLeft, ListChecks, MessageSquare, FileTextIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { buttonVariants } from '@/components/ui/button'
 import { Tabs } from '@/components/ui/tabs'
@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 const TAB_CONFIG = [
   { value: 'overview', label: 'Overview', icon: LayoutDashboard },
   { value: 'scripts', label: 'Scripts', icon: FileText },
+  { value: 'briefs', label: 'Briefs', icon: FileTextIcon },
   { value: 'strategy', label: 'Strategy', icon: Settings },
   { value: 'queue', label: 'Queue', icon: ListVideo },
   { value: 'backlog', label: 'Backlog', icon: ListChecks },
@@ -33,13 +34,17 @@ export function ContentGenShell({ children }: { children: React.ReactNode }) {
 
   const isPipelineDetail = pathname.match(/\/content-gen\/pipeline\/[^/]+$/)
   const isBacklogDetail = pathname.match(/\/content-gen\/backlog\/[^/]+$/)
+  const isBriefDetail = pathname.match(/\/content-gen\/briefs\/[^/]+$/)
   const isBacklogRoute = pathname.startsWith('/content-gen/backlog')
+  const isBriefsRoute = pathname.startsWith('/content-gen/briefs')
   const isChatRoute = pathname.startsWith('/content-gen/chat')
   const activeTab = isBacklogRoute
     ? 'backlog'
-    : isChatRoute
-      ? 'chat'
-      : searchParams.get('tab') || 'overview'
+    : isBriefsRoute
+      ? 'briefs'
+      : isChatRoute
+        ? 'chat'
+        : searchParams.get('tab') || 'overview'
 
   const activePipelineCount = pipelines.filter(
     (p) => p.status === 'running' || p.status === 'queued',
@@ -71,6 +76,10 @@ export function ContentGenShell({ children }: { children: React.ReactNode }) {
       router.push('/content-gen/backlog')
       return
     }
+    if (value === 'briefs') {
+      router.push('/content-gen/briefs')
+      return
+    }
     if (value === 'chat') {
       router.push('/content-gen/chat')
       return
@@ -83,9 +92,9 @@ export function ContentGenShell({ children }: { children: React.ReactNode }) {
       <section className="panel-shell rounded-[1.45rem] p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            {isPipelineDetail || isBacklogDetail ? (
+            {isPipelineDetail || isBacklogDetail || isBriefDetail ? (
               <Link
-                href={isBacklogDetail ? '/content-gen/backlog' : '/content-gen'}
+                href={isBacklogDetail ? '/content-gen/backlog' : isBriefDetail ? '/content-gen/briefs' : '/content-gen'}
                 className={buttonVariants({
                   variant: 'ghost',
                   size: 'sm',

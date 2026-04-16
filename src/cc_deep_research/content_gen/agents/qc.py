@@ -59,6 +59,7 @@ class QCAgent:
         packaging_summary: str = "",
         research_summary: str = "",
         argument_map_summary: str = "",
+        success_criteria: list[str] | None = None,
     ) -> HumanQCGate:
         system = prompts.QC_SYSTEM
         user = prompts.qc_user(
@@ -67,6 +68,7 @@ class QCAgent:
             packaging_summary=packaging_summary,
             research_summary=research_summary,
             argument_map_summary=argument_map_summary,
+            success_criteria=success_criteria,
         )
         text = await self._call_llm(system, user, temperature=0.2)
 
@@ -130,4 +132,5 @@ def _parse_qc_gate(text: str) -> HumanQCGate:
         risky_claims=risky_claims,
         required_fact_checks=_extract_list(text, "required_fact_checks"),
         must_fix_items=must_fix_items,
+        success_criteria_results=_extract_list(text, "success_criteria_evaluation"),
     )

@@ -1,6 +1,6 @@
 """Prompt templates for the 10-step scripting pipeline.
 
-Contract Version: 1.1.0
+Contract Version: 1.2.0
 
 Parser expectations for each step:
 - Step 1 (define_core_inputs): Expects "Topic:", "Outcome:", "Audience:" fields
@@ -39,7 +39,97 @@ from cc_deep_research.content_gen.models import (
     ScriptVersion,
 )
 
-CONTRACT_VERSION = "1.1.0"
+CONTRACT_VERSION = "1.2.0"
+
+REFINED_CONTENT_TYPES = """\
+- Insight Breakdown
+- Mistake to Fix
+- Story-Based
+- Myth vs Truth
+- Tutorial / How-To
+- Result-First / Case Study
+- Opinion / Hot Take
+- Before vs After"""
+
+REFINED_STRUCTURE_LIBRARY = """\
+A. Insight Breakdown
+Hook
+Why this matters
+Point 1
+Point 2
+Point 3
+Core takeaway
+CTA
+
+B. Mistake to Fix
+Hook
+Pain point
+What most people do wrong
+What to do instead
+Why it works
+Expected result
+CTA
+
+C. Story-Based
+Hook
+Starting situation
+Conflict / struggle
+Turning point
+Lesson
+Payoff / result
+CTA
+
+D. Myth vs Truth
+Hook
+The popular belief
+Why people believe it
+Why it breaks down
+What's actually true
+What to do with that truth
+CTA
+
+E. Tutorial / How-To
+Hook
+Desired outcome
+Step 1
+Step 2
+Step 3
+Common pitfall
+CTA
+
+F. Result-First / Case Study
+Hook with result
+Context
+What changed
+Why it worked
+Lesson
+CTA
+
+G. Opinion / Hot Take
+Hook
+Bold claim
+Why most people disagree
+Your reasoning
+Implication
+CTA
+
+H. Before vs After
+Hook
+Before
+What changed
+After
+Lesson
+CTA"""
+
+UNIVERSAL_SHORT_FORM_RULES = """\
+Universal short-form performance rules:
+- The hook must create tension, not just announce the topic
+- The second beat must justify attention fast with pain, surprise, proof, or urgency
+- One video = one core idea; supporting points must reinforce the same thesis
+- The payoff must be specific and observable, not generic
+- Prefer proof, example, or contrast when the claim needs support
+- The CTA should match the format and feel like the natural next move"""
+
 
 def _render_research_context(research_context: str) -> str:
     if not research_context.strip():
@@ -240,15 +330,12 @@ Requirements:
 - The angle must make the topic worth watching
 - Avoid generic educational framing
 - Find tension, contradiction, surprise, or a sharp benefit
+- Pick the content type that best fits the viewer payoff, not the safest label
+- Avoid overlapping educational framings when a more specific format fits better
 - If the topic is weak, improve the angle instead of forcing a bland one
 
 Choose one content type:
-- Contrarian
-- Mistake
-- Framework
-- Insight
-- Story
-- Myth vs Truth
+{REFINED_CONTENT_TYPES}
 
 Output format:
 
@@ -283,45 +370,19 @@ Task:
 Choose the strongest script structure based on the angle and content type.
 
 Available structures:
+{REFINED_STRUCTURE_LIBRARY}
 
-A. Insight Breakdown
-Hook
-Context / Setup
-Main Point 1
-Main Point 2
-Main Point 3
-Payoff / Insight
-CTA
-
-B. Mistake to Fix
-Hook
-Problem
-Common Mistake
-Better Approach
-Expected Result
-CTA
-
-C. Story-Based
-Hook
-Setup
-Turning Point
-Lesson
-Payoff
-CTA
-
-D. Myth vs Truth
-Hook
-Common Belief
-Why It Fails
-What's True
-Implication
-CTA
+{UNIVERSAL_SHORT_FORM_RULES}
 
 Requirements:
 - Choose the structure that best fits the idea
 - Do not choose based on symmetry or habit
 - Briefly justify the choice
 - If needed, lightly adapt the structure names to fit the topic, but keep the logic intact
+- Make sure the first two beats earn attention quickly
+- Prefer structures that surface proof, example, or contrast before the payoff feels delayed
+- If the content type is educational, avoid redundant "just explain more" beat naming
+- Keep the beat list aligned to one core thesis
 
 Output format:
 
@@ -435,6 +496,9 @@ Requirements:
 - Keep hooks speakable and concise
 - Prefer specificity over abstraction
 - Vary the hook style across the set
+- Avoid topic-only hooks that do not imply a payoff or consequence
+- At least 3 hooks should make the payoff concrete through a result, contrast, or example
+- The strongest hook should set up a fast second beat, not a slow explanation
 - If an Argument Map is provided, only imply or state safe claims that the script can support
 - Do not turn unsafe claims into bold factual hooks
 
@@ -519,6 +583,11 @@ Requirements:
 - Use exactly one hook line and exactly one CTA line in the full script
 - The hook line must use the selected hook, not a rewritten alternate
 - Do not include multiple opening hooks, backup hooks, CTA variants, or repeated CTA lines
+- Make the first two beats do the heaviest retention work
+- The second beat must quickly add tension, pain, proof, or surprise
+- Keep the script centered on one core idea
+- Make the payoff specific and observable for the stated audience
+- Use proof, example, or contrast when the structure calls for it
 - One idea per sentence
 - 8-12 words per sentence when possible
 - Keep it conversational and speakable
@@ -601,6 +670,7 @@ Revise the draft to improve pacing and viewer hold.
 
 Apply these retention rules:
 - Every 1-2 lines should add a new idea, shift perspective, or increase tension
+- Tighten the first two beats before touching anything else
 - Add at least 2 of the following where useful:
   - Contrast
   - Open loop
@@ -610,6 +680,7 @@ Apply these retention rules:
 - Do not add fluff
 - Do not make the script longer unless the added line clearly improves retention
 - Preserve clarity and natural spoken rhythm
+- If the payoff lands late, move proof or example earlier
 - Preserve the supported-claim boundaries from the Argument Map
 - Preserve exactly one hook line and at most one CTA line
 - Do not turn the opening into multiple hook lines
@@ -680,6 +751,8 @@ Editing rules:
 - Cut any line that does not add value
 - Preserve the core angle and flow
 - Keep natural spoken rhythm
+- Keep the first two beats sharp and fast
+- If the payoff is vague, rewrite it into a specific viewer result
 - Keep the script inside the supported claims established by the Argument Map
 - Do not over-polish into robotic language
 - Preserve exactly one hook line and at most one CTA line
@@ -815,6 +888,7 @@ Evaluate the script against the checklist below.
 Checklist:
 - Understandable in one pass
 - Hook creates curiosity, tension, or relevance
+- Second beat escalates quickly instead of stalling in setup
 - Exactly one hook is present
 - At most one CTA is present
 - No vague or generic phrasing
@@ -822,7 +896,8 @@ Checklist:
 - Spoken rhythm feels natural
 - Structure is coherent
 - No unnecessary length
-- Payoff is clear
+- One clear core idea runs through the script
+- Payoff is specific and clear
 - CTA does not feel disconnected
 - Script delivers on the stated outcome for the target audience
 - Core tension from the angle is preserved throughout

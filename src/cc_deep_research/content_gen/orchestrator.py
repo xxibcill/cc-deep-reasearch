@@ -14,13 +14,19 @@ from cc_deep_research.content_gen.models import (
     ArgumentMap,
     BeatIntent,
     BeatIntentMap,
+    BriefExecutionGate,
+    BriefExecutionPolicyMode,
+    BriefLifecycleState,
+    BriefProvenance,
     ClaimTraceEntry,
     ClaimTraceLedger,
     ClaimTraceStage,
     ClaimTraceStatus,
     CoreInputs,
     IterationState,
+    ManagedOpportunityBrief,
     OpportunityBrief,
+    PipelineBriefReference,
     PipelineCandidate,
     PipelineContext,
     PipelineLaneContext,
@@ -40,6 +46,7 @@ from cc_deep_research.content_gen.models import (
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
+    from cc_deep_research.content_gen.brief_service import BriefService
 
 logger = logging.getLogger(__name__)
 
@@ -458,6 +465,530 @@ class ContentGenOrchestrator:
             raise ValueError(msg)
         return factory()
 
+    def _get_brief_service(self) -> BriefService:
+        """Get or create a BriefService instance."""
+        from cc_deep_research.content_gen.brief_service import BriefService
+
+        return BriefService(config=self._config)
+
+    def establish_brief_reference(
+        self,
+        *,
+        brief_id: str | None = None,
+        managed_brief: ManagedOpportunityBrief | None = None,
+        revision_id: str | None = None,
+        revision_version: int | None = None,
+        snapshot: OpportunityBrief | None = None,
+        reference_type: str = "managed",
+        seeded_from_revision_id: str = "",
+    ) -> PipelineBriefReference:
+        """Establish a brief reference from a managed brief or inline data.
+
+        This is the canonical way to create a PipelineBriefReference for a run.
+        If managed_brief is provided, we extract the revision metadata from it.
+        If only an inline snapshot is provided, we create an inline_fallback reference.
+
+        Args:
+            brief_id: The managed brief resource ID.
+            managed_brief: The managed brief resource (preferred).
+            revision_id: Specific revision ID to pin to (for resume/seeded runs).
+            revision_version: Human-readable version number.
+            snapshot: The OpportunityBrief content for this run.
+            reference_type: "managed", "inline_fallback", or "imported".
+            seeded_from_revision_id: For seeded runs, the revision that was explicitly chosen.
+
+        Returns:
+            A PipelineBriefReference ready for PipelineContext.brief_reference.
+        """
+        from datetime import UTC, datetime
+
+        now = datetime.now(tz=UTC).isoformat()
+
+        if managed_brief is not None:
+            # Resolve from managed brief
+            resolved_brief_id = brief_id or managed_brief.brief_id
+            resolved_revision_id = revision_id or managed_brief.current_revision_id or managed_brief.latest_revision_id
+            resolved_version = revision_version or managed_brief.revision_count
+            resolved_state = managed_brief.lifecycle_state
+            # Use provided snapshot or create a snapshot from the brief
+            resolved_snapshot = snapshot or self._build_brief_snapshot(managed_brief)
+            resolved_type = reference_type
+        else:
+            # Inline fallback
+            resolved_brief_id = brief_id or ""
+            resolved_revision_id = revision_id or ""
+            resolved_version = revision_version or 0
+            resolved_state = BriefLifecycleState.DRAFT
+            resolved_snapshot = snapshot
+            resolved_type = "inline_fallback"
+
+        return PipelineBriefReference(
+            brief_id=resolved_brief_id,
+            revision_id=resolved_revision_id,
+            revision_version=resolved_version,
+            snapshot=resolved_snapshot,
+            lifecycle_state=resolved_state,
+            reference_type=resolved_type,
+            seeded_from_revision_id=seeded_from_revision_id,
+            created_at=now,
+        )
+
+    def _build_brief_snapshot(self, managed: ManagedOpportunityBrief) -> OpportunityBrief:
+        """Build an OpportunityBrief snapshot from a managed brief's current head.
+
+        This creates an inline OpportunityBrief that captures the managed brief's
+        content for the pipeline. The snapshot is for portability; the managed
+        brief remains the source of truth.
+        """
+        # For a full implementation, we would load the actual revision content.
+        # For now, we create a synthetic snapshot from managed brief metadata.
+        # The revision content loading is part of P1's brief service scope.
+        return OpportunityBrief(
+            brief_id=managed.brief_id,
+            theme=managed.title,
+            goal="",  # Would come from revision
+            version=managed.revision_count,
+            is_generated=True,
+            is_approved=(managed.lifecycle_state == BriefLifecycleState.APPROVED),
+        )
+
+    def get_brief_for_run(
+        self,
+        *,
+        brief_id: str | None = None,
+        revision_id: str | None = None,
+        snapshot: OpportunityBrief | None = None,
+    ) -> tuple[PipelineBriefReference, OpportunityBrief | None]:
+        """Get the brief reference and resolved brief content for starting a run.
+
+        This is the canonical entry point for starting a run from a managed brief.
+
+        Args:
+            brief_id: The managed brief ID to start from.
+            revision_id: Specific revision to pin to (None = current head).
+            snapshot: Fallback inline brief if brief_id not provided.
+
+        Returns:
+            Tuple of (PipelineBriefReference, OpportunityBrief) where the second
+            element is the resolved brief content to use for the run.
+        """
+        if not brief_id:
+            # No managed brief - use inline snapshot or create a minimal reference
+            ref = self.establish_brief_reference(snapshot=snapshot, reference_type="inline_fallback")
+            return ref, snapshot
+
+        service = self._get_brief_service()
+        managed = service.get_brief(brief_id)
+
+        if managed is None:
+            ref = self.establish_brief_reference(
+                brief_id=brief_id,
+                snapshot=snapshot,
+                reference_type="inline_fallback" if snapshot else "imported",
+            )
+            return ref, snapshot
+
+        # Determine which revision to use
+        target_revision_id = revision_id or managed.current_revision_id or managed.latest_revision_id
+
+        # Build the reference
+        ref = self.establish_brief_reference(
+            brief_id=managed.brief_id,
+            managed_brief=managed,
+            revision_id=target_revision_id,
+            seeded_from_revision_id=target_revision_id if revision_id else "",
+        )
+
+        # Get the resolved brief content
+        # In a full implementation, we'd load the specific revision content here
+        brief_content = self._load_brief_revision_content(managed, target_revision_id) or snapshot
+
+        return ref, brief_content
+
+    def _load_brief_revision_content(
+        self,
+        managed: ManagedOpportunityBrief,
+        revision_id: str,
+    ) -> OpportunityBrief | None:
+        """Load the OpportunityBrief content for a specific revision.
+
+        Loads the revision from the BriefRevisionStore and converts it back
+        to an OpportunityBrief for use in pipeline execution.
+        """
+        service = self._get_brief_service()
+        revision = service.get_revision(revision_id)
+        if revision is None:
+            return None
+
+        # Convert BriefRevision back to OpportunityBrief
+        return OpportunityBrief(
+            brief_id=managed.brief_id,
+            theme=revision.theme,
+            goal=revision.goal,
+            primary_audience_segment=revision.primary_audience_segment,
+            secondary_audience_segments=revision.secondary_audience_segments,
+            problem_statements=revision.problem_statements,
+            content_objective=revision.content_objective,
+            proof_requirements=revision.proof_requirements,
+            platform_constraints=revision.platform_constraints,
+            risk_constraints=revision.risk_constraints,
+            freshness_rationale=revision.freshness_rationale,
+            sub_angles=revision.sub_angles,
+            research_hypotheses=revision.research_hypotheses,
+            success_criteria=revision.success_criteria,
+            expert_take=revision.expert_take,
+            non_obvious_claims_to_test=revision.non_obvious_claims_to_test,
+            genericity_risks=revision.genericity_risks,
+            is_generated=revision.is_generated,
+        )
+
+    # ------------------------------------------------------------------
+    # P2-T3: Resume, Clone, and Seeded Run Flows
+    # ------------------------------------------------------------------
+
+    def validate_resume_context(
+        self,
+        ctx: PipelineContext,
+        *,
+        allow_stale_brief: bool = False,
+    ) -> tuple[bool, str]:
+        """Validate whether a saved pipeline context can be safely resumed.
+
+        This checks:
+        1. The brief revision is still available
+        2. If the brief has changed since the original run, operator is warned
+        3. Resume behavior is pinned to the original revision (no silent rebinding)
+
+        Args:
+            ctx: The pipeline context to validate.
+            allow_stale_brief: If True, allow resuming even if brief has changed.
+
+        Returns:
+            Tuple of (is_valid, message) where:
+            - is_valid is True if resume can proceed
+            - message explains any warnings or issues
+        """
+        if ctx.brief_reference is None:
+            # No brief reference - this is a legacy context, allow resume
+            return True, "Resume allowed: legacy context without managed brief"
+
+        brief_id = ctx.brief_reference.brief_id
+        pinned_revision_id = ctx.brief_reference.revision_id
+
+        if not brief_id:
+            return True, "Resume allowed: no brief_id in reference"
+
+        # Load current brief state
+        service = self._get_brief_service()
+        managed = service.get_brief(brief_id)
+
+        if managed is None:
+            return False, (
+                f"Resume blocked: managed brief '{brief_id}' no longer exists. "
+                f"The brief may have been deleted."
+            )
+
+        # Check if pinned revision is still available
+        if pinned_revision_id and pinned_revision_id != managed.current_revision_id:
+            if pinned_revision_id == managed.latest_revision_id:
+                # Revision was incorporated but current head moved on
+                warning = (
+                    f"Warning: Brief '{brief_id}' has advanced past revision {pinned_revision_id}. "
+                    f"Current head is {managed.current_revision_id}. "
+                    f"Resume will use the pinned revision (not the latest)."
+                )
+            else:
+                warning = (
+                    f"Warning: Brief '{brief_id}' revision {pinned_revision_id} is no longer the latest. "
+                    f"Latest is {managed.latest_revision_id}, current head is {managed.current_revision_id}. "
+                    f"Resume will use the pinned revision."
+                )
+
+            if not allow_stale_brief:
+                return False, warning + " Use allow_stale_brief=True to override."
+
+            return True, warning + " Resume allowed (override)."
+
+        # Check if brief state has changed
+        original_state = ctx.brief_reference.lifecycle_state
+        current_state = managed.lifecycle_state
+
+        if original_state != current_state:
+            warning = (
+                f"Warning: Brief '{brief_id}' state changed from '{original_state.value}' "
+                f"to '{current_state.value}' since original run."
+            )
+            if not allow_stale_brief and current_state == BriefLifecycleState.APPROVED:
+                # State improved - might be OK
+                pass
+            elif not allow_stale_brief:
+                return False, warning + " Use allow_stale_brief=True to override."
+            return True, warning + " Resume allowed."
+
+        return True, f"Resume allowed: brief '{brief_id}' revision {pinned_revision_id or 'head'} is unchanged"
+
+    def get_brief_revisions_info(
+        self,
+        brief_id: str,
+    ) -> dict[str, Any] | None:
+        """Get information about available revisions for a managed brief.
+
+        Args:
+            brief_id: The managed brief ID.
+
+        Returns:
+            Dictionary with brief info and revision details, or None if not found.
+        """
+        service = self._get_brief_service()
+        managed = service.get_brief(brief_id)
+
+        if managed is None:
+            return None
+
+        return {
+            "brief_id": managed.brief_id,
+            "title": managed.title,
+            "lifecycle_state": managed.lifecycle_state.value,
+            "current_revision_id": managed.current_revision_id,
+            "latest_revision_id": managed.latest_revision_id,
+            "revision_count": managed.revision_count,
+            "revision_history": managed.revision_history,
+            "created_at": managed.created_at,
+            "updated_at": managed.updated_at,
+            "provenance": managed.provenance.value,
+        }
+
+    def create_seeded_run_reference(
+        self,
+        brief_id: str,
+        *,
+        revision_id: str | None = None,
+        revision_version: int | None = None,
+        snapshot: OpportunityBrief | None = None,
+    ) -> PipelineBriefReference | None:
+        """Create a brief reference for starting a new run from a specific revision.
+
+        This is the canonical way to seed a new pipeline run from an existing
+        managed brief revision. The revision is explicitly pinned to prevent
+        silent rebinding to newer heads.
+
+        Args:
+            brief_id: The managed brief ID to seed from.
+            revision_id: Specific revision ID to pin to. If None, uses current head.
+            revision_version: Human-readable version number for display.
+            snapshot: The OpportunityBrief content for this run.
+
+        Returns:
+            A PipelineBriefReference with seeded_from_revision_id set, or None
+            if the brief doesn't exist.
+        """
+        if not brief_id:
+            return None
+
+        service = self._get_brief_service()
+        managed = service.get_brief(brief_id)
+
+        if managed is None:
+            return None
+
+        # Determine target revision
+        target_revision_id = revision_id or managed.current_revision_id or managed.latest_revision_id
+
+        return self.establish_brief_reference(
+            brief_id=brief_id,
+            managed_brief=managed,
+            revision_id=target_revision_id,
+            revision_version=revision_version or managed.revision_count,
+            snapshot=snapshot,
+            reference_type="managed",
+            seeded_from_revision_id=target_revision_id,
+        )
+
+    def create_clone_reference(
+        self,
+        source_brief_id: str,
+        *,
+        source_revision_id: str | None = None,
+        snapshot: OpportunityBrief | None = None,
+    ) -> tuple[PipelineBriefReference, str | None]:
+        """Create a brief reference for cloning from an existing brief.
+
+        Clone semantics: create a new managed brief resource by copying an
+        existing one. The new brief starts with the same content but has its
+        own brief_id and lifecycle (operator approval required to use it).
+
+        Args:
+            source_brief_id: The brief ID to clone from.
+            source_revision_id: Specific revision to clone (None = current head).
+            snapshot: The OpportunityBrief content to use for the clone.
+
+        Returns:
+            Tuple of (PipelineBriefReference for the clone, new brief_id) or
+            (None, None) if source brief not found.
+        """
+        if not source_brief_id:
+            return None, None
+
+        service = self._get_brief_service()
+        source = service.get_brief(source_brief_id)
+
+        if source is None:
+            return None, None
+
+        # Determine source revision
+        source_rev_id = source_revision_id or source.current_revision_id or source.latest_revision_id
+
+        # Create a new brief by copying
+        if snapshot is None:
+            snapshot = self._build_brief_snapshot(source)
+
+        new_brief = service.create_from_opportunity(
+            snapshot,
+            provenance=BriefProvenance.CLONED,
+            source_pipeline_id="",
+            revision_notes=f"Cloned from brief '{source_brief_id}' revision '{source_rev_id}'",
+        )
+
+        # Create reference for the clone
+        ref = self.establish_brief_reference(
+            brief_id=new_brief.brief_id,
+            managed_brief=new_brief,
+            revision_id=new_brief.current_revision_id,
+            snapshot=snapshot,
+            reference_type="managed",
+        )
+
+        return ref, new_brief.brief_id
+
+    # ------------------------------------------------------------------
+    # P2-T2: Brief Execution Gates
+    # ------------------------------------------------------------------
+
+    def initialize_brief_gate(
+        self,
+        *,
+        brief_state: BriefLifecycleState = BriefLifecycleState.DRAFT,
+        policy_mode: BriefExecutionPolicyMode | None = None,
+    ) -> BriefExecutionGate:
+        """Initialize the brief execution gate for a pipeline run.
+
+        Args:
+            brief_state: The lifecycle state of the brief at pipeline start.
+            policy_mode: The gate policy to enforce. If None, uses config default.
+
+        Returns:
+            A configured BriefExecutionGate ready for use.
+        """
+        if policy_mode is None:
+            policy_mode = self._get_default_gate_policy()
+
+        gate = BriefExecutionGate(
+            policy_mode=policy_mode,
+            brief_state_at_start=brief_state,
+        )
+
+        # Check initial gate status
+        can_proceed, message = gate.check_gate(brief_state, "plan_opportunity")
+        if not can_proceed:
+            gate.was_blocked = True
+            gate.error_message = message
+        elif brief_state == BriefLifecycleState.DRAFT:
+            gate.warnings.append(
+                f"Pipeline starting with {brief_state.value} brief. "
+                f"Consider approving before running production stages."
+            )
+
+        return gate
+
+    def _get_default_gate_policy(self) -> BriefExecutionPolicyMode:
+        """Get the default gate policy from config."""
+        try:
+            gate_policy = getattr(self._config.content_gen, "brief_gate_policy", None)
+            if gate_policy:
+                return BriefExecutionPolicyMode(gate_policy)
+        except (ValueError, AttributeError):
+            pass
+        return BriefExecutionPolicyMode.DEFAULT_APPROVED
+
+    def check_stage_gate(
+        self,
+        ctx: PipelineContext,
+        stage_name: str,
+    ) -> tuple[bool, str]:
+        """Check if execution can proceed for the given stage.
+
+        Args:
+            ctx: Current pipeline context.
+            stage_name: Name of the stage to check.
+
+        Returns:
+            Tuple of (can_proceed, message).
+
+        Note:
+            The gate only enforces approval requirements when a brief_reference
+            is present (indicating a managed brief run). Older saved jobs or
+            inline-only runs bypass the gate to maintain backward compatibility.
+            Briefs generated in the same pipeline run also bypass gating since
+            they're actively being developed.
+        """
+        # Get current brief state
+        brief_state = BriefLifecycleState.DRAFT
+        if ctx.brief_reference is not None:
+            brief_state = ctx.brief_reference.lifecycle_state
+        else:
+            # No managed brief reference - this is an older saved job or inline-only run
+            # Gate is not enforced in this case for backward compatibility
+            return True, "Gate bypassed: no managed brief reference (legacy/inline run)"
+
+        # P2-T2: If brief was generated in this pipeline run, don't gate
+        # The brief is still being developed, not an externally-sourced brief
+        if ctx.brief_reference.was_generated_in_run:
+            return True, "Gate bypassed: brief was generated in this pipeline run"
+
+        if ctx.brief_gate is None:
+            # Gate not initialized - initialize it now
+            ctx.brief_gate = self.initialize_brief_gate(brief_state=brief_state)
+            ctx.brief_gate.checked_at_stage = PIPELINE_STAGES.index(stage_name) if stage_name in PIPELINE_STAGES else -1
+
+        if ctx.brief_gate.was_blocked:
+            return False, ctx.brief_gate.error_message
+
+        # Check gate for this stage
+        can_proceed, message = ctx.brief_gate.check_gate(brief_state, stage_name)
+
+        # Update gate state
+        ctx.brief_gate.checked_at_stage = PIPELINE_STAGES.index(stage_name) if stage_name in PIPELINE_STAGES else -1
+
+        if not can_proceed:
+            ctx.brief_gate.was_blocked = True
+            ctx.brief_gate.error_message = message
+
+        return can_proceed, message
+
+    def get_gate_status_message(self, ctx: PipelineContext) -> str:
+        """Get a human-readable gate status for display.
+
+        Returns a message suitable for logging or operator visibility.
+        """
+        if ctx.brief_gate is None:
+            return "Gate not initialized"
+
+        gate = ctx.brief_gate
+        stage_label = PIPELINE_STAGE_LABELS.get(PIPELINE_STAGES[gate.checked_at_stage], "unknown") if gate.checked_at_stage >= 0 else "not checked"
+
+        parts = [
+            f"Gate status: {gate.get_gate_status()}",
+            f"Policy: {gate.policy_mode.value}",
+            f"Checked at stage: {stage_label}",
+        ]
+
+        if gate.warnings:
+            parts.append(f"Warnings ({len(gate.warnings)}):")
+            for warning in gate.warnings:
+                parts.append(f"  - {warning}")
+
+        return "\n".join(parts)
+
     # ------------------------------------------------------------------
     # Full pipeline
     # ------------------------------------------------------------------
@@ -472,6 +1003,9 @@ class ContentGenOrchestrator:
         bypass_ideation: bool = False,
         progress_callback: Callable[[int, str], None] | None = None,
         stage_completed_callback: Callable[[int, str, str, PipelineContext], None] | None = None,
+        # P2-T1: Managed brief reference for controlled handoff
+        brief_id: str | None = None,
+        brief_snapshot: OpportunityBrief | None = None,
     ) -> PipelineContext:
         """Run the full 14-stage content pipeline with iterative quality loop.
 
@@ -479,6 +1013,10 @@ class ContentGenOrchestrator:
           1. Stages 0-4 (ideation) — run once
           2. Stages 5-11 (content) — iterative loop with quality evaluation
           3. Stages 12-13 (publish) — run once after loop exits
+
+        P2-T1: If brief_id is provided, establishes a managed brief reference
+        at pipeline start. The brief_snapshot provides the initial brief content
+        for the run.
         """
         if initial_context is None:
             ctx = PipelineContext(
@@ -498,6 +1036,27 @@ class ContentGenOrchestrator:
                 ctx.iteration_state = IterationState(
                     max_iterations=self._config.content_gen.max_iterations,
                 )
+
+        # P2-T1: Establish managed brief reference if provided
+        if brief_id or brief_snapshot:
+            brief_ref, resolved_brief = self.get_brief_for_run(
+                brief_id=brief_id,
+                snapshot=brief_snapshot,
+            )
+            ctx.brief_reference = brief_ref
+            # Use the resolved brief content as the initial opportunity_brief if no inline one exists
+            if resolved_brief and ctx.opportunity_brief is None:
+                ctx.opportunity_brief = resolved_brief
+
+        # P2-T2: Initialize the brief execution gate only when using managed brief
+        # Legacy/inline runs bypass gate initialization for backward compatibility
+        if ctx.brief_reference is not None:
+            brief_state = ctx.brief_reference.lifecycle_state
+            ctx.brief_gate = self.initialize_brief_gate(brief_state=brief_state)
+            # If gate is blocked at start, log and surface to operator
+            if ctx.brief_gate.was_blocked:
+                logger.error("Brief execution gate blocked: %s", ctx.brief_gate.error_message)
+
         end = to_stage if to_stage is not None else len(PIPELINE_STAGES) - 1
 
         # Phase 1: Ideation stages (0-4) — run once
@@ -673,11 +1232,36 @@ class ContentGenOrchestrator:
                 stage_completed_callback(idx, "skipped", skip_reason, ctx)
             return ctx
 
+        # P2-T2: Check brief execution gate before running stage
+        gate_ok, gate_message = self.check_stage_gate(ctx, stage_name)
+        if not gate_ok:
+            warnings = self._collect_trace_warnings(idx, ctx, status="blocked", detail=gate_message)
+            trace = PipelineStageTrace(
+                stage_index=idx,
+                stage_name=stage_name,
+                stage_label=label,
+                status="blocked",
+                started_at=started_at,
+                completed_at=datetime.now(tz=UTC).isoformat(),
+                input_summary=input_summary,
+                output_summary=gate_message,
+                warnings=warnings,
+                decision_summary=f"Brief gate blocked: {gate_message}",
+                metadata=self._build_trace_metadata(idx, ctx),
+            )
+            ctx.stage_traces.append(trace)
+            if stage_completed_callback:
+                stage_completed_callback(idx, "blocked", gate_message, ctx)
+            raise RuntimeError(gate_message)
+
         try:
             ctx = await _PIPELINE_HANDLERS[idx](self, ctx)
             status = "completed"
             output_summary = self._summarize_output(idx, ctx)
             warnings = self._collect_trace_warnings(idx, ctx, status=status)
+            # P2-T2: Add brief gate warnings if present
+            if ctx.brief_gate and ctx.brief_gate.warnings:
+                warnings = warnings + [f"Brief gate: {w}" for w in ctx.brief_gate.warnings]
             decision_summary = self._build_decision_summary(idx, ctx, status=status)
         except Exception as e:
             status = "failed"
@@ -1625,6 +2209,7 @@ async def _stage_plan_opportunity(
         format_quality_summary,
         validate_opportunity_brief_quality,
     )
+    from cc_deep_research.content_gen.brief_service import BriefService
 
     agent = orch._get_agent("opportunity")
     ctx.opportunity_brief = await agent.plan(ctx.theme, ctx.strategy or StrategyMemory())
@@ -1633,6 +2218,36 @@ async def _stage_plan_opportunity(
         warnings, is_acceptable = validate_opportunity_brief_quality(ctx.opportunity_brief)
         ctx.opportunity_brief._quality_summary = format_quality_summary(warnings)  # type: ignore[attr-defined]
         ctx.opportunity_brief._quality_acceptable = is_acceptable  # type: ignore[attr-defined]
+
+    # P2-T1: Create managed brief and establish reference if not already set
+    if ctx.brief_reference is None and ctx.opportunity_brief:
+        # Check if there's a brief service available
+        try:
+            service = BriefService(config=orch._config)
+            # Create a managed brief from the stage 1 output
+            managed = service.create_from_opportunity(
+                ctx.opportunity_brief,
+                source_pipeline_id=ctx.pipeline_id,
+                revision_notes="Initial brief from stage 1 generation",
+            )
+            # Establish the brief reference for this run
+            # P2-T2: was_generated_in_run=True because this brief was created in this pipeline
+            if hasattr(orch, "establish_brief_reference"):
+                ctx.brief_reference = orch.establish_brief_reference(
+                    brief_id=managed.brief_id,
+                    managed_brief=managed,
+                    snapshot=ctx.opportunity_brief,
+                    reference_type="managed",
+                )
+                ctx.brief_reference.was_generated_in_run = True
+        except Exception:
+            # If brief service fails, fall back to inline-only reference
+            if hasattr(orch, "establish_brief_reference"):
+                ctx.brief_reference = orch.establish_brief_reference(
+                    snapshot=ctx.opportunity_brief,
+                    reference_type="inline_fallback",
+                )
+
     return ctx
 
 
@@ -1732,8 +2347,10 @@ async def _stage_build_research_pack(
                 targeted_gaps = orch._extract_retrieval_gaps(plan)
                 if targeted_gaps:
                     research_gaps = (research_gaps or []) + targeted_gaps
+        research_hypotheses = list(ctx.opportunity_brief.research_hypotheses) if ctx.opportunity_brief else None
         research_pack = await agent.build(
-            item, angle, feedback=feedback, research_gaps=research_gaps
+            item, angle, feedback=feedback, research_gaps=research_gaps,
+            research_hypotheses=research_hypotheses,
         )
         _record_lane_completion(
             ctx,
@@ -1974,12 +2591,14 @@ async def _stage_human_qc(orch: ContentGenOrchestrator, ctx: PipelineContext) ->
         # Combine summaries, with claim traceability first as it's most important for QC
         full_research_summary = claim_trace_summary + "\n\n" + research_summary if claim_trace_summary else research_summary
 
+        success_criteria = list(ctx.opportunity_brief.success_criteria) if ctx.opportunity_brief else None
         qc_gate = await agent.review(
             script=script,
             visual_summary=visual_summary,
             packaging_summary=packaging_summary,
             research_summary=full_research_summary,
             argument_map_summary=argument_map_summary,
+            success_criteria=success_criteria,
         )
         _record_lane_completion(
             ctx,

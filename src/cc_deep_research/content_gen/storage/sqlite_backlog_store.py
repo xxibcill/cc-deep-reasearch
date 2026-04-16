@@ -96,6 +96,8 @@ class SqliteBacklogStore:
         self._initialized = False
         self._lock = threading.RLock()
         self._conn: sqlite3.Connection | None = None
+        # Ensure parent directory exists before SQLite tries to create the database file
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
 
     @property
     def path(self) -> Path:
@@ -114,9 +116,7 @@ class SqliteBacklogStore:
         with self._lock:
             self._ensure_initialized()
             conn = self._get_conn()
-            cursor = conn.execute(
-                "SELECT idea_id, data FROM backlog_items ORDER BY created_at ASC"
-            )
+            cursor = conn.execute("SELECT idea_id, data FROM backlog_items ORDER BY created_at ASC")
             rows = cursor.fetchall()
             if not rows:
                 # Try one-time YAML import
@@ -137,13 +137,17 @@ class SqliteBacklogStore:
             self._ensure_initialized()
             conn = self._get_conn()
             # Replace all rows transactionally
-            existing_ids = {r[0] for r in conn.execute("SELECT idea_id FROM backlog_items").fetchall()}
+            existing_ids = {
+                r[0] for r in conn.execute("SELECT idea_id FROM backlog_items").fetchall()
+            }
             new_ids = {item.idea_id for item in backlog.items}
 
             to_delete = existing_ids - new_ids
             if to_delete:
                 placeholders = ",".join("?" * len(to_delete))
-                conn.execute(f"DELETE FROM backlog_items WHERE idea_id IN ({placeholders})", tuple(to_delete))
+                conn.execute(
+                    f"DELETE FROM backlog_items WHERE idea_id IN ({placeholders})", tuple(to_delete)
+                )
 
             for item in backlog.items:
                 data = item.model_dump(exclude_none=True)
@@ -165,9 +169,7 @@ class SqliteBacklogStore:
         with self._lock:
             self._ensure_initialized()
             conn = self._get_conn()
-            cursor = conn.execute(
-                "SELECT data FROM backlog_items WHERE idea_id = ?", (idea_id,)
-            )
+            cursor = conn.execute("SELECT data FROM backlog_items WHERE idea_id = ?", (idea_id,))
             row = cursor.fetchone()
             if row is None:
                 return None
@@ -175,9 +177,7 @@ class SqliteBacklogStore:
             merged_item = _json_decoded(row[0])
             unsupported_fields = sorted(set(patch) - set(BacklogItem.model_fields))
             if unsupported_fields:
-                raise ValueError(
-                    "Unsupported backlog fields: " + ", ".join(unsupported_fields)
-                )
+                raise ValueError("Unsupported backlog fields: " + ", ".join(unsupported_fields))
             merged_item.update(patch)
             updated = BacklogItem.model_validate(merged_item)
             json_data = _json_encoded(updated.model_dump(exclude_none=True))
@@ -216,9 +216,7 @@ class SqliteBacklogStore:
             )
             """
         )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_backlog_updated ON backlog_items(updated_at)"
-        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_backlog_updated ON backlog_items(updated_at)")
         conn.commit()
         self._initialized = True
 

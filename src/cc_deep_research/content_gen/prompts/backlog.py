@@ -1,6 +1,6 @@
 """Prompt templates for the backlog builder and idea scorer.
 
-Contract Version: 1.1.0
+Contract Version: 1.2.0
 
 Parser expectations:
 - build_backlog output: Uses `---` as block delimiter. The parser keeps a
@@ -30,7 +30,7 @@ from cc_deep_research.content_gen.models import (
     StrategyMemory,
 )
 
-CONTRACT_VERSION = "1.1.0"
+CONTRACT_VERSION = "1.2.0"
 
 GLOBAL_RULES = """\
 You are generating short-form video content ideas inside a modular workflow.
@@ -62,6 +62,14 @@ Requirements:
 - Each idea should narrow the persona and emotional driver when possible
 - Each idea must have a clear why_now reason
 - Each idea must include a hook, key message, and CTA
+- Each idea must support one clear core idea for one video
+- The hook must create tension, not just name the topic
+- The key message must point to a specific payoff, not generic value
+- Prefer ideas that naturally allow proof, example, demonstration, or comparison
+- Use refined short-form formats where possible:
+  Insight Breakdown, Mistake to Fix, Story-Based, Myth vs Truth,
+  Tutorial / How-To, Result-First / Case Study, Opinion / Hot Take,
+  Before vs After
 - Reject ideas that are vague, unprovable, or too broad
 - Keep only ideas with a clear audience + clear payoff + at least one evidence source
 
@@ -141,6 +149,12 @@ def build_backlog_user(
             parts.append(f"Freshness rationale: {opportunity_brief.freshness_rationale}")
         if opportunity_brief.sub_angles:
             parts.append(f"Sub-angles to explore: {', '.join(opportunity_brief.sub_angles)}")
+        if opportunity_brief.research_hypotheses:
+            parts.append(f"Research hypotheses: {'; '.join(opportunity_brief.research_hypotheses)}")
+        if opportunity_brief.success_criteria:
+            parts.append(f"Success criteria: {'; '.join(opportunity_brief.success_criteria)}")
+        if opportunity_brief.problem_statements:
+            parts.append(f"Problem statements: {'; '.join(opportunity_brief.problem_statements)}")
 
     return "\n".join(parts)
 
@@ -163,9 +177,13 @@ Score each idea from 1-5 on these dimensions:
 - evidence_strength: How strong is the supporting evidence?
 - hook_strength: How compelling is the potential hook?
 - repurposing: Can this be repurposed across platforms?
+- opportunity_fit: How well does this idea fit the opportunity brief?
+  (audience, problem, sub-angle, and proof constraints — 1-5)
 
 Hard rules:
 - Kill anything with weak evidence AND weak hook
+- Penalize generic educational ideas that overlap heavily with other ideas
+- Prefer ideas whose payoff is specific and whose format is obvious from the angle
 - Produce_now only if total score passes the threshold
 - Build a ranked shortlist from the strongest produce_now ideas only
 - Pick one selected idea_id from the shortlist and explain why it won
@@ -182,9 +200,11 @@ production_ease: (1-5)
 evidence_strength: (1-5)
 hook_strength: (1-5)
 repurposing: (1-5)
-total_score: (sum)
+opportunity_fit: (1-5 — how well this fits opportunity brief constraints)
+total_score: (sum — include opportunity_fit in the sum)
 recommendation: produce_now | hold | kill
 reason: (one sentence)
+opportunity_fit_reason: (brief explanation of how this idea satisfies the opportunity brief)
 ---
 
 After all idea blocks, add:

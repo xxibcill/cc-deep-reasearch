@@ -7,10 +7,14 @@ from cc_deep_research.content_gen.storage.audit_store import (
     AuditStore,
 )
 from cc_deep_research.content_gen.storage.backlog_store import BacklogStore
+from cc_deep_research.content_gen.storage.brief_store import BriefStore
 from cc_deep_research.content_gen.storage.performance_learning_store import PerformanceLearningStore
+from cc_deep_research.content_gen.storage.planning_learning_store import PlanningLearningStore
 from cc_deep_research.content_gen.storage.publish_queue_store import PublishQueueStore
+from cc_deep_research.content_gen.storage.revision_store import BriefRevisionStore
 from cc_deep_research.content_gen.storage.scripting_store import ScriptingStore
 from cc_deep_research.content_gen.storage.sqlite_backlog_store import SqliteBacklogStore
+from cc_deep_research.content_gen.storage.sqlite_brief_store import SqliteBriefStore
 from cc_deep_research.content_gen.storage.strategy_store import StrategyStore
 
 __all__ = [
@@ -19,9 +23,13 @@ __all__ = [
     "AuditEventType",
     "AuditStore",
     "BacklogStore",
+    "BriefRevisionStore",
+    "BriefStore",
     "PerformanceLearningStore",
+    "PlanningLearningStore",
     "PublishQueueStore",
     "ScriptingStore",
     "SqliteBacklogStore",
+    "SqliteBriefStore",
     "StrategyStore",
 ]
