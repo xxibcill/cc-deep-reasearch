@@ -8,7 +8,47 @@ History before `0.1.0` is summarized from the repository state captured on 2026-
 
 <!-- Add Added/Changed/Fixed entries here before cutting a release. -->
 
-### Completed Task Packs
+#### Phase 01 - Strategy And Constraints (7 tasks)
+
+- Defined the canonical seven-phase operating contract and mapped the current 14-stage pipeline into it
+- Added typed workflow governance fields (owner, SLA, entry/exit criteria, skip/kill conditions, reuse opportunities) and exposed them in context and traces
+- Separated evergreen strategy memory from per-run constraints and effort controls
+
+#### Phase 02 - Opportunity And Idea Scoring (3 tasks)
+
+- Collapsed opportunity planning, backlog generation, and scoring into one decision-heavy flow with four dispositions: produce_now, hold, kill, reuse_recommended
+- Added ROI, effort, and fast-fail thresholds with effort tier and expected upside fields stopping weak ideas before research
+- Added content-type profiles so shorts, articles, newsletters, webinars, and launch assets do not use the same depth
+
+#### Phase 03 - Research And Argument (3 tasks)
+
+- Tied research depth and search budget to expected upside and claim risk with depth routing instead of flat budget
+- Collapsed angle generation and argument design into one thesis artifact with claim ledger visibility
+- Introduced early evidence gate that can hold or kill ideas before drafting with acceptable-uncertainty disclosure rules
+
+#### Phase 04 - Draft And Packaging (3 tasks)
+
+- Made the draft lane channel-aware from the first hook and structure pass with co-designed scripting and packaging
+- Added derivative and reuse planning turning approved arguments into a reusable pack instead of single assets
+- Added explicit publish-now versus hold-for-proof decision path before visual planning
+
+#### Phase 05 - Visual And Production Brief (3 tasks)
+
+- Added format-aware planning rules so light assets can skip heavy production work based on production complexity classes
+- Created unified execution brief covering beats, assets, owners, and shoot constraints replacing separate visual and production artifacts
+- Added fallback plans and asset reuse paths for visuals, locations, props, and existing assets
+
+#### Phase 06 - QC And Publish (3 tasks)
+
+- Moved fact, brand, and formatting checks earlier in the workflow with progressive QC checkpoints before final review
+- Replaced stop-before-publish behavior with explicit release-state model (blocked, approved, approved-with-known-risks)
+- Persisted operator overrides, risk acknowledgements, and approval history with audit trail
+
+#### Phase 07 - Performance And Rule Updates (3 tasks)
+
+- Persisted always-on performance signals including publish outcome, response metrics, cycle time, and stage-level timing
+- Fed performance learnings back into scoring rubrics, packaging rules, and strategy constraints with versioned rule changes
+- Added operating fitness metrics for cycle time, kill rate, reuse rate, and cost per published asset
 
 #### Web Search Cache (6 tasks)
 
