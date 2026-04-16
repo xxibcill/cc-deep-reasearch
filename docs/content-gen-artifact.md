@@ -45,6 +45,7 @@ The canonical full-run artifact is [`PipelineContext`](src/cc_deep_research/cont
 | `scripting` | Nested 10-step script-generation state |
 | `visual_plan` | Beat-by-beat visual treatment |
 | `production_brief` | Filming checklist and production prep |
+| `execution_brief` | P5-T2: Combined visual and production brief for low/medium complexity formats |
 | `packaging` | Platform-specific hooks, captions, hashtags, and related package data |
 | `qc_gate` | AI-assisted QC review plus human approval gate |
 | `publish_items` | Publish schedule suggestions and engagement plans |
@@ -498,7 +499,20 @@ This is the visual treatment artifact. It provides beat-by-beat visual guidance,
 
 This is the bridge between the written script and the shoot plan.
 
-#### 2. `ProductionBrief`
+#### 2. `VisualProductionExecutionBrief` (P5-T2 & P5-T3)
+
+For formats where `use_combined_execution_brief=True` (newsletter, article, thread, carousel), the system generates a combined execution brief instead of separate visual and production artifacts. This brief covers:
+
+- Beat-to-visual mapping (simplified or full depending on `visual_complexity`)
+- Production constraints (location, setup, wardrobe, props)
+- Fallback options for missing assets (P5-T3)
+- Asset reuse paths from existing library (P5-T3)
+- Owner assignments and shoot constraints
+- Missing asset decisions (downgrade, delay, alt-format, or skip)
+
+This reduces planning overhead for light assets while preserving full planning for complex formats.
+
+#### 3. `ProductionBrief`
 
 This is the filming checklist artifact. It contains:
 

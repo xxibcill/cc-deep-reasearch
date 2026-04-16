@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from cc_deep_research.content_gen.models import (
     PIPELINE_STAGE_LABELS,
@@ -14,6 +14,7 @@ from cc_deep_research.content_gen.models import (
     ArgumentMap,
     BeatIntent,
     BeatIntentMap,
+    BeatVisual,
     BriefExecutionGate,
     BriefExecutionPolicyMode,
     BriefLifecycleState,
@@ -22,6 +23,7 @@ from cc_deep_research.content_gen.models import (
     ClaimTraceLedger,
     ClaimTraceStage,
     ClaimTraceStatus,
+    ContentTypeProfile,
     CoreInputs,
     IterationState,
     ManagedOpportunityBrief,
@@ -45,6 +47,8 @@ from cc_deep_research.content_gen.models import (
     StageTraceMetadata,
     StrategyMemory,
     TargetedRevisionPlan,
+    VisualComplexity,
+    VisualProductionExecutionBrief,
     get_phase_for_stage,
     get_phase_policy,
 )
@@ -189,6 +193,21 @@ def _resolve_lane_angle(ctx: PipelineContext, idea_id: str) -> Any | None:
         if angle is not None:
             return angle
     return lane.angles.angle_options[0] if lane.angles.angle_options else None
+
+
+# P5-T2: Helper to get content type profile
+def _get_content_type_profile(ctx: PipelineContext) -> ContentTypeProfile:
+    """Get the content type profile for the current run."""
+    from cc_deep_research.content_gen.models import get_content_type_profile
+
+    content_type = ctx.run_constraints.content_type if ctx.run_constraints else ""
+    return get_content_type_profile(content_type)
+
+
+def _use_combined_execution_brief(ctx: PipelineContext) -> bool:
+    """Check if the current content type should use combined execution brief."""
+    profile = _get_content_type_profile(ctx)
+    return profile.use_combined_execution_brief
 
 
 def _update_candidate_status(ctx: PipelineContext, idea_id: str, status: str) -> None:
@@ -1234,6 +1253,9 @@ class ContentGenOrchestrator:
             for candidate in lane_candidates
         ):
             return False, "lane backlog/angles/argument_map missing"
+        # P5-T2: Skip visual_translation when using combined execution brief
+        if stage == "visual_translation" and _use_combined_execution_brief(ctx):
+            return False, "using combined execution brief"
         if stage == "visual_translation" and not any(
             lane.scripting is not None
             and (
@@ -1244,10 +1266,23 @@ class ContentGenOrchestrator:
             for lane in ctx.lane_contexts
         ):
             return False, "lane script/structure incomplete"
-        if stage == "production_brief" and not any(
-            lane.visual_plan is not None for lane in ctx.lane_contexts
-        ):
-            return False, "lane visual_plan missing"
+        # P5-T2: For production_brief, check if we're using combined execution brief
+        # If so, we generate it from scripting context directly
+        if stage == "production_brief":
+            if _use_combined_execution_brief(ctx):
+                # Combined execution brief uses scripting context directly
+                if not any(
+                    lane.scripting is not None
+                    and (
+                        lane.scripting.tightened or lane.scripting.annotated_script or lane.scripting.draft
+                    )
+                    is not None
+                    for lane in ctx.lane_contexts
+                ):
+                    return False, "lane script missing for combined execution brief"
+                return True, ""
+            elif not any(lane.visual_plan is not None for lane in ctx.lane_contexts):
+                return False, "lane visual_plan missing"
         if stage == "packaging" and not any(
             lane.scripting is not None
             and _resolve_lane_angle(ctx, lane.idea_id) is not None
@@ -2808,6 +2843,12 @@ async def _stage_production_brief(
     candidates = _lane_candidates(ctx)
     if not candidates:
         return ctx
+
+    # P5-T2: Handle combined execution brief for formats that use it
+    if _use_combined_execution_brief(ctx):
+        return await _stage_combined_execution_brief(orch, ctx, candidates)
+
+    # Standard flow: generate separate production brief from visual plan
     agent = orch._get_agent("production")
     for candidate in candidates:
         lane = _resolve_lane_context(ctx, candidate.idea_id)
@@ -2822,6 +2863,162 @@ async def _stage_production_brief(
             value=production_brief,
         )
     return ctx
+
+
+async def _stage_combined_execution_brief(
+    orch: ContentGenOrchestrator,
+    ctx: PipelineContext,
+    candidates: list[PipelineCandidate],
+) -> PipelineContext:
+    """P5-T2: Generate combined visual and production execution brief.
+
+    This handles formats where use_combined_execution_brief=True,
+    replacing separate visual_translation and production_brief stages.
+    """
+    from cc_deep_research.content_gen.models import VisualProductionExecutionBrief
+
+    profile = _get_content_type_profile(ctx)
+
+    for candidate in candidates:
+        lane = _resolve_lane_context(ctx, candidate.idea_id)
+        if lane is None or lane.scripting is None:
+            continue
+
+        source = lane.scripting.tightened or lane.scripting.annotated_script or lane.scripting.draft
+        if source is None:
+            continue
+
+        # P5-T3: Build execution brief with fallback and reuse planning
+        execution_brief = _build_combined_execution_brief(
+            lane=lane,
+            profile=profile,
+            source=source,
+        )
+
+        # Record completion on the lane
+        lane.execution_brief = execution_brief
+        lane.last_completed_stage = 9
+
+        # Also set on ctx for backwards compatibility
+        ctx.execution_brief = execution_brief
+
+    return ctx
+
+
+def _build_combined_execution_brief(
+    lane: PipelineLaneContext,
+    profile: "ContentTypeProfile",
+    source: ScriptVersion,
+) -> VisualProductionExecutionBrief:
+    """P5-T2 & P5-T3: Build a combined execution brief with fallback planning.
+
+    For formats using combined execution brief, this creates a single brief
+    that covers:
+    - Beat-to-visual mapping (simplified)
+    - Production constraints
+    - Owner assignments
+    - Shoot constraints
+    - Fallback options for missing assets
+    - Asset reuse paths
+    """
+    from cc_deep_research.content_gen.models import (
+        AssetFallback,
+        BeatVisual,
+        MissingAssetDecision,
+        VisualProductionExecutionBrief,
+    )
+
+    # Extract beat visuals from structure if available
+    beat_visuals: list[BeatVisual] = []
+    if lane.scripting and lane.scripting.structure and lane.scripting.structure.beats:
+        for beat in lane.scripting.structure.beats:
+            beat_visuals.append(
+                BeatVisual(
+                    beat=beat.beat if hasattr(beat, "beat") else "",
+                    spoken_line=beat.intent if hasattr(beat, "intent") else "",
+                    visual="medium shot" if profile.visual_complexity == VisualComplexity.LIGHT else "see script",
+                )
+            )
+
+    # Determine planning depth based on visual complexity
+    planning_depth: Literal["light", "standard", "rich"] = "standard"
+    if profile.visual_complexity == VisualComplexity.NONE:
+        planning_depth = "light"
+    elif profile.visual_complexity == VisualComplexity.RICH:
+        planning_depth = "rich"
+
+    # P5-T3: Build fallback options based on content type
+    missing_asset_decisions: list[AssetFallback] = []
+    prop_fallbacks: list[str] = []
+    visual_fallbacks: list[str] = []
+    existing_assets: list[str] = []
+
+    # Add default fallback decisions based on content type
+    if profile.profile_key in ("newsletter", "thread", "article"):
+        # Text-based formats: minimal production risk
+        missing_asset_decisions.append(
+            AssetFallback(
+                asset_name="location",
+                fallback_option="remote/office setup",
+                decision=MissingAssetDecision.DOWNGRADE,
+                decision_note="Text format works with any basic setup",
+            )
+        )
+    elif profile.profile_key == "carousel":
+        # Carousel: visual risk exists
+        missing_asset_decisions.append(
+            AssetFallback(
+                asset_name="visuals",
+                fallback_option="stock imagery or generated graphics",
+                decision=MissingAssetDecision.DOWNGRADE,
+                decision_note="Carousel can use static visuals if custom shots unavailable",
+            )
+        )
+        prop_fallbacks = ["simple props or none required"]
+        visual_fallbacks = ["stock photos", "screen recordings", "generated visuals"]
+    else:
+        # Video formats: moderate to high production risk
+        missing_asset_decisions.append(
+            AssetFallback(
+                asset_name="location",
+                fallback_option="home office or neutral background",
+                decision=MissingAssetDecision.DOWNGRADE,
+                decision_note="Simple background acceptable for talking-head content",
+            )
+        )
+        missing_asset_decisions.append(
+            AssetFallback(
+                asset_name="props",
+                fallback_option="none or minimal",
+                decision=MissingAssetDecision.DOWNGRADE,
+                decision_note="Props optional for standard short-form",
+            )
+        )
+
+    return VisualProductionExecutionBrief(
+        idea_id=lane.idea_id,
+        beat_visuals=beat_visuals,
+        location="tbd - operator to confirm",
+        location_fallback="home office or remote setup",
+        setup="basic lighting and camera setup",
+        wardrobe="casual/professional per brand guidelines",
+        props=[],
+        prop_fallbacks=prop_fallbacks,
+        assets_to_prepare=[],
+        existing_assets=existing_assets,
+        asset_reuse_plan="check asset library before creating new",
+        audio_checks=["mic levels", "room echo check"],
+        battery_checks=["camera battery", "lav battery"],
+        storage_checks=["card space", "backup storage"],
+        pickup_lines_to_capture=[],
+        visual_fallbacks=visual_fallbacks,
+        backup_plan="use B-roll or cut to talking head",
+        missing_asset_decisions=missing_asset_decisions,
+        owner="operator",
+        shoot_constraints="30-60 min shoot time",
+        planning_depth=planning_depth,
+        visual_complexity_used=profile.visual_complexity,
+    )
 
 
 async def _stage_packaging(orch: ContentGenOrchestrator, ctx: PipelineContext) -> PipelineContext:

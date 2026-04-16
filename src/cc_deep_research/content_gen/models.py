@@ -1063,6 +1063,24 @@ class EffortTier(StrEnum):
     DEEP = "deep"  # Full iteration, highest quality bar
 
 
+# P5-T1: Production and visual complexity enums
+class ProductionComplexity(StrEnum):
+    """Production planning complexity level."""
+
+    MINIMAL = "minimal"  # Light assets: talking heads, screen recordings
+    STANDARD = "standard"  # Regular shorts with some B-roll and setup
+    PREMIUM = "premium"  # Complex: multi-location, props, multiple setups
+
+
+class VisualComplexity(StrEnum):
+    """Visual planning complexity level."""
+
+    NONE = "none"  # No visual planning needed (pure text/audio formats)
+    LIGHT = "light"  # Minimal visual notes, basic shot suggestions
+    STANDARD = "standard"  # Full beat-by-beat visual plan
+    RICH = "rich"  # Detailed visual with multiple options per beat
+
+
 # P2-T3: Content-type branching profiles
 class ContentTypeProfile(BaseModel):
     """Depth profile for one content type.
@@ -1075,7 +1093,11 @@ class ContentTypeProfile(BaseModel):
     research_depth: Literal["none", "light", "standard", "deep"] = "standard"
     drafting_depth: Literal["outline", "draft", "polished"] = "draft"
     production_depth: Literal["minimal", "standard", "premium"] = "standard"
+    # P5-T1: Visual complexity determines depth of visual translation planning
+    visual_complexity: VisualComplexity = VisualComplexity.STANDARD
     packaging_depth: Literal["minimal", "standard", "full"] = "standard"
+    # P5-T1: When True, use combined execution brief instead of separate visual + production
+    use_combined_execution_brief: bool = False
     skip_stages: list[str] = Field(
         default_factory=list,
         description="Stage names to skip for this content type",
@@ -1093,7 +1115,9 @@ CONTENT_TYPE_PROFILES: dict[str, ContentTypeProfile] = {
         research_depth="standard",
         drafting_depth="polished",
         production_depth="standard",
+        visual_complexity=VisualComplexity.STANDARD,
         packaging_depth="standard",
+        use_combined_execution_brief=False,
         skip_stages=[],
         required_artifacts=["research_pack", "script", "visual_plan", "packaging"],
     ),
@@ -1102,7 +1126,9 @@ CONTENT_TYPE_PROFILES: dict[str, ContentTypeProfile] = {
         research_depth="light",
         drafting_depth="draft",
         production_depth="minimal",
+        visual_complexity=VisualComplexity.NONE,
         packaging_depth="minimal",
+        use_combined_execution_brief=True,
         skip_stages=["visual_translation", "production_brief"],
         required_artifacts=["research_pack", "script", "packaging"],
     ),
@@ -1111,7 +1137,9 @@ CONTENT_TYPE_PROFILES: dict[str, ContentTypeProfile] = {
         research_depth="deep",
         drafting_depth="polished",
         production_depth="minimal",
+        visual_complexity=VisualComplexity.NONE,
         packaging_depth="minimal",
+        use_combined_execution_brief=True,
         skip_stages=["visual_translation", "production_brief"],
         required_artifacts=["research_pack", "argument_map", "script", "packaging"],
     ),
@@ -1120,7 +1148,9 @@ CONTENT_TYPE_PROFILES: dict[str, ContentTypeProfile] = {
         research_depth="deep",
         drafting_depth="polished",
         production_depth="premium",
+        visual_complexity=VisualComplexity.RICH,
         packaging_depth="full",
+        use_combined_execution_brief=False,
         skip_stages=[],
         required_artifacts=["research_pack", "argument_map", "script", "visual_plan", "production_brief", "packaging"],
     ),
@@ -1129,7 +1159,9 @@ CONTENT_TYPE_PROFILES: dict[str, ContentTypeProfile] = {
         research_depth="standard",
         drafting_depth="polished",
         production_depth="premium",
+        visual_complexity=VisualComplexity.RICH,
         packaging_depth="full",
+        use_combined_execution_brief=False,
         skip_stages=[],
         required_artifacts=["research_pack", "angle", "script", "visual_plan", "production_brief", "packaging"],
     ),
@@ -1138,7 +1170,9 @@ CONTENT_TYPE_PROFILES: dict[str, ContentTypeProfile] = {
         research_depth="light",
         drafting_depth="draft",
         production_depth="minimal",
+        visual_complexity=VisualComplexity.NONE,
         packaging_depth="minimal",
+        use_combined_execution_brief=True,
         skip_stages=["visual_translation", "production_brief"],
         required_artifacts=["research_pack", "script", "packaging"],
     ),
@@ -1147,7 +1181,9 @@ CONTENT_TYPE_PROFILES: dict[str, ContentTypeProfile] = {
         research_depth="standard",
         drafting_depth="polished",
         production_depth="standard",
+        visual_complexity=VisualComplexity.LIGHT,
         packaging_depth="standard",
+        use_combined_execution_brief=True,
         skip_stages=["production_brief"],
         required_artifacts=["research_pack", "script", "visual_plan", "packaging"],
     ),
@@ -1156,7 +1192,9 @@ CONTENT_TYPE_PROFILES: dict[str, ContentTypeProfile] = {
         research_depth="standard",
         drafting_depth="polished",
         production_depth="standard",
+        visual_complexity=VisualComplexity.STANDARD,
         packaging_depth="standard",
+        use_combined_execution_brief=False,
         skip_stages=[],
         required_artifacts=["research_pack", "script", "visual_plan", "packaging"],
     ),
@@ -2368,6 +2406,144 @@ class ProductionBrief(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# P5-T2 & P5-T3: Combined Visual & Production Execution Brief
+# ---------------------------------------------------------------------------
+
+
+class MissingAssetDecision(StrEnum):
+    """How to handle a missing asset or dependency."""
+
+    DOWNGRADE = "downgrade"  # Use simpler fallback option
+    DELAY = "delay"  # Wait until asset is available
+    ALT_FORMAT = "alt_format"  # Switch to alternate format
+    SKIP = "skip"  # Skip this element entirely
+
+
+class AssetFallback(BaseModel):
+    """A fallback option for a missing asset or dependency."""
+
+    asset_name: str = Field(description="Name of the asset that might be missing")
+    fallback_option: str = Field(description="What to use instead")
+    decision: MissingAssetDecision = Field(
+        default=MissingAssetDecision.DOWNGRADE,
+        description="How to handle if this asset is unavailable",
+    )
+    decision_note: str = Field(
+        default="",
+        description="Why this decision was made",
+    )
+
+
+class VisualProductionExecutionBrief(BaseModel):
+    """Combined execution brief for formats that use use_combined_execution_brief=True.
+
+    P5-T2: Replaces separate visual_plan and production_brief for low/medium complexity formats.
+    P5-T3: Includes fallback planning and asset reuse tracking.
+
+    This model covers:
+    - Beat-to-visual mapping (from VisualPlanOutput)
+    - Production constraints (from ProductionBrief)
+    - Owner assignments for execution
+    - Shoot constraints and timing
+    - Fallback options for missing assets
+    - Asset reuse paths from existing library
+    """
+
+    idea_id: str = ""
+    # Beat-level visual execution (lightweight version)
+    beat_visuals: list[BeatVisual] = Field(
+        default_factory=list,
+        description="Simplified beat-to-visual mapping for execution",
+    )
+    # Production execution fields (from ProductionBrief)
+    location: str = Field(
+        default="",
+        description="Primary filming location",
+    )
+    location_fallback: str = Field(
+        default="",
+        description="Alternate location if primary is unavailable",
+    )
+    setup: str = Field(
+        default="",
+        description="Setup requirements and notes",
+    )
+    wardrobe: str = Field(
+        default="",
+        description="Wardrobe/appearance notes",
+    )
+    props: list[str] = Field(
+        default_factory=list,
+        description="Props needed for filming",
+    )
+    # P5-T3: Fallback props if primary props unavailable
+    prop_fallbacks: list[str] = Field(
+        default_factory=list,
+        description="Alternate prop options",
+    )
+    # Assets to prepare or source
+    assets_to_prepare: list[str] = Field(
+        default_factory=list,
+        description="Assets that need to be created or sourced",
+    )
+    # P5-T3: Existing assets that can be reused
+    existing_assets: list[str] = Field(
+        default_factory=list,
+        description="Assets from library that can be reused",
+    )
+    # P5-T3: Plan for how to reuse existing assets
+    asset_reuse_plan: str = Field(
+        default="",
+        description="How existing assets will be incorporated or adapted",
+    )
+    # Audio/video setup checks
+    audio_checks: list[str] = Field(default_factory=list)
+    battery_checks: list[str] = Field(default_factory=list)
+    storage_checks: list[str] = Field(default_factory=list)
+    # Pickup lines / B-roll to capture
+    pickup_lines_to_capture: list[str] = Field(
+        default_factory=list,
+        description="Specific lines or moments to capture for pickup",
+    )
+    # P5-T3: Visual fallback options (e.g., stock footage alternatives)
+    visual_fallbacks: list[str] = Field(
+        default_factory=list,
+        description="Alternate visuals if planned shots are not achievable",
+    )
+    # Backup/contingency plan
+    backup_plan: str = Field(
+        default="",
+        description="What to do if main plan fails",
+    )
+    # P5-T3: Missing asset decisions - explicit handling for each at-risk asset
+    missing_asset_decisions: list[AssetFallback] = Field(
+        default_factory=list,
+        description="How missing assets trigger downgrade, delay, or alternate-format decisions",
+    )
+    # Ownership and responsibilities
+    owner: str = Field(
+        default="",
+        description="Who is responsible for execution",
+    )
+    shoot_constraints: str = Field(
+        default="",
+        description="Time, equipment, or other constraints for the shoot",
+    )
+    # Complexity and planning depth tracking
+    planning_depth: Literal["light", "standard", "rich"] = Field(
+        default="standard",
+        description="How much planning detail was produced",
+    )
+    visual_complexity_used: VisualComplexity = Field(
+        default=VisualComplexity.STANDARD,
+        description="Visual complexity level that was applied",
+    )
+    # Degradation tracking
+    is_degraded: bool = False
+    degradation_reason: str = ""
+
+
+# ---------------------------------------------------------------------------
 # Pipeline stage 8: Packaging generator
 # ---------------------------------------------------------------------------
 
@@ -2703,6 +2879,11 @@ class PipelineLaneContext(BaseModel):
     scripting: ScriptingContext | None = None
     visual_plan: VisualPlanOutput | None = None
     production_brief: ProductionBrief | None = None
+    # P5-T2: Combined execution brief for low/medium complexity formats
+    execution_brief: VisualProductionExecutionBrief | None = Field(
+        default=None,
+        description="Combined visual and production brief for formats using use_combined_execution_brief=True",
+    )
     packaging: PackagingOutput | None = None
     qc_gate: HumanQCGate | None = None
     # P3-T3: Early fact-risk gate decision (after thesis, before drafting)
@@ -2991,6 +3172,11 @@ class PipelineContext(BaseModel):
     scripting: ScriptingContext | None = None
     visual_plan: VisualPlanOutput | None = None
     production_brief: ProductionBrief | None = None
+    # P5-T2: Combined execution brief for low/medium complexity formats
+    execution_brief: VisualProductionExecutionBrief | None = Field(
+        default=None,
+        description="Combined visual and production brief for formats using use_combined_execution_brief=True",
+    )
     packaging: PackagingOutput | None = None
     qc_gate: HumanQCGate | None = None
     publish_items: list[PublishItem] = Field(default_factory=list)

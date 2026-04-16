@@ -175,7 +175,7 @@ Phase 01 defines the canonical seven-phase operating model as the operator-frien
 | 2 | Opportunity & Ideation | `plan_opportunity`, `build_backlog`, `score_ideas`, `generate_angles` | Generate and score ideas |
 | 3 | Research & Argument | `build_research_pack`, `build_argument_map` | Build evidence and narrative plan |
 | 4 | Draft & Refinement | `run_scripting` | Generate and refine script (with iterative loop) |
-| 5 | Visual & Production | `visual_translation`, `production_brief` | Plan visuals and production |
+| 5 | Visual & Production | `visual_translation`, `production_brief` | Plan visuals and production (P5: format-aware depth, combined execution brief for light formats, fallback planning) |
 | 6 | QC & Approval | `packaging`, `human_qc` | Generate packaging and human QC |
 | 7 | Publish & Learn | `publish_queue`, `performance_analysis` | Schedule publish and analyze |
 
@@ -429,6 +429,8 @@ P2-T1 Decision Lane: Scoring produces four explicit dispositions:
 
 P2-T3 Content-Type Branching: Scoring carries a `content_type_profile` derived from `RunConstraints.content_type`. Each profile defines research/drafting/production/packaging depth and which stages to skip. Known profiles: `short_form_video` (default), `newsletter`, `article`, `webinar`, `launch_asset`, `thread`, `carousel`. Profiles are defined in [`ContentTypeProfile`](../src/cc_deep_research/content_gen/models.py) and resolved via `get_content_type_profile()`.
 
+**P5-T1: Production Complexity Branching:** Profiles now include `visual_complexity` (NONE/LIGHT/STANDARD/RICH) and `use_combined_execution_brief` (bool). Light formats (newsletter, thread, article, carousel) use combined execution brief instead of separate visual and production planning.
+
 CLI:
 
 ```bash
@@ -614,6 +616,7 @@ Behavior:
 - the orchestrator prefers `tightened`, then `annotated_script`, then `draft`
 - each beat is expanded into a visual treatment
 - the prompt asks for a `visual_refresh_check`
+- **P5-T1**: For formats with `visual_complexity=NONE` (newsletter, article, thread), this stage is skipped and a combined execution brief is generated instead
 
 CLI:
 
@@ -646,6 +649,27 @@ CLI:
 ```bash
 cc-deep-research content-gen production --from-file visual.json -o production.json
 ```
+
+**P5-T2: Format-Aware Planning Depth:**
+
+For formats where `use_combined_execution_brief=True` (newsletter, article, thread, carousel), the system generates a combined `VisualProductionExecutionBrief` instead of separate visual and production artifacts. This:
+
+- Combines visual mapping and execution planning into one reusable execution brief
+- Reduces planning overhead for light assets (simple talking-head shorts, text-based formats)
+- Preserves full separate planning for complex formats (webinar, launch asset, standard short-form video)
+
+The content type profile's `visual_complexity` and `production_depth` fields determine which path is taken.
+
+**P5-T3: Fallback And Asset Reuse Planning:**
+
+The combined execution brief includes:
+
+- `location_fallback`: Alternate location if primary is unavailable
+- `prop_fallbacks`: Alternate prop options
+- `visual_fallbacks`: Alternate visuals if planned shots are not achievable
+- `existing_assets`: Assets from library that can be reused
+- `asset_reuse_plan`: How existing assets will be incorporated
+- `missing_asset_decisions`: Explicit handling for each at-risk asset (downgrade, delay, alt-format, skip)
 
 ### Stage 10: Packaging
 
