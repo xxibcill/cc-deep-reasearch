@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ShieldCheck, AlertTriangle, XCircle, Shield, ShieldAlert, ShieldX } from 'lucide-react'
+import { ShieldCheck, Shield, ShieldAlert, ShieldX } from 'lucide-react'
 import type { HumanQCGate } from '@/types/content-gen'
 
 interface QCGatePanelProps {
@@ -103,6 +103,21 @@ export function QCGatePanel({ qcGate, pipelineId, onApprove }: QCGatePanelProps)
         </div>
       )}
 
+      {qcGate.issue_origin_summary && qcGate.issue_origin_summary.length > 0 && (
+        <div className="border border-warning/20 bg-warning-muted/20 rounded-sm p-3 space-y-1.5">
+          <h4 className="text-xs font-mono uppercase tracking-wider text-warning">
+            Issue Origins
+          </h4>
+          <ul className="space-y-1">
+            {qcGate.issue_origin_summary.map((item, i) => (
+              <li key={i} className="text-sm text-foreground/75 pl-3 border-l border-warning/30">
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Issue categories */}
       <div className="space-y-3">
         {issueSection('Clarity', qcGate.clarity_issues)}
@@ -114,10 +129,22 @@ export function QCGatePanel({ qcGate, pipelineId, onApprove }: QCGatePanelProps)
 
       {/* Approval */}
       <div className="pt-3 border-t border-border">
+        {qcGate.release_state ? (
+          <p className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground mb-2">
+            Release State: {qcGate.release_state}
+          </p>
+        ) : null}
         {approved ? (
-          <div className="flex items-center gap-2 text-success text-sm font-medium">
-            <ShieldCheck className="h-4 w-4" />
-            Approved for publish
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 text-success text-sm font-medium">
+              <ShieldCheck className="h-4 w-4" />
+              Approved for publish
+            </div>
+            {qcGate.override_reason ? (
+              <div className="text-xs text-warning font-mono">
+                Override by {qcGate.override_actor || 'operator'}: {qcGate.override_reason}
+              </div>
+            ) : null}
           </div>
         ) : (
           <button

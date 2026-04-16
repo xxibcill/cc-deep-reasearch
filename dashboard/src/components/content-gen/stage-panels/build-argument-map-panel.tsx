@@ -52,6 +52,14 @@ export function BuildArgumentMapPanel({ ctx }: { ctx: PipelineContext }) {
           label="Core mechanism"
           value={ctx.argument_map.core_mechanism || 'No mechanism recorded'}
         />
+        <SummaryField
+          label="Fact-risk decision"
+          value={ctx.fact_risk_gate?.decision || 'No early fact-risk gate recorded'}
+        />
+        <SummaryField
+          label="Fact-risk rationale"
+          value={ctx.fact_risk_gate?.decision_reason || 'No early fact-risk rationale recorded'}
+        />
       </div>
 
       <SummaryField
@@ -109,6 +117,19 @@ export function BuildArgumentMapPanel({ ctx }: { ctx: PipelineContext }) {
         items={ctx.argument_map.genericity_flags ?? []}
         emptyLabel="No genericity flags"
       />
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <SectionList
+          label="Hold resolution requirements"
+          items={ctx.fact_risk_gate?.hold_resolution_requirements ?? []}
+          emptyLabel="No hold requirements recorded"
+        />
+        <SectionList
+          label="Proof checks"
+          items={ctx.fact_risk_gate?.proof_check_results ?? []}
+          emptyLabel="No proof checks recorded"
+        />
+      </div>
     </div>
   )
 }
