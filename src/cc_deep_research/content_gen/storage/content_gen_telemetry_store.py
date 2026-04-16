@@ -100,6 +100,19 @@ class ContentGenTelemetryStore:
         existing.append(run)
         self.save_run_metrics(existing)
 
+    def upsert_run_metrics(self, run: ContentGenRunMetrics) -> None:
+        """Insert or replace run metrics for a pipeline run."""
+        existing = self.load_run_metrics()
+        replaced = False
+        for index, current in enumerate(existing):
+            if current.run_id == run.run_id:
+                existing[index] = run
+                replaced = True
+                break
+        if not replaced:
+            existing.append(run)
+        self.save_run_metrics(existing)
+
     # ---------------------------------------------------------------------------
     # Operating Fitness
     # ---------------------------------------------------------------------------
