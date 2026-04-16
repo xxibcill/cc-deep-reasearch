@@ -28,6 +28,11 @@ Thumbs.db
 .temp/
 pipeline_context*.json
 
+# Local environment files
+.env
+.env.*
+!.env.example
+
 # Node modules (if using Node.js projects)
 node_modules/
 dashboard/node_modules/
