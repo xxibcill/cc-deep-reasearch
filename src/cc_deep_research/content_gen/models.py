@@ -147,10 +147,12 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "build_research_pack": ContentGenStageContract(
         stage_name="build_research_pack",
         prompt_module="prompts/research_pack.py",
-        contract_version="1.2.0",
+        contract_version="1.3.0",
         parser_location="agents/research_pack.py::_parse_research_pack",
         output_model="ResearchPack",
         format_notes=(
+            "P3-T1: Research depth routing metadata (research_depth_routing, research_mode) "
+            "is attached to the pack output for pipeline traceability. "
             "Structured findings/claims/flag blocks reference source_ids from the "
             "prompt-provided source catalog; sources are pre-sorted by quality_rank "
             "and carry authority/directness/freshness signals (Task 16)."
@@ -163,19 +165,25 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
             "uncertainty_flags",
             "assets_needed",
             "research_stop_reason",
+            "research_depth_routing",
+            "research_mode",
         ),
         failure_mode="tolerant",
     ),
     "build_argument_map": ContentGenStageContract(
         stage_name="build_argument_map",
         prompt_module="prompts/argument_map.py",
-        contract_version="1.0.0",
+        contract_version="1.1.0",
         parser_location="agents/argument_map.py::_parse_argument_map",
         output_model="ArgumentMap",
         format_notes=(
-            "Scalar thesis fields followed by repeated '---' blocks for proof_anchors, "
-            "counterarguments, safe_claims, unsafe_claims, and beat_claim_plan. "
-            "Beat and claim records reference explicit proof_id/claim_id identifiers."
+            "P3-T2: This stage produces the single unified thesis artifact that replaces "
+            "the previous separate angle-selection + argument-design flow. "
+            "Scalar thesis fields (thesis, audience_belief_to_challenge, core_mechanism) "
+            "carry the chosen angle and core claim. Repeated '---' blocks for proof_anchors, "
+            "counterarguments, safe_claims, unsafe_claims, and beat_claim_plan provide "
+            "the full support structure. The beat_claim_plan is the narrative contract "
+            "that seeds scripting directly. Claim ledger linkage is via proof_id cross-reference."
         ),
         required_fields=(
             "thesis",
@@ -188,6 +196,9 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
             "safe_claims",
             "unsafe_claims",
             "beat_claim_plan",
+            "what_this_contributes",
+            "genericity_flags",
+            "differentiation_strategy",
         ),
         failure_mode="fail_fast",
     ),
@@ -1566,6 +1577,178 @@ class RetrievalMode(StrEnum):
     CONTRARIAN = "contrarian"  # Emphasize counterevidence and pushback
 
 
+class ResearchDepthTier(StrEnum):
+    """Research depth investment level tied to upside and claim risk.
+
+    P3-T1: Routes research time and validation depth to expected upside
+    and fact risk of the idea instead of using one default level.
+    """
+
+    LIGHT = "light"  # Minimal search, fast turnaround — low-upside or low-risk ideas
+    STANDARD = "standard"  # Normal search depth — medium-upside ideas
+    DEEP = "deep"  # Expanded search, more sources — high-upside or high-risk ideas
+    OVERRIDE = "override"  # Operator-specified depth, bypasses ROI routing
+
+
+class ResearchDepthRouting(BaseModel):
+    """P3-T1: Routing decision for research depth with traceability."""
+
+    tier: ResearchDepthTier = Field(
+        default=ResearchDepthTier.STANDARD,
+        description="The depth tier assigned to this research run",
+    )
+    routing_basis: str = Field(
+        default="",
+        description="Why this tier was selected: 'effort_tier', 'expected_upside', 'claim_risk', 'operator_override'",
+    )
+    effort_tier_source: str = Field(
+        default="",
+        description="The EffortTier value from scoring that influenced routing",
+    )
+    expected_upside_source: int = Field(
+        default=0,
+        ge=0,
+        le=5,
+        description="The expected_upside score from scoring (0 means unknown/not yet scored)",
+    )
+    claim_risk_signals: list[str] = Field(
+        default_factory=list,
+        description="Identified risk signals that bumped tier: 'high_dispute', 'no_sources', 'weak_evidence', etc.",
+    )
+    operator_override: bool = Field(
+        default=False,
+        description="True when operator explicitly overrode the ROI-based routing",
+    )
+    override_reason: str = Field(
+        default="",
+        description="Operator's stated reason for override",
+    )
+
+
+# ---------------------------------------------------------------------------
+# P3-T3: Early Fact-Risk And Uncertainty Gate
+# ---------------------------------------------------------------------------
+
+
+class ClaimStatus(StrEnum):
+    """P3-T3: Classification of a claim's support status."""
+
+    SUPPORTED = "supported"  # Has proof anchor backing from research
+    WEAK = "weak"  # Has some evidence but not strong enough for confident delivery
+    MISSING = "missing"  # Claim made but no supporting proof found
+    DISPUTED = "disputed"  # Counterevidence or conflicting sources exist
+    ACCEPTABLE_WITH_DISCLOSURE = "acceptable_with_disclosure"  # Known uncertainty but operator-approved
+
+
+class FactRiskDecision(StrEnum):
+    """P3-T3: Gate decision for an idea's path through the pipeline."""
+
+    APPROVED = "approved"  # All critical claims supported, can proceed to drafting
+    HOLD = "hold"  # Significant unsupported claims — hold for proof before drafting
+    KILL = "kill"  # Critical claims disputed or missing — kill before drafting
+    PROCEED_WITH_UNCERTAINTY = "proceed_with_uncertainty"  # Known uncertainty acceptable with disclosure
+
+
+class FactRiskGate(BaseModel):
+    """P3-T3: Early gate output after thesis artifact, before drafting.
+
+    Classifies all claims and makes a pipeline routing decision.
+    Stops unsupported ideas before drafting starts.
+    """
+
+    idea_id: str = ""
+    angle_id: str = ""
+    thesis: str = ""
+
+    # P3-T3: Per-claim classification
+    claim_statuses: list[ClaimStatus] = Field(
+        default_factory=list,
+        description="Status of each major claim in the thesis",
+    )
+
+    # P3-T3: Aggregate counts for review
+    supported_claims: list[str] = Field(
+        default_factory=list,
+        description="claim_ids or claim texts that are fully supported",
+    )
+    weak_claims: list[str] = Field(
+        default_factory=list,
+        description="claim_ids or claim texts with partial but insufficient evidence",
+    )
+    missing_claims: list[str] = Field(
+        default_factory=list,
+        description="claim_ids or claim texts with no supporting evidence",
+    )
+    disputed_claims: list[str] = Field(
+        default_factory=list,
+        description="claim_ids or claim texts with conflicting evidence",
+    )
+    acceptable_uncertainty_claims: list[str] = Field(
+        default_factory=list,
+        description="claim_ids or claim texts approved for delivery with known uncertainty",
+    )
+
+    # P3-T3: Gate decision
+    decision: FactRiskDecision = FactRiskDecision.HOLD
+
+    # P3-T3: Reason for the decision
+    decision_reason: str = Field(
+        default="",
+        description="Why this decision was made — key evidence or risk factors",
+    )
+
+    # P3-T3: What must be resolved before the hold can be cleared
+    hold_resolution_requirements: list[str] = Field(
+        default_factory=list,
+        description="What must be proven or clarified before moving to drafting",
+    )
+
+    # P3-T3: When proceeding with known uncertainty, what disclosure is required
+    required_disclosure: str = Field(
+        default="",
+        description="What the script must include as qualified/uncertain delivery",
+    )
+
+    # P3-T3: Known-uncertainty rules for this idea/angle
+    # When operator explicitly allows delivery with known gaps
+    uncertainty_policy: str = Field(
+        default="",
+        description="The policy that governs when delivery with uncertainty is acceptable",
+    )
+
+    # P3-T3: Trace of which proof anchors were checked and their status
+    proof_check_results: list[str] = Field(
+        default_factory=list,
+        description="Human-readable trace of which proof anchors were verified",
+    )
+
+
+class FactRiskGateResult(BaseModel):
+    """P3-T3: Result of a single idea's fact-risk gate evaluation."""
+
+    idea_id: str
+    decision: FactRiskDecision
+    decision_reason: str
+    supported_count: int = 0
+    weak_count: int = 0
+    missing_count: int = 0
+    disputed_count: int = 0
+    hold_resolution_requirements: list[str] = Field(default_factory=list)
+    required_disclosure: str = ""
+    uncertainty_policy: str = ""
+
+
+class FactRiskGateOutput(BaseModel):
+    """P3-T3: Collection of gate decisions for all ideas in a scoring run."""
+
+    gates: list[FactRiskGate] = Field(default_factory=list)
+    # Aggregate summary across all gated ideas
+    total_approved: int = 0
+    total_held: int = 0
+    total_killed: int = 0
+    total_proceed_with_uncertainty: int = 0
+
+
 class RetrievalDecision(BaseModel):
     """Single query decision from the retrieval planner."""
 
@@ -1578,7 +1761,11 @@ class RetrievalDecision(BaseModel):
 
 
 class RetrievalBudget(BaseModel):
-    """Explicit budget for bounding retrieval search volume."""
+    """Explicit budget for bounding retrieval search volume.
+
+    P3-T1: Core budget fields are used for all tiers; tier-specific overrides
+    are applied by the planner based on the ResearchDepthRouting decision.
+    """
 
     max_queries: int = Field(default=6, ge=1, le=50)
     max_sources: int = Field(default=12, ge=1, le=100)
@@ -1586,6 +1773,23 @@ class RetrievalBudget(BaseModel):
     stop_if_sources_seen: int | None = Field(default=None, description="Stop early if N sources already collected")
     stop_on_family_count: int | None = Field(
         default=None, description="Stop per family after N queries (for deep mode)"
+    )
+    # P3-T1: Tier-specific overrides — these replace the base fields when the tier is set
+    # Format: tier_name -> (max_queries, max_sources)
+    tier_overrides: dict[str, tuple[int, int]] = Field(
+        default_factory=lambda: {
+            "light": (3, 6),
+            "standard": (6, 12),
+            "deep": (12, 24),
+        },
+        description="Per-tier query and source budget overrides",
+    )
+    # P3-T1: Time budget in seconds — used for display and enforcement
+    time_budget_seconds: int = Field(
+        default=120,
+        ge=30,
+        le=600,
+        description="Estimated time budget for this research run",
     )
 
 
@@ -1595,6 +1799,11 @@ class RetrievalPlan(BaseModel):
     decisions: list[RetrievalDecision] = Field(default_factory=list)
     budget: RetrievalBudget = Field(default_factory=RetrievalBudget)
     mode: RetrievalMode = Field(default=RetrievalMode.BASELINE)
+    # P3-T1: Research depth routing for the pipeline
+    research_depth_routing: ResearchDepthRouting | None = Field(
+        default=None,
+        description="Routing decision that determines depth tier and time budget",
+    )
     research_hypotheses: list[str] = Field(default_factory=list)
     coverage_notes: list[str] = Field(default_factory=list)
     is_complete: bool = Field(default=False)
@@ -1715,6 +1924,16 @@ class ResearchPack(BaseModel):
     research_stop_reason: str = ""
     is_degraded: bool = False
     degradation_reason: str = ""
+    # P3-T1: Research depth routing metadata (which tier was used and why)
+    research_depth_routing: ResearchDepthRouting | None = Field(
+        default=None,
+        description="Depth routing decision for this research run",
+    )
+    # P3-T1: Retrieval mode used (baseline, deep, targeted, contrarian)
+    research_mode: str = Field(
+        default="",
+        description="RetrievalMode string used for this research run",
+    )
 
     @model_validator(mode="after")
     def _sync_structured_and_legacy_views(self) -> ResearchPack:
@@ -2372,6 +2591,11 @@ class PipelineLaneContext(BaseModel):
     production_brief: ProductionBrief | None = None
     packaging: PackagingOutput | None = None
     qc_gate: HumanQCGate | None = None
+    # P3-T3: Early fact-risk gate decision (after thesis, before drafting)
+    fact_risk_gate: FactRiskGate | None = Field(
+        default=None,
+        description="Early gate output after thesis artifact, before drafting",
+    )
     publish_items: list[PublishItem] = Field(default_factory=list)
 
 

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from cc_deep_research.content_gen.models import AngleOption, BacklogItem, ResearchPack
 
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"
 
 GLOBAL_RULES = """\
 You are building the argument map that bridges research into script drafting.

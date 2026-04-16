@@ -353,13 +353,20 @@ def test_content_gen_stage_contract_registry_tracks_expert_workflow_shapes() -> 
     scripting_contract = CONTENT_GEN_STAGE_CONTRACTS["run_scripting"]
     qc_contract = CONTENT_GEN_STAGE_CONTRACTS["human_qc"]
 
-    assert research_contract.contract_version == "1.2.0"
+    assert research_contract.contract_version == "1.3.0"
     assert "counterpoints" in research_contract.expected_sections
     assert "uncertainty_flags" in research_contract.expected_sections
+    # P3-T1: research depth routing metadata
+    assert "research_depth_routing" in research_contract.expected_sections
+    assert "research_mode" in research_contract.expected_sections
 
-    assert argument_contract.contract_version == "1.0.0"
+    assert argument_contract.contract_version == "1.1.0"
     assert "unsafe_claims" in argument_contract.expected_sections
     assert "beat_claim_plan" in argument_contract.expected_sections
+    # P3-T2: Thesis artifact merges angle choice + argument design
+    assert "what_this_contributes" in argument_contract.expected_sections
+    assert "genericity_flags" in argument_contract.expected_sections
+    assert "differentiation_strategy" in argument_contract.expected_sections
 
     assert scripting_contract.contract_version == "1.2.0"
     assert "Step 4: at least one beat intent" in scripting_contract.required_fields
@@ -939,8 +946,14 @@ async def test_build_research_pack_uses_pipeline_selected_idea() -> None:
             feedback: str = "",
             research_gaps: list[str] | None = None,
             research_hypotheses: list[str] | None = None,
+            # P3-T1: Extended signature — accept and discard new params
+            depth_tier: Any = None,
+            effort_tier: str = "",
+            expected_upside: int = 0,
+            operator_override: bool = False,
+            override_reason: str = "",
         ) -> ResearchPack:
-            del feedback, research_gaps, research_hypotheses
+            del feedback, research_gaps, research_hypotheses, depth_tier, effort_tier, expected_upside, operator_override, override_reason
             self.seen_item_id = item.idea_id
             self.seen_angle_id = angle.angle_id
             return ResearchPack(idea_id=item.idea_id, angle_id=angle.angle_id)
@@ -1410,7 +1423,14 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
             feedback: str = "",
             research_gaps: list[str] | None = None,
             research_hypotheses: list[str] | None = None,
+            # P3-T1: Extended signature
+            depth_tier: Any = None,
+            effort_tier: str = "",
+            expected_upside: int = 0,
+            operator_override: bool = False,
+            override_reason: str = "",
         ) -> ResearchPack:
+            pass  # assertions below cover the params we care about
             assert feedback == ""
             assert research_gaps is None
             if item.idea_id == selected_idea_id:

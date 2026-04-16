@@ -32,6 +32,8 @@ from cc_deep_research.content_gen.models import (
     PipelineLaneContext,
     PipelineStageTrace,
     QualityEvaluation,
+    ResearchDepthRouting,
+    ResearchDepthTier,
     ResearchPack,
     RevisionMode,
     RunConstraints,
@@ -414,6 +416,63 @@ def _build_claim_ledger(
                     ledger.unsupported_script_claims.append(stmt.statement_id)
 
     return ledger
+
+
+def _compute_research_depth_routing(
+    ctx: PipelineContext,
+    candidate: PipelineCandidate,
+    config: Any,
+) -> ResearchDepthRouting:
+    """P3-T1: Compute research depth routing from scoring outputs and config.
+
+    Routes research time and validation depth to expected upside and claim risk
+    instead of using one default level. Preserves operator override path.
+    """
+    effort_tier_str = ""
+    expected_upside = 0
+    idea_score: Any = None
+
+    # Look up the score for this candidate from scoring output
+    if ctx.scoring:
+        for score in ctx.scoring.scores:
+            if score.idea_id == candidate.idea_id:
+                idea_score = score
+                break
+
+    if idea_score:
+        effort_tier_str = idea_score.effort_tier.value if hasattr(idea_score.effort_tier, "value") else str(idea_score.effort_tier)
+        expected_upside = idea_score.expected_upside
+
+    # Map effort tier to depth tier using config
+    effort_to_depth = getattr(config.content_gen, "research_depth_by_effort_tier", None)
+    if effort_to_depth is None:
+        effort_to_depth = {"quick": "light", "standard": "standard", "deep": "deep"}
+
+    base_tier_str = effort_to_depth.get(effort_tier_str, "standard")
+
+    # Check if upside bumps tier to deep
+    upside_deep_threshold = getattr(config.content_gen, "research_upside_deep_threshold", 4)
+    if expected_upside >= upside_deep_threshold:
+        base_tier_str = "deep"
+
+    # Check if effort tier itself mandates deep
+    effort_deep_threshold = getattr(config.content_gen, "research_effort_deep_threshold", "deep")
+    if effort_tier_str == effort_deep_threshold or effort_tier_str == "deep":
+        base_tier_str = "deep"
+
+    try:
+        tier = ResearchDepthTier(base_tier_str)
+    except ValueError:
+        tier = ResearchDepthTier.STANDARD
+
+    routing = ResearchDepthRouting(
+        tier=tier,
+        routing_basis="effort_upside_routing",
+        effort_tier_source=effort_tier_str,
+        expected_upside_source=expected_upside,
+    )
+
+    return routing
 
 
 class ContentGenOrchestrator:
@@ -1801,6 +1860,11 @@ class ContentGenOrchestrator:
                 meta.cache_reused = "cache" in ctx.research_pack.research_stop_reason.lower()
                 meta.is_degraded = ctx.research_pack.is_degraded
                 meta.degradation_reason = ctx.research_pack.degradation_reason
+                # P3-T1: Record research depth routing in trace
+                if ctx.research_pack.research_depth_routing:
+                    routing = ctx.research_pack.research_depth_routing
+                    if routing.operator_override:
+                        meta.policy_override = f"operator_override: {routing.override_reason}"
         elif stage == "build_argument_map":
             if ctx.argument_map:
                 meta.selected_idea_id = ctx.argument_map.idea_id or _resolve_selected_idea_id(ctx)
@@ -2411,9 +2475,22 @@ async def _stage_build_research_pack(
                 if targeted_gaps:
                     research_gaps = (research_gaps or []) + targeted_gaps
         research_hypotheses = list(ctx.opportunity_brief.research_hypotheses) if ctx.opportunity_brief else None
+
+        # P3-T1: Compute depth routing from scoring outputs
+        routing = _compute_research_depth_routing(ctx, candidate, orch._config)
+        depth_tier = routing.tier
+
+        # P3-T1: Record routing metadata for trace visibility
         research_pack = await agent.build(
-            item, angle, feedback=feedback, research_gaps=research_gaps,
+            item, angle,
+            feedback=feedback,
+            research_gaps=research_gaps,
             research_hypotheses=research_hypotheses,
+            depth_tier=depth_tier,
+            effort_tier=routing.effort_tier_source,
+            expected_upside=routing.expected_upside_source,
+            operator_override=routing.operator_override,
+            override_reason=routing.override_reason,
         )
         _record_lane_completion(
             ctx,

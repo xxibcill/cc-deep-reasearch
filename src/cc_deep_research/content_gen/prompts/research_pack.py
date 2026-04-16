@@ -1,6 +1,9 @@
 """Prompt templates for the research pack builder.
 
-Contract Version: 1.2.0
+Contract Version: 1.3.0
+
+P3-T1: Added research depth routing metadata to track which tier was used
+and why, making the pipeline's research investment visible in traces.
 
 Parser expectations:
 - synthesis output: Prefers structured sections named findings, claims,
@@ -21,7 +24,7 @@ from __future__ import annotations
 
 from cc_deep_research.content_gen.models import AngleOption, BacklogItem
 
-CONTRACT_VERSION = "1.2.0"
+CONTRACT_VERSION = "1.3.0"
 
 GLOBAL_RULES = """\
 You are building a compact research pack for a short-form video inside a modular workflow.
