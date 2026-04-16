@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 from click.testing import CliRunner
@@ -842,11 +843,11 @@ def test_skipped_stage_recorded_when_prerequisites_missing() -> None:
 @pytest.mark.asyncio
 async def test_generate_angles_uses_selected_idea_over_produce_now_order() -> None:
     """P3-T2: Thesis generation should follow the explicit selected idea."""
+    from cc_deep_research.content_gen.models import ThesisArtifact
     from cc_deep_research.content_gen.orchestrator import (
         ContentGenOrchestrator,
         _stage_generate_angles,
     )
-    from cc_deep_research.content_gen.models import ThesisArtifact
 
     class FakeConfig:
         content_gen = type(

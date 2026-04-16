@@ -14,9 +14,9 @@ from cc_deep_research.content_gen.models import (
     BriefRevision,
     ManagedBriefOutput,
     ManagedOpportunityBrief,
+    OperatingPhase,
     OpportunityBrief,
     get_phase_policy,
-    OperatingPhase,
 )
 from cc_deep_research.content_gen.storage import (
     AuditActor,

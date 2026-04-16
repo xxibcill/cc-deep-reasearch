@@ -13,6 +13,7 @@ from cc_deep_research.content_gen.models import (
     LearningDurability,
     PerformanceLearning,
     PerformanceLearningSet,
+    RuleVersionKind,
     StrategyPerformanceGuidance,
 )
 from cc_deep_research.content_gen.storage._paths import resolve_content_gen_file_path
@@ -359,7 +360,6 @@ class PerformanceLearningStore:
         # Import here to avoid circular imports
         from cc_deep_research.content_gen.models import (
             RuleChangeOperation,
-            RuleVersionKind,
         )
         from cc_deep_research.content_gen.storage.strategy_store import StrategyStore
 

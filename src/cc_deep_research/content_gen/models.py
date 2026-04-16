@@ -982,9 +982,9 @@ class StrategyMemory(BaseModel):
     # Task 20: Performance-derived guidance
     performance_guidance: StrategyPerformanceGuidance = Field(default_factory=StrategyPerformanceGuidance)
     # P7-T2: Version history for rule changes
-    rule_version_history: "RuleVersionHistory" = Field(default_factory=lambda: RuleVersionHistory())
+    rule_version_history: RuleVersionHistory = Field(default_factory=lambda: RuleVersionHistory())
     # P7-T3: Operating fitness metrics
-    operating_fitness: "OperatingFitnessMetrics" = Field(default_factory=lambda: OperatingFitnessMetrics())
+    operating_fitness: OperatingFitnessMetrics = Field(default_factory=lambda: OperatingFitnessMetrics())
 
     @field_validator("signature_frameworks", mode="before")
     @classmethod
@@ -4256,7 +4256,7 @@ class ManagedOpportunityBrief(BaseModel):
         default="",
         description="Why this brief was branched (e.g., 'different channel', 'experiment').",
     )
-    operating_policies: list["OperatingPhasePolicy"] = Field(
+    operating_policies: list[OperatingPhasePolicy] = Field(
         default_factory=list,
         description="The phase policies that governed this brief when it was created or updated.",
     )

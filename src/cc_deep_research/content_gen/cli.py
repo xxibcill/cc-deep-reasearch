@@ -1102,14 +1102,14 @@ def register_content_gen_commands(cli: click.Group) -> None:
                 if resume_error:
                     raise click.UsageError(resume_error)
             t = theme or idea or "general"
-            kwargs = dict(
-                from_stage=start,
-                to_stage=to_stage,
-                initial_context=ctx,
-                bypass_ideation=bypass_ideation,
-                progress_callback=progress,
-                stage_completed_callback=on_stage_completed,
-            )
+            kwargs = {
+                "from_stage": start,
+                "to_stage": to_stage,
+                "initial_context": ctx,
+                "bypass_ideation": bypass_ideation,
+                "progress_callback": progress,
+                "stage_completed_callback": on_stage_completed,
+            }
             if "run_constraints" in inspect.signature(orch.run_full_pipeline).parameters:
                 kwargs["run_constraints"] = run_constraints
             return await orch.run_full_pipeline(t, **kwargs)

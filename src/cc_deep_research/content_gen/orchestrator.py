@@ -19,11 +19,11 @@ from cc_deep_research.content_gen.models import (
     BriefExecutionPolicyMode,
     BriefLifecycleState,
     BriefProvenance,
+    ClaimStatus,
     ClaimTraceEntry,
     ClaimTraceLedger,
     ClaimTraceStage,
     ClaimTraceStatus,
-    ClaimStatus,
     ContentGenRunMetrics,
     ContentTypeProfile,
     CoreInputs,
@@ -716,7 +716,7 @@ def _evaluate_fact_risk_gate(
     elif gate.disputed_claims or gate.acceptable_uncertainty_claims:
         risk_constraints = str(getattr(item, "constraints", "") or "").lower()
         strategy_rules = " ".join(
-            (getattr(strategy, "proof_rules", []) if strategy else [])
+            getattr(strategy, "proof_rules", []) if strategy else []
         ).lower()
         policy_text = f"{risk_constraints} {strategy_rules}".strip()
         can_disclose_uncertainty = any(
@@ -910,7 +910,6 @@ class ContentGenOrchestrator:
         return self._agents[name]
 
     def _create_agent(self, name: str) -> Any:
-        from cc_deep_research.content_gen.agents.angle import AngleAgent
         from cc_deep_research.content_gen.agents.argument_map import ArgumentMapAgent
         from cc_deep_research.content_gen.agents.backlog import BacklogAgent
         from cc_deep_research.content_gen.agents.opportunity import OpportunityPlanningAgent
@@ -3596,7 +3595,6 @@ async def _stage_combined_execution_brief(
     This handles formats where use_combined_execution_brief=True,
     replacing separate visual_translation and production_brief stages.
     """
-    from cc_deep_research.content_gen.models import VisualProductionExecutionBrief
 
     profile = _get_content_type_profile(ctx)
 
@@ -3656,7 +3654,7 @@ async def _stage_combined_execution_brief(
 
 def _build_combined_execution_brief(
     lane: PipelineLaneContext,
-    profile: "ContentTypeProfile",
+    profile: ContentTypeProfile,
     source: ScriptVersion,
 ) -> VisualProductionExecutionBrief:
     """P5-T2 & P5-T3: Build a combined execution brief with fallback planning.
