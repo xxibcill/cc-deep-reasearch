@@ -4,22 +4,22 @@ This workflow describes a general content-production pipeline that turns a theme
 
 ## Workflow Summary
 
-| Stage | Input | Artifact Produced |
-| --- | --- | --- |
-| 1. Strategy setup | Brand goals, audience definition, channel constraints, tone rules, proof standards, past learnings | `Strategy` |
-| 2. Opportunity planning | `Strategy`, campaign theme, market signal, operator brief | `OpportunityBrief` |
-| 3. Backlog generation | `Strategy`, `OpportunityBrief` | `Backlog` |
-| 4. Idea scoring and selection | `Backlog`, selection criteria, business priorities | `ScoringReport`, `Shortlist`, `SelectedIdea` |
-| 5. Angle development | `SelectedIdea`, `Strategy`, audience priorities | `AngleOptions`, `SelectedAngle` |
-| 6. Research assembly | `SelectedAngle`, source set, proof requirements | `ResearchPack` |
-| 7. Argument design | `ResearchPack`, `SelectedAngle`, narrative goal | `ArgumentMap` |
-| 8. Script development | `ArgumentMap`, `ResearchPack`, style constraints, platform constraints | `ScriptDraft`, `RevisedScript`, `ScriptPackage` |
-| 9. Visual translation | `RevisedScript`, platform format, creative constraints | `VisualPlan` |
-| 10. Production planning | `VisualPlan`, `RevisedScript`, available resources | `ProductionBrief` |
-| 11. Packaging | `RevisedScript`, `SelectedAngle`, platform requirements | `PackagingSet` |
-| 12. Quality control | `ScriptPackage`, `VisualPlan`, `ProductionBrief`, `PackagingSet`, fact rules | `QcReport`, `ApprovalDecision`, `FixList` |
-| 13. Publish preparation | `ApprovalDecision`, `PackagingSet`, channel schedule | `PublishQueueItems`, `LaunchPlan` |
-| 14. Performance review | Published content metrics, audience feedback, original plan | `PerformanceAnalysis`, `LearningNotes`, `NextTests` |
+| Stage | Input | Artifact Produced | Content-Type Branching |
+| --- | --- | --- | --- |
+| 1. Strategy setup | Brand goals, audience definition, channel constraints, tone rules, proof standards, past learnings | `Strategy` | No branching — evergreen |
+| 2. Opportunity planning | `Strategy`, campaign theme, market signal, operator brief | `OpportunityBrief` | No branching |
+| 3. Backlog generation | `Strategy`, `OpportunityBrief` | `Backlog` | No branching |
+| 4. Idea scoring and selection | `Backlog`, selection criteria, business priorities | `ScoringReport`, `Shortlist`, `SelectedIdea` | P2-T3: selected idea carries `content_type_profile` — profile key is set in `ScoringOutput.content_type_profile` and propagates to `PipelineCandidate.content_type_profile` |
+| 5. Angle development | `SelectedIdea`, `Strategy`, audience priorities | `AngleOptions`, `SelectedAngle` | Profile controls required artifacts |
+| 6. Research assembly | `SelectedAngle`, source set, proof requirements | `ResearchPack` | Profile determines research depth: `light`, `standard`, or `deep` |
+| 7. Argument design | `ResearchPack`, `SelectedAngle`, narrative goal | `ArgumentMap` | Profile may skip for lightweight types |
+| 8. Script development | `ArgumentMap`, `ResearchPack`, style constraints, platform constraints | `ScriptDraft`, `RevisedScript`, `ScriptPackage` | Profile controls drafting depth: `outline`, `draft`, or `polished` |
+| 9. Visual translation | `RevisedScript`, platform format, creative constraints | `VisualPlan` | Newsletter, article, thread skip this stage |
+| 10. Production planning | `VisualPlan`, `RevisedScript`, available resources | `ProductionBrief` | Newsletter, article, thread skip this stage |
+| 11. Packaging | `RevisedScript`, `SelectedAngle`, platform requirements | `PackagingSet` | Profile controls packaging depth: `minimal`, `standard`, or `full` |
+| 12. Quality control | `ScriptPackage`, `VisualPlan`, `ProductionBrief`, `PackagingSet`, fact rules | `QcReport`, `ApprovalDecision`, `FixList` | No branching |
+| 13. Publish preparation | `ApprovalDecision`, `PackagingSet`, channel schedule | `PublishQueueItems`, `LaunchPlan` | No branching |
+| 14. Performance review | Published content metrics, audience feedback, original plan | `PerformanceAnalysis`, `LearningNotes`, `NextTests` | No branching |
 
 ## Stage Notes
 

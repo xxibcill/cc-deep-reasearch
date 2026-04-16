@@ -420,6 +420,15 @@ Threshold behavior:
 - default threshold comes from `config.content_gen.scoring_threshold_produce`
 - current default is `25`
 
+P2-T1 Decision Lane: Scoring produces four explicit dispositions:
+
+- `produce_now`: passes threshold — enters research lane
+- `hold`: does not pass — preserved for future consideration
+- `kill`: fails hard criteria (e.g., weak evidence AND weak hook) — rejected
+- `reuse_recommended`: hold ideas with strong fundamentals (hook≥4, evidence≥3, relevance≥4) — flagged for future reuse when conditions improve
+
+P2-T3 Content-Type Branching: Scoring carries a `content_type_profile` derived from `RunConstraints.content_type`. Each profile defines research/drafting/production/packaging depth and which stages to skip. Known profiles: `short_form_video` (default), `newsletter`, `article`, `webinar`, `launch_asset`, `thread`, `carousel`. Profiles are defined in [`ContentTypeProfile`](../src/cc_deep_research/content_gen/models.py) and resolved via `get_content_type_profile()`.
+
 CLI:
 
 ```bash
@@ -429,6 +438,7 @@ cc-deep-research content-gen backlog score --from-file backlog.json --select-top
 Pipeline behavior:
 
 - scoring returns a ranked `shortlist`, `selected_idea_id`, `selection_reasoning`, `runner_up_idea_ids`, and a small `active_candidates` queue
+- hold ideas with strong fundamentals are marked `reuse_recommended` so operators can revisit them when seasonality, new proof, or platform changes improve the fit
 - the full pipeline keeps the top 2 ideas alive as `active_candidates`: one `primary` lane and one `runner_up`
 - downstream execution still advances the primary lane, but the runner-up remains explicit in `PipelineContext` and backlog status
 

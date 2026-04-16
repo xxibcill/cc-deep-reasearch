@@ -1,5 +1,16 @@
 # P2-T1 - Merge Opportunity And Scoring Lane
 
+## Status
+
+Done.
+
+Implemented:
+- `ScoringOutput` model now includes `reuse_recommended: list[str]` field for hold ideas with strong fundamentals
+- `BacklogAgent.score_ideas()` computes `reuse_recommended` from hold ideas where hook≥4, evidence≥3, relevance≥4
+- `_is_reuse_recommended()` helper function added to `agents/backlog.py`
+- `docs/content-generation.md` Stage 3 section updated to document the four dispositions: produce_now, hold, kill, reuse_recommended
+- Tests added for `reuse_recommended` field and `_is_reuse_recommended` logic
+
 ## Objective
 
 Collapse opportunity planning, backlog generation, and idea scoring into one decision lane that ends with a small set of explicit outcomes.

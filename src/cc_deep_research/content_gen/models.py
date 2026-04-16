@@ -979,6 +979,111 @@ class EffortTier(StrEnum):
     DEEP = "deep"  # Full iteration, highest quality bar
 
 
+# P2-T3: Content-type branching profiles
+class ContentTypeProfile(BaseModel):
+    """Depth profile for one content type.
+
+    Determines how much research, drafting, production, and packaging
+    depth is required. Each stage respects the profile's skip conditions.
+    """
+
+    profile_key: str = ""  # e.g., "short_form", "newsletter", "article"
+    research_depth: Literal["none", "light", "standard", "deep"] = "standard"
+    drafting_depth: Literal["outline", "draft", "polished"] = "draft"
+    production_depth: Literal["minimal", "standard", "premium"] = "standard"
+    packaging_depth: Literal["minimal", "standard", "full"] = "standard"
+    skip_stages: list[str] = Field(
+        default_factory=list,
+        description="Stage names to skip for this content type",
+    )
+    required_artifacts: list[str] = Field(
+        default_factory=list,
+        description="Stage outputs that must be present for this type",
+    )
+
+
+# P2-T3: Known content type profiles
+CONTENT_TYPE_PROFILES: dict[str, ContentTypeProfile] = {
+    "short_form_video": ContentTypeProfile(
+        profile_key="short_form_video",
+        research_depth="standard",
+        drafting_depth="polished",
+        production_depth="standard",
+        packaging_depth="standard",
+        skip_stages=[],
+        required_artifacts=["research_pack", "script", "visual_plan", "packaging"],
+    ),
+    "newsletter": ContentTypeProfile(
+        profile_key="newsletter",
+        research_depth="light",
+        drafting_depth="draft",
+        production_depth="minimal",
+        packaging_depth="minimal",
+        skip_stages=["visual_translation", "production_brief"],
+        required_artifacts=["research_pack", "script", "packaging"],
+    ),
+    "article": ContentTypeProfile(
+        profile_key="article",
+        research_depth="deep",
+        drafting_depth="polished",
+        production_depth="minimal",
+        packaging_depth="minimal",
+        skip_stages=["visual_translation", "production_brief"],
+        required_artifacts=["research_pack", "argument_map", "script", "packaging"],
+    ),
+    "webinar": ContentTypeProfile(
+        profile_key="webinar",
+        research_depth="deep",
+        drafting_depth="polished",
+        production_depth="premium",
+        packaging_depth="full",
+        skip_stages=[],
+        required_artifacts=["research_pack", "argument_map", "script", "visual_plan", "production_brief", "packaging"],
+    ),
+    "launch_asset": ContentTypeProfile(
+        profile_key="launch_asset",
+        research_depth="standard",
+        drafting_depth="polished",
+        production_depth="premium",
+        packaging_depth="full",
+        skip_stages=[],
+        required_artifacts=["research_pack", "angle", "script", "visual_plan", "production_brief", "packaging"],
+    ),
+    "thread": ContentTypeProfile(
+        profile_key="thread",
+        research_depth="light",
+        drafting_depth="draft",
+        production_depth="minimal",
+        packaging_depth="minimal",
+        skip_stages=["visual_translation", "production_brief"],
+        required_artifacts=["research_pack", "script", "packaging"],
+    ),
+    "carousel": ContentTypeProfile(
+        profile_key="carousel",
+        research_depth="standard",
+        drafting_depth="polished",
+        production_depth="standard",
+        packaging_depth="standard",
+        skip_stages=["production_brief"],
+        required_artifacts=["research_pack", "script", "visual_plan", "packaging"],
+    ),
+    "短视频": ContentTypeProfile(
+        profile_key="短视频",
+        research_depth="standard",
+        drafting_depth="polished",
+        production_depth="standard",
+        packaging_depth="standard",
+        skip_stages=[],
+        required_artifacts=["research_pack", "script", "visual_plan", "packaging"],
+    ),
+}
+
+
+def get_content_type_profile(content_type: str) -> ContentTypeProfile:
+    """Resolve content type string to profile, with fallback to short_form_video."""
+    return CONTENT_TYPE_PROFILES.get(content_type, CONTENT_TYPE_PROFILES.get("short_form_video"))
+
+
 class RunConstraints(BaseModel):
     """Per-run constraint variables that change each content cycle.
 
@@ -1230,6 +1335,21 @@ class IdeaScores(BaseModel):
     hook_strength: int = Field(default=0, ge=1, le=5)
     repurposing: int = Field(default=0, ge=1, le=5)
     opportunity_fit: int = Field(default=1, ge=1, le=5, description="How well this idea fits opportunity brief constraints")
+    # P2-T2: Effort and ROI gates
+    effort_tier: EffortTier = Field(
+        default=EffortTier.STANDARD,
+        description="Estimated effort/complexity tier for producing this idea",
+    )
+    expected_upside: int = Field(
+        default=3,
+        ge=1,
+        le=5,
+        description="Expected upside potential (1-5) — used for ROI gate",
+    )
+    kill_reason: str = Field(
+        default="",
+        description="Why this idea was recommended for kill (fast-fail rationale)",
+    )
     total_score: int = 0
     recommendation: str = "hold"  # produce_now | hold | kill
     reason: str = ""
@@ -1251,6 +1371,20 @@ class ScoringOutput(BaseModel):
     active_candidates: list[PipelineCandidate] = Field(default_factory=list)
     hold: list[str] = Field(default_factory=list)  # idea_ids
     killed: list[str] = Field(default_factory=list)  # idea_ids
+    reuse_recommended: list[str] = Field(
+        default_factory=list,
+        description="idea_ids of hold ideas that are recommended for future reuse when conditions improve",
+    )
+    # P2-T2: Effort distribution summary across scored ideas
+    effort_summary: dict[str, int] = Field(
+        default_factory=dict,
+        description="Count of ideas per effort tier: {'quick': N, 'standard': N, 'deep': N}",
+    )
+    # P2-T3: Content-type profile that applies to all ideas in this scoring run
+    content_type_profile: str = Field(
+        default="",
+        description="Profile key (e.g., 'short_form_video') derived from RunConstraints.content_type",
+    )
     is_degraded: bool = False
     degradation_reason: str = ""
 
@@ -1261,6 +1395,7 @@ class ScoringOutput(BaseModel):
             shortlist=self.shortlist,
             runner_up_idea_ids=self.runner_up_idea_ids,
             existing_candidates=self.active_candidates,
+            content_type_profile=self.content_type_profile,
         )
         if not self.runner_up_idea_ids:
             self.runner_up_idea_ids = [
@@ -1282,6 +1417,11 @@ class PipelineCandidate(BaseModel):
     idea_id: str
     role: Literal["primary", "runner_up"] = "primary"
     status: Literal["selected", "runner_up", "in_production", "published"] = "selected"
+    # P2-T3: Content-type profile for this lane
+    content_type_profile: str = Field(
+        default="",
+        description="Profile key for branching decisions in this lane",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2594,6 +2734,7 @@ def _derive_pipeline_candidates(
     shortlist: list[str] | None = None,
     runner_up_idea_ids: list[str] | None = None,
     existing_candidates: list[PipelineCandidate] | None = None,
+    content_type_profile: str = "",
 ) -> list[PipelineCandidate]:
     primary_id = selected_idea_id.strip()
     if not primary_id and existing_candidates:
@@ -2628,6 +2769,7 @@ def _derive_pipeline_candidates(
             idea_id=primary_id or ordered_ids[0],
             role="primary",
             status=primary_status if primary_status in {"selected", "in_production", "published"} else "selected",
+            content_type_profile=content_type_profile,
         )
     ]
 
@@ -2639,6 +2781,7 @@ def _derive_pipeline_candidates(
                 idea_id=idea_id,
                 role="runner_up",
                 status="runner_up",
+                content_type_profile=content_type_profile,
             )
         )
         if len(candidates) >= _ACTIVE_CANDIDATE_LIMIT:

@@ -201,9 +201,12 @@ evidence_strength: (1-5)
 hook_strength: (1-5)
 repurposing: (1-5)
 opportunity_fit: (1-5 — how well this fits opportunity brief constraints)
+expected_upside: (1-5 — expected upside potential, used for ROI gate; below 2 = fast-fail kill)
+effort_tier: quick | standard | deep — estimated production effort/complexity
 total_score: (sum — include opportunity_fit in the sum)
 recommendation: produce_now | hold | kill
 reason: (one sentence)
+kill_reason: (required when recommendation is kill — why this idea fails the ROI gate)
 opportunity_fit_reason: (brief explanation of how this idea satisfies the opportunity brief)
 ---
 

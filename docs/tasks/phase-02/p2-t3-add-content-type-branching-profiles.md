@@ -1,5 +1,17 @@
 # P2-T3 - Add Content-Type Branching Profiles
 
+## Status
+
+Done.
+
+Implemented:
+- `ContentTypeProfile` dataclass added to `models.py` with research/drafting/production/packaging depth per profile type
+- `ScoringOutput` gains `content_type_profile` field — set from `RunConstraints.content_type` at scoring time so selected ideas carry their profile before research starts
+- `PipelineCandidate` gains optional `content_type_profile` field so each lane preserves its profile through the pipeline
+- Profile is derived from `RunConstraints.content_type` at pipeline start, validated against known profile keys
+- `docs/content-generation.md` Stage 3 section updated to describe how scoring now carries content-type profile into downstream stages
+- `docs/content-gen-workflow-template.md` updated with profile column and branching behavior per content type
+
 ## Objective
 
 Make the workflow branch by asset type so shorts, newsletters, articles, webinars, and launch assets do not all require the same depth.

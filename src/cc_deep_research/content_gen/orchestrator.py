@@ -2334,7 +2334,24 @@ async def _stage_score_ideas(orch: ContentGenOrchestrator, ctx: PipelineContext)
     agent = orch._get_agent("backlog")
     strategy = ctx.strategy or StrategyMemory()
     threshold = orch._config.content_gen.scoring_threshold_produce
-    ctx.scoring = await agent.score_ideas(ctx.backlog.items, strategy, threshold=threshold)
+    # P2-T3: Derive content type profile from run_constraints
+    content_type_profile = ""
+    if ctx.run_constraints and ctx.run_constraints.content_type:
+        from cc_deep_research.content_gen.models import get_content_type_profile
+
+        profile = get_content_type_profile(ctx.run_constraints.content_type)
+        content_type_profile = profile.profile_key
+    # P2-T2: Config fields may be absent in test fixtures — use getattr with fallbacks
+    min_upside = getattr(orch._config.content_gen, "scoring_min_upside_threshold", 2)
+    effort_cap = getattr(orch._config.content_gen, "scoring_effort_tier_cap", "deep")
+    ctx.scoring = await agent.score_ideas(
+        ctx.backlog.items,
+        strategy,
+        threshold=threshold,
+        min_upside_threshold=min_upside,
+        effort_tier_cap=effort_cap,
+        content_type_profile=content_type_profile,
+    )
     ctx.shortlist = ctx.scoring.shortlist
     ctx.selected_idea_id = ctx.scoring.selected_idea_id
     ctx.selection_reasoning = ctx.scoring.selection_reasoning

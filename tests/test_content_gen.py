@@ -1384,6 +1384,9 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
             strategy: StrategyMemory,
             *,
             threshold: float,
+            min_upside_threshold: int = 2,
+            effort_tier_cap: str = "deep",
+            content_type_profile: str = "",
         ) -> ScoringOutput:
             assert [item.idea_id for item in items] == ["idea-alpha", "idea-beta"]
             assert strategy.niche == fixture["strategy"]["niche"]
@@ -3531,6 +3534,208 @@ def test_scoring_output_degraded_flag() -> None:
     output = ScoringOutput(is_degraded=True, degradation_reason="zero valid scores")
     assert output.is_degraded is True
     assert output.degradation_reason == "zero valid scores"
+
+
+def test_scoring_output_reuse_recommended_field() -> None:
+    """ScoringOutput should expose reuse_recommended list."""
+    output = ScoringOutput(reuse_recommended=["id2", "id3"])
+    assert output.reuse_recommended == ["id2", "id3"]
+    restored = ScoringOutput.model_validate_json(output.model_dump_json())
+    assert restored.reuse_recommended == ["id2", "id3"]
+
+
+def test_is_reuse_recommended_identifies_strong_hold_ideas() -> None:
+    """_is_reuse_recommended should identify hold ideas with good fundamentals."""
+    # Import here to avoid import at top level issues
+    from cc_deep_research.content_gen.agents.backlog import _is_reuse_recommended
+    from cc_deep_research.content_gen.models import IdeaScores
+
+    # Strong hold idea — should be recommended for reuse
+    strong_hold = IdeaScores(
+        idea_id="id1",
+        hook_strength=4,
+        evidence_strength=4,
+        relevance=4,
+        total_score=20,
+        recommendation="hold",
+    )
+    assert _is_reuse_recommended(strong_hold) is True
+
+    # Weak hold idea — should not be recommended for reuse
+    weak_hold = IdeaScores(
+        idea_id="id2",
+        hook_strength=2,
+        evidence_strength=2,
+        relevance=3,
+        total_score=12,
+        recommendation="hold",
+    )
+    assert _is_reuse_recommended(weak_hold) is False
+
+    # Strong produce_now — not relevant for reuse (already passing)
+    produce_now = IdeaScores(
+        idea_id="id3",
+        hook_strength=5,
+        evidence_strength=5,
+        relevance=5,
+        total_score=30,
+        recommendation="produce_now",
+    )
+    # Not a hold, so not checked for reuse in the normal flow
+    # but the function itself doesn't filter on recommendation
+    # (reuse logic filters on hold first, so this won't appear in reuse_recommended)
+    assert _is_reuse_recommended(produce_now) is True  # passes the signal check
+
+
+def test_apply_upside_gate_kills_low_upside_ideas() -> None:
+    """_apply_upside_gate should kill ideas with expected_upside below threshold."""
+    from cc_deep_research.content_gen.agents.backlog import _apply_upside_gate
+    from cc_deep_research.content_gen.models import IdeaScores
+
+    scores = [
+        IdeaScores(idea_id="id1", expected_upside=1, recommendation="produce_now", relevance=4),
+        IdeaScores(idea_id="id2", expected_upside=3, recommendation="hold", relevance=3),
+        IdeaScores(idea_id="id3", expected_upside=2, recommendation="produce_now", relevance=4),
+        IdeaScores(idea_id="id4", expected_upside=3, recommendation="kill", relevance=2),
+    ]
+    result = _apply_upside_gate(scores, min_upside=2)
+    assert result[0].recommendation == "kill"
+    assert result[0].kill_reason == "expected_upside 1 below minimum threshold 2"
+    assert result[1].recommendation == "hold"
+    assert result[2].recommendation == "kill"
+    assert result[3].recommendation == "kill"
+
+
+def test_apply_effort_tier_cap_downgrades_tier() -> None:
+    """_apply_effort_tier_cap should downgrade deep ideas when cap is lower."""
+    from cc_deep_research.content_gen.agents.backlog import _apply_effort_tier_cap
+    from cc_deep_research.content_gen.models import EffortTier, IdeaScores
+
+    scores = [
+        IdeaScores(idea_id="id1", effort_tier=EffortTier.DEEP, relevance=4),
+        IdeaScores(idea_id="id2", effort_tier=EffortTier.STANDARD, relevance=4),
+        IdeaScores(idea_id="id3", effort_tier=EffortTier.QUICK, relevance=4),
+        IdeaScores(idea_id="id4", effort_tier=EffortTier.DEEP, relevance=4),
+    ]
+    result = _apply_effort_tier_cap(scores, cap="standard")
+    assert result[0].effort_tier == EffortTier.STANDARD
+    assert result[1].effort_tier == EffortTier.STANDARD
+    assert result[2].effort_tier == EffortTier.QUICK
+    assert result[3].effort_tier == EffortTier.STANDARD
+
+
+def test_compute_effort_summary_counts_tiers() -> None:
+    """_compute_effort_summary should count ideas per effort tier."""
+    from cc_deep_research.content_gen.agents.backlog import _compute_effort_summary
+    from cc_deep_research.content_gen.models import EffortTier, IdeaScores
+
+    scores = [
+        IdeaScores(idea_id="id1", effort_tier=EffortTier.DEEP),
+        IdeaScores(idea_id="id2", effort_tier=EffortTier.STANDARD),
+        IdeaScores(idea_id="id3", effort_tier=EffortTier.QUICK),
+        IdeaScores(idea_id="id4", effort_tier=EffortTier.DEEP),
+        IdeaScores(idea_id="id5", effort_tier=EffortTier.STANDARD),
+    ]
+    summary = _compute_effort_summary(scores)
+    assert summary == {"quick": 1, "standard": 2, "deep": 2}
+
+
+def test_idea_scores_effort_tier_and_upside_fields() -> None:
+    """IdeaScores should carry effort_tier, expected_upside, and kill_reason."""
+    from cc_deep_research.content_gen.models import EffortTier, IdeaScores
+
+    score = IdeaScores(
+        idea_id="test1",
+        relevance=4,
+        novelty=4,
+        authority_fit=4,
+        production_ease=4,
+        evidence_strength=4,
+        hook_strength=4,
+        repurposing=4,
+        effort_tier=EffortTier.DEEP,
+        expected_upside=4,
+        kill_reason="weak evidence and weak hook",
+        recommendation="kill",
+    )
+    assert score.effort_tier == EffortTier.DEEP
+    assert score.expected_upside == 4
+    assert score.kill_reason == "weak evidence and weak hook"
+    restored = IdeaScores.model_validate_json(score.model_dump_json())
+    assert restored.effort_tier == EffortTier.DEEP
+    assert restored.expected_upside == 4
+    assert restored.kill_reason == "weak evidence and weak hook"
+
+
+def test_scoring_output_effort_summary_field() -> None:
+    """ScoringOutput should expose effort_summary dict."""
+    output = ScoringOutput(effort_summary={"quick": 2, "standard": 5, "deep": 1})
+    assert output.effort_summary == {"quick": 2, "standard": 5, "deep": 1}
+    restored = ScoringOutput.model_validate_json(output.model_dump_json())
+    assert restored.effort_summary == {"quick": 2, "standard": 5, "deep": 1}
+
+
+def test_content_type_profiles_defined() -> None:
+    """CONTENT_TYPE_PROFILES should contain expected content types."""
+    from cc_deep_research.content_gen.models import CONTENT_TYPE_PROFILES, ContentTypeProfile
+
+    assert "short_form_video" in CONTENT_TYPE_PROFILES
+    assert "newsletter" in CONTENT_TYPE_PROFILES
+    assert "article" in CONTENT_TYPE_PROFILES
+    assert "webinar" in CONTENT_TYPE_PROFILES
+    assert "launch_asset" in CONTENT_TYPE_PROFILES
+    assert "thread" in CONTENT_TYPE_PROFILES
+    assert "carousel" in CONTENT_TYPE_PROFILES
+
+    profile = CONTENT_TYPE_PROFILES["short_form_video"]
+    assert isinstance(profile, ContentTypeProfile)
+    assert profile.research_depth == "standard"
+    assert "visual_translation" not in profile.skip_stages
+
+
+def test_get_content_type_profile_fallback() -> None:
+    """get_content_type_profile should fall back to short_form_video for unknown types."""
+    from cc_deep_research.content_gen.models import get_content_type_profile
+
+    profile = get_content_type_profile("unknown_type")
+    assert profile.profile_key == "short_form_video"
+
+    specific = get_content_type_profile("newsletter")
+    assert specific.profile_key == "newsletter"
+    assert specific.research_depth == "light"
+    assert "visual_translation" in specific.skip_stages
+
+
+def test_scoring_output_content_type_profile_field() -> None:
+    """ScoringOutput should carry content_type_profile."""
+    output = ScoringOutput(content_type_profile="article")
+    assert output.content_type_profile == "article"
+    restored = ScoringOutput.model_validate_json(output.model_dump_json())
+    assert restored.content_type_profile == "article"
+
+
+def test_pipeline_candidate_content_type_profile_field() -> None:
+    """PipelineCandidate should carry optional content_type_profile."""
+    from cc_deep_research.content_gen.models import PipelineCandidate
+
+    candidate = PipelineCandidate(idea_id="id1", content_type_profile="webinar")
+    assert candidate.content_type_profile == "webinar"
+    restored = PipelineCandidate.model_validate_json(candidate.model_dump_json())
+    assert restored.content_type_profile == "webinar"
+
+
+def test_derive_pipeline_candidates_preserves_profile() -> None:
+    """_derive_pipeline_candidates should propagate content_type_profile to candidates."""
+    from cc_deep_research.content_gen.models import _derive_pipeline_candidates
+
+    candidates = _derive_pipeline_candidates(
+        selected_idea_id="id1",
+        shortlist=["id1", "id2"],
+        content_type_profile="newsletter",
+    )
+    assert len(candidates) == 2
+    assert candidates[0].content_type_profile == "newsletter"
+    assert candidates[1].content_type_profile == "newsletter"
 
 
 def test_scoring_output_roundtrip_with_shortlist() -> None:
