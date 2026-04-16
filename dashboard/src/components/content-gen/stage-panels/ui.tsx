@@ -42,20 +42,22 @@ export function SectionList({
 export function SummaryField({
   label,
   value,
+  fallback,
 }: {
   label: string
   value: string | null | undefined
+  fallback?: string
 }) {
-  if (!value) {
-    return null
-  }
+  const displayValue = value?.trim() || (fallback ?? '')
 
   return (
     <div className="rounded-xl border border-border/70 bg-background/55 px-3 py-3">
       <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-muted-foreground">
         {label}
       </p>
-      <p className="mt-2 text-sm leading-relaxed text-foreground/82">{value}</p>
+      <p className={`mt-2 text-sm leading-relaxed ${displayValue ? 'text-foreground/82' : 'text-muted-foreground italic'}`}>
+        {displayValue || fallback}
+      </p>
     </div>
   )
 }

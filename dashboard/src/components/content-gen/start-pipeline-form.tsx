@@ -141,6 +141,7 @@ export function StartPipelineForm({
             value={owner}
             onChange={(e) => setOwner(e.target.value)}
             placeholder="content-team"
+            maxLength={100}
             disabled={isSubmitting}
           />
         </FormField>
@@ -153,6 +154,7 @@ export function StartPipelineForm({
             value={channelGoal}
             onChange={(e) => setChannelGoal(e.target.value)}
             placeholder="Shorts growth"
+            maxLength={200}
             disabled={isSubmitting}
           />
         </FormField>
@@ -165,6 +167,7 @@ export function StartPipelineForm({
             value={successTarget}
             onChange={(e) => setSuccessTarget(e.target.value)}
             placeholder="High save rate"
+            maxLength={200}
             disabled={isSubmitting}
           />
         </FormField>

@@ -1280,6 +1280,22 @@ class RunConstraints(BaseModel):
         description="Why the operator overrode the default research depth routing.",
     )
 
+    @model_validator(mode="after")
+    def validate_content_type(self) -> "RunConstraints":
+        """Warn and fall back if content_type is not a known profile."""
+        if self.content_type and self.content_type not in CONTENT_TYPE_PROFILES:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "Unknown content_type %r, falling back to short_form_video. "
+                "Known types: %s",
+                self.content_type,
+                ", ".join(sorted(CONTENT_TYPE_PROFILES.keys())),
+            )
+            self.content_type = "short_form_video"
+        return self
+
 
 # ---------------------------------------------------------------------------
 # Pipeline stage 2: Backlog builder
