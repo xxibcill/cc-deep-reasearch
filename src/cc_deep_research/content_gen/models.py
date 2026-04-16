@@ -1281,7 +1281,7 @@ class RunConstraints(BaseModel):
     )
 
     @model_validator(mode="after")
-    def validate_content_type(self) -> "RunConstraints":
+    def validate_content_type(self) -> RunConstraints:
         """Warn and fall back if content_type is not a known profile."""
         if self.content_type and self.content_type not in CONTENT_TYPE_PROFILES:
             import logging
