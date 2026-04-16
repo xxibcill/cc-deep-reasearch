@@ -10,14 +10,12 @@ These tests cover:
 
 from __future__ import annotations
 
-import json
-import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-from cc_deep_research.content_gen.brief_migration import BriefMigration, MigrationResult
+from cc_deep_research.content_gen.brief_migration import BriefMigration
 from cc_deep_research.content_gen.brief_service import BriefService, ConcurrentModificationError
 from cc_deep_research.content_gen.models import (
     BriefLifecycleState,
@@ -32,7 +30,6 @@ from cc_deep_research.content_gen.storage import (
     BriefStore,
     SqliteBriefStore,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -677,8 +674,8 @@ def test_brief_migration_build_summary() -> None:
 
 def test_orchestrator_resolve_brief_inline_fallback(temp_dir: Path) -> None:
     """Orchestrator falls back to inline snapshot when brief_id is not provided."""
-    from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
     from cc_deep_research.config import Config
+    from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
 
     config = Config()
     orch = ContentGenOrchestrator(config)
@@ -696,8 +693,8 @@ def test_orchestrator_resolve_brief_not_found_uses_snapshot(
     temp_dir: Path,
 ) -> None:
     """Orchestrator uses inline snapshot when brief_id doesn't exist in store."""
-    from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
     from cc_deep_research.config import Config
+    from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
 
     config = Config()
     orch = ContentGenOrchestrator(config)

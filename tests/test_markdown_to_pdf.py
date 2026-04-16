@@ -147,6 +147,10 @@ def test_generate_pdf_report_from_markdown_file_uses_html_renderer(
         fake_render_document,
     )
     monkeypatch.setattr(
+        "cc_deep_research.pdf_generator.WEASYPRINT_AVAILABLE",
+        True,
+    )
+    monkeypatch.setattr(
         "cc_deep_research.pdf_generator.PDFGenerator.generate_pdf_from_html",
         fake_generate_pdf_from_html,
     )
