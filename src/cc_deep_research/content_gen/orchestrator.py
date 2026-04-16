@@ -2096,7 +2096,14 @@ class ContentGenOrchestrator:
         return await agent.brief(visual_plan)
 
     async def run_packaging(
-        self, script: Any, angle: Any, *, platforms: list[str] | None = None, idea_id: str = ""
+        self,
+        script: Any,
+        angle: Any,
+        *,
+        platforms: list[str] | None = None,
+        idea_id: str = "",
+        early_packaging_signals: Any | None = None,
+        draft_hooks: list[str] | None = None,
     ) -> Any:
         from cc_deep_research.content_gen.storage import StrategyStore
 
@@ -2104,7 +2111,15 @@ class ContentGenOrchestrator:
         strategy = store.load()
         agent = self._get_agent("packaging")
         p = platforms or self._config.content_gen.default_platforms
-        return await agent.generate(script, angle, p, strategy=strategy, idea_id=idea_id)
+        return await agent.generate(
+            script,
+            angle,
+            p,
+            strategy=strategy,
+            idea_id=idea_id,
+            early_packaging_signals=early_packaging_signals,
+            draft_hooks=draft_hooks,
+        )
 
     async def run_qc(
         self,
@@ -2622,8 +2637,23 @@ async def _stage_run_scripting(
         from cc_deep_research.content_gen.models import DerivativeOpportunity
 
         derivative_opportunities: list[DerivativeOpportunity] = []
+
+        # Get source material for derivatives
+        source_script = ""
+        if scripting.qc and scripting.qc.final_script:
+            source_script = scripting.qc.final_script
+        elif scripting.tightened:
+            source_script = scripting.tightened.content
+        elif scripting.draft:
+            source_script = scripting.draft.content
+
+        thesis = lane.argument_map.thesis if lane.argument_map else ""
+        topic = scripting.core_inputs.topic if scripting and scripting.core_inputs else ""
+        outcome = scripting.core_inputs.outcome if scripting and scripting.core_inputs else ""
+        audience = scripting.core_inputs.audience if scripting and scripting.core_inputs else ""
+
+        # P4-T2: Extract alternate hook derivatives from top hook candidates
         if scripting and scripting.hooks and scripting.hooks.hooks:
-            # Create alternate hook derivatives from top hook candidates
             for hook in scripting.hooks.hooks[:3]:
                 if hook != scripting.hooks.best_hook:
                     derivative_opportunities.append(
@@ -2636,6 +2666,105 @@ async def _stage_run_scripting(
                             reuse_value="Tests different hook direction without new research",
                         )
                     )
+
+        # P4-T2: Extract proof points for reuse in other formats
+        proof_points: list[str] = []
+        if lane.research_pack and lane.research_pack.proof_points:
+            proof_points = list(lane.research_pack.proof_points)[:3]
+
+        # P4-T2: Quote card derivative - extract a key quote or insight from the script
+        if source_script and len(source_script) > 50:
+            # Find a punchy line from the script as a quote card candidate
+            lines = [line.strip() for line in source_script.split("\n") if line.strip() and len(line.strip()) < 100]
+            if lines:
+                quote_line = lines[len(lines) // 2] if len(lines) > 1 else lines[0]
+                if quote_line:
+                    derivative_opportunities.append(
+                        DerivativeOpportunity(
+                            source_idea_id=candidate.idea_id,
+                            derivative_type="quote_card",
+                            title=f"Quote card: {quote_line[:40]}",
+                            summary=f"Static quote card using key insight: {quote_line}",
+                            target_channel="instagram",
+                            reuse_value="High-performing format for key insights; low production lift",
+                            proof_points_to_reuse=[],
+                        )
+                    )
+
+        # P4-T2: Thread variant derivative - expand script into a Twitter/thread format
+        if source_script and thesis:
+            derivative_opportunities.append(
+                DerivativeOpportunity(
+                    source_idea_id=candidate.idea_id,
+                    derivative_type="thread_variant",
+                    title=f"Thread: {thesis[:50]}",
+                    summary="Expand the core argument into a Twitter thread format",
+                    target_channel="twitter",
+                    reuse_value="Captures audiences who prefer text-based content",
+                    proof_points_to_reuse=[p[:50] for p in proof_points[:2]],
+                )
+            )
+
+        # P4-T2: Newsletter snippet derivative - create an email-ready summary
+        if thesis and outcome:
+            derivative_opportunities.append(
+                DerivativeOpportunity(
+                    source_idea_id=candidate.idea_id,
+                    derivative_type="newsletter_snippet",
+                    title=f"Newsletter: {topic[:40]}" if topic else f"Newsletter snippet from {candidate.idea_id}",
+                    summary="Email-ready summary of the core insight for newsletter distribution",
+                    target_channel="email",
+                    reuse_value="Newsletter audience; evergreen format",
+                    proof_points_to_reuse=[p[:50] for p in proof_points[:2]],
+                )
+            )
+
+        # P4-T2: Follow-up short derivative - create a follow-up piece on a sub-angle
+        if lane.argument_map and lane.argument_map.safe_claims:
+            sub_claims = [c.claim for c in lane.argument_map.safe_claims[1:3]]
+            if sub_claims:
+                derivative_opportunities.append(
+                    DerivativeOpportunity(
+                        source_idea_id=candidate.idea_id,
+                        derivative_type="follow_up_short",
+                        title=f"Follow-up: {sub_claims[0][:40]}" if sub_claims else f"Follow-up short from {candidate.idea_id}",
+                        summary=f"Follow-up piece diving deeper into: {sub_claims[0] if sub_claims else 'a sub-angle'}",
+                        target_channel=early_signals.target_channel if early_signals else "shorts",
+                        reuse_value="Builds on existing proof without new research",
+                        proof_points_to_reuse=proof_points[:2],
+                    )
+                )
+
+        # P4-T2: CTA variation derivative - create alternative call-to-action
+        if scripting and scripting.cta:
+            derivative_opportunities.append(
+                DerivativeOpportunity(
+                    source_idea_id=candidate.idea_id,
+                    derivative_type="cta_variation",
+                    title="CTA variation",
+                    summary=f"Different call-to-action: {scripting.cta}",
+                    target_channel=early_signals.target_channel if early_signals else "",
+                    reuse_value="Tests different conversion actions without new research",
+                )
+            )
+
+        # P4-T2: Platform adaptation derivative - adapt content for a different platform
+        target_channels = ["tiktok", "reels", "youtube_shorts"]
+        current_channel = early_signals.target_channel if early_signals else ""
+        for channel in target_channels:
+            if channel != current_channel:
+                derivative_opportunities.append(
+                    DerivativeOpportunity(
+                        source_idea_id=candidate.idea_id,
+                        derivative_type="platform_adaptation",
+                        title=f"Platform adaptation: {channel}",
+                        summary=f"Adapt the core argument for {channel} audience and format",
+                        target_channel=channel,
+                        reuse_value=f"Expands reach to {channel} audience; leverages existing research",
+                    )
+                )
+                break  # Only add one platform adaptation by default
+
         # Store derivative opportunities on the lane
         if lane and derivative_opportunities:
             lane.derivative_opportunities = derivative_opportunities
@@ -2716,8 +2845,13 @@ async def _stage_packaging(orch: ContentGenOrchestrator, ctx: PipelineContext) -
             continue
         script = ScriptVersion(content=source, word_count=len(source.split()))
 
-        # P4-T1: Pass early packaging signals if available
+        # P4-T1: Pass early packaging signals and draft hooks for channel-aware packaging
         early_signals = lane.early_packaging_signals if lane else None
+
+        # P4-T1: Extract draft hooks from scripting for packaging selection
+        draft_hooks: list[str] = []
+        if lane.scripting and lane.scripting.hooks:
+            draft_hooks = lane.scripting.hooks.hooks[:5]
 
         packaging = await agent.generate(
             script,
@@ -2725,6 +2859,7 @@ async def _stage_packaging(orch: ContentGenOrchestrator, ctx: PipelineContext) -
             platforms,
             strategy=strategy,
             early_packaging_signals=early_signals,
+            draft_hooks=draft_hooks,
         )
         _record_lane_completion(
             ctx,
@@ -2842,20 +2977,41 @@ async def _stage_publish_queue(
         elif lane.fact_risk_gate is not None:
             # Use fact risk gate to determine decision
             risk_decision = lane.fact_risk_gate.decision
-            if risk_decision == "kill" or risk_decision == "hold":
+            if risk_decision == "kill":
                 decision = DraftLaneDecision.HOLD_FOR_PROOF
                 decision_reason = (
-                    f"Fact risk gate: {risk_decision.value}. "
+                    f"Fact risk gate: kill. "
+                    f"Unsupported: {len(lane.fact_risk_gate.weak_claims)} weak, "
+                    f"{len(lane.fact_risk_gate.missing_claims)} missing claims"
+                )
+            elif risk_decision == "hold":
+                decision = DraftLaneDecision.HOLD_FOR_PROOF
+                decision_reason = (
+                    f"Fact risk gate: hold. "
                     f"Unsupported: {len(lane.fact_risk_gate.weak_claims)} weak, "
                     f"{len(lane.fact_risk_gate.missing_claims)} missing claims"
                 )
             elif risk_decision == "proceed_with_uncertainty":
-                # P4-T3: Fast-path publish with known uncertainty
-                decision = DraftLaneDecision.PUBLISH_NOW
-                decision_reason = (
-                    f"Proceeding with known uncertainty. "
-                    f"Required disclosure: {lane.fact_risk_gate.required_disclosure or 'none'}"
+                # P4-T3: Has uncertainty but can proceed
+                # Check if there are strong derivative opportunities to capture first
+                # P4-T2: RECYCLE_FOR_REUSE captures reuse value when uncertainty exists
+                has_strong_derivatives = (
+                    lane.derivative_opportunities and len(lane.derivative_opportunities) >= 3
                 )
+                if has_strong_derivatives:
+                    decision = DraftLaneDecision.RECYCLE_FOR_REUSE
+                    decision_reason = (
+                        f"Proceeding with known uncertainty but strong reuse potential detected. "
+                        f"{len(lane.derivative_opportunities)} derivative opportunities captured. "
+                        f"Required disclosure: {lane.fact_risk_gate.required_disclosure or 'none'}"
+                    )
+                else:
+                    # P4-T3: Fast-path publish with known uncertainty
+                    decision = DraftLaneDecision.PUBLISH_NOW
+                    decision_reason = (
+                        f"Proceeding with known uncertainty. "
+                        f"Required disclosure: {lane.fact_risk_gate.required_disclosure or 'none'}"
+                    )
             else:
                 decision = DraftLaneDecision.PUBLISH_NOW
                 decision_reason = "All claims supported, QC approved"

@@ -64,10 +64,11 @@ class PackagingAgent:
         strategy: StrategyMemory | None = None,
         idea_id: str = "",
         early_packaging_signals: EarlyPackagingSignals | None = None,
+        draft_hooks: list[str] | None = None,
     ) -> PackagingOutput:
         system = prompts.PACKAGING_SYSTEM
         strat = strategy or StrategyMemory()
-        user = prompts.packaging_user(script, angle, platforms, strat, early_packaging_signals)
+        user = prompts.packaging_user(script, angle, platforms, strat, early_packaging_signals, draft_hooks)
         text = await self._call_llm(system, user, temperature=0.6)
 
         packages = _parse_platform_packages(text)
@@ -86,7 +87,12 @@ class PackagingAgent:
                 if not pkg.content_type_hint and early_packaging_signals.content_type:
                     pkg.content_type_hint = early_packaging_signals.content_type
 
-        return PackagingOutput(idea_id=idea_id, platform_packages=packages)
+        return PackagingOutput(
+            idea_id=idea_id,
+            platform_packages=packages,
+            draft_hooks=draft_hooks or [],
+            early_packaging_signals=early_packaging_signals,
+        )
 
 
 # ---------------------------------------------------------------------------

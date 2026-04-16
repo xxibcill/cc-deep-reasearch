@@ -678,6 +678,27 @@ Input behavior:
 - parsing is intentionally tolerant per block, but the stage fails if no usable platform package
   survives parsing
 
+**P4-T1 Channel-Aware Co-Design:**
+
+- Early packaging signals (`EarlyPackagingSignals`) are passed from the scripting stage
+- Draft hook candidates are included for packaging selection
+- Signals include: `target_channel`, `content_type`, `tone_hint`, `format_constraints`, `cta_hint`
+- Packaging generator applies channel-specific hook energy matching
+
+**P4-T2 Derivative And Reuse Planning:**
+
+- Packaging output includes `draft_hooks` and `early_packaging_signals` for traceability
+- Derivative opportunities are extracted during scripting and stored on the lane context
+- `DerivativeOpportunityStore` persists opportunities to `derivative_opportunities.yaml`
+- Opportunities include: alternate_hook, quote_card, thread_variant, newsletter_snippet, follow_up_short, cta_variation, platform_adaptation
+
+**P4-T3 Publish-Now Vs Hold Decision Path:**
+
+- Decision is applied in `_stage_publish_queue` before invoking publish
+- `DraftLaneDecision` enum: `PUBLISH_NOW`, `HOLD_FOR_PROOF`, `RECYCLE_FOR_REUSE`, `KILL`
+- `PublishItem` carries `draft_decision`, `decision_reason`, and `claim_status_summary`
+- `RECYCLE_FOR_REUSE` triggers when uncertainty exists AND 3+ derivative opportunities are available
+
 ### Stage 11: Human QC Gate
 
 Implementation:

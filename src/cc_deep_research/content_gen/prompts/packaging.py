@@ -79,6 +79,7 @@ def packaging_user(
     platforms: list[str],
     strategy: StrategyMemory,
     early_signals: EarlyPackagingSignals | None = None,
+    draft_hooks: list[str] | None = None,
 ) -> str:
     parts = [
         f"Platforms: {', '.join(platforms)}",
@@ -99,6 +100,10 @@ def packaging_user(
             parts.append(f"Format Constraints: {', '.join(early_signals.format_constraints)}")
         if early_signals.cta_hint:
             parts.append(f"CTA Hint: {early_signals.cta_hint}")
+
+    # P4-T1: Include draft hook candidates for packaging selection
+    if draft_hooks:
+        parts.append("\nDraft Hook Candidates:\n- " + "\n- ".join(draft_hooks))
 
     parts.append(f"\nScript:\n{script.content}")
 
