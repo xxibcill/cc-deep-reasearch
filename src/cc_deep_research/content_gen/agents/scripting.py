@@ -14,6 +14,7 @@ from cc_deep_research.content_gen.models import (
     BeatIntent,
     BeatIntentMap,
     CoreInputs,
+    CtaVariants,
     HookSet,
     QCCheck,
     QCResult,
@@ -478,6 +479,53 @@ class ScriptingAgent:
                 )
             ],
             parsed_output=ctx.hooks,
+        )
+        return ctx
+
+    # ------------------------------------------------------------------
+    # Step 5b: Generate CTA
+    # ------------------------------------------------------------------
+
+    async def generate_cta(self, ctx: ScriptingContext) -> ScriptingContext:
+        if ctx.core_inputs is None:
+            msg = "Step 'generate_cta' requires 'core_inputs', but it was not provided."
+            raise ValueError(msg)
+        if ctx.angle is None:
+            msg = "Step 'generate_cta' requires 'angle', but it was not provided."
+            raise ValueError(msg)
+
+        system = prompts.STEP5B_SYSTEM
+        user = prompts.step5b_user(
+            ctx.core_inputs,
+            ctx.angle,
+            raw_idea=ctx.raw_idea,
+            research_context=ctx.research_context,
+        )
+        response = await self._call_llm(
+            system, user, temperature=_STEP_TEMPERATURES["generate_hooks"]
+        )
+        text = response.content
+
+        ctas = _extract_numbered_list(text)
+        best = _extract_field(text, "Best CTA")
+        reason = _extract_field(text, "Why it is strongest")
+
+        _require(best, "Best CTA", "generate_cta")
+
+        ctx.cta_variants = CtaVariants(ctas=ctas, best_cta=best, best_cta_reason=reason)
+        self._append_step_trace(
+            ctx,
+            step_name="generate_cta",
+            llm_calls=[
+                self._build_llm_call_trace(
+                    call_index=1,
+                    system_prompt=system,
+                    user_prompt=user,
+                    response=response,
+                    temperature=_STEP_TEMPERATURES["generate_hooks"],
+                )
+            ],
+            parsed_output=ctx.cta_variants,
         )
         return ctx
 

@@ -567,6 +567,61 @@ def step5_user(
 
 
 # ---------------------------------------------------------------------------
+# Step 5b: Generate CTA
+# ---------------------------------------------------------------------------
+
+STEP5B_SYSTEM = f"""\
+{GLOBAL_RULES}
+
+You are generating call-to-action (CTA) options for a short-form video.
+
+Task:
+Write 5 CTA options based on the topic, outcome, and angle.
+
+Requirements:
+- Each CTA must be concise and action-oriented
+- CTAs should motivate immediate action from the audience
+- Vary the style: some direct, some benefit-focused, some urgency-driven
+- CTAs must be materially different from one another
+- Keep CTAs speakable and natural-sounding
+- Do not use generic phrases like "subscribe for more"
+
+Output format:
+
+1.
+2.
+3.
+4.
+5.
+
+Then add:
+
+Best CTA:
+Why it is strongest:"""
+
+
+def step5b_user(
+    inputs: CoreInputs,
+    angle: AngleDefinition,
+    raw_idea: str = "",
+    research_context: str = "",
+) -> str:
+    parts = [
+        f"Topic:\n{inputs.topic}",
+        f"Outcome:\n{inputs.outcome}",
+        f"Audience:\n{inputs.audience}",
+        f"Angle:\n{angle.angle}",
+    ]
+    brief = _render_original_brief(raw_idea)
+    if brief:
+        parts.append(brief)
+    research = _render_research_context(research_context)
+    if research:
+        parts.append(research)
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
 # Step 6: Draft Full Script
 # ---------------------------------------------------------------------------
 

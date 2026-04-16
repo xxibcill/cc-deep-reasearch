@@ -479,6 +479,14 @@ class HookSet(BaseModel):
     best_hook_reason: str
 
 
+class CtaVariants(BaseModel):
+    """Step 5b output: generated CTA options with best selection."""
+
+    ctas: list[str]
+    best_cta: str
+    best_cta_reason: str
+
+
 class ScriptVersion(BaseModel):
     """Script text with metadata (used for draft, retention, tightened)."""
 
@@ -554,6 +562,7 @@ class ScriptingContext(BaseModel):
     structure: ScriptStructure | None = None
     beat_intents: BeatIntentMap | None = None
     hooks: HookSet | None = None
+    cta_variants: CtaVariants | None = None
     draft: ScriptVersion | None = None
     retention_revised: ScriptVersion | None = None
     tightened: ScriptVersion | None = None
