@@ -15,8 +15,8 @@
 
 ## Tasks
 
-| Task | Summary |
-| --- | --- |
+| Task                                            | Summary        |
+| ----------------------------------------------- | -------------- |
 | [PX-T1](../tasks/phase-XX/pX-t1-[task-slug].md) | [Task summary] |
 | [PX-T2](../tasks/phase-XX/pX-t2-[task-slug].md) | [Task summary] |
 | [PX-T3](../tasks/phase-XX/pX-t3-[task-slug].md) | [Task summary] |
@@ -31,3 +31,7 @@
 - [Observable outcome 1]
 - [Observable outcome 2]
 - [Observable outcome 3]
+
+## Status
+
+status of each phase or tasks if it Pending, Partially Implemented or Done

@@ -8,6 +8,7 @@ Use these docs as the current contributor entry points:
 - [`../dashboard/README.md`](../dashboard/README.md): frontend development commands, runtime env vars, and backend wiring for the Next.js dashboard
 - [`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md): pipeline phases, orchestrator ownership, and package boundaries
 - [`content-generation.md`](content-generation.md): full short-form content-generation workflow, stage contracts, CLI usage, persistence, and current caveats
+- [`CONTENT_GEN_IMPROVEMENT_PLAN.md`](CONTENT_GEN_IMPROVEMENT_PLAN.md): phased roadmap for compressing content generation into a faster seven-phase operating system with gating, branching, reuse, and tighter feedback loops
 - [`brief-management.md`](brief-management.md): persistent brief management, lifecycle states, revision history, approval workflows, and rollout guide
 - [`TELEMETRY.md`](TELEMETRY.md): persisted telemetry model and monitoring workflow
 - [`REALTIME_MONITORING.md`](REALTIME_MONITORING.md): FastAPI + Next.js operator console for live monitoring
