@@ -8,6 +8,8 @@ Use these docs as the current contributor entry points:
 - [`../dashboard/README.md`](../dashboard/README.md): frontend development commands, runtime env vars, and backend wiring for the Next.js dashboard
 - [`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md): pipeline phases, orchestrator ownership, and package boundaries
 - [`content-generation.md`](content-generation.md): full short-form content-generation workflow, stage contracts, CLI usage, persistence, and current caveats
+- [`beats.md`](beats.md): detailed guide to beat structure, beat lifecycle, beat constraints, targeted revision, and visual handoff in the content-generation pipeline
+- [`select-beat-structure-prompts.md`](select-beat-structure-prompts.md): self-contained prompt for choosing a beat structure from only a content pillar and angle statement
 - [`CONTENT_GEN_IMPROVEMENT_PLAN.md`](CONTENT_GEN_IMPROVEMENT_PLAN.md): phased roadmap for compressing content generation into a faster seven-phase operating system with gating, branching, reuse, and tighter feedback loops
 - [`brief-management.md`](brief-management.md): persistent brief management, lifecycle states, revision history, approval workflows, and rollout guide
 - [`TELEMETRY.md`](TELEMETRY.md): persisted telemetry model and monitoring workflow
