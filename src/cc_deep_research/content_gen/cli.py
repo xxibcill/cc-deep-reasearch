@@ -435,12 +435,12 @@ def register_content_gen_commands(cli: click.Group) -> None:
             )
 
             click.echo(f"\nHook strength: {result.hook_strength}")
+            click.echo(f"Release state: {result.release_state.value}")
             click.echo(f"Clarity issues: {len(result.clarity_issues)}")
             click.echo(f"Factual issues: {len(result.factual_issues)}")
             click.echo(f"Must fix: {len(result.must_fix_items)}")
             for item in result.must_fix_items:
                 click.echo(f"  - {item}")
-            click.echo(f"\nApproved: {result.approved_for_publish}")
 
         asyncio.run(_run())
 
@@ -452,9 +452,43 @@ def register_content_gen_commands(cli: click.Group) -> None:
         required=True,
         help="Pipeline context JSON to update",
     )
-    def qc_approve(idea_id: str, from_file: str) -> None:
-        """Manually approve a video for publish. Only humans can do this."""
-        from cc_deep_research.content_gen.models import PipelineContext
+    @click.option(
+        "--release-state",
+        type=click.Choice(["approved", "approved-with-known-risks"]),
+        default="approved",
+        help="Release state: approved (clean) or approved-with-known-risks (operator override)",
+    )
+    @click.option(
+        "--override-reason",
+        default="",
+        help="Required reason when approving with known risks (identifies what risks are accepted)",
+    )
+    @click.option(
+        "--actor",
+        default="operator",
+        help="Operator identifier for audit trail",
+    )
+    def qc_approve(
+        idea_id: str,
+        from_file: str,
+        release_state: str,
+        override_reason: str,
+        actor: str,
+    ) -> None:
+        """Manually approve a video for publish with explicit release state.
+
+        P6-T2: Release state replaces the boolean approved_for_publish.
+        --release-state=approved: Full approval with no known issues.
+        --release-state=approved-with-known-risks: Operator accepts documented risks (requires --override-reason).
+
+        Examples:
+            cc-deep-research content-gen qc approve --idea-id idea123 --from-file ctx.json
+            cc-deep-research content-gen qc approve --idea-id idea123 --from-file ctx.json \\
+                --release-state approved-with-known-risks --override-reason "hook is adequate, not strong"
+        """
+        from datetime import UTC, datetime
+
+        from cc_deep_research.content_gen.models import PipelineContext, ReleaseState
 
         path = Path(from_file)
         ctx = PipelineContext.model_validate_json(path.read_text())
@@ -463,9 +497,48 @@ def register_content_gen_commands(cli: click.Group) -> None:
             click.echo("No QC gate found in context. Run 'qc review' first.")
             return
 
-        ctx.qc_gate.approved_for_publish = True
+        # Set release state
+        if release_state == "approved":
+            ctx.qc_gate.release_state = ReleaseState.APPROVED
+            ctx.qc_gate.approved_for_publish = True
+            ctx.qc_gate.override_actor = ""
+            ctx.qc_gate.override_reason = ""
+            ctx.qc_gate.override_timestamp = ""
+        else:
+            # approved-with-known-risks: operator override
+            if not override_reason:
+                click.echo(
+                    "--override-reason is required when --release-state approved-with-known-risks. "
+                    "Document the accepted risks."
+                )
+                return
+            ctx.qc_gate.release_state = ReleaseState.APPROVED_WITH_KNOWN_RISKS
+            ctx.qc_gate.approved_for_publish = True  # Override allows publish
+            ctx.qc_gate.override_actor = actor
+            ctx.qc_gate.override_reason = override_reason
+            ctx.qc_gate.override_timestamp = datetime.now(tz=UTC).isoformat()
+
         path.write_text(ctx.model_dump_json(indent=2))
-        click.echo(f"Approved idea {idea_id} for publish.")
+
+        state_label = ctx.qc_gate.release_state.value
+        click.echo(f"Approved idea {idea_id} for publish. Release state: {state_label}")
+        if ctx.qc_gate.override_reason:
+            click.echo(f"Override reason: {ctx.qc_gate.override_reason}")
+
+        # P6-T3: Log operator override to audit trail when releasing with known risks
+        if ctx.qc_gate.release_state.value == "approved_with_known_risks":
+            try:
+                from cc_deep_research.content_gen.storage import AuditStore
+                audit = AuditStore()
+                audit.log_operator_override(
+                    idea_id=idea_id,
+                    original_state="blocked",
+                    override_reason=ctx.qc_gate.override_reason,
+                    actor_label=actor,
+                    actor="operator",
+                )
+            except Exception:
+                pass  # Audit store is best-effort
 
     # ------------------------------------------------------------------
     # Publish commands

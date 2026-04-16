@@ -65,6 +65,10 @@ class AuditEventType(StrEnum):
     BRIEF_HEAD_UPDATED = "brief_head_updated"
     BRIEF_LIFECYCLE_CHANGED = "brief_lifecycle_changed"
 
+    # P6: Release and override events
+    RELEASE_STATE_CHANGED = "release_state_changed"
+    OPERATOR_OVERRIDE_APPLIED = "operator_override_applied"
+
 
 class AuditActor(StrEnum):
     """Who or what initiated the event."""
@@ -396,6 +400,70 @@ class AuditStore:
             description=f"{event_type.value}: {brief_id}",
             payload={"patch": patch or {}, "brief_snapshot": snapshot},
             outcome=outcome,
+        )
+        self.append(entry)
+        return entry
+
+    def log_release_state_change(
+        self,
+        idea_id: str,
+        from_state: str,
+        to_state: str,
+        actor: AuditActor,
+        *,
+        actor_label: str = "",
+        pipeline_id: str = "",
+        override_reason: str = "",
+        override_timestamp: str = "",
+        brief_id: str = "",
+    ) -> AuditEntry:
+        """Record a release state transition."""
+        entry = AuditEntry(
+            event_type=AuditEventType.RELEASE_STATE_CHANGED,
+            actor=actor,
+            actor_label=actor_label,
+            idea_id=idea_id,
+            brief_id=brief_id,
+            pipeline_id=pipeline_id,
+            description=f"Release state: {from_state} → {to_state}",
+            payload={
+                "from_state": from_state,
+                "to_state": to_state,
+                "override_reason": override_reason,
+                "override_timestamp": override_timestamp,
+            },
+            outcome="success",
+        )
+        self.append(entry)
+        return entry
+
+    def log_operator_override(
+        self,
+        idea_id: str,
+        original_state: str,
+        override_reason: str,
+        actor: AuditActor,
+        *,
+        actor_label: str = "",
+        pipeline_id: str = "",
+        brief_id: str = "",
+        linked_evidence: list[str] | None = None,
+    ) -> AuditEntry:
+        """Record an operator override of an automated gate."""
+        entry = AuditEntry(
+            event_type=AuditEventType.OPERATOR_OVERRIDE_APPLIED,
+            actor=actor,
+            actor_label=actor_label,
+            idea_id=idea_id,
+            brief_id=brief_id,
+            pipeline_id=pipeline_id,
+            description=f"Operator overrode gate: {original_state} → approved_with_known_risks",
+            payload={
+                "original_state": original_state,
+                "override_reason": override_reason,
+                "linked_evidence": linked_evidence or [],
+            },
+            outcome="success",
         )
         self.append(entry)
         return entry

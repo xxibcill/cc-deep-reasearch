@@ -2594,6 +2594,17 @@ class PackagingOutput(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class ReleaseState(StrEnum):
+    """P6-T2: Explicit release states for publish readiness.
+
+    Every asset must reach one of these states before entering the publish queue.
+    """
+
+    BLOCKED = "blocked"  # QC found issues that block publication
+    APPROVED = "approved"  # QC passed, no known risks
+    APPROVED_WITH_KNOWN_RISKS = "approved_with_known_risks"  # Operator accepted known risks
+
+
 class HumanQCGate(BaseModel):
     """Human-gateable QC output (spec stage 9).
 
@@ -2616,6 +2627,21 @@ class HumanQCGate(BaseModel):
     success_criteria_results: list[str] = Field(
         default_factory=list,
         description="Per-criterion evaluation: whether each planned success criterion is met or unmet",
+    )
+    # P6-T2: Explicit release state replaces boolean approval
+    release_state: ReleaseState = ReleaseState.BLOCKED
+    # P6-T3: Override tracking when operator explicitly overrides a blocked gate
+    override_actor: str = Field(
+        default="",
+        description="Who overrode the gate (operator name or 'system')",
+    )
+    override_reason: str = Field(
+        default="",
+        description="Why the override was applied — the operator's justification",
+    )
+    override_timestamp: str = Field(
+        default="",
+        description="ISO timestamp of when the override was applied",
     )
 
 
@@ -2863,6 +2889,19 @@ class PublishItem(BaseModel):
     claim_status_summary: str = Field(
         default="",
         description="Summary of claim status at time of decision (e.g., '3 supported, 1 weak')",
+    )
+    # P6-T3: Override tracking when operator approved with known risks
+    override_actor: str = Field(
+        default="",
+        description="Who overrode the gate (operator name or 'system')",
+    )
+    override_reason: str = Field(
+        default="",
+        description="Why the override was applied — the operator's justification",
+    )
+    override_timestamp: str = Field(
+        default="",
+        description="ISO timestamp of when the override was applied",
     )
 
 

@@ -267,10 +267,23 @@ def _record_lane_completion(
 
 
 def _lane_publish_prereqs_met(ctx: PipelineContext) -> bool:
+    # P6-T2: Check release_state for publish readiness
+    # P6-T2 backward compat: also accept approved_for_publish=True when release_state is BLOCKED
+    from cc_deep_research.content_gen.models import ReleaseState
+
+    def _is_approved(lane: PipelineLaneContext) -> bool:
+        qc = lane.qc_gate
+        if qc is None:
+            return False
+        if qc.release_state in (ReleaseState.APPROVED, ReleaseState.APPROVED_WITH_KNOWN_RISKS):
+            return True
+        # Backward compatibility: treat approved_for_publish=True with BLOCKED as APPROVED
+        if qc.release_state == ReleaseState.BLOCKED and qc.approved_for_publish:
+            return True
+        return False
+
     return any(
-        lane.packaging is not None
-        and lane.qc_gate is not None
-        and lane.qc_gate.approved_for_publish
+        lane.packaging is not None and _is_approved(lane)
         for lane in ctx.lane_contexts
     )
 
@@ -1784,8 +1797,8 @@ class ContentGenOrchestrator:
             return "ready_for_review"
         if stage == "publish_queue":
             if ctx.qc_gate:
-                return f"approved={ctx.qc_gate.approved_for_publish}"
-            return "approved=false"
+                return f"release_state={ctx.qc_gate.release_state.value}"
+            return "release_state=not_reviewed"
         return ""
 
     def _summarize_output(self, idx: int, ctx: PipelineContext) -> str:
@@ -1847,7 +1860,7 @@ class ContentGenOrchestrator:
             return "empty"
         if stage == "human_qc":
             if ctx.qc_gate:
-                return f"approved={ctx.qc_gate.approved_for_publish}"
+                return f"release_state={ctx.qc_gate.release_state.value}"
             return "not_reviewed"
         if stage == "publish_queue":
             if ctx.publish_items:
@@ -1954,7 +1967,13 @@ class ContentGenOrchestrator:
             elif ctx.publish_item:
                 meta.selected_idea_id = ctx.publish_item.idea_id or _resolve_selected_idea_id(ctx)
         elif stage == "human_qc" and ctx.qc_gate:
-            meta.approved = ctx.qc_gate.approved_for_publish
+            # P6-T2: Record release state in metadata
+            from cc_deep_research.content_gen.models import ReleaseState
+
+            meta.approved = ctx.qc_gate.release_state in (
+                ReleaseState.APPROVED,
+                ReleaseState.APPROVED_WITH_KNOWN_RISKS,
+            )
         elif stage == "performance_analysis" and ctx.performance:
             meta.is_degraded = ctx.performance.is_degraded
             meta.degradation_reason = ctx.performance.degradation_reason
@@ -2062,8 +2081,14 @@ class ContentGenOrchestrator:
         if stage == "build_argument_map" and ctx.argument_map:
             return ctx.argument_map.thesis
         if stage == "human_qc" and ctx.qc_gate:
-            if ctx.qc_gate.approved_for_publish:
+            from cc_deep_research.content_gen.models import ReleaseState
+
+            rs = ctx.qc_gate.release_state
+            if rs == ReleaseState.APPROVED:
                 return "Human QC approved the package for publish."
+            if rs == ReleaseState.APPROVED_WITH_KNOWN_RISKS:
+                reason = ctx.qc_gate.override_reason or "operator accepted known risks"
+                return f"Approved with known risks: {reason}"
             if ctx.qc_gate.must_fix_items:
                 return f"Human QC requires {len(ctx.qc_gate.must_fix_items)} must-fix item(s) before publish."
             return "Human QC review completed without approval."
@@ -3147,7 +3172,7 @@ async def _stage_publish_queue(
     invoked when they add real value for the selected path.
     """
     from cc_deep_research.content_gen.backlog_service import BacklogService
-    from cc_deep_research.content_gen.models import DraftLaneDecision
+    from cc_deep_research.content_gen.models import DraftLaneDecision, ReleaseState
     from cc_deep_research.content_gen.storage import DerivativeOpportunityStore
 
     candidates = _lane_candidates(ctx)
@@ -3166,11 +3191,33 @@ async def _stage_publish_queue(
         decision: DraftLaneDecision
         decision_reason: str = ""
 
+        # P6-T2: Use release_state for publish readiness.
+        # For backward compatibility with existing contexts that predate release_state,
+        # treat approved_for_publish=True (without a set release_state) as APPROVED.
+        qc = lane.qc_gate
+        assert qc is not None
+
+        # Determine effective release state
+        if qc.release_state == ReleaseState.APPROVED:
+            effective_approved = True
+            effective_state = ReleaseState.APPROVED
+        elif qc.release_state == ReleaseState.APPROVED_WITH_KNOWN_RISKS:
+            effective_approved = True  # Override allows publish
+            effective_state = ReleaseState.APPROVED_WITH_KNOWN_RISKS
+        elif qc.release_state == ReleaseState.BLOCKED and qc.approved_for_publish:
+            # Backward compatibility: existing contexts with approved_for_publish=True
+            # but no explicit release_state are treated as APPROVED
+            effective_approved = True
+            effective_state = ReleaseState.APPROVED
+        else:
+            effective_approved = False
+            effective_state = ReleaseState.BLOCKED
+
         # Check if QC gate is approved
-        if not lane.qc_gate.approved_for_publish:
-            # QC gate failed — this is a kill decision
+        if not effective_approved:
+            # QC gate blocked — this is a kill decision
             decision = DraftLaneDecision.KILL
-            decision_reason = f"QC gate not approved: {', '.join(lane.qc_gate.must_fix_items[:3])}"
+            decision_reason = f"Release state blocked: {', '.join(qc.must_fix_items[:3])}"
         elif lane.fact_risk_gate is not None:
             # Use fact risk gate to determine decision
             risk_decision = lane.fact_risk_gate.decision
@@ -3257,17 +3304,22 @@ async def _stage_publish_queue(
             continue
 
         # PUBLISH_NOW: Proceed with publishing
-        if not lane.qc_gate.approved_for_publish:
+        if not effective_approved:
             # Safety check — should not reach here if QC is not approved
             continue
 
         items = await agent.schedule(lane.packaging, idea_id=candidate.idea_id)
 
         # P4-T3: Attach decision metadata to publish items
+        # P6-T3: Carry override information through to publish queue items
         for item in items:
             item.draft_decision = decision
             item.decision_reason = decision_reason
             item.claim_status_summary = claim_status_summary
+            if qc.override_reason:
+                item.override_actor = qc.override_actor
+                item.override_reason = qc.override_reason
+                item.override_timestamp = qc.override_timestamp
 
         _record_lane_completion(
             ctx,
