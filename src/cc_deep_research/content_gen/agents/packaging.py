@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from cc_deep_research.content_gen.agents._llm_utils import call_agent_llm_text
 from cc_deep_research.content_gen.models import (
     AngleOption,
+    EarlyPackagingSignals,
     PackagingOutput,
     PlatformPackage,
     ScriptVersion,
@@ -19,6 +20,7 @@ from cc_deep_research.llm import LLMRouter
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
+    from cc_deep_research.content_gen.models import EarlyPackagingSignals
 
 logger = logging.getLogger(__name__)
 
@@ -61,10 +63,11 @@ class PackagingAgent:
         *,
         strategy: StrategyMemory | None = None,
         idea_id: str = "",
+        early_packaging_signals: EarlyPackagingSignals | None = None,
     ) -> PackagingOutput:
         system = prompts.PACKAGING_SYSTEM
         strat = strategy or StrategyMemory()
-        user = prompts.packaging_user(script, angle, platforms, strat)
+        user = prompts.packaging_user(script, angle, platforms, strat, early_packaging_signals)
         text = await self._call_llm(system, user, temperature=0.6)
 
         packages = _parse_platform_packages(text)
@@ -74,6 +77,15 @@ class PackagingAgent:
                 "with 'platform', 'primary_hook', and 'caption'."
             )
             raise ValueError(msg)
+
+        # Apply channel-aware signals to each package if provided
+        if early_packaging_signals:
+            for pkg in packages:
+                if not pkg.target_channel and early_packaging_signals.target_channel:
+                    pkg.target_channel = early_packaging_signals.target_channel
+                if not pkg.content_type_hint and early_packaging_signals.content_type:
+                    pkg.content_type_hint = early_packaging_signals.content_type
+
         return PackagingOutput(idea_id=idea_id, platform_packages=packages)
 
 

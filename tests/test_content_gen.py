@@ -1503,6 +1503,7 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
             platforms: list[str],
             *,
             strategy: StrategyMemory,
+            early_packaging_signals=None,
         ) -> PackagingOutput:
             assert platforms == ["tiktok"]
             assert strategy.niche == fixture["strategy"]["niche"]

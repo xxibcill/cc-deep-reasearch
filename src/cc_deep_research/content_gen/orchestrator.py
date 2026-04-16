@@ -2582,12 +2582,29 @@ async def _stage_run_scripting(
             structure=_seed_structure_from_argument_map(lane.argument_map),
             beat_intents=_seed_beat_intents_from_argument_map(lane.argument_map),
         )
+        # P4-T1: Capture early packaging signals from angle for channel-aware drafting
+        early_signals = None
+        if angle:
+            from cc_deep_research.content_gen.models import EarlyPackagingSignals
+
+            early_signals = EarlyPackagingSignals(
+                target_channel=angle.format or "",
+                content_type=angle.lens or "",
+                tone_hint=angle.tone or "",
+                cta_hint=angle.cta or "",
+            )
+
         start_step = 5 if seeded_ctx.structure and seeded_ctx.beat_intents else 3
         scripting = await agent.run_from_step(seeded_ctx, start_step)
 
         # Build claim traceability ledger
         claim_ledger = _build_claim_ledger(lane.research_pack, lane.argument_map, scripting)
         scripting.claim_ledger = claim_ledger
+
+        # P4-T1: Capture draft hooks for packaging selection later
+        draft_hooks = []
+        if scripting.hooks:
+            draft_hooks = scripting.hooks.hooks[:5]  # top 5 hook candidates
 
         _record_lane_completion(
             ctx,
@@ -2596,6 +2613,33 @@ async def _stage_run_scripting(
             stage_field="scripting",
             value=scripting,
         )
+
+        # P4-T1: Store early packaging signals on the lane
+        if early_signals and lane:
+            lane.early_packaging_signals = early_signals
+
+        # P4-T2: Extract derivative opportunities from approved draft
+        from cc_deep_research.content_gen.models import DerivativeOpportunity
+
+        derivative_opportunities: list[DerivativeOpportunity] = []
+        if scripting and scripting.hooks and scripting.hooks.hooks:
+            # Create alternate hook derivatives from top hook candidates
+            for hook in scripting.hooks.hooks[:3]:
+                if hook != scripting.hooks.best_hook:
+                    derivative_opportunities.append(
+                        DerivativeOpportunity(
+                            source_idea_id=candidate.idea_id,
+                            derivative_type="alternate_hook",
+                            title=f"Alternate hook: {hook[:50]}",
+                            summary=f"Use this hook instead of the primary: {hook}",
+                            target_channel=early_signals.target_channel if early_signals else "",
+                            reuse_value="Tests different hook direction without new research",
+                        )
+                    )
+        # Store derivative opportunities on the lane
+        if lane and derivative_opportunities:
+            lane.derivative_opportunities = derivative_opportunities
+
         if service is None:
             service = BacklogService(getattr(orch, "_config", None))
         service.mark_in_production(candidate.idea_id, source_pipeline_id=ctx.pipeline_id)
@@ -2671,7 +2715,17 @@ async def _stage_packaging(orch: ContentGenOrchestrator, ctx: PipelineContext) -
         if not source:
             continue
         script = ScriptVersion(content=source, word_count=len(source.split()))
-        packaging = await agent.generate(script, angle, platforms, strategy=strategy)
+
+        # P4-T1: Pass early packaging signals if available
+        early_signals = lane.early_packaging_signals if lane else None
+
+        packaging = await agent.generate(
+            script,
+            angle,
+            platforms,
+            strategy=strategy,
+            early_packaging_signals=early_signals,
+        )
         _record_lane_completion(
             ctx,
             candidate,
@@ -2753,23 +2807,115 @@ async def _stage_human_qc(orch: ContentGenOrchestrator, ctx: PipelineContext) ->
 async def _stage_publish_queue(
     orch: ContentGenOrchestrator, ctx: PipelineContext
 ) -> PipelineContext:
+    """P4-T3: Implement publish-now vs hold-for-proof decision path.
+
+    This stage applies the draft lane decision before invoking publish.
+    The decision is based on the lane's fact_risk_gate (uncertainty status)
+    and qc_gate (quality check). Later stages (visual, production) are only
+    invoked when they add real value for the selected path.
+    """
     from cc_deep_research.content_gen.backlog_service import BacklogService
+    from cc_deep_research.content_gen.models import DraftLaneDecision
+    from cc_deep_research.content_gen.storage import DerivativeOpportunityStore
 
     candidates = _lane_candidates(ctx)
     if not candidates:
         return ctx
     agent = orch._get_agent("publish")
     service: BacklogService | None = None
+    derivative_store: DerivativeOpportunityStore | None = None
+
     for candidate in candidates:
         lane = _resolve_lane_context(ctx, candidate.idea_id)
-        if (
-            lane is None
-            or lane.packaging is None
-            or lane.qc_gate is None
-            or not lane.qc_gate.approved_for_publish
-        ):
+        if lane is None or lane.packaging is None or lane.qc_gate is None:
             continue
+
+        # P4-T3: Determine draft lane decision based on fact_risk_gate and qc_gate
+        decision: DraftLaneDecision
+        decision_reason: str = ""
+
+        # Check if QC gate is approved
+        if not lane.qc_gate.approved_for_publish:
+            # QC gate failed — this is a kill decision
+            decision = DraftLaneDecision.KILL
+            decision_reason = f"QC gate not approved: {', '.join(lane.qc_gate.must_fix_items[:3])}"
+        elif lane.fact_risk_gate is not None:
+            # Use fact risk gate to determine decision
+            risk_decision = lane.fact_risk_gate.decision
+            if risk_decision == "kill" or risk_decision == "hold":
+                decision = DraftLaneDecision.HOLD_FOR_PROOF
+                decision_reason = (
+                    f"Fact risk gate: {risk_decision.value}. "
+                    f"Unsupported: {len(lane.fact_risk_gate.weak_claims)} weak, "
+                    f"{len(lane.fact_risk_gate.missing_claims)} missing claims"
+                )
+            elif risk_decision == "proceed_with_uncertainty":
+                # P4-T3: Fast-path publish with known uncertainty
+                decision = DraftLaneDecision.PUBLISH_NOW
+                decision_reason = (
+                    f"Proceeding with known uncertainty. "
+                    f"Required disclosure: {lane.fact_risk_gate.required_disclosure or 'none'}"
+                )
+            else:
+                decision = DraftLaneDecision.PUBLISH_NOW
+                decision_reason = "All claims supported, QC approved"
+        else:
+            # No fact risk gate — default to publish now if QC passes
+            decision = DraftLaneDecision.PUBLISH_NOW
+            decision_reason = "No fact risk gate, QC approved"
+
+        # Apply decision to lane
+        lane.draft_decision = decision
+        lane.decision_reason = decision_reason
+
+        # Build claim status summary for publish items
+        claim_status_summary = ""
+        if lane.fact_risk_gate:
+            claim_status_summary = (
+                f"{len(lane.fact_risk_gate.supported_claims)} supported, "
+                f"{len(lane.fact_risk_gate.weak_claims)} weak, "
+                f"{len(lane.fact_risk_gate.missing_claims)} missing"
+            )
+
+        # P4-T3: Execute decision
+        if decision == DraftLaneDecision.KILL or decision == DraftLaneDecision.HOLD_FOR_PROOF:
+            # Do not proceed to publish — record decision and skip
+            logger.info(
+                "Draft decision %s for idea %s: %s",
+                decision.value,
+                candidate.idea_id,
+                decision_reason,
+            )
+            continue
+
+        if decision == DraftLaneDecision.RECYCLE_FOR_REUSE:
+            # P4-T2: Store derivative opportunities for later use
+            if lane.derivative_opportunities:
+                if derivative_store is None:
+                    derivative_store = DerivativeOpportunityStore()
+                for deriv in lane.derivative_opportunities:
+                    deriv.created_at = datetime.now(tz=UTC).isoformat()
+                derivative_store.add_opportunities(lane.derivative_opportunities)
+                logger.info(
+                    "Stored %d derivative opportunities for idea %s",
+                    len(lane.derivative_opportunities),
+                    candidate.idea_id,
+                )
+            continue
+
+        # PUBLISH_NOW: Proceed with publishing
+        if not lane.qc_gate.approved_for_publish:
+            # Safety check — should not reach here if QC is not approved
+            continue
+
         items = await agent.schedule(lane.packaging, idea_id=candidate.idea_id)
+
+        # P4-T3: Attach decision metadata to publish items
+        for item in items:
+            item.draft_decision = decision
+            item.decision_reason = decision_reason
+            item.claim_status_summary = claim_status_summary
+
         _record_lane_completion(
             ctx,
             candidate,

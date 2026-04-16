@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field, computed_field, field_validator, model_va
 
 from cc_deep_research.models.search import QueryProvenance
 
-CONTRACT_VERSION = "1.7.0"
+CONTRACT_VERSION = "1.8.0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,10 +275,10 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "packaging": ContentGenStageContract(
         stage_name="packaging",
         prompt_module="prompts/packaging.py",
-        contract_version="1.0.0",
+        contract_version="1.1.0",
         parser_location="agents/packaging.py::_parse_platform_packages",
         output_model="PackagingOutput",
-        format_notes="Repeated '---' platform blocks with scalar fields and '-' list sections.",
+        format_notes="P4-T1: Early packaging signals (target_channel, content_type_hint) added to PlatformPackage. PackagingOutput now includes draft_hooks and early_packaging_signals for channel-aware co-design.",
         required_fields=("platform", "primary_hook", "caption"),
         expected_sections=(
             "alternate_hooks",
@@ -288,6 +288,8 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
             "pinned_comment",
             "cta",
             "version_notes",
+            "target_channel",
+            "content_type_hint",
         ),
         failure_mode="fail_fast",
     ),
@@ -362,6 +364,77 @@ class AngleDefinition(BaseModel):
     content_type: str
     core_tension: str
     why_it_works: str = ""
+
+
+class EarlyPackagingSignals(BaseModel):
+    """P4-T1: Channel-aware packaging signals captured early to co-design draft with packaging.
+
+    These signals are captured from the angle/channel selection stage and inform
+    the packaging generator so hook choices and draft structure can align with
+    channel expectations from the start.
+    """
+
+    target_channel: str = Field(
+        default="",
+        description="Primary distribution channel hint (e.g., 'shorts', 'reels', 'feed', 'twitter')",
+    )
+    content_type: str = Field(
+        default="",
+        description="Content type hint (e.g., 'contrarian', 'tutorial', 'story', 'insight')",
+    )
+    tone_hint: str = Field(
+        default="",
+        description="Tone guidance for packaging (e.g., 'conversational', 'urgent', 'story-driven')",
+    )
+    format_constraints: list[str] = Field(
+        default_factory=list,
+        description="Format constraints from channel (e.g., '60s max', 'vertical only', 'no product')",
+    )
+    cta_hint: str = Field(
+        default="",
+        description="Call-to-action hint derived from angle or channel best practices",
+    )
+
+
+class DerivativeOpportunity(BaseModel):
+    """P4-T2: A reuse or derivative opportunity derived from an approved draft."""
+
+    idea_id: str = Field(default_factory=lambda: f"deriv_{uuid4().hex[:8]}")
+    source_idea_id: str = Field(
+        default="",
+        description="The idea_id of the approved argument this derives from",
+    )
+    derivative_type: Literal[
+        "alternate_hook",
+        "quote_card",
+        "thread_variant",
+        "newsletter_snippet",
+        "follow_up_short",
+        "clip_reel",
+        "cta_variation",
+        "audience_variant",
+        "platform_adaptation",
+    ] = ""
+    title: str = ""
+    summary: str = Field(
+        default="",
+        description="Brief description of the derivative opportunity",
+    )
+    target_channel: str = Field(
+        default="",
+        description="Recommended channel/platform for this derivative",
+    )
+    reuse_value: str = Field(
+        default="",
+        description="Why this derivative is worth producing (e.g., 'high-performing format', 'new audience segment')",
+    )
+    proof_points_to_reuse: list[str] = Field(
+        default_factory=list,
+        description="Proof anchor IDs from the source argument that apply here",
+    )
+    status: Literal["pending", "planned", "in_production", "published"] = "pending"
+    created_at: str = ""
+    notes: str = ""
 
 
 class ScriptStructure(BaseModel):
@@ -2312,6 +2385,15 @@ class PlatformPackage(BaseModel):
     pinned_comment: str = ""
     cta: str = ""
     version_notes: str = ""
+    # P4-T1: Channel-aware packaging signals
+    target_channel: str = Field(
+        default="",
+        description="Target channel/format hint (e.g., 'shorts', 'reels', 'feed') that guided this packaging",
+    )
+    content_type_hint: str = Field(
+        default="",
+        description="Content type that guided this packaging (e.g., 'contrarian', 'tutorial', 'story')",
+    )
 
 
 class PackagingOutput(BaseModel):
@@ -2319,6 +2401,16 @@ class PackagingOutput(BaseModel):
 
     idea_id: str = ""
     platform_packages: list[PlatformPackage] = Field(default_factory=list)
+    # P4-T1: Early packaging signals captured from hook/angle stage
+    # These guide packaging generation before the full script is written
+    draft_hooks: list[str] = Field(
+        default_factory=list,
+        description="Hook candidates considered during scripting, passed forward for packaging selection",
+    )
+    early_packaging_signals: EarlyPackagingSignals | None = Field(
+        default=None,
+        description="Channel format, content type, and target signals captured early to co-design draft with packaging",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2562,6 +2654,15 @@ class ScriptingRunResult(BaseModel):
     iterations: ScriptingIterations | None = None
 
 
+class DraftLaneDecision(StrEnum):
+    """P4-T3: Draft lane decision for publish-now vs hold-for-proof path."""
+
+    PUBLISH_NOW = "publish_now"  # Publish with known uncertainty, fast path
+    HOLD_FOR_PROOF = "hold_for_proof"  # Hold for stronger proof before publishing
+    RECYCLE_FOR_REUSE = "recycle_for_reuse"  # Recycle to backlog for derivative/reuse
+    KILL = "kill"  # Abandon this draft
+
+
 class PublishItem(BaseModel):
     """Single publish queue entry (spec stage 10)."""
 
@@ -2574,6 +2675,19 @@ class PublishItem(BaseModel):
     cross_post_targets: list[str] = Field(default_factory=list)
     first_30_minute_engagement_plan: str = ""
     status: str = "scheduled"  # scheduled | published
+    # P4-T3: Publish-now vs hold decision tracking
+    draft_decision: DraftLaneDecision | None = Field(
+        default=None,
+        description="The draft lane decision that led to this publish item",
+    )
+    decision_reason: str = Field(
+        default="",
+        description="Why this decision was made (uncertainty status, risk level, etc.)",
+    )
+    claim_status_summary: str = Field(
+        default="",
+        description="Summary of claim status at time of decision (e.g., '3 supported, 1 weak')",
+    )
 
 
 class PipelineLaneContext(BaseModel):
@@ -2595,6 +2709,25 @@ class PipelineLaneContext(BaseModel):
     fact_risk_gate: FactRiskGate | None = Field(
         default=None,
         description="Early gate output after thesis artifact, before drafting",
+    )
+    # P4-T1: Early packaging signals captured from angle/channel stage
+    early_packaging_signals: EarlyPackagingSignals | None = Field(
+        default=None,
+        description="Channel format, content type, and target signals captured early to co-design draft with packaging",
+    )
+    # P4-T2: Derivative and reuse opportunities from approved draft
+    derivative_opportunities: list[DerivativeOpportunity] = Field(
+        default_factory=list,
+        description="Reuse and derivative opportunities extracted from this draft",
+    )
+    # P4-T3: Publish-now vs hold-for-proof decision
+    draft_decision: DraftLaneDecision | None = Field(
+        default=None,
+        description="Draft lane decision: publish now, hold for proof, recycle for reuse, or kill",
+    )
+    decision_reason: str = Field(
+        default="",
+        description="Why the draft decision was made (uncertainty status, risk level, etc.)",
     )
     publish_items: list[PublishItem] = Field(default_factory=list)
 
