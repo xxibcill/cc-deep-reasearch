@@ -151,6 +151,8 @@ These are the main event families currently used by the codebase.
 | Subprocess | `subprocess.*` | Generic external-process visibility and failures |
 | LLM route | `llm.route_selected`, `llm.route_fallback`, `llm.route_request`, `llm.route_completion` | Route-planning and route-usage analytics |
 | Decision graph inputs | `decision.made`, `state.changed`, `degradation.detected`, failure/error events | Explicit operator decisions and causal state transitions |
+| Content-gen run | `contentgen.run_started`, `contentgen.run_completed`, `contentgen.stage_timing`, `contentgen.release_decision` | P7-T1: Content-gen workflow signals linking outcomes to selection and production decisions |
+| Content-gen operating | `contentgen.cycle_time`, `contentgen.kill_decision`, `contentgen.reuse_recorded` | P7-T3: Operating fitness signals for cycle time, kill rate, and reuse metrics |
 
 ## Live Query Path
 
@@ -282,6 +284,28 @@ cd dashboard
 npm install
 npm run dev
 ```
+
+## Content-Gen Telemetry (Phase 07)
+
+Content-generation runs emit specialized telemetry for measuring workflow speed and operating fitness:
+
+- **Run Metrics**: [`ContentGenRunMetrics`](src/cc_deep_research/content_gen/models.py) captures idea score, content type, effort tier, stage-level timing, release state, and cost signals for every content-gen run.
+- **Operating Fitness**: [`OperatingFitnessMetrics`](src/cc_deep_research/content_gen/models.py) tracks cycle time, kill rate, reuse rate, and cost per published asset.
+- **Rule Versioning**: [`RuleVersionHistory`](src/cc_deep_research/content_gen/models.py) records when strategy guidance changed so operators can trace scoring and packaging behavior to observed results.
+
+Content-gen telemetry is stored separately from research telemetry in:
+
+- `~/.config/cc-deep-research/content_gen_telemetry.yaml` (YAML store for run metrics, operating fitness, and rule versions)
+- `~/.config/cc-deep-research/performance_learnings.yaml` (YAML store for performance learnings and strategy guidance)
+
+The [`ContentGenTelemetryStore`](src/cc_deep_research/content_gen/storage/content_gen_telemetry_store.py) provides:
+
+- `add_run_metrics()`: Record a run's performance signals
+- `compute_operating_fitness()`: Derive operating fitness metrics from run history
+- `record_rule_change()`: Version rule changes when learnings are applied
+- `get_fast_cycles()`, `get_top_performers()`: Query runs by performance
+
+See [`docs/phases/phase-07-performance-and-rule-updates.md`](phases/phase-07-performance-and-rule-updates.md) for the full Phase 07 specification.
 
 ## Adding New Telemetry
 

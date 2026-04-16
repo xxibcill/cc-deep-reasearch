@@ -8,6 +8,9 @@ from cc_deep_research.content_gen.storage.audit_store import (
 )
 from cc_deep_research.content_gen.storage.backlog_store import BacklogStore
 from cc_deep_research.content_gen.storage.brief_store import BriefStore
+from cc_deep_research.content_gen.storage.content_gen_telemetry_store import (
+    ContentGenTelemetryStore,
+)
 from cc_deep_research.content_gen.storage.derivative_opportunity_store import (
     DerivativeOpportunityStore,
 )
@@ -28,6 +31,7 @@ __all__ = [
     "BacklogStore",
     "BriefRevisionStore",
     "BriefStore",
+    "ContentGenTelemetryStore",
     "DerivativeOpportunityStore",
     "PerformanceLearningStore",
     "PlanningLearningStore",
