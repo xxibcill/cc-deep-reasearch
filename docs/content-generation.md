@@ -165,6 +165,57 @@ cc-deep-research content-gen pipeline --theme "..."
 
 This path works for generation up through QC, with the remaining operational caveats documented below in [Current Gaps And Caveats](#current-gaps-and-caveats).
 
+## Seven-Phase Operating Model
+
+Phase 01 defines the canonical seven-phase operating model as the operator-friendly view of the content workflow. The 14 pipeline stages are grouped into these seven phases:
+
+| Phase | Name | Stages | Purpose |
+|-------|------|--------|---------|
+| 1 | Strategy & Setup | `load_strategy` | Load evergreen strategy memory |
+| 2 | Opportunity & Ideation | `plan_opportunity`, `build_backlog`, `score_ideas`, `generate_angles` | Generate and score ideas |
+| 3 | Research & Argument | `build_research_pack`, `build_argument_map` | Build evidence and narrative plan |
+| 4 | Draft & Refinement | `run_scripting` | Generate and refine script (with iterative loop) |
+| 5 | Visual & Production | `visual_translation`, `production_brief` | Plan visuals and production |
+| 6 | QC & Approval | `packaging`, `human_qc` | Generate packaging and human QC |
+| 7 | Publish & Learn | `publish_queue`, `performance_analysis` | Schedule publish and analyze |
+
+The phase definitions are in `OperatingPhase` enum and `PHASE_TO_STAGES_MAPPING` in [`models.py`](../src/cc_deep_research/content_gen/models.py).
+
+### Phase Governance
+
+Each phase has typed governance metadata in `OperatingPhasePolicy`:
+
+- **owner**: Role or team responsible for the phase
+- **max_turnaround_minutes**: Expected SLA for phase completion
+- **entry_criteria**: Conditions that must be true before phase starts
+- **exit_criteria**: What must be true before moving to the next phase
+- **skip_conditions**: When the phase can be bypassed
+- **kill_conditions**: When the phase should terminate early
+- **reuse_opportunities**: How phase outputs can be leveraged
+
+These policies are exposed in stage traces (`PipelineStageTrace.policy`) for observability.
+
+### Stage-to-Phase Mapping
+
+The mapping is defined in `STAGE_TO_PHASE_MAPPING`:
+
+```python
+"load_strategy"        -> Phase 1: Strategy
+"plan_opportunity"      -> Phase 2: Opportunity
+"build_backlog"         -> Phase 2: Opportunity
+"score_ideas"           -> Phase 2: Opportunity
+"generate_angles"        -> Phase 2: Opportunity
+"build_research_pack"   -> Phase 3: Research
+"build_argument_map"    -> Phase 3: Research
+"run_scripting"         -> Phase 4: Draft
+"visual_translation"    -> Phase 5: Visual
+"production_brief"      -> Phase 5: Visual
+"packaging"             -> Phase 6: QC
+"human_qc"              -> Phase 6: QC
+"publish_queue"          -> Phase 7: Publish
+"performance_analysis"  -> Phase 7: Publish
+```
+
 ## End-To-End Flow
 
 The implemented pipeline order is defined by `PIPELINE_STAGES` in [`src/cc_deep_research/content_gen/models.py`](../src/cc_deep_research/content_gen/models.py):
@@ -206,6 +257,47 @@ strategy memory
   -> publish queue
   -> performance analysis
   -> feedback into strategy/backlog decisions
+```
+
+## Strategy vs Run Constraints
+
+The system separates **evergreen strategy memory** from **per-run constraints**:
+
+### Strategy Memory (Evergreen)
+
+Stored in `StrategyMemory` and persists across all runs. Contains:
+
+- **Positioning**: niche, content_pillars, audience_segments
+- **Tone rules**: tone_rules, offer_cta_rules
+- **Proof standards**: proof_standards, proof_rules
+- **Audience rules**: forbidden_claims, banned_tropes
+- **Expertise**: expertise_edge, signature_frameworks, contrarian_beliefs
+- **Performance learnings**: winning_hooks, winning_framings, proof_expectations
+
+See [`StrategyStore`](../src/cc_deep_research/content_gen/storage/strategy_store.py).
+
+### Run Constraints (Per-Run)
+
+Stored in `RunConstraints` and set at the start of each content cycle:
+
+| Field | Description |
+|-------|-------------|
+| `content_type` | Content format (e.g., "short-form video", "carousel") |
+| `effort_tier` | `quick`, `standard`, or `deep` - determines iteration depth |
+| `owner` | Who is responsible for this content run |
+| `channel_goal` | Primary channel or distribution goal |
+| `success_target` | What success looks like for this cycle |
+| `target_platforms` | Specific platforms to optimize for |
+| `use_iterative_loop` | Whether to enable iterative drafting |
+| `max_iterations` | Override for max iterations |
+
+Run constraints can be set via CLI before opportunity scoring:
+
+```bash
+cc-deep-research content-gen pipeline --theme "..." \
+  --content-type "short-form video" \
+  --effort-tier "deep" \
+  --owner "content-team"
 ```
 
 ## Stage-By-Stage Breakdown

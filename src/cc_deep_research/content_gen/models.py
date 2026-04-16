@@ -964,6 +964,76 @@ class OpportunityBrief(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Phase 01 - Run Constraints (per-run variables)
+# ---------------------------------------------------------------------------
+
+
+class EffortTier(StrEnum):
+    """Effort/complexity tier for a content run.
+
+    This determines how much iteration and refinement the pipeline applies.
+    """
+
+    QUICK = "quick"  # Minimal iteration, fast turnaround
+    STANDARD = "standard"  # Normal iteration, standard quality bar
+    DEEP = "deep"  # Full iteration, highest quality bar
+
+
+class RunConstraints(BaseModel):
+    """Per-run constraint variables that change each content cycle.
+
+    These fields capture the run-specific decisions that would otherwise
+    be embedded in the opportunity brief. Separating them makes strategy
+    truly evergreen and allows operators to set content type and effort
+    tier before opportunity scoring begins.
+
+    Strategy memory provides the durable defaults; RunConstraints provides
+    the per-run overrides.
+    """
+
+    # Content type for this run (e.g., "short-form video", "carousel", "thread")
+    content_type: str = Field(
+        default="",
+        description="The content format for this run.",
+    )
+    # Effort/complexity tier
+    effort_tier: EffortTier = Field(
+        default=EffortTier.STANDARD,
+        description="Effort tier determining iteration depth and SLA.",
+    )
+    # Who owns this run (role or name)
+    owner: str = Field(
+        default="",
+        description="Who is responsible for this content run.",
+    )
+    # Channel or platform goal for this run
+    channel_goal: str = Field(
+        default="",
+        description="Primary channel or distribution goal for this content.",
+    )
+    # Success target for this specific run
+    success_target: str = Field(
+        default="",
+        description="What success looks like for this content cycle.",
+    )
+    # Target platform(s) for this run (overrides strategy default)
+    target_platforms: list[str] = Field(
+        default_factory=list,
+        description="Specific platforms to optimize for (empty = use strategy defaults).",
+    )
+    # Whether to use iterative drafting (for deep tier)
+    use_iterative_loop: bool = Field(
+        default=True,
+        description="Whether to enable iterative drafting with quality evaluation.",
+    )
+    # Maximum iterations allowed (None = use config default)
+    max_iterations: int | None = Field(
+        default=None,
+        description="Override for max iterations (None = use config default).",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Pipeline stage 2: Backlog builder
 # ---------------------------------------------------------------------------
 
@@ -2340,7 +2410,36 @@ class PipelineStageTrace(BaseModel):
     stage_index: int
     stage_name: str
     stage_label: str
-    status: str = "completed"  # completed | skipped | failed
+    # P1-T1: Operating phase this stage belongs to
+    # Uses string default to avoid forward reference issue; Pydantic coerces to OperatingPhase
+    phase: OperatingPhase = Field(
+        default="phase_02_opportunity",
+        description="The operating phase this stage belongs to.",
+    )
+    phase_label: str = Field(
+        default="Opportunity & Ideation",
+        description="Human-readable phase name.",
+    )
+    # P1-T2: Policy fields that governed this stage
+    policy: OperatingPhasePolicy | None = Field(
+        default=None,
+        description="The operating policy that governed this stage's execution.",
+    )
+    # P1-T2: Skip/kill decision reason if stage was skipped or killed
+    skip_reason: str = Field(
+        default="",
+        description="Reason for skipping this stage (if status is 'skipped').",
+    )
+    kill_reason: str = Field(
+        default="",
+        description="Reason for killing this stage early (if status is 'killed').",
+    )
+    # P1-T2: Override record if policy was manually overridden
+    policy_override: str = Field(
+        default="",
+        description="Description of any manual policy override applied to this stage.",
+    )
+    status: str = "completed"  # completed | skipped | failed | blocked
     started_at: str = ""
     completed_at: str = ""
     duration_ms: int = 0
@@ -2375,6 +2474,11 @@ class PipelineContext(BaseModel):
     brief_reference: PipelineBriefReference | None = Field(
         default=None,
         description="Reference to the managed brief resource and revision used by this run.",
+    )
+    # P1-T3: Per-run constraints that change each content cycle
+    run_constraints: RunConstraints | None = Field(
+        default=None,
+        description="Per-run constraint variables (content type, effort tier, owner, channel goal, success target).",
     )
     backlog: BacklogOutput | None = None
     scoring: ScoringOutput | None = None
@@ -3121,3 +3225,445 @@ class BriefExecutionGate(BaseModel):
             f"to run with draft briefs (not recommended for production)."
         )
         return False, self.error_message
+
+
+# ---------------------------------------------------------------------------
+# Phase 01 - Seven-Phase Operating Model
+# ---------------------------------------------------------------------------
+
+
+class OperatingPhase(StrEnum):
+    """Canonical seven-phase operating model for content generation.
+
+    This replaces the 14-stage view with a compressed, operator-friendly
+    grouping that aligns with how teams actually think about content work.
+    """
+
+    PHASE_01_STRATEGY = "phase_01_strategy"
+    PHASE_02_OPPORTUNITY = "phase_02_opportunity"
+    PHASE_03_RESEARCH = "phase_03_research"
+    PHASE_04_DRAFT = "phase_04_draft"
+    PHASE_05_VISUAL = "phase_05_visual"
+    PHASE_06_QC = "phase_06_qc"
+    PHASE_07_PUBLISH = "phase_07_publish"
+
+
+OPERATING_PHASE_LABELS: dict[OperatingPhase, str] = {
+    OperatingPhase.PHASE_01_STRATEGY: "Strategy & Setup",
+    OperatingPhase.PHASE_02_OPPORTUNITY: "Opportunity & Ideation",
+    OperatingPhase.PHASE_03_RESEARCH: "Research & Argument",
+    OperatingPhase.PHASE_04_DRAFT: "Draft & Refinement",
+    OperatingPhase.PHASE_05_VISUAL: "Visual & Production",
+    OperatingPhase.PHASE_06_QC: "QC & Approval",
+    OperatingPhase.PHASE_07_PUBLISH: "Publish & Learn",
+}
+
+
+# Stage-to-phase mapping: which phase each of the 14 pipeline stages belongs to
+STAGE_TO_PHASE_MAPPING: dict[str, OperatingPhase] = {
+    "load_strategy": OperatingPhase.PHASE_01_STRATEGY,
+    "plan_opportunity": OperatingPhase.PHASE_02_OPPORTUNITY,
+    "build_backlog": OperatingPhase.PHASE_02_OPPORTUNITY,
+    "score_ideas": OperatingPhase.PHASE_02_OPPORTUNITY,
+    "generate_angles": OperatingPhase.PHASE_02_OPPORTUNITY,
+    "build_research_pack": OperatingPhase.PHASE_03_RESEARCH,
+    "build_argument_map": OperatingPhase.PHASE_03_RESEARCH,
+    "run_scripting": OperatingPhase.PHASE_04_DRAFT,
+    "visual_translation": OperatingPhase.PHASE_05_VISUAL,
+    "production_brief": OperatingPhase.PHASE_05_VISUAL,
+    "packaging": OperatingPhase.PHASE_06_QC,
+    "human_qc": OperatingPhase.PHASE_06_QC,
+    "publish_queue": OperatingPhase.PHASE_07_PUBLISH,
+    "performance_analysis": OperatingPhase.PHASE_07_PUBLISH,
+}
+
+
+# Phase-to-stages mapping: which stages belong to each phase
+PHASE_TO_STAGES_MAPPING: dict[OperatingPhase, list[str]] = {
+    OperatingPhase.PHASE_01_STRATEGY: ["load_strategy"],
+    OperatingPhase.PHASE_02_OPPORTUNITY: [
+        "plan_opportunity",
+        "build_backlog",
+        "score_ideas",
+        "generate_angles",
+    ],
+    OperatingPhase.PHASE_03_RESEARCH: [
+        "build_research_pack",
+        "build_argument_map",
+    ],
+    OperatingPhase.PHASE_04_DRAFT: ["run_scripting"],
+    OperatingPhase.PHASE_05_VISUAL: [
+        "visual_translation",
+        "production_brief",
+    ],
+    OperatingPhase.PHASE_06_QC: ["packaging", "human_qc"],
+    OperatingPhase.PHASE_07_PUBLISH: [
+        "publish_queue",
+        "performance_analysis",
+    ],
+}
+
+
+def get_phase_for_stage(stage_name: str) -> OperatingPhase:
+    """Return the operating phase for a given pipeline stage."""
+    return STAGE_TO_PHASE_MAPPING.get(stage_name, OperatingPhase.PHASE_02_OPPORTUNITY)
+
+
+def get_stages_for_phase(phase: OperatingPhase) -> list[str]:
+    """Return the list of pipeline stages for a given operating phase."""
+    return PHASE_TO_STAGES_MAPPING.get(phase, [])
+
+
+class PhaseExitCriteria(BaseModel):
+    """Exit criteria for completing a phase."""
+
+    description: str = Field(
+        default="",
+        description="Human-readable description of what constitutes phase completion.",
+    )
+    required_artifacts: list[str] = Field(
+        default_factory=list,
+        description="List of artifact names that must be present to exit the phase.",
+    )
+    quality_threshold: float | None = Field(
+        default=None,
+        description="Optional quality score threshold to meet before exiting.",
+    )
+
+
+class PhaseSkipCondition(BaseModel):
+    """Condition under which a phase can be skipped."""
+
+    reason: str = Field(
+        default="",
+        description="Human-readable reason why the phase can be skipped.",
+    )
+    requires_manual_override: bool = Field(
+        default=False,
+        description="Whether operator confirmation is required to skip.",
+    )
+    preserves_quality: bool = Field(
+        default=True,
+        description="Whether skipping this phase preserves output quality.",
+    )
+
+
+class PhaseKillCondition(BaseModel):
+    """Condition under which a phase should be terminated early."""
+
+    reason: str = Field(
+        default="",
+        description="Human-readable reason why the phase should be killed.",
+    )
+    abort_pipeline: bool = Field(
+        default=False,
+        description="Whether killing this phase should abort the entire pipeline.",
+    )
+    preserve_artifacts: bool = Field(
+        default=True,
+        description="Whether to preserve partial artifacts even when killed.",
+    )
+
+
+class PhaseReuseOpportunity(BaseModel):
+    """Opportunity to reuse phase outputs across runs."""
+
+    description: str = Field(
+        default="",
+        description="What can be reused from this phase.",
+    )
+    reuse_pattern: str = Field(
+        default="",
+        description="How to reuse (e.g., 'cache', 'template', 'reference').",
+    )
+    ttl_hours: int | None = Field(
+        default=None,
+        description="How long reuse is valid (None = until next strategy update).",
+    )
+
+
+class OperatingPhasePolicy(BaseModel):
+    """Typed governance metadata for one operating phase.
+
+    This model captures the explicit workflow rules that were previously
+    only documented in prose, making them machine-readable and
+    enforceable in traces and managed briefs.
+    """
+
+    phase: OperatingPhase = Field(
+        description="Which operating phase this policy governs.",
+    )
+    phase_label: str = Field(
+        description="Human-readable phase name.",
+    )
+    owner: str = Field(
+        default="",
+        description="Who is responsible for this phase (role or team).",
+    )
+    # SLA: max turnaround time in minutes
+    max_turnaround_minutes: int = Field(
+        default=60,
+        description="Expected maximum turnaround time for this phase in minutes.",
+    )
+    # Entry criteria: what must be true before this phase starts
+    entry_criteria: list[str] = Field(
+        default_factory=list,
+        description="List of conditions that must be true before phase execution.",
+    )
+    # Exit criteria: what must be true before moving to next phase
+    exit_criteria: PhaseExitCriteria = Field(
+        default_factory=PhaseExitCriteria,
+        description="Criteria for successfully completing this phase.",
+    )
+    # Skip conditions: when this phase can be bypassed
+    skip_conditions: list[PhaseSkipCondition] = Field(
+        default_factory=list,
+        description="Conditions under which this phase can be skipped.",
+    )
+    # Kill conditions: when this phase should terminate early
+    kill_conditions: list[PhaseKillCondition] = Field(
+        default_factory=list,
+        description="Conditions under which this phase should be killed.",
+    )
+    # Reuse opportunities: how outputs can be leveraged
+    reuse_opportunities: list[PhaseReuseOpportunity] = Field(
+        default_factory=list,
+        description="Opportunities to reuse phase outputs in future runs.",
+    )
+
+
+# Default operating phase policies
+DEFAULT_PHASE_POLICIES: dict[OperatingPhase, OperatingPhasePolicy] = {
+    OperatingPhase.PHASE_01_STRATEGY: OperatingPhasePolicy(
+        phase=OperatingPhase.PHASE_01_STRATEGY,
+        phase_label="Strategy & Setup",
+        owner="content lead",
+        max_turnaround_minutes=5,
+        entry_criteria=["strategy memory exists"],
+        exit_criteria=PhaseExitCriteria(
+            description="Strategy memory loaded and validated",
+            required_artifacts=["strategy"],
+        ),
+        skip_conditions=[],
+        kill_conditions=[
+            PhaseKillCondition(
+                reason="Strategy memory is corrupted",
+                abort_pipeline=False,
+                preserve_artifacts=True,
+            ),
+        ],
+        reuse_opportunities=[
+            PhaseReuseOpportunity(
+                description="Strategy memory persists across all runs",
+                reuse_pattern="persistent_store",
+            ),
+        ],
+    ),
+    OperatingPhase.PHASE_02_OPPORTUNITY: OperatingPhasePolicy(
+        phase=OperatingPhase.PHASE_02_OPPORTUNITY,
+        phase_label="Opportunity & Ideation",
+        owner="senior editor",
+        max_turnaround_minutes=120,
+        entry_criteria=[
+            "strategy memory loaded",
+            "theme defined",
+        ],
+        exit_criteria=PhaseExitCriteria(
+            description="At least one scored idea with selected angle",
+            required_artifacts=["opportunity_brief", "backlog", "scoring", "angles"],
+        ),
+        skip_conditions=[
+            PhaseSkipCondition(
+                reason="Using pre-scored ideas from previous run",
+                requires_manual_override=True,
+                preserves_quality=True,
+            ),
+        ],
+        kill_conditions=[
+            PhaseKillCondition(
+                reason="No ideas score above production threshold",
+                abort_pipeline=False,
+                preserve_artifacts=True,
+            ),
+            PhaseKillCondition(
+                reason="All ideas killed during scoring",
+                abort_pipeline=True,
+                preserve_artifacts=True,
+            ),
+        ],
+        reuse_opportunities=[
+            PhaseReuseOpportunity(
+                description="Scored backlog can be cached for 24 hours",
+                reuse_pattern="cache",
+                ttl_hours=24,
+            ),
+        ],
+    ),
+    OperatingPhase.PHASE_03_RESEARCH: OperatingPhasePolicy(
+        phase=OperatingPhase.PHASE_03_RESEARCH,
+        phase_label="Research & Argument",
+        owner="research lead",
+        max_turnaround_minutes=180,
+        entry_criteria=[
+            "angle selected",
+            "opportunity brief approved or in review",
+        ],
+        exit_criteria=PhaseExitCriteria(
+            description="Argument map with proof anchors and beat plan",
+            required_artifacts=["research_pack", "argument_map"],
+        ),
+        skip_conditions=[
+            PhaseSkipCondition(
+                reason="Using cached research from previous run on same angle",
+                requires_manual_override=True,
+                preserves_quality=False,
+            ),
+        ],
+        kill_conditions=[
+            PhaseKillCondition(
+                reason="Research pack has zero usable claims",
+                abort_pipeline=False,
+                preserve_artifacts=True,
+            ),
+            PhaseKillCondition(
+                reason="All claims flagged as unsafe with no safe alternative",
+                abort_pipeline=True,
+                preserve_artifacts=True,
+            ),
+        ],
+        reuse_opportunities=[
+            PhaseReuseOpportunity(
+                description="Research pack can be reused within same opportunity",
+                reuse_pattern="cache",
+                ttl_hours=168,  # 1 week
+            ),
+        ],
+    ),
+    OperatingPhase.PHASE_04_DRAFT: OperatingPhasePolicy(
+        phase=OperatingPhase.PHASE_04_DRAFT,
+        phase_label="Draft & Refinement",
+        owner="script writer",
+        max_turnaround_minutes=240,
+        entry_criteria=[
+            "argument map complete",
+            "beat plan defined",
+        ],
+        exit_criteria=PhaseExitCriteria(
+            description="Final script passed QC with all beats complete",
+            required_artifacts=["scripting"],
+            quality_threshold=0.7,
+        ),
+        skip_conditions=[],
+        kill_conditions=[
+            PhaseKillCondition(
+                reason="Script failed QC after maximum iterations",
+                abort_pipeline=False,
+                preserve_artifacts=True,
+            ),
+            PhaseKillCondition(
+                reason="All beats marked as failed in targeted revision",
+                abort_pipeline=True,
+                preserve_artifacts=True,
+            ),
+        ],
+        reuse_opportunities=[
+            PhaseReuseOpportunity(
+                description="Stable beats from iterative revision can be preserved",
+                reuse_pattern="template",
+            ),
+        ],
+    ),
+    OperatingPhase.PHASE_05_VISUAL: OperatingPhasePolicy(
+        phase=OperatingPhase.PHASE_05_VISUAL,
+        phase_label="Visual & Production",
+        owner="production lead",
+        max_turnaround_minutes=60,
+        entry_criteria=[
+            "script finalized (QC passed or tightened)",
+        ],
+        exit_criteria=PhaseExitCriteria(
+            description="Production brief with location, props, and pickup lines",
+            required_artifacts=["visual_plan", "production_brief"],
+        ),
+        skip_conditions=[
+            PhaseSkipCondition(
+                reason="Visual plan not needed (audio-only content)",
+                requires_manual_override=True,
+                preserves_quality=True,
+            ),
+        ],
+        kill_conditions=[
+            PhaseKillCondition(
+                reason="Visual plan references missing assets",
+                abort_pipeline=False,
+                preserve_artifacts=True,
+            ),
+        ],
+        reuse_opportunities=[
+            PhaseReuseOpportunity(
+                description="Production brief templates for recurring shoot setups",
+                reuse_pattern="template",
+            ),
+        ],
+    ),
+    OperatingPhase.PHASE_06_QC: OperatingPhasePolicy(
+        phase=OperatingPhase.PHASE_06_QC,
+        phase_label="QC & Approval",
+        owner="quality lead",
+        max_turnaround_minutes=30,
+        entry_criteria=[
+            "production brief complete",
+            "packaging variants generated",
+        ],
+        exit_criteria=PhaseExitCriteria(
+            description="Human QC approved with no blocking must-fix items",
+            required_artifacts=["packaging", "qc_gate"],
+        ),
+        skip_conditions=[],
+        kill_conditions=[
+            PhaseKillCondition(
+                reason="Human QC blocked with must-fix items not resolved",
+                abort_pipeline=False,
+                preserve_artifacts=True,
+            ),
+        ],
+        reuse_opportunities=[
+            PhaseReuseOpportunity(
+                description="QC checklist templates for recurring issue patterns",
+                reuse_pattern="template",
+            ),
+        ],
+    ),
+    OperatingPhase.PHASE_07_PUBLISH: OperatingPhasePolicy(
+        phase=OperatingPhase.PHASE_07_PUBLISH,
+        phase_label="Publish & Learn",
+        owner="distribution lead",
+        max_turnaround_minutes=15,
+        entry_criteria=[
+            "QC approved",
+        ],
+        exit_criteria=PhaseExitCriteria(
+            description="Publish items scheduled with engagement actions",
+            required_artifacts=["publish_items"],
+        ),
+        skip_conditions=[],
+        kill_conditions=[
+            PhaseKillCondition(
+                reason="Platform constraints violated by latest changes",
+                abort_pipeline=False,
+                preserve_artifacts=True,
+            ),
+        ],
+        reuse_opportunities=[
+            PhaseReuseOpportunity(
+                description="Publish scheduling patterns inform future timing",
+                reuse_pattern="learning",
+            ),
+        ],
+    ),
+}
+
+
+def get_phase_policy(phase: OperatingPhase) -> OperatingPhasePolicy:
+    """Get the operating policy for a phase."""
+    return DEFAULT_PHASE_POLICIES.get(phase, OperatingPhasePolicy(phase=phase, phase_label=phase.value))

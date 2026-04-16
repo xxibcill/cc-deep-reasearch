@@ -34,6 +34,7 @@ from cc_deep_research.content_gen.models import (
     QualityEvaluation,
     ResearchPack,
     RevisionMode,
+    RunConstraints,
     ScoringOutput,
     ScriptClaimStatement,
     ScriptingContext,
@@ -42,6 +43,8 @@ from cc_deep_research.content_gen.models import (
     StageTraceMetadata,
     StrategyMemory,
     TargetedRevisionPlan,
+    get_phase_for_stage,
+    get_phase_policy,
 )
 
 if TYPE_CHECKING:
@@ -1006,6 +1009,8 @@ class ContentGenOrchestrator:
         # P2-T1: Managed brief reference for controlled handoff
         brief_id: str | None = None,
         brief_snapshot: OpportunityBrief | None = None,
+        # P1-T3: Per-run constraints
+        run_constraints: RunConstraints | None = None,
     ) -> PipelineContext:
         """Run the full 14-stage content pipeline with iterative quality loop.
 
@@ -1017,6 +1022,10 @@ class ContentGenOrchestrator:
         P2-T1: If brief_id is provided, establishes a managed brief reference
         at pipeline start. The brief_snapshot provides the initial brief content
         for the run.
+
+        P1-T3: run_constraints provides per-run variables (content type,
+        effort tier, owner, channel goal, success target) that change each
+        content cycle. If not provided, uses defaults.
         """
         if initial_context is None:
             ctx = PipelineContext(
@@ -1036,6 +1045,13 @@ class ContentGenOrchestrator:
                 ctx.iteration_state = IterationState(
                     max_iterations=self._config.content_gen.max_iterations,
                 )
+
+        # P1-T3: Initialize run constraints if provided
+        if run_constraints is not None:
+            ctx.run_constraints = run_constraints
+        elif ctx.run_constraints is None:
+            # Initialize with defaults
+            ctx.run_constraints = RunConstraints()
 
         # P2-T1: Establish managed brief reference if provided
         if brief_id or brief_snapshot:
@@ -1071,7 +1087,17 @@ class ContentGenOrchestrator:
                 ctx = await self._run_stage(idx, ctx, progress_callback, stage_completed_callback)
 
         # Phase 2: Content stages (5-11) — iterative or single-pass
-        if self._config.content_gen.enable_iterative_mode and end >= 7 and from_stage <= 6:
+        # P1-T3: Check run_constraints for iteration settings
+        use_iterative = self._config.content_gen.enable_iterative_mode
+        if ctx.run_constraints is not None:
+            use_iterative = use_iterative and ctx.run_constraints.use_iterative_loop
+
+        if use_iterative and end >= 7 and from_stage <= 6:
+            # P1-T3: Use run_constraints max_iterations if set
+            if ctx.run_constraints and ctx.run_constraints.max_iterations is not None:
+                ctx.iteration_state = IterationState(
+                    max_iterations=ctx.run_constraints.max_iterations,
+                )
             ctx = await self._run_iterative_loop(
                 ctx, progress_callback, end, stage_completed_callback
             )
@@ -1202,6 +1228,11 @@ class ContentGenOrchestrator:
         _ = retrieval_gaps  # noqa: ARG002
         stage_name = PIPELINE_STAGES[idx]
         label = PIPELINE_STAGE_LABELS.get(stage_name, stage_name)
+        # P1-T1: Get operating phase for this stage
+        phase = get_phase_for_stage(stage_name)
+        phase_label = phase.value.replace("_", " ").title()
+        # P1-T2: Get the operating policy for this phase
+        policy = get_phase_policy(phase)
         if progress_callback:
             progress_callback(idx, label)
         ctx.current_stage = idx
@@ -1216,6 +1247,10 @@ class ContentGenOrchestrator:
                 stage_index=idx,
                 stage_name=stage_name,
                 stage_label=label,
+                phase=phase,
+                phase_label=phase_label,
+                policy=policy,
+                skip_reason=skip_reason,
                 status="skipped",
                 started_at=started_at,
                 completed_at=datetime.now(tz=UTC).isoformat(),
@@ -1240,6 +1275,10 @@ class ContentGenOrchestrator:
                 stage_index=idx,
                 stage_name=stage_name,
                 stage_label=label,
+                phase=phase,
+                phase_label=phase_label,
+                policy=policy,
+                kill_reason=f"Brief gate blocked: {gate_message}",
                 status="blocked",
                 started_at=started_at,
                 completed_at=datetime.now(tz=UTC).isoformat(),
@@ -1275,6 +1314,10 @@ class ContentGenOrchestrator:
                 stage_index=idx,
                 stage_name=stage_name,
                 stage_label=label,
+                phase=phase,
+                phase_label=phase_label,
+                policy=policy,
+                kill_reason=str(e),
                 status=status,
                 started_at=started_at,
                 completed_at=completed_at,
@@ -1300,6 +1343,9 @@ class ContentGenOrchestrator:
             stage_index=idx,
             stage_name=stage_name,
             stage_label=label,
+            phase=phase,
+            phase_label=phase_label,
+            policy=policy,
             status=status,
             started_at=started_at,
             completed_at=completed_at,
