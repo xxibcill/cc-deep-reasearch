@@ -545,8 +545,13 @@ def test_content_gen_pipeline_websocket_streams_live_stage_events(
             *,
             from_stage: int = 0,
             to_stage: int | None = None,
+            initial_context=None,
+            bypass_ideation=False,
             progress_callback=None,
             stage_completed_callback=None,
+            brief_id=None,
+            brief_snapshot=None,
+            run_constraints=None,
         ) -> PipelineContext:
             assert theme == "pricing anchors"
             assert from_stage == 0
@@ -717,8 +722,13 @@ def test_content_gen_pipeline_websocket_streams_failed_stage_events(
             *,
             from_stage: int = 0,
             to_stage: int | None = None,
+            initial_context=None,
+            bypass_ideation=False,
             progress_callback=None,
             stage_completed_callback=None,
+            brief_id=None,
+            brief_snapshot=None,
+            run_constraints=None,
         ) -> PipelineContext:
             assert theme == "pricing anchors"
             assert from_stage == 0
@@ -3143,8 +3153,12 @@ def test_start_backlog_item_returns_202_with_pipeline_id(
             from_stage: int = 0,
             to_stage: int | None = None,
             initial_context: PipelineContext | None = None,
+            bypass_ideation=False,
             progress_callback=None,
             stage_completed_callback=None,
+            brief_id=None,
+            brief_snapshot=None,
+            run_constraints=None,
         ) -> PipelineContext:
             return initial_context or PipelineContext(theme=theme)
 
@@ -3211,8 +3225,12 @@ def test_start_backlog_item_returns_409_on_duplicate_active_run(
             from_stage: int = 0,
             to_stage: int | None = None,
             initial_context: PipelineContext | None = None,
+            bypass_ideation=False,
             progress_callback=None,
             stage_completed_callback=None,
+            brief_id=None,
+            brief_snapshot=None,
+            run_constraints=None,
         ) -> PipelineContext:
             # Wait forever so the job stays "running"
             await asyncio.Future()
@@ -3271,8 +3289,12 @@ def test_start_backlog_item_seeds_context_with_selected_idea_id(
             from_stage: int = 0,
             to_stage: int | None = None,
             initial_context: PipelineContext | None = None,
+            bypass_ideation=False,
             progress_callback=None,
             stage_completed_callback=None,
+            brief_id=None,
+            brief_snapshot=None,
+            run_constraints=None,
         ) -> PipelineContext:
             nonlocal captured_context
             captured_context = initial_context
@@ -3338,8 +3360,12 @@ def test_start_backlog_item_respects_from_stage_4(
             from_stage: int = 0,
             to_stage: int | None = None,
             initial_context: PipelineContext | None = None,
+            bypass_ideation=False,
             progress_callback=None,
             stage_completed_callback=None,
+            brief_id=None,
+            brief_snapshot=None,
+            run_constraints=None,
         ) -> PipelineContext:
             nonlocal captured_from_stage
             captured_from_stage = from_stage
