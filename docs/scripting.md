@@ -183,7 +183,9 @@ Requirements:
 - Choose the structure that best fits the idea
 - Do not choose based on symmetry or habit
 - Briefly justify the choice
-- If needed, lightly adapt the structure names to fit the topic, but keep the logic intact
+- Select one structure template and keep the exact same beat sequence as that template
+- Do not add beats, remove beats, merge beats, split beats, or rename beats
+- If none of the templates fit cleanly, choose the closest valid template instead of inventing a hybrid
 
 Output format:
 
@@ -302,6 +304,7 @@ Requirements:
 - Keep hooks speakable and concise
 - Prefer specificity over abstraction
 - Vary the hook style across the set
+- Hooks must be materially different from one another, not minor rewrites of the same line
 
 Use a mix of:
 
@@ -365,7 +368,9 @@ Write a full script using the selected hook and beat plan.
 Requirements:
 
 - Follow the chosen structure
+- Keep the exact same beat order, beat count, and beat labels from the chosen structure
 - Use the beat intents exactly
+- Do not add, remove, merge, split, or rename beats
 - Use exactly one hook line and exactly one CTA line in the script
 - The hook line must use the selected hook, not a new alternate
 - Do not include backup hooks, CTA options, or repeated CTA lines
