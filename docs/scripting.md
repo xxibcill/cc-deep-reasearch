@@ -183,7 +183,9 @@ Requirements:
 - Choose the structure that best fits the idea
 - Do not choose based on symmetry or habit
 - Briefly justify the choice
-- If needed, lightly adapt the structure names to fit the topic, but keep the logic intact
+- Select one structure template and keep the exact same beat sequence as that template
+- Do not add beats, remove beats, merge beats, split beats, or rename beats
+- If none of the templates fit cleanly, choose the closest valid template instead of inventing a hybrid
 
 Output format:
 
@@ -302,6 +304,7 @@ Requirements:
 - Keep hooks speakable and concise
 - Prefer specificity over abstraction
 - Vary the hook style across the set
+- Hooks must be materially different from one another, not minor rewrites of the same line
 
 Use a mix of:
 
@@ -365,7 +368,9 @@ Write a full script using the selected hook and beat plan.
 Requirements:
 
 - Follow the chosen structure
+- Keep the exact same beat order, beat count, and beat labels from the chosen structure
 - Use the beat intents exactly
+- Do not add, remove, merge, split, or rename beats
 - Use exactly one hook line and exactly one CTA line in the script
 - The hook line must use the selected hook, not a new alternate
 - Do not include backup hooks, CTA options, or repeated CTA lines
@@ -798,3 +803,53 @@ Run strict QC
 - identify weak parts
 - produce final script
 ```
+
+---
+
+# Phase 04 - Draft And Packaging Co-Design
+
+## P4-T1: Channel-Aware Drafting
+
+The drafting pipeline is now channel-aware from the first hook and structure pass. Early packaging signals (target channel, content type, tone, format constraints) are captured from the angle/channel selection stage and inform both the scripting and packaging generators.
+
+**How it works:**
+
+1. When an angle is selected, `EarlyPackagingSignals` are captured:
+   - `target_channel`: Primary distribution channel (e.g., 'shorts', 'reels', 'feed')
+   - `content_type`: Content type hint (e.g., 'contrarian', 'tutorial', 'story')
+   - `tone_hint`: Tone guidance derived from angle
+   - `format_constraints`: Channel format constraints (e.g., '60s max', 'vertical only')
+   - `cta_hint`: Call-to-action hint
+
+2. These signals are passed to the packaging generator to co-design hooks and captions aligned to channel expectations
+
+3. Draft hooks captured during scripting are passed forward to packaging for selection, ensuring the packaging generator can choose from channel-appropriate hook options
+
+**Key principle:** Packaging signals influence the draft before visual planning, and channel mismatch is caught in the draft lane rather than late in packaging.
+
+## P4-T2: Derivative And Reuse Planning
+
+Approved arguments automatically generate a reusable derivative pack:
+
+- **Alternate hooks**: Top hook candidates become reusable derivative opportunities
+- **Quote cards**: Key insights extracted as static image content
+- **Thread variants**: Twitter/thread format adaptations
+- **Newsletter snippets**: Email-ready summaries
+- **Follow-up shorts**: Sub-angle expansions
+- **CTA variations**: Alternative call-to-action options
+- **Platform adaptations**: Content adapted for different platforms
+
+Derivative opportunities are stored in `derivative_opportunities.yaml` and can be fed back into the backlog without re-running idea selection.
+
+## P4-T3: Publish-Now Vs Hold Decision Path
+
+Before visual planning begins, the draft lane applies an explicit decision:
+
+| Decision | Trigger | Action |
+|----------|---------|--------|
+| `PUBLISH_NOW` | QC passed, claims supported or explicitly uncertain | Proceed to publish |
+| `HOLD_FOR_PROOF` | Fact risk gate says hold or kill | Do not publish, return for more proof |
+| `RECYCLE_FOR_REUSE` | Uncertainty exists + 3+ derivative opportunities | Store derivatives, skip publish |
+| `KILL` | QC gate failed | Abandon this draft |
+
+The decision captures uncertainty and risk status, ensuring fast-path publishes preserve claim status and packaging context for auditability.

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from cc_deep_research.content_gen.models import (
     PIPELINE_STAGE_LABELS,
@@ -14,15 +14,21 @@ from cc_deep_research.content_gen.models import (
     ArgumentMap,
     BeatIntent,
     BeatIntentMap,
+    BeatVisual,
     BriefExecutionGate,
     BriefExecutionPolicyMode,
     BriefLifecycleState,
     BriefProvenance,
+    ClaimStatus,
     ClaimTraceEntry,
     ClaimTraceLedger,
     ClaimTraceStage,
     ClaimTraceStatus,
+    ContentGenRunMetrics,
+    ContentTypeProfile,
     CoreInputs,
+    FactRiskDecision,
+    FactRiskGate,
     IterationState,
     ManagedOpportunityBrief,
     OpportunityBrief,
@@ -31,9 +37,15 @@ from cc_deep_research.content_gen.models import (
     PipelineContext,
     PipelineLaneContext,
     PipelineStageTrace,
+    ProgressiveQCCheckpoint,
+    ProgressiveQCIssue,
     QualityEvaluation,
+    ReleaseState,
+    ResearchDepthRouting,
+    ResearchDepthTier,
     ResearchPack,
     RevisionMode,
+    RunConstraints,
     ScoringOutput,
     ScriptClaimStatement,
     ScriptingContext,
@@ -42,6 +54,11 @@ from cc_deep_research.content_gen.models import (
     StageTraceMetadata,
     StrategyMemory,
     TargetedRevisionPlan,
+    ThesisArtifact,
+    VisualComplexity,
+    VisualProductionExecutionBrief,
+    get_phase_for_stage,
+    get_phase_policy,
 )
 
 if TYPE_CHECKING:
@@ -169,8 +186,24 @@ def _resolve_lane_item(ctx: PipelineContext, idea_id: str) -> Any | None:
 
 
 def _resolve_lane_angle(ctx: PipelineContext, idea_id: str) -> Any | None:
+    """Resolve the angle for a lane.
+
+    P3-T2: First checks if thesis_artifact is available (new flow),
+    and constructs an AngleOption-compatible object from it.
+    Falls back to legacy lane.angles for backward compatibility.
+    """
     lane = _resolve_lane_context(ctx, idea_id)
-    if lane is None or lane.angles is None:
+    if lane is None:
+        return None
+
+    # P3-T2: Check thesis_artifact first (new unified flow)
+    if lane.thesis_artifact is not None:
+        thesis = lane.thesis_artifact
+        # Construct an AngleOption-compatible object from thesis_artifact
+        return _thesis_to_angle_option_like(thesis)
+
+    # Backward compatibility: use legacy lane.angles
+    if lane.angles is None:
         return None
     if lane.angles.selected_angle_id:
         angle = next(
@@ -184,6 +217,46 @@ def _resolve_lane_angle(ctx: PipelineContext, idea_id: str) -> Any | None:
         if angle is not None:
             return angle
     return lane.angles.angle_options[0] if lane.angles.angle_options else None
+
+
+def _thesis_to_angle_option_like(thesis: ThesisArtifact) -> Any:
+    """Convert a ThesisArtifact to an AngleOption-compatible object for backward compatibility.
+
+    P3-T2: The ThesisArtifact contains all angle fields directly, so we construct
+    an object that exposes the same interface that downstream code expects.
+    """
+    from cc_deep_research.content_gen.models import AngleOption
+
+    return AngleOption(
+        angle_id=thesis.angle_id,
+        target_audience=thesis.target_audience,
+        viewer_problem=thesis.viewer_problem,
+        core_promise=thesis.core_promise,
+        primary_takeaway=thesis.primary_takeaway,
+        lens=thesis.lens,
+        format=thesis.format,
+        tone=thesis.tone,
+        cta=thesis.cta,
+        why_this_version_should_exist=thesis.why_this_version_should_exist,
+        differentiation_summary=thesis.differentiation_summary,
+        genericity_risks=thesis.genericity_risks,
+        market_framing_challenged=thesis.market_framing_challenged,
+    )
+
+
+# P5-T2: Helper to get content type profile
+def _get_content_type_profile(ctx: PipelineContext) -> ContentTypeProfile:
+    """Get the content type profile for the current run."""
+    from cc_deep_research.content_gen.models import get_content_type_profile
+
+    content_type = ctx.run_constraints.content_type if ctx.run_constraints else ""
+    return get_content_type_profile(content_type)
+
+
+def _use_combined_execution_brief(ctx: PipelineContext) -> bool:
+    """Check if the current content type should use combined execution brief."""
+    profile = _get_content_type_profile(ctx)
+    return profile.use_combined_execution_brief
 
 
 def _update_candidate_status(ctx: PipelineContext, idea_id: str, status: str) -> None:
@@ -216,14 +289,18 @@ def _sync_primary_lane(ctx: PipelineContext) -> None:
     if primary_lane is None:
         return
 
+    # P3-T2: Sync thesis_artifact from primary lane
+    ctx.thesis_artifact = primary_lane.thesis_artifact
     ctx.angles = primary_lane.angles
     ctx.research_pack = primary_lane.research_pack
     ctx.argument_map = primary_lane.argument_map
     ctx.scripting = primary_lane.scripting
     ctx.visual_plan = primary_lane.visual_plan
     ctx.production_brief = primary_lane.production_brief
+    ctx.execution_brief = primary_lane.execution_brief
     ctx.packaging = primary_lane.packaging
     ctx.qc_gate = primary_lane.qc_gate
+    ctx.fact_risk_gate = primary_lane.fact_risk_gate
     ctx.publish_items = list(primary_lane.publish_items)
     ctx.publish_item = ctx.publish_items[0] if ctx.publish_items else None
 
@@ -243,12 +320,22 @@ def _record_lane_completion(
 
 
 def _lane_publish_prereqs_met(ctx: PipelineContext) -> bool:
-    return any(
-        lane.packaging is not None
-        and lane.qc_gate is not None
-        and lane.qc_gate.approved_for_publish
-        for lane in ctx.lane_contexts
-    )
+    # P6-T2: Check release_state for publish readiness
+    # P6-T2 backward compat: also accept approved_for_publish=True when release_state is BLOCKED
+    from cc_deep_research.content_gen.models import ReleaseState
+
+    def _is_approved(lane: PipelineLaneContext) -> bool:
+        qc = lane.qc_gate
+        if qc is None:
+            return False
+        if qc.release_state in (ReleaseState.APPROVED, ReleaseState.APPROVED_WITH_KNOWN_RISKS):
+            return True
+        # Backward compatibility: treat approved_for_publish=True with BLOCKED as APPROVED
+        if qc.release_state == ReleaseState.BLOCKED and qc.approved_for_publish:
+            return True
+        return False
+
+    return any(lane.packaging is not None and _is_approved(lane) for lane in ctx.lane_contexts)
 
 
 def _seed_structure_from_argument_map(argument_map: ArgumentMap | None) -> ScriptStructure | None:
@@ -300,7 +387,9 @@ def _build_claim_ledger(
                 first_seen_stage=ClaimTraceStage.RESEARCH_PACK,
                 research_claim_type=claim.claim_type,
                 source_ids=list(claim.source_ids),
-                status=ClaimTraceStatus.SUPPORTED if claim.source_ids else ClaimTraceStatus.UNSUPPORTED,
+                status=ClaimTraceStatus.SUPPORTED
+                if claim.source_ids
+                else ClaimTraceStatus.UNSUPPORTED,
             )
             ledger.entries.append(entry)
             claim_text_to_id[claim.claim] = claim.claim_id
@@ -324,7 +413,9 @@ def _build_claim_ledger(
                     present_in_argument_map=True,
                     argument_claim_id=arg_claim.claim_id,
                     supporting_proof_ids=list(arg_claim.supporting_proof_ids),
-                    status=ClaimTraceStatus.SUPPORTED if arg_claim.supporting_proof_ids else ClaimTraceStatus.UNSUPPORTED,
+                    status=ClaimTraceStatus.SUPPORTED
+                    if arg_claim.supporting_proof_ids
+                    else ClaimTraceStatus.UNSUPPORTED,
                 )
                 ledger.entries.append(entry)
                 claim_text_to_id[arg_claim.claim] = arg_claim.claim_id
@@ -359,7 +450,9 @@ def _build_claim_ledger(
 
         if final_script:
             # Match script claims against known claims from argument map
-            arg_claims_by_text = {c.claim: c for c in (argument_map.safe_claims if argument_map else [])}
+            arg_claims_by_text = {
+                c.claim: c for c in (argument_map.safe_claims if argument_map else [])
+            }
 
             for claim_text, arg_claim in arg_claims_by_text.items():
                 if claim_text.lower() in final_script.lower():
@@ -371,7 +464,9 @@ def _build_claim_ledger(
                             beat_name=existing_entry.beat_ids[0] if existing_entry.beat_ids else "",
                             claim_ids=[arg_claim.claim_id],
                             proof_anchor_ids=list(arg_claim.supporting_proof_ids),
-                            status=ClaimTraceStatus.SUPPORTED if arg_claim.supporting_proof_ids else ClaimTraceStatus.UNSUPPORTED,
+                            status=ClaimTraceStatus.SUPPORTED
+                            if arg_claim.supporting_proof_ids
+                            else ClaimTraceStatus.UNSUPPORTED,
                             status_reason="Matched to argument map claim with proof anchors"
                             if arg_claim.supporting_proof_ids
                             else "Matched to argument map claim without proof anchors",
@@ -413,6 +508,391 @@ def _build_claim_ledger(
     return ledger
 
 
+def _compute_research_depth_routing(
+    ctx: PipelineContext,
+    candidate: PipelineCandidate,
+    config: Any,
+) -> ResearchDepthRouting:
+    """P3-T1: Compute research depth routing from scoring outputs and config.
+
+    Routes research time and validation depth to expected upside and claim risk
+    instead of using one default level. Preserves operator override path.
+    """
+    effort_tier_str = ""
+    expected_upside = 0
+    idea_score: Any = None
+
+    # Look up the score for this candidate from scoring output
+    if ctx.scoring:
+        for score in ctx.scoring.scores:
+            if score.idea_id == candidate.idea_id:
+                idea_score = score
+                break
+
+    if idea_score:
+        effort_tier_str = (
+            idea_score.effort_tier.value
+            if hasattr(idea_score.effort_tier, "value")
+            else str(idea_score.effort_tier)
+        )
+        expected_upside = idea_score.expected_upside
+
+    # Map effort tier to depth tier using config
+    effort_to_depth = getattr(config.content_gen, "research_depth_by_effort_tier", None)
+    if effort_to_depth is None:
+        effort_to_depth = {"quick": "light", "standard": "standard", "deep": "deep"}
+
+    base_tier_str = effort_to_depth.get(effort_tier_str, "standard")
+
+    # Check if upside bumps tier to deep
+    upside_deep_threshold = getattr(config.content_gen, "research_upside_deep_threshold", 4)
+    if expected_upside >= upside_deep_threshold:
+        base_tier_str = "deep"
+
+    # Check if effort tier itself mandates deep
+    effort_deep_threshold = getattr(config.content_gen, "research_effort_deep_threshold", "deep")
+    if effort_tier_str == effort_deep_threshold or effort_tier_str == "deep":
+        base_tier_str = "deep"
+
+    if ctx.run_constraints and ctx.run_constraints.research_depth_override:
+        try:
+            override_tier = ResearchDepthTier(ctx.run_constraints.research_depth_override)
+            return ResearchDepthRouting(
+                tier=override_tier,
+                routing_basis="operator_override",
+                effort_tier_source=effort_tier_str,
+                expected_upside_source=expected_upside,
+                operator_override=True,
+                override_reason=ctx.run_constraints.research_override_reason,
+            )
+        except ValueError:
+            pass
+
+    try:
+        tier = ResearchDepthTier(base_tier_str)
+    except ValueError:
+        tier = ResearchDepthTier.STANDARD
+
+    routing = ResearchDepthRouting(
+        tier=tier,
+        routing_basis="effort_upside_routing",
+        effort_tier_source=effort_tier_str,
+        expected_upside_source=expected_upside,
+    )
+
+    return routing
+
+
+def _upsert_progressive_issue(
+    lane: PipelineLaneContext,
+    *,
+    category: Literal["fact", "brand", "packaging", "execution"],
+    summary: str,
+    severity: Literal["low", "medium", "high"],
+    first_seen_stage: str,
+) -> str:
+    for issue in lane.progressive_qc_issues:
+        if issue.summary == summary and issue.category == category:
+            return issue.issue_id
+
+    issue = ProgressiveQCIssue(
+        category=category,
+        summary=summary,
+        severity=severity,
+        first_seen_stage=first_seen_stage,
+    )
+    lane.progressive_qc_issues.append(issue)
+    return issue.issue_id
+
+
+def _record_progressive_checkpoint(
+    lane: PipelineLaneContext,
+    *,
+    checkpoint_name: Literal["research", "draft", "execution"],
+    stage_name: str,
+    summary: str,
+    issue_ids: list[str],
+) -> None:
+    status: Literal["pass", "warning", "blocked"] = "pass"
+    unresolved = [
+        issue
+        for issue in lane.progressive_qc_issues
+        if issue.issue_id in issue_ids and not issue.is_resolved
+    ]
+    if any(issue.severity == "high" for issue in unresolved):
+        status = "blocked"
+    elif unresolved:
+        status = "warning"
+
+    lane.progressive_qc_checkpoints.append(
+        ProgressiveQCCheckpoint(
+            checkpoint_name=checkpoint_name,
+            stage_name=stage_name,
+            status=status,
+            summary=summary,
+            issue_ids=issue_ids,
+            created_at=datetime.now(tz=UTC).isoformat(),
+        )
+    )
+
+
+def _evaluate_fact_risk_gate(
+    lane: PipelineLaneContext,
+    *,
+    item: Any,
+    angle: Any,
+    strategy: StrategyMemory | None,
+) -> FactRiskGate:
+    argument_map = lane.argument_map
+    research_pack = lane.research_pack
+
+    gate = FactRiskGate(
+        idea_id=lane.idea_id,
+        angle_id=getattr(angle, "angle_id", ""),
+        thesis=argument_map.thesis if argument_map else "",
+    )
+    if argument_map is None:
+        gate.decision = FactRiskDecision.HOLD
+        gate.decision_reason = "Argument map missing; cannot validate claims before drafting."
+        gate.hold_resolution_requirements.append(
+            "Create a thesis artifact with claim-level support."
+        )
+        return gate
+
+    uncertainty_claims = {
+        flag.claim.strip()
+        for flag in (research_pack.uncertainty_flags if research_pack else [])
+        if flag.claim.strip()
+    }
+    proof_ids = {proof.proof_id for proof in argument_map.proof_anchors}
+
+    for claim in argument_map.safe_claims:
+        status = "supported"
+        if not claim.supporting_proof_ids:
+            status = "missing"
+            gate.missing_claims.append(claim.claim_id or claim.claim)
+            gate.hold_resolution_requirements.append(
+                f"Add direct evidence for claim '{claim.claim[:80]}'"
+            )
+        elif any(proof_id not in proof_ids for proof_id in claim.supporting_proof_ids):
+            status = "weak"
+            gate.weak_claims.append(claim.claim_id or claim.claim)
+            gate.hold_resolution_requirements.append(
+                f"Repair proof linkage for claim '{claim.claim[:80]}'"
+            )
+        elif claim.claim.strip() in uncertainty_claims:
+            status = "acceptable_with_disclosure"
+            gate.acceptable_uncertainty_claims.append(claim.claim_id or claim.claim)
+        else:
+            gate.supported_claims.append(claim.claim_id or claim.claim)
+
+        gate.claim_statuses.append(ClaimStatus(status))
+
+    for claim in argument_map.unsafe_claims:
+        reason = claim.claim_id or claim.claim
+        if claim.claim.strip() in uncertainty_claims:
+            gate.acceptable_uncertainty_claims.append(reason)
+            claim_status = "acceptable_with_disclosure"
+        else:
+            gate.disputed_claims.append(reason)
+            claim_status = "disputed"
+            gate.hold_resolution_requirements.append(
+                f"Remove or reframe unsafe claim '{claim.claim[:80]}'"
+            )
+        gate.claim_statuses.append(ClaimStatus(claim_status))
+
+    gate.proof_check_results = [
+        f"{claim.claim_id or claim.claim[:40]} -> {status.value}"
+        for status, claim in zip(
+            gate.claim_statuses,
+            [*argument_map.safe_claims, *argument_map.unsafe_claims],
+            strict=False,
+        )
+    ]
+
+    if gate.missing_claims or gate.weak_claims:
+        gate.decision = FactRiskDecision.HOLD
+        gate.decision_reason = f"{len(gate.missing_claims)} missing and {len(gate.weak_claims)} weak claim(s) must be resolved before drafting."
+    elif gate.disputed_claims or gate.acceptable_uncertainty_claims:
+        risk_constraints = str(getattr(item, "constraints", "") or "").lower()
+        strategy_rules = " ".join(
+            getattr(strategy, "proof_rules", []) if strategy else []
+        ).lower()
+        policy_text = f"{risk_constraints} {strategy_rules}".strip()
+        can_disclose_uncertainty = any(
+            token in policy_text for token in ("qualify", "disclose", "uncertain", "hypothesis")
+        )
+        limited_dispute = (
+            bool(gate.disputed_claims)
+            and not gate.acceptable_uncertainty_claims
+            and len(gate.disputed_claims) <= 1
+            and len(gate.supported_claims) >= 1
+            and not gate.missing_claims
+            and not gate.weak_claims
+        )
+        if can_disclose_uncertainty or limited_dispute:
+            gate.decision = FactRiskDecision.PROCEED_WITH_UNCERTAINTY
+            gate.required_disclosure = (
+                "State the uncertainty explicitly and avoid categorical delivery."
+            )
+            gate.uncertainty_policy = (
+                "Allowed only when the script discloses uncertainty and avoids overstated claims."
+            )
+            gate.decision_reason = f"{len(gate.acceptable_uncertainty_claims) + len(gate.disputed_claims)} claim(s) may proceed with disclosure."
+        else:
+            if gate.disputed_claims:
+                gate.decision = FactRiskDecision.KILL
+                gate.decision_reason = (
+                    f"{len(gate.disputed_claims)} disputed claim(s) remain in the thesis artifact."
+                )
+            else:
+                gate.decision = FactRiskDecision.HOLD
+                gate.decision_reason = (
+                    "Known uncertainty exists but no disclosure policy is configured for this run."
+                )
+                gate.hold_resolution_requirements.append(
+                    "Either strengthen evidence or declare an uncertainty policy before drafting."
+                )
+    else:
+        gate.decision = FactRiskDecision.APPROVED
+        gate.decision_reason = "All thesis claims are backed by the current proof set."
+
+    return gate
+
+
+def _build_run_metrics(ctx: PipelineContext) -> ContentGenRunMetrics:
+    phase_durations: dict[str, int] = {
+        "phase_01_strategy_ms": 0,
+        "phase_02_opportunity_ms": 0,
+        "phase_03_research_ms": 0,
+        "phase_04_draft_ms": 0,
+        "phase_05_visual_ms": 0,
+        "phase_06_qc_ms": 0,
+        "phase_07_publish_ms": 0,
+    }
+    for trace in ctx.stage_traces:
+        phase_key = {
+            "phase_01_strategy": "phase_01_strategy_ms",
+            "phase_02_opportunity": "phase_02_opportunity_ms",
+            "phase_03_research": "phase_03_research_ms",
+            "phase_04_draft": "phase_04_draft_ms",
+            "phase_05_visual": "phase_05_visual_ms",
+            "phase_06_qc": "phase_06_qc_ms",
+            "phase_07_publish": "phase_07_publish_ms",
+        }.get(trace.phase.value)
+        if phase_key:
+            phase_durations[phase_key] += trace.duration_ms
+
+    primary_lane = next((lane for lane in ctx.lane_contexts if lane.role == "primary"), None)
+    selected_score = None
+    if ctx.scoring:
+        selected_id = _resolve_selected_idea_id(ctx)
+        selected_score = next(
+            (score for score in ctx.scoring.scores if score.idea_id == selected_id),
+            None,
+        )
+
+    release_state = "unknown"
+    kill_reason = ""
+    kill_phase = ""
+    if primary_lane and primary_lane.publish_items:
+        release_state = "published"
+    elif (
+        primary_lane
+        and primary_lane.draft_decision
+        and primary_lane.draft_decision.value == "recycle_for_reuse"
+    ):
+        release_state = "recycled_for_reuse"
+    elif (
+        primary_lane
+        and primary_lane.draft_decision
+        and primary_lane.draft_decision.value == "hold_for_proof"
+    ):
+        release_state = "held"
+        kill_reason = primary_lane.decision_reason
+        kill_phase = "phase_07_publish"
+    elif (
+        primary_lane
+        and primary_lane.fact_risk_gate
+        and primary_lane.fact_risk_gate.decision == FactRiskDecision.HOLD
+    ):
+        release_state = "held"
+        kill_reason = primary_lane.fact_risk_gate.decision_reason
+        kill_phase = "phase_03_research"
+    elif (
+        primary_lane
+        and primary_lane.fact_risk_gate
+        and primary_lane.fact_risk_gate.decision == FactRiskDecision.KILL
+    ):
+        release_state = "killed_early"
+        kill_reason = primary_lane.fact_risk_gate.decision_reason
+        kill_phase = "phase_03_research"
+    elif ctx.qc_gate and ctx.qc_gate.must_fix_items:
+        release_state = "killed_late"
+        kill_reason = "; ".join(ctx.qc_gate.must_fix_items[:3])
+        kill_phase = "phase_06_qc"
+
+    llm_call_count = 0
+    if ctx.scripting and ctx.scripting.step_traces:
+        llm_call_count += sum(len(step.llm_calls) for step in ctx.scripting.step_traces)
+
+    script_word_count = 0
+    if ctx.scripting and ctx.scripting.qc and ctx.scripting.qc.final_script:
+        script_word_count = len(ctx.scripting.qc.final_script.split())
+    elif ctx.scripting and ctx.scripting.tightened:
+        script_word_count = ctx.scripting.tightened.word_count
+    elif ctx.scripting and ctx.scripting.draft:
+        script_word_count = ctx.scripting.draft.word_count
+
+    production_asset_count = 0
+    if ctx.execution_brief:
+        production_asset_count = len(ctx.execution_brief.assets_to_prepare) + len(
+            ctx.execution_brief.existing_assets
+        )
+    elif ctx.production_brief:
+        production_asset_count = len(ctx.production_brief.assets_to_prepare) + len(
+            ctx.production_brief.props
+        )
+
+    packaging_variant_count = len(ctx.packaging.platform_packages) if ctx.packaging else 0
+
+    return ContentGenRunMetrics(
+        run_id=ctx.pipeline_id,
+        brief_id=ctx.brief_reference.brief_id if ctx.brief_reference else "",
+        idea_id=_resolve_selected_idea_id(ctx),
+        angle_id=(getattr(_resolve_selected_angle(ctx), "angle_id", "") or ""),
+        idea_score=float(selected_score.total_score if selected_score else 0.0),
+        content_type=ctx.run_constraints.content_type if ctx.run_constraints else "",
+        effort_tier=(
+            ctx.run_constraints.effort_tier.value
+            if ctx.run_constraints and hasattr(ctx.run_constraints.effort_tier, "value")
+            else str(ctx.run_constraints.effort_tier)
+            if ctx.run_constraints
+            else ""
+        ),
+        release_queue_state=ctx.qc_gate.release_state.value if ctx.qc_gate else "",
+        release_state=release_state,
+        kill_reason=kill_reason,
+        kill_phase=kill_phase,
+        reuse_recommended=bool(
+            ctx.scoring and _resolve_selected_idea_id(ctx) in ctx.scoring.reuse_recommended
+        ),
+        derivative_count=len(primary_lane.derivative_opportunities) if primary_lane else 0,
+        approved_with_known_risks=bool(
+            ctx.qc_gate and ctx.qc_gate.release_state == ReleaseState.APPROVED_WITH_KNOWN_RISKS
+        ),
+        script_word_count=script_word_count,
+        production_asset_count=production_asset_count,
+        packaging_variant_count=packaging_variant_count,
+        llm_call_count=llm_call_count,
+        estimated_cost_cents=0.0,
+        created_at=ctx.created_at,
+        published_at=(ctx.publish_items[0].publish_datetime if ctx.publish_items else ""),
+        **phase_durations,
+        total_cycle_time_ms=sum(phase_durations.values()),
+    )
+
+
 class ContentGenOrchestrator:
     """Coordinate content generation modules.
 
@@ -430,7 +910,6 @@ class ContentGenOrchestrator:
         return self._agents[name]
 
     def _create_agent(self, name: str) -> Any:
-        from cc_deep_research.content_gen.agents.angle import AngleAgent
         from cc_deep_research.content_gen.agents.argument_map import ArgumentMapAgent
         from cc_deep_research.content_gen.agents.backlog import BacklogAgent
         from cc_deep_research.content_gen.agents.opportunity import OpportunityPlanningAgent
@@ -442,13 +921,15 @@ class ContentGenOrchestrator:
         from cc_deep_research.content_gen.agents.quality_evaluator import QualityEvaluatorAgent
         from cc_deep_research.content_gen.agents.research_pack import ResearchPackAgent
         from cc_deep_research.content_gen.agents.scripting import ScriptingAgent
+        from cc_deep_research.content_gen.agents.thesis import ThesisAgent
         from cc_deep_research.content_gen.agents.visual import VisualAgent
 
         factories: dict[str, Callable[[], Any]] = {
             "scripting": lambda: ScriptingAgent(self._config),
             "opportunity": lambda: OpportunityPlanningAgent(self._config),
             "backlog": lambda: BacklogAgent(self._config),
-            "angle": lambda: AngleAgent(self._config),
+            "angle": lambda: ThesisAgent(self._config),  # P3-T2: now uses ThesisAgent
+            "thesis": lambda: ThesisAgent(self._config),  # P3-T2: explicit thesis agent
             "research": lambda: ResearchPackAgent(self._config),
             "argument_map": lambda: ArgumentMapAgent(self._config),
             "visual": lambda: VisualAgent(self._config),
@@ -507,7 +988,9 @@ class ContentGenOrchestrator:
         if managed_brief is not None:
             # Resolve from managed brief
             resolved_brief_id = brief_id or managed_brief.brief_id
-            resolved_revision_id = revision_id or managed_brief.current_revision_id or managed_brief.latest_revision_id
+            resolved_revision_id = (
+                revision_id or managed_brief.current_revision_id or managed_brief.latest_revision_id
+            )
             resolved_version = revision_version or managed_brief.revision_count
             resolved_state = managed_brief.lifecycle_state
             # Use provided snapshot or create a snapshot from the brief
@@ -574,7 +1057,9 @@ class ContentGenOrchestrator:
         """
         if not brief_id:
             # No managed brief - use inline snapshot or create a minimal reference
-            ref = self.establish_brief_reference(snapshot=snapshot, reference_type="inline_fallback")
+            ref = self.establish_brief_reference(
+                snapshot=snapshot, reference_type="inline_fallback"
+            )
             return ref, snapshot
 
         service = self._get_brief_service()
@@ -589,7 +1074,9 @@ class ContentGenOrchestrator:
             return ref, snapshot
 
         # Determine which revision to use
-        target_revision_id = revision_id or managed.current_revision_id or managed.latest_revision_id
+        target_revision_id = (
+            revision_id or managed.current_revision_id or managed.latest_revision_id
+        )
 
         # Build the reference
         ref = self.establish_brief_reference(
@@ -725,7 +1212,10 @@ class ContentGenOrchestrator:
                 return False, warning + " Use allow_stale_brief=True to override."
             return True, warning + " Resume allowed."
 
-        return True, f"Resume allowed: brief '{brief_id}' revision {pinned_revision_id or 'head'} is unchanged"
+        return (
+            True,
+            f"Resume allowed: brief '{brief_id}' revision {pinned_revision_id or 'head'} is unchanged",
+        )
 
     def get_brief_revisions_info(
         self,
@@ -792,7 +1282,9 @@ class ContentGenOrchestrator:
             return None
 
         # Determine target revision
-        target_revision_id = revision_id or managed.current_revision_id or managed.latest_revision_id
+        target_revision_id = (
+            revision_id or managed.current_revision_id or managed.latest_revision_id
+        )
 
         return self.establish_brief_reference(
             brief_id=brief_id,
@@ -836,7 +1328,9 @@ class ContentGenOrchestrator:
             return None, None
 
         # Determine source revision
-        source_rev_id = source_revision_id or source.current_revision_id or source.latest_revision_id
+        source_rev_id = (
+            source_revision_id or source.current_revision_id or source.latest_revision_id
+        )
 
         # Create a new brief by copying
         if snapshot is None:
@@ -948,7 +1442,9 @@ class ContentGenOrchestrator:
         if ctx.brief_gate is None:
             # Gate not initialized - initialize it now
             ctx.brief_gate = self.initialize_brief_gate(brief_state=brief_state)
-            ctx.brief_gate.checked_at_stage = PIPELINE_STAGES.index(stage_name) if stage_name in PIPELINE_STAGES else -1
+            ctx.brief_gate.checked_at_stage = (
+                PIPELINE_STAGES.index(stage_name) if stage_name in PIPELINE_STAGES else -1
+            )
 
         if ctx.brief_gate.was_blocked:
             return False, ctx.brief_gate.error_message
@@ -957,7 +1453,9 @@ class ContentGenOrchestrator:
         can_proceed, message = ctx.brief_gate.check_gate(brief_state, stage_name)
 
         # Update gate state
-        ctx.brief_gate.checked_at_stage = PIPELINE_STAGES.index(stage_name) if stage_name in PIPELINE_STAGES else -1
+        ctx.brief_gate.checked_at_stage = (
+            PIPELINE_STAGES.index(stage_name) if stage_name in PIPELINE_STAGES else -1
+        )
 
         if not can_proceed:
             ctx.brief_gate.was_blocked = True
@@ -974,7 +1472,11 @@ class ContentGenOrchestrator:
             return "Gate not initialized"
 
         gate = ctx.brief_gate
-        stage_label = PIPELINE_STAGE_LABELS.get(PIPELINE_STAGES[gate.checked_at_stage], "unknown") if gate.checked_at_stage >= 0 else "not checked"
+        stage_label = (
+            PIPELINE_STAGE_LABELS.get(PIPELINE_STAGES[gate.checked_at_stage], "unknown")
+            if gate.checked_at_stage >= 0
+            else "not checked"
+        )
 
         parts = [
             f"Gate status: {gate.get_gate_status()}",
@@ -1006,6 +1508,8 @@ class ContentGenOrchestrator:
         # P2-T1: Managed brief reference for controlled handoff
         brief_id: str | None = None,
         brief_snapshot: OpportunityBrief | None = None,
+        # P1-T3: Per-run constraints
+        run_constraints: RunConstraints | None = None,
     ) -> PipelineContext:
         """Run the full 14-stage content pipeline with iterative quality loop.
 
@@ -1017,6 +1521,10 @@ class ContentGenOrchestrator:
         P2-T1: If brief_id is provided, establishes a managed brief reference
         at pipeline start. The brief_snapshot provides the initial brief content
         for the run.
+
+        P1-T3: run_constraints provides per-run variables (content type,
+        effort tier, owner, channel goal, success target) that change each
+        content cycle. If not provided, uses defaults.
         """
         if initial_context is None:
             ctx = PipelineContext(
@@ -1036,6 +1544,13 @@ class ContentGenOrchestrator:
                 ctx.iteration_state = IterationState(
                     max_iterations=self._config.content_gen.max_iterations,
                 )
+
+        # P1-T3: Initialize run constraints if provided
+        if run_constraints is not None:
+            ctx.run_constraints = run_constraints
+        elif ctx.run_constraints is None:
+            # Initialize with defaults
+            ctx.run_constraints = RunConstraints()
 
         # P2-T1: Establish managed brief reference if provided
         if brief_id or brief_snapshot:
@@ -1071,7 +1586,17 @@ class ContentGenOrchestrator:
                 ctx = await self._run_stage(idx, ctx, progress_callback, stage_completed_callback)
 
         # Phase 2: Content stages (5-11) — iterative or single-pass
-        if self._config.content_gen.enable_iterative_mode and end >= 7 and from_stage <= 6:
+        # P1-T3: Check run_constraints for iteration settings
+        use_iterative = self._config.content_gen.enable_iterative_mode
+        if ctx.run_constraints is not None:
+            use_iterative = use_iterative and ctx.run_constraints.use_iterative_loop
+
+        if use_iterative and end >= 7 and from_stage <= 6:
+            # P1-T3: Use run_constraints max_iterations if set
+            if ctx.run_constraints and ctx.run_constraints.max_iterations is not None:
+                ctx.iteration_state = IterationState(
+                    max_iterations=ctx.run_constraints.max_iterations,
+                )
             ctx = await self._run_iterative_loop(
                 ctx, progress_callback, end, stage_completed_callback
             )
@@ -1083,7 +1608,19 @@ class ContentGenOrchestrator:
         for idx in range(12, end + 1):
             ctx = await self._run_stage(idx, ctx, progress_callback, stage_completed_callback)
 
+        self._persist_run_metrics(ctx)
+
         return ctx
+
+    def _persist_run_metrics(self, ctx: PipelineContext) -> None:
+        """Persist always-on run metrics for operating-fitness analysis."""
+        try:
+            from cc_deep_research.content_gen.storage import ContentGenTelemetryStore
+
+            store = ContentGenTelemetryStore(config=self._config)
+            store.upsert_run_metrics(_build_run_metrics(ctx))
+        except Exception:
+            logger.warning("Failed to persist content-gen run metrics", exc_info=True)
 
     def validate_resume_context(
         self,
@@ -1144,11 +1681,23 @@ class ContentGenOrchestrator:
         if stage == "run_scripting" and not any(
             (lane := _resolve_lane_context(ctx, candidate.idea_id)) is not None
             and lane.argument_map is not None
+            and lane.fact_risk_gate is not None
+            and lane.fact_risk_gate.decision
+            in (
+                FactRiskDecision.APPROVED,
+                FactRiskDecision.PROCEED_WITH_UNCERTAINTY,
+            )
             and _resolve_lane_item(ctx, candidate.idea_id) is not None
             and _resolve_lane_angle(ctx, candidate.idea_id) is not None
             for candidate in lane_candidates
         ):
-            return False, "lane backlog/angles/argument_map missing"
+            return (
+                False,
+                "lane backlog/angles/argument_map missing or fact-risk gate blocked drafting",
+            )
+        # P5-T2: Skip visual_translation when using combined execution brief
+        if stage == "visual_translation" and _use_combined_execution_brief(ctx):
+            return False, "using combined execution brief"
         if stage == "visual_translation" and not any(
             lane.scripting is not None
             and (
@@ -1159,10 +1708,25 @@ class ContentGenOrchestrator:
             for lane in ctx.lane_contexts
         ):
             return False, "lane script/structure incomplete"
-        if stage == "production_brief" and not any(
-            lane.visual_plan is not None for lane in ctx.lane_contexts
-        ):
-            return False, "lane visual_plan missing"
+        # P5-T2: For production_brief, check if we're using combined execution brief
+        # If so, we generate it from scripting context directly
+        if stage == "production_brief":
+            if _use_combined_execution_brief(ctx):
+                # Combined execution brief uses scripting context directly
+                if not any(
+                    lane.scripting is not None
+                    and (
+                        lane.scripting.tightened
+                        or lane.scripting.annotated_script
+                        or lane.scripting.draft
+                    )
+                    is not None
+                    for lane in ctx.lane_contexts
+                ):
+                    return False, "lane script missing for combined execution brief"
+                return True, ""
+            elif not any(lane.visual_plan is not None for lane in ctx.lane_contexts):
+                return False, "lane visual_plan missing"
         if stage == "packaging" and not any(
             lane.scripting is not None
             and _resolve_lane_angle(ctx, lane.idea_id) is not None
@@ -1202,6 +1766,11 @@ class ContentGenOrchestrator:
         _ = retrieval_gaps  # noqa: ARG002
         stage_name = PIPELINE_STAGES[idx]
         label = PIPELINE_STAGE_LABELS.get(stage_name, stage_name)
+        # P1-T1: Get operating phase for this stage
+        phase = get_phase_for_stage(stage_name)
+        phase_label = phase.value.replace("_", " ").title()
+        # P1-T2: Get the operating policy for this phase
+        policy = get_phase_policy(phase)
         if progress_callback:
             progress_callback(idx, label)
         ctx.current_stage = idx
@@ -1216,6 +1785,10 @@ class ContentGenOrchestrator:
                 stage_index=idx,
                 stage_name=stage_name,
                 stage_label=label,
+                phase=phase,
+                phase_label=phase_label,
+                policy=policy,
+                skip_reason=skip_reason,
                 status="skipped",
                 started_at=started_at,
                 completed_at=datetime.now(tz=UTC).isoformat(),
@@ -1240,6 +1813,10 @@ class ContentGenOrchestrator:
                 stage_index=idx,
                 stage_name=stage_name,
                 stage_label=label,
+                phase=phase,
+                phase_label=phase_label,
+                policy=policy,
+                kill_reason=f"Brief gate blocked: {gate_message}",
                 status="blocked",
                 started_at=started_at,
                 completed_at=datetime.now(tz=UTC).isoformat(),
@@ -1275,6 +1852,10 @@ class ContentGenOrchestrator:
                 stage_index=idx,
                 stage_name=stage_name,
                 stage_label=label,
+                phase=phase,
+                phase_label=phase_label,
+                policy=policy,
+                kill_reason=str(e),
                 status=status,
                 started_at=started_at,
                 completed_at=completed_at,
@@ -1300,6 +1881,9 @@ class ContentGenOrchestrator:
             stage_index=idx,
             stage_name=stage_name,
             stage_label=label,
+            phase=phase,
+            phase_label=phase_label,
+            policy=policy,
             status=status,
             started_at=started_at,
             completed_at=completed_at,
@@ -1340,7 +1924,10 @@ class ContentGenOrchestrator:
                 progress_callback(-1, f"Iteration {iteration}/{max_iter}")
 
             # Check for full restart recommendation
-            if iter_state.targeted_revision_plan and iter_state.targeted_revision_plan.full_restart_recommended:
+            if (
+                iter_state.targeted_revision_plan
+                and iter_state.targeted_revision_plan.full_restart_recommended
+            ):
                 logger.info("Full restart recommended — clearing targeted plan")
                 iter_state.targeted_revision_plan = None
                 iter_state.revision_mode = RevisionMode.FULL
@@ -1355,10 +1942,14 @@ class ContentGenOrchestrator:
 
             # Run targeted or full content stages
             if revision_mode == RevisionMode.TARGETED and iter_state.targeted_revision_plan:
-                ctx = await self._run_targeted_revision(ctx, progress_callback, end_stage, stage_completed_callback)
+                ctx = await self._run_targeted_revision(
+                    ctx, progress_callback, end_stage, stage_completed_callback
+                )
             else:
                 for idx in range(6, min(12, end_stage + 1)):
-                    ctx = await self._run_stage(idx, ctx, progress_callback, stage_completed_callback)
+                    ctx = await self._run_stage(
+                        idx, ctx, progress_callback, stage_completed_callback
+                    )
 
             # Re-fetch iter_state in case stage handlers replaced it
             iter_state = ctx.iteration_state
@@ -1376,7 +1967,8 @@ class ContentGenOrchestrator:
 
             # Prepare next iteration
             if quality_eval.research_gaps_identified or (
-                quality_eval.targeted_revision_plan and quality_eval.targeted_revision_plan.needs_retrieval
+                quality_eval.targeted_revision_plan
+                and quality_eval.targeted_revision_plan.needs_retrieval
             ):
                 iter_state.should_rerun_research = True
 
@@ -1410,7 +2002,9 @@ class ContentGenOrchestrator:
         retrieval_gaps = self._extract_retrieval_gaps(plan)
         if retrieval_gaps:
             logger.info("Running targeted research for %d gaps", len(retrieval_gaps))
-            ctx = await self._run_stage(5, ctx, progress_callback, stage_completed_callback, retrieval_gaps=retrieval_gaps)
+            ctx = await self._run_stage(
+                5, ctx, progress_callback, stage_completed_callback, retrieval_gaps=retrieval_gaps
+            )
 
         # Step 2: Re-run argument map to incorporate refreshed evidence
         if retrieval_gaps:
@@ -1554,7 +2148,9 @@ class ContentGenOrchestrator:
             if action.instruction:
                 parts.append(f"[{action.beat_name or action.beat_id}] {action.instruction}")
             elif action.weak_claim_ids:
-                parts.append(f"[{action.beat_name or action.beat_id}] Rewrite needed for claims: {', '.join(action.weak_claim_ids)}")
+                parts.append(
+                    f"[{action.beat_name or action.beat_id}] Rewrite needed for claims: {', '.join(action.weak_claim_ids)}"
+                )
 
         if plan.full_restart_recommended:
             parts.append("WARNING: Full restart recommended — targeted revision insufficient.")
@@ -1644,8 +2240,8 @@ class ContentGenOrchestrator:
             return "ready_for_review"
         if stage == "publish_queue":
             if ctx.qc_gate:
-                return f"approved={ctx.qc_gate.approved_for_publish}"
-            return "approved=false"
+                return f"release_state={ctx.qc_gate.release_state.value}"
+            return "release_state=not_reviewed"
         return ""
 
     def _summarize_output(self, idx: int, ctx: PipelineContext) -> str:
@@ -1707,7 +2303,7 @@ class ContentGenOrchestrator:
             return "empty"
         if stage == "human_qc":
             if ctx.qc_gate:
-                return f"approved={ctx.qc_gate.approved_for_publish}"
+                return f"release_state={ctx.qc_gate.release_state.value}"
             return "not_reviewed"
         if stage == "publish_queue":
             if ctx.publish_items:
@@ -1741,11 +2337,16 @@ class ContentGenOrchestrator:
                 parse_mode = getattr(ctx.opportunity_brief, "_parse_mode", "")
                 meta.parse_mode = parse_mode or ""
         elif stage == "generate_angles":
-            if ctx.angles:
+            # P3-T2: Support both AngleOutput (legacy) and ThesisArtifact
+            if ctx.thesis_artifact:
+                meta.selected_idea_id = ctx.thesis_artifact.idea_id or _resolve_selected_idea_id(ctx)
+                meta.selected_angle_id = ctx.thesis_artifact.angle_id or ""
+                meta.option_count = 1  # ThesisArtifact represents a single selected angle
+            elif ctx.angles:
                 meta.selected_idea_id = ctx.angles.idea_id or _resolve_selected_idea_id(ctx)
                 meta.selected_angle_id = ctx.angles.selected_angle_id or ""
                 meta.option_count = len(ctx.angles.angle_options)
-                meta.active_candidate_count = len(ctx.active_candidates)
+            meta.active_candidate_count = len(ctx.active_candidates)
         elif stage == "build_research_pack":
             if ctx.research_pack:
                 meta.selected_idea_id = ctx.research_pack.idea_id or _resolve_selected_idea_id(ctx)
@@ -1755,6 +2356,11 @@ class ContentGenOrchestrator:
                 meta.cache_reused = "cache" in ctx.research_pack.research_stop_reason.lower()
                 meta.is_degraded = ctx.research_pack.is_degraded
                 meta.degradation_reason = ctx.research_pack.degradation_reason
+                # P3-T1: Record research depth routing in trace
+                if ctx.research_pack.research_depth_routing:
+                    routing = ctx.research_pack.research_depth_routing
+                    if routing.operator_override:
+                        meta.policy_override = f"operator_override: {routing.override_reason}"
         elif stage == "build_argument_map":
             if ctx.argument_map:
                 meta.selected_idea_id = ctx.argument_map.idea_id or _resolve_selected_idea_id(ctx)
@@ -1763,6 +2369,13 @@ class ContentGenOrchestrator:
                 meta.claim_count = len(ctx.argument_map.safe_claims)
                 meta.unsafe_claim_count = len(ctx.argument_map.unsafe_claims)
                 meta.beats_count = len(ctx.argument_map.beat_claim_plan)
+            primary_lane = next(
+                (lane for lane in ctx.lane_contexts if lane.role == "primary"), None
+            )
+            if primary_lane and primary_lane.fact_risk_gate:
+                meta.fact_risk_decision = primary_lane.fact_risk_gate.decision.value
+                meta.progressive_issue_count = len(primary_lane.progressive_qc_issues)
+                meta.checkpoint_count = len(primary_lane.progressive_qc_checkpoints)
         elif stage == "run_scripting":
             if ctx.scripting:
                 meta.selected_idea_id = _resolve_selected_idea_id(ctx)
@@ -1784,6 +2397,12 @@ class ContentGenOrchestrator:
                     meta.proof_count = len(ctx.scripting.argument_map.proof_anchors)
                     meta.claim_count = len(ctx.scripting.argument_map.safe_claims)
                     meta.beats_count = len(ctx.scripting.argument_map.beat_claim_plan)
+            primary_lane = next(
+                (lane for lane in ctx.lane_contexts if lane.role == "primary"), None
+            )
+            if primary_lane:
+                meta.progressive_issue_count = len(primary_lane.progressive_qc_issues)
+                meta.checkpoint_count = len(primary_lane.progressive_qc_checkpoints)
         elif stage == "visual_translation":
             if ctx.visual_plan:
                 meta.selected_idea_id = ctx.visual_plan.idea_id or _resolve_selected_idea_id(ctx)
@@ -1800,6 +2419,12 @@ class ContentGenOrchestrator:
                 )
                 meta.is_degraded = ctx.production_brief.is_degraded
                 meta.degradation_reason = ctx.production_brief.degradation_reason
+            primary_lane = next(
+                (lane for lane in ctx.lane_contexts if lane.role == "primary"), None
+            )
+            if primary_lane:
+                meta.progressive_issue_count = len(primary_lane.progressive_qc_issues)
+                meta.checkpoint_count = len(primary_lane.progressive_qc_checkpoints)
         elif stage == "publish_queue":
             if ctx.publish_items:
                 meta.selected_idea_id = ctx.publish_items[0].idea_id or _resolve_selected_idea_id(
@@ -1809,7 +2434,16 @@ class ContentGenOrchestrator:
             elif ctx.publish_item:
                 meta.selected_idea_id = ctx.publish_item.idea_id or _resolve_selected_idea_id(ctx)
         elif stage == "human_qc" and ctx.qc_gate:
-            meta.approved = ctx.qc_gate.approved_for_publish
+            meta.approved = ctx.qc_gate.release_state in (
+                ReleaseState.APPROVED,
+                ReleaseState.APPROVED_WITH_KNOWN_RISKS,
+            )
+            primary_lane = next(
+                (lane for lane in ctx.lane_contexts if lane.role == "primary"), None
+            )
+            if primary_lane:
+                meta.progressive_issue_count = len(primary_lane.progressive_qc_issues)
+                meta.checkpoint_count = len(primary_lane.progressive_qc_checkpoints)
         elif stage == "performance_analysis" and ctx.performance:
             meta.is_degraded = ctx.performance.is_degraded
             meta.degradation_reason = ctx.performance.degradation_reason
@@ -1857,6 +2491,8 @@ class ContentGenOrchestrator:
             warnings.append(
                 f"Human QC blocked publish until {len(ctx.qc_gate.must_fix_items)} must-fix item(s) are resolved."
             )
+            if ctx.qc_gate.issue_origin_summary:
+                warnings.append("Issue origins: " + "; ".join(ctx.qc_gate.issue_origin_summary[:3]))
         elif stage == "build_argument_map" and ctx.argument_map and ctx.argument_map.unsafe_claims:
             warnings.append(
                 f"Argument map flagged {len(ctx.argument_map.unsafe_claims)} unsafe claim(s) to avoid in scripting."
@@ -1910,16 +2546,29 @@ class ContentGenOrchestrator:
             return ctx.selection_reasoning or (
                 ctx.scoring.selection_reasoning if ctx.scoring else ""
             )
-        if stage == "generate_angles" and ctx.angles:
-            return ctx.angles.selection_reasoning
+        if stage == "generate_angles":
+            # P3-T2: Prefer thesis_artifact.selection_reasoning if available
+            if ctx.thesis_artifact and ctx.thesis_artifact.selection_reasoning:
+                return ctx.thesis_artifact.selection_reasoning
+            if ctx.angles:
+                return ctx.angles.selection_reasoning
         if stage == "build_research_pack" and ctx.research_pack:
             return ctx.research_pack.research_stop_reason
         if stage == "build_argument_map" and ctx.argument_map:
             return ctx.argument_map.thesis
         if stage == "human_qc" and ctx.qc_gate:
-            if ctx.qc_gate.approved_for_publish:
+            rs = ctx.qc_gate.release_state
+            if rs == ReleaseState.APPROVED:
                 return "Human QC approved the package for publish."
+            if rs == ReleaseState.APPROVED_WITH_KNOWN_RISKS:
+                reason = ctx.qc_gate.override_reason or "operator accepted known risks"
+                return f"Approved with known risks: {reason}"
             if ctx.qc_gate.must_fix_items:
+                if ctx.qc_gate.issue_origin_summary:
+                    return (
+                        f"Human QC reduced the final gate to {len(ctx.qc_gate.must_fix_items)} unresolved item(s). "
+                        f"First seen earlier in: {'; '.join(ctx.qc_gate.issue_origin_summary[:3])}"
+                    )
                 return f"Human QC requires {len(ctx.qc_gate.must_fix_items)} must-fix item(s) before publish."
             return "Human QC review completed without approval."
         if stage == "run_scripting" and ctx.scripting and ctx.scripting.angle:
@@ -1986,7 +2635,14 @@ class ContentGenOrchestrator:
         return await agent.brief(visual_plan)
 
     async def run_packaging(
-        self, script: Any, angle: Any, *, platforms: list[str] | None = None, idea_id: str = ""
+        self,
+        script: Any,
+        angle: Any,
+        *,
+        platforms: list[str] | None = None,
+        idea_id: str = "",
+        early_packaging_signals: Any | None = None,
+        draft_hooks: list[str] | None = None,
     ) -> Any:
         from cc_deep_research.content_gen.storage import StrategyStore
 
@@ -1994,7 +2650,15 @@ class ContentGenOrchestrator:
         strategy = store.load()
         agent = self._get_agent("packaging")
         p = platforms or self._config.content_gen.default_platforms
-        return await agent.generate(script, angle, p, strategy=strategy, idea_id=idea_id)
+        return await agent.generate(
+            script,
+            angle,
+            p,
+            strategy=strategy,
+            idea_id=idea_id,
+            early_packaging_signals=early_packaging_signals,
+            draft_hooks=draft_hooks,
+        )
 
     async def run_qc(
         self,
@@ -2288,7 +2952,24 @@ async def _stage_score_ideas(orch: ContentGenOrchestrator, ctx: PipelineContext)
     agent = orch._get_agent("backlog")
     strategy = ctx.strategy or StrategyMemory()
     threshold = orch._config.content_gen.scoring_threshold_produce
-    ctx.scoring = await agent.score_ideas(ctx.backlog.items, strategy, threshold=threshold)
+    # P2-T3: Derive content type profile from run_constraints
+    content_type_profile = ""
+    if ctx.run_constraints and ctx.run_constraints.content_type:
+        from cc_deep_research.content_gen.models import get_content_type_profile
+
+        profile = get_content_type_profile(ctx.run_constraints.content_type)
+        content_type_profile = profile.profile_key
+    # P2-T2: Config fields may be absent in test fixtures — use getattr with fallbacks
+    min_upside = getattr(orch._config.content_gen, "scoring_min_upside_threshold", 2)
+    effort_cap = getattr(orch._config.content_gen, "scoring_effort_tier_cap", "deep")
+    ctx.scoring = await agent.score_ideas(
+        ctx.backlog.items,
+        strategy,
+        threshold=threshold,
+        min_upside_threshold=min_upside,
+        effort_tier_cap=effort_cap,
+        content_type_profile=content_type_profile,
+    )
     ctx.shortlist = ctx.scoring.shortlist
     ctx.selected_idea_id = ctx.scoring.selected_idea_id
     ctx.selection_reasoning = ctx.scoring.selection_reasoning
@@ -2301,17 +2982,26 @@ async def _stage_score_ideas(orch: ContentGenOrchestrator, ctx: PipelineContext)
 async def _stage_generate_angles(
     orch: ContentGenOrchestrator, ctx: PipelineContext
 ) -> PipelineContext:
+    """P3-T2: Generate unified thesis artifact combining angle selection with argument design.
+
+    This stage now produces ThesisArtifact instead of separate AngleOutput.
+    The thesis includes both the selected angle framing AND the argument structure
+    (thesis, claims, beats) in one unified artifact.
+    """
     candidates = _lane_candidates(ctx)
     if not candidates:
         return ctx
     strategy = ctx.strategy or StrategyMemory()
-    agent = orch._get_agent("angle")
+    agent = orch._get_agent("thesis")  # P3-T2: uses ThesisAgent
     for candidate in candidates:
         item = _resolve_lane_item(ctx, candidate.idea_id)
         if item is None:
             continue
-        angles = await agent.generate(item, strategy)
-        _record_lane_completion(ctx, candidate, stage_index=4, stage_field="angles", value=angles)
+        # P3-T2: Produce unified thesis artifact instead of AngleOutput
+        thesis_artifact = await agent.build(item, strategy)
+        _record_lane_completion(
+            ctx, candidate, stage_index=4, stage_field="thesis_artifact", value=thesis_artifact
+        )
     return ctx
 
 
@@ -2347,10 +3037,26 @@ async def _stage_build_research_pack(
                 targeted_gaps = orch._extract_retrieval_gaps(plan)
                 if targeted_gaps:
                     research_gaps = (research_gaps or []) + targeted_gaps
-        research_hypotheses = list(ctx.opportunity_brief.research_hypotheses) if ctx.opportunity_brief else None
+        research_hypotheses = (
+            list(ctx.opportunity_brief.research_hypotheses) if ctx.opportunity_brief else None
+        )
+
+        # P3-T1: Compute depth routing from scoring outputs
+        routing = _compute_research_depth_routing(ctx, candidate, orch._config)
+        depth_tier = routing.tier
+
+        # P3-T1: Record routing metadata for trace visibility
         research_pack = await agent.build(
-            item, angle, feedback=feedback, research_gaps=research_gaps,
+            item,
+            angle,
+            feedback=feedback,
+            research_gaps=research_gaps,
             research_hypotheses=research_hypotheses,
+            depth_tier=depth_tier,
+            effort_tier=routing.effort_tier_source,
+            expected_upside=routing.expected_upside_source,
+            operator_override=routing.operator_override,
+            override_reason=routing.override_reason,
         )
         _record_lane_completion(
             ctx,
@@ -2365,6 +3071,12 @@ async def _stage_build_research_pack(
 async def _stage_build_argument_map(
     orch: ContentGenOrchestrator, ctx: PipelineContext
 ) -> PipelineContext:
+    """P3-T2: Build argument map.
+
+    If thesis_artifact is available from generate_angles (P3-T2 flow), derive the
+    argument_map from it. Otherwise, fall back to the separate argument_map agent
+    (backward compatibility for non-thesis flows).
+    """
     if ctx.backlog is None:
         return ctx
     candidates = _lane_candidates(ctx)
@@ -2374,10 +3086,75 @@ async def _stage_build_argument_map(
     for candidate in candidates:
         lane = _resolve_lane_context(ctx, candidate.idea_id)
         item = _resolve_lane_item(ctx, candidate.idea_id)
-        angle = _resolve_lane_angle(ctx, candidate.idea_id)
-        if lane is None or lane.research_pack is None or item is None or angle is None:
+        if lane is None or item is None:
             continue
-        argument_map = await agent.build(item, angle, lane.research_pack)
+
+        # P3-T2: If thesis_artifact is available, derive argument_map from it
+        if lane.thesis_artifact is not None:
+            thesis = lane.thesis_artifact
+            # Convert ThesisArtifact to AngleOption-compatible object for fact-risk gate
+            angle = _thesis_to_angle_option_like(thesis)
+            # Convert ThesisArtifact to ArgumentMap for backward compatibility
+            from cc_deep_research.content_gen.models import ArgumentMap
+
+            argument_map = ArgumentMap(
+                idea_id=thesis.idea_id,
+                angle_id=thesis.angle_id,
+                thesis=thesis.thesis,
+                audience_belief_to_challenge=thesis.audience_belief_to_challenge,
+                core_mechanism=thesis.core_mechanism,
+                proof_anchors=thesis.proof_anchors,
+                counterarguments=thesis.counterarguments,
+                safe_claims=thesis.safe_claims,
+                unsafe_claims=thesis.unsafe_claims,
+                beat_claim_plan=thesis.beat_claim_plan,
+                what_this_contributes=thesis.what_this_contributes,
+                genericity_flags=thesis.genericity_flags,
+                differentiation_stategy=thesis.differentiation_stategy,
+            )
+            lane.argument_map = argument_map
+        else:
+            # Backward compatibility: use argument_map agent
+            angle = _resolve_lane_angle(ctx, candidate.idea_id)
+            if lane.research_pack is None or angle is None:
+                continue
+            argument_map = await agent.build(item, angle, lane.research_pack)
+            lane.argument_map = argument_map
+        lane.last_completed_stage = max(lane.last_completed_stage, 6)
+        lane.fact_risk_gate = _evaluate_fact_risk_gate(
+            lane,
+            item=item,
+            angle=angle,
+            strategy=ctx.strategy,
+        )
+        fact_issue_ids: list[str] = []
+        for claim in lane.fact_risk_gate.weak_claims:
+            fact_issue_ids.append(
+                _upsert_progressive_issue(
+                    lane,
+                    category="fact",
+                    summary=f"Weak proof before drafting: {claim}",
+                    severity="medium",
+                    first_seen_stage="build_argument_map",
+                )
+            )
+        for claim in [*lane.fact_risk_gate.missing_claims, *lane.fact_risk_gate.disputed_claims]:
+            fact_issue_ids.append(
+                _upsert_progressive_issue(
+                    lane,
+                    category="fact",
+                    summary=f"Unsupported thesis claim before drafting: {claim}",
+                    severity="high",
+                    first_seen_stage="build_argument_map",
+                )
+            )
+        _record_progressive_checkpoint(
+            lane,
+            checkpoint_name="research",
+            stage_name="build_argument_map",
+            summary=lane.fact_risk_gate.decision_reason or "Research QC completed.",
+            issue_ids=fact_issue_ids,
+        )
         _record_lane_completion(
             ctx,
             candidate,
@@ -2391,6 +3168,11 @@ async def _stage_build_argument_map(
 async def _stage_run_scripting(
     orch: ContentGenOrchestrator, ctx: PipelineContext
 ) -> PipelineContext:
+    """Run the scripting pipeline.
+
+    P3-T2: When thesis_artifact is available (P3-T2 flow), use its fields to seed
+    the ScriptingContext. Falls back to angle fields for backward compatibility.
+    """
     from cc_deep_research.content_gen.backlog_service import BacklogService
 
     if ctx.backlog is None:
@@ -2403,7 +3185,9 @@ async def _stage_run_scripting(
     for candidate in candidates:
         lane = _resolve_lane_context(ctx, candidate.idea_id)
         item = _resolve_lane_item(ctx, candidate.idea_id)
-        angle = _resolve_lane_angle(ctx, candidate.idea_id)
+        # P3-T2: Prefer thesis_artifact over legacy angle
+        thesis = lane.thesis_artifact if lane else None
+        angle = _resolve_lane_angle(ctx, candidate.idea_id) if thesis is None else None
         if lane is None or lane.argument_map is None:
             continue
         raw_idea = item.idea if item else ctx.theme
@@ -2411,43 +3195,97 @@ async def _stage_run_scripting(
         if lane.scripting and lane.scripting.research_context:
             existing_research = lane.scripting.research_context
         research_context = existing_research or _format_research_context(lane.research_pack)
-        seeded_ctx = ScriptingContext(
-            raw_idea=raw_idea,
-            research_context=research_context,
-            tone=(angle.tone if angle else ""),
-            cta=(angle.cta if angle else ""),
-            argument_map=lane.argument_map,
-            core_inputs=CoreInputs(
-                topic=item.idea if item else raw_idea,
-                outcome=(
-                    (angle.primary_takeaway if angle else "")
-                    or (item.problem if item else raw_idea)
+
+        # P3-T2: Use thesis_artifact fields when available, otherwise fall back to angle
+        if thesis is not None:
+            seeded_ctx = ScriptingContext(
+                raw_idea=raw_idea,
+                research_context=research_context,
+                tone=thesis.tone,
+                cta=thesis.cta,
+                argument_map=lane.argument_map,
+                core_inputs=CoreInputs(
+                    topic=item.idea if item else raw_idea,
+                    outcome=thesis.primary_takeaway or (item.problem if item else raw_idea),
+                    audience=thesis.target_audience or (item.audience if item else ""),
                 ),
-                audience=(
-                    (angle.target_audience if angle else "") or (item.audience if item else "")
-                ),
-            ),
-            angle=AngleDefinition(
-                angle=(angle.core_promise if angle else "") or raw_idea,
-                content_type=(
-                    (angle.format if angle else "") or (angle.lens if angle else "") or "Insight"
-                ),
-                core_tension=(
-                    (angle.viewer_problem if angle else "")
+                angle=AngleDefinition(
+                    angle=thesis.core_promise or raw_idea,
+                    content_type=thesis.format or thesis.lens or "Insight",
+                    core_tension=thesis.viewer_problem
                     or (item.problem if item else "")
-                    or raw_idea
+                    or raw_idea,
+                    why_it_works=thesis.why_this_version_should_exist,
                 ),
-                why_it_works=(angle.why_this_version_should_exist if angle else ""),
-            ),
-            structure=_seed_structure_from_argument_map(lane.argument_map),
-            beat_intents=_seed_beat_intents_from_argument_map(lane.argument_map),
-        )
+                structure=_seed_structure_from_argument_map(lane.argument_map),
+                beat_intents=_seed_beat_intents_from_argument_map(lane.argument_map),
+            )
+        else:
+            # Backward compatibility with legacy angle-based flow
+            seeded_ctx = ScriptingContext(
+                raw_idea=raw_idea,
+                research_context=research_context,
+                tone=(angle.tone if angle else ""),
+                cta=(angle.cta if angle else ""),
+                argument_map=lane.argument_map,
+                core_inputs=CoreInputs(
+                    topic=item.idea if item else raw_idea,
+                    outcome=(
+                        (angle.primary_takeaway if angle else "")
+                        or (item.problem if item else raw_idea)
+                    ),
+                    audience=(
+                        (angle.target_audience if angle else "") or (item.audience if item else "")
+                    ),
+                ),
+                angle=AngleDefinition(
+                    angle=(angle.core_promise if angle else "") or raw_idea,
+                    content_type=(
+                        (angle.format if angle else "")
+                        or (angle.lens if angle else "")
+                        or "Insight"
+                    ),
+                    core_tension=(
+                        (angle.viewer_problem if angle else "")
+                        or (item.problem if item else "")
+                        or raw_idea
+                    ),
+                    why_it_works=(angle.why_this_version_should_exist if angle else ""),
+                ),
+                structure=_seed_structure_from_argument_map(lane.argument_map),
+                beat_intents=_seed_beat_intents_from_argument_map(lane.argument_map),
+            )
+        # P4-T1: Capture early packaging signals from angle/thesis for channel-aware drafting
+        # P3-T2: Use thesis_artifact fields when available
+        early_signals = None
+        from cc_deep_research.content_gen.models import EarlyPackagingSignals
+
+        if thesis is not None:
+            early_signals = EarlyPackagingSignals(
+                target_channel=thesis.format or "",
+                content_type=thesis.lens or "",
+                tone_hint=thesis.tone or "",
+                cta_hint=thesis.cta or "",
+            )
+        elif angle:
+            early_signals = EarlyPackagingSignals(
+                target_channel=angle.format or "",
+                content_type=angle.lens or "",
+                tone_hint=angle.tone or "",
+                cta_hint=angle.cta or "",
+            )
+
         start_step = 5 if seeded_ctx.structure and seeded_ctx.beat_intents else 3
         scripting = await agent.run_from_step(seeded_ctx, start_step)
 
         # Build claim traceability ledger
         claim_ledger = _build_claim_ledger(lane.research_pack, lane.argument_map, scripting)
         scripting.claim_ledger = claim_ledger
+
+        # P4-T1: Capture draft hooks for packaging selection later
+        draft_hooks = []
+        if scripting.hooks:
+            draft_hooks = scripting.hooks.hooks[:5]  # top 5 hook candidates
 
         _record_lane_completion(
             ctx,
@@ -2456,6 +3294,200 @@ async def _stage_run_scripting(
             stage_field="scripting",
             value=scripting,
         )
+
+        # P4-T1: Store early packaging signals on the lane
+        if early_signals and lane:
+            lane.early_packaging_signals = early_signals
+
+        draft_issue_ids: list[str] = []
+        if scripting.claim_ledger and scripting.claim_ledger.unsupported_script_claims:
+            draft_issue_ids.append(
+                _upsert_progressive_issue(
+                    lane,
+                    category="fact",
+                    summary=(
+                        f"{len(scripting.claim_ledger.unsupported_script_claims)} unsupported "
+                        "script claim(s) survived drafting"
+                    ),
+                    severity="high",
+                    first_seen_stage="run_scripting",
+                )
+            )
+        if lane.argument_map and lane.argument_map.genericity_flags:
+            draft_issue_ids.append(
+                _upsert_progressive_issue(
+                    lane,
+                    category="brand",
+                    summary=(
+                        "Draft still risks generic framing: "
+                        + "; ".join(lane.argument_map.genericity_flags[:2])
+                    ),
+                    severity="medium",
+                    first_seen_stage="run_scripting",
+                )
+            )
+        if early_signals and not early_signals.target_channel:
+            draft_issue_ids.append(
+                _upsert_progressive_issue(
+                    lane,
+                    category="packaging",
+                    summary="Draft reached scripting without a clear target channel.",
+                    severity="medium",
+                    first_seen_stage="run_scripting",
+                )
+            )
+        _record_progressive_checkpoint(
+            lane,
+            checkpoint_name="draft",
+            stage_name="run_scripting",
+            summary="Draft QC checkpoint completed before visual/execution planning.",
+            issue_ids=draft_issue_ids,
+        )
+
+        # P4-T2: Extract derivative opportunities from approved draft
+        from cc_deep_research.content_gen.models import DerivativeOpportunity
+
+        derivative_opportunities: list[DerivativeOpportunity] = []
+
+        # Get source material for derivatives
+        source_script = ""
+        if scripting.qc and scripting.qc.final_script:
+            source_script = scripting.qc.final_script
+        elif scripting.tightened:
+            source_script = scripting.tightened.content
+        elif scripting.draft:
+            source_script = scripting.draft.content
+
+        thesis = lane.argument_map.thesis if lane.argument_map else ""
+        topic = scripting.core_inputs.topic if scripting and scripting.core_inputs else ""
+        outcome = scripting.core_inputs.outcome if scripting and scripting.core_inputs else ""
+        audience = scripting.core_inputs.audience if scripting and scripting.core_inputs else ""
+
+        # P4-T2: Extract alternate hook derivatives from top hook candidates
+        if scripting and scripting.hooks and scripting.hooks.hooks:
+            for hook in scripting.hooks.hooks[:3]:
+                if hook != scripting.hooks.best_hook:
+                    derivative_opportunities.append(
+                        DerivativeOpportunity(
+                            source_idea_id=candidate.idea_id,
+                            derivative_type="alternate_hook",
+                            title=f"Alternate hook: {hook[:50]}",
+                            summary=f"Use this hook instead of the primary: {hook}",
+                            target_channel=early_signals.target_channel if early_signals else "",
+                            reuse_value="Tests different hook direction without new research",
+                        )
+                    )
+
+        # P4-T2: Extract proof points for reuse in other formats
+        proof_points: list[str] = []
+        if lane.research_pack and lane.research_pack.proof_points:
+            proof_points = list(lane.research_pack.proof_points)[:3]
+
+        # P4-T2: Quote card derivative - extract a key quote or insight from the script
+        if source_script and len(source_script) > 50:
+            # Find a punchy line from the script as a quote card candidate
+            lines = [
+                line.strip()
+                for line in source_script.split("\n")
+                if line.strip() and len(line.strip()) < 100
+            ]
+            if lines:
+                quote_line = lines[len(lines) // 2] if len(lines) > 1 else lines[0]
+                if quote_line:
+                    derivative_opportunities.append(
+                        DerivativeOpportunity(
+                            source_idea_id=candidate.idea_id,
+                            derivative_type="quote_card",
+                            title=f"Quote card: {quote_line[:40]}",
+                            summary=f"Static quote card using key insight: {quote_line}",
+                            target_channel="instagram",
+                            reuse_value="High-performing format for key insights; low production lift",
+                            proof_points_to_reuse=[],
+                        )
+                    )
+
+        # P4-T2: Thread variant derivative - expand script into a Twitter/thread format
+        if source_script and thesis:
+            derivative_opportunities.append(
+                DerivativeOpportunity(
+                    source_idea_id=candidate.idea_id,
+                    derivative_type="thread_variant",
+                    title=f"Thread: {thesis[:50]}",
+                    summary="Expand the core argument into a Twitter thread format",
+                    target_channel="twitter",
+                    reuse_value="Captures audiences who prefer text-based content",
+                    proof_points_to_reuse=[p[:50] for p in proof_points[:2]],
+                )
+            )
+
+        # P4-T2: Newsletter snippet derivative - create an email-ready summary
+        if thesis and outcome:
+            derivative_opportunities.append(
+                DerivativeOpportunity(
+                    source_idea_id=candidate.idea_id,
+                    derivative_type="newsletter_snippet",
+                    title=f"Newsletter: {topic[:40]}"
+                    if topic
+                    else f"Newsletter snippet from {candidate.idea_id}",
+                    summary="Email-ready summary of the core insight for newsletter distribution",
+                    target_channel="email",
+                    reuse_value="Newsletter audience; evergreen format",
+                    proof_points_to_reuse=[p[:50] for p in proof_points[:2]],
+                )
+            )
+
+        # P4-T2: Follow-up short derivative - create a follow-up piece on a sub-angle
+        if lane.argument_map and lane.argument_map.safe_claims:
+            sub_claims = [c.claim for c in lane.argument_map.safe_claims[1:3]]
+            if sub_claims:
+                derivative_opportunities.append(
+                    DerivativeOpportunity(
+                        source_idea_id=candidate.idea_id,
+                        derivative_type="follow_up_short",
+                        title=f"Follow-up: {sub_claims[0][:40]}"
+                        if sub_claims
+                        else f"Follow-up short from {candidate.idea_id}",
+                        summary=f"Follow-up piece diving deeper into: {sub_claims[0] if sub_claims else 'a sub-angle'}",
+                        target_channel=early_signals.target_channel if early_signals else "shorts",
+                        reuse_value="Builds on existing proof without new research",
+                        proof_points_to_reuse=proof_points[:2],
+                    )
+                )
+
+        # P4-T2: CTA variation derivative - create alternative call-to-action
+        if scripting and scripting.cta:
+            derivative_opportunities.append(
+                DerivativeOpportunity(
+                    source_idea_id=candidate.idea_id,
+                    derivative_type="cta_variation",
+                    title="CTA variation",
+                    summary=f"Different call-to-action: {scripting.cta}",
+                    target_channel=early_signals.target_channel if early_signals else "",
+                    reuse_value="Tests different conversion actions without new research",
+                )
+            )
+
+        # P4-T2: Platform adaptation derivative - adapt content for a different platform
+        target_channels = ["tiktok", "reels", "youtube_shorts"]
+        current_channel = early_signals.target_channel if early_signals else ""
+        for channel in target_channels:
+            if channel != current_channel:
+                derivative_opportunities.append(
+                    DerivativeOpportunity(
+                        source_idea_id=candidate.idea_id,
+                        derivative_type="platform_adaptation",
+                        title=f"Platform adaptation: {channel}",
+                        summary=f"Adapt the core argument for {channel} audience and format",
+                        target_channel=channel,
+                        reuse_value=f"Expands reach to {channel} audience; leverages existing research",
+                    )
+                )
+                break  # Only add one platform adaptation by default
+
+        # Store derivative opportunities on the lane
+        if lane and derivative_opportunities:
+            lane.derivative_opportunities = derivative_opportunities
+
         if service is None:
             service = BacklogService(getattr(orch, "_config", None))
         service.mark_in_production(candidate.idea_id, source_pipeline_id=ctx.pipeline_id)
@@ -2495,12 +3527,54 @@ async def _stage_production_brief(
     candidates = _lane_candidates(ctx)
     if not candidates:
         return ctx
+
+    # P5-T2: Handle combined execution brief for formats that use it
+    if _use_combined_execution_brief(ctx):
+        return await _stage_combined_execution_brief(orch, ctx, candidates)
+
+    # Standard flow: generate separate production brief from visual plan
     agent = orch._get_agent("production")
     for candidate in candidates:
         lane = _resolve_lane_context(ctx, candidate.idea_id)
         if lane is None or lane.visual_plan is None:
             continue
         production_brief = await agent.brief(lane.visual_plan)
+        source = lane.scripting.tightened or lane.scripting.annotated_script or lane.scripting.draft
+        if source is not None:
+            lane.execution_brief = _build_combined_execution_brief(
+                lane=lane,
+                profile=_get_content_type_profile(ctx),
+                source=source,
+            )
+            ctx.execution_brief = lane.execution_brief
+        execution_issue_ids: list[str] = []
+        if not production_brief.backup_plan:
+            execution_issue_ids.append(
+                _upsert_progressive_issue(
+                    lane,
+                    category="execution",
+                    summary="Production brief is missing a usable backup plan.",
+                    severity="medium",
+                    first_seen_stage="production_brief",
+                )
+            )
+        if not production_brief.assets_to_prepare and not production_brief.props:
+            execution_issue_ids.append(
+                _upsert_progressive_issue(
+                    lane,
+                    category="execution",
+                    summary="Execution plan has no explicit asset or prop preparation list.",
+                    severity="low",
+                    first_seen_stage="production_brief",
+                )
+            )
+        _record_progressive_checkpoint(
+            lane,
+            checkpoint_name="execution",
+            stage_name="production_brief",
+            summary="Execution QC checkpoint completed before final release QC.",
+            issue_ids=execution_issue_ids,
+        )
         _record_lane_completion(
             ctx,
             candidate,
@@ -2509,6 +3583,215 @@ async def _stage_production_brief(
             value=production_brief,
         )
     return ctx
+
+
+async def _stage_combined_execution_brief(
+    orch: ContentGenOrchestrator,
+    ctx: PipelineContext,
+    candidates: list[PipelineCandidate],
+) -> PipelineContext:
+    """P5-T2: Generate combined visual and production execution brief.
+
+    This handles formats where use_combined_execution_brief=True,
+    replacing separate visual_translation and production_brief stages.
+    """
+
+    profile = _get_content_type_profile(ctx)
+
+    for candidate in candidates:
+        lane = _resolve_lane_context(ctx, candidate.idea_id)
+        if lane is None or lane.scripting is None:
+            continue
+
+        source = lane.scripting.tightened or lane.scripting.annotated_script or lane.scripting.draft
+        if source is None:
+            continue
+
+        # P5-T3: Build execution brief with fallback and reuse planning
+        execution_brief = _build_combined_execution_brief(
+            lane=lane,
+            profile=profile,
+            source=source,
+        )
+        execution_issue_ids: list[str] = []
+        if not execution_brief.missing_asset_decisions:
+            execution_issue_ids.append(
+                _upsert_progressive_issue(
+                    lane,
+                    category="execution",
+                    summary="Combined execution brief has no explicit missing-asset decisions.",
+                    severity="medium",
+                    first_seen_stage="production_brief",
+                )
+            )
+        if not execution_brief.existing_assets:
+            execution_issue_ids.append(
+                _upsert_progressive_issue(
+                    lane,
+                    category="execution",
+                    summary="Execution brief has no reusable asset inventory yet.",
+                    severity="low",
+                    first_seen_stage="production_brief",
+                )
+            )
+        _record_progressive_checkpoint(
+            lane,
+            checkpoint_name="execution",
+            stage_name="production_brief",
+            summary="Execution QC checkpoint completed using the combined execution brief.",
+            issue_ids=execution_issue_ids,
+        )
+
+        # Record completion on the lane
+        lane.execution_brief = execution_brief
+        lane.last_completed_stage = 9
+
+        # Also set on ctx for backwards compatibility
+        ctx.execution_brief = execution_brief
+
+    return ctx
+
+
+def _build_combined_execution_brief(
+    lane: PipelineLaneContext,
+    profile: ContentTypeProfile,
+    source: ScriptVersion,
+) -> VisualProductionExecutionBrief:
+    """P5-T2 & P5-T3: Build a combined execution brief with fallback planning.
+
+    For formats using combined execution brief, this creates a single brief
+    that covers:
+    - Beat-to-visual mapping (simplified)
+    - Production constraints
+    - Owner assignments
+    - Shoot constraints
+    - Fallback options for missing assets
+    - Asset reuse paths
+    """
+    from cc_deep_research.content_gen.models import (
+        AssetFallback,
+        BeatVisual,
+        MissingAssetDecision,
+        VisualProductionExecutionBrief,
+    )
+
+    # Extract beat visuals from structure if available
+    beat_visuals: list[BeatVisual] = []
+    script_lines = [line.strip() for line in source.content.splitlines() if line.strip()]
+    if lane.scripting and lane.scripting.structure and lane.scripting.structure.beat_list:
+        for index, beat_name in enumerate(lane.scripting.structure.beat_list):
+            mapped_line = script_lines[index] if index < len(script_lines) else beat_name
+            beat_visuals.append(
+                BeatVisual(
+                    beat=beat_name,
+                    spoken_line=mapped_line,
+                    visual=(
+                        "medium shot"
+                        if profile.visual_complexity == VisualComplexity.LIGHT
+                        else mapped_line
+                    ),
+                )
+            )
+
+    # Determine planning depth based on visual complexity
+    planning_depth: Literal["light", "standard", "rich"] = "standard"
+    if profile.visual_complexity == VisualComplexity.NONE:
+        planning_depth = "light"
+    elif profile.visual_complexity == VisualComplexity.RICH:
+        planning_depth = "rich"
+
+    # P5-T3: Build fallback options based on content type
+    missing_asset_decisions: list[AssetFallback] = []
+    prop_fallbacks: list[str] = []
+    visual_fallbacks: list[str] = []
+    existing_assets: list[str] = []
+
+    # Add default fallback decisions based on content type
+    if profile.profile_key in ("newsletter", "thread", "article"):
+        # Text-based formats: minimal production risk
+        missing_asset_decisions.append(
+            AssetFallback(
+                asset_name="location",
+                fallback_option="remote/office setup",
+                decision=MissingAssetDecision.DOWNGRADE,
+                decision_note="Text format works with any basic setup",
+            )
+        )
+    elif profile.profile_key == "carousel":
+        # Carousel: visual risk exists
+        missing_asset_decisions.append(
+            AssetFallback(
+                asset_name="visuals",
+                fallback_option="stock imagery or generated graphics",
+                decision=MissingAssetDecision.DOWNGRADE,
+                decision_note="Carousel can use static visuals if custom shots unavailable",
+            )
+        )
+        prop_fallbacks = ["simple props or none required"]
+        visual_fallbacks = ["stock photos", "screen recordings", "generated visuals"]
+    else:
+        # Video formats: moderate to high production risk
+        missing_asset_decisions.append(
+            AssetFallback(
+                asset_name="location",
+                fallback_option="home office or neutral background",
+                decision=MissingAssetDecision.DOWNGRADE,
+                decision_note="Simple background acceptable for talking-head content",
+            )
+        )
+        missing_asset_decisions.append(
+            AssetFallback(
+                asset_name="props",
+                fallback_option="none or minimal",
+                decision=MissingAssetDecision.DOWNGRADE,
+                decision_note="Props optional for standard short-form",
+            )
+        )
+
+    if lane.research_pack and lane.research_pack.assets_needed:
+        existing_assets.extend(
+            [f"library candidate: {asset}" for asset in lane.research_pack.assets_needed[:3]]
+        )
+    if lane.derivative_opportunities:
+        existing_assets.extend(
+            [
+                f"reusable derivative: {opp.derivative_type}"
+                for opp in lane.derivative_opportunities[:3]
+            ]
+        )
+    existing_assets = list(dict.fromkeys(existing_assets))
+
+    asset_reuse_plan = "No existing assets identified; create fresh assets only where required."
+    if existing_assets:
+        asset_reuse_plan = (
+            "Use reusable assets first, then downgrade to fallbacks before requesting new production work: "
+            + "; ".join(existing_assets[:3])
+        )
+
+    return VisualProductionExecutionBrief(
+        idea_id=lane.idea_id,
+        beat_visuals=beat_visuals,
+        location="tbd - operator to confirm",
+        location_fallback="home office or remote setup",
+        setup="basic lighting and camera setup",
+        wardrobe="casual/professional per brand guidelines",
+        props=[],
+        prop_fallbacks=prop_fallbacks,
+        assets_to_prepare=[],
+        existing_assets=existing_assets,
+        asset_reuse_plan=asset_reuse_plan,
+        audio_checks=["mic levels", "room echo check"],
+        battery_checks=["camera battery", "lav battery"],
+        storage_checks=["card space", "backup storage"],
+        pickup_lines_to_capture=[],
+        visual_fallbacks=visual_fallbacks,
+        backup_plan="use B-roll or cut to talking head",
+        missing_asset_decisions=missing_asset_decisions,
+        owner="operator",
+        shoot_constraints="30-60 min shoot time",
+        planning_depth=planning_depth,
+        visual_complexity_used=profile.visual_complexity,
+    )
 
 
 async def _stage_packaging(orch: ContentGenOrchestrator, ctx: PipelineContext) -> PipelineContext:
@@ -2531,7 +3814,23 @@ async def _stage_packaging(orch: ContentGenOrchestrator, ctx: PipelineContext) -
         if not source:
             continue
         script = ScriptVersion(content=source, word_count=len(source.split()))
-        packaging = await agent.generate(script, angle, platforms, strategy=strategy)
+
+        # P4-T1: Pass early packaging signals and draft hooks for channel-aware packaging
+        early_signals = lane.early_packaging_signals if lane else None
+
+        # P4-T1: Extract draft hooks from scripting for packaging selection
+        draft_hooks: list[str] = []
+        if lane.scripting and lane.scripting.hooks:
+            draft_hooks = lane.scripting.hooks.hooks[:5]
+
+        packaging = await agent.generate(
+            script,
+            angle,
+            platforms,
+            strategy=strategy,
+            early_packaging_signals=early_signals,
+            draft_hooks=draft_hooks,
+        )
         _record_lane_completion(
             ctx,
             candidate,
@@ -2563,6 +3862,10 @@ async def _stage_human_qc(orch: ContentGenOrchestrator, ctx: PipelineContext) ->
             visual_summary = "; ".join(
                 f"{bv.beat}: {bv.visual}" for bv in lane.visual_plan.visual_plan[:5]
             )
+        elif lane.execution_brief:
+            visual_summary = "; ".join(
+                f"{bv.beat}: {bv.visual}" for bv in lane.execution_brief.beat_visuals[:5]
+            )
         packaging_summary = ""
         if lane.packaging:
             parts = [f"{p.platform}: {p.primary_hook}" for p in lane.packaging.platform_packages]
@@ -2576,22 +3879,34 @@ async def _stage_human_qc(orch: ContentGenOrchestrator, ctx: PipelineContext) ->
             ledger = lane.scripting.claim_ledger
             claim_trace_parts = ["Claim Traceability Analysis:"]
             if ledger.unsupported_script_claims:
-                claim_trace_parts.append(f"Unsupported claims detected: {len(ledger.unsupported_script_claims)}")
+                claim_trace_parts.append(
+                    f"Unsupported claims detected: {len(ledger.unsupported_script_claims)}"
+                )
                 claim_trace_parts.extend(f"- {c}" for c in ledger.unsupported_claims_for_qc()[:5])
             if ledger.introduced_late_claims:
-                claim_trace_parts.append(f"Introduced late (not in argument map): {len(ledger.introduced_late_claims)}")
+                claim_trace_parts.append(
+                    f"Introduced late (not in argument map): {len(ledger.introduced_late_claims)}"
+                )
             if ledger.dropped_claims:
                 claim_trace_parts.append(f"Dropped from argument map: {len(ledger.dropped_claims)}")
             if ledger.weakened_claims:
                 claim_trace_parts.append(f"Lost proof support: {len(ledger.weakened_claims)}")
             claim_trace_summary = "\n".join(claim_trace_parts)
             if claim_trace_summary == "Claim Traceability Analysis:":
-                claim_trace_summary = "Claim Traceability Analysis: All script claims traceable to argument map."
+                claim_trace_summary = (
+                    "Claim Traceability Analysis: All script claims traceable to argument map."
+                )
 
         # Combine summaries, with claim traceability first as it's most important for QC
-        full_research_summary = claim_trace_summary + "\n\n" + research_summary if claim_trace_summary else research_summary
+        full_research_summary = (
+            claim_trace_summary + "\n\n" + research_summary
+            if claim_trace_summary
+            else research_summary
+        )
 
-        success_criteria = list(ctx.opportunity_brief.success_criteria) if ctx.opportunity_brief else None
+        success_criteria = (
+            list(ctx.opportunity_brief.success_criteria) if ctx.opportunity_brief else None
+        )
         qc_gate = await agent.review(
             script=script,
             visual_summary=visual_summary,
@@ -2600,6 +3915,33 @@ async def _stage_human_qc(orch: ContentGenOrchestrator, ctx: PipelineContext) ->
             argument_map_summary=argument_map_summary,
             success_criteria=success_criteria,
         )
+        unresolved_issues = [issue for issue in lane.progressive_qc_issues if not issue.is_resolved]
+        if unresolved_issues:
+            origin_summary = [
+                f"{issue.first_seen_stage}: {issue.summary}" for issue in unresolved_issues[:5]
+            ]
+            qc_gate.issue_origin_summary = origin_summary
+            allow_known_fact_risk = (
+                lane.fact_risk_gate is not None
+                and lane.fact_risk_gate.decision == FactRiskDecision.PROCEED_WITH_UNCERTAINTY
+            )
+            inherited_must_fixs = [
+                issue.summary
+                for issue in unresolved_issues
+                if issue.severity in ("medium", "high")
+                and not (allow_known_fact_risk and issue.category == "fact")
+            ]
+            for inherited in inherited_must_fixs:
+                if inherited not in qc_gate.must_fix_items:
+                    qc_gate.must_fix_items.append(inherited)
+        if qc_gate.must_fix_items:
+            qc_gate.release_state = ReleaseState.BLOCKED
+        elif qc_gate.override_reason:
+            qc_gate.release_state = ReleaseState.APPROVED_WITH_KNOWN_RISKS
+        elif qc_gate.approved_for_publish:
+            qc_gate.release_state = ReleaseState.APPROVED
+        else:
+            qc_gate.release_state = ReleaseState.BLOCKED
         _record_lane_completion(
             ctx,
             candidate,
@@ -2613,23 +3955,180 @@ async def _stage_human_qc(orch: ContentGenOrchestrator, ctx: PipelineContext) ->
 async def _stage_publish_queue(
     orch: ContentGenOrchestrator, ctx: PipelineContext
 ) -> PipelineContext:
+    """P4-T3: Implement publish-now vs hold-for-proof decision path.
+
+    This stage applies the draft lane decision before invoking publish.
+    The decision is based on the lane's fact_risk_gate (uncertainty status)
+    and qc_gate (quality check). Later stages (visual, production) are only
+    invoked when they add real value for the selected path.
+    """
     from cc_deep_research.content_gen.backlog_service import BacklogService
+    from cc_deep_research.content_gen.models import DraftLaneDecision, ReleaseState
+    from cc_deep_research.content_gen.storage import DerivativeOpportunityStore
 
     candidates = _lane_candidates(ctx)
     if not candidates:
         return ctx
     agent = orch._get_agent("publish")
     service: BacklogService | None = None
+    derivative_store: DerivativeOpportunityStore | None = None
+
     for candidate in candidates:
         lane = _resolve_lane_context(ctx, candidate.idea_id)
-        if (
-            lane is None
-            or lane.packaging is None
-            or lane.qc_gate is None
-            or not lane.qc_gate.approved_for_publish
-        ):
+        if lane is None or lane.packaging is None or lane.qc_gate is None:
             continue
+
+        # P4-T3: Determine draft lane decision based on fact_risk_gate and qc_gate
+        decision: DraftLaneDecision
+        decision_reason: str = ""
+
+        # P6-T2: Use release_state for publish readiness.
+        # For backward compatibility with existing contexts that predate release_state,
+        # treat approved_for_publish=True (without a set release_state) as APPROVED.
+        qc = lane.qc_gate
+        assert qc is not None
+
+        # Determine effective release state
+        if qc.release_state == ReleaseState.APPROVED:
+            effective_approved = True
+            effective_state = ReleaseState.APPROVED
+        elif qc.release_state == ReleaseState.APPROVED_WITH_KNOWN_RISKS:
+            effective_approved = True  # Override allows publish
+            effective_state = ReleaseState.APPROVED_WITH_KNOWN_RISKS
+        elif qc.release_state == ReleaseState.BLOCKED and qc.approved_for_publish:
+            # Backward compatibility: existing contexts with approved_for_publish=True
+            # but no explicit release_state are treated as APPROVED
+            effective_approved = True
+            effective_state = ReleaseState.APPROVED
+        else:
+            effective_approved = False
+            effective_state = ReleaseState.BLOCKED
+
+        # Check if QC gate is approved
+        if not effective_approved:
+            # QC gate blocked — this is a kill decision
+            decision = DraftLaneDecision.KILL
+            decision_reason = f"Release state blocked: {', '.join(qc.must_fix_items[:3])}"
+        elif lane.fact_risk_gate is not None:
+            # Use fact risk gate to determine decision
+            risk_decision = lane.fact_risk_gate.decision
+            if risk_decision == "kill":
+                decision = DraftLaneDecision.HOLD_FOR_PROOF
+                decision_reason = (
+                    f"Fact risk gate: kill. "
+                    f"Unsupported: {len(lane.fact_risk_gate.weak_claims)} weak, "
+                    f"{len(lane.fact_risk_gate.missing_claims)} missing claims"
+                )
+            elif risk_decision == "hold":
+                decision = DraftLaneDecision.HOLD_FOR_PROOF
+                decision_reason = (
+                    f"Fact risk gate: hold. "
+                    f"Unsupported: {len(lane.fact_risk_gate.weak_claims)} weak, "
+                    f"{len(lane.fact_risk_gate.missing_claims)} missing claims"
+                )
+            elif risk_decision == "proceed_with_uncertainty":
+                # P4-T3: Has uncertainty but can proceed
+                # Check if there are strong derivative opportunities to capture first
+                # P4-T2: RECYCLE_FOR_REUSE captures reuse value when uncertainty exists
+                run_signals = " ".join(
+                    filter(
+                        None,
+                        [
+                            getattr(ctx.run_constraints, "channel_goal", "")
+                            if ctx.run_constraints
+                            else "",
+                            getattr(ctx.run_constraints, "success_target", "")
+                            if ctx.run_constraints
+                            else "",
+                        ],
+                    )
+                ).lower()
+                prefers_reuse_lane = any(
+                    token in run_signals
+                    for token in ("reuse", "repurpose", "derivative", "backlog")
+                )
+                has_strong_derivatives = (
+                    lane.derivative_opportunities and len(lane.derivative_opportunities) >= 3
+                )
+                if has_strong_derivatives and prefers_reuse_lane:
+                    decision = DraftLaneDecision.RECYCLE_FOR_REUSE
+                    decision_reason = (
+                        f"Proceeding with known uncertainty but strong reuse potential detected. "
+                        f"{len(lane.derivative_opportunities)} derivative opportunities captured. "
+                        f"Required disclosure: {lane.fact_risk_gate.required_disclosure or 'none'}"
+                    )
+                else:
+                    # P4-T3: Fast-path publish with known uncertainty
+                    decision = DraftLaneDecision.PUBLISH_NOW
+                    decision_reason = (
+                        f"Proceeding with known uncertainty. "
+                        f"Required disclosure: {lane.fact_risk_gate.required_disclosure or 'none'}"
+                    )
+            else:
+                decision = DraftLaneDecision.PUBLISH_NOW
+                decision_reason = "All claims supported, QC approved"
+        else:
+            # No fact risk gate — default to publish now if QC passes
+            decision = DraftLaneDecision.PUBLISH_NOW
+            decision_reason = "No fact risk gate, QC approved"
+
+        # Apply decision to lane
+        lane.draft_decision = decision
+        lane.decision_reason = decision_reason
+
+        # Build claim status summary for publish items
+        claim_status_summary = ""
+        if lane.fact_risk_gate:
+            claim_status_summary = (
+                f"{len(lane.fact_risk_gate.supported_claims)} supported, "
+                f"{len(lane.fact_risk_gate.weak_claims)} weak, "
+                f"{len(lane.fact_risk_gate.missing_claims)} missing"
+            )
+
+        # P4-T3: Execute decision
+        if decision == DraftLaneDecision.KILL or decision == DraftLaneDecision.HOLD_FOR_PROOF:
+            # Do not proceed to publish — record decision and skip
+            logger.info(
+                "Draft decision %s for idea %s: %s",
+                decision.value,
+                candidate.idea_id,
+                decision_reason,
+            )
+            continue
+
+        if decision == DraftLaneDecision.RECYCLE_FOR_REUSE:
+            # P4-T2: Store derivative opportunities for later use
+            if lane.derivative_opportunities:
+                if derivative_store is None:
+                    derivative_store = DerivativeOpportunityStore()
+                for deriv in lane.derivative_opportunities:
+                    deriv.created_at = datetime.now(tz=UTC).isoformat()
+                derivative_store.add_opportunities(lane.derivative_opportunities)
+                logger.info(
+                    "Stored %d derivative opportunities for idea %s",
+                    len(lane.derivative_opportunities),
+                    candidate.idea_id,
+                )
+            continue
+
+        # PUBLISH_NOW: Proceed with publishing
+        if not effective_approved:
+            # Safety check — should not reach here if QC is not approved
+            continue
+
         items = await agent.schedule(lane.packaging, idea_id=candidate.idea_id)
+
+        # P4-T3: Attach decision metadata to publish items
+        # P6-T3: Carry override information through to publish queue items
+        for item in items:
+            item.draft_decision = decision
+            item.decision_reason = decision_reason
+            item.claim_status_summary = claim_status_summary
+            if qc.override_reason:
+                item.override_actor = qc.override_actor
+                item.override_reason = qc.override_reason
+                item.override_timestamp = qc.override_timestamp
+
         _record_lane_completion(
             ctx,
             candidate,
@@ -2642,13 +4141,21 @@ async def _stage_publish_queue(
                 service = BacklogService(getattr(orch, "_config", None))
             service.mark_published(candidate.idea_id, source_pipeline_id=ctx.pipeline_id)
             _update_candidate_status(ctx, candidate.idea_id, "published")
+
+    published_lane_ids = {
+        lane.idea_id for lane in ctx.lane_contexts if getattr(lane, "publish_items", None)
+    }
+    if published_lane_ids:
+        # Compatibility: older callers expect retained shortlist candidates to mirror the
+        # terminal per-lane publish outcome, not just the primary lane's top-level projection.
+        for candidate in list(ctx.active_candidates):
+            if candidate.idea_id in published_lane_ids and candidate.status != "published":
+                _update_candidate_status(ctx, candidate.idea_id, "published")
     _sync_primary_lane(ctx)
     return ctx
 
 
-async def _stage_performance(
-    orch: ContentGenOrchestrator, ctx: PipelineContext
-) -> PipelineContext:
+async def _stage_performance(orch: ContentGenOrchestrator, ctx: PipelineContext) -> PipelineContext:
     """Extract and store performance learnings when performance analysis is available.
 
     This stage runs after performance_analysis and persists structured learnings
@@ -2664,7 +4171,10 @@ async def _stage_performance(
 
     # Extract and store learnings from performance analysis
     try:
-        from cc_deep_research.content_gen.storage import PerformanceLearningStore
+        from cc_deep_research.content_gen.storage import (
+            ContentGenTelemetryStore,
+            PerformanceLearningStore,
+        )
 
         store = PerformanceLearningStore()
         platform = ""
@@ -2679,6 +4189,11 @@ async def _stage_performance(
             "Extracted %d performance learnings from video %s",
             len(learning_set.learnings),
             ctx.performance.video_id or ctx.pipeline_id,
+        )
+        ContentGenTelemetryStore(config=orch._config).sync_from_performance_learning(
+            ctx.performance.video_id or ctx.pipeline_id,
+            ctx.performance,
+            ctx.performance.metrics,
         )
     except Exception as e:
         logger.warning("Failed to extract performance learnings: %s", e)

@@ -1,6 +1,6 @@
 """Prompt templates for the 10-step scripting pipeline.
 
-Contract Version: 1.2.0
+Contract Version: 1.2.1
 
 Parser expectations for each step:
 - Step 1 (define_core_inputs): Expects "Topic:", "Outcome:", "Audience:" fields
@@ -261,6 +261,8 @@ Important:
 - If the writing is generic, sharpen it
 - If an Original Brief is provided, preserve its constraints unless they conflict with this step's explicit task
 - If an Argument Map is provided, treat it as the grounding source of truth for what can be claimed
+- Once a structure is chosen, treat its beat order and beat count as locked unless a step explicitly tells you to re-choose the structure
+- Once a best hook is chosen, treat that exact line as locked unless a step explicitly tells you to regenerate hooks
 - Optimize for spoken delivery, retention, and compression"""
 
 
@@ -378,7 +380,9 @@ Requirements:
 - Choose the structure that best fits the idea
 - Do not choose based on symmetry or habit
 - Briefly justify the choice
-- If needed, lightly adapt the structure names to fit the topic, but keep the logic intact
+- Select one structure template and keep the exact same beat sequence as that template
+- Do not add beats, remove beats, merge beats, split beats, or rename beats
+- If none of the templates fit cleanly, choose the closest valid template instead of inventing a hybrid
 - Make sure the first two beats earn attention quickly
 - Prefer structures that surface proof, example, or contrast before the payoff feels delayed
 - If the content type is educational, avoid redundant "just explain more" beat naming
@@ -496,6 +500,7 @@ Requirements:
 - Keep hooks speakable and concise
 - Prefer specificity over abstraction
 - Vary the hook style across the set
+- Hooks must be materially different from one another, not minor rewrites of the same line
 - Avoid topic-only hooks that do not imply a payoff or consequence
 - At least 3 hooks should make the payoff concrete through a result, contrast, or example
 - The strongest hook should set up a fast second beat, not a slow explanation
@@ -575,7 +580,9 @@ Write a full script using the selected hook and beat plan.
 
 Requirements:
 - Follow the chosen structure
+- Keep the exact same beat order, beat count, and beat labels from the chosen structure
 - Use the beat intents exactly
+- Do not add, remove, merge, split, or rename beats
 - Use the Argument Map and beat-level claim/proof links as the source of truth for what the script can state
 - Only state claims that are supported by the mapped proof anchors for each beat
 - Do not mention citations, IDs, or source labels in the spoken script
@@ -685,6 +692,8 @@ Apply these retention rules:
 - Preserve exactly one hook line and at most one CTA line
 - Do not turn the opening into multiple hook lines
 - Do not add a second CTA
+- Preserve the exact beat order, beat count, and beat labels from the chosen structure
+- Do not add, remove, merge, split, or rename beats while revising
 
 Output format:
 
@@ -757,6 +766,8 @@ Editing rules:
 - Do not over-polish into robotic language
 - Preserve exactly one hook line and at most one CTA line
 - If the script contains duplicate hooks or duplicate CTAs, collapse them into the single strongest version
+- Preserve the exact beat order, beat count, and beat labels from the chosen structure
+- Do not add, remove, merge, split, or rename beats during tightening
 
 Output format:
 
@@ -832,6 +843,7 @@ Rules:
 - Do not add visual annotations that imply unsupported claims
 - Keep exactly one [Hook] line and at most one [CTA] line in the annotated output
 - Do not split the hook or CTA into multiple labeled lines
+- Preserve the exact beat order, beat count, and beat labels from the chosen structure
 
 Output format:
 
@@ -891,6 +903,9 @@ Checklist:
 - Second beat escalates quickly instead of stalling in setup
 - Exactly one hook is present
 - At most one CTA is present
+- Beat order matches the chosen structure exactly
+- Beat count matches the chosen structure exactly
+- No beats were renamed, merged, split, added, or removed
 - No vague or generic phrasing
 - Every line adds value
 - Spoken rhythm feels natural

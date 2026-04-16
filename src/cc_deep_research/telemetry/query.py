@@ -692,7 +692,85 @@ def query_llm_route_summary(
     return query_llm_route_analytics(session_id, db_path=db_path)
 
 
+# ---------------------------------------------------------------------------
+# Content-Gen Operating Fitness Queries (P7-T3)
+# ---------------------------------------------------------------------------
+
+
+def query_content_gen_operating_fitness(
+    period_start: str | None = None,
+    period_end: str | None = None,
+) -> dict[str, Any]:
+    """Query content-gen operating fitness metrics.
+
+    P7-T3: Returns cycle time, kill rate, reuse rate, and cost metrics
+    derived from content-gen run history.
+
+    Args:
+        period_start: ISO date string to filter runs from this date
+        period_end: ISO date string to filter runs until this date
+
+    Returns:
+        Dict with operating fitness metrics
+    """
+    # Import here to avoid adding optional dependency to core telemetry
+    try:
+        from cc_deep_research.content_gen.storage.content_gen_telemetry_store import (
+            ContentGenTelemetryStore,
+        )
+    except ImportError:
+        return {
+            "error": "content-gen not available",
+            "metrics": {},
+        }
+
+    store = ContentGenTelemetryStore()
+    metrics = store.compute_operating_fitness(
+        period_start=period_start,
+        period_end=period_end,
+    )
+    return {
+        "metrics": metrics.model_dump(),
+        "summary": metrics.to_summary(),
+    }
+
+
+def query_content_gen_rule_versions(
+    kind: str | None = None,
+) -> dict[str, Any]:
+    """Query rule version history from strategy store.
+
+    P7-T2: Returns version history for strategy rule changes so operators
+    can see when guidance changed.
+
+    Args:
+        kind: Optional rule kind filter (hook, framing, scoring_threshold, etc.)
+
+    Returns:
+        Dict with rule version timeline
+    """
+    try:
+        from cc_deep_research.content_gen.models import RuleVersionKind
+        from cc_deep_research.content_gen.storage.strategy_store import StrategyStore
+    except ImportError:
+        return {
+            "error": "content-gen not available",
+            "versions": [],
+        }
+
+    store = StrategyStore()
+    versions = store.get_rule_versions(
+        kind=RuleVersionKind(kind) if kind else None
+    )
+    return {
+        "versions": [v.model_dump() for v in versions],
+        "count": len(versions),
+    }
+
+
 __all__ = [
+    "query_content_gen_operating_fitness",
+    "query_content_gen_rule_versions",
     "query_dashboard_data",
     "query_event_tree",
     "query_events_by_parent",

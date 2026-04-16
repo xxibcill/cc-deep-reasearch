@@ -368,6 +368,40 @@ class ContentGenConfig(BaseModel):
     default_platforms: list[str] = Field(default_factory=lambda: ["tiktok", "reels", "shorts"])
     research_max_queries: int = 6
     scoring_threshold_produce: int = 25  # out of 35 max
+    # P2-T2: ROI and fast-fail gate settings
+    scoring_min_upside_threshold: int = Field(
+        default=2,
+        ge=1,
+        le=5,
+        description="Minimum expected_upside (1-5) for an idea to enter research. Below this is auto-killed.",
+    )
+    scoring_effort_tier_cap: str = Field(
+        default="deep",
+        description="Maximum effort tier the scorer will recommend: 'quick', 'standard', or 'deep'",
+    )
+
+    # P3-T1: Research depth routing configuration
+    # Map EffortTier (from scoring) to ResearchDepthTier for automatic routing
+    research_depth_by_effort_tier: dict[str, str] = Field(
+        default_factory=lambda: {
+            "quick": "light",
+            "standard": "standard",
+            "deep": "deep",
+        },
+        description="Maps EffortTier from scoring to ResearchDepthTier for research routing",
+    )
+    # Upside threshold (1-5) above which depth is bumped to deep regardless of effort tier
+    research_upside_deep_threshold: int = Field(
+        default=4,
+        ge=1,
+        le=5,
+        description="Expected upside at or above this triggers deep research even if effort_tier is standard",
+    )
+    # Effort tier at or above which depth is bumped to deep regardless of upside
+    research_effort_deep_threshold: str = Field(
+        default="deep",
+        description="Effort tier at or above which research uses deep mode regardless of upside",
+    )
 
     # Iterative quality-check loop settings
     enable_iterative_mode: bool = True

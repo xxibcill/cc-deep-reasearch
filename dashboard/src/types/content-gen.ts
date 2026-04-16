@@ -269,9 +269,19 @@ export interface IdeaScores {
   evidence_strength: number;
   hook_strength: number;
   repurposing: number;
+  effort_tier?: 'quick' | 'standard' | 'deep' | string;
+  expected_upside?: number;
+  kill_reason?: string;
   total_score: number;
   recommendation: ScoreRecommendation | string;
   reason: string;
+}
+
+export interface PipelineCandidate {
+  idea_id: string;
+  role: 'primary' | 'runner_up' | string;
+  status: string;
+  content_type_profile?: string;
 }
 
 export interface ScoringOutput {
@@ -281,8 +291,12 @@ export interface ScoringOutput {
   selected_idea_id: string;
   selection_reasoning: string;
   runner_up_idea_ids: string[];
+  active_candidates?: PipelineCandidate[];
   hold: string[];
   killed: string[];
+  reuse_recommended?: string[];
+  effort_summary?: Record<string, number>;
+  content_type_profile?: string;
   is_degraded: boolean;
   degradation_reason: string;
 }
@@ -329,6 +343,15 @@ export interface ResearchPack {
   claims_requiring_verification: string[];
   unsafe_or_uncertain_claims: string[];
   research_stop_reason: string;
+  research_mode?: string;
+  research_depth_routing?: {
+    tier: string;
+    routing_basis: string;
+    effort_tier_source?: string;
+    expected_upside_source?: number;
+    operator_override?: boolean;
+    override_reason?: string;
+  } | null;
 }
 
 // =============================================================================
@@ -538,6 +561,40 @@ export interface ProductionBrief {
   storage_checks: string[];
   pickup_lines_to_capture: string[];
   backup_plan: string;
+  is_degraded?: boolean;
+  degradation_reason?: string;
+}
+
+export interface AssetFallback {
+  asset_name: string;
+  fallback_option: string;
+  decision: string;
+  decision_note: string;
+}
+
+export interface VisualProductionExecutionBrief {
+  idea_id: string;
+  beat_visuals: BeatVisual[];
+  location: string;
+  location_fallback: string;
+  setup: string;
+  wardrobe: string;
+  props: string[];
+  prop_fallbacks: string[];
+  assets_to_prepare: string[];
+  existing_assets: string[];
+  asset_reuse_plan: string;
+  audio_checks: string[];
+  battery_checks: string[];
+  storage_checks: string[];
+  pickup_lines_to_capture: string[];
+  visual_fallbacks: string[];
+  backup_plan: string;
+  missing_asset_decisions: AssetFallback[];
+  owner: string;
+  shoot_constraints: string;
+  planning_depth: 'light' | 'standard' | 'rich' | string;
+  visual_complexity_used: string;
 }
 
 // =============================================================================
@@ -557,9 +614,18 @@ export interface PlatformPackage {
   version_notes: string;
 }
 
+export interface EarlyPackagingSignals {
+  target_channel: string;
+  content_type: string;
+  tone_hint: string;
+  cta_hint: string;
+}
+
 export interface PackagingOutput {
   idea_id: string;
   platform_packages: PlatformPackage[];
+  draft_hooks?: string[];
+  early_packaging_signals?: EarlyPackagingSignals | null;
 }
 
 // =============================================================================
@@ -574,8 +640,16 @@ export interface HumanQCGate {
   visual_issues: string[];
   audio_issues: string[];
   caption_issues: string[];
+  unsupported_claims?: string[];
+  risky_claims?: string[];
+  required_fact_checks?: string[];
   must_fix_items: string[];
   approved_for_publish: boolean;
+  release_state?: 'blocked' | 'approved' | 'approved_with_known_risks' | string;
+  override_actor?: string;
+  override_reason?: string;
+  override_timestamp?: string;
+  issue_origin_summary?: string[];
 }
 
 // =============================================================================
@@ -592,6 +666,12 @@ export interface PublishItem {
   cross_post_targets: string[];
   first_30_minute_engagement_plan: string;
   status: PublishItemStatus | string;
+  draft_decision?: string | null;
+  decision_reason?: string;
+  claim_status_summary?: string;
+  override_actor?: string;
+  override_reason?: string;
+  override_timestamp?: string;
 }
 
 // =============================================================================
@@ -637,6 +717,56 @@ export interface IterationState {
   should_rerun_research: boolean;
 }
 
+export interface RunConstraints {
+  content_type: string;
+  effort_tier: 'quick' | 'standard' | 'deep' | string;
+  owner: string;
+  channel_goal: string;
+  success_target: string;
+  target_platforms?: string[];
+  use_iterative_loop?: boolean;
+  max_iterations?: number | null;
+  research_depth_override?: '' | 'light' | 'standard' | 'deep' | string;
+  research_override_reason?: string;
+}
+
+export interface FactRiskGate {
+  idea_id: string;
+  angle_id: string;
+  thesis: string;
+  claim_statuses: string[];
+  supported_claims: string[];
+  weak_claims: string[];
+  missing_claims: string[];
+  disputed_claims: string[];
+  acceptable_uncertainty_claims: string[];
+  decision: 'approved' | 'hold' | 'kill' | 'proceed_with_uncertainty' | string;
+  decision_reason: string;
+  hold_resolution_requirements: string[];
+  required_disclosure: string;
+  uncertainty_policy: string;
+  proof_check_results: string[];
+}
+
+export interface ProgressiveQCIssue {
+  issue_id: string;
+  category: 'fact' | 'brand' | 'packaging' | 'execution' | string;
+  summary: string;
+  severity: 'low' | 'medium' | 'high' | string;
+  first_seen_stage: string;
+  is_resolved: boolean;
+  resolution_note: string;
+}
+
+export interface ProgressiveQCCheckpoint {
+  checkpoint_name: 'research' | 'draft' | 'execution' | string;
+  stage_name: string;
+  status: 'pass' | 'warning' | 'blocked' | string;
+  summary: string;
+  issue_ids: string[];
+  created_at: string;
+}
+
 export interface StageTraceMetadata {
   selected_idea_id?: string;
   selected_angle_id?: string;
@@ -659,12 +789,21 @@ export interface StageTraceMetadata {
   platforms_count?: number;
   approved?: boolean;
   active_candidate_count?: number;
+  parse_mode?: string;
+  fact_risk_decision?: string;
+  progressive_issue_count?: number;
+  checkpoint_count?: number;
 }
 
 export interface PipelineStageTrace {
   stage_index: number;
   stage_name: PipelineStageName | string;
   stage_label: string;
+  phase?: string;
+  phase_label?: string;
+  skip_reason?: string;
+  kill_reason?: string;
+  policy_override?: string;
   status: PipelineTraceStatus | string;
   started_at: string;
   completed_at: string;
@@ -674,6 +813,19 @@ export interface PipelineStageTrace {
   warnings: string[];
   decision_summary: string;
   metadata: StageTraceMetadata;
+}
+
+export interface PipelineLaneContext {
+  idea_id: string;
+  role: 'primary' | 'runner_up' | string;
+  status: string;
+  last_completed_stage: number;
+  fact_risk_gate?: FactRiskGate | null;
+  progressive_qc_issues?: ProgressiveQCIssue[];
+  progressive_qc_checkpoints?: ProgressiveQCCheckpoint[];
+  derivative_opportunities?: Array<Record<string, unknown>>;
+  draft_decision?: string | null;
+  decision_reason?: string;
 }
 
 // =============================================================================
@@ -687,6 +839,7 @@ export interface PipelineContext {
   current_stage: number;
   strategy: StrategyMemory | null;
   opportunity_brief: OpportunityBrief | null;
+  run_constraints?: RunConstraints | null;
   backlog: BacklogOutput | null;
   scoring: ScoringOutput | null;
   shortlist: string[];
@@ -696,9 +849,11 @@ export interface PipelineContext {
   angles: AngleOutput | null;
   research_pack: ResearchPack | null;
   argument_map: ArgumentMap | null;
+  fact_risk_gate?: FactRiskGate | null;
   scripting: ScriptingContext | null;
   visual_plan: VisualPlanOutput | null;
   production_brief: ProductionBrief | null;
+  execution_brief?: VisualProductionExecutionBrief | null;
   packaging: PackagingOutput | null;
   qc_gate: HumanQCGate | null;
   publish_items?: PublishItem[];
@@ -706,6 +861,7 @@ export interface PipelineContext {
   performance: PerformanceAnalysis | null;
   iteration_state: IterationState | null;
   stage_traces: PipelineStageTrace[];
+  lane_contexts?: PipelineLaneContext[];
   // Managed brief reference (Phase 04)
   brief_reference?: PipelineBriefReference | null;
   brief_gate?: BriefExecutionGate | null;
@@ -740,10 +896,23 @@ export interface StartPipelineRequest {
   theme: string;
   from_stage?: number;
   to_stage?: number | null;
+  content_type?: string;
+  effort_tier?: 'quick' | 'standard' | 'deep';
+  owner?: string;
+  channel_goal?: string;
+  success_target?: string;
+  research_depth_override?: 'light' | 'standard' | 'deep' | '';
+  research_override_reason?: string;
 }
 
 export interface ResumePipelineRequest {
   from_stage?: number;
+}
+
+export interface ApproveQCRequest {
+  release_state?: 'approved' | 'approved_with_known_risks';
+  override_reason?: string;
+  actor?: string;
 }
 
 export interface RunScriptingRequest {
@@ -1073,6 +1242,8 @@ export interface ManagedOpportunityBrief {
   // Lineage tracking for branched/cloned briefs
   source_brief_id?: string;
   branch_reason?: string;
+  operating_policies?: Array<Record<string, unknown>>;
+  override_history?: string[];
 }
 
 export interface ManagedBriefOutput {

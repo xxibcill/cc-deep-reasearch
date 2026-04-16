@@ -165,6 +165,57 @@ cc-deep-research content-gen pipeline --theme "..."
 
 This path works for generation up through QC, with the remaining operational caveats documented below in [Current Gaps And Caveats](#current-gaps-and-caveats).
 
+## Seven-Phase Operating Model
+
+Phase 01 defines the canonical seven-phase operating model as the operator-friendly view of the content workflow. The 14 pipeline stages are grouped into these seven phases:
+
+| Phase | Name | Stages | Purpose |
+|-------|------|--------|---------|
+| 1 | Strategy & Setup | `load_strategy` | Load evergreen strategy memory |
+| 2 | Opportunity & Ideation | `plan_opportunity`, `build_backlog`, `score_ideas`, `generate_angles` | Generate and score ideas |
+| 3 | Research & Argument | `build_research_pack`, `build_argument_map` | Build evidence and narrative plan |
+| 4 | Draft & Refinement | `run_scripting` | Generate and refine script (with iterative loop) |
+| 5 | Visual & Production | `visual_translation`, `production_brief` | Plan visuals and production (P5: format-aware depth, combined execution brief for light formats, fallback planning) |
+| 6 | QC & Approval | `packaging`, `human_qc` | Generate packaging and human QC |
+| 7 | Publish & Learn | `publish_queue`, `performance_analysis` | Schedule publish and analyze |
+
+The phase definitions are in `OperatingPhase` enum and `PHASE_TO_STAGES_MAPPING` in [`models.py`](../src/cc_deep_research/content_gen/models.py).
+
+### Phase Governance
+
+Each phase has typed governance metadata in `OperatingPhasePolicy`:
+
+- **owner**: Role or team responsible for the phase
+- **max_turnaround_minutes**: Expected SLA for phase completion
+- **entry_criteria**: Conditions that must be true before phase starts
+- **exit_criteria**: What must be true before moving to the next phase
+- **skip_conditions**: When the phase can be bypassed
+- **kill_conditions**: When the phase should terminate early
+- **reuse_opportunities**: How phase outputs can be leveraged
+
+These policies are exposed in stage traces (`PipelineStageTrace.policy`) for observability.
+
+### Stage-to-Phase Mapping
+
+The mapping is defined in `STAGE_TO_PHASE_MAPPING`:
+
+```python
+"load_strategy"        -> Phase 1: Strategy
+"plan_opportunity"      -> Phase 2: Opportunity
+"build_backlog"         -> Phase 2: Opportunity
+"score_ideas"           -> Phase 2: Opportunity
+"generate_angles"        -> Phase 2: Opportunity
+"build_research_pack"   -> Phase 3: Research
+"build_argument_map"    -> Phase 3: Research
+"run_scripting"         -> Phase 4: Draft
+"visual_translation"    -> Phase 5: Visual
+"production_brief"      -> Phase 5: Visual
+"packaging"             -> Phase 6: QC
+"human_qc"              -> Phase 6: QC
+"publish_queue"          -> Phase 7: Publish
+"performance_analysis"  -> Phase 7: Publish
+```
+
 ## End-To-End Flow
 
 The implemented pipeline order is defined by `PIPELINE_STAGES` in [`src/cc_deep_research/content_gen/models.py`](../src/cc_deep_research/content_gen/models.py):
@@ -206,6 +257,47 @@ strategy memory
   -> publish queue
   -> performance analysis
   -> feedback into strategy/backlog decisions
+```
+
+## Strategy vs Run Constraints
+
+The system separates **evergreen strategy memory** from **per-run constraints**:
+
+### Strategy Memory (Evergreen)
+
+Stored in `StrategyMemory` and persists across all runs. Contains:
+
+- **Positioning**: niche, content_pillars, audience_segments
+- **Tone rules**: tone_rules, offer_cta_rules
+- **Proof standards**: proof_standards, proof_rules
+- **Audience rules**: forbidden_claims, banned_tropes
+- **Expertise**: expertise_edge, signature_frameworks, contrarian_beliefs
+- **Performance learnings**: winning_hooks, winning_framings, proof_expectations
+
+See [`StrategyStore`](../src/cc_deep_research/content_gen/storage/strategy_store.py).
+
+### Run Constraints (Per-Run)
+
+Stored in `RunConstraints` and set at the start of each content cycle:
+
+| Field | Description |
+|-------|-------------|
+| `content_type` | Content format (e.g., "short-form video", "carousel") |
+| `effort_tier` | `quick`, `standard`, or `deep` - determines iteration depth |
+| `owner` | Who is responsible for this content run |
+| `channel_goal` | Primary channel or distribution goal |
+| `success_target` | What success looks like for this cycle |
+| `target_platforms` | Specific platforms to optimize for |
+| `use_iterative_loop` | Whether to enable iterative drafting |
+| `max_iterations` | Override for max iterations |
+
+Run constraints can be set via CLI before opportunity scoring:
+
+```bash
+cc-deep-research content-gen pipeline --theme "..." \
+  --content-type "short-form video" \
+  --effort-tier "deep" \
+  --owner "content-team"
 ```
 
 ## Stage-By-Stage Breakdown
@@ -328,6 +420,17 @@ Threshold behavior:
 - default threshold comes from `config.content_gen.scoring_threshold_produce`
 - current default is `25`
 
+P2-T1 Decision Lane: Scoring produces four explicit dispositions:
+
+- `produce_now`: passes threshold — enters research lane
+- `hold`: does not pass — preserved for future consideration
+- `kill`: fails hard criteria (e.g., weak evidence AND weak hook) — rejected
+- `reuse_recommended`: hold ideas with strong fundamentals (hook≥4, evidence≥3, relevance≥4) — flagged for future reuse when conditions improve
+
+P2-T3 Content-Type Branching: Scoring carries a `content_type_profile` derived from `RunConstraints.content_type`. Each profile defines research/drafting/production/packaging depth and which stages to skip. Known profiles: `short_form_video` (default), `newsletter`, `article`, `webinar`, `launch_asset`, `thread`, `carousel`. Profiles are defined in [`ContentTypeProfile`](../src/cc_deep_research/content_gen/models.py) and resolved via `get_content_type_profile()`.
+
+**P5-T1: Production Complexity Branching:** Profiles now include `visual_complexity` (NONE/LIGHT/STANDARD/RICH) and `use_combined_execution_brief` (bool). Light formats (newsletter, thread, article, carousel) use combined execution brief instead of separate visual and production planning.
+
 CLI:
 
 ```bash
@@ -337,6 +440,7 @@ cc-deep-research content-gen backlog score --from-file backlog.json --select-top
 Pipeline behavior:
 
 - scoring returns a ranked `shortlist`, `selected_idea_id`, `selection_reasoning`, `runner_up_idea_ids`, and a small `active_candidates` queue
+- hold ideas with strong fundamentals are marked `reuse_recommended` so operators can revisit them when seasonality, new proof, or platform changes improve the fit
 - the full pipeline keeps the top 2 ideas alive as `active_candidates`: one `primary` lane and one `runner_up`
 - downstream execution still advances the primary lane, but the runner-up remains explicit in `PipelineContext` and backlog status
 
@@ -512,6 +616,7 @@ Behavior:
 - the orchestrator prefers `tightened`, then `annotated_script`, then `draft`
 - each beat is expanded into a visual treatment
 - the prompt asks for a `visual_refresh_check`
+- **P5-T1**: For formats with `visual_complexity=NONE` (newsletter, article, thread), this stage is skipped and a combined execution brief is generated instead
 
 CLI:
 
@@ -545,6 +650,27 @@ CLI:
 cc-deep-research content-gen production --from-file visual.json -o production.json
 ```
 
+**P5-T2: Format-Aware Planning Depth:**
+
+For formats where `use_combined_execution_brief=True` (newsletter, article, thread, carousel), the system generates a combined `VisualProductionExecutionBrief` instead of separate visual and production artifacts. This:
+
+- Combines visual mapping and execution planning into one reusable execution brief
+- Reduces planning overhead for light assets (simple talking-head shorts, text-based formats)
+- Preserves full separate planning for complex formats (webinar, launch asset, standard short-form video)
+
+The content type profile's `visual_complexity` and `production_depth` fields determine which path is taken.
+
+**P5-T3: Fallback And Asset Reuse Planning:**
+
+The combined execution brief includes:
+
+- `location_fallback`: Alternate location if primary is unavailable
+- `prop_fallbacks`: Alternate prop options
+- `visual_fallbacks`: Alternate visuals if planned shots are not achievable
+- `existing_assets`: Assets from library that can be reused
+- `asset_reuse_plan`: How existing assets will be incorporated
+- `missing_asset_decisions`: Explicit handling for each at-risk asset (downgrade, delay, alt-format, skip)
+
 ### Stage 10: Packaging
 
 Implementation:
@@ -575,6 +701,27 @@ Input behavior:
 - helper functions extract the best available final script and angle information
 - parsing is intentionally tolerant per block, but the stage fails if no usable platform package
   survives parsing
+
+**P4-T1 Channel-Aware Co-Design:**
+
+- Early packaging signals (`EarlyPackagingSignals`) are passed from the scripting stage
+- Draft hook candidates are included for packaging selection
+- Signals include: `target_channel`, `content_type`, `tone_hint`, `format_constraints`, `cta_hint`
+- Packaging generator applies channel-specific hook energy matching
+
+**P4-T2 Derivative And Reuse Planning:**
+
+- Packaging output includes `draft_hooks` and `early_packaging_signals` for traceability
+- Derivative opportunities are extracted during scripting and stored on the lane context
+- `DerivativeOpportunityStore` persists opportunities to `derivative_opportunities.yaml`
+- Opportunities include: alternate_hook, quote_card, thread_variant, newsletter_snippet, follow_up_short, cta_variation, platform_adaptation
+
+**P4-T3 Publish-Now Vs Hold Decision Path:**
+
+- Decision is applied in `_stage_publish_queue` before invoking publish
+- `DraftLaneDecision` enum: `PUBLISH_NOW`, `HOLD_FOR_PROOF`, `RECYCLE_FOR_REUSE`, `KILL`
+- `PublishItem` carries `draft_decision`, `decision_reason`, and `claim_status_summary`
+- `RECYCLE_FOR_REUSE` triggers when uncertainty exists AND 3+ derivative opportunities are available
 
 ### Stage 11: Human QC Gate
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 from click.testing import CliRunner
@@ -88,6 +89,7 @@ from cc_deep_research.content_gen.models import (
     ScriptStructure,
     ScriptVersion,
     StrategyMemory,
+    ThesisArtifact,
     VisualPlanOutput,
 )
 from cc_deep_research.content_gen.orchestrator import _format_research_context
@@ -103,6 +105,7 @@ from cc_deep_research.content_gen.prompts import publish as publish_prompts
 from cc_deep_research.content_gen.prompts import qc as qc_prompts
 from cc_deep_research.content_gen.prompts import research_pack as research_pack_prompts
 from cc_deep_research.content_gen.prompts import scripting as scripting_prompts
+from cc_deep_research.content_gen.prompts import thesis as thesis_prompts
 from cc_deep_research.content_gen.prompts import visual as visual_prompts
 from cc_deep_research.content_gen.prompts.backlog import build_backlog_user
 from cc_deep_research.llm.base import LLMProviderType, LLMResponse, LLMTransportType
@@ -312,7 +315,7 @@ def test_content_gen_stage_contract_registry_covers_core_prompt_stages() -> None
         "plan_opportunity": opportunity_prompts,
         "build_backlog": backlog_prompts,
         "score_ideas": backlog_prompts,
-        "generate_angles": angle_prompts,
+        "generate_angles": thesis_prompts,  # P3-T2: now uses unified thesis prompt
         "build_research_pack": research_pack_prompts,
         "build_argument_map": argument_map_prompts,
         "run_scripting": scripting_prompts,
@@ -342,24 +345,34 @@ def test_content_gen_stage_contract_registry_documents_parser_behavior() -> None
     """Registry entries should describe the intended parser strictness."""
     assert CONTENT_GEN_STAGE_CONTRACTS["generate_angles"].failure_mode == "fail_fast"
     assert CONTENT_GEN_STAGE_CONTRACTS["build_research_pack"].failure_mode == "tolerant"
-    assert CONTENT_GEN_STAGE_CONTRACTS["build_argument_map"].failure_mode == "fail_fast"
+    assert CONTENT_GEN_STAGE_CONTRACTS["build_argument_map"].failure_mode == "tolerant"  # P3-T2: backward compat
     assert CONTENT_GEN_STAGE_CONTRACTS["human_qc"].failure_mode == "human_gated"
 
 
 def test_content_gen_stage_contract_registry_tracks_expert_workflow_shapes() -> None:
     """Registry should document the expert-workflow contract additions."""
     research_contract = CONTENT_GEN_STAGE_CONTRACTS["build_research_pack"]
-    argument_contract = CONTENT_GEN_STAGE_CONTRACTS["build_argument_map"]
+    # P3-T2: thesis contract replaces build_argument_map for unified artifact
+    thesis_contract = CONTENT_GEN_STAGE_CONTRACTS["generate_angles"]
     scripting_contract = CONTENT_GEN_STAGE_CONTRACTS["run_scripting"]
     qc_contract = CONTENT_GEN_STAGE_CONTRACTS["human_qc"]
 
-    assert research_contract.contract_version == "1.2.0"
+    assert research_contract.contract_version == "1.3.0"
     assert "counterpoints" in research_contract.expected_sections
     assert "uncertainty_flags" in research_contract.expected_sections
+    # P3-T1: research depth routing metadata
+    assert "research_depth_routing" in research_contract.expected_sections
+    assert "research_mode" in research_contract.expected_sections
 
-    assert argument_contract.contract_version == "1.0.0"
-    assert "unsafe_claims" in argument_contract.expected_sections
-    assert "beat_claim_plan" in argument_contract.expected_sections
+    # P3-T2: Thesis artifact (generate_angles stage) contains angle + argument fields
+    assert thesis_contract.contract_version == "2.0.0"
+    assert thesis_contract.output_model == "ThesisArtifact"
+    assert "unsafe_claims" in thesis_contract.expected_sections
+    assert "beat_claim_plan" in thesis_contract.expected_sections
+    assert "what_this_contributes" in thesis_contract.expected_sections
+    assert "genericity_flags" in thesis_contract.expected_sections
+    assert "differentiation_stategy" in thesis_contract.expected_sections
+    assert "selection_reasoning" in thesis_contract.expected_sections
 
     assert scripting_contract.contract_version == "1.2.0"
     assert "Step 4: at least one beat intent" in scripting_contract.required_fields
@@ -829,7 +842,8 @@ def test_skipped_stage_recorded_when_prerequisites_missing() -> None:
 
 @pytest.mark.asyncio
 async def test_generate_angles_uses_selected_idea_over_produce_now_order() -> None:
-    """Angle generation should follow the explicit selected idea."""
+    """P3-T2: Thesis generation should follow the explicit selected idea."""
+    from cc_deep_research.content_gen.models import ThesisArtifact
     from cc_deep_research.content_gen.orchestrator import (
         ContentGenOrchestrator,
         _stage_generate_angles,
@@ -857,22 +871,28 @@ async def test_generate_angles_uses_selected_idea_over_produce_now_order() -> No
             },
         )()
 
-    class FakeAngleAgent:
+    class FakeThesisAgent:
         def __init__(self) -> None:
             self.seen_item_id = ""
 
-        async def generate(self, item: BacklogItem, strategy: StrategyMemory) -> AngleOutput:
+        async def build(self, item: BacklogItem, strategy: StrategyMemory) -> ThesisArtifact:
             del strategy
             self.seen_item_id = item.idea_id
-            return AngleOutput(
+            return ThesisArtifact(
                 idea_id=item.idea_id,
-                angle_options=[AngleOption(angle_id="angle-2", core_promise="Selected angle")],
-                selected_angle_id="angle-2",
+                angle_id="angle-2",
+                target_audience="test audience",
+                viewer_problem="test problem",
+                core_promise="Selected angle thesis",
+                primary_takeaway="test takeaway",
+                thesis="Test thesis statement",
+                audience_belief_to_challenge="common misconception",
+                core_mechanism="why it works",
             )
 
     orch = ContentGenOrchestrator(FakeConfig())
-    fake_agent = FakeAngleAgent()
-    orch._agents["angle"] = fake_agent
+    fake_agent = FakeThesisAgent()
+    orch._agents["thesis"] = fake_agent
     ctx = PipelineContext(
         theme="test",
         backlog=BacklogOutput(
@@ -890,10 +910,10 @@ async def test_generate_angles_uses_selected_idea_over_produce_now_order() -> No
 
     ctx = await _stage_generate_angles(orch, ctx)
 
-    # ctx.angles reflects the primary (selected) lane after _sync_primary_lane
+    # ctx.thesis_artifact reflects the primary (selected) lane after _sync_primary_lane
     assert fake_agent.seen_item_id in ("id2", "id1"), "sanity: agent was called"
-    assert ctx.angles is not None
-    assert ctx.angles.idea_id == "id2"
+    assert ctx.thesis_artifact is not None
+    assert ctx.thesis_artifact.idea_id == "id2"
 
 
 @pytest.mark.asyncio
@@ -939,8 +959,14 @@ async def test_build_research_pack_uses_pipeline_selected_idea() -> None:
             feedback: str = "",
             research_gaps: list[str] | None = None,
             research_hypotheses: list[str] | None = None,
+            # P3-T1: Extended signature — accept and discard new params
+            depth_tier: Any = None,
+            effort_tier: str = "",
+            expected_upside: int = 0,
+            operator_override: bool = False,
+            override_reason: str = "",
         ) -> ResearchPack:
-            del feedback, research_gaps, research_hypotheses
+            del feedback, research_gaps, research_hypotheses, depth_tier, effort_tier, expected_upside, operator_override, override_reason
             self.seen_item_id = item.idea_id
             self.seen_angle_id = angle.angle_id
             return ResearchPack(idea_id=item.idea_id, angle_id=angle.angle_id)
@@ -1384,6 +1410,9 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
             strategy: StrategyMemory,
             *,
             threshold: float,
+            min_upside_threshold: int = 2,
+            effort_tier_cap: str = "deep",
+            content_type_profile: str = "",
         ) -> ScoringOutput:
             assert [item.idea_id for item in items] == ["idea-alpha", "idea-beta"]
             assert strategy.niche == fixture["strategy"]["niche"]
@@ -1398,6 +1427,87 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
             assert item.idea_id == runner_up_idea_id
             return runner_up_angles
 
+    class FakeThesisAgent:
+        """P3-T2: Fake thesis agent that produces ThesisArtifact from fixture data."""
+
+        async def build(self, item: BacklogItem, strategy: StrategyMemory) -> ThesisArtifact:
+            assert strategy.niche == fixture["strategy"]["niche"]
+            # Use selected angle data for selected idea, runner_up data for runner-up
+            if item.idea_id == selected_idea_id:
+                angles_data = fixture["angles"]
+                argmap_data = fixture["argument_map"]
+                angle_opt = angles_data["angle_options"][0]
+            else:
+                # Runner-up idea
+                angle_opt = runner_up_angles.angle_options[0]
+                runner_up_thesis = runner_up_argument_map
+                argmap_data = {
+                    "thesis": runner_up_thesis.thesis,
+                    "audience_belief_to_challenge": runner_up_thesis.audience_belief_to_challenge,
+                    "core_mechanism": runner_up_thesis.core_mechanism,
+                    "proof_anchors": [
+                        {"proof_id": p.proof_id, "summary": p.summary, "source_ids": p.source_ids, "usage_note": p.usage_note}
+                        for p in runner_up_thesis.proof_anchors
+                    ],
+                    "counterarguments": [
+                        {
+                            "counterargument_id": c.counterargument_id,
+                            "counterargument": c.counterargument,
+                            "response": c.response,
+                            "response_proof_ids": c.response_proof_ids,
+                        }
+                        for c in runner_up_thesis.counterarguments
+                    ],
+                    "safe_claims": [
+                        {
+                            "claim_id": c.claim_id,
+                            "claim": c.claim,
+                            "supporting_proof_ids": c.supporting_proof_ids,
+                            "note": c.note,
+                        }
+                        for c in runner_up_thesis.safe_claims
+                    ],
+                    "unsafe_claims": [],
+                    "beat_claim_plan": [
+                        {
+                            "beat_id": b.beat_id,
+                            "beat_name": b.beat_name,
+                            "goal": b.goal,
+                            "claim_ids": b.claim_ids,
+                            "proof_anchor_ids": b.proof_anchor_ids,
+                            "counterargument_ids": b.counterargument_ids,
+                            "transition_note": b.transition_note,
+                        }
+                        for b in runner_up_thesis.beat_claim_plan
+                    ],
+                }
+                angles_data = {
+                    "selection_reasoning": runner_up_angles.selection_reasoning,
+                }
+            thesis_data = {
+                "idea_id": item.idea_id,
+                "angle_id": angle_opt["angle_id"] if isinstance(angle_opt, dict) else angle_opt.angle_id,
+                "target_audience": angle_opt["target_audience"] if isinstance(angle_opt, dict) else angle_opt.target_audience,
+                "viewer_problem": angle_opt["viewer_problem"] if isinstance(angle_opt, dict) else angle_opt.viewer_problem,
+                "core_promise": angle_opt["core_promise"] if isinstance(angle_opt, dict) else angle_opt.core_promise,
+                "primary_takeaway": angle_opt["primary_takeaway"] if isinstance(angle_opt, dict) else angle_opt.primary_takeaway,
+                "lens": angle_opt["lens"] if isinstance(angle_opt, dict) else angle_opt.lens,
+                "format": angle_opt["format"] if isinstance(angle_opt, dict) else angle_opt.format,
+                "tone": angle_opt["tone"] if isinstance(angle_opt, dict) else angle_opt.tone,
+                "cta": angle_opt["cta"] if isinstance(angle_opt, dict) else angle_opt.cta,
+                "why_this_version_should_exist": angle_opt["why_this_version_should_exist"] if isinstance(angle_opt, dict) else angle_opt.why_this_version_should_exist,
+                "thesis": argmap_data["thesis"],
+                "audience_belief_to_challenge": argmap_data["audience_belief_to_challenge"],
+                "core_mechanism": argmap_data["core_mechanism"],
+                "proof_anchors": argmap_data["proof_anchors"],
+                "counterarguments": argmap_data["counterarguments"],
+                "safe_claims": argmap_data["safe_claims"],
+                "unsafe_claims": argmap_data["unsafe_claims"],
+                "beat_claim_plan": argmap_data["beat_claim_plan"],
+                "selection_reasoning": angles_data["selection_reasoning"],
+            }
+            return ThesisArtifact.model_validate(thesis_data)
+
     class FakeResearchAgent:
         async def build(
             self,
@@ -1407,7 +1517,14 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
             feedback: str = "",
             research_gaps: list[str] | None = None,
             research_hypotheses: list[str] | None = None,
+            # P3-T1: Extended signature
+            depth_tier: Any = None,
+            effort_tier: str = "",
+            expected_upside: int = 0,
+            operator_override: bool = False,
+            override_reason: str = "",
         ) -> ResearchPack:
+            pass  # assertions below cover the params we care about
             assert feedback == ""
             assert research_gaps is None
             if item.idea_id == selected_idea_id:
@@ -1480,6 +1597,8 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
             platforms: list[str],
             *,
             strategy: StrategyMemory,
+            early_packaging_signals=None,
+            draft_hooks=None,
         ) -> PackagingOutput:
             assert platforms == ["tiktok"]
             assert strategy.niche == fixture["strategy"]["niche"]
@@ -1530,6 +1649,7 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
     orch = ContentGenOrchestrator(FakeConfig())
     orch._agents["opportunity"] = FakeOpportunityAgent()
     orch._agents["backlog"] = FakeBacklogAgent()
+    orch._agents["thesis"] = FakeThesisAgent()  # P3-T2: unified thesis agent
     orch._agents["angle"] = FakeAngleAgent()
     orch._agents["research"] = FakeResearchAgent()
     orch._agents["argument_map"] = FakeArgumentMapAgent()
@@ -1555,9 +1675,10 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
     assert [candidate.status for candidate in ctx.active_candidates] == ["published", "published"]
     assert len(ctx.lane_contexts) == 2
     lane_by_id = {lane.idea_id: lane for lane in ctx.lane_contexts}
-    assert lane_by_id[selected_idea_id].angles is not None
+    # P3-T2: thesis_artifact is set by the unified thesis stage
+    assert lane_by_id[selected_idea_id].thesis_artifact is not None
     assert lane_by_id[selected_idea_id].publish_items[0].idea_id == selected_idea_id
-    assert lane_by_id[runner_up_idea_id].angles is not None
+    assert lane_by_id[runner_up_idea_id].thesis_artifact is not None
     assert lane_by_id[runner_up_idea_id].research_pack is not None
     assert lane_by_id[runner_up_idea_id].argument_map is not None
     assert lane_by_id[runner_up_idea_id].scripting is not None
@@ -2821,12 +2942,23 @@ def test_step6_prompt_requires_single_hook_and_single_cta() -> None:
     """Drafting prompt should explicitly enforce a single hook and CTA."""
     assert "Use exactly one hook line and exactly one CTA line" in scripting_prompts.STEP6_SYSTEM
     assert "Do not include multiple opening hooks, backup hooks, CTA variants" in scripting_prompts.STEP6_SYSTEM
+    assert "Keep the exact same beat order, beat count, and beat labels" in scripting_prompts.STEP6_SYSTEM
+    assert "Do not add, remove, merge, split, or rename beats" in scripting_prompts.STEP6_SYSTEM
+
+
+def test_step3_and_step5_prompts_lock_structure_and_require_real_hook_variation() -> None:
+    """Structure should stay template-locked and hooks should be meaningfully varied."""
+    assert "keep the exact same beat sequence as that template" in scripting_prompts.STEP3_SYSTEM
+    assert "Do not add beats, remove beats, merge beats, split beats, or rename beats" in scripting_prompts.STEP3_SYSTEM
+    assert "Hooks must be materially different from one another" in scripting_prompts.STEP5_SYSTEM
 
 
 def test_step10_qc_checks_single_hook_and_cta_presence() -> None:
     """Final QC should verify hook/CTA uniqueness before saving the script."""
     assert "- Exactly one hook is present" in scripting_prompts.STEP10_SYSTEM
     assert "- At most one CTA is present" in scripting_prompts.STEP10_SYSTEM
+    assert "- Beat order matches the chosen structure exactly" in scripting_prompts.STEP10_SYSTEM
+    assert "- No beats were renamed, merged, split, added, or removed" in scripting_prompts.STEP10_SYSTEM
 
 
 def test_scripting_context_tone_and_cta_default_empty() -> None:
@@ -3531,6 +3663,208 @@ def test_scoring_output_degraded_flag() -> None:
     output = ScoringOutput(is_degraded=True, degradation_reason="zero valid scores")
     assert output.is_degraded is True
     assert output.degradation_reason == "zero valid scores"
+
+
+def test_scoring_output_reuse_recommended_field() -> None:
+    """ScoringOutput should expose reuse_recommended list."""
+    output = ScoringOutput(reuse_recommended=["id2", "id3"])
+    assert output.reuse_recommended == ["id2", "id3"]
+    restored = ScoringOutput.model_validate_json(output.model_dump_json())
+    assert restored.reuse_recommended == ["id2", "id3"]
+
+
+def test_is_reuse_recommended_identifies_strong_hold_ideas() -> None:
+    """_is_reuse_recommended should identify hold ideas with good fundamentals."""
+    # Import here to avoid import at top level issues
+    from cc_deep_research.content_gen.agents.backlog import _is_reuse_recommended
+    from cc_deep_research.content_gen.models import IdeaScores
+
+    # Strong hold idea — should be recommended for reuse
+    strong_hold = IdeaScores(
+        idea_id="id1",
+        hook_strength=4,
+        evidence_strength=4,
+        relevance=4,
+        total_score=20,
+        recommendation="hold",
+    )
+    assert _is_reuse_recommended(strong_hold) is True
+
+    # Weak hold idea — should not be recommended for reuse
+    weak_hold = IdeaScores(
+        idea_id="id2",
+        hook_strength=2,
+        evidence_strength=2,
+        relevance=3,
+        total_score=12,
+        recommendation="hold",
+    )
+    assert _is_reuse_recommended(weak_hold) is False
+
+    # Strong produce_now — not relevant for reuse (already passing)
+    produce_now = IdeaScores(
+        idea_id="id3",
+        hook_strength=5,
+        evidence_strength=5,
+        relevance=5,
+        total_score=30,
+        recommendation="produce_now",
+    )
+    # Not a hold, so not checked for reuse in the normal flow
+    # but the function itself doesn't filter on recommendation
+    # (reuse logic filters on hold first, so this won't appear in reuse_recommended)
+    assert _is_reuse_recommended(produce_now) is True  # passes the signal check
+
+
+def test_apply_upside_gate_kills_low_upside_ideas() -> None:
+    """_apply_upside_gate should kill ideas with expected_upside below threshold."""
+    from cc_deep_research.content_gen.agents.backlog import _apply_upside_gate
+    from cc_deep_research.content_gen.models import IdeaScores
+
+    scores = [
+        IdeaScores(idea_id="id1", expected_upside=1, recommendation="produce_now", relevance=4),
+        IdeaScores(idea_id="id2", expected_upside=3, recommendation="hold", relevance=3),
+        IdeaScores(idea_id="id3", expected_upside=2, recommendation="produce_now", relevance=4),
+        IdeaScores(idea_id="id4", expected_upside=3, recommendation="kill", relevance=2),
+    ]
+    result = _apply_upside_gate(scores, min_upside=2)
+    assert result[0].recommendation == "kill"
+    assert result[0].kill_reason == "expected_upside 1 below minimum threshold 2"
+    assert result[1].recommendation == "hold"
+    assert result[2].recommendation == "kill"
+    assert result[3].recommendation == "kill"
+
+
+def test_apply_effort_tier_cap_downgrades_tier() -> None:
+    """_apply_effort_tier_cap should downgrade deep ideas when cap is lower."""
+    from cc_deep_research.content_gen.agents.backlog import _apply_effort_tier_cap
+    from cc_deep_research.content_gen.models import EffortTier, IdeaScores
+
+    scores = [
+        IdeaScores(idea_id="id1", effort_tier=EffortTier.DEEP, relevance=4),
+        IdeaScores(idea_id="id2", effort_tier=EffortTier.STANDARD, relevance=4),
+        IdeaScores(idea_id="id3", effort_tier=EffortTier.QUICK, relevance=4),
+        IdeaScores(idea_id="id4", effort_tier=EffortTier.DEEP, relevance=4),
+    ]
+    result = _apply_effort_tier_cap(scores, cap="standard")
+    assert result[0].effort_tier == EffortTier.STANDARD
+    assert result[1].effort_tier == EffortTier.STANDARD
+    assert result[2].effort_tier == EffortTier.QUICK
+    assert result[3].effort_tier == EffortTier.STANDARD
+
+
+def test_compute_effort_summary_counts_tiers() -> None:
+    """_compute_effort_summary should count ideas per effort tier."""
+    from cc_deep_research.content_gen.agents.backlog import _compute_effort_summary
+    from cc_deep_research.content_gen.models import EffortTier, IdeaScores
+
+    scores = [
+        IdeaScores(idea_id="id1", effort_tier=EffortTier.DEEP),
+        IdeaScores(idea_id="id2", effort_tier=EffortTier.STANDARD),
+        IdeaScores(idea_id="id3", effort_tier=EffortTier.QUICK),
+        IdeaScores(idea_id="id4", effort_tier=EffortTier.DEEP),
+        IdeaScores(idea_id="id5", effort_tier=EffortTier.STANDARD),
+    ]
+    summary = _compute_effort_summary(scores)
+    assert summary == {"quick": 1, "standard": 2, "deep": 2}
+
+
+def test_idea_scores_effort_tier_and_upside_fields() -> None:
+    """IdeaScores should carry effort_tier, expected_upside, and kill_reason."""
+    from cc_deep_research.content_gen.models import EffortTier, IdeaScores
+
+    score = IdeaScores(
+        idea_id="test1",
+        relevance=4,
+        novelty=4,
+        authority_fit=4,
+        production_ease=4,
+        evidence_strength=4,
+        hook_strength=4,
+        repurposing=4,
+        effort_tier=EffortTier.DEEP,
+        expected_upside=4,
+        kill_reason="weak evidence and weak hook",
+        recommendation="kill",
+    )
+    assert score.effort_tier == EffortTier.DEEP
+    assert score.expected_upside == 4
+    assert score.kill_reason == "weak evidence and weak hook"
+    restored = IdeaScores.model_validate_json(score.model_dump_json())
+    assert restored.effort_tier == EffortTier.DEEP
+    assert restored.expected_upside == 4
+    assert restored.kill_reason == "weak evidence and weak hook"
+
+
+def test_scoring_output_effort_summary_field() -> None:
+    """ScoringOutput should expose effort_summary dict."""
+    output = ScoringOutput(effort_summary={"quick": 2, "standard": 5, "deep": 1})
+    assert output.effort_summary == {"quick": 2, "standard": 5, "deep": 1}
+    restored = ScoringOutput.model_validate_json(output.model_dump_json())
+    assert restored.effort_summary == {"quick": 2, "standard": 5, "deep": 1}
+
+
+def test_content_type_profiles_defined() -> None:
+    """CONTENT_TYPE_PROFILES should contain expected content types."""
+    from cc_deep_research.content_gen.models import CONTENT_TYPE_PROFILES, ContentTypeProfile
+
+    assert "short_form_video" in CONTENT_TYPE_PROFILES
+    assert "newsletter" in CONTENT_TYPE_PROFILES
+    assert "article" in CONTENT_TYPE_PROFILES
+    assert "webinar" in CONTENT_TYPE_PROFILES
+    assert "launch_asset" in CONTENT_TYPE_PROFILES
+    assert "thread" in CONTENT_TYPE_PROFILES
+    assert "carousel" in CONTENT_TYPE_PROFILES
+
+    profile = CONTENT_TYPE_PROFILES["short_form_video"]
+    assert isinstance(profile, ContentTypeProfile)
+    assert profile.research_depth == "standard"
+    assert "visual_translation" not in profile.skip_stages
+
+
+def test_get_content_type_profile_fallback() -> None:
+    """get_content_type_profile should fall back to short_form_video for unknown types."""
+    from cc_deep_research.content_gen.models import get_content_type_profile
+
+    profile = get_content_type_profile("unknown_type")
+    assert profile.profile_key == "short_form_video"
+
+    specific = get_content_type_profile("newsletter")
+    assert specific.profile_key == "newsletter"
+    assert specific.research_depth == "light"
+    assert "visual_translation" in specific.skip_stages
+
+
+def test_scoring_output_content_type_profile_field() -> None:
+    """ScoringOutput should carry content_type_profile."""
+    output = ScoringOutput(content_type_profile="article")
+    assert output.content_type_profile == "article"
+    restored = ScoringOutput.model_validate_json(output.model_dump_json())
+    assert restored.content_type_profile == "article"
+
+
+def test_pipeline_candidate_content_type_profile_field() -> None:
+    """PipelineCandidate should carry optional content_type_profile."""
+    from cc_deep_research.content_gen.models import PipelineCandidate
+
+    candidate = PipelineCandidate(idea_id="id1", content_type_profile="webinar")
+    assert candidate.content_type_profile == "webinar"
+    restored = PipelineCandidate.model_validate_json(candidate.model_dump_json())
+    assert restored.content_type_profile == "webinar"
+
+
+def test_derive_pipeline_candidates_preserves_profile() -> None:
+    """_derive_pipeline_candidates should propagate content_type_profile to candidates."""
+    from cc_deep_research.content_gen.models import _derive_pipeline_candidates
+
+    candidates = _derive_pipeline_candidates(
+        selected_idea_id="id1",
+        shortlist=["id1", "id2"],
+        content_type_profile="newsletter",
+    )
+    assert len(candidates) == 2
+    assert candidates[0].content_type_profile == "newsletter"
+    assert candidates[1].content_type_profile == "newsletter"
 
 
 def test_scoring_output_roundtrip_with_shortlist() -> None:

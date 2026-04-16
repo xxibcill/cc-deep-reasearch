@@ -2,6 +2,7 @@ import axios from 'axios';
 import { dashboardRuntimeConfig } from '@/lib/runtime-config';
 import { getApiErrorMessage } from '@/lib/api';
 import type {
+  ApproveQCRequest,
   PipelineRunSummary,
   PipelineContext,
   StrategyMemory,
@@ -55,6 +56,7 @@ function emptyPipelineContext(summary: PipelineRunSummary): PipelineContext {
     current_stage: summary.current_stage,
     strategy: null,
     opportunity_brief: null,
+    run_constraints: null,
     backlog: null,
     scoring: null,
     shortlist: [],
@@ -64,9 +66,11 @@ function emptyPipelineContext(summary: PipelineRunSummary): PipelineContext {
     angles: null,
     research_pack: null,
     argument_map: null,
+    fact_risk_gate: null,
     scripting: null,
     visual_plan: null,
     production_brief: null,
+    execution_brief: null,
     packaging: null,
     qc_gate: null,
     publish_items: [],
@@ -74,6 +78,7 @@ function emptyPipelineContext(summary: PipelineRunSummary): PipelineContext {
     performance: null,
     iteration_state: null,
     stage_traces: [],
+    lane_contexts: [],
   };
 }
 
@@ -147,9 +152,9 @@ export async function resumePipeline(
 // QC endpoints
 // ---------------------------------------------------------------------------
 
-export async function approveQC(pipelineId: string): Promise<void> {
+export async function approveQC(pipelineId: string, req?: ApproveQCRequest): Promise<void> {
   try {
-    await contentGenClient.post(`/qc/${pipelineId}/approve`);
+    await contentGenClient.post(`/qc/${pipelineId}/approve`, req ?? {});
   } catch (error) {
     throw new Error(getApiErrorMessage(error, 'Failed to approve QC.'));
   }

@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field, computed_field, field_validator, model_va
 
 from cc_deep_research.models.search import QueryProvenance
 
-CONTRACT_VERSION = "1.7.0"
+CONTRACT_VERSION = "1.8.0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,35 +122,51 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     ),
     "generate_angles": ContentGenStageContract(
         stage_name="generate_angles",
-        prompt_module="prompts/angle.py",
-        contract_version="1.1.0",
-        parser_location="agents/angle.py::_parse_angle_options",
-        output_model="AngleOutput",
-        format_notes="Repeated '---' blocks plus trailing best-angle summary fields.",
+        prompt_module="prompts/thesis.py",
+        contract_version="2.0.0",
+        parser_location="agents/thesis.py::_parse_thesis_artifact",
+        output_model="ThesisArtifact",
+        format_notes=(
+            "P3-T2: This stage produces a unified thesis artifact that combines "
+            "angle selection with argument design in one pass. The output includes "
+            "selected angle fields (target_audience, viewer_problem, core_promise, etc.) "
+            "alongside the thesis structure (thesis, audience_belief_to_challenge, "
+            "core_mechanism, proof_anchors, safe_claims, beat_claim_plan, etc.). "
+            "Repeated '---' blocks for proof_anchors, counterarguments, claims, and beats. "
+            "Scalar fields for angle metadata and thesis core."
+        ),
         required_fields=(
+            "angle_id",
             "target_audience",
             "viewer_problem",
             "core_promise",
             "primary_takeaway",
+            "thesis",
+            "audience_belief_to_challenge",
+            "core_mechanism",
         ),
         expected_sections=(
-            "lens",
-            "format",
-            "tone",
-            "cta",
-            "why_this_version_should_exist",
-            "Best angle_id",
-            "Selection reasoning",
+            "proof_anchors",
+            "counterarguments",
+            "safe_claims",
+            "unsafe_claims",
+            "beat_claim_plan",
+            "selection_reasoning",
+            "what_this_contributes",
+            "genericity_flags",
+            "differentiation_stategy",
         ),
         failure_mode="fail_fast",
     ),
     "build_research_pack": ContentGenStageContract(
         stage_name="build_research_pack",
         prompt_module="prompts/research_pack.py",
-        contract_version="1.2.0",
+        contract_version="1.3.0",
         parser_location="agents/research_pack.py::_parse_research_pack",
         output_model="ResearchPack",
         format_notes=(
+            "P3-T1: Research depth routing metadata (research_depth_routing, research_mode) "
+            "is attached to the pack output for pipeline traceability. "
             "Structured findings/claims/flag blocks reference source_ids from the "
             "prompt-provided source catalog; sources are pre-sorted by quality_rank "
             "and carry authority/directness/freshness signals (Task 16)."
@@ -163,33 +179,36 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
             "uncertainty_flags",
             "assets_needed",
             "research_stop_reason",
+            "research_depth_routing",
+            "research_mode",
         ),
         failure_mode="tolerant",
     ),
     "build_argument_map": ContentGenStageContract(
         stage_name="build_argument_map",
         prompt_module="prompts/argument_map.py",
-        contract_version="1.0.0",
+        contract_version="1.1.0",
         parser_location="agents/argument_map.py::_parse_argument_map",
         output_model="ArgumentMap",
         format_notes=(
-            "Scalar thesis fields followed by repeated '---' blocks for proof_anchors, "
-            "counterarguments, safe_claims, unsafe_claims, and beat_claim_plan. "
-            "Beat and claim records reference explicit proof_id/claim_id identifiers."
+            "P3-T2: DEPRECATED - Argument map is now produced as part of ThesisArtifact "
+            "in the generate_angles stage. This stage is kept for backward compatibility "
+            "and populates argument_map field from thesis_artifact when available. "
+            "The unified thesis artifact combines angle selection with argument design."
         ),
         required_fields=(
             "thesis",
             "audience_belief_to_challenge",
             "core_mechanism",
-            "proof_anchors",
         ),
         expected_sections=(
+            "proof_anchors",
             "counterarguments",
             "safe_claims",
             "unsafe_claims",
             "beat_claim_plan",
         ),
-        failure_mode="fail_fast",
+        failure_mode="tolerant",
     ),
     "run_scripting": ContentGenStageContract(
         stage_name="run_scripting",
@@ -264,10 +283,10 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "packaging": ContentGenStageContract(
         stage_name="packaging",
         prompt_module="prompts/packaging.py",
-        contract_version="1.0.0",
+        contract_version="1.1.0",
         parser_location="agents/packaging.py::_parse_platform_packages",
         output_model="PackagingOutput",
-        format_notes="Repeated '---' platform blocks with scalar fields and '-' list sections.",
+        format_notes="P4-T1: Early packaging signals (target_channel, content_type_hint) added to PlatformPackage. PackagingOutput now includes draft_hooks and early_packaging_signals for channel-aware co-design.",
         required_fields=("platform", "primary_hook", "caption"),
         expected_sections=(
             "alternate_hooks",
@@ -277,6 +296,8 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
             "pinned_comment",
             "cta",
             "version_notes",
+            "target_channel",
+            "content_type_hint",
         ),
         failure_mode="fail_fast",
     ),
@@ -351,6 +372,77 @@ class AngleDefinition(BaseModel):
     content_type: str
     core_tension: str
     why_it_works: str = ""
+
+
+class EarlyPackagingSignals(BaseModel):
+    """P4-T1: Channel-aware packaging signals captured early to co-design draft with packaging.
+
+    These signals are captured from the angle/channel selection stage and inform
+    the packaging generator so hook choices and draft structure can align with
+    channel expectations from the start.
+    """
+
+    target_channel: str = Field(
+        default="",
+        description="Primary distribution channel hint (e.g., 'shorts', 'reels', 'feed', 'twitter')",
+    )
+    content_type: str = Field(
+        default="",
+        description="Content type hint (e.g., 'contrarian', 'tutorial', 'story', 'insight')",
+    )
+    tone_hint: str = Field(
+        default="",
+        description="Tone guidance for packaging (e.g., 'conversational', 'urgent', 'story-driven')",
+    )
+    format_constraints: list[str] = Field(
+        default_factory=list,
+        description="Format constraints from channel (e.g., '60s max', 'vertical only', 'no product')",
+    )
+    cta_hint: str = Field(
+        default="",
+        description="Call-to-action hint derived from angle or channel best practices",
+    )
+
+
+class DerivativeOpportunity(BaseModel):
+    """P4-T2: A reuse or derivative opportunity derived from an approved draft."""
+
+    idea_id: str = Field(default_factory=lambda: f"deriv_{uuid4().hex[:8]}")
+    source_idea_id: str = Field(
+        default="",
+        description="The idea_id of the approved argument this derives from",
+    )
+    derivative_type: Literal[
+        "alternate_hook",
+        "quote_card",
+        "thread_variant",
+        "newsletter_snippet",
+        "follow_up_short",
+        "clip_reel",
+        "cta_variation",
+        "audience_variant",
+        "platform_adaptation",
+    ] = ""
+    title: str = ""
+    summary: str = Field(
+        default="",
+        description="Brief description of the derivative opportunity",
+    )
+    target_channel: str = Field(
+        default="",
+        description="Recommended channel/platform for this derivative",
+    )
+    reuse_value: str = Field(
+        default="",
+        description="Why this derivative is worth producing (e.g., 'high-performing format', 'new audience segment')",
+    )
+    proof_points_to_reuse: list[str] = Field(
+        default_factory=list,
+        description="Proof anchor IDs from the source argument that apply here",
+    )
+    status: Literal["pending", "planned", "in_production", "published"] = "pending"
+    created_at: str = ""
+    notes: str = ""
 
 
 class ScriptStructure(BaseModel):
@@ -889,6 +981,10 @@ class StrategyMemory(BaseModel):
     past_losers: list[ContentExample] = Field(default_factory=list)
     # Task 20: Performance-derived guidance
     performance_guidance: StrategyPerformanceGuidance = Field(default_factory=StrategyPerformanceGuidance)
+    # P7-T2: Version history for rule changes
+    rule_version_history: RuleVersionHistory = Field(default_factory=lambda: RuleVersionHistory())
+    # P7-T3: Operating fitness metrics
+    operating_fitness: OperatingFitnessMetrics = Field(default_factory=lambda: OperatingFitnessMetrics())
 
     @field_validator("signature_frameworks", mode="before")
     @classmethod
@@ -961,6 +1057,244 @@ class OpportunityBrief(BaseModel):
         default_factory=list,
         description="Change log entries describing what was revised",
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 01 - Run Constraints (per-run variables)
+# ---------------------------------------------------------------------------
+
+
+class EffortTier(StrEnum):
+    """Effort/complexity tier for a content run.
+
+    This determines how much iteration and refinement the pipeline applies.
+    """
+
+    QUICK = "quick"  # Minimal iteration, fast turnaround
+    STANDARD = "standard"  # Normal iteration, standard quality bar
+    DEEP = "deep"  # Full iteration, highest quality bar
+
+
+# P5-T1: Production and visual complexity enums
+class ProductionComplexity(StrEnum):
+    """Production planning complexity level."""
+
+    MINIMAL = "minimal"  # Light assets: talking heads, screen recordings
+    STANDARD = "standard"  # Regular shorts with some B-roll and setup
+    PREMIUM = "premium"  # Complex: multi-location, props, multiple setups
+
+
+class VisualComplexity(StrEnum):
+    """Visual planning complexity level."""
+
+    NONE = "none"  # No visual planning needed (pure text/audio formats)
+    LIGHT = "light"  # Minimal visual notes, basic shot suggestions
+    STANDARD = "standard"  # Full beat-by-beat visual plan
+    RICH = "rich"  # Detailed visual with multiple options per beat
+
+
+# P2-T3: Content-type branching profiles
+class ContentTypeProfile(BaseModel):
+    """Depth profile for one content type.
+
+    Determines how much research, drafting, production, and packaging
+    depth is required. Each stage respects the profile's skip conditions.
+    """
+
+    profile_key: str = ""  # e.g., "short_form", "newsletter", "article"
+    research_depth: Literal["none", "light", "standard", "deep"] = "standard"
+    drafting_depth: Literal["outline", "draft", "polished"] = "draft"
+    production_depth: Literal["minimal", "standard", "premium"] = "standard"
+    # P5-T1: Visual complexity determines depth of visual translation planning
+    visual_complexity: VisualComplexity = VisualComplexity.STANDARD
+    packaging_depth: Literal["minimal", "standard", "full"] = "standard"
+    # P5-T1: When True, use combined execution brief instead of separate visual + production
+    use_combined_execution_brief: bool = False
+    skip_stages: list[str] = Field(
+        default_factory=list,
+        description="Stage names to skip for this content type",
+    )
+    required_artifacts: list[str] = Field(
+        default_factory=list,
+        description="Stage outputs that must be present for this type",
+    )
+
+
+# P2-T3: Known content type profiles
+CONTENT_TYPE_PROFILES: dict[str, ContentTypeProfile] = {
+    "short_form_video": ContentTypeProfile(
+        profile_key="short_form_video",
+        research_depth="standard",
+        drafting_depth="polished",
+        production_depth="standard",
+        visual_complexity=VisualComplexity.STANDARD,
+        packaging_depth="standard",
+        use_combined_execution_brief=False,
+        skip_stages=[],
+        required_artifacts=["research_pack", "script", "visual_plan", "production_brief", "packaging"],
+    ),
+    "newsletter": ContentTypeProfile(
+        profile_key="newsletter",
+        research_depth="light",
+        drafting_depth="draft",
+        production_depth="minimal",
+        visual_complexity=VisualComplexity.NONE,
+        packaging_depth="minimal",
+        use_combined_execution_brief=True,
+        skip_stages=["visual_translation", "production_brief"],
+        required_artifacts=["research_pack", "script", "packaging"],
+    ),
+    "article": ContentTypeProfile(
+        profile_key="article",
+        research_depth="deep",
+        drafting_depth="polished",
+        production_depth="minimal",
+        visual_complexity=VisualComplexity.NONE,
+        packaging_depth="minimal",
+        use_combined_execution_brief=True,
+        skip_stages=["visual_translation", "production_brief"],
+        required_artifacts=["research_pack", "argument_map", "script", "packaging"],
+    ),
+    "webinar": ContentTypeProfile(
+        profile_key="webinar",
+        research_depth="deep",
+        drafting_depth="polished",
+        production_depth="premium",
+        visual_complexity=VisualComplexity.RICH,
+        packaging_depth="full",
+        use_combined_execution_brief=False,
+        skip_stages=[],
+        required_artifacts=["research_pack", "argument_map", "script", "visual_plan", "production_brief", "packaging"],
+    ),
+    "launch_asset": ContentTypeProfile(
+        profile_key="launch_asset",
+        research_depth="standard",
+        drafting_depth="polished",
+        production_depth="premium",
+        visual_complexity=VisualComplexity.RICH,
+        packaging_depth="full",
+        use_combined_execution_brief=False,
+        skip_stages=[],
+        required_artifacts=["research_pack", "angle", "script", "visual_plan", "production_brief", "packaging"],
+    ),
+    "thread": ContentTypeProfile(
+        profile_key="thread",
+        research_depth="light",
+        drafting_depth="draft",
+        production_depth="minimal",
+        visual_complexity=VisualComplexity.NONE,
+        packaging_depth="minimal",
+        use_combined_execution_brief=True,
+        skip_stages=["visual_translation", "production_brief"],
+        required_artifacts=["research_pack", "script", "packaging"],
+    ),
+    "carousel": ContentTypeProfile(
+        profile_key="carousel",
+        research_depth="standard",
+        drafting_depth="polished",
+        production_depth="standard",
+        visual_complexity=VisualComplexity.LIGHT,
+        packaging_depth="standard",
+        use_combined_execution_brief=True,
+        skip_stages=["production_brief"],
+        required_artifacts=["research_pack", "script", "visual_plan", "packaging"],
+    ),
+    "短视频": ContentTypeProfile(
+        profile_key="短视频",
+        research_depth="standard",
+        drafting_depth="polished",
+        production_depth="standard",
+        visual_complexity=VisualComplexity.STANDARD,
+        packaging_depth="standard",
+        use_combined_execution_brief=False,
+        skip_stages=[],
+        required_artifacts=["research_pack", "script", "visual_plan", "production_brief", "packaging"],
+    ),
+}
+
+
+def get_content_type_profile(content_type: str) -> ContentTypeProfile:
+    """Resolve content type string to profile, with fallback to short_form_video."""
+    return CONTENT_TYPE_PROFILES.get(content_type, CONTENT_TYPE_PROFILES.get("short_form_video"))
+
+
+class RunConstraints(BaseModel):
+    """Per-run constraint variables that change each content cycle.
+
+    These fields capture the run-specific decisions that would otherwise
+    be embedded in the opportunity brief. Separating them makes strategy
+    truly evergreen and allows operators to set content type and effort
+    tier before opportunity scoring begins.
+
+    Strategy memory provides the durable defaults; RunConstraints provides
+    the per-run overrides.
+    """
+
+    # Content type for this run (e.g., "short-form video", "carousel", "thread")
+    content_type: str = Field(
+        default="",
+        description="The content format for this run.",
+    )
+    # Effort/complexity tier
+    effort_tier: EffortTier = Field(
+        default=EffortTier.STANDARD,
+        description="Effort tier determining iteration depth and SLA.",
+    )
+    # Who owns this run (role or name)
+    owner: str = Field(
+        default="",
+        description="Who is responsible for this content run.",
+    )
+    # Channel or platform goal for this run
+    channel_goal: str = Field(
+        default="",
+        description="Primary channel or distribution goal for this content.",
+    )
+    # Success target for this specific run
+    success_target: str = Field(
+        default="",
+        description="What success looks like for this content cycle.",
+    )
+    # Target platform(s) for this run (overrides strategy default)
+    target_platforms: list[str] = Field(
+        default_factory=list,
+        description="Specific platforms to optimize for (empty = use strategy defaults).",
+    )
+    # Whether to use iterative drafting (for deep tier)
+    use_iterative_loop: bool = Field(
+        default=True,
+        description="Whether to enable iterative drafting with quality evaluation.",
+    )
+    # Maximum iterations allowed (None = use config default)
+    max_iterations: int | None = Field(
+        default=None,
+        description="Override for max iterations (None = use config default).",
+    )
+    # P3-T1: Operator override for research depth routing
+    research_depth_override: Literal["", "light", "standard", "deep"] = Field(
+        default="",
+        description="Optional operator-selected research depth that overrides ROI-based routing.",
+    )
+    research_override_reason: str = Field(
+        default="",
+        description="Why the operator overrode the default research depth routing.",
+    )
+
+    @model_validator(mode="after")
+    def validate_content_type(self) -> RunConstraints:
+        """Warn and fall back if content_type is not a known profile."""
+        if self.content_type and self.content_type not in CONTENT_TYPE_PROFILES:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "Unknown content_type %r, falling back to short_form_video. "
+                "Known types: %s",
+                self.content_type,
+                ", ".join(sorted(CONTENT_TYPE_PROFILES.keys())),
+            )
+            self.content_type = "short_form_video"
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -1160,6 +1494,21 @@ class IdeaScores(BaseModel):
     hook_strength: int = Field(default=0, ge=1, le=5)
     repurposing: int = Field(default=0, ge=1, le=5)
     opportunity_fit: int = Field(default=1, ge=1, le=5, description="How well this idea fits opportunity brief constraints")
+    # P2-T2: Effort and ROI gates
+    effort_tier: EffortTier = Field(
+        default=EffortTier.STANDARD,
+        description="Estimated effort/complexity tier for producing this idea",
+    )
+    expected_upside: int = Field(
+        default=3,
+        ge=1,
+        le=5,
+        description="Expected upside potential (1-5) — used for ROI gate",
+    )
+    kill_reason: str = Field(
+        default="",
+        description="Why this idea was recommended for kill (fast-fail rationale)",
+    )
     total_score: int = 0
     recommendation: str = "hold"  # produce_now | hold | kill
     reason: str = ""
@@ -1181,6 +1530,20 @@ class ScoringOutput(BaseModel):
     active_candidates: list[PipelineCandidate] = Field(default_factory=list)
     hold: list[str] = Field(default_factory=list)  # idea_ids
     killed: list[str] = Field(default_factory=list)  # idea_ids
+    reuse_recommended: list[str] = Field(
+        default_factory=list,
+        description="idea_ids of hold ideas that are recommended for future reuse when conditions improve",
+    )
+    # P2-T2: Effort distribution summary across scored ideas
+    effort_summary: dict[str, int] = Field(
+        default_factory=dict,
+        description="Count of ideas per effort tier: {'quick': N, 'standard': N, 'deep': N}",
+    )
+    # P2-T3: Content-type profile that applies to all ideas in this scoring run
+    content_type_profile: str = Field(
+        default="",
+        description="Profile key (e.g., 'short_form_video') derived from RunConstraints.content_type",
+    )
     is_degraded: bool = False
     degradation_reason: str = ""
 
@@ -1191,6 +1554,7 @@ class ScoringOutput(BaseModel):
             shortlist=self.shortlist,
             runner_up_idea_ids=self.runner_up_idea_ids,
             existing_candidates=self.active_candidates,
+            content_type_profile=self.content_type_profile,
         )
         if not self.runner_up_idea_ids:
             self.runner_up_idea_ids = [
@@ -1212,6 +1576,11 @@ class PipelineCandidate(BaseModel):
     idea_id: str
     role: Literal["primary", "runner_up"] = "primary"
     status: Literal["selected", "runner_up", "in_production", "published"] = "selected"
+    # P2-T3: Content-type profile for this lane
+    content_type_profile: str = Field(
+        default="",
+        description="Profile key for branching decisions in this lane",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1254,6 +1623,133 @@ class AngleOutput(BaseModel):
     angle_options: list[AngleOption] = Field(default_factory=list)
     selected_angle_id: str = ""
     selection_reasoning: str = ""
+
+
+# ---------------------------------------------------------------------------
+# P3-T2: Unified Thesis Artifact (replaces separate angle + argument map)
+# ---------------------------------------------------------------------------
+
+
+class ThesisArtifact(BaseModel):
+    """P3-T2: Unified thesis artifact that combines angle selection with argument design.
+
+    This artifact replaces the previous two-stage flow of:
+    1. generate_angles -> AngleOutput (with angle options + selection)
+    2. build_argument_map -> ArgumentMap (with thesis, claims, beats)
+
+    Now produced in a single stage with full traceability between the
+    selected editorial angle and its supporting argument structure.
+    """
+
+    idea_id: str = ""
+
+    # === Selected Angle Fields (from AngleOption, embedded directly) ===
+    angle_id: str = Field(default_factory=lambda: uuid4().hex[:8])
+    target_audience: str = ""
+    viewer_problem: str = ""
+    core_promise: str = ""
+    primary_takeaway: str = ""
+    lens: str = ""
+    format: str = ""
+    tone: str = ""
+    cta: str = ""
+    why_this_version_should_exist: str = ""
+    differentiation_summary: str = Field(
+        default="",
+        description="Why this angle is distinct from the baseline market framing for this topic",
+    )
+    genericity_risks: list[str] = Field(
+        default_factory=list,
+        description="Known failure modes: clichéd framing, interchangeable takeaways, generic advice",
+    )
+    market_framing_challenged: str = Field(
+        default="",
+        description="What common/repeated market framing this angle reframes or contradicts",
+    )
+
+    # === Thesis Fields (from ArgumentMap, carry the chosen angle and core claim) ===
+    thesis: str = ""
+    audience_belief_to_challenge: str = ""
+    core_mechanism: str = ""
+
+    # === Support Structure (from ArgumentMap) ===
+    proof_anchors: list[ArgumentProofAnchor] = Field(default_factory=list)
+    counterarguments: list[ArgumentCounterargument] = Field(default_factory=list)
+    safe_claims: list[ArgumentClaim] = Field(default_factory=list)
+    unsafe_claims: list[ArgumentClaim] = Field(default_factory=list)
+    beat_claim_plan: list[ArgumentBeatClaim] = Field(default_factory=list)
+
+    # === Differentiation (from ArgumentMap) ===
+    what_this_contributes: str = Field(
+        default="",
+        description="What the selected angle contributes beyond consensus or standard advice",
+    )
+    genericity_flags: list[str] = Field(
+        default_factory=list,
+        description="Specific generic or clichéd framings this script must avoid",
+    )
+    differentiation_stategy: str = Field(
+        default="",
+        description="The editorial strategy for standing out from market-standard content on this topic",
+    )
+
+    # === Selection metadata ===
+    selection_reasoning: str = Field(
+        default="",
+        description="Why this angle/thesis was chosen over alternatives",
+    )
+
+    @model_validator(mode="after")
+    def _validate_references(self) -> ThesisArtifact:
+        """Validate that all ID references are consistent within the artifact."""
+        proof_ids = _ensure_unique_ids(
+            self.proof_anchors,
+            id_attr="proof_id",
+            label="proof_anchors",
+        )
+        counterargument_ids = _ensure_unique_ids(
+            self.counterarguments,
+            id_attr="counterargument_id",
+            label="counterarguments",
+        )
+        claim_ids = _ensure_unique_ids(
+            [*self.safe_claims, *self.unsafe_claims],
+            id_attr="claim_id",
+            label="claims",
+        )
+
+        for claim in [*self.safe_claims, *self.unsafe_claims]:
+            _ensure_known_ids(
+                claim.supporting_proof_ids,
+                valid_ids=proof_ids,
+                label=f"claim '{claim.claim_id}' supporting_proof_ids",
+            )
+
+        for counterargument in self.counterarguments:
+            _ensure_known_ids(
+                counterargument.response_proof_ids,
+                valid_ids=proof_ids,
+                label=f"counterargument '{counterargument.counterargument_id}' response_proof_ids",
+            )
+
+        for beat in self.beat_claim_plan:
+            _ensure_known_ids(
+                beat.claim_ids,
+                valid_ids=claim_ids,
+                label=f"beat '{beat.beat_id}' claim_ids",
+            )
+            _ensure_known_ids(
+                beat.proof_anchor_ids,
+                valid_ids=proof_ids,
+                label=f"beat '{beat.beat_id}' proof_anchor_ids",
+            )
+            _ensure_known_ids(
+                beat.counterargument_ids,
+                valid_ids=counterargument_ids,
+                label=f"beat '{beat.beat_id}' counterargument_ids",
+            )
+
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -1356,6 +1852,201 @@ class RetrievalMode(StrEnum):
     CONTRARIAN = "contrarian"  # Emphasize counterevidence and pushback
 
 
+class ResearchDepthTier(StrEnum):
+    """Research depth investment level tied to upside and claim risk.
+
+    P3-T1: Routes research time and validation depth to expected upside
+    and fact risk of the idea instead of using one default level.
+    """
+
+    LIGHT = "light"  # Minimal search, fast turnaround — low-upside or low-risk ideas
+    STANDARD = "standard"  # Normal search depth — medium-upside ideas
+    DEEP = "deep"  # Expanded search, more sources — high-upside or high-risk ideas
+    OVERRIDE = "override"  # Operator-specified depth, bypasses ROI routing
+
+
+class ResearchDepthRouting(BaseModel):
+    """P3-T1: Routing decision for research depth with traceability."""
+
+    tier: ResearchDepthTier = Field(
+        default=ResearchDepthTier.STANDARD,
+        description="The depth tier assigned to this research run",
+    )
+    routing_basis: str = Field(
+        default="",
+        description="Why this tier was selected: 'effort_tier', 'expected_upside', 'claim_risk', 'operator_override'",
+    )
+    effort_tier_source: str = Field(
+        default="",
+        description="The EffortTier value from scoring that influenced routing",
+    )
+    expected_upside_source: int = Field(
+        default=0,
+        ge=0,
+        le=5,
+        description="The expected_upside score from scoring (0 means unknown/not yet scored)",
+    )
+    claim_risk_signals: list[str] = Field(
+        default_factory=list,
+        description="Identified risk signals that bumped tier: 'high_dispute', 'no_sources', 'weak_evidence', etc.",
+    )
+    operator_override: bool = Field(
+        default=False,
+        description="True when operator explicitly overrode the ROI-based routing",
+    )
+    override_reason: str = Field(
+        default="",
+        description="Operator's stated reason for override",
+    )
+
+
+# ---------------------------------------------------------------------------
+# P3-T3: Early Fact-Risk And Uncertainty Gate
+# ---------------------------------------------------------------------------
+
+
+class ClaimStatus(StrEnum):
+    """P3-T3: Classification of a claim's support status."""
+
+    SUPPORTED = "supported"  # Has proof anchor backing from research
+    WEAK = "weak"  # Has some evidence but not strong enough for confident delivery
+    MISSING = "missing"  # Claim made but no supporting proof found
+    DISPUTED = "disputed"  # Counterevidence or conflicting sources exist
+    ACCEPTABLE_WITH_DISCLOSURE = "acceptable_with_disclosure"  # Known uncertainty but operator-approved
+
+
+class FactRiskDecision(StrEnum):
+    """P3-T3: Gate decision for an idea's path through the pipeline."""
+
+    APPROVED = "approved"  # All critical claims supported, can proceed to drafting
+    HOLD = "hold"  # Significant unsupported claims — hold for proof before drafting
+    KILL = "kill"  # Critical claims disputed or missing — kill before drafting
+    PROCEED_WITH_UNCERTAINTY = "proceed_with_uncertainty"  # Known uncertainty acceptable with disclosure
+
+
+class FactRiskGate(BaseModel):
+    """P3-T3: Early gate output after thesis artifact, before drafting.
+
+    Classifies all claims and makes a pipeline routing decision.
+    Stops unsupported ideas before drafting starts.
+    """
+
+    idea_id: str = ""
+    angle_id: str = ""
+    thesis: str = ""
+
+    # P3-T3: Per-claim classification
+    claim_statuses: list[ClaimStatus] = Field(
+        default_factory=list,
+        description="Status of each major claim in the thesis",
+    )
+
+    # P3-T3: Aggregate counts for review
+    supported_claims: list[str] = Field(
+        default_factory=list,
+        description="claim_ids or claim texts that are fully supported",
+    )
+    weak_claims: list[str] = Field(
+        default_factory=list,
+        description="claim_ids or claim texts with partial but insufficient evidence",
+    )
+    missing_claims: list[str] = Field(
+        default_factory=list,
+        description="claim_ids or claim texts with no supporting evidence",
+    )
+    disputed_claims: list[str] = Field(
+        default_factory=list,
+        description="claim_ids or claim texts with conflicting evidence",
+    )
+    acceptable_uncertainty_claims: list[str] = Field(
+        default_factory=list,
+        description="claim_ids or claim texts approved for delivery with known uncertainty",
+    )
+
+    # P3-T3: Gate decision
+    decision: FactRiskDecision = FactRiskDecision.HOLD
+
+    # P3-T3: Reason for the decision
+    decision_reason: str = Field(
+        default="",
+        description="Why this decision was made — key evidence or risk factors",
+    )
+
+    # P3-T3: What must be resolved before the hold can be cleared
+    hold_resolution_requirements: list[str] = Field(
+        default_factory=list,
+        description="What must be proven or clarified before moving to drafting",
+    )
+
+    # P3-T3: When proceeding with known uncertainty, what disclosure is required
+    required_disclosure: str = Field(
+        default="",
+        description="What the script must include as qualified/uncertain delivery",
+    )
+
+    # P3-T3: Known-uncertainty rules for this idea/angle
+    # When operator explicitly allows delivery with known gaps
+    uncertainty_policy: str = Field(
+        default="",
+        description="The policy that governs when delivery with uncertainty is acceptable",
+    )
+
+    # P3-T3: Trace of which proof anchors were checked and their status
+    proof_check_results: list[str] = Field(
+        default_factory=list,
+        description="Human-readable trace of which proof anchors were verified",
+    )
+
+
+class FactRiskGateResult(BaseModel):
+    """P3-T3: Result of a single idea's fact-risk gate evaluation."""
+
+    idea_id: str
+    decision: FactRiskDecision
+    decision_reason: str
+    supported_count: int = 0
+    weak_count: int = 0
+    missing_count: int = 0
+    disputed_count: int = 0
+    hold_resolution_requirements: list[str] = Field(default_factory=list)
+    required_disclosure: str = ""
+    uncertainty_policy: str = ""
+
+
+class FactRiskGateOutput(BaseModel):
+    """P3-T3: Collection of gate decisions for all ideas in a scoring run."""
+
+    gates: list[FactRiskGate] = Field(default_factory=list)
+    # Aggregate summary across all gated ideas
+    total_approved: int = 0
+    total_held: int = 0
+    total_killed: int = 0
+    total_proceed_with_uncertainty: int = 0
+
+
+class ProgressiveQCIssue(BaseModel):
+    """A quality issue detected before final release QC."""
+
+    issue_id: str = Field(default_factory=lambda: f"issue_{uuid4().hex[:8]}")
+    category: Literal["fact", "brand", "packaging", "execution"] = "fact"
+    summary: str = ""
+    severity: Literal["low", "medium", "high"] = "medium"
+    first_seen_stage: str = ""
+    is_resolved: bool = False
+    resolution_note: str = ""
+
+
+class ProgressiveQCCheckpoint(BaseModel):
+    """Lightweight QC pass attached to an earlier workflow phase."""
+
+    checkpoint_name: Literal["research", "draft", "execution"] = "research"
+    stage_name: str = ""
+    status: Literal["pass", "warning", "blocked"] = "pass"
+    summary: str = ""
+    issue_ids: list[str] = Field(default_factory=list)
+    created_at: str = ""
+
+
 class RetrievalDecision(BaseModel):
     """Single query decision from the retrieval planner."""
 
@@ -1368,7 +2059,11 @@ class RetrievalDecision(BaseModel):
 
 
 class RetrievalBudget(BaseModel):
-    """Explicit budget for bounding retrieval search volume."""
+    """Explicit budget for bounding retrieval search volume.
+
+    P3-T1: Core budget fields are used for all tiers; tier-specific overrides
+    are applied by the planner based on the ResearchDepthRouting decision.
+    """
 
     max_queries: int = Field(default=6, ge=1, le=50)
     max_sources: int = Field(default=12, ge=1, le=100)
@@ -1376,6 +2071,23 @@ class RetrievalBudget(BaseModel):
     stop_if_sources_seen: int | None = Field(default=None, description="Stop early if N sources already collected")
     stop_on_family_count: int | None = Field(
         default=None, description="Stop per family after N queries (for deep mode)"
+    )
+    # P3-T1: Tier-specific overrides — these replace the base fields when the tier is set
+    # Format: tier_name -> (max_queries, max_sources)
+    tier_overrides: dict[str, tuple[int, int]] = Field(
+        default_factory=lambda: {
+            "light": (3, 6),
+            "standard": (6, 12),
+            "deep": (12, 24),
+        },
+        description="Per-tier query and source budget overrides",
+    )
+    # P3-T1: Time budget in seconds — used for display and enforcement
+    time_budget_seconds: int = Field(
+        default=120,
+        ge=30,
+        le=600,
+        description="Estimated time budget for this research run",
     )
 
 
@@ -1385,6 +2097,11 @@ class RetrievalPlan(BaseModel):
     decisions: list[RetrievalDecision] = Field(default_factory=list)
     budget: RetrievalBudget = Field(default_factory=RetrievalBudget)
     mode: RetrievalMode = Field(default=RetrievalMode.BASELINE)
+    # P3-T1: Research depth routing for the pipeline
+    research_depth_routing: ResearchDepthRouting | None = Field(
+        default=None,
+        description="Routing decision that determines depth tier and time budget",
+    )
     research_hypotheses: list[str] = Field(default_factory=list)
     coverage_notes: list[str] = Field(default_factory=list)
     is_complete: bool = Field(default=False)
@@ -1505,6 +2222,16 @@ class ResearchPack(BaseModel):
     research_stop_reason: str = ""
     is_degraded: bool = False
     degradation_reason: str = ""
+    # P3-T1: Research depth routing metadata (which tier was used and why)
+    research_depth_routing: ResearchDepthRouting | None = Field(
+        default=None,
+        description="Depth routing decision for this research run",
+    )
+    # P3-T1: Retrieval mode used (baseline, deep, targeted, contrarian)
+    research_mode: str = Field(
+        default="",
+        description="RetrievalMode string used for this research run",
+    )
 
     @model_validator(mode="after")
     def _sync_structured_and_legacy_views(self) -> ResearchPack:
@@ -1866,6 +2593,144 @@ class ProductionBrief(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# P5-T2 & P5-T3: Combined Visual & Production Execution Brief
+# ---------------------------------------------------------------------------
+
+
+class MissingAssetDecision(StrEnum):
+    """How to handle a missing asset or dependency."""
+
+    DOWNGRADE = "downgrade"  # Use simpler fallback option
+    DELAY = "delay"  # Wait until asset is available
+    ALT_FORMAT = "alt_format"  # Switch to alternate format
+    SKIP = "skip"  # Skip this element entirely
+
+
+class AssetFallback(BaseModel):
+    """A fallback option for a missing asset or dependency."""
+
+    asset_name: str = Field(description="Name of the asset that might be missing")
+    fallback_option: str = Field(description="What to use instead")
+    decision: MissingAssetDecision = Field(
+        default=MissingAssetDecision.DOWNGRADE,
+        description="How to handle if this asset is unavailable",
+    )
+    decision_note: str = Field(
+        default="",
+        description="Why this decision was made",
+    )
+
+
+class VisualProductionExecutionBrief(BaseModel):
+    """Combined execution brief for formats that use use_combined_execution_brief=True.
+
+    P5-T2: Replaces separate visual_plan and production_brief for low/medium complexity formats.
+    P5-T3: Includes fallback planning and asset reuse tracking.
+
+    This model covers:
+    - Beat-to-visual mapping (from VisualPlanOutput)
+    - Production constraints (from ProductionBrief)
+    - Owner assignments for execution
+    - Shoot constraints and timing
+    - Fallback options for missing assets
+    - Asset reuse paths from existing library
+    """
+
+    idea_id: str = ""
+    # Beat-level visual execution (lightweight version)
+    beat_visuals: list[BeatVisual] = Field(
+        default_factory=list,
+        description="Simplified beat-to-visual mapping for execution",
+    )
+    # Production execution fields (from ProductionBrief)
+    location: str = Field(
+        default="",
+        description="Primary filming location",
+    )
+    location_fallback: str = Field(
+        default="",
+        description="Alternate location if primary is unavailable",
+    )
+    setup: str = Field(
+        default="",
+        description="Setup requirements and notes",
+    )
+    wardrobe: str = Field(
+        default="",
+        description="Wardrobe/appearance notes",
+    )
+    props: list[str] = Field(
+        default_factory=list,
+        description="Props needed for filming",
+    )
+    # P5-T3: Fallback props if primary props unavailable
+    prop_fallbacks: list[str] = Field(
+        default_factory=list,
+        description="Alternate prop options",
+    )
+    # Assets to prepare or source
+    assets_to_prepare: list[str] = Field(
+        default_factory=list,
+        description="Assets that need to be created or sourced",
+    )
+    # P5-T3: Existing assets that can be reused
+    existing_assets: list[str] = Field(
+        default_factory=list,
+        description="Assets from library that can be reused",
+    )
+    # P5-T3: Plan for how to reuse existing assets
+    asset_reuse_plan: str = Field(
+        default="",
+        description="How existing assets will be incorporated or adapted",
+    )
+    # Audio/video setup checks
+    audio_checks: list[str] = Field(default_factory=list)
+    battery_checks: list[str] = Field(default_factory=list)
+    storage_checks: list[str] = Field(default_factory=list)
+    # Pickup lines / B-roll to capture
+    pickup_lines_to_capture: list[str] = Field(
+        default_factory=list,
+        description="Specific lines or moments to capture for pickup",
+    )
+    # P5-T3: Visual fallback options (e.g., stock footage alternatives)
+    visual_fallbacks: list[str] = Field(
+        default_factory=list,
+        description="Alternate visuals if planned shots are not achievable",
+    )
+    # Backup/contingency plan
+    backup_plan: str = Field(
+        default="",
+        description="What to do if main plan fails",
+    )
+    # P5-T3: Missing asset decisions - explicit handling for each at-risk asset
+    missing_asset_decisions: list[AssetFallback] = Field(
+        default_factory=list,
+        description="How missing assets trigger downgrade, delay, or alternate-format decisions",
+    )
+    # Ownership and responsibilities
+    owner: str = Field(
+        default="",
+        description="Who is responsible for execution",
+    )
+    shoot_constraints: str = Field(
+        default="",
+        description="Time, equipment, or other constraints for the shoot",
+    )
+    # Complexity and planning depth tracking
+    planning_depth: Literal["light", "standard", "rich"] = Field(
+        default="standard",
+        description="How much planning detail was produced",
+    )
+    visual_complexity_used: VisualComplexity = Field(
+        default=VisualComplexity.STANDARD,
+        description="Visual complexity level that was applied",
+    )
+    # Degradation tracking
+    is_degraded: bool = False
+    degradation_reason: str = ""
+
+
+# ---------------------------------------------------------------------------
 # Pipeline stage 8: Packaging generator
 # ---------------------------------------------------------------------------
 
@@ -1883,6 +2748,15 @@ class PlatformPackage(BaseModel):
     pinned_comment: str = ""
     cta: str = ""
     version_notes: str = ""
+    # P4-T1: Channel-aware packaging signals
+    target_channel: str = Field(
+        default="",
+        description="Target channel/format hint (e.g., 'shorts', 'reels', 'feed') that guided this packaging",
+    )
+    content_type_hint: str = Field(
+        default="",
+        description="Content type that guided this packaging (e.g., 'contrarian', 'tutorial', 'story')",
+    )
 
 
 class PackagingOutput(BaseModel):
@@ -1890,11 +2764,32 @@ class PackagingOutput(BaseModel):
 
     idea_id: str = ""
     platform_packages: list[PlatformPackage] = Field(default_factory=list)
+    # P4-T1: Early packaging signals captured from hook/angle stage
+    # These guide packaging generation before the full script is written
+    draft_hooks: list[str] = Field(
+        default_factory=list,
+        description="Hook candidates considered during scripting, passed forward for packaging selection",
+    )
+    early_packaging_signals: EarlyPackagingSignals | None = Field(
+        default=None,
+        description="Channel format, content type, and target signals captured early to co-design draft with packaging",
+    )
 
 
 # ---------------------------------------------------------------------------
 # Pipeline stage 9: Human QC gate
 # ---------------------------------------------------------------------------
+
+
+class ReleaseState(StrEnum):
+    """P6-T2: Explicit release states for publish readiness.
+
+    Every asset must reach one of these states before entering the publish queue.
+    """
+
+    BLOCKED = "blocked"  # QC found issues that block publication
+    APPROVED = "approved"  # QC passed, no known risks
+    APPROVED_WITH_KNOWN_RISKS = "approved_with_known_risks"  # Operator accepted known risks
 
 
 class HumanQCGate(BaseModel):
@@ -1919,6 +2814,25 @@ class HumanQCGate(BaseModel):
     success_criteria_results: list[str] = Field(
         default_factory=list,
         description="Per-criterion evaluation: whether each planned success criterion is met or unmet",
+    )
+    # P6-T2: Explicit release state replaces boolean approval
+    release_state: ReleaseState = ReleaseState.BLOCKED
+    # P6-T3: Override tracking when operator explicitly overrides a blocked gate
+    override_actor: str = Field(
+        default="",
+        description="Who overrode the gate (operator name or 'system')",
+    )
+    override_reason: str = Field(
+        default="",
+        description="Why the override was applied — the operator's justification",
+    )
+    override_timestamp: str = Field(
+        default="",
+        description="ISO timestamp of when the override was applied",
+    )
+    issue_origin_summary: list[str] = Field(
+        default_factory=list,
+        description="Summary of where major issues first appeared in earlier QC checkpoints.",
     )
 
 
@@ -2133,6 +3047,15 @@ class ScriptingRunResult(BaseModel):
     iterations: ScriptingIterations | None = None
 
 
+class DraftLaneDecision(StrEnum):
+    """P4-T3: Draft lane decision for publish-now vs hold-for-proof path."""
+
+    PUBLISH_NOW = "publish_now"  # Publish with known uncertainty, fast path
+    HOLD_FOR_PROOF = "hold_for_proof"  # Hold for stronger proof before publishing
+    RECYCLE_FOR_REUSE = "recycle_for_reuse"  # Recycle to backlog for derivative/reuse
+    KILL = "kill"  # Abandon this draft
+
+
 class PublishItem(BaseModel):
     """Single publish queue entry (spec stage 10)."""
 
@@ -2145,6 +3068,32 @@ class PublishItem(BaseModel):
     cross_post_targets: list[str] = Field(default_factory=list)
     first_30_minute_engagement_plan: str = ""
     status: str = "scheduled"  # scheduled | published
+    # P4-T3: Publish-now vs hold decision tracking
+    draft_decision: DraftLaneDecision | None = Field(
+        default=None,
+        description="The draft lane decision that led to this publish item",
+    )
+    decision_reason: str = Field(
+        default="",
+        description="Why this decision was made (uncertainty status, risk level, etc.)",
+    )
+    claim_status_summary: str = Field(
+        default="",
+        description="Summary of claim status at time of decision (e.g., '3 supported, 1 weak')",
+    )
+    # P6-T3: Override tracking when operator approved with known risks
+    override_actor: str = Field(
+        default="",
+        description="Who overrode the gate (operator name or 'system')",
+    )
+    override_reason: str = Field(
+        default="",
+        description="Why the override was applied — the operator's justification",
+    )
+    override_timestamp: str = Field(
+        default="",
+        description="ISO timestamp of when the override was applied",
+    )
 
 
 class PipelineLaneContext(BaseModel):
@@ -2154,14 +3103,54 @@ class PipelineLaneContext(BaseModel):
     role: Literal["primary", "runner_up"] = "primary"
     status: Literal["selected", "runner_up", "in_production", "published"] = "selected"
     last_completed_stage: int = -1
+    # P3-T2: Unified thesis artifact (replaces separate angles + argument_map)
+    thesis_artifact: ThesisArtifact | None = None
+    # Deprecated: angles and argument_map are now merged into thesis_artifact
     angles: AngleOutput | None = None
     research_pack: ResearchPack | None = None
     argument_map: ArgumentMap | None = None
     scripting: ScriptingContext | None = None
     visual_plan: VisualPlanOutput | None = None
     production_brief: ProductionBrief | None = None
+    # P5-T2: Combined execution brief for low/medium complexity formats
+    execution_brief: VisualProductionExecutionBrief | None = Field(
+        default=None,
+        description="Combined visual and production brief for formats using use_combined_execution_brief=True",
+    )
     packaging: PackagingOutput | None = None
     qc_gate: HumanQCGate | None = None
+    # P3-T3: Early fact-risk gate decision (after thesis, before drafting)
+    fact_risk_gate: FactRiskGate | None = Field(
+        default=None,
+        description="Early gate output after thesis artifact, before drafting",
+    )
+    progressive_qc_issues: list[ProgressiveQCIssue] = Field(
+        default_factory=list,
+        description="Quality issues detected before final QC, with their first-seen stage.",
+    )
+    progressive_qc_checkpoints: list[ProgressiveQCCheckpoint] = Field(
+        default_factory=list,
+        description="Research, draft, and execution QC checkpoints captured before final QC.",
+    )
+    # P4-T1: Early packaging signals captured from angle/channel stage
+    early_packaging_signals: EarlyPackagingSignals | None = Field(
+        default=None,
+        description="Channel format, content type, and target signals captured early to co-design draft with packaging",
+    )
+    # P4-T2: Derivative and reuse opportunities from approved draft
+    derivative_opportunities: list[DerivativeOpportunity] = Field(
+        default_factory=list,
+        description="Reuse and derivative opportunities extracted from this draft",
+    )
+    # P4-T3: Publish-now vs hold-for-proof decision
+    draft_decision: DraftLaneDecision | None = Field(
+        default=None,
+        description="Draft lane decision: publish now, hold for proof, recycle for reuse, or kill",
+    )
+    decision_reason: str = Field(
+        default="",
+        description="Why the draft decision was made (uncertainty status, risk level, etc.)",
+    )
     publish_items: list[PublishItem] = Field(default_factory=list)
 
 
@@ -2299,6 +3288,283 @@ class PlanningMetrics(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Phase 07 - Performance And Rule Updates (P7-T1, P7-T2, P7-T3)
+# ---------------------------------------------------------------------------
+
+
+class ContentGenRunMetrics(BaseModel):
+    """Performance signals captured for every content-gen run.
+
+    P7-T1: Provides always-on signals that link content outcomes to workflow
+    speed. Every published asset can be traced back to its selection and
+    production decisions.
+    """
+
+    # Run identity
+    run_id: str = ""
+    brief_id: str = ""
+    idea_id: str = ""
+    angle_id: str = ""
+
+    # Selection context at time of creation
+    idea_score: float = 0.0
+    content_type: str = ""
+    effort_tier: str = ""
+    release_queue_state: str = ""
+
+    # Stage-level timing (milliseconds)
+    phase_1_strategy_ms: int = 0
+    phase_2_opportunity_ms: int = 0
+    phase_3_research_ms: int = 0
+    phase_4_draft_ms: int = 0
+    phase_5_visual_ms: int = 0
+    phase_6_qc_ms: int = 0
+    phase_7_publish_ms: int = 0
+    total_cycle_time_ms: int = 0
+
+    # Release state
+    release_state: str = Field(
+        default="unknown",
+        description="One of: published, killed_early, killed_late, held, recycled_for_reuse",
+    )
+    kill_reason: str = ""
+    kill_phase: str = ""
+
+    # Reuse signals
+    reuse_recommended: bool = False
+    derivative_count: int = 0
+    approved_with_known_risks: bool = False
+
+    # Output metrics
+    script_word_count: int = 0
+    production_asset_count: int = 0
+    packaging_variant_count: int = 0
+
+    # Cost signals
+    llm_call_count: int = 0
+    estimated_cost_cents: float = 0.0
+
+    # Audience outcome (when available)
+    view_count: int = 0
+    engagement_rate: float = 0.0
+
+    # Timestamps
+    created_at: str = ""
+    published_at: str = ""
+    analyzed_at: str = ""
+
+    @computed_field(return_type=float)
+    @property
+    def phase_4_draft_pct(self) -> float:
+        """Percentage of cycle time spent in draft phase."""
+        if not self.total_cycle_time_ms:
+            return 0.0
+        return round(self.phase_4_draft_ms / self.total_cycle_time_ms, 4)
+
+    @computed_field(return_type=float)
+    @property
+    def is_fast_cycle(self) -> float:
+        """Whether this run completed faster than the 50th percentile threshold."""
+        # Quick tier: <5min, Standard: <15min, Deep: <30min
+        thresholds = {"quick": 300000, "standard": 900000, "deep": 1800000}
+        threshold = thresholds.get(self.effort_tier, 900000)
+        return 1.0 if self.total_cycle_time_ms < threshold else 0.0
+
+    @computed_field(return_type=bool)
+    @property
+    def killed(self) -> bool:
+        """Whether this run was killed (early or late)."""
+        return self.release_state in ("killed_early", "killed_late")
+
+
+class RuleVersionKind(StrEnum):
+    """What kind of rule was changed."""
+
+    HOOK = "hook"
+    FRAMING = "framing"
+    SCORING_THRESHOLD = "scoring_threshold"
+    PACKAGING_HEURISTIC = "packaging_heuristic"
+    REUSE_TEMPLATE = "reuse_template"
+    TIME_BUDGET = "time_budget"
+
+
+class RuleChangeOperation(StrEnum):
+    """How the rule was changed."""
+
+    ADDED = "added"
+    UPDATED = "updated"
+    REMOVED = "removed"
+
+
+class RuleVersion(BaseModel):
+    """A single versioned change to strategy rules.
+
+    P7-T2: Rules are versioned so operators can see when guidance changed.
+    Each version records what changed, when, and why it was changed.
+    """
+
+    version_id: str = Field(default_factory=lambda: f"rulev_{uuid4().hex[:8]}")
+    kind: RuleVersionKind = RuleVersionKind.HOOK
+    operation: RuleChangeOperation = RuleChangeOperation.ADDED
+    # Human-readable description of the change
+    change_summary: str = ""
+    # The rule content before change (empty for ADDED)
+    previous_value: str = ""
+    # The rule content after change (empty for REMOVED)
+    new_value: str = ""
+    # Learning IDs that prompted this change
+    source_learning_ids: list[str] = Field(default_factory=list)
+    # Video/content IDs that provided the evidence
+    source_content_ids: list[str] = Field(default_factory=list)
+    # Operator who approved (empty if auto-approved)
+    approved_by: str = ""
+    # When this rule version was created
+    created_at: str = ""
+
+
+class RuleVersionHistory(BaseModel):
+    """Version history for strategy rule changes.
+
+    P7-T2: Maintains a complete audit trail of rule changes so that
+    scoring and packaging behavior can be traced to observed results.
+    """
+
+    versions: list[RuleVersion] = Field(default_factory=list)
+
+    def get_active_rules(self, kind: RuleVersionKind) -> list[str]:
+        """Get the current active rules of a given kind, in order of version."""
+        active: list[str] = []
+        for version in self.versions:
+            if version.kind == kind:
+                if version.operation == RuleChangeOperation.ADDED:
+                    active.append(version.new_value)
+                elif version.operation == RuleChangeOperation.REMOVED:
+                    # Remove the rule from active list
+                    active = [r for r in active if r != version.new_value]
+        return active
+
+    def get_version_timeline(
+        self,
+        kind: RuleVersionKind | None = None,
+    ) -> list[RuleVersion]:
+        """Get chronological version history, optionally filtered by kind."""
+        versions = self.versions
+        if kind is not None:
+            versions = [v for v in versions if v.kind == kind]
+        return sorted(versions, key=lambda v: v.created_at)
+
+
+class OperatingFitnessMetrics(BaseModel):
+    """Operating fitness metrics for content-gen workflow.
+
+    P7-T3: Tracks whether the redesigned workflow is faster and more practical
+    by measuring operating fitness, not just content outcomes.
+    """
+
+    # Cycle time metrics
+    avg_cycle_time_ms: float = 0.0
+    median_cycle_time_ms: float = 0.0
+    p95_cycle_time_ms: float = 0.0
+    fastest_cycle_time_ms: int = 0
+    slowest_cycle_time_ms: int = 0
+
+    # Kill rate metrics
+    total_ideas_evaluated: int = 0
+    ideas_killed_early: int = 0  # Killed in phase 1-2
+    ideas_killed_late: int = 0  # Killed after draft started
+    ideas_published: int = 0
+    ideas_held: int = 0
+    ideas_recycled: int = 0
+
+    @computed_field(return_type=float)
+    @property
+    def kill_rate(self) -> float:
+        """Percentage of ideas that were killed (early or late)."""
+        total = self.total_ideas_evaluated
+        if not total:
+            return 0.0
+        killed = self.ideas_killed_early + self.ideas_killed_late
+        return round(killed / total, 4)
+
+    @computed_field(return_type=float)
+    @property
+    def early_kill_rate(self) -> float:
+        """Percentage of ideas killed before draft phase."""
+        total = self.total_ideas_evaluated
+        if not total:
+            return 0.0
+        return round(self.ideas_killed_early / total, 4)
+
+    @computed_field(return_type=float)
+    @property
+    def late_kill_rate(self) -> float:
+        """Percentage of ideas killed after draft started."""
+        total = self.total_ideas_evaluated
+        if not total:
+            return 0.0
+        return round(self.ideas_killed_late / total, 4)
+
+    @computed_field(return_type=float)
+    @property
+    def publish_rate(self) -> float:
+        """Percentage of ideas that reached publish."""
+        total = self.total_ideas_evaluated
+        if not total:
+            return 0.0
+        return round(self.ideas_published / total, 4)
+
+    @computed_field(return_type=float)
+    @property
+    def reuse_rate(self) -> float:
+        """Percentage of held/recycled ideas that were reused."""
+        held_and_recycled = self.ideas_held + self.ideas_recycled
+        if not held_and_recycled:
+            return 0.0
+        return round(self.ideas_recycled / held_and_recycled, 4)
+
+    # Reuse metrics
+    reuse_candidates_identified: int = 0
+    reuse_candidates_applied: int = 0
+
+    # Cost metrics
+    total_estimated_cost_cents: float = 0.0
+    avg_cost_per_published: float = 0.0
+    avg_cost_per_killed: float = 0.0
+
+    @computed_field(return_type=float)
+    @property
+    def cost_per_idea(self) -> float:
+        """Average cost per idea evaluated."""
+        total = self.total_ideas_evaluated
+        if not total:
+            return 0.0
+        return round(self.total_estimated_cost_cents / total, 2)
+
+    # Throughput metrics
+    ideas_per_week: float = 0.0
+    published_per_week: float = 0.0
+
+    # Time period
+    period_start: str = ""
+    period_end: str = ""
+    total_runs: int = 0
+
+    def to_summary(self) -> str:
+        """Human-readable operating fitness summary."""
+        lines = [
+            "Operating Fitness Metrics:",
+            f"  Cycle Time: avg={self.avg_cycle_time_ms/1000:.0f}s, median={self.median_cycle_time_ms/1000:.0f}s, p95={self.p95_cycle_time_ms/1000:.0f}s",
+            f"  Kill Rate: {self.kill_rate:.1%} (early={self.early_kill_rate:.1%}, late={self.late_kill_rate:.1%})",
+            f"  Publish Rate: {self.publish_rate:.1%}",
+            f"  Reuse Rate: {self.reuse_rate:.1%}",
+            f"  Cost: avg/published=${self.avg_cost_per_published:.2f}, avg/killed=${self.avg_cost_per_killed:.2f}",
+            f"  Throughput: {self.published_per_week:.1f} published/week",
+            f"  Period: {self.period_start} to {self.period_end}",
+        ]
+        return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Pipeline stage tracing
 # ---------------------------------------------------------------------------
 
@@ -2332,6 +3598,9 @@ class StageTraceMetadata(BaseModel):
     approved: bool = False
     active_candidate_count: int = 0
     parse_mode: str = ""  # "json" | "legacy" — which parse path succeeded
+    fact_risk_decision: str = ""
+    progressive_issue_count: int = 0
+    checkpoint_count: int = 0
 
 
 class PipelineStageTrace(BaseModel):
@@ -2340,7 +3609,36 @@ class PipelineStageTrace(BaseModel):
     stage_index: int
     stage_name: str
     stage_label: str
-    status: str = "completed"  # completed | skipped | failed
+    # P1-T1: Operating phase this stage belongs to
+    # Uses string default to avoid forward reference issue; Pydantic coerces to OperatingPhase
+    phase: OperatingPhase = Field(
+        default="phase_02_opportunity",
+        description="The operating phase this stage belongs to.",
+    )
+    phase_label: str = Field(
+        default="Opportunity & Ideation",
+        description="Human-readable phase name.",
+    )
+    # P1-T2: Policy fields that governed this stage
+    policy: OperatingPhasePolicy | None = Field(
+        default=None,
+        description="The operating policy that governed this stage's execution.",
+    )
+    # P1-T2: Skip/kill decision reason if stage was skipped or killed
+    skip_reason: str = Field(
+        default="",
+        description="Reason for skipping this stage (if status is 'skipped').",
+    )
+    kill_reason: str = Field(
+        default="",
+        description="Reason for killing this stage early (if status is 'killed').",
+    )
+    # P1-T2: Override record if policy was manually overridden
+    policy_override: str = Field(
+        default="",
+        description="Description of any manual policy override applied to this stage.",
+    )
+    status: str = "completed"  # completed | skipped | failed | blocked
     started_at: str = ""
     completed_at: str = ""
     duration_ms: int = 0
@@ -2376,6 +3674,11 @@ class PipelineContext(BaseModel):
         default=None,
         description="Reference to the managed brief resource and revision used by this run.",
     )
+    # P1-T3: Per-run constraints that change each content cycle
+    run_constraints: RunConstraints | None = Field(
+        default=None,
+        description="Per-run constraint variables (content type, effort tier, owner, channel goal, success target).",
+    )
     backlog: BacklogOutput | None = None
     scoring: ScoringOutput | None = None
     shortlist: list[str] = Field(default_factory=list)
@@ -2384,12 +3687,24 @@ class PipelineContext(BaseModel):
     runner_up_idea_ids: list[str] = Field(default_factory=list)
     active_candidates: list[PipelineCandidate] = Field(default_factory=list)
     lane_contexts: list[PipelineLaneContext] = Field(default_factory=list)
+    # P3-T2: Unified thesis artifact (replaces separate angles + argument_map)
+    thesis_artifact: ThesisArtifact | None = None
+    # Deprecated: angles is kept for backward compatibility
     angles: AngleOutput | None = None
     research_pack: ResearchPack | None = None
     argument_map: ArgumentMap | None = None
+    fact_risk_gate: FactRiskGate | None = Field(
+        default=None,
+        description="Top-level compatibility alias for the primary lane's fact-risk gate.",
+    )
     scripting: ScriptingContext | None = None
     visual_plan: VisualPlanOutput | None = None
     production_brief: ProductionBrief | None = None
+    # P5-T2: Combined execution brief for low/medium complexity formats
+    execution_brief: VisualProductionExecutionBrief | None = Field(
+        default=None,
+        description="Combined visual and production brief for formats using use_combined_execution_brief=True",
+    )
     packaging: PackagingOutput | None = None
     qc_gate: HumanQCGate | None = None
     publish_items: list[PublishItem] = Field(default_factory=list)
@@ -2490,6 +3805,7 @@ def _derive_pipeline_candidates(
     shortlist: list[str] | None = None,
     runner_up_idea_ids: list[str] | None = None,
     existing_candidates: list[PipelineCandidate] | None = None,
+    content_type_profile: str = "",
 ) -> list[PipelineCandidate]:
     primary_id = selected_idea_id.strip()
     if not primary_id and existing_candidates:
@@ -2524,6 +3840,7 @@ def _derive_pipeline_candidates(
             idea_id=primary_id or ordered_ids[0],
             role="primary",
             status=primary_status if primary_status in {"selected", "in_production", "published"} else "selected",
+            content_type_profile=content_type_profile,
         )
     ]
 
@@ -2535,6 +3852,7 @@ def _derive_pipeline_candidates(
                 idea_id=idea_id,
                 role="runner_up",
                 status="runner_up",
+                content_type_profile=content_type_profile,
             )
         )
         if len(candidates) >= _ACTIVE_CANDIDATE_LIMIT:
@@ -2661,7 +3979,7 @@ PIPELINE_STAGE_LABELS: dict[str, str] = {
     "plan_opportunity": "Planning opportunity brief",
     "build_backlog": "Building backlog",
     "score_ideas": "Scoring ideas",
-    "generate_angles": "Generating angles",
+    "generate_angles": "Building thesis",  # P3-T2: now produces unified thesis artifact
     "build_research_pack": "Building research pack",
     "build_argument_map": "Building argument map",
     "run_scripting": "Running scripting pipeline",
@@ -2954,6 +4272,14 @@ class ManagedOpportunityBrief(BaseModel):
         default="",
         description="Why this brief was branched (e.g., 'different channel', 'experiment').",
     )
+    operating_policies: list[OperatingPhasePolicy] = Field(
+        default_factory=list,
+        description="The phase policies that governed this brief when it was created or updated.",
+    )
+    override_history: list[str] = Field(
+        default_factory=list,
+        description="Human-readable history of operator overrides attached to this brief.",
+    )
 
     def head_revision(self, revisions: list[BriefRevision]) -> BriefRevision | None:
         """Return the current head revision from a list of known revisions."""
@@ -3121,3 +4447,445 @@ class BriefExecutionGate(BaseModel):
             f"to run with draft briefs (not recommended for production)."
         )
         return False, self.error_message
+
+
+# ---------------------------------------------------------------------------
+# Phase 01 - Seven-Phase Operating Model
+# ---------------------------------------------------------------------------
+
+
+class OperatingPhase(StrEnum):
+    """Canonical seven-phase operating model for content generation.
+
+    This replaces the 14-stage view with a compressed, operator-friendly
+    grouping that aligns with how teams actually think about content work.
+    """
+
+    PHASE_01_STRATEGY = "phase_01_strategy"
+    PHASE_02_OPPORTUNITY = "phase_02_opportunity"
+    PHASE_03_RESEARCH = "phase_03_research"
+    PHASE_04_DRAFT = "phase_04_draft"
+    PHASE_05_VISUAL = "phase_05_visual"
+    PHASE_06_QC = "phase_06_qc"
+    PHASE_07_PUBLISH = "phase_07_publish"
+
+
+OPERATING_PHASE_LABELS: dict[OperatingPhase, str] = {
+    OperatingPhase.PHASE_01_STRATEGY: "Strategy & Setup",
+    OperatingPhase.PHASE_02_OPPORTUNITY: "Opportunity & Ideation",
+    OperatingPhase.PHASE_03_RESEARCH: "Research & Argument",
+    OperatingPhase.PHASE_04_DRAFT: "Draft & Refinement",
+    OperatingPhase.PHASE_05_VISUAL: "Visual & Production",
+    OperatingPhase.PHASE_06_QC: "QC & Approval",
+    OperatingPhase.PHASE_07_PUBLISH: "Publish & Learn",
+}
+
+
+# Stage-to-phase mapping: which phase each of the 14 pipeline stages belongs to
+STAGE_TO_PHASE_MAPPING: dict[str, OperatingPhase] = {
+    "load_strategy": OperatingPhase.PHASE_01_STRATEGY,
+    "plan_opportunity": OperatingPhase.PHASE_02_OPPORTUNITY,
+    "build_backlog": OperatingPhase.PHASE_02_OPPORTUNITY,
+    "score_ideas": OperatingPhase.PHASE_02_OPPORTUNITY,
+    "generate_angles": OperatingPhase.PHASE_02_OPPORTUNITY,
+    "build_research_pack": OperatingPhase.PHASE_03_RESEARCH,
+    "build_argument_map": OperatingPhase.PHASE_03_RESEARCH,
+    "run_scripting": OperatingPhase.PHASE_04_DRAFT,
+    "visual_translation": OperatingPhase.PHASE_05_VISUAL,
+    "production_brief": OperatingPhase.PHASE_05_VISUAL,
+    "packaging": OperatingPhase.PHASE_06_QC,
+    "human_qc": OperatingPhase.PHASE_06_QC,
+    "publish_queue": OperatingPhase.PHASE_07_PUBLISH,
+    "performance_analysis": OperatingPhase.PHASE_07_PUBLISH,
+}
+
+
+# Phase-to-stages mapping: which stages belong to each phase
+PHASE_TO_STAGES_MAPPING: dict[OperatingPhase, list[str]] = {
+    OperatingPhase.PHASE_01_STRATEGY: ["load_strategy"],
+    OperatingPhase.PHASE_02_OPPORTUNITY: [
+        "plan_opportunity",
+        "build_backlog",
+        "score_ideas",
+        "generate_angles",
+    ],
+    OperatingPhase.PHASE_03_RESEARCH: [
+        "build_research_pack",
+        "build_argument_map",
+    ],
+    OperatingPhase.PHASE_04_DRAFT: ["run_scripting"],
+    OperatingPhase.PHASE_05_VISUAL: [
+        "visual_translation",
+        "production_brief",
+    ],
+    OperatingPhase.PHASE_06_QC: ["packaging", "human_qc"],
+    OperatingPhase.PHASE_07_PUBLISH: [
+        "publish_queue",
+        "performance_analysis",
+    ],
+}
+
+
+def get_phase_for_stage(stage_name: str) -> OperatingPhase:
+    """Return the operating phase for a given pipeline stage."""
+    return STAGE_TO_PHASE_MAPPING.get(stage_name, OperatingPhase.PHASE_02_OPPORTUNITY)
+
+
+def get_stages_for_phase(phase: OperatingPhase) -> list[str]:
+    """Return the list of pipeline stages for a given operating phase."""
+    return PHASE_TO_STAGES_MAPPING.get(phase, [])
+
+
+class PhaseExitCriteria(BaseModel):
+    """Exit criteria for completing a phase."""
+
+    description: str = Field(
+        default="",
+        description="Human-readable description of what constitutes phase completion.",
+    )
+    required_artifacts: list[str] = Field(
+        default_factory=list,
+        description="List of artifact names that must be present to exit the phase.",
+    )
+    quality_threshold: float | None = Field(
+        default=None,
+        description="Optional quality score threshold to meet before exiting.",
+    )
+
+
+class PhaseSkipCondition(BaseModel):
+    """Condition under which a phase can be skipped."""
+
+    reason: str = Field(
+        default="",
+        description="Human-readable reason why the phase can be skipped.",
+    )
+    requires_manual_override: bool = Field(
+        default=False,
+        description="Whether operator confirmation is required to skip.",
+    )
+    preserves_quality: bool = Field(
+        default=True,
+        description="Whether skipping this phase preserves output quality.",
+    )
+
+
+class PhaseKillCondition(BaseModel):
+    """Condition under which a phase should be terminated early."""
+
+    reason: str = Field(
+        default="",
+        description="Human-readable reason why the phase should be killed.",
+    )
+    abort_pipeline: bool = Field(
+        default=False,
+        description="Whether killing this phase should abort the entire pipeline.",
+    )
+    preserve_artifacts: bool = Field(
+        default=True,
+        description="Whether to preserve partial artifacts even when killed.",
+    )
+
+
+class PhaseReuseOpportunity(BaseModel):
+    """Opportunity to reuse phase outputs across runs."""
+
+    description: str = Field(
+        default="",
+        description="What can be reused from this phase.",
+    )
+    reuse_pattern: str = Field(
+        default="",
+        description="How to reuse (e.g., 'cache', 'template', 'reference').",
+    )
+    ttl_hours: int | None = Field(
+        default=None,
+        description="How long reuse is valid (None = until next strategy update).",
+    )
+
+
+class OperatingPhasePolicy(BaseModel):
+    """Typed governance metadata for one operating phase.
+
+    This model captures the explicit workflow rules that were previously
+    only documented in prose, making them machine-readable and
+    enforceable in traces and managed briefs.
+    """
+
+    phase: OperatingPhase = Field(
+        description="Which operating phase this policy governs.",
+    )
+    phase_label: str = Field(
+        description="Human-readable phase name.",
+    )
+    owner: str = Field(
+        default="",
+        description="Who is responsible for this phase (role or team).",
+    )
+    # SLA: max turnaround time in minutes
+    max_turnaround_minutes: int = Field(
+        default=60,
+        description="Expected maximum turnaround time for this phase in minutes.",
+    )
+    # Entry criteria: what must be true before this phase starts
+    entry_criteria: list[str] = Field(
+        default_factory=list,
+        description="List of conditions that must be true before phase execution.",
+    )
+    # Exit criteria: what must be true before moving to next phase
+    exit_criteria: PhaseExitCriteria = Field(
+        default_factory=PhaseExitCriteria,
+        description="Criteria for successfully completing this phase.",
+    )
+    # Skip conditions: when this phase can be bypassed
+    skip_conditions: list[PhaseSkipCondition] = Field(
+        default_factory=list,
+        description="Conditions under which this phase can be skipped.",
+    )
+    # Kill conditions: when this phase should terminate early
+    kill_conditions: list[PhaseKillCondition] = Field(
+        default_factory=list,
+        description="Conditions under which this phase should be killed.",
+    )
+    # Reuse opportunities: how outputs can be leveraged
+    reuse_opportunities: list[PhaseReuseOpportunity] = Field(
+        default_factory=list,
+        description="Opportunities to reuse phase outputs in future runs.",
+    )
+
+
+# Default operating phase policies
+DEFAULT_PHASE_POLICIES: dict[OperatingPhase, OperatingPhasePolicy] = {
+    OperatingPhase.PHASE_01_STRATEGY: OperatingPhasePolicy(
+        phase=OperatingPhase.PHASE_01_STRATEGY,
+        phase_label="Strategy & Setup",
+        owner="content lead",
+        max_turnaround_minutes=5,
+        entry_criteria=["strategy memory exists"],
+        exit_criteria=PhaseExitCriteria(
+            description="Strategy memory loaded and validated",
+            required_artifacts=["strategy"],
+        ),
+        skip_conditions=[],
+        kill_conditions=[
+            PhaseKillCondition(
+                reason="Strategy memory is corrupted",
+                abort_pipeline=False,
+                preserve_artifacts=True,
+            ),
+        ],
+        reuse_opportunities=[
+            PhaseReuseOpportunity(
+                description="Strategy memory persists across all runs",
+                reuse_pattern="persistent_store",
+            ),
+        ],
+    ),
+    OperatingPhase.PHASE_02_OPPORTUNITY: OperatingPhasePolicy(
+        phase=OperatingPhase.PHASE_02_OPPORTUNITY,
+        phase_label="Opportunity & Ideation",
+        owner="senior editor",
+        max_turnaround_minutes=120,
+        entry_criteria=[
+            "strategy memory loaded",
+            "theme defined",
+        ],
+        exit_criteria=PhaseExitCriteria(
+            description="At least one scored idea with selected angle",
+            required_artifacts=["opportunity_brief", "backlog", "scoring", "angles"],
+        ),
+        skip_conditions=[
+            PhaseSkipCondition(
+                reason="Using pre-scored ideas from previous run",
+                requires_manual_override=True,
+                preserves_quality=True,
+            ),
+        ],
+        kill_conditions=[
+            PhaseKillCondition(
+                reason="No ideas score above production threshold",
+                abort_pipeline=False,
+                preserve_artifacts=True,
+            ),
+            PhaseKillCondition(
+                reason="All ideas killed during scoring",
+                abort_pipeline=True,
+                preserve_artifacts=True,
+            ),
+        ],
+        reuse_opportunities=[
+            PhaseReuseOpportunity(
+                description="Scored backlog can be cached for 24 hours",
+                reuse_pattern="cache",
+                ttl_hours=24,
+            ),
+        ],
+    ),
+    OperatingPhase.PHASE_03_RESEARCH: OperatingPhasePolicy(
+        phase=OperatingPhase.PHASE_03_RESEARCH,
+        phase_label="Research & Argument",
+        owner="research lead",
+        max_turnaround_minutes=180,
+        entry_criteria=[
+            "angle selected",
+            "opportunity brief approved or in review",
+        ],
+        exit_criteria=PhaseExitCriteria(
+            description="Argument map with proof anchors and beat plan",
+            required_artifacts=["research_pack", "argument_map"],
+        ),
+        skip_conditions=[
+            PhaseSkipCondition(
+                reason="Using cached research from previous run on same angle",
+                requires_manual_override=True,
+                preserves_quality=False,
+            ),
+        ],
+        kill_conditions=[
+            PhaseKillCondition(
+                reason="Research pack has zero usable claims",
+                abort_pipeline=False,
+                preserve_artifacts=True,
+            ),
+            PhaseKillCondition(
+                reason="All claims flagged as unsafe with no safe alternative",
+                abort_pipeline=True,
+                preserve_artifacts=True,
+            ),
+        ],
+        reuse_opportunities=[
+            PhaseReuseOpportunity(
+                description="Research pack can be reused within same opportunity",
+                reuse_pattern="cache",
+                ttl_hours=168,  # 1 week
+            ),
+        ],
+    ),
+    OperatingPhase.PHASE_04_DRAFT: OperatingPhasePolicy(
+        phase=OperatingPhase.PHASE_04_DRAFT,
+        phase_label="Draft & Refinement",
+        owner="script writer",
+        max_turnaround_minutes=240,
+        entry_criteria=[
+            "argument map complete",
+            "beat plan defined",
+        ],
+        exit_criteria=PhaseExitCriteria(
+            description="Final script passed QC with all beats complete",
+            required_artifacts=["scripting"],
+            quality_threshold=0.7,
+        ),
+        skip_conditions=[],
+        kill_conditions=[
+            PhaseKillCondition(
+                reason="Script failed QC after maximum iterations",
+                abort_pipeline=False,
+                preserve_artifacts=True,
+            ),
+            PhaseKillCondition(
+                reason="All beats marked as failed in targeted revision",
+                abort_pipeline=True,
+                preserve_artifacts=True,
+            ),
+        ],
+        reuse_opportunities=[
+            PhaseReuseOpportunity(
+                description="Stable beats from iterative revision can be preserved",
+                reuse_pattern="template",
+            ),
+        ],
+    ),
+    OperatingPhase.PHASE_05_VISUAL: OperatingPhasePolicy(
+        phase=OperatingPhase.PHASE_05_VISUAL,
+        phase_label="Visual & Production",
+        owner="production lead",
+        max_turnaround_minutes=60,
+        entry_criteria=[
+            "script finalized (QC passed or tightened)",
+        ],
+        exit_criteria=PhaseExitCriteria(
+            description="Production brief with location, props, and pickup lines",
+            required_artifacts=["visual_plan", "production_brief"],
+        ),
+        skip_conditions=[
+            PhaseSkipCondition(
+                reason="Visual plan not needed (audio-only content)",
+                requires_manual_override=True,
+                preserves_quality=True,
+            ),
+        ],
+        kill_conditions=[
+            PhaseKillCondition(
+                reason="Visual plan references missing assets",
+                abort_pipeline=False,
+                preserve_artifacts=True,
+            ),
+        ],
+        reuse_opportunities=[
+            PhaseReuseOpportunity(
+                description="Production brief templates for recurring shoot setups",
+                reuse_pattern="template",
+            ),
+        ],
+    ),
+    OperatingPhase.PHASE_06_QC: OperatingPhasePolicy(
+        phase=OperatingPhase.PHASE_06_QC,
+        phase_label="QC & Approval",
+        owner="quality lead",
+        max_turnaround_minutes=30,
+        entry_criteria=[
+            "production brief complete",
+            "packaging variants generated",
+        ],
+        exit_criteria=PhaseExitCriteria(
+            description="Human QC approved with no blocking must-fix items",
+            required_artifacts=["packaging", "qc_gate"],
+        ),
+        skip_conditions=[],
+        kill_conditions=[
+            PhaseKillCondition(
+                reason="Human QC blocked with must-fix items not resolved",
+                abort_pipeline=False,
+                preserve_artifacts=True,
+            ),
+        ],
+        reuse_opportunities=[
+            PhaseReuseOpportunity(
+                description="QC checklist templates for recurring issue patterns",
+                reuse_pattern="template",
+            ),
+        ],
+    ),
+    OperatingPhase.PHASE_07_PUBLISH: OperatingPhasePolicy(
+        phase=OperatingPhase.PHASE_07_PUBLISH,
+        phase_label="Publish & Learn",
+        owner="distribution lead",
+        max_turnaround_minutes=15,
+        entry_criteria=[
+            "QC approved",
+        ],
+        exit_criteria=PhaseExitCriteria(
+            description="Publish items scheduled with engagement actions",
+            required_artifacts=["publish_items"],
+        ),
+        skip_conditions=[],
+        kill_conditions=[
+            PhaseKillCondition(
+                reason="Platform constraints violated by latest changes",
+                abort_pipeline=False,
+                preserve_artifacts=True,
+            ),
+        ],
+        reuse_opportunities=[
+            PhaseReuseOpportunity(
+                description="Publish scheduling patterns inform future timing",
+                reuse_pattern="learning",
+            ),
+        ],
+    ),
+}
+
+
+def get_phase_policy(phase: OperatingPhase) -> OperatingPhasePolicy:
+    """Get the operating policy for a phase."""
+    return DEFAULT_PHASE_POLICIES.get(phase, OperatingPhasePolicy(phase=phase, phase_label=phase.value))

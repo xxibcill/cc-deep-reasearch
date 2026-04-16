@@ -14,7 +14,9 @@ from cc_deep_research.content_gen.models import (
     BriefRevision,
     ManagedBriefOutput,
     ManagedOpportunityBrief,
+    OperatingPhase,
     OpportunityBrief,
+    get_phase_policy,
 )
 from cc_deep_research.content_gen.storage import (
     AuditActor,
@@ -63,6 +65,10 @@ def _validate_brief_id(brief_id: str) -> str:
             f"brief_id '{brief_id}' contains invalid characters; use only alphanumeric, hyphen, underscore"
         )
     return brief_id
+
+
+def _default_operating_policies() -> list[Any]:
+    return [get_phase_policy(phase) for phase in OperatingPhase]
 
 
 class BriefService:
@@ -177,6 +183,7 @@ class BriefService:
             created_at=now,
             updated_at=now,
             revision_history=[f"v1: {revision.revision_notes}"],
+            operating_policies=_default_operating_policies(),
         )
 
         # Persist revision first
@@ -376,6 +383,45 @@ class BriefService:
             )
         return updated
 
+    def record_override(
+        self,
+        brief_id: str,
+        *,
+        actor_label: str,
+        reason: str,
+        pipeline_id: str = "",
+        linked_evidence: list[str] | None = None,
+    ) -> ManagedOpportunityBrief | None:
+        """Attach an operator override record to the managed brief."""
+        _validate_brief_id(brief_id)
+        output = self._store.load()
+        managed = next((b for b in output.briefs if b.brief_id == brief_id), None)
+        if managed is None:
+            return None
+
+        now = _now_iso()
+        evidence = ", ".join(linked_evidence or []) if linked_evidence else "none"
+        entry = (
+            f"{now} | actor={actor_label or 'operator'} | "
+            f"reason={reason or 'override applied'} | evidence={evidence}"
+        )
+        managed.override_history = [*managed.override_history, entry]
+        managed.updated_at = now
+        self._store.save(output)
+        self._audit_mutation(
+            AuditEventType.OPERATOR_OVERRIDE_APPLIED,
+            brief_id,
+            actor=AuditActor.OPERATOR,
+            patch={
+                "override_entry": entry,
+                "pipeline_id": pipeline_id,
+                "linked_evidence": linked_evidence or [],
+            },
+            brief_snapshot=managed,
+            outcome="success",
+        )
+        return managed
+
     # -------------------------------------------------------------------------
     # Update
     # -------------------------------------------------------------------------
@@ -501,6 +547,7 @@ class BriefService:
             created_at=now,
             updated_at=now,
             revision_history=[f"v1: {new_revision.revision_notes}"],
+            operating_policies=_default_operating_policies(),
         )
 
         # Persist revision and brief
@@ -587,6 +634,7 @@ class BriefService:
             revision_history=[f"v1: {new_revision.revision_notes}"],
             source_brief_id=brief_id,
             branch_reason=branch_reason,
+            operating_policies=_default_operating_policies(),
         )
 
         # Persist revision and brief

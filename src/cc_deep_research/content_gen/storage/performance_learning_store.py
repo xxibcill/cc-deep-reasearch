@@ -13,6 +13,7 @@ from cc_deep_research.content_gen.models import (
     LearningDurability,
     PerformanceLearning,
     PerformanceLearningSet,
+    RuleVersionKind,
     StrategyPerformanceGuidance,
 )
 from cc_deep_research.content_gen.storage._paths import resolve_content_gen_file_path
@@ -43,6 +44,26 @@ def _serialize_model_to_dict(model: Any) -> dict[str, Any]:
 
     data = model.model_dump(exclude_none=True)
     return _convert_value(data)
+
+
+def _learning_category_to_rule_kind(category: LearningCategory) -> RuleVersionKind:
+    """Map a learning category to the corresponding rule version kind.
+
+    P7-T2: Connects performance learnings to rule version tracking.
+    """
+    from cc_deep_research.content_gen.models import RuleVersionKind
+
+    mapping = {
+        LearningCategory.HOOK: RuleVersionKind.HOOK,
+        LearningCategory.FRAME: RuleVersionKind.FRAMING,
+        LearningCategory.AUDIENCE: RuleVersionKind.FRAMING,
+        LearningCategory.PROOF: RuleVersionKind.FRAMING,
+        LearningCategory.FORMAT: RuleVersionKind.PACKAGING_HEURISTIC,
+        LearningCategory.PACING: RuleVersionKind.TIME_BUDGET,
+        LearningCategory.CTA: RuleVersionKind.PACKAGING_HEURISTIC,
+        LearningCategory.PACKAGING: RuleVersionKind.PACKAGING_HEURISTIC,
+    }
+    return mapping.get(category, RuleVersionKind.FRAMING)
 
 
 class PerformanceLearningStore:
@@ -281,15 +302,20 @@ class PerformanceLearningStore:
         learning_ids: list[str],
         *,
         operator_approved: bool = True,
+        record_versions: bool = True,
     ) -> StrategyPerformanceGuidance:
         """Apply selected learnings as durable strategy guidance.
 
         This is a controlled, operator-visible path. Only learnings that have
         been explicitly selected and approved become durable strategy guidance.
 
+        P7-T2: When learnings are promoted, rule versions are recorded so
+        operators can see when guidance changed.
+
         Args:
             learning_ids: IDs of learnings to promote to strategy guidance
             operator_approved: Whether an operator has explicitly approved this promotion
+            record_versions: Whether to record rule versions in strategy store
 
         Returns:
             The updated strategy guidance
@@ -315,7 +341,56 @@ class PerformanceLearningStore:
             learning.updated_at = _now_iso()
         self._save_learnings(valid_learnings)
 
+        # P7-T2: Record rule versions in strategy store
+        if record_versions:
+            self._record_rule_versions(valid_learnings, operator_approved)
+
         return guidance
+
+    def _record_rule_versions(
+        self,
+        learnings: list[PerformanceLearning],
+        operator_approved: bool,
+    ) -> None:
+        """Record rule versions when learnings are applied to strategy.
+
+        P7-T2: Each rule change is versioned so operators can see when
+        guidance changed and trace scoring/packaging to observed results.
+        """
+        # Import here to avoid circular imports
+        from cc_deep_research.content_gen.models import (
+            RuleChangeOperation,
+        )
+        from cc_deep_research.content_gen.storage.strategy_store import StrategyStore
+
+        strategy_store = StrategyStore()
+
+        for learning in learnings:
+            # Map learning category to rule version kind
+            kind = _learning_category_to_rule_kind(learning.category)
+
+            # Determine operation based on guidance
+            guidance_lower = learning.guidance.lower()
+            if "avoid" in guidance_lower or "remove" in guidance_lower:
+                operation = RuleChangeOperation.REMOVED
+            elif "continue" in guidance_lower or "winning" in guidance_lower:
+                operation = RuleChangeOperation.ADDED
+            else:
+                operation = RuleChangeOperation.UPDATED
+
+            # Build change summary
+            change_summary = f"{learning.category.value}: {learning.observation[:100]}"
+
+            strategy_store.record_rule_version(
+                kind=kind,
+                operation=operation,
+                change_summary=change_summary,
+                new_value=learning.guidance if operation == RuleChangeOperation.ADDED else "",
+                previous_value="" if operation == RuleChangeOperation.ADDED else learning.guidance,
+                source_learning_ids=[learning.learning_id],
+                source_content_ids=learning.source_video_ids,
+                approved_by="operator" if operator_approved else "",
+            )
 
     def _get_learning(self, learning_id: str) -> PerformanceLearning | None:
         """Get a learning by ID."""

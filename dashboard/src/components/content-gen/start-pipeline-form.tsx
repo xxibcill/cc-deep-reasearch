@@ -24,6 +24,11 @@ export function StartPipelineForm({
 } = {}) {
   const router = useRouter()
   const [theme, setTheme] = useState(initialTheme ?? '')
+  const [contentType, setContentType] = useState('short_form_video')
+  const [effortTier, setEffortTier] = useState<'quick' | 'standard' | 'deep'>('standard')
+  const [owner, setOwner] = useState('')
+  const [channelGoal, setChannelGoal] = useState('')
+  const [successTarget, setSuccessTarget] = useState('')
   const [fromStage, setFromStage] = useState(1)
   const [toStage, setToStage] = useState(TOTAL_PIPELINE_STAGES - 1)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -55,6 +60,11 @@ export function StartPipelineForm({
     try {
       const result = await startPipeline({
         theme: theme.trim(),
+        content_type: contentType,
+        effort_tier: effortTier,
+        owner: owner.trim(),
+        channel_goal: channelGoal.trim(),
+        success_target: successTarget.trim(),
         from_stage: fromStage,
         to_stage: toStage,
       })
@@ -87,6 +97,81 @@ export function StartPipelineForm({
           disabled={isSubmitting}
         />
       </FormField>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <FormField>
+          <FormLabel htmlFor="content-type">Content Type</FormLabel>
+          <NativeSelect
+            id="content-type"
+            value={contentType}
+            onChange={(e) => setContentType(e.target.value)}
+            disabled={isSubmitting}
+          >
+            <option value="short_form_video">Short-form video</option>
+            <option value="carousel">Carousel</option>
+            <option value="thread">Thread</option>
+            <option value="newsletter">Newsletter</option>
+            <option value="article">Article</option>
+            <option value="launch_asset">Launch asset</option>
+            <option value="webinar">Webinar</option>
+          </NativeSelect>
+        </FormField>
+
+        <FormField>
+          <FormLabel htmlFor="effort-tier">Effort Tier</FormLabel>
+          <NativeSelect
+            id="effort-tier"
+            value={effortTier}
+            onChange={(e) => setEffortTier(e.target.value as 'quick' | 'standard' | 'deep')}
+            disabled={isSubmitting}
+          >
+            <option value="quick">Quick</option>
+            <option value="standard">Standard</option>
+            <option value="deep">Deep</option>
+          </NativeSelect>
+        </FormField>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <FormField>
+          <FormLabel htmlFor="owner">Owner</FormLabel>
+          <Input
+            id="owner"
+            type="text"
+            value={owner}
+            onChange={(e) => setOwner(e.target.value)}
+            placeholder="content-team"
+            maxLength={100}
+            disabled={isSubmitting}
+          />
+        </FormField>
+
+        <FormField>
+          <FormLabel htmlFor="channel-goal">Channel Goal</FormLabel>
+          <Input
+            id="channel-goal"
+            type="text"
+            value={channelGoal}
+            onChange={(e) => setChannelGoal(e.target.value)}
+            placeholder="Shorts growth"
+            maxLength={200}
+            disabled={isSubmitting}
+          />
+        </FormField>
+
+        <FormField>
+          <FormLabel htmlFor="success-target">Success Target</FormLabel>
+          <Input
+            id="success-target"
+            type="text"
+            value={successTarget}
+            onChange={(e) => setSuccessTarget(e.target.value)}
+            placeholder="High save rate"
+            maxLength={200}
+            disabled={isSubmitting}
+          />
+        </FormField>
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <FormField>

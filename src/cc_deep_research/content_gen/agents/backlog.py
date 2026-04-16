@@ -10,6 +10,7 @@ from cc_deep_research.content_gen.agents._llm_utils import call_agent_llm_text
 from cc_deep_research.content_gen.models import (
     BacklogItem,
     BacklogOutput,
+    EffortTier,
     IdeaScores,
     OpportunityBrief,
     ScoringOutput,
@@ -104,6 +105,9 @@ class BacklogAgent:
         strategy: StrategyMemory,
         *,
         threshold: int = 25,
+        min_upside_threshold: int = 2,
+        effort_tier_cap: str = "deep",
+        content_type_profile: str = "",
     ) -> ScoringOutput:
         if not items:
             logger.warning("Scoring called with empty items list")
@@ -123,6 +127,12 @@ class BacklogAgent:
             invalid_count = len(scores) - len(valid_scores)
             logger.warning(f"Scoring output contained {invalid_count} invalid recommendations, defaulting to 'hold'")
 
+        # P2-T2: Apply ROI fast-fail — kill ideas below minimum upside threshold
+        valid_scores = _apply_upside_gate(valid_scores, min_upside_threshold)
+
+        # P2-T2: Apply effort tier cap — downgrade deep ideas if cap is lower
+        valid_scores = _apply_effort_tier_cap(valid_scores, effort_tier_cap)
+
         produce_now = [s.idea_id for s in valid_scores if s.recommendation == "produce_now"]
         shortlist, selected_idea_id, selection_reasoning, runner_up_idea_ids = _derive_selection(
             text,
@@ -131,6 +141,17 @@ class BacklogAgent:
         )
         hold = [s.idea_id for s in valid_scores if s.recommendation == "hold"]
         killed = [s.idea_id for s in valid_scores if s.recommendation == "kill"]
+
+        # P2-T1: Identify hold ideas with strong reusability signals
+        reuse_recommended = [
+            s.idea_id
+            for s in valid_scores
+            if s.recommendation == "hold"
+            and _is_reuse_recommended(s)
+        ]
+
+        # P2-T2: Compute effort distribution summary
+        effort_summary = _compute_effort_summary(valid_scores)
 
         is_degraded = False
         degradation_reason = ""
@@ -147,9 +168,73 @@ class BacklogAgent:
             runner_up_idea_ids=runner_up_idea_ids,
             hold=hold,
             killed=killed,
+            reuse_recommended=reuse_recommended,
+            effort_summary=effort_summary,
+            content_type_profile=content_type_profile,
             is_degraded=is_degraded,
             degradation_reason=degradation_reason,
         )
+
+
+# ---------------------------------------------------------------------------
+# P2-T2: ROI and fast-fail gate helpers
+# ---------------------------------------------------------------------------
+
+
+def _apply_upside_gate(scores: list[IdeaScores], min_upside: int) -> list[IdeaScores]:
+    """Kill ideas with expected_upside below the minimum threshold.
+
+    These ideas fail the ROI gate — they would consume research and drafting
+    time without sufficient upside potential. The kill_reason is recorded.
+    """
+    result: list[IdeaScores] = []
+    for score in scores:
+        if score.recommendation != "kill" and score.expected_upside <= min_upside:
+            updated = score.model_copy(
+                update={
+                    "recommendation": "kill",
+                    "kill_reason": f"expected_upside {score.expected_upside} below minimum threshold {min_upside}",
+                }
+            )
+            result.append(updated)
+        else:
+            result.append(score)
+    return result
+
+
+def _apply_effort_tier_cap(scores: list[IdeaScores], cap: str) -> list[IdeaScores]:
+    """Downgrade effort tier if it exceeds the configured cap.
+
+    Cap values: 'quick', 'standard', 'deep'. Only downgrade — never upgrade.
+    """
+    tier_order = ["quick", "standard", "deep"]
+    try:
+        cap_index = tier_order.index(cap)
+    except ValueError:
+        cap_index = 2  # default to deep
+    result: list[IdeaScores] = []
+    for score in scores:
+        try:
+            score_tier_idx = tier_order.index(score.effort_tier.value)
+        except (ValueError, AttributeError):
+            score_tier_idx = 1  # default to standard
+        if score_tier_idx > cap_index:
+            downgraded_tier = EffortTier(tier_order[cap_index])
+            updated = score.model_copy(update={"effort_tier": downgraded_tier})
+            result.append(updated)
+        else:
+            result.append(score)
+    return result
+
+
+def _compute_effort_summary(scores: list[IdeaScores]) -> dict[str, int]:
+    """Compute count of ideas per effort tier."""
+    summary: dict[str, int] = {"quick": 0, "standard": 0, "deep": 0}
+    for score in scores:
+        tier = score.effort_tier.value if hasattr(score.effort_tier, "value") else str(score.effort_tier)
+        if tier in summary:
+            summary[tier] += 1
+    return summary
 
 
 # ---------------------------------------------------------------------------
@@ -274,6 +359,17 @@ def _parse_scores(text: str, _items: list[BacklogItem]) -> list[IdeaScores]:
             rec = "hold"
         reason = _extract_block_field(block_text, "reason")
         opportunity_fit_reason = _extract_block_field(block_text, "opportunity_fit_reason")
+        # P2-T2: Parse effort_tier, expected_upside, and kill_reason
+        effort_tier_str = _extract_block_field(block_text, "effort_tier").lower()
+        if effort_tier_str not in ("quick", "standard", "deep"):
+            effort_tier_str = "standard"
+        effort_tier = EffortTier(effort_tier_str)
+        upside_str = _extract_block_field(block_text, "expected_upside")
+        try:
+            expected_upside = max(1, min(5, int(upside_str)))
+        except (ValueError, TypeError):
+            expected_upside = 3
+        kill_reason = _extract_block_field(block_text, "kill_reason")
         scores.append(
             IdeaScores(
                 idea_id=idea_id,
@@ -281,6 +377,9 @@ def _parse_scores(text: str, _items: list[BacklogItem]) -> list[IdeaScores]:
                 recommendation=rec,
                 reason=reason,
                 opportunity_fit_reason=opportunity_fit_reason,
+                effort_tier=effort_tier,
+                expected_upside=expected_upside,
+                kill_reason=kill_reason,
                 **dim_scores,  # type: ignore[arg-type]
             )
         )
@@ -347,6 +446,21 @@ def _normalize_idea_id(raw_value: str, valid_ids: set[str]) -> str:
         if re.search(rf"\b{re.escape(idea_id)}\b", cleaned):
             return idea_id
     return ""
+
+
+def _is_reuse_recommended(score: IdeaScores) -> bool:
+    """Check if a hold idea has strong reusability signals.
+
+    A hold idea is recommended for future reuse when it has good fundamentals
+    but doesn't pass the threshold now — e.g., strong hook/evidence but low
+    urgency or slight genericity risk. These are not killed because they can
+    become produce_now when conditions improve (seasonality, new proof, etc.).
+    """
+    return (
+        score.hook_strength >= 4
+        and score.evidence_strength >= 3
+        and score.relevance >= 4
+    )
 
 
 def _rank_scores(scores: list[IdeaScores], items: list[BacklogItem]) -> list[IdeaScores]:

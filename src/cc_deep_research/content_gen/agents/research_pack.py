@@ -16,6 +16,8 @@ from cc_deep_research.content_gen.models import (
     ResearchClaimType,
     ResearchConfidence,
     ResearchCounterpoint,
+    ResearchDepthRouting,
+    ResearchDepthTier,
     ResearchFinding,
     ResearchFindingType,
     ResearchFlagType,
@@ -56,6 +58,9 @@ class RetrievalPlanner:
     - Freshness needs
     - Contrarian/counterevidence coverage
     - Explicit budget constraints
+
+    P3-T1: Also respects ResearchDepthTier to route research investment
+    based on expected upside and claim risk.
     """
 
     # Core families that form the baseline retrieval set
@@ -68,6 +73,14 @@ class RetrievalPlanner:
         ("practitioner-language", ["practitioner", "language", "workflow"], "Practitioner perspectives and language"),
     ]
 
+    # P3-T1: Time budgets per tier in seconds
+    _TIER_TIME_BUDGETS: dict[str, int] = {
+        "light": 60,
+        "standard": 120,
+        "deep": 300,
+        "override": 300,
+    }
+
     def __init__(
         self,
         item: BacklogItem,
@@ -78,6 +91,7 @@ class RetrievalPlanner:
         research_gaps: list[str] | None = None,
         mode: RetrievalMode = RetrievalMode.BASELINE,
         research_hypotheses: list[str] | None = None,
+        depth_tier: ResearchDepthTier = ResearchDepthTier.STANDARD,
     ) -> None:
         self.item = item
         self.angle = angle
@@ -87,6 +101,9 @@ class RetrievalPlanner:
         self.mode = mode
         self._seen_queries: set[str] = set()
         self._research_hypotheses = research_hypotheses or []
+        self._depth_tier = depth_tier
+        # P3-T1: Apply tier-specific budget overrides
+        self._apply_tier_budget_override()
 
     def build_plan(self) -> RetrievalPlan:
         """Build a complete retrieval plan based on item, angle, and context."""
@@ -118,14 +135,14 @@ class RetrievalPlanner:
         # Sort by priority (higher first)
         decisions.sort(key=lambda d: d.priority, reverse=True)
 
-        return RetrievalPlan(
+        return self._build_with_depth_routing(RetrievalPlan(
             decisions=decisions,
             budget=self.budget,
             mode=effective_mode,
             research_hypotheses=self._extract_hypotheses(),
             coverage_notes=coverage_notes,
             is_complete=len(decisions) > 0,
-        )
+        ))
 
     def _resolve_mode(self) -> RetrievalMode:
         """Determine the effective retrieval mode based on context."""
@@ -404,6 +421,51 @@ class RetrievalPlanner:
             decisions = sorted(decisions, key=lambda d: d.priority, reverse=True)[: self.budget.max_queries]
         return decisions
 
+    def _apply_tier_budget_override(self) -> None:
+        """P3-T1: Apply tier-specific budget overrides to the base budget.
+
+        Only overrides if the user hasn't explicitly set custom max_queries or max_sources
+        values (detected by checking if they differ from Pydantic defaults).
+        OVERRIDE tier always applies its budget.
+        """
+        # OVERRIDE tier always uses its budget
+        if self._depth_tier == ResearchDepthTier.OVERRIDE:
+            tier_name = self._depth_tier.value
+            if tier_name in self.budget.tier_overrides:
+                max_q, max_s = self.budget.tier_overrides[tier_name]
+                self.budget.max_queries = max_q
+                self.budget.max_sources = max_s
+            return
+
+        # For normal tiers: only override if user didn't explicitly set budgets
+        # User-provided values detected when they differ from Pydantic defaults
+        user_set_queries = self.budget.max_queries != 6
+        user_set_sources = self.budget.max_sources != 12
+        if user_set_queries or user_set_sources:
+            # User explicitly provided custom budget — preserve it
+            return
+
+        tier_name = self._depth_tier.value
+        if tier_name in self.budget.tier_overrides:
+            max_q, max_s = self.budget.tier_overrides[tier_name]
+            self.budget.max_queries = max_q
+            self.budget.max_sources = max_s
+
+    def _build_with_depth_routing(self, plan: RetrievalPlan) -> RetrievalPlan:
+        """P3-T1: Return plan with depth routing metadata attached."""
+        return RetrievalPlan(
+            decisions=plan.decisions,
+            budget=plan.budget,
+            mode=plan.mode,
+            research_depth_routing=ResearchDepthRouting(
+                tier=self._depth_tier,
+                routing_basis="depth_tier_from_build_plan",
+            ),
+            research_hypotheses=plan.research_hypotheses,
+            coverage_notes=plan.coverage_notes,
+            is_complete=plan.is_complete,
+        )
+
     def _subject(self) -> str:
         return _first_non_empty(
             self.angle.core_promise,
@@ -506,15 +568,22 @@ class ResearchPackAgent:
         feedback: str = "",
         research_gaps: list[str] | None = None,
         research_hypotheses: list[str] | None = None,
+        # P3-T1: Depth routing inputs from scoring
+        depth_tier: ResearchDepthTier = ResearchDepthTier.STANDARD,
+        effort_tier: str = "",
+        expected_upside: int = 0,
+        operator_override: bool = False,
+        override_reason: str = "",
     ) -> ResearchPack:
         budget = RetrievalBudget(max_queries=max_queries or self._config.content_gen.research_max_queries)
-        search_context, supporting_sources = await self._run_searches(
+        plan, search_context, supporting_sources = await self._run_searches(
             item,
             angle,
             budget=budget,
             feedback=feedback,
             research_gaps=research_gaps,
             research_hypotheses=research_hypotheses,
+            depth_tier=depth_tier,
         )
 
         system = prompts.SYNTHESIS_SYSTEM
@@ -533,6 +602,12 @@ class ResearchPackAgent:
         # Detect and record degraded state
         _maybe_set_degraded(pack, text)
 
+        # P3-T1: Attach routing metadata to the pack for pipeline visibility
+        if plan.research_depth_routing:
+            pack.research_depth_routing = plan.research_depth_routing
+        if plan.mode != RetrievalMode.BASELINE:
+            pack.research_mode = plan.mode.value
+
         return pack
 
     async def _run_searches(
@@ -544,7 +619,8 @@ class ResearchPackAgent:
         feedback: str = "",
         research_gaps: list[str] | None = None,
         research_hypotheses: list[str] | None = None,
-    ) -> tuple[str, list[ResearchSource]]:
+        depth_tier: ResearchDepthTier = ResearchDepthTier.STANDARD,
+    ) -> tuple[RetrievalPlan, str, list[ResearchSource]]:
         planner = RetrievalPlanner(
             item,
             angle,
@@ -552,11 +628,12 @@ class ResearchPackAgent:
             feedback=feedback,
             research_gaps=research_gaps,
             research_hypotheses=research_hypotheses,
+            depth_tier=depth_tier,
         )
         plan = planner.build_plan()
 
         if not plan.decisions:
-            return "No search queries generated.", []
+            return plan, "No search queries generated.", []
 
         try:
             providers = self._get_providers()
@@ -611,8 +688,8 @@ class ResearchPackAgent:
 
         supporting_sources = list(sources_by_url.values())
         if not supporting_sources:
-            return "No search results found.", []
-        return _render_source_catalog(supporting_sources), supporting_sources
+            return plan, "No search results found.", []
+        return plan, _render_source_catalog(supporting_sources), supporting_sources
 
     def _get_providers(self) -> list:
         from cc_deep_research.providers import resolve_provider_specs

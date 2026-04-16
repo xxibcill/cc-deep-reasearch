@@ -23,6 +23,8 @@ from .live import (
 )
 from .query import (
     _load_dashboard_connection,
+    query_content_gen_operating_fitness,
+    query_content_gen_rule_versions,
     query_dashboard_data,
     query_event_tree,
     query_events_by_parent,
@@ -41,6 +43,8 @@ __all__ = [
     "query_checkpoint_detail",
     "query_checkpoint_lineage",
     "query_checkpoints_by_phase",
+    "query_content_gen_operating_fitness",
+    "query_content_gen_rule_versions",
     "query_dashboard_data",
     "query_event_tree",
     "query_events_by_parent",

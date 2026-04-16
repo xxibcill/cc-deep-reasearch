@@ -40,6 +40,8 @@ from cc_deep_research.content_gen.models import (
     PIPELINE_STAGES,
     BacklogItem,
     PipelineContext,
+    ReleaseState,
+    RunConstraints,
     ScriptingContext,
     ScriptingIterations,
     ScriptingIterationSummary,
@@ -72,12 +74,34 @@ class StartPipelineRequest(BaseModel):
     theme: str = Field(min_length=1)
     from_stage: int = Field(default=0, ge=0)
     to_stage: int | None = Field(default=None, ge=0)
+    content_type: str = ""
+    effort_tier: Literal["quick", "standard", "deep"] = "standard"
+    owner: str = ""
+    channel_goal: str = ""
+    success_target: str = ""
+    research_depth_override: Literal["", "light", "standard", "deep"] = ""
+    research_override_reason: str = ""
 
 
 class ResumePipelineRequest(BaseModel):
     """Request body for resuming a pipeline run."""
 
     from_stage: int = Field(default=0, ge=0)
+
+
+class ApproveQCRequest(BaseModel):
+    """Request body for resolving QC with an explicit release state."""
+
+    release_state: Literal["approved", "approved_with_known_risks"] = "approved"
+    override_reason: str = ""
+    actor: str = "operator"
+
+
+class ApplyLearningsRequest(BaseModel):
+    """Request body for promoting performance learnings into strategy rules."""
+
+    learning_ids: list[str] = Field(default_factory=list)
+    operator_approved: bool = True
 
 
 class RunScriptingRequest(BaseModel):
@@ -451,12 +475,22 @@ def register_content_gen_routes(
                     )
 
             try:
+                run_constraints = RunConstraints(
+                    content_type=request.content_type,
+                    effort_tier=request.effort_tier,
+                    owner=request.owner,
+                    channel_goal=request.channel_goal,
+                    success_target=request.success_target,
+                    research_depth_override=request.research_depth_override,
+                    research_override_reason=request.research_override_reason,
+                )
                 ctx = await orch.run_full_pipeline(
                     request.theme,
                     from_stage=request.from_stage,
                     to_stage=end,
                     progress_callback=_progress,
                     stage_completed_callback=_stage_completed,
+                    run_constraints=run_constraints,
                 )
 
                 job_registry.update_context(job.pipeline_id, ctx)
@@ -644,7 +678,7 @@ def register_content_gen_routes(
     # ------------------------------------------------------------------
 
     @app.post("/api/content-gen/qc/{pipeline_id}/approve")
-    async def approve_qc(pipeline_id: str) -> JSONResponse:
+    async def approve_qc(pipeline_id: str, request: ApproveQCRequest) -> JSONResponse:
         job = job_registry.get_job(pipeline_id)
         if job is None:
             return JSONResponse(status_code=404, content={"error": "Pipeline not found"})
@@ -652,8 +686,49 @@ def register_content_gen_routes(
         if ctx is None or ctx.qc_gate is None:
             return JSONResponse(status_code=400, content={"error": "No QC gate found"})
         ctx.qc_gate.approved_for_publish = True
+        if request.release_state == "approved_with_known_risks":
+            if not request.override_reason:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "override_reason is required for approved_with_known_risks"},
+                )
+            ctx.qc_gate.release_state = ReleaseState.APPROVED_WITH_KNOWN_RISKS
+            ctx.qc_gate.override_actor = request.actor
+            ctx.qc_gate.override_reason = request.override_reason
+            ctx.qc_gate.override_timestamp = datetime.now(tz=UTC).isoformat()
+            try:
+                audit = AuditStore(config=load_config())
+                audit.log_operator_override(
+                    idea_id=ctx.selected_idea_id,
+                    original_state="blocked",
+                    override_reason=request.override_reason,
+                    actor=AuditActor.OPERATOR,
+                    actor_label=request.actor,
+                    pipeline_id=ctx.pipeline_id,
+                    brief_id=ctx.brief_reference.brief_id if ctx.brief_reference else "",
+                )
+                if ctx.brief_reference:
+                    _brief_service().record_override(
+                        ctx.brief_reference.brief_id,
+                        actor_label=request.actor,
+                        reason=request.override_reason,
+                        pipeline_id=ctx.pipeline_id,
+                    )
+            except Exception:
+                logger.warning("Failed to persist QC override audit", exc_info=True)
+        else:
+            ctx.qc_gate.release_state = ReleaseState.APPROVED
+            ctx.qc_gate.override_actor = ""
+            ctx.qc_gate.override_reason = ""
+            ctx.qc_gate.override_timestamp = ""
         job_registry.update_context(pipeline_id, ctx)
-        return JSONResponse(content={"pipeline_id": pipeline_id, "approved": True})
+        return JSONResponse(
+            content={
+                "pipeline_id": pipeline_id,
+                "approved": True,
+                "release_state": ctx.qc_gate.release_state.value,
+            }
+        )
 
     # ------------------------------------------------------------------
     # Standalone scripting
@@ -1837,6 +1912,47 @@ def register_content_gen_routes(
         store = StrategyStore()
         updated = store.update(request.patch)
         return JSONResponse(content=json.loads(updated.model_dump_json()))
+
+    @app.get("/api/content-gen/learnings")
+    async def list_learnings(
+        category: str | None = None,
+        durability: str | None = None,
+    ) -> JSONResponse:
+        from cc_deep_research.content_gen.models import LearningCategory, LearningDurability
+        from cc_deep_research.content_gen.storage import PerformanceLearningStore
+
+        store = PerformanceLearningStore()
+        items = store.get_active_learnings(
+            category=LearningCategory(category) if category else None,
+            durability=LearningDurability(durability) if durability else None,
+        )
+        return JSONResponse(
+            content={"items": [json.loads(item.model_dump_json()) for item in items], "count": len(items)}
+        )
+
+    @app.post("/api/content-gen/learnings/apply")
+    async def apply_learnings(request: ApplyLearningsRequest) -> JSONResponse:
+        from cc_deep_research.content_gen.storage import PerformanceLearningStore
+
+        store = PerformanceLearningStore()
+        guidance = store.apply_learnings_to_strategy(
+            request.learning_ids,
+            operator_approved=request.operator_approved,
+            record_versions=True,
+        )
+        return JSONResponse(content=json.loads(guidance.model_dump_json()))
+
+    @app.get("/api/content-gen/rule-versions")
+    async def list_rule_versions(kind: str | None = None) -> JSONResponse:
+        from cc_deep_research.telemetry.query import query_content_gen_rule_versions
+
+        return JSONResponse(content=query_content_gen_rule_versions(kind=kind))
+
+    @app.get("/api/content-gen/operating-fitness")
+    async def get_operating_fitness() -> JSONResponse:
+        from cc_deep_research.telemetry.query import query_content_gen_operating_fitness
+
+        return JSONResponse(content=query_content_gen_operating_fitness())
 
     # ------------------------------------------------------------------
     # Publish queue
