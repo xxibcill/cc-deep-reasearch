@@ -88,6 +88,7 @@ from cc_deep_research.content_gen.models import (
     ScriptStructure,
     ScriptVersion,
     StrategyMemory,
+    ThesisArtifact,
     VisualPlanOutput,
 )
 from cc_deep_research.content_gen.orchestrator import _format_research_context
@@ -103,6 +104,7 @@ from cc_deep_research.content_gen.prompts import publish as publish_prompts
 from cc_deep_research.content_gen.prompts import qc as qc_prompts
 from cc_deep_research.content_gen.prompts import research_pack as research_pack_prompts
 from cc_deep_research.content_gen.prompts import scripting as scripting_prompts
+from cc_deep_research.content_gen.prompts import thesis as thesis_prompts
 from cc_deep_research.content_gen.prompts import visual as visual_prompts
 from cc_deep_research.content_gen.prompts.backlog import build_backlog_user
 from cc_deep_research.llm.base import LLMProviderType, LLMResponse, LLMTransportType
@@ -312,7 +314,7 @@ def test_content_gen_stage_contract_registry_covers_core_prompt_stages() -> None
         "plan_opportunity": opportunity_prompts,
         "build_backlog": backlog_prompts,
         "score_ideas": backlog_prompts,
-        "generate_angles": angle_prompts,
+        "generate_angles": thesis_prompts,  # P3-T2: now uses unified thesis prompt
         "build_research_pack": research_pack_prompts,
         "build_argument_map": argument_map_prompts,
         "run_scripting": scripting_prompts,
@@ -342,14 +344,15 @@ def test_content_gen_stage_contract_registry_documents_parser_behavior() -> None
     """Registry entries should describe the intended parser strictness."""
     assert CONTENT_GEN_STAGE_CONTRACTS["generate_angles"].failure_mode == "fail_fast"
     assert CONTENT_GEN_STAGE_CONTRACTS["build_research_pack"].failure_mode == "tolerant"
-    assert CONTENT_GEN_STAGE_CONTRACTS["build_argument_map"].failure_mode == "fail_fast"
+    assert CONTENT_GEN_STAGE_CONTRACTS["build_argument_map"].failure_mode == "tolerant"  # P3-T2: backward compat
     assert CONTENT_GEN_STAGE_CONTRACTS["human_qc"].failure_mode == "human_gated"
 
 
 def test_content_gen_stage_contract_registry_tracks_expert_workflow_shapes() -> None:
     """Registry should document the expert-workflow contract additions."""
     research_contract = CONTENT_GEN_STAGE_CONTRACTS["build_research_pack"]
-    argument_contract = CONTENT_GEN_STAGE_CONTRACTS["build_argument_map"]
+    # P3-T2: thesis contract replaces build_argument_map for unified artifact
+    thesis_contract = CONTENT_GEN_STAGE_CONTRACTS["generate_angles"]
     scripting_contract = CONTENT_GEN_STAGE_CONTRACTS["run_scripting"]
     qc_contract = CONTENT_GEN_STAGE_CONTRACTS["human_qc"]
 
@@ -360,13 +363,15 @@ def test_content_gen_stage_contract_registry_tracks_expert_workflow_shapes() -> 
     assert "research_depth_routing" in research_contract.expected_sections
     assert "research_mode" in research_contract.expected_sections
 
-    assert argument_contract.contract_version == "1.1.0"
-    assert "unsafe_claims" in argument_contract.expected_sections
-    assert "beat_claim_plan" in argument_contract.expected_sections
-    # P3-T2: Thesis artifact merges angle choice + argument design
-    assert "what_this_contributes" in argument_contract.expected_sections
-    assert "genericity_flags" in argument_contract.expected_sections
-    assert "differentiation_strategy" in argument_contract.expected_sections
+    # P3-T2: Thesis artifact (generate_angles stage) contains angle + argument fields
+    assert thesis_contract.contract_version == "2.0.0"
+    assert thesis_contract.output_model == "ThesisArtifact"
+    assert "unsafe_claims" in thesis_contract.expected_sections
+    assert "beat_claim_plan" in thesis_contract.expected_sections
+    assert "what_this_contributes" in thesis_contract.expected_sections
+    assert "genericity_flags" in thesis_contract.expected_sections
+    assert "differentiation_stategy" in thesis_contract.expected_sections
+    assert "selection_reasoning" in thesis_contract.expected_sections
 
     assert scripting_contract.contract_version == "1.2.0"
     assert "Step 4: at least one beat intent" in scripting_contract.required_fields
@@ -836,11 +841,12 @@ def test_skipped_stage_recorded_when_prerequisites_missing() -> None:
 
 @pytest.mark.asyncio
 async def test_generate_angles_uses_selected_idea_over_produce_now_order() -> None:
-    """Angle generation should follow the explicit selected idea."""
+    """P3-T2: Thesis generation should follow the explicit selected idea."""
     from cc_deep_research.content_gen.orchestrator import (
         ContentGenOrchestrator,
         _stage_generate_angles,
     )
+    from cc_deep_research.content_gen.models import ThesisArtifact
 
     class FakeConfig:
         content_gen = type(
@@ -864,22 +870,28 @@ async def test_generate_angles_uses_selected_idea_over_produce_now_order() -> No
             },
         )()
 
-    class FakeAngleAgent:
+    class FakeThesisAgent:
         def __init__(self) -> None:
             self.seen_item_id = ""
 
-        async def generate(self, item: BacklogItem, strategy: StrategyMemory) -> AngleOutput:
+        async def build(self, item: BacklogItem, strategy: StrategyMemory) -> ThesisArtifact:
             del strategy
             self.seen_item_id = item.idea_id
-            return AngleOutput(
+            return ThesisArtifact(
                 idea_id=item.idea_id,
-                angle_options=[AngleOption(angle_id="angle-2", core_promise="Selected angle")],
-                selected_angle_id="angle-2",
+                angle_id="angle-2",
+                target_audience="test audience",
+                viewer_problem="test problem",
+                core_promise="Selected angle thesis",
+                primary_takeaway="test takeaway",
+                thesis="Test thesis statement",
+                audience_belief_to_challenge="common misconception",
+                core_mechanism="why it works",
             )
 
     orch = ContentGenOrchestrator(FakeConfig())
-    fake_agent = FakeAngleAgent()
-    orch._agents["angle"] = fake_agent
+    fake_agent = FakeThesisAgent()
+    orch._agents["thesis"] = fake_agent
     ctx = PipelineContext(
         theme="test",
         backlog=BacklogOutput(
@@ -897,10 +909,10 @@ async def test_generate_angles_uses_selected_idea_over_produce_now_order() -> No
 
     ctx = await _stage_generate_angles(orch, ctx)
 
-    # ctx.angles reflects the primary (selected) lane after _sync_primary_lane
+    # ctx.thesis_artifact reflects the primary (selected) lane after _sync_primary_lane
     assert fake_agent.seen_item_id in ("id2", "id1"), "sanity: agent was called"
-    assert ctx.angles is not None
-    assert ctx.angles.idea_id == "id2"
+    assert ctx.thesis_artifact is not None
+    assert ctx.thesis_artifact.idea_id == "id2"
 
 
 @pytest.mark.asyncio
@@ -1414,6 +1426,87 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
             assert item.idea_id == runner_up_idea_id
             return runner_up_angles
 
+    class FakeThesisAgent:
+        """P3-T2: Fake thesis agent that produces ThesisArtifact from fixture data."""
+
+        async def build(self, item: BacklogItem, strategy: StrategyMemory) -> ThesisArtifact:
+            assert strategy.niche == fixture["strategy"]["niche"]
+            # Use selected angle data for selected idea, runner_up data for runner-up
+            if item.idea_id == selected_idea_id:
+                angles_data = fixture["angles"]
+                argmap_data = fixture["argument_map"]
+                angle_opt = angles_data["angle_options"][0]
+            else:
+                # Runner-up idea
+                angle_opt = runner_up_angles.angle_options[0]
+                runner_up_thesis = runner_up_argument_map
+                argmap_data = {
+                    "thesis": runner_up_thesis.thesis,
+                    "audience_belief_to_challenge": runner_up_thesis.audience_belief_to_challenge,
+                    "core_mechanism": runner_up_thesis.core_mechanism,
+                    "proof_anchors": [
+                        {"proof_id": p.proof_id, "summary": p.summary, "source_ids": p.source_ids, "usage_note": p.usage_note}
+                        for p in runner_up_thesis.proof_anchors
+                    ],
+                    "counterarguments": [
+                        {
+                            "counterargument_id": c.counterargument_id,
+                            "counterargument": c.counterargument,
+                            "response": c.response,
+                            "response_proof_ids": c.response_proof_ids,
+                        }
+                        for c in runner_up_thesis.counterarguments
+                    ],
+                    "safe_claims": [
+                        {
+                            "claim_id": c.claim_id,
+                            "claim": c.claim,
+                            "supporting_proof_ids": c.supporting_proof_ids,
+                            "note": c.note,
+                        }
+                        for c in runner_up_thesis.safe_claims
+                    ],
+                    "unsafe_claims": [],
+                    "beat_claim_plan": [
+                        {
+                            "beat_id": b.beat_id,
+                            "beat_name": b.beat_name,
+                            "goal": b.goal,
+                            "claim_ids": b.claim_ids,
+                            "proof_anchor_ids": b.proof_anchor_ids,
+                            "counterargument_ids": b.counterargument_ids,
+                            "transition_note": b.transition_note,
+                        }
+                        for b in runner_up_thesis.beat_claim_plan
+                    ],
+                }
+                angles_data = {
+                    "selection_reasoning": runner_up_angles.selection_reasoning,
+                }
+            thesis_data = {
+                "idea_id": item.idea_id,
+                "angle_id": angle_opt["angle_id"] if isinstance(angle_opt, dict) else angle_opt.angle_id,
+                "target_audience": angle_opt["target_audience"] if isinstance(angle_opt, dict) else angle_opt.target_audience,
+                "viewer_problem": angle_opt["viewer_problem"] if isinstance(angle_opt, dict) else angle_opt.viewer_problem,
+                "core_promise": angle_opt["core_promise"] if isinstance(angle_opt, dict) else angle_opt.core_promise,
+                "primary_takeaway": angle_opt["primary_takeaway"] if isinstance(angle_opt, dict) else angle_opt.primary_takeaway,
+                "lens": angle_opt["lens"] if isinstance(angle_opt, dict) else angle_opt.lens,
+                "format": angle_opt["format"] if isinstance(angle_opt, dict) else angle_opt.format,
+                "tone": angle_opt["tone"] if isinstance(angle_opt, dict) else angle_opt.tone,
+                "cta": angle_opt["cta"] if isinstance(angle_opt, dict) else angle_opt.cta,
+                "why_this_version_should_exist": angle_opt["why_this_version_should_exist"] if isinstance(angle_opt, dict) else angle_opt.why_this_version_should_exist,
+                "thesis": argmap_data["thesis"],
+                "audience_belief_to_challenge": argmap_data["audience_belief_to_challenge"],
+                "core_mechanism": argmap_data["core_mechanism"],
+                "proof_anchors": argmap_data["proof_anchors"],
+                "counterarguments": argmap_data["counterarguments"],
+                "safe_claims": argmap_data["safe_claims"],
+                "unsafe_claims": argmap_data["unsafe_claims"],
+                "beat_claim_plan": argmap_data["beat_claim_plan"],
+                "selection_reasoning": angles_data["selection_reasoning"],
+            }
+            return ThesisArtifact.model_validate(thesis_data)
+
     class FakeResearchAgent:
         async def build(
             self,
@@ -1555,6 +1648,7 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
     orch = ContentGenOrchestrator(FakeConfig())
     orch._agents["opportunity"] = FakeOpportunityAgent()
     orch._agents["backlog"] = FakeBacklogAgent()
+    orch._agents["thesis"] = FakeThesisAgent()  # P3-T2: unified thesis agent
     orch._agents["angle"] = FakeAngleAgent()
     orch._agents["research"] = FakeResearchAgent()
     orch._agents["argument_map"] = FakeArgumentMapAgent()
@@ -1580,9 +1674,10 @@ async def test_full_pipeline_smoke_uses_fixture_backed_outputs(
     assert [candidate.status for candidate in ctx.active_candidates] == ["published", "published"]
     assert len(ctx.lane_contexts) == 2
     lane_by_id = {lane.idea_id: lane for lane in ctx.lane_contexts}
-    assert lane_by_id[selected_idea_id].angles is not None
+    # P3-T2: thesis_artifact is set by the unified thesis stage
+    assert lane_by_id[selected_idea_id].thesis_artifact is not None
     assert lane_by_id[selected_idea_id].publish_items[0].idea_id == selected_idea_id
-    assert lane_by_id[runner_up_idea_id].angles is not None
+    assert lane_by_id[runner_up_idea_id].thesis_artifact is not None
     assert lane_by_id[runner_up_idea_id].research_pack is not None
     assert lane_by_id[runner_up_idea_id].argument_map is not None
     assert lane_by_id[runner_up_idea_id].scripting is not None
@@ -2846,12 +2941,23 @@ def test_step6_prompt_requires_single_hook_and_single_cta() -> None:
     """Drafting prompt should explicitly enforce a single hook and CTA."""
     assert "Use exactly one hook line and exactly one CTA line" in scripting_prompts.STEP6_SYSTEM
     assert "Do not include multiple opening hooks, backup hooks, CTA variants" in scripting_prompts.STEP6_SYSTEM
+    assert "Keep the exact same beat order, beat count, and beat labels" in scripting_prompts.STEP6_SYSTEM
+    assert "Do not add, remove, merge, split, or rename beats" in scripting_prompts.STEP6_SYSTEM
+
+
+def test_step3_and_step5_prompts_lock_structure_and_require_real_hook_variation() -> None:
+    """Structure should stay template-locked and hooks should be meaningfully varied."""
+    assert "keep the exact same beat sequence as that template" in scripting_prompts.STEP3_SYSTEM
+    assert "Do not add beats, remove beats, merge beats, split beats, or rename beats" in scripting_prompts.STEP3_SYSTEM
+    assert "Hooks must be materially different from one another" in scripting_prompts.STEP5_SYSTEM
 
 
 def test_step10_qc_checks_single_hook_and_cta_presence() -> None:
     """Final QC should verify hook/CTA uniqueness before saving the script."""
     assert "- Exactly one hook is present" in scripting_prompts.STEP10_SYSTEM
     assert "- At most one CTA is present" in scripting_prompts.STEP10_SYSTEM
+    assert "- Beat order matches the chosen structure exactly" in scripting_prompts.STEP10_SYSTEM
+    assert "- No beats were renamed, merged, split, added, or removed" in scripting_prompts.STEP10_SYSTEM
 
 
 def test_scripting_context_tone_and_cta_default_empty() -> None:

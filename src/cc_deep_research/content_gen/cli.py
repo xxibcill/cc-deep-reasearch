@@ -528,6 +528,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
         # P6-T3: Log operator override to audit trail when releasing with known risks
         if ctx.qc_gate.release_state.value == "approved_with_known_risks":
             try:
+                from cc_deep_research.content_gen.brief_service import BriefService
                 from cc_deep_research.content_gen.storage import AuditStore
                 audit = AuditStore()
                 audit.log_operator_override(
@@ -536,7 +537,15 @@ def register_content_gen_commands(cli: click.Group) -> None:
                     override_reason=ctx.qc_gate.override_reason,
                     actor_label=actor,
                     actor="operator",
+                    brief_id=ctx.brief_reference.brief_id if ctx.brief_reference else "",
                 )
+                if ctx.brief_reference:
+                    BriefService().record_override(
+                        ctx.brief_reference.brief_id,
+                        actor_label=actor,
+                        reason=ctx.qc_gate.override_reason,
+                        pipeline_id=ctx.pipeline_id,
+                    )
             except Exception:
                 pass  # Audit store is best-effort
 
@@ -644,6 +653,76 @@ def register_content_gen_commands(cli: click.Group) -> None:
                 click.echo(f"\nSaved to: {output}")
 
         asyncio.run(_run())
+
+    @content_gen.group()
+    def learnings() -> None:
+        """Review and apply performance learnings."""
+
+    @learnings.command("list")
+    @click.option("--category", default=None, help="Optional learning category filter")
+    @click.option("--durability", default=None, help="Optional durability filter")
+    def learnings_list(category: str | None, durability: str | None) -> None:
+        from cc_deep_research.content_gen.models import LearningCategory, LearningDurability
+        from cc_deep_research.content_gen.storage import PerformanceLearningStore
+
+        store = PerformanceLearningStore()
+        learnings = store.get_active_learnings(
+            category=LearningCategory(category) if category else None,
+            durability=LearningDurability(durability) if durability else None,
+        )
+        if not learnings:
+            click.echo("No active learnings found.")
+            return
+        for learning in learnings:
+            click.echo(f"{learning.learning_id} [{learning.category.value}/{learning.durability.value}]")
+            click.echo(f"  Observation: {learning.observation}")
+            click.echo(f"  Guidance: {learning.guidance}")
+            if learning.source_video_ids:
+                click.echo(f"  Source videos: {', '.join(learning.source_video_ids[:3])}")
+
+    @learnings.command("apply")
+    @click.option("--learning-id", "learning_ids", multiple=True, required=True, help="Learning ID to promote into durable strategy guidance")
+    @click.option("--approved-by", default="operator", help="Operator applying the learning")
+    def learnings_apply(learning_ids: tuple[str, ...], approved_by: str) -> None:
+        from cc_deep_research.content_gen.storage import PerformanceLearningStore
+
+        store = PerformanceLearningStore()
+        guidance = store.apply_learnings_to_strategy(
+            list(learning_ids),
+            operator_approved=True,
+            record_versions=True,
+        )
+        click.echo(f"Applied {len(learning_ids)} learning(s) to strategy guidance.")
+        click.echo(f"Winning hooks: {len(guidance.winning_hooks)}")
+        click.echo(f"Winning framings: {len(guidance.winning_framings)}")
+        click.echo(f"Proof expectations: {len(guidance.proof_expectations)}")
+        click.echo(f"Approved by: {approved_by}")
+
+    @learnings.command("rules")
+    @click.option("--kind", default=None, help="Optional rule kind filter")
+    def learnings_rules(kind: str | None) -> None:
+        from cc_deep_research.telemetry.query import query_content_gen_rule_versions
+
+        result = query_content_gen_rule_versions(kind=kind)
+        versions = result.get("versions", [])
+        if not versions:
+            click.echo("No rule versions recorded.")
+            return
+        for version in versions:
+            click.echo(f"{version['created_at']} [{version['kind']}/{version['operation']}]")
+            click.echo(f"  {version['change_summary']}")
+
+    @content_gen.command("operating-fitness")
+    def operating_fitness() -> None:
+        from cc_deep_research.telemetry.query import query_content_gen_operating_fitness
+
+        result = query_content_gen_operating_fitness()
+        summary = result.get("summary", {})
+        if not summary:
+            click.echo("No operating-fitness metrics recorded yet.")
+            return
+        for key, value in summary.items():
+            click.echo(f"{key}: {value}")
 
     # ------------------------------------------------------------------
     # Script command (existing, preserved)
@@ -846,6 +925,27 @@ def register_content_gen_commands(cli: click.Group) -> None:
         default=None,
         help="Resume from saved PipelineContext",
     )
+    @click.option("--content-type", default="", help="Run-level content type profile")
+    @click.option(
+        "--effort-tier",
+        type=click.Choice(["quick", "standard", "deep"]),
+        default=None,
+        help="Run-level effort tier used for scoring, research depth, and iteration budgets",
+    )
+    @click.option("--owner", default="", help="Run owner for traceability and execution handoff")
+    @click.option("--channel-goal", default="", help="Primary channel or distribution goal")
+    @click.option("--success-target", default="", help="Current success target for this run")
+    @click.option(
+        "--research-depth-override",
+        type=click.Choice(["light", "standard", "deep"]),
+        default=None,
+        help="Override automatic research-depth routing for this run",
+    )
+    @click.option(
+        "--research-override-reason",
+        default="",
+        help="Why the automatic research-depth routing is being overridden",
+    )
     @click.option("-o", "--output", type=click.Path(), default=None)
     @click.option("--save-context", is_flag=True, help="Save pipeline context as JSON")
     @click.option("--quiet", is_flag=True, help="Only show final result")
@@ -855,6 +955,13 @@ def register_content_gen_commands(cli: click.Group) -> None:
         from_stage: int | None,
         to_stage: int | None,
         from_file: str | None,
+        content_type: str,
+        effort_tier: str | None,
+        owner: str,
+        channel_goal: str,
+        success_target: str,
+        research_depth_override: str | None,
+        research_override_reason: str,
         output: str | None,
         save_context: bool,
         quiet: bool,
@@ -868,6 +975,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
             BacklogOutput,
             PipelineCandidate,
             PipelineContext,
+            RunConstraints,
             ScoringOutput,
         )
 
@@ -946,6 +1054,24 @@ def register_content_gen_commands(cli: click.Group) -> None:
         context_output_path = _resolve_pipeline_context_path(output, save_context)
         latest_ctx = ctx
 
+        if ctx is not None and ctx.run_constraints is not None:
+            run_constraints = ctx.run_constraints.model_copy(deep=True)
+        else:
+            run_constraints = RunConstraints()
+        if content_type:
+            run_constraints.content_type = content_type
+        if effort_tier:
+            run_constraints.effort_tier = effort_tier
+        if owner:
+            run_constraints.owner = owner
+        if channel_goal:
+            run_constraints.channel_goal = channel_goal
+        if success_target:
+            run_constraints.success_target = success_target
+        if research_depth_override:
+            run_constraints.research_depth_override = research_depth_override
+            run_constraints.research_override_reason = research_override_reason
+
         def progress(idx: int, label: str) -> None:
             if not quiet:
                 click.echo(f"  Stage {idx + 1}/{len(PIPELINE_STAGES)}: {label}...")
@@ -962,6 +1088,8 @@ def register_content_gen_commands(cli: click.Group) -> None:
                 _write_pipeline_context(stage_ctx, context_output_path)
 
         async def _run() -> PipelineContext:
+            import inspect
+
             from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
 
             orch = ContentGenOrchestrator(config)
@@ -974,8 +1102,7 @@ def register_content_gen_commands(cli: click.Group) -> None:
                 if resume_error:
                     raise click.UsageError(resume_error)
             t = theme or idea or "general"
-            return await orch.run_full_pipeline(
-                t,
+            kwargs = dict(
                 from_stage=start,
                 to_stage=to_stage,
                 initial_context=ctx,
@@ -983,6 +1110,9 @@ def register_content_gen_commands(cli: click.Group) -> None:
                 progress_callback=progress,
                 stage_completed_callback=on_stage_completed,
             )
+            if "run_constraints" in inspect.signature(orch.run_full_pipeline).parameters:
+                kwargs["run_constraints"] = run_constraints
+            return await orch.run_full_pipeline(t, **kwargs)
 
         try:
             result = asyncio.run(_run())

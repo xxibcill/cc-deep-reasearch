@@ -122,25 +122,39 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     ),
     "generate_angles": ContentGenStageContract(
         stage_name="generate_angles",
-        prompt_module="prompts/angle.py",
-        contract_version="1.1.0",
-        parser_location="agents/angle.py::_parse_angle_options",
-        output_model="AngleOutput",
-        format_notes="Repeated '---' blocks plus trailing best-angle summary fields.",
+        prompt_module="prompts/thesis.py",
+        contract_version="2.0.0",
+        parser_location="agents/thesis.py::_parse_thesis_artifact",
+        output_model="ThesisArtifact",
+        format_notes=(
+            "P3-T2: This stage produces a unified thesis artifact that combines "
+            "angle selection with argument design in one pass. The output includes "
+            "selected angle fields (target_audience, viewer_problem, core_promise, etc.) "
+            "alongside the thesis structure (thesis, audience_belief_to_challenge, "
+            "core_mechanism, proof_anchors, safe_claims, beat_claim_plan, etc.). "
+            "Repeated '---' blocks for proof_anchors, counterarguments, claims, and beats. "
+            "Scalar fields for angle metadata and thesis core."
+        ),
         required_fields=(
+            "angle_id",
             "target_audience",
             "viewer_problem",
             "core_promise",
             "primary_takeaway",
+            "thesis",
+            "audience_belief_to_challenge",
+            "core_mechanism",
         ),
         expected_sections=(
-            "lens",
-            "format",
-            "tone",
-            "cta",
-            "why_this_version_should_exist",
-            "Best angle_id",
-            "Selection reasoning",
+            "proof_anchors",
+            "counterarguments",
+            "safe_claims",
+            "unsafe_claims",
+            "beat_claim_plan",
+            "selection_reasoning",
+            "what_this_contributes",
+            "genericity_flags",
+            "differentiation_stategy",
         ),
         failure_mode="fail_fast",
     ),
@@ -177,30 +191,24 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
         parser_location="agents/argument_map.py::_parse_argument_map",
         output_model="ArgumentMap",
         format_notes=(
-            "P3-T2: This stage produces the single unified thesis artifact that replaces "
-            "the previous separate angle-selection + argument-design flow. "
-            "Scalar thesis fields (thesis, audience_belief_to_challenge, core_mechanism) "
-            "carry the chosen angle and core claim. Repeated '---' blocks for proof_anchors, "
-            "counterarguments, safe_claims, unsafe_claims, and beat_claim_plan provide "
-            "the full support structure. The beat_claim_plan is the narrative contract "
-            "that seeds scripting directly. Claim ledger linkage is via proof_id cross-reference."
+            "P3-T2: DEPRECATED - Argument map is now produced as part of ThesisArtifact "
+            "in the generate_angles stage. This stage is kept for backward compatibility "
+            "and populates argument_map field from thesis_artifact when available. "
+            "The unified thesis artifact combines angle selection with argument design."
         ),
         required_fields=(
             "thesis",
             "audience_belief_to_challenge",
             "core_mechanism",
-            "proof_anchors",
         ),
         expected_sections=(
+            "proof_anchors",
             "counterarguments",
             "safe_claims",
             "unsafe_claims",
             "beat_claim_plan",
-            "what_this_contributes",
-            "genericity_flags",
-            "differentiation_strategy",
         ),
-        failure_mode="fail_fast",
+        failure_mode="tolerant",
     ),
     "run_scripting": ContentGenStageContract(
         stage_name="run_scripting",
@@ -1123,7 +1131,7 @@ CONTENT_TYPE_PROFILES: dict[str, ContentTypeProfile] = {
         packaging_depth="standard",
         use_combined_execution_brief=False,
         skip_stages=[],
-        required_artifacts=["research_pack", "script", "visual_plan", "packaging"],
+        required_artifacts=["research_pack", "script", "visual_plan", "production_brief", "packaging"],
     ),
     "newsletter": ContentTypeProfile(
         profile_key="newsletter",
@@ -1200,7 +1208,7 @@ CONTENT_TYPE_PROFILES: dict[str, ContentTypeProfile] = {
         packaging_depth="standard",
         use_combined_execution_brief=False,
         skip_stages=[],
-        required_artifacts=["research_pack", "script", "visual_plan", "packaging"],
+        required_artifacts=["research_pack", "script", "visual_plan", "production_brief", "packaging"],
     ),
 }
 
@@ -1261,6 +1269,15 @@ class RunConstraints(BaseModel):
     max_iterations: int | None = Field(
         default=None,
         description="Override for max iterations (None = use config default).",
+    )
+    # P3-T1: Operator override for research depth routing
+    research_depth_override: Literal["", "light", "standard", "deep"] = Field(
+        default="",
+        description="Optional operator-selected research depth that overrides ROI-based routing.",
+    )
+    research_override_reason: str = Field(
+        default="",
+        description="Why the operator overrode the default research depth routing.",
     )
 
 
@@ -1593,6 +1610,133 @@ class AngleOutput(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# P3-T2: Unified Thesis Artifact (replaces separate angle + argument map)
+# ---------------------------------------------------------------------------
+
+
+class ThesisArtifact(BaseModel):
+    """P3-T2: Unified thesis artifact that combines angle selection with argument design.
+
+    This artifact replaces the previous two-stage flow of:
+    1. generate_angles -> AngleOutput (with angle options + selection)
+    2. build_argument_map -> ArgumentMap (with thesis, claims, beats)
+
+    Now produced in a single stage with full traceability between the
+    selected editorial angle and its supporting argument structure.
+    """
+
+    idea_id: str = ""
+
+    # === Selected Angle Fields (from AngleOption, embedded directly) ===
+    angle_id: str = Field(default_factory=lambda: uuid4().hex[:8])
+    target_audience: str = ""
+    viewer_problem: str = ""
+    core_promise: str = ""
+    primary_takeaway: str = ""
+    lens: str = ""
+    format: str = ""
+    tone: str = ""
+    cta: str = ""
+    why_this_version_should_exist: str = ""
+    differentiation_summary: str = Field(
+        default="",
+        description="Why this angle is distinct from the baseline market framing for this topic",
+    )
+    genericity_risks: list[str] = Field(
+        default_factory=list,
+        description="Known failure modes: clichéd framing, interchangeable takeaways, generic advice",
+    )
+    market_framing_challenged: str = Field(
+        default="",
+        description="What common/repeated market framing this angle reframes or contradicts",
+    )
+
+    # === Thesis Fields (from ArgumentMap, carry the chosen angle and core claim) ===
+    thesis: str = ""
+    audience_belief_to_challenge: str = ""
+    core_mechanism: str = ""
+
+    # === Support Structure (from ArgumentMap) ===
+    proof_anchors: list[ArgumentProofAnchor] = Field(default_factory=list)
+    counterarguments: list[ArgumentCounterargument] = Field(default_factory=list)
+    safe_claims: list[ArgumentClaim] = Field(default_factory=list)
+    unsafe_claims: list[ArgumentClaim] = Field(default_factory=list)
+    beat_claim_plan: list[ArgumentBeatClaim] = Field(default_factory=list)
+
+    # === Differentiation (from ArgumentMap) ===
+    what_this_contributes: str = Field(
+        default="",
+        description="What the selected angle contributes beyond consensus or standard advice",
+    )
+    genericity_flags: list[str] = Field(
+        default_factory=list,
+        description="Specific generic or clichéd framings this script must avoid",
+    )
+    differentiation_stategy: str = Field(
+        default="",
+        description="The editorial strategy for standing out from market-standard content on this topic",
+    )
+
+    # === Selection metadata ===
+    selection_reasoning: str = Field(
+        default="",
+        description="Why this angle/thesis was chosen over alternatives",
+    )
+
+    @model_validator(mode="after")
+    def _validate_references(self) -> ThesisArtifact:
+        """Validate that all ID references are consistent within the artifact."""
+        proof_ids = _ensure_unique_ids(
+            self.proof_anchors,
+            id_attr="proof_id",
+            label="proof_anchors",
+        )
+        counterargument_ids = _ensure_unique_ids(
+            self.counterarguments,
+            id_attr="counterargument_id",
+            label="counterarguments",
+        )
+        claim_ids = _ensure_unique_ids(
+            [*self.safe_claims, *self.unsafe_claims],
+            id_attr="claim_id",
+            label="claims",
+        )
+
+        for claim in [*self.safe_claims, *self.unsafe_claims]:
+            _ensure_known_ids(
+                claim.supporting_proof_ids,
+                valid_ids=proof_ids,
+                label=f"claim '{claim.claim_id}' supporting_proof_ids",
+            )
+
+        for counterargument in self.counterarguments:
+            _ensure_known_ids(
+                counterargument.response_proof_ids,
+                valid_ids=proof_ids,
+                label=f"counterargument '{counterargument.counterargument_id}' response_proof_ids",
+            )
+
+        for beat in self.beat_claim_plan:
+            _ensure_known_ids(
+                beat.claim_ids,
+                valid_ids=claim_ids,
+                label=f"beat '{beat.beat_id}' claim_ids",
+            )
+            _ensure_known_ids(
+                beat.proof_anchor_ids,
+                valid_ids=proof_ids,
+                label=f"beat '{beat.beat_id}' proof_anchor_ids",
+            )
+            _ensure_known_ids(
+                beat.counterargument_ids,
+                valid_ids=counterargument_ids,
+                label=f"beat '{beat.beat_id}' counterargument_ids",
+            )
+
+        return self
+
+
+# ---------------------------------------------------------------------------
 # Pipeline stage 4: Research pack builder
 # ---------------------------------------------------------------------------
 
@@ -1862,6 +2006,29 @@ class FactRiskGateOutput(BaseModel):
     total_held: int = 0
     total_killed: int = 0
     total_proceed_with_uncertainty: int = 0
+
+
+class ProgressiveQCIssue(BaseModel):
+    """A quality issue detected before final release QC."""
+
+    issue_id: str = Field(default_factory=lambda: f"issue_{uuid4().hex[:8]}")
+    category: Literal["fact", "brand", "packaging", "execution"] = "fact"
+    summary: str = ""
+    severity: Literal["low", "medium", "high"] = "medium"
+    first_seen_stage: str = ""
+    is_resolved: bool = False
+    resolution_note: str = ""
+
+
+class ProgressiveQCCheckpoint(BaseModel):
+    """Lightweight QC pass attached to an earlier workflow phase."""
+
+    checkpoint_name: Literal["research", "draft", "execution"] = "research"
+    stage_name: str = ""
+    status: Literal["pass", "warning", "blocked"] = "pass"
+    summary: str = ""
+    issue_ids: list[str] = Field(default_factory=list)
+    created_at: str = ""
 
 
 class RetrievalDecision(BaseModel):
@@ -2647,6 +2814,10 @@ class HumanQCGate(BaseModel):
         default="",
         description="ISO timestamp of when the override was applied",
     )
+    issue_origin_summary: list[str] = Field(
+        default_factory=list,
+        description="Summary of where major issues first appeared in earlier QC checkpoints.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2916,6 +3087,9 @@ class PipelineLaneContext(BaseModel):
     role: Literal["primary", "runner_up"] = "primary"
     status: Literal["selected", "runner_up", "in_production", "published"] = "selected"
     last_completed_stage: int = -1
+    # P3-T2: Unified thesis artifact (replaces separate angles + argument_map)
+    thesis_artifact: ThesisArtifact | None = None
+    # Deprecated: angles and argument_map are now merged into thesis_artifact
     angles: AngleOutput | None = None
     research_pack: ResearchPack | None = None
     argument_map: ArgumentMap | None = None
@@ -2933,6 +3107,14 @@ class PipelineLaneContext(BaseModel):
     fact_risk_gate: FactRiskGate | None = Field(
         default=None,
         description="Early gate output after thesis artifact, before drafting",
+    )
+    progressive_qc_issues: list[ProgressiveQCIssue] = Field(
+        default_factory=list,
+        description="Quality issues detected before final QC, with their first-seen stage.",
+    )
+    progressive_qc_checkpoints: list[ProgressiveQCCheckpoint] = Field(
+        default_factory=list,
+        description="Research, draft, and execution QC checkpoints captured before final QC.",
     )
     # P4-T1: Early packaging signals captured from angle/channel stage
     early_packaging_signals: EarlyPackagingSignals | None = Field(
@@ -3112,6 +3294,7 @@ class ContentGenRunMetrics(BaseModel):
     idea_score: float = 0.0
     content_type: str = ""
     effort_tier: str = ""
+    release_queue_state: str = ""
 
     # Stage-level timing (milliseconds)
     phase_1_strategy_ms: int = 0
@@ -3134,6 +3317,7 @@ class ContentGenRunMetrics(BaseModel):
     # Reuse signals
     reuse_recommended: bool = False
     derivative_count: int = 0
+    approved_with_known_risks: bool = False
 
     # Output metrics
     script_word_count: int = 0
@@ -3398,6 +3582,9 @@ class StageTraceMetadata(BaseModel):
     approved: bool = False
     active_candidate_count: int = 0
     parse_mode: str = ""  # "json" | "legacy" — which parse path succeeded
+    fact_risk_decision: str = ""
+    progressive_issue_count: int = 0
+    checkpoint_count: int = 0
 
 
 class PipelineStageTrace(BaseModel):
@@ -3484,9 +3671,16 @@ class PipelineContext(BaseModel):
     runner_up_idea_ids: list[str] = Field(default_factory=list)
     active_candidates: list[PipelineCandidate] = Field(default_factory=list)
     lane_contexts: list[PipelineLaneContext] = Field(default_factory=list)
+    # P3-T2: Unified thesis artifact (replaces separate angles + argument_map)
+    thesis_artifact: ThesisArtifact | None = None
+    # Deprecated: angles is kept for backward compatibility
     angles: AngleOutput | None = None
     research_pack: ResearchPack | None = None
     argument_map: ArgumentMap | None = None
+    fact_risk_gate: FactRiskGate | None = Field(
+        default=None,
+        description="Top-level compatibility alias for the primary lane's fact-risk gate.",
+    )
     scripting: ScriptingContext | None = None
     visual_plan: VisualPlanOutput | None = None
     production_brief: ProductionBrief | None = None
@@ -3769,7 +3963,7 @@ PIPELINE_STAGE_LABELS: dict[str, str] = {
     "plan_opportunity": "Planning opportunity brief",
     "build_backlog": "Building backlog",
     "score_ideas": "Scoring ideas",
-    "generate_angles": "Generating angles",
+    "generate_angles": "Building thesis",  # P3-T2: now produces unified thesis artifact
     "build_research_pack": "Building research pack",
     "build_argument_map": "Building argument map",
     "run_scripting": "Running scripting pipeline",
@@ -4061,6 +4255,14 @@ class ManagedOpportunityBrief(BaseModel):
     branch_reason: str = Field(
         default="",
         description="Why this brief was branched (e.g., 'different channel', 'experiment').",
+    )
+    operating_policies: list["OperatingPhasePolicy"] = Field(
+        default_factory=list,
+        description="The phase policies that governed this brief when it was created or updated.",
+    )
+    override_history: list[str] = Field(
+        default_factory=list,
+        description="Human-readable history of operator overrides attached to this brief.",
     )
 
     def head_revision(self, revisions: list[BriefRevision]) -> BriefRevision | None:
