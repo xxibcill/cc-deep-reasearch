@@ -98,7 +98,7 @@ export function ContentGenNavigation() {
   }
 
   return (
-    <div className="flex flex-col gap-3 border-t border-border/60 pt-4">
+    <div className="flex flex-col gap-2">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           {isPipelineDetail || isBacklogDetail || isBriefDetail ? (
