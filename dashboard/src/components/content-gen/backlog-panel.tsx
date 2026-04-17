@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogBody, DialogFooter } from '@/components/ui/dialog'
 import { NativeSelect } from '@/components/ui/native-select'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { BacklogItemForm } from '@/components/content-gen/backlog-item-form'
 import {
   backlogHook,
@@ -24,6 +23,7 @@ import {
   STATUS_OPTIONS,
 } from '@/components/content-gen/backlog-shared'
 import { ItemsView, ItemsViewHeader, ItemsViewLoading, ItemsViewEmpty, ItemsViewToggle, type ItemsViewMode } from '@/components/content-gen/items-view'
+import { DataTable, type DataTableColumn } from '@/components/content-gen/data-table'
 import { cn } from '@/lib/utils'
 import type { BacklogItem } from '@/types/content-gen'
 
@@ -446,118 +446,164 @@ export function BacklogPanel({
           })}
         </>
       ) : (
-        <Table>
-                <TableHeader className="bg-surface-raised/60">
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="w-10">
-                      <input
-                        type="checkbox"
-                        checked={selectedIdeaIds.size === filteredItems.length && filteredItems.length > 0}
-                        onChange={toggleSelectAll}
-                        className="h-4 w-4 rounded border-input"
-                      />
-                    </TableHead>
-                    <TableHead>Idea</TableHead>
-                    <TableHead>Backlog status</TableHead>
-                    <TableHead>Pipeline</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Score</TableHead>
-                    <TableHead>Recommendation</TableHead>
-                    <TableHead>Theme</TableHead>
-                    <TableHead>Updated</TableHead>
-                    <TableHead className="text-right">&nbsp;</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredItems.map((item) => {
-                    const rowKey = item.idea_id
-
-                    return (
-                      <TableRow
-                        key={rowKey}
-                        onClick={(e) => navigateToDetail(item.idea_id, e)}
-                        className={cn(
-                          'cursor-pointer hover:bg-surface/50',
-                          selectedIdeaIds.has(item.idea_id) && 'bg-primary/5'
-                        )}
-                      >
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={selectedIdeaIds.has(item.idea_id)}
-                            onChange={() => toggleSelect(item.idea_id)}
-                            className="h-4 w-4 rounded border-input"
-                          />
-                        </TableCell>
-                        <TableCell className="min-w-[22rem]">
-                          <div className="space-y-1">
-                            <p className="text-sm font-medium text-foreground">{backlogTitle(item)}</p>
-                            <p className="text-xs text-muted-foreground">{backlogSummary(item)}</p>
-                            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                              <span className="font-mono">{item.idea_id.slice(0, 8)}</span>
-                              {item.selection_reasoning ? (
-                                <span className="truncate">Reason: {item.selection_reasoning}</span>
-                              ) : null}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-2">
-                            <Badge variant={statusBadgeVariant(item.status)}>{item.status}</Badge>
-                            <NativeSelect
-                              value={item.status}
-                              onChange={(event) => {
-                                if (onUpdateStatus) {
-                                  void runAction(`${rowKey}-status`, async () =>
-                                    onUpdateStatus(item.idea_id, { status: event.target.value }),
-                                  )
-                                }
-                              }}
-                              disabled={!onUpdateStatus || busyKey === `${rowKey}-status`}
-                              className="h-9 min-w-[10rem] rounded-md"
-                            >
-                              {STATUS_OPTIONS.map((status) => (
-                                <option key={status} value={status}>
-                                  {status}
-                                </option>
-                              ))}
-                            </NativeSelect>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {hasActiveProductionStatus(item.production_status) ? (
-                            <Badge variant={productionStatusBadgeVariant(item.production_status)}>
-                              {formatProductionStatus(item.production_status)}
-                            </Badge>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">idle</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-foreground/80">{item.category || '—'}</TableCell>
-                        <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">
-                          {item.latest_score ?? '—'}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={recommendationBadgeVariant(item.latest_recommendation)}>
-                            {item.latest_recommendation || 'unscored'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="max-w-[12rem] truncate text-xs text-muted-foreground">
-                          {item.source_theme || '—'}
-                        </TableCell>
-                        <TableCell className="max-w-[12rem] text-xs text-muted-foreground">
-                          {formatTimestamp(item.updated_at || item.created_at)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            {renderItemActions(item)}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
+        <DataTable
+          columns={[
+            {
+              id: 'idea',
+              header: 'Idea',
+              render: (item) => (
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-foreground">{backlogTitle(item)}</p>
+                  <p className="text-xs text-muted-foreground">{backlogSummary(item)}</p>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span className="font-mono">{item.idea_id.slice(0, 8)}</span>
+                    {item.selection_reasoning ? (
+                      <span className="truncate">Reason: {item.selection_reasoning}</span>
+                    ) : null}
+                  </div>
+                </div>
+              ),
+              className: 'min-w-[22rem]',
+            },
+            {
+              id: 'status',
+              header: 'Backlog status',
+              render: (item) => (
+                <div className="space-y-2">
+                  <Badge variant={statusBadgeVariant(item.status)}>{item.status}</Badge>
+                  <NativeSelect
+                    value={item.status}
+                    onChange={(event) => {
+                      if (onUpdateStatus) {
+                        void runAction(`${item.idea_id}-status`, async () =>
+                          onUpdateStatus(item.idea_id, { status: event.target.value }),
+                        )
+                      }
+                    }}
+                    disabled={!onUpdateStatus || busyKey === `${item.idea_id}-status`}
+                    className="h-9 min-w-[10rem] rounded-md"
+                  >
+                    {STATUS_OPTIONS.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </div>
+              ),
+            },
+            {
+              id: 'pipeline',
+              header: 'Pipeline',
+              render: (item) =>
+                hasActiveProductionStatus(item.production_status) ? (
+                  <Badge variant={productionStatusBadgeVariant(item.production_status)}>
+                    {formatProductionStatus(item.production_status)}
+                  </Badge>
+                ) : (
+                  <span className="text-xs text-muted-foreground">idle</span>
+                ),
+            },
+            {
+              id: 'category',
+              header: 'Category',
+              render: (item) => <span className="text-foreground/80">{item.category || '—'}</span>,
+            },
+            {
+              id: 'score',
+              header: 'Score',
+              render: (item) => (
+                <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                  {item.latest_score ?? '—'}
+                </span>
+              ),
+            },
+            {
+              id: 'recommendation',
+              header: 'Recommendation',
+              render: (item) => (
+                <Badge variant={recommendationBadgeVariant(item.latest_recommendation)}>
+                  {item.latest_recommendation || 'unscored'}
+                </Badge>
+              ),
+            },
+            {
+              id: 'theme',
+              header: 'Theme',
+              render: (item) => (
+                <span className="max-w-[12rem] truncate text-xs text-muted-foreground">
+                  {item.source_theme || '—'}
+                </span>
+              ),
+            },
+            {
+              id: 'updated',
+              header: 'Updated',
+              render: (item) => (
+                <span className="max-w-[12rem] text-xs text-muted-foreground">
+                  {formatTimestamp(item.updated_at || item.created_at)}
+                </span>
+              ),
+            },
+            {
+              id: 'actions',
+              header: '',
+              render: (item) => (
+                <div className="flex items-center justify-end gap-1">
+                  {renderItemActions(item)}
+                </div>
+              ),
+              className: 'text-right',
+            },
+          ]}
+          data={filteredItems}
+          keyField="idea_id"
+          onRowClick={(item, e) => navigateToDetail(item.idea_id, e)}
+          selection={{
+            selectedIds: selectedIdeaIds,
+            onToggle: toggleSelect,
+            onToggleAll: toggleSelectAll,
+          }}
+          bulkActions={
+            selectedIdeaIds.size > 0 ? (
+              <div className="flex items-center justify-between rounded-xl border border-border bg-surface/80 px-4 py-3 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-foreground">
+                    {selectedIdeaIds.size} selected
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={toggleSelectAll}
+                    className="h-8 text-xs"
+                  >
+                    {selectedIdeaIds.size === filteredItems.length ? 'Deselect all' : 'Select all'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearSelection}
+                    className="h-8 text-xs"
+                  >
+                    Clear
+                  </Button>
+                </div>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setBulkDeleteConfirm(new Set(selectedIdeaIds))}
+                  className="h-8 gap-2"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete selected
+                </Button>
+              </div>
+            ) : undefined
+          }
+        />
       )}
 
       {deleteConfirm && (

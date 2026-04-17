@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { Badge } from '@/components/ui/badge'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ItemsView, ItemsViewHeader, ItemsViewLoading, ItemsViewEmpty, ItemsViewToggle, type ItemsViewMode } from '@/components/content-gen/items-view'
+import { DataTable, type DataTableColumn } from '@/components/content-gen/data-table'
 import useContentGen from '@/hooks/useContentGen'
 import type { SavedScriptRun } from '@/types/content-gen'
 
@@ -33,6 +33,59 @@ export function ScriptsPanel({ onReuseInputs }: ScriptsPanelProps) {
     e.stopPropagation()
     router.push(`/content-gen/scripts/${runId}`)
   }
+
+  const columns: DataTableColumn<SavedScriptRun>[] = [
+  {
+    id: 'script',
+    header: 'Script',
+    render: (run) => (
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-foreground truncate max-w-md">
+          {run.raw_idea || 'Untitled script'}
+        </p>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span className="font-mono">{run.run_id.slice(0, 8)}</span>
+        </div>
+      </div>
+    ),
+    className: 'min-w-[22rem]',
+  },
+  {
+    id: 'execution',
+    header: 'Execution',
+    render: (run) => (
+      <Badge variant="outline">
+        {run.execution_mode === 'iterative' ? 'Iterative' : 'Single pass'}
+      </Badge>
+    ),
+  },
+  {
+    id: 'iterations',
+    header: 'Iterations',
+    render: (run) =>
+      run.iterations ? (
+        <span className="font-mono text-xs tabular-nums">
+          {run.iterations.count}/{run.iterations.max_iterations}
+        </span>
+      ) : (
+        <span className="text-xs text-muted-foreground">1</span>
+      ),
+  },
+  {
+    id: 'words',
+    header: 'Words',
+    render: (run) => (
+      <span className="font-mono text-xs tabular-nums text-muted-foreground">
+        {run.word_count.toLocaleString()}
+      </span>
+    ),
+  },
+  {
+    id: 'saved',
+    header: 'Saved',
+    render: (run) => <span className="text-xs text-muted-foreground">{run.saved_at}</span>,
+  },
+]
 
   if (loading) {
     return <ItemsViewLoading label="scripts" />
@@ -124,57 +177,12 @@ export function ScriptsPanel({ onReuseInputs }: ScriptsPanelProps) {
             ))}
           </>
         ) : (
-          <Table>
-            <TableHeader className="bg-surface-raised/60">
-              <TableRow className="hover:bg-transparent">
-                <TableHead>Script</TableHead>
-                <TableHead>Execution</TableHead>
-                <TableHead>Iterations</TableHead>
-                <TableHead>Words</TableHead>
-                <TableHead>Saved</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {scripts.map((run) => (
-                <TableRow
-                  key={run.run_id}
-                  onClick={(e) => navigateToDetail(run.run_id, e)}
-                  className="cursor-pointer hover:bg-surface/50"
-                >
-                  <TableCell className="min-w-[22rem]">
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-foreground truncate max-w-md">
-                        {run.raw_idea || 'Untitled script'}
-                      </p>
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <span className="font-mono">{run.run_id.slice(0, 8)}</span>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">
-                      {run.execution_mode === 'iterative' ? 'Iterative' : 'Single pass'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {run.iterations ? (
-                      <span className="font-mono text-xs tabular-nums">
-                        {run.iterations.count}/{run.iterations.max_iterations}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">1</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">
-                    {run.word_count.toLocaleString()}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {run.saved_at}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <DataTable
+            columns={columns}
+            data={scripts}
+            keyField="run_id"
+            onRowClick={(run, e) => navigateToDetail(run.run_id, e)}
+          />
         )}
       </ItemsView>
     </div>
