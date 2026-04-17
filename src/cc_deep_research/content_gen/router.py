@@ -11,7 +11,7 @@ from typing import Any, Literal
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from cc_deep_research.config import load_config
 from cc_deep_research.content_gen.agents.backlog_chat import (
@@ -39,6 +39,7 @@ from cc_deep_research.content_gen.models import (
     PIPELINE_STAGE_LABELS,
     PIPELINE_STAGES,
     BacklogItem,
+    HookSet,
     PipelineContext,
     ReleaseState,
     RunConstraints,
@@ -825,6 +826,144 @@ def register_content_gen_routes(
             response.script = script_text
             response.word_count = len(script_text.split())
         return JSONResponse(content=json.loads(response.model_dump_json()))
+
+    # ------------------------------------------------------------------
+    # Script variant generation & update
+    # ------------------------------------------------------------------
+
+    class GenerateVariantsRequest(BaseModel):
+        tone: str | None = None
+        cta_goal: str | None = None
+
+    @app.post("/api/content-gen/scripts/{run_id}/generate-variants")
+    async def generate_script_variants(
+        run_id: str,
+        request: GenerateVariantsRequest,
+    ) -> JSONResponse:
+        """Generate new hook and CTA variants for an existing script run."""
+        store = ScriptingStore()
+        run = store.get(run_id)
+        if run is None:
+            return JSONResponse(status_code=404, content={"error": "Script run not found"})
+
+        # Load context
+        context: ScriptingContext | None = None
+        try:
+            from pathlib import Path
+
+            context_text = Path(run.context_path).read_text()
+            if context_text:
+                context = ScriptingContext.model_validate_json(context_text)
+        except (FileNotFoundError, json.JSONDecodeError, ValidationError):
+            pass
+
+        if context is None:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Script context not found - cannot generate variants"},
+            )
+
+        # Ensure required fields exist
+        if context.core_inputs is None or context.angle is None:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "Script is missing core_inputs or angle - run full scripting first"
+                },
+            )
+
+        # Override tone if provided
+        if request.tone is not None:
+            context.tone = request.tone
+        if request.cta_goal is not None:
+            context.cta = request.cta_goal
+
+        # Generate hooks and CTA using ScriptingAgent
+        from cc_deep_research.content_gen.agents.scripting import ScriptingAgent
+        from cc_deep_research.llm import LLMRouter
+
+        config = load_config()
+        llm = LLMRouter(config.content_gen.llm)
+        agent = ScriptingAgent(llm)
+
+        # Generate hooks (step 5)
+        context = await agent.generate_hooks(context)
+
+        # Generate CTA (step 5b)
+        context = await agent.generate_cta(context)
+
+        # Save updated context
+        store = ScriptingStore()
+        store._save_context(run_id, context)
+
+        return JSONResponse(
+            content={
+                "hooks": json.loads(context.hooks.model_dump_json()),
+                "cta_variants": json.loads(context.cta_variants.model_dump_json()),
+            }
+        )
+
+    class UpdateScriptRequest(BaseModel):
+        hook: str | None = None
+        cta: str | None = None
+        script: str | None = None
+
+    @app.patch("/api/content-gen/scripts/{run_id}")
+    async def update_script(
+        run_id: str,
+        request: UpdateScriptRequest,
+    ) -> JSONResponse:
+        """Update a script run with new hook, CTA, or full script content."""
+        if request.hook is None and request.cta is None and request.script is None:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "At least one field (hook, cta, or script) must be provided"},
+            )
+
+        store = ScriptingStore()
+        run = store.get(run_id)
+        if run is None:
+            return JSONResponse(status_code=404, content={"error": "Script run not found"})
+
+        # Load context
+        context: ScriptingContext | None = None
+        try:
+            from pathlib import Path
+
+            context_text = Path(run.context_path).read_text()
+            if context_text:
+                context = ScriptingContext.model_validate_json(context_text)
+        except (FileNotFoundError, json.JSONDecodeError, ValidationError):
+            pass
+
+        if context is None:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Script context not found"},
+            )
+
+        # Update fields
+        if request.hook is not None:
+            if context.hooks is None:
+                context.hooks = HookSet(hooks=[], best_hook=request.hook, best_hook_reason="")
+            else:
+                context.hooks.best_hook = request.hook
+
+        if request.cta is not None:
+            context.cta = request.cta
+
+        if request.script is not None:
+            # Update script_path with new script content
+            from pathlib import Path
+
+            script_path = Path(run.script_path)
+            script_path.parent.mkdir(parents=True, exist_ok=True)
+            script_path.write_text(request.script)
+
+        # Save updated context
+        store._save_context(run_id, context)
+
+        return JSONResponse(content={"success": True, "run_id": run_id})
 
     # ------------------------------------------------------------------
     # Backlog

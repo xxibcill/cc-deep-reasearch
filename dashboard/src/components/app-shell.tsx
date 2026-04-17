@@ -1,19 +1,20 @@
 'use client'
 
+import { Suspense } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Activity } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { NavBar, navItems } from '@/components/ui/nav-bar'
+import { NavBar, NavBarBrand } from '@/components/ui/nav-bar'
 import { NotificationProvider } from '@/components/ui/notification-center'
 import { CommandPalette, KeyboardHint } from '@/components/command-palette'
+import { ContentGenNavigation } from '@/components/content-gen/content-gen-navigation'
+
+function ContentGenNavigationSkeleton() {
+  return <div className="h-10 w-10 animate-pulse rounded-xl bg-muted/25 sm:w-36" />
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
-  const activeItem =
-    navItems.find((item) =>
-      item.href === '/' ? pathname === '/' : pathname.startsWith(item.href),
-    ) ?? navItems[0]
+  const isContentGenRoute = pathname.startsWith('/content-gen')
 
   return (
     <NotificationProvider>
@@ -26,28 +27,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         >
           Skip to main content
         </Link>
-        <header className="sticky top-0 z-50 border-b border-border/70 bg-background/82 backdrop-blur-xl">
+        <header className="sticky top-0 z-50 border-b border-border/70 bg-background/86 backdrop-blur-xl">
           <div className="mx-auto max-w-content px-page-x">
-            <div className="flex flex-col gap-4 py-4 lg:flex-row lg:items-end lg:justify-between">
-              <div className="min-w-0">
-                <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                  <Badge variant="outline" className="text-[0.64rem]">
-                    {activeItem.label}
-                  </Badge>
-                  <span>
-                    Operational visibility for research runs, telemetry, and publishing pipelines.
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-3 lg:items-end">
-                <div className="flex items-center gap-2 rounded-full border border-border/70 bg-surface/75 px-3 py-1.5 text-[0.72rem] text-muted-foreground shadow-card">
-                  <Activity className="h-3.5 w-3.5 text-primary" />
-                  Workspace online
-                </div>
-                <NavBar />
-              </div>
-            </div>
+            <NavBar
+              leadingSlot={<NavBarBrand />}
+              utilitySlot={
+                isContentGenRoute ? (
+                  <Suspense fallback={<ContentGenNavigationSkeleton />}>
+                    <ContentGenNavigation />
+                  </Suspense>
+                ) : null
+              }
+              showCommandTrigger
+            />
           </div>
         </header>
         <main id="main-content">{children}</main>

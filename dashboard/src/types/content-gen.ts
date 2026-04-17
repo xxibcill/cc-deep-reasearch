@@ -443,6 +443,12 @@ export interface HookSet {
   best_hook_reason: string;
 }
 
+export interface CtaVariants {
+  ctas: string[];
+  best_cta: string;
+  best_cta_reason: string;
+}
+
 export interface ScriptVersion {
   content: string;
   word_count: number;

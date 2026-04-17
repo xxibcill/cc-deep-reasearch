@@ -412,10 +412,11 @@ You can also pass an explicit version such as `uv run python scripts/bump_versio
 
 - [Usage Guide](docs/USAGE.md)
 - [Telemetry Architecture](docs/TELEMETRY.md)
-- [Examples](docs/EXAMPLES.md)
 - [Research Workflow Design](docs/RESEARCH_WORKFLOW.md)
 - [Research Workflow and Agent Interactions](docs/RESEARCH_WORKFLOW_AGENT_INTERACTIONS.md)
-- [Research Workflow Improvement Plan](docs/RESEARCH_WORKFLOW_IMPROVEMENT_PLAN.md)
+- [Dashboard Guide](docs/DASHBOARD_GUIDE.md)
+- [Content-Generation Workflow](docs/content-generation/content-generation.md)
+- [Documentation Index](docs/README.md)
 
 ## Benchmark Corpus
 

@@ -2,136 +2,104 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Use Playwright as your eyes to inspect the UI, verify behavior, and fix frontend-side code issues based on what you observe in the browser.
-
 ## Project Overview
 
-CC Deep Research is a CLI tool that performs comprehensive web research using multiple specialized AI agents working together. It combines Tavily's professional web search API with Claude Code's built-in search capabilities.
+CC Deep Research is a CLI tool for multi-stage web research using Tavily search, local specialist agents, session persistence, and telemetry analytics. It supports depth modes (quick, standard, deep), parallel source collection, LLM routing across multiple providers, and real-time dashboard monitoring.
 
 ## Development Commands
 
-### Primary Development Workflow (uv - Recommended)
-
 ```bash
-# Install dependencies and sync environment (one-time)
+# Install dev dependencies
 uv sync
 
-# Run CLI during development - changes reflect immediately
-uv run cc-deep-research research "query"
-
-# Run tests
+# Run all tests
 uv run pytest
 
-# Run specific test
+# Run a single test file
 uv run pytest tests/test_orchestrator.py
 
-# Run linting
+# Run tests matching a pattern
+uv run pytest -k "test_analyzer"
+
+# Lint
 uv run ruff check src/ tests/
 
-# Format code
+# Format
 uv run ruff format src/ tests/
 
-# Type checking
+# Type check
 uv run mypy src/
 
-# Add a new dependency
-uv add package-name
-
-# Add a dev dependency
-uv add --dev package-name
-```
-
-### Alternative Development Methods
-
-```bash
-# Editable install with pip
-pip install -e .
-cc-deep-research research "query"
-
-# Run as Python module directly
-python -m cc_deep_research.cli research "query"
-
-# With uv
-uv run python -m cc_deep_research.cli research "query"
+# Run the full benchmark corpus
+cc-deep-research benchmark run --depth standard --output-dir benchmark_runs/latest
 ```
 
 ## Architecture
 
-### Core Components
+### Core Workflow
 
-1. **Orchestrator** ([orchestrator.py](src/cc_deep_research/orchestrator.py)) - `TeamResearchOrchestrator` coordinates the entire research workflow using specialized agents in phases:
-   - Phase 1: Analyze query and determine strategy (ResearchLeadAgent)
-   - Phase 2: Expand queries for comprehensive coverage (QueryExpanderAgent)
-   - Phase 3: Collect sources from providers (SourceCollectorAgent)
-   - Phase 4: Analyze findings (AnalyzerAgent)
-   - Phase 5: Validate quality (ValidatorAgent)
+The research pipeline is a staged local workflow managed by `TeamResearchOrchestrator` (`src/cc_deep_research/orchestrator.py`), not by the `LocalResearchTeam` wrapper. The primary flow:
 
-2. **Agent System** ([agents/](src/cc_deep_research/agents/)) - Specialized research agents:
-   - `ResearchLeadAgent`: Analyzes query complexity and determines research strategy
-   - `SourceCollectorAgent`: Gathers sources from configured search providers (Tavily, Claude)
-   - `QueryExpanderAgent`: Generates query variations for comprehensive coverage
-   - `AnalyzerAgent`: Synthesizes and analyzes collected information
-   - `ReporterAgent`: Generates final research reports
-   - `ValidatorAgent`: Validates research quality and completeness
+1. CLI parses flags and loads config
+2. `TeamResearchOrchestrator.execute_research()` runs the pipeline
+3. Phases execute sequentially through `src/cc_deep_research/orchestration/`
+4. Iterative follow-up collection can loop back based on validation
+5. `ResearchSession` is returned and persisted via `SessionStore`
 
-3. **Team Management** ([teams/research_team.py](src/cc_deep_research/teams/research_team.py)) - `ResearchTeam` wraps Claude's Agent Team functionality for coordinated parallel execution of agents.
+Key modules:
+- `src/cc_deep_research/cli/` - CLI command handlers (research, config, session, telemetry, dashboard)
+- `src/cc_deep_research/orchestrator.py` - Public facade for the research pipeline
+- `src/cc_deep_research/orchestration/` - Phase execution services (phases.py, execution.py, runtime.py, session_state.py, planner_orchestrator.py)
+- `src/cc_deep_research/agents/` - Specialized agents (analyzer, deep_analyzer, reporter, validator, research_lead, query_expander, source_collector, planner)
+- `src/cc_deep_research/llm/` - LLM routing and transport clients (anthropic, openrouter, cerebras, registry, route_planner)
+- `src/cc_deep_research/providers/` - Search providers (tavily)
 
-4. **Configuration** ([config.py](src/cc_deep_research/config.py)) - Pydantic-based configuration with:
-   - Environment variable support (e.g., `TAVILY_API_KEYS`)
-   - YAML config file at `~/.config/cc-deep-research/config.yaml`
-   - CLI command: `cc-deep-research config set/show/init`
+### Agent Naming vs Reality
 
-5. **Search Providers** ([providers/](src/cc_deep_research/providers/)) - Abstracted search interfaces:
-   - Tavily provider with API key rotation and rate limiting
-   - Claude provider using WebSearch tool
-   - Hybrid parallel mode runs both simultaneously
+The codebase uses agent-oriented naming, but the current implementation is **local specialized Python objects**, not external distributed agents:
 
-6. **Reporting** ([reporting.py](src/cc_deep_research/reporting.py)) - Generates markdown and JSON reports with citations, executive summaries, and cross-reference analysis.
+| Component | Status |
+|-----------|--------|
+| `TeamResearchOrchestrator` | Real and authoritative |
+| `LocalResearchTeam` | Local scaffolding only, not a distributed runtime |
+| `LocalAgentPool` | Local task state tracking, not external workers |
+| `LocalMessageBus` | Local async queue, not cross-process messaging |
 
-7. **Monitoring** ([monitoring.py](src/cc_deep_research/monitoring.py)) - Internal workflow tracking with `--monitor` flag for debugging research execution.
+Parallel mode (`--parallel-mode`) means **concurrent asyncio task execution in one process**, not spawned external agents.
 
-### Research Modes
+### LLM Routing
 
-- **Quick**: 3-5 sources, 1-2 minutes - Fact-checking, basic queries
-- **Standard**: 10-15 sources, 3-5 minutes - General research, overviews
-- **Deep** (default): 20+ sources, 5-10 minutes - Thorough research, detailed understanding
+Four transports: `anthropic_api`, `openrouter_api`, `cerebras_api`, `heuristic` (fallback). The route planner (`src/cc_deep_research/agents/llm_route_planner.py`) assigns routes per agent. Configuration lives in `~/.config/cc-deep-research/config.yaml` under `llm` section.
 
-### CLI Entry Point
+### Telemetry Architecture
 
-[cli.py](src/cc_deep_research/cli.py) uses Click for command parsing:
+`ResearchMonitor` is the telemetry sink. Events flow to:
+- `~/.config/cc-deep-research/telemetry/<session_id>/events.jsonl` - Per-session JSONL
+- `~/.config/cc-deep-research/telemetry/<session_id>/summary.json` - Session summary
 
-- `cc-deep-research research "query"` - Main research command
-- `cc-deep-research config set/show/init` - Configuration management
+Dashboards:
+- `cc-deep-research telemetry dashboard` - Streamlit dashboard (requires `dashboard` extra)
+- `cc-deep-research dashboard` + Next.js frontend - Real-time operator console
 
-## Key Patterns
+### Session Metadata Contract
 
-### Agent Execution Flow
+`ResearchSession.metadata` has a stable structure with keys: `strategy`, `analysis`, `validation`, `iteration_history`, `providers`, `execution`, `deep_analysis`, `llm_routes`, `prompts`. This contract applies across all depth modes.
 
-Agents are instantiated in the orchestrator's `_initialize_team()` method and called sequentially in phases. Each agent has a specific interface (e.g., `analyze_query()`, `collect_sources()`, `validate_research()`).
+### Configuration
 
-### Async Operations
+Config file: `~/.config/cc-deep-research/config.yaml`. Also supports env var overrides (e.g., `TAVILY_API_KEYS`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `CEREBRAS_API_KEY`). A `.env` file at project root is loaded without overwriting existing env vars.
 
-The orchestrator uses async/await throughout. Search operations, particularly in SourceCollectorAgent, are async to support parallel provider execution.
+### Content Generation
 
-### Configuration Hierarchy
+A separate content-gen workflow exists in `src/cc_deep_research/content_gen/` with its own telemetry store, models, and pipeline for short-form video content. This runs under a different entry point and is documented in `docs/content-generation/`.
 
-Configuration is loaded in this priority:
+### Dashboard Frontend
 
-1. CLI flags (highest priority)
-2. Environment variables (e.g., `TAVILY_API_KEYS`)
-3. Config file (`~/.config/cc-deep-research/config.yaml`)
-4. Defaults (lowest priority)
+The Next.js dashboard is in `dashboard/`. Start with `npm install && npm run dev` from that directory. It communicates with the FastAPI backend via `src/cc_deep_research/web_server.py`.
 
-### Search Mode
+## Testing Conventions
 
-`HYBRID_PARALLEL` mode (default) runs Tavily and Claude searches simultaneously. Use `--tavily-only` or `--claude-only` to restrict to single provider.
-
-## Testing
-
-Tests are located in [tests/](tests/). Run with:
-
-```bash
-uv run pytest
-```
-
-For async tests, pytest-asyncio is configured with `asyncio_mode = "auto"`.
+- Tests live in `tests/`, mirroring the `src/cc_deep_research/` structure
+- `pytest-asyncio` with `asyncio_mode = "auto"`
+- `pythonpath = ["src"]` so imports use `cc_deep_research` package
+- Key test files: `test_orchestrator.py`, `test_monitoring.py`, `test_telemetry.py`, `test_content_gen.py`, `test_llm_router.py`

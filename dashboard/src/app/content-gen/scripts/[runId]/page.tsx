@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, FileText, Loader2 } from 'lucide-react'
 
@@ -26,9 +26,8 @@ export default function ScriptDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<TabValue>('script')
 
-  useEffect(() => {
+  const refreshResult = useCallback(() => {
     if (!runId) return
-
     setLoading(true)
     setError(null)
     getScript(runId)
@@ -41,6 +40,10 @@ export default function ScriptDetailPage() {
         setLoading(false)
       })
   }, [runId])
+
+  useEffect(() => {
+    refreshResult()
+  }, [refreshResult])
 
   if (loading) {
     return (
@@ -167,7 +170,13 @@ export default function ScriptDetailPage() {
 
         {activeTab === 'hooks' && (
           result.context.hooks ? (
-            <HooksCtaTab hooks={result.context.hooks} cta={result.context.cta} />
+            <HooksCtaTab
+              hooks={result.context.hooks}
+              cta={result.context.cta}
+              script={result.script || ''}
+              runId={runId}
+              onApply={refreshResult}
+            />
           ) : (
             <p className="text-sm text-muted-foreground">No hooks available</p>
           )

@@ -42,6 +42,8 @@ import type {
   BranchBriefRequest,
   SiblingBriefsResponse,
   CompareBriefsResponse,
+  HookSet,
+  CtaVariants,
 } from '@/types/content-gen';
 
 interface PipelineRunDetailResponse extends PipelineRunSummary {
@@ -194,6 +196,38 @@ export async function getScript(
     return response.data;
   } catch (error) {
     throw new Error(getApiErrorMessage(error, 'Failed to get script.'));
+  }
+}
+
+export interface GenerateVariantsResponse {
+  hooks: HookSet;
+  cta_variants: CtaVariants;
+}
+
+export async function generateScriptVariants(
+  runId: string,
+  options?: { tone?: string; cta_goal?: string },
+): Promise<GenerateVariantsResponse> {
+  try {
+    const response = await contentGenClient.post(
+      `/scripts/${runId}/generate-variants`,
+      options ?? {}
+    );
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to generate variants.'));
+  }
+}
+
+export async function updateScript(
+  runId: string,
+  patch: { hook?: string; cta?: string; script?: string }
+): Promise<{ success: boolean; run_id: string }> {
+  try {
+    const response = await contentGenClient.patch(`/scripts/${runId}`, patch);
+    return response.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, 'Failed to update script.'));
   }
 }
 

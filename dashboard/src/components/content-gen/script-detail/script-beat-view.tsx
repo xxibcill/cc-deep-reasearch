@@ -22,34 +22,42 @@ function splitScriptByBeats(script: string, beatList: string[]): BeatSection[] {
   const escaped = beatList.map((b) => b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
   const pattern = new RegExp(`##\\s*(${escaped.join('|')})\\s*$`, 'gim')
 
-  const sections: BeatSection[] = []
-  let lastIndex = 0
+  // Find all header positions first
+  const headers: { beat: string; start: number; end: number }[] = []
   let match
-  const foundBeats: string[] = []
-
   while ((match = pattern.exec(script)) !== null) {
-    if (foundBeats.length > 0) {
-      // Update content of previous section
-      const prevBeat = foundBeats[foundBeats.length - 1]
-      const prevSection = sections.find((s) => s.beat === prevBeat)
-      if (prevSection) {
-        prevSection.content = script.slice(lastIndex, match.index).trim()
-      }
-    }
-    foundBeats.push(match[1])
-    sections.push({ beat: match[1], content: '' })
-    lastIndex = pattern.lastIndex
-  }
-
-  // Handle last section content
-  if (sections.length > 0) {
-    const lastSection = sections[sections.length - 1]
-    lastSection.content = script.slice(lastIndex).trim()
+    headers.push({
+      beat: match[1],
+      start: match.index,
+      end: match.index + match[0].length,
+    })
   }
 
   // If no beats were found, return full script as single section
-  if (sections.length === 0) {
+  if (headers.length === 0) {
     return [{ beat: 'Full Script', content: script }]
+  }
+
+  // Extract content between headers
+  const sections: BeatSection[] = []
+  for (let i = 0; i < headers.length; i++) {
+    const header = headers[i]
+    const nextHeader = headers[i + 1]
+
+    // Find content start: skip past the newline after this header
+    let contentStart = header.end
+    while (contentStart < script.length && (script[contentStart] === '\n' || script[contentStart] === '\r')) {
+      contentStart++
+    }
+
+    // Find content end: before the next header (skipping blank lines)
+    let contentEnd = nextHeader ? nextHeader.start : script.length
+    while (contentEnd > contentStart && script[contentEnd - 1] === '\n') {
+      contentEnd--
+    }
+
+    const content = script.slice(contentStart, contentEnd).trim()
+    sections.push({ beat: header.beat, content })
   }
 
   return sections
