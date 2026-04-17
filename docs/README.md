@@ -7,14 +7,15 @@ Use these docs as the current contributor entry points:
 - [`DASHBOARD_GUIDE.md`](DASHBOARD_GUIDE.md): comprehensive dashboard guide covering architecture, usage, APIs, telemetry flow, and caveats
 - [`../dashboard/README.md`](../dashboard/README.md): frontend development commands, runtime env vars, and backend wiring for the Next.js dashboard
 - [`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md): pipeline phases, orchestrator ownership, and package boundaries
-- [`content-generation.md`](content-generation.md): full short-form content-generation workflow, stage contracts, CLI usage, persistence, and current caveats
+- [`content-generation/content-generation.md`](content-generation/content-generation.md): full short-form content-generation workflow, stage contracts, CLI usage, persistence, and current caveats
+- [`content-generation/content-gen-backlog.md`](content-generation/content-gen-backlog.md): persistent content backlog model, lifecycle, and storage
+- [`content-generation/content-gen-artifact.md`](content-generation/content-gen-artifact.md): pipeline artifacts, persistence layers, dashboard control surface, and production boundary
 - [`beats.md`](beats.md): detailed guide to beat structure, beat lifecycle, beat constraints, targeted revision, and visual handoff in the content-generation pipeline
 - [`select-beat-structure-prompts.md`](select-beat-structure-prompts.md): self-contained prompt for choosing a beat structure from only a content pillar and angle statement
-- [`CONTENT_GEN_IMPROVEMENT_PLAN.md`](CONTENT_GEN_IMPROVEMENT_PLAN.md): phased roadmap for compressing content generation into a faster seven-phase operating system with gating, branching, reuse, and tighter feedback loops
 - [`brief-management.md`](brief-management.md): persistent brief management, lifecycle states, revision history, approval workflows, and rollout guide
 - [`TELEMETRY.md`](TELEMETRY.md): persisted telemetry model and monitoring workflow
 - [`REALTIME_MONITORING.md`](REALTIME_MONITORING.md): FastAPI + Next.js operator console for live monitoring
-- [`IMPROVEMENT_PLAN.md`](IMPROVEMENT_PLAN.md): capability assessment and roadmap for making traces answer operator questions faster
+- [`RELEASING.md`](RELEASING.md): release checklist, version bump workflow, and changelog expectations
 
 Current code layout:
 
