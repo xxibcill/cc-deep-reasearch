@@ -11,7 +11,7 @@ from typing import Any, Literal
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from cc_deep_research.config import load_config
 from cc_deep_research.content_gen.agents.backlog_chat import (
@@ -848,12 +848,14 @@ def register_content_gen_routes(
 
         # Load context
         context: ScriptingContext | None = None
-        with suppress(Exception):
+        try:
             from pathlib import Path
 
             context_text = Path(run.context_path).read_text()
             if context_text:
                 context = ScriptingContext.model_validate_json(context_text)
+        except (FileNotFoundError, json.JSONDecodeError, ValidationError):
+            pass
 
         if context is None:
             return JSONResponse(
@@ -912,6 +914,12 @@ def register_content_gen_routes(
         request: UpdateScriptRequest,
     ) -> JSONResponse:
         """Update a script run with new hook, CTA, or full script content."""
+        if request.hook is None and request.cta is None and request.script is None:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "At least one field (hook, cta, or script) must be provided"},
+            )
+
         store = ScriptingStore()
         run = store.get(run_id)
         if run is None:
@@ -919,12 +927,14 @@ def register_content_gen_routes(
 
         # Load context
         context: ScriptingContext | None = None
-        with suppress(Exception):
+        try:
             from pathlib import Path
 
             context_text = Path(run.context_path).read_text()
             if context_text:
                 context = ScriptingContext.model_validate_json(context_text)
+        except (FileNotFoundError, json.JSONDecodeError, ValidationError):
+            pass
 
         if context is None:
             return JSONResponse(
