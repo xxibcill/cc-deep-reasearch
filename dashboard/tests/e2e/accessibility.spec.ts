@@ -10,7 +10,7 @@ test.describe("Dashboard accessibility baseline @a11y", () => {
 
       await expect(page.locator("header")).toBeVisible();
       await expect(page.locator("main")).toBeVisible();
-      await expect(page.locator('nav[aria-label="Primary"]')).toBeVisible();
+      await expect(page.locator('nav[aria-label="Primary navigation"]')).toBeVisible();
       await expect(page.locator("main h1")).toHaveCount(1);
     });
 
