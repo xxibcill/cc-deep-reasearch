@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
   ArrowLeft,
+  ChevronDown,
   FileText,
   FileTextIcon,
   LayoutDashboard,
@@ -34,6 +35,8 @@ export function ContentGenNavigation() {
   const pathname = usePathname()
   const router = useRouter()
   const searchParams = useSearchParams()
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [isOpen, setIsOpen] = useState(false)
 
   const loadPipelines = useContentGen((s) => s.loadPipelines)
   const loadScripts = useContentGen((s) => s.loadScripts)
@@ -59,6 +62,25 @@ export function ContentGenNavigation() {
   const activePipelineCount = pipelines.filter(
     (pipeline) => pipeline.status === 'running' || pipeline.status === 'queued',
   ).length
+  const activeTabConfig = TAB_CONFIG.find((tab) => tab.value === activeTab) ?? TAB_CONFIG[0]
+  const backHref = isBacklogDetail
+    ? '/content-gen/backlog'
+    : isBriefDetail
+      ? '/content-gen/briefs'
+      : isPipelineDetail
+        ? '/content-gen'
+        : null
+  const currentSectionLabel = isPipelineDetail
+    ? 'Pipeline detail'
+    : isBacklogDetail
+      ? 'Backlog item'
+      : isBriefDetail
+        ? 'Brief detail'
+        : activeTabConfig.label
+  const routeSignature = useMemo(
+    () => `${pathname}?${searchParams.toString()}`,
+    [pathname, searchParams],
+  )
 
   const tabsWithBadges = TAB_CONFIG.map((tab) => {
     if (tab.value === 'overview' && activePipelineCount > 0) {
@@ -81,7 +103,42 @@ export function ContentGenNavigation() {
     ])
   }, [loadPipelines, loadPublishQueue, loadScripts])
 
+  useEffect(() => {
+    setIsOpen(false)
+  }, [routeSignature])
+
+  useEffect(() => {
+    if (!isOpen) {
+      return
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) {
+        return
+      }
+      if (!containerRef.current?.contains(target)) {
+        setIsOpen(false)
+      }
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false)
+      }
+    }
+
+    window.addEventListener('mousedown', handlePointerDown)
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isOpen])
+
   const handleTabChange = (value: string) => {
+    setIsOpen(false)
     if (value === 'backlog') {
       router.push('/content-gen/backlog')
       return
@@ -98,60 +155,107 @@ export function ContentGenNavigation() {
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          {isPipelineDetail || isBacklogDetail || isBriefDetail ? (
-            <Link
-              href={
-                isBacklogDetail
-                  ? '/content-gen/backlog'
-                  : isBriefDetail
-                    ? '/content-gen/briefs'
-                    : '/content-gen'
-              }
-              className={buttonVariants({
-                variant: 'ghost',
-                size: 'sm',
-                className: 'px-2',
-              })}
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-          ) : null}
-          <nav aria-label="Content studio sections">
-            <Tabs
-              className={cn('w-full max-w-4xl md:w-auto')}
-              value={activeTab}
-              onValueChange={handleTabChange}
-              tabs={tabsWithBadges}
-            />
-          </nav>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {activePipelineCount > 0 ? (
-            <Badge variant="warning">
-              {activePipelineCount} active pipeline{activePipelineCount === 1 ? '' : 's'}
-            </Badge>
-          ) : (
-            <Badge variant="secondary">No active pipelines</Badge>
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setIsOpen((open) => !open)}
+        className="inline-flex h-10 items-center gap-2 rounded-[0.9rem] border border-border/70 bg-surface/62 px-2.5 text-sm text-muted-foreground transition-all duration-200 hover:border-primary/35 hover:bg-surface-raised/78 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45 sm:px-3"
+        aria-expanded={isOpen}
+        aria-controls="content-gen-sections-panel"
+      >
+        <LayoutDashboard className="h-4 w-4 shrink-0 text-primary" />
+        <span className="hidden sm:inline text-foreground">Studio</span>
+        <span className="hidden max-w-[8rem] truncate text-[0.78rem] text-muted-foreground lg:inline">
+          {currentSectionLabel}
+        </span>
+        {activePipelineCount > 0 ? (
+          <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-warning-muted px-1.5 py-0.5 text-[0.65rem] font-mono uppercase tracking-[0.12em] text-warning">
+            {activePipelineCount}
+          </span>
+        ) : null}
+        <ChevronDown
+          className={cn(
+            'hidden h-3.5 w-3.5 shrink-0 transition-transform duration-200 sm:block',
+            isOpen && 'rotate-180',
           )}
-          {scripts.length > 0 ? (
-            <Badge variant="outline">{scripts.length} scripts</Badge>
-          ) : null}
-          {publishQueue.length > 0 ? (
-            <Badge variant="outline">{publishQueue.length} queued</Badge>
-          ) : null}
+        />
+      </button>
+
+      <div
+        id="content-gen-sections-panel"
+        className={cn(
+          'pointer-events-none absolute right-0 top-full z-[70] mt-2 w-[min(46rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] origin-top-right transition-all duration-180',
+          isOpen ? 'translate-y-0 opacity-100' : 'translate-y-1.5 opacity-0',
+        )}
+      >
+        <div
+          className={cn(
+            'overflow-hidden rounded-[1.1rem] border border-border/70 bg-popover/96 shadow-panel backdrop-blur-xl',
+            isOpen ? 'pointer-events-auto' : 'pointer-events-none',
+          )}
+        >
+          <div className="flex flex-col gap-3 border-b border-border/60 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="text-[0.65rem] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                Content Studio
+              </div>
+              <div className="mt-1 flex min-w-0 items-center gap-2">
+                <span className="truncate text-sm font-medium text-foreground">
+                  {currentSectionLabel}
+                </span>
+                {backHref ? (
+                  <Link
+                    href={backHref}
+                    className={buttonVariants({
+                      variant: 'ghost',
+                      size: 'sm',
+                      className: 'h-7 px-2 text-[0.68rem]',
+                    })}
+                    onClick={() => setIsOpen(false)}
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5" />
+                    Back
+                  </Link>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              {activePipelineCount > 0 ? (
+                <Badge variant="warning">
+                  {activePipelineCount} active pipeline{activePipelineCount === 1 ? '' : 's'}
+                </Badge>
+              ) : (
+                <Badge variant="secondary">No active pipelines</Badge>
+              )}
+              {scripts.length > 0 ? (
+                <Badge variant="outline">{scripts.length} scripts</Badge>
+              ) : null}
+              {publishQueue.length > 0 ? (
+                <Badge variant="outline">{publishQueue.length} queued</Badge>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="px-4 py-4">
+            <nav aria-label="Content studio sections">
+              <Tabs
+                className={cn('w-full max-w-4xl md:w-auto')}
+                value={activeTab}
+                onValueChange={handleTabChange}
+                tabs={tabsWithBadges}
+              />
+            </nav>
+
+            {isPipelineDetail && activePipelineCount > 0 ? (
+              <div className="mt-3 flex items-center gap-2 text-xs text-warning">
+                <span className="h-1.5 w-1.5 animate-stage-pulse rounded-full bg-warning" />
+                Monitoring active content runs while viewing pipeline history.
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
-
-      {isPipelineDetail && activePipelineCount > 0 ? (
-        <div className="flex items-center gap-2 text-xs text-warning">
-          <span className="h-1.5 w-1.5 animate-stage-pulse rounded-full bg-warning" />
-          Monitoring active content runs while viewing pipeline history.
-        </div>
-      ) : null}
     </div>
   )
 }

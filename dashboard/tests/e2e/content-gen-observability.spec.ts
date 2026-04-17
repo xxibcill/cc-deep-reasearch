@@ -83,6 +83,8 @@ function makePipelineDetailResponse(): PipelineDetailResponse {
         {
           idea_id: "idea-selected",
           category: "authority-building",
+          title: "Onboarding trust decision",
+          one_line_summary: "The first 90 seconds of AI agent onboarding decide whether operators trust it.",
           idea: "The first 90 seconds of your AI agent onboarding decide whether operators trust it.",
           audience: "Technical founders",
           problem: "Users think they succeeded before the workflow is actually usable.",
@@ -98,6 +100,8 @@ function makePipelineDetailResponse(): PipelineDetailResponse {
         {
           idea_id: "idea-alt",
           category: "trend-responsive",
+          title: "Demo to real workflow handoff",
+          one_line_summary: "Agent launch videos skip the handoff from demo to real workflow.",
           idea: "Agent launch videos keep skipping the handoff from demo to real workflow.",
           audience: "AI PMs",
           problem: "Viewers see the result, not the operator setup path.",
@@ -113,6 +117,8 @@ function makePipelineDetailResponse(): PipelineDetailResponse {
         {
           idea_id: "idea-hold",
           category: "evergreen",
+          title: "Onboarding checklist for AI workflow releases",
+          one_line_summary: "Build an onboarding checklist for your next AI workflow release.",
           idea: "Build an onboarding checklist for your next AI workflow release.",
           audience: "Developer advocates",
           problem: "Teams ship without a repeatable operator checklist.",

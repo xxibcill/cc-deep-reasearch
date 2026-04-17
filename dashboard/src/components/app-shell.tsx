@@ -3,13 +3,13 @@
 import { Suspense } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { NavBar } from '@/components/ui/nav-bar'
+import { NavBar, NavBarBrand } from '@/components/ui/nav-bar'
 import { NotificationProvider } from '@/components/ui/notification-center'
 import { CommandPalette, KeyboardHint } from '@/components/command-palette'
 import { ContentGenNavigation } from '@/components/content-gen/content-gen-navigation'
 
 function ContentGenNavigationSkeleton() {
-  return <div className="h-11 animate-pulse rounded-xl bg-muted/25" />
+  return <div className="h-10 w-10 animate-pulse rounded-xl bg-muted/25 sm:w-36" />
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -29,14 +29,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </Link>
         <header className="sticky top-0 z-50 border-b border-border/70 bg-background/86 backdrop-blur-xl">
           <div className="mx-auto max-w-content px-page-x">
-            <NavBar />
-            {isContentGenRoute ? (
-              <div className="border-t border-border/60 py-3">
-                <Suspense fallback={<ContentGenNavigationSkeleton />}>
-                  <ContentGenNavigation />
-                </Suspense>
-              </div>
-            ) : null}
+            <NavBar
+              leadingSlot={<NavBarBrand />}
+              utilitySlot={
+                isContentGenRoute ? (
+                  <Suspense fallback={<ContentGenNavigationSkeleton />}>
+                    <ContentGenNavigation />
+                  </Suspense>
+                ) : null
+              }
+              showCommandTrigger
+            />
           </div>
         </header>
         <main id="main-content">{children}</main>
