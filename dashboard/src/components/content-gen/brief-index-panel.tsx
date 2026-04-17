@@ -18,6 +18,7 @@ import {
   briefTitle,
   LIFECYCLE_STATE_OPTIONS,
 } from '@/components/content-gen/brief-shared'
+import { ItemsViewHeader, ItemsViewLoading, ItemsViewEmpty } from '@/components/content-gen/items-view'
 import useContentGen from '@/hooks/useContentGen'
 import type { ManagedOpportunityBrief } from '@/types/content-gen'
 
@@ -66,7 +67,7 @@ export function BriefIndexPanel({ initialLifecycleState }: BriefIndexPanelProps)
   }
 
   if (loading && briefs.length === 0) {
-    return <div className="py-8 text-center text-sm text-muted-foreground">Loading briefs...</div>
+    return <ItemsViewLoading label="briefs" />
   }
 
   return (
@@ -77,14 +78,11 @@ export function BriefIndexPanel({ initialLifecycleState }: BriefIndexPanelProps)
         </Alert>
       )}
 
-      <div className="rounded-[1.15rem] border border-border/75 bg-surface/62 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-foreground">Opportunity briefs</p>
-            <p className="text-xs text-muted-foreground">
-              {briefs.length} brief{briefs.length === 1 ? '' : 's'} total
-            </p>
-          </div>
+      <ItemsViewHeader
+        title="Opportunity briefs"
+        totalCount={briefs.length}
+        visibleCount={filteredBriefs.length}
+        stats={
           <div className="flex flex-wrap gap-2">
             <Badge variant="outline" className="bg-background/45">
               {filteredBriefs.length} visible
@@ -99,9 +97,8 @@ export function BriefIndexPanel({ initialLifecycleState }: BriefIndexPanelProps)
               {briefs.filter((b) => b.lifecycle_state === 'superseded').length} superseded
             </Badge>
           </div>
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-end gap-3">
+        }
+        controls={
           <div className="space-y-1">
             <label className="text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
               Lifecycle state
@@ -119,18 +116,19 @@ export function BriefIndexPanel({ initialLifecycleState }: BriefIndexPanelProps)
               ))}
             </NativeSelect>
           </div>
-        </div>
-      </div>
+        }
+      />
 
       {!filteredBriefs.length ? (
-        <div className="rounded-xl border border-dashed border-border bg-card/70 py-16 text-center">
-          <p className="text-sm text-muted-foreground">No briefs found.</p>
-          <p className="mt-1 text-xs text-muted-foreground/60">
-            {lifecycleFilter
+        <ItemsViewEmpty
+          label="briefs"
+          message="No briefs found."
+          secondaryMessage={
+            lifecycleFilter
               ? `No briefs in "${lifecycleStateLabel(lifecycleFilter)}" state.`
-              : 'No briefs have been created yet.'}
-          </p>
-        </div>
+              : 'No briefs have been created yet.'
+          }
+        />
       ) : (
         <div className="overflow-hidden rounded-xl border border-border bg-card/95 shadow-sm">
           <Table>
