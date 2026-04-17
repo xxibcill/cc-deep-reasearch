@@ -209,8 +209,8 @@ def thesis_user(
     if strategy:
         if strategy.positioning:
             parts.append(f"Brand positioning: {strategy.positioning}")
-        if strategy.tone_guide:
-            parts.append(f"Tone guide: {strategy.tone_guide}")
+        if strategy.tone_rules:
+            parts.append(f"Tone rules: {', '.join(strategy.tone_rules)}")
         if strategy.proof_standards:
             parts.append(f"Proof standards: {strategy.proof_standards}")
 

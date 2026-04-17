@@ -1,5 +1,9 @@
 # P1-T1 - Expand Strategy Schema
 
+## Status
+
+Done. Added `ContentPillar`, `PlatformRule`, `CTAStrategy`, `ClaimToProofRule` models. Added `positioning`, `business_objective`, `allowed_audience_universe`, `forbidden_topics`, `cta_strategy`, `claim_to_proof_rules`, `platform_rules` fields to `StrategyMemory`. Changed `content_pillars` from `list[str]` to `list[ContentPillar]` with backward-compatible string coercion validator.
+
 ## Summary
 
 Expand the backend strategy model so it can represent the full outer-layer concepts described in the strategy guide.

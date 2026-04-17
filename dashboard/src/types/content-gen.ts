@@ -147,15 +147,47 @@ export interface ContentExample {
   metrics_snapshot: Record<string, unknown>;
 }
 
+export interface ContentPillar {
+  name: string;
+  description: string;
+  content_types: string[];
+}
+
+export interface PlatformRule {
+  platform: string;
+  format_preferences: string[];
+  length_constraints: string;
+  style_constraints: string[];
+  cta_norms: string[];
+}
+
+export interface CTAStrategy {
+  allowed_cta_types: string[];
+  default_by_content_goal: Record<string, string>;
+}
+
+export interface ClaimToProofRule {
+  claim_type: string;
+  required_proof: string[];
+  examples: string[];
+}
+
 export interface StrategyMemory {
   niche: string;
-  content_pillars: string[];
+  content_pillars: ContentPillar[];
   audience_segments: AudienceSegment[];
   tone_rules: string[];
   offer_cta_rules: string[];
   platforms: string[];
   forbidden_claims: string[];
+  forbidden_topics: string[];
   proof_standards: string[];
+  positioning: string;
+  business_objective: string;
+  allowed_audience_universe: string[];
+  platform_rules: PlatformRule[];
+  cta_strategy: CTAStrategy;
+  claim_to_proof_rules: ClaimToProofRule[];
   past_winners: ContentExample[];
   past_losers: ContentExample[];
 }

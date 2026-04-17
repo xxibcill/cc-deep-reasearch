@@ -1,5 +1,9 @@
 # P1-T3 - Align API And Client Contracts
 
+## Status
+
+Done. Updated `dashboard/src/types/content-gen.ts` with new interfaces (`ContentPillar`, `PlatformRule`, `CTAStrategy`, `ClaimToProofRule`) and expanded `StrategyMemory` interface to match the full backend contract. The existing API endpoints already return `model_dump_json()` so new fields are automatically exposed.
+
 ## Summary
 
 Expose the upgraded strategy schema consistently through the content-gen API and dashboard type system.

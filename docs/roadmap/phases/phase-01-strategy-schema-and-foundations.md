@@ -1,5 +1,9 @@
 # Phase 01 - Strategy Schema And Foundations
 
+## Status
+
+Done. All four tasks completed. `StrategyMemory` now expresses identity, pillars, proof policy, audience universe, platform rules, and CTA policy via structured models. Backward compatibility preserved. API, TypeScript types, and prompts are aligned.
+
 ## Functional Feature Outcome
 
 The content system can store and validate a richer strategy object that is expressive enough to constrain content generation and safe enough to support structured dashboard editing.

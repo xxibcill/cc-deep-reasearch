@@ -113,7 +113,7 @@ def plan_opportunity_user(
     if strategy.niche:
         parts.append(f"Niche: {strategy.niche}")
     if strategy.content_pillars:
-        parts.append(f"Content pillars: {', '.join(strategy.content_pillars)}")
+        parts.append(f"Content pillars: {', '.join(p.name for p in strategy.content_pillars)}")
     if strategy.audience_segments:
         segs = "; ".join(f"{s.name}: {s.description}" for s in strategy.audience_segments)
         parts.append(f"Known audience segments: {segs}")

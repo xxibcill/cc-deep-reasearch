@@ -24,6 +24,17 @@ def _now_iso() -> str:
     return datetime.now(tz=UTC).isoformat()
 
 
+def _deep_merge(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+    """Recursively merge patch into base, merging nested dicts rather than replacing them."""
+    result: dict[str, Any] = dict(base)
+    for key, value in patch.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
 def _model_to_dict(model: Any) -> dict[str, Any]:
     """Serialize a Pydantic model to a plain dict, converting enums to string values."""
     from enum import Enum
@@ -70,9 +81,10 @@ class StrategyStore:
         self._path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
 
     def update(self, patch: dict[str, Any]) -> StrategyMemory:
-        """Load, apply a partial update, save, and return the result."""
+        """Load, apply a deep-merged partial update, save, and return the result."""
         memory = self.load()
-        updated = memory.model_copy(update=patch)
+        merged = _deep_merge(memory.model_dump(), patch)
+        updated = StrategyMemory.model_validate(merged)
         self.save(updated)
         return updated
 

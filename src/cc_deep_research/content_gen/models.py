@@ -868,6 +868,44 @@ class ProofRule(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Phase 01: Structured strategy types (P1-T1)
+# ---------------------------------------------------------------------------
+
+
+class ContentPillar(BaseModel):
+    """A structured content pillar with name and optional metadata."""
+
+    name: str = ""
+    description: str = ""
+    content_types: list[str] = Field(default_factory=list)
+
+
+class PlatformRule(BaseModel):
+    """Platform-specific constraints and style rules."""
+
+    platform: str = ""
+    format_preferences: list[str] = Field(default_factory=list)
+    length_constraints: str = ""
+    style_constraints: list[str] = Field(default_factory=list)
+    cta_norms: list[str] = Field(default_factory=list)
+
+
+class CTAStrategy(BaseModel):
+    """Global CTA policy: allowed types and defaults by content goal."""
+
+    allowed_cta_types: list[str] = Field(default_factory=list)
+    default_by_content_goal: dict[str, str] = Field(default_factory=dict)
+
+
+class ClaimToProofRule(BaseModel):
+    """Maps a claim type to the required proof format."""
+
+    claim_type: str = ""
+    required_proof: list[str] = Field(default_factory=list)
+    examples: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
 # Task 20: Performance Learning (referenced by StrategyMemory)
 # ---------------------------------------------------------------------------
 
@@ -974,18 +1012,29 @@ class StrategyMemory(BaseModel):
     """
 
     niche: str = ""
-    content_pillars: list[str] = Field(default_factory=list)
+    # P1-T1: list[ContentPillar] with backward coercion from strings
+    content_pillars: list[ContentPillar] = Field(default_factory=list)
     audience_segments: list[AudienceSegment] = Field(default_factory=list)
     tone_rules: list[str] = Field(default_factory=list)
     offer_cta_rules: list[str] = Field(default_factory=list)
     platforms: list[str] = Field(default_factory=list)
     forbidden_claims: list[str] = Field(default_factory=list)
+    forbidden_topics: list[str] = Field(default_factory=list)
     proof_standards: list[str] = Field(default_factory=list)
     signature_frameworks: list[ExpertFramework] = Field(default_factory=list)
     contrarian_beliefs: list[ContrarianBelief] = Field(default_factory=list)
     proof_rules: list[ProofRule] = Field(default_factory=list)
     banned_tropes: list[str] = Field(default_factory=list)
     expertise_edge: str = ""
+    # P1-T1: Strategic identity fields
+    positioning: str = ""
+    business_objective: str = ""
+    # P1-T1: Audience universe and platform structure
+    allowed_audience_universe: list[str] = Field(default_factory=list)
+    platform_rules: list[PlatformRule] = Field(default_factory=list)
+    # P1-T1: CTA policy and claim-to-proof mapping
+    cta_strategy: CTAStrategy = Field(default_factory=CTAStrategy)
+    claim_to_proof_rules: list[ClaimToProofRule] = Field(default_factory=list)
     past_winners: list[ContentExample] = Field(default_factory=list)
     past_losers: list[ContentExample] = Field(default_factory=list)
     # Task 20: Performance-derived guidance
@@ -994,6 +1043,16 @@ class StrategyMemory(BaseModel):
     rule_version_history: RuleVersionHistory = Field(default_factory=lambda: RuleVersionHistory())
     # P7-T3: Operating fitness metrics
     operating_fitness: OperatingFitnessMetrics = Field(default_factory=lambda: OperatingFitnessMetrics())
+
+    @field_validator("content_pillars", mode="before")
+    @classmethod
+    def _coerce_content_pillars(cls, value: Any) -> Any:
+        if not isinstance(value, list):
+            return value
+        return [
+            item if not isinstance(item, str) else {"name": item}
+            for item in value
+        ]
 
     @field_validator("signature_frameworks", mode="before")
     @classmethod
