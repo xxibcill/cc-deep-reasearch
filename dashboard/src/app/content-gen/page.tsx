@@ -57,8 +57,9 @@ const ScriptsPanel = dynamic(
   },
 )
 
-const StrategyEditor = dynamic(
-  () => import('@/components/content-gen/strategy-editor').then((mod) => mod.StrategyEditor),
+const StrategyWorkspace = dynamic(
+  () =>
+    import('@/components/content-gen/strategy-workspace').then((mod) => mod.StrategyWorkspace),
   {
     ssr: false,
     loading: () => <PanelLoadingMessage label="Loading strategy…" />,
@@ -461,15 +462,7 @@ export default function ContentGenPage() {
         </div>
       )}
 
-      {activeTab === 'strategy' && (
-        <div className="max-w-2xl">
-          <Card className="rounded-[1.3rem]">
-            <CardContent className="p-6">
-              <StrategyEditor />
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      {activeTab === 'strategy' && <StrategyWorkspace />}
 
       {activeTab === 'backlog' && (
         <div className="w-full">

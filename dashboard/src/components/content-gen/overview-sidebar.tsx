@@ -101,9 +101,7 @@ export function OverviewSidebar({ onTabChange, researchBridge }: OverviewSidebar
               {strategy.content_pillars?.length > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {strategy.content_pillars.slice(0, 3).map((pillar, i) => (
-                    <Badge key={i} variant="outline">
-                      {pillar}
-                    </Badge>
+                    <Badge key={i} variant="outline">{pillar.name}</Badge>
                   ))}
                 </div>
               )}
