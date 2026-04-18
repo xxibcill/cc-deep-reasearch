@@ -8,7 +8,8 @@ with its initial score, linking signals).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from enum import Enum
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from cc_deep_research.radar.models import (
     FeedbackType,
@@ -20,6 +21,7 @@ from cc_deep_research.radar.models import (
     OpportunityType,
     RadarSource,
     RawSignal,
+    SourceStatus,
     StatusHistoryEntry,
     WorkflowLink,
     WorkflowType,
@@ -28,6 +30,21 @@ from cc_deep_research.radar.storage import RadarStore
 
 if TYPE_CHECKING:
     pass
+
+
+TEnum = TypeVar("TEnum", bound=Enum)
+
+
+def _coerce_optional_enum(
+    value: str | TEnum | None,
+    enum_cls: type[TEnum],
+) -> TEnum | None:
+    """Return *value* as *enum_cls* when provided."""
+    if value is None:
+        return None
+    if isinstance(value, enum_cls):
+        return value
+    return enum_cls(value)
 
 
 class RadarService:
@@ -81,7 +98,7 @@ class RadarService:
 
     def list_sources(
         self,
-        status: str | None = None,
+        status: str | SourceStatus | None = None,
     ) -> list[RadarSource]:
         """List all sources, optionally filtered by status.
 
@@ -92,10 +109,9 @@ class RadarService:
             List of RadarSource records.
         """
         sources = self._store.load_sources().sources
-        if status is not None:
-            from cc_deep_research.radar.models import SourceStatus
-
-            sources = [s for s in sources if s.status == SourceStatus(status)]
+        status_enum = _coerce_optional_enum(status, SourceStatus)
+        if status_enum is not None:
+            sources = [s for s in sources if s.status == status_enum]
         return sources
 
     def get_source(self, source_id: str) -> RadarSource | None:
@@ -203,9 +219,9 @@ class RadarService:
 
     def list_opportunities(
         self,
-        status: str | None = None,
-        opportunity_type: str | None = None,
-        freshness: str | None = None,
+        status: str | OpportunityStatus | None = None,
+        opportunity_type: str | OpportunityType | None = None,
+        freshness: str | FreshnessState | None = None,
         limit: int | None = None,
     ) -> list[Opportunity]:
         """List opportunities with optional filtering.
@@ -219,9 +235,9 @@ class RadarService:
         Returns:
             Filtered, sorted list of opportunities.
         """
-        status_enum = OpportunityStatus(status) if status else None
-        type_enum = OpportunityType(opportunity_type) if opportunity_type else None
-        freshness_enum = FreshnessState(freshness) if freshness else None
+        status_enum = _coerce_optional_enum(status, OpportunityStatus)
+        type_enum = _coerce_optional_enum(opportunity_type, OpportunityType)
+        freshness_enum = _coerce_optional_enum(freshness, FreshnessState)
         return self._store.list_opportunities(
             status=status_enum,
             opportunity_type=type_enum,
@@ -515,4 +531,3 @@ class RadarService:
             "why_now": opp.recommended_action or "",
             "opportunity_id": opportunity_id,
         }
-
