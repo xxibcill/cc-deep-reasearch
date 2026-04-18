@@ -36,6 +36,7 @@ from cc_deep_research.content_gen.progress import (
 )
 from cc_deep_research.content_gen.router import register_content_gen_routes
 from cc_deep_research.event_router import EventRouter, WebSocketConnection
+from cc_deep_research.radar.router import register_radar_routes
 from cc_deep_research.reporting import ReportGenerator
 from cc_deep_research.research_runs.jobs import ResearchRunJob, ResearchRunJobRegistry
 from cc_deep_research.research_runs.models import (
@@ -253,6 +254,9 @@ def create_app(
     # Content generation routes
     runtime = get_backend_runtime(app)
     register_content_gen_routes(app, runtime.event_router, runtime.pipeline_jobs)
+
+    # Radar routes
+    register_radar_routes(app, runtime.event_router)
 
     return app
 

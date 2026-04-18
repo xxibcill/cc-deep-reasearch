@@ -33,4 +33,4 @@ Radar will fail quickly if the team starts with UI or scoring experiments before
 - A new Radar backend package exists with typed models and service boundaries.
 - Radar entities persist across process restarts.
 - The backend exposes stable JSON contracts for sources and opportunities.
-- Backend tests cover basic create/list/update flows.
+## Status: Done
