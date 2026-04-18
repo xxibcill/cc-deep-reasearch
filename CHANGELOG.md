@@ -8,6 +8,32 @@ History before `0.1.0` is summarized from the repository state captured on 2026-
 
 <!-- Add Added/Changed/Fixed entries here before cutting a release. -->
 
+#### Phase 01 - Strategy Schema And Foundations (4 tasks)
+
+- Expanded `StrategyMemory` with structured `ContentPillar`, `PlatformRule`, `CTAStrategy`, `ClaimToProofRule` models and new fields (`positioning`, `business_objective`, `allowed_audience_universe`, `forbidden_topics`, `cta_strategy`, `claim_to_proof_rules`, `platform_rules`)
+- Added backward-compatible storage migration with deep merge semantics and string-to-object coercion for legacy YAML strategy files
+- Aligned dashboard TypeScript types and API contracts with the upgraded backend schema
+- Fixed prompt/schema drift (removed `tone_guide` references, fixed `content_pillars` iteration) with regression tests
+
+#### Phase 02 - Strategy Dashboard And Editing UX (4 tasks)
+
+- Redesigned strategy page into a sectioned workspace with tabs: Health, Niche, Pillars, Audience, Platforms, Claims, Examples, Advanced
+- Built first-class content pillar CRUD UI with add, edit, delete, reorder, and archive flows
+- Added structured editors for nested strategy objects: `AudienceSegmentEditor`, `PlatformRuleEditor`, `CTAStrategyEditor`, `ContentExampleEditor`
+- Added readiness feedback panels, JSON import/export controls, and safer save state UX
+
+#### Phase 03 - Strategy Integration And Learning Quality (3 tasks)
+
+- Wired upgraded strategy fields (`content_pillars`, `platform_rules`, `cta_strategy`, `claim_to_proof_rules`, `allowed_audience_universe`, `performance_guidance`) into planning, scoring, scripting, packaging, and thesis prompts
+- Upgraded `PerformanceLearning` to capture `exact_pattern`, `evidence_count`, `baseline_comparison`, `confidence`, `review_after`, `source_metrics`, `audience_context`, `source_video_ids`, `platform`, and `content_type`
+- Added `apply_learnings_to_strategy()` promotion logic with backward-compatible `performance_guidance` output and CLI `learnings apply` command
+
+#### Phase 04 - Governance, Validation, And Operating Fitness (3 tasks)
+
+- Added `StrategyReadiness` validation engine with 9 checks (blocking: niche, content_pillars; warnings: expertise_edge, proof_standards, forbidden_claims, platforms, audience_segments, tone_rules, past_winners) and `GET /api/content-gen/strategy/readiness` endpoint
+- Added `RuleLifecycleStatus` enum (`PROMOTED`, `UNDER_REVIEW`, `DEPRECATED`, `EXPIRED`) with lifecycle metadata on `RuleVersion` and `can_promote()`/`should_retire()` methods; added `GET /api/content-gen/strategy/rules-for-review` and `PATCH /api/content-gen/strategy/rule-lifecycle/{version_id}` endpoints
+- Extended `OperatingFitnessMetrics` with drift/bias fields (`rule_churn_rate`, `deprecated_rules_count`, `new_rules_count`, `avg_rule_confidence`, `rules_needing_review_count`, `hook/framing/scoring/packaging_rule_count`) and computed `rule_diversity_ratio`, `learning_bias_score`, `drift_summary`; wired into `GET /api/content-gen/operating-fitness`
+
 #### Phase 01 - Strategy And Constraints (7 tasks)
 
 - Defined the canonical seven-phase operating contract and mapped the current 14-stage pipeline into it
