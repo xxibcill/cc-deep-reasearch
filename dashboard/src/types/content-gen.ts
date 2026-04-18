@@ -193,6 +193,106 @@ export interface StrategyMemory {
 }
 
 // =============================================================================
+// P4-T2: Rule Governance Lifecycle Types
+// =============================================================================
+
+export type RuleLifecycleStatus = 'promoted' | 'under_review' | 'deprecated' | 'expired';
+
+export interface RuleVersion {
+  version_id: string;
+  kind: string;
+  operation: string;
+  change_summary: string;
+  previous_value: string;
+  new_value: string;
+  source_learning_ids: string[];
+  source_content_ids: string[];
+  approved_by: string;
+  created_at: string;
+  lifecycle_status: RuleLifecycleStatus;
+  confidence: number;
+  evidence_count: number;
+  review_after: string;
+  review_notes: string;
+}
+
+// =============================================================================
+// P4-T1: Strategy Readiness Types
+// =============================================================================
+
+export type StrategyReadiness = 'invalid' | 'incomplete' | 'healthy';
+
+export interface StrategyReadinessIssue {
+  code: string;
+  label: string;
+  severity: 'blocking' | 'warning';
+  field_path: string;
+  detail: string;
+  suggestion: string;
+}
+
+export interface StrategyReadinessResult {
+  readiness: StrategyReadiness;
+  overall_score: number;
+  issues: StrategyReadinessIssue[];
+  summary: string;
+}
+
+// =============================================================================
+// P4-T3: Operating Fitness & Strategy Risk Types
+// =============================================================================
+
+export interface OperatingFitnessMetrics {
+  // Cycle time
+  avg_cycle_time_ms: number;
+  median_cycle_time_ms: number;
+  p95_cycle_time_ms: number;
+  fastest_cycle_time_ms: number;
+  slowest_cycle_time_ms: number;
+  // Kill rate
+  total_ideas_evaluated: number;
+  ideas_killed_early: number;
+  ideas_killed_late: number;
+  ideas_published: number;
+  ideas_held: number;
+  ideas_recycled: number;
+  kill_rate: number;
+  early_kill_rate: number;
+  late_kill_rate: number;
+  publish_rate: number;
+  reuse_rate: number;
+  // Reuse
+  reuse_candidates_identified: number;
+  reuse_candidates_applied: number;
+  // Cost
+  total_estimated_cost_cents: number;
+  avg_cost_per_published: number;
+  avg_cost_per_killed: number;
+  cost_per_idea: number;
+  // Throughput
+  ideas_per_week: number;
+  published_per_week: number;
+  // Time period
+  period_start: string;
+  period_end: string;
+  total_runs: number;
+  // P4-T3: Drift and bias signals
+  rule_churn_rate: number;
+  deprecated_rules_count: number;
+  new_rules_count: number;
+  avg_rule_confidence: number;
+  rules_needing_review_count: number;
+  hook_rule_count: number;
+  framing_rule_count: number;
+  scoring_rule_count: number;
+  packaging_rule_count: number;
+  other_rule_count: number;
+  rule_diversity_ratio: number;
+  learning_bias_score: number;
+  drift_summary: string;
+}
+
+// =============================================================================
 // Opportunity brief (stage 1)
 // =============================================================================
 
