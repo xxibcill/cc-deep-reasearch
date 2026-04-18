@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -26,6 +27,7 @@ import yaml
 
 from cc_deep_research.config import get_default_config_path
 from cc_deep_research.radar.models import (
+    FeedbackType,
     FreshnessState,
     Opportunity,
     OpportunityFeedback,
@@ -145,8 +147,6 @@ def _serialize_model_to_dict(model: Any) -> dict[str, Any]:
 
 def _now_iso() -> str:
     """Return current UTC time as ISO string."""
-    from datetime import UTC, datetime
-
     return datetime.now(tz=UTC).isoformat()
 
 
@@ -522,6 +522,32 @@ class RadarStore:
         """Get all feedback entries for an opportunity."""
         entries = self.load_feedback()
         return [e for e in entries.feedback_entries if e.opportunity_id == opportunity_id]
+
+    def get_feedback_counts(
+        self,
+        opportunity_type: str | None = None,
+        days_back: int = 30,
+    ) -> dict[FeedbackType, int]:
+        """Aggregate feedback counts, optionally filtered by opportunity type.
+
+        Args:
+            opportunity_type: If set, only count feedback for this opportunity type
+                (stored in feedback metadata as 'opportunity_type').
+            days_back: Only count feedback from the last N days.
+
+        Returns:
+            Dict mapping FeedbackType to count.
+        """
+        cutoff = (datetime.now(tz=UTC) - timedelta(days=days_back)).isoformat()
+        counts: dict[FeedbackType, int] = {ft: 0 for ft in FeedbackType}
+        for fb in self.load_feedback().feedback_entries:
+            if fb.created_at < cutoff:
+                continue
+            if opportunity_type is not None:
+                if fb.metadata.get("opportunity_type") != opportunity_type:
+                    continue
+            counts[fb.feedback_type] += 1
+        return counts
 
     # -- Workflow link operations ---------------------------------------------
 

@@ -19,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from cc_deep_research.radar.models import (
+    FeedbackType,
     FreshnessState,
     Opportunity,
     OpportunityScore,
@@ -29,6 +30,36 @@ from cc_deep_research.radar.scanner import SourceScanner
 from cc_deep_research.radar.storage import RadarStore
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Feedback-adjusted weight modifier
+# ---------------------------------------------------------------------------
+
+_WEIGHT_PENALTY_PER_DISMISSAL = 0.85
+_WEIGHT_BOOST_PER_ACTED_ON = 1.10
+_MIN_MODIFIER = 0.5
+_MAX_MODIFIER = 1.2
+
+
+@dataclass
+class FeedbackWeightModifier:
+    """Multipliers applied to each scoring dimension based on feedback history."""
+
+    strategic_relevance: float = 1.0
+    novelty: float = 1.0
+    urgency: float = 1.0
+    evidence: float = 1.0
+    business_value: float = 1.0
+    workflow_fit: float = 1.0
+
+
+def _compute_dimension_modifier(negative_count: int, positive_count: int) -> float:
+    """Compute a single dimension modifier from feedback counts."""
+    modifier = 1.0
+    modifier *= (_WEIGHT_PENALTY_PER_DISMISSAL ** negative_count)
+    modifier *= (_WEIGHT_BOOST_PER_ACTED_ON ** positive_count)
+    return max(_MIN_MODIFIER, min(_MAX_MODIFIER, modifier))
+
 
 # ---------------------------------------------------------------------------
 # Keyword sets for opportunity type detection
@@ -65,12 +96,14 @@ _TYPE_KEYWORDS: dict[OpportunityType, list[str]] = {
     ],
 }
 
-# Keywords that indicate strategic relevance
 _STRATEGIC_KEYWORDS = [
     "competitor", "market", "industry", "strategy", "strategic",
     "opportunity", "growth", "revenue", "customer", "product",
     "feature", "launch", "release", "update", "announcement",
 ]
+
+# Fallback keywords used when no strategy memory is available
+_FALLBACK_KEYWORDS = _STRATEGIC_KEYWORDS
 
 
 # ---------------------------------------------------------------------------
@@ -325,11 +358,80 @@ class ScoreCalculator:
         "workflow_fit": 0.10,
     }
 
+    def __init__(
+        self,
+        strategy_memory: Any = None,
+    ) -> None:
+        """Initialize the calculator with optional strategy context.
+
+        Args:
+            strategy_memory: Optional StrategyMemory for strategy-aware scoring.
+        """
+        self._strategy_memory = strategy_memory
+        self._strategic_keywords = self._extract_keywords_from_strategy(strategy_memory)
+
+    def _extract_keywords_from_strategy(self, memory: Any) -> list[str]:
+        """Extract strategic keywords from StrategyMemory or fall back to defaults."""
+        if memory is None:
+            return _FALLBACK_KEYWORDS
+
+        from cc_deep_research.content_gen.models import ContentPillar
+
+        keywords: set[str] = set()
+        keyword_set = set(k.lower() for k in _FALLBACK_KEYWORDS)
+
+        # Pull niche words
+        if hasattr(memory, "niche") and memory.niche:
+            niche_words = re.findall(r"[a-z]+", memory.niche.lower())
+            keywords.update(w for w in niche_words if len(w) >= 3)
+
+        # Pull content pillar words
+        if hasattr(memory, "content_pillars") and memory.content_pillars:
+            for pillar in memory.content_pillars:
+                if isinstance(pillar, ContentPillar):
+                    kw = re.findall(r"[a-z]+", pillar.name.lower())
+                    keywords.update(w for w in kw if len(w) >= 3)
+                    if pillar.description:
+                        desc_words = re.findall(r"[a-z]+", pillar.description.lower())
+                        keywords.update(w for w in desc_words if len(w) >= 3)
+                elif isinstance(pillar, dict):
+                    name = pillar.get("name", "")
+                    kw = re.findall(r"[a-z]+", name.lower())
+                    keywords.update(w for w in kw if len(w) >= 3)
+
+        # Pull forbidden topics so we can suppress them
+        if hasattr(memory, "forbidden_topics") and memory.forbidden_topics:
+            for topic in memory.forbidden_topics:
+                words = re.findall(r"[a-z]+", topic.lower())
+                keywords.update(w for w in words if len(w) >= 3)
+
+        # If we got nothing meaningful, fall back
+        if not keywords:
+            return _FALLBACK_KEYWORDS
+
+        return list(keywords)
+
+    def _score_strategic_relevance(self, opportunity: Opportunity, signals: list[RawSignal]) -> float:
+        """Score strategic relevance based on keyword matching.
+
+        Args:
+            opportunity: The Opportunity.
+            signals: Signals in the cluster.
+
+        Returns:
+            Score from 0-100.
+        """
+        text = f"{opportunity.title} {opportunity.summary}".lower()
+        keyword_set = {k.lower() for k in self._strategic_keywords}
+        matches = sum(1 for kw in keyword_set if kw in text)
+        return min(100.0, matches * 35)
+
     def calculate(
         self,
         opportunity: Opportunity,
         signals: list[RawSignal],
         cluster: SignalCluster,
+        weight_modifier: FeedbackWeightModifier | None = None,
     ) -> tuple[OpportunityScore, str]:
         """Calculate all scoring dimensions for an opportunity.
 
@@ -337,10 +439,12 @@ class ScoreCalculator:
             opportunity: The Opportunity being scored.
             signals: All RawSignals in the opportunity's cluster.
             cluster: The SignalCluster for this opportunity.
+            weight_modifier: Optional feedback-based weight adjustments.
 
         Returns:
             A tuple of (OpportunityScore, human-readable explanation).
         """
+        modifier = weight_modifier or FeedbackWeightModifier()
         strategic = self._score_strategic_relevance(opportunity, signals)
         novelty = self._score_novelty(signals)
         urgency = self._score_urgency(signals)
@@ -349,12 +453,12 @@ class ScoreCalculator:
         workflow_fit = self._score_workflow_fit(opportunity, signals)
 
         total = (
-            strategic * self.WEIGHTS["strategic_relevance"]
-            + novelty * self.WEIGHTS["novelty"]
-            + urgency * self.WEIGHTS["urgency"]
-            + evidence * self.WEIGHTS["evidence"]
-            + business_value * self.WEIGHTS["business_value"]
-            + workflow_fit * self.WEIGHTS["workflow_fit"]
+            strategic * self.WEIGHTS["strategic_relevance"] * modifier.strategic_relevance
+            + novelty * self.WEIGHTS["novelty"] * modifier.novelty
+            + urgency * self.WEIGHTS["urgency"] * modifier.urgency
+            + evidence * self.WEIGHTS["evidence"] * modifier.evidence
+            + business_value * self.WEIGHTS["business_value"] * modifier.business_value
+            + workflow_fit * self.WEIGHTS["workflow_fit"] * modifier.workflow_fit
         )
 
         score = OpportunityScore(
@@ -376,22 +480,6 @@ class ScoreCalculator:
         score.explanation = explanation
 
         return score, explanation
-
-    def _score_strategic_relevance(self, opportunity: Opportunity, signals: list[RawSignal]) -> float:
-        """Score strategic relevance based on keyword matching.
-
-        Args:
-            opportunity: The Opportunity.
-            signals: Signals in the cluster.
-
-        Returns:
-            Score from 0-100.
-        """
-        text = f"{opportunity.title} {opportunity.summary}".lower()
-        keyword_set = {k.lower() for k in _STRATEGIC_KEYWORDS}
-        matches = sum(1 for kw in keyword_set if kw in text)
-        # Normalize: 3+ matches = high score
-        return min(100.0, matches * 35)
 
     def _score_novelty(self, signals: list[RawSignal]) -> float:
         """Score novelty based on how recent the newest signal is.
@@ -734,18 +822,46 @@ class RadarEngine:
         self,
         store: RadarStore | None = None,
         scanner: SourceScanner | None = None,
+        strategy_memory: Any | None = None,
     ) -> None:
         """Initialize the engine.
 
         Args:
             store: RadarStore to use. Defaults to new RadarStore.
             scanner: SourceScanner to use. Defaults to new SourceScanner.
+            strategy_memory: Optional StrategyMemory for strategy-aware scoring.
         """
         self._store = store or RadarStore()
         self._scanner = scanner or SourceScanner(self._store)
         self._clusterer = SignalClusterer()
-        self._scorer = ScoreCalculator()
+        self._scorer = ScoreCalculator(strategy_memory=strategy_memory)
         self._freshness = FreshnessManager()
+
+    def _compute_feedback_adjustment(
+        self,
+        opportunity_type: str,
+    ) -> FeedbackWeightModifier:
+        """Compute feedback-based weight modifiers for an opportunity type.
+
+        Args:
+            opportunity_type: The type of opportunity being scored.
+
+        Returns:
+            FeedbackWeightModifier with per-dimension multipliers.
+        """
+        counts = self._store.get_feedback_counts(opportunity_type=opportunity_type)
+        dismissed = counts.get(FeedbackType.DISMISSED, 0) + counts.get(FeedbackType.IGNORED, 0)
+        acted_on = (
+            counts.get(FeedbackType.ACTED_ON, 0)
+            + counts.get(FeedbackType.CONVERTED_TO_RESEARCH, 0)
+            + counts.get(FeedbackType.CONVERTED_TO_CONTENT, 0)
+        )
+        base = _compute_dimension_modifier(dismissed, acted_on)
+        return FeedbackWeightModifier(
+            workflow_fit=base,
+            business_value=max(0.8, base + 0.1),
+            novelty=max(0.85, base),
+        )
 
     # -- Deduplication --------------------------------------------------------
 
@@ -943,8 +1059,9 @@ class RadarEngine:
                 link_reason="same_topic",
             )
 
-        # Score and update
-        score, _ = self._scorer.calculate(opp, signals, cluster)
+        # Score and update (with feedback-based weight adjustment)
+        modifier = self._compute_feedback_adjustment(opp.opportunity_type.value)
+        score, _ = self._scorer.calculate(opp, signals, cluster, modifier)
         self._store.upsert_score(score)
 
         # Apply freshness
@@ -987,8 +1104,9 @@ class RadarEngine:
                     link_reason="same_topic",
                 )
 
-        # Re-score
-        score, _ = self._scorer.calculate(opp, signals, cluster)
+        # Re-score (with feedback-based weight adjustment)
+        modifier = self._compute_feedback_adjustment(opp.opportunity_type.value)
+        score, _ = self._scorer.calculate(opp, signals, cluster, modifier)
         self._store.upsert_score(score)
 
         # Update opportunity
@@ -1085,7 +1203,8 @@ class RadarEngine:
             keywords=list(set(keywords)),
         )
 
-        score, explanation = self._scorer.calculate(opp, signals, cluster)
+        modifier = self._compute_feedback_adjustment(opp.opportunity_type.value)
+        score, explanation = self._scorer.calculate(opp, signals, cluster, modifier)
         self._store.upsert_score(score)
 
         opp = self._freshness.apply_freshness_decay(opp, signals)
