@@ -19,7 +19,6 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
@@ -284,7 +283,7 @@ class OpportunityScore(BaseModel):
             return 0.0
 
     @model_validator(mode="after")
-    def _derive_priority_label(self) -> "OpportunityScore":
+    def _derive_priority_label(self) -> OpportunityScore:
         """Derive priority_label from total_score."""
         if self.total_score >= 80:
             self.priority_label = PriorityLabel.ACT_NOW

@@ -24,8 +24,8 @@ from cc_deep_research.radar.models import (
     WorkflowLink,
     WorkflowType,
 )
-from cc_deep_research.radar.storage import RadarStore
 from cc_deep_research.radar.service import RadarService
+from cc_deep_research.radar.storage import RadarStore
 
 __all__ = [
     # Models - enums

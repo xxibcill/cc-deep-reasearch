@@ -26,7 +26,6 @@ import yaml
 
 from cc_deep_research.config import get_default_config_path
 from cc_deep_research.radar.models import (
-    FeedbackType,
     FreshnessState,
     Opportunity,
     OpportunityFeedback,
@@ -38,16 +37,12 @@ from cc_deep_research.radar.models import (
     OpportunitySignalLinkList,
     OpportunityStatus,
     OpportunityType,
-    PriorityLabel,
     RadarSource,
     RadarSourceList,
     RawSignal,
     RawSignalList,
-    SourceStatus,
-    SourceType,
     WorkflowLink,
     WorkflowLinkList,
-    WorkflowType,
 )
 
 if TYPE_CHECKING:
@@ -484,13 +479,13 @@ class RadarStore:
     def get_signal_ids_for_opportunity(self, opportunity_id: str) -> list[str]:
         """Get all signal ids linked to an opportunity."""
         links = self.load_signal_links()
-        return [l.raw_signal_id for l in links.links if l.opportunity_id == opportunity_id]
+        return [link.raw_signal_id for link in links.links if link.opportunity_id == opportunity_id]
 
     def get_opportunity_ids_for_signal(self, raw_signal_id: str) -> list[str]:
         """Get all opportunity ids linked to a signal."""
         links = self.load_signal_links()
         return [
-            l.opportunity_id for l in links.links if l.raw_signal_id == raw_signal_id
+            link.opportunity_id for link in links.links if link.raw_signal_id == raw_signal_id
         ]
 
     # -- Feedback operations -------------------------------------------------
@@ -558,4 +553,4 @@ class RadarStore:
     ) -> list[WorkflowLink]:
         """Get all workflow links for an opportunity."""
         links = self.load_workflow_links()
-        return [l for l in links.links if l.opportunity_id == opportunity_id]
+        return [link for link in links.links if link.opportunity_id == opportunity_id]
