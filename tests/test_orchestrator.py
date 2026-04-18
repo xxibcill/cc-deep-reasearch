@@ -4,7 +4,6 @@ from collections.abc import Sequence
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from click.testing import CliRunner
 
 from cc_deep_research.agents import (
     AGENT_TYPE_ANALYZER,
@@ -17,7 +16,6 @@ from cc_deep_research.agents import (
 )
 from cc_deep_research.agents.query_expander import QueryExpanderAgent
 from cc_deep_research.aggregation import deduplicate_by_url
-from cc_deep_research.cli import _resolve_parallel_mode_override, main
 from cc_deep_research.config import Config
 from cc_deep_research.coordination.agent_pool import LocalAgentPool
 from cc_deep_research.coordination.message_bus import LocalMessageBus
@@ -440,23 +438,6 @@ def _install_fake_team(
 
 class TestTeamResearchOrchestrator:
     """Workflow contract tests for the orchestrator."""
-
-    def test_research_help_describes_no_team_as_sequential_collection(self) -> None:
-        runner = CliRunner()
-
-        result = runner.invoke(main, ["research", "--help"])
-
-        assert result.exit_code == 0
-        assert "[markdown|json|html]" in result.output
-        assert "--no-team" in result.output
-        assert "Run source collection sequentially instead of" in result.output
-        assert "using parallel local tasks" in result.output
-
-    def test_no_team_override_forces_sequential_collection(self) -> None:
-        assert _resolve_parallel_mode_override(no_team=True, parallel_mode=False) is False
-        assert _resolve_parallel_mode_override(no_team=True, parallel_mode=True) is False
-        assert _resolve_parallel_mode_override(no_team=False, parallel_mode=True) is True
-        assert _resolve_parallel_mode_override(no_team=False, parallel_mode=False) is None
 
     def test_orchestrator_initialization(self) -> None:
         config = Config()

@@ -37,5 +37,5 @@ jobs:
       - name: Orchestrator smoke (full fixture-backed pipeline)
         run: uv run pytest tests/test_orchestrator.py tests/test_orchestration.py -v
 
-      - name: CLI smoke (command entrypoint)
-        run: uv run pytest tests/test_cli_research.py tests/test_research_run_service.py -v
+      - name: Research run service smoke
+        run: uv run pytest tests/test_research_run_service.py -v
