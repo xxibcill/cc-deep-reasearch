@@ -39,6 +39,18 @@ import type {
   SearchCacheDeleteResponse,
   SearchCacheClearResponse,
 } from '@/types/search-cache';
+import type {
+  ApiRadarSource,
+  ApiOpportunity,
+  OpportunityDetailResponse,
+  OpportunityListResponse,
+  SourceListResponse,
+  RadarSource,
+  Opportunity,
+  OpportunityDetail,
+  OpportunityListResult,
+  SourceListResult,
+} from '@/types/radar';
 
 const apiClient = axios.create({
   baseURL: dashboardRuntimeConfig.apiBaseUrl,
@@ -765,4 +777,173 @@ export async function getAnalytics(daysBack: number = 30): Promise<AnalyticsResp
     params: { days_back: daysBack },
   });
   return response.data;
+}
+
+// ---------------------------------------------------------------------------
+// Radar API helpers
+// ---------------------------------------------------------------------------
+
+function normalizeRadarSource(raw: ApiRadarSource): RadarSource {
+  return {
+    id: raw.id,
+    sourceType: raw.source_type as RadarSource['sourceType'],
+    label: raw.label,
+    urlOrIdentifier: raw.url_or_identifier,
+    status: raw.status as RadarSource['status'],
+    scanCadence: raw.scan_cadence,
+    lastScannedAt: raw.last_scanned_at,
+    createdAt: raw.created_at,
+    updatedAt: raw.updated_at,
+  };
+}
+
+function normalizeOpportunity(raw: ApiOpportunity): Opportunity {
+  return {
+    id: raw.id,
+    title: raw.title,
+    summary: raw.summary,
+    opportunityType: raw.opportunity_type as Opportunity['opportunityType'],
+    status: raw.status as Opportunity['status'],
+    priorityLabel: raw.priority_label as Opportunity['priorityLabel'],
+    whyItMatters: raw.why_it_matters,
+    recommendedAction: raw.recommended_action,
+    totalScore: raw.total_score,
+    freshnessState: raw.freshness_state as Opportunity['freshnessState'],
+    createdAt: raw.created_at,
+    updatedAt: raw.updated_at,
+  };
+}
+
+export async function getRadarSources(status?: string): Promise<SourceListResult> {
+  const params: Record<string, unknown> = {};
+  if (status) params.status = status;
+  const response = await apiClient.get<SourceListResponse>('/radar/sources', { params });
+  return {
+    sources: response.data.items.map(normalizeRadarSource),
+    total: response.data.count,
+  };
+}
+
+export interface CreateRadarSourceRequest {
+  source_type: string;
+  label: string;
+  url_or_identifier: string;
+  scan_cadence?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export async function createRadarSource(request: CreateRadarSourceRequest): Promise<RadarSource> {
+  const response = await apiClient.post<ApiRadarSource>('/radar/sources', request);
+  return normalizeRadarSource(response.data);
+}
+
+export async function getRadarOpportunities(params?: {
+  status?: string;
+  opportunity_type?: string;
+  freshness?: string;
+  limit?: number;
+}): Promise<OpportunityListResult> {
+  const queryParams: Record<string, unknown> = {};
+  if (params?.status) queryParams.status = params.status;
+  if (params?.opportunity_type) queryParams.opportunity_type = params.opportunity_type;
+  if (params?.freshness) queryParams.freshness = params.freshness;
+  if (params?.limit) queryParams.limit = params.limit;
+  const response = await apiClient.get<OpportunityListResponse>('/radar/opportunities', {
+    params: queryParams,
+  });
+  return {
+    opportunities: response.data.items.map(normalizeOpportunity),
+    total: response.data.count,
+  };
+}
+
+export async function getRadarOpportunityDetail(
+  opportunityId: string
+): Promise<OpportunityDetail> {
+  const response = await apiClient.get<OpportunityDetailResponse>(
+    `/radar/opportunities/${opportunityId}`
+  );
+  return {
+    opportunity: normalizeOpportunity(response.data.opportunity),
+    score: response.data.score
+      ? {
+          opportunityId: response.data.score.opportunity_id,
+          strategicRelevanceScore: response.data.score.strategic_relevance_score,
+          noveltyScore: response.data.score.novelty_score,
+          urgencyScore: response.data.score.urgency_score,
+          evidenceScore: response.data.score.evidence_score,
+          businessValueScore: response.data.score.business_value_score,
+          workflowFitScore: response.data.score.workflow_fit_score,
+          totalScore: response.data.score.total_score,
+          priorityLabel: response.data.score.priority_label as Opportunity['priorityLabel'],
+          explanation: response.data.score.explanation,
+          scoredAt: response.data.score.scored_at,
+        }
+      : null,
+    signals: response.data.signals.map((s) => ({
+      id: s.id,
+      sourceId: s.source_id,
+      externalId: s.external_id,
+      title: s.title,
+      summary: s.summary,
+      url: s.url,
+      publishedAt: s.published_at,
+      discoveredAt: s.discovered_at,
+      contentHash: s.content_hash,
+      metadata: s.metadata,
+      normalizedType: s.normalized_type,
+    })),
+    feedback: response.data.feedback.map((f) => ({
+      id: f.id,
+      opportunityId: f.opportunity_id,
+      feedbackType: f.feedback_type as OpportunityDetail['feedback'][number]['feedbackType'],
+      createdAt: f.created_at,
+      metadata: f.metadata,
+    })),
+    workflowLinks: response.data.workflow_links.map((w) => ({
+      id: w.id,
+      opportunityId: w.opportunity_id,
+      workflowType: w.workflow_type as OpportunityDetail['workflowLinks'][number]['workflowType'],
+      workflowId: w.workflow_id,
+      createdAt: w.created_at,
+    })),
+  };
+}
+
+export type OpportunityStatusUpdate =
+  | 'new'
+  | 'saved'
+  | 'acted_on'
+  | 'monitoring'
+  | 'dismissed'
+  | 'archived';
+
+export async function updateRadarOpportunityStatus(
+  opportunityId: string,
+  status: OpportunityStatusUpdate
+): Promise<Opportunity> {
+  const response = await apiClient.post<ApiOpportunity>(
+    `/radar/opportunities/${opportunityId}/status`,
+    { status }
+  );
+  return normalizeOpportunity(response.data);
+}
+
+export type FeedbackTypeInput =
+  | 'acted_on'
+  | 'saved'
+  | 'dismissed'
+  | 'ignored'
+  | 'converted_to_research'
+  | 'converted_to_content';
+
+export async function recordRadarOpportunityFeedback(
+  opportunityId: string,
+  feedbackType: FeedbackTypeInput,
+  metadata?: Record<string, unknown>
+): Promise<void> {
+  await apiClient.post(`/radar/opportunities/${opportunityId}/feedback`, {
+    feedback_type: feedbackType,
+    metadata: metadata ?? {},
+  });
 }

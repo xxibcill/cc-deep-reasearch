@@ -10,6 +10,7 @@ import {
   FileVideo,
   FlaskConical,
   Menu,
+  Radar,
   Search,
   Settings,
   Trophy,
@@ -32,6 +33,7 @@ const defaultNavItems: NavBarItem[] = [
   { href: '/', label: 'Research', icon: FlaskConical },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/benchmark', label: 'Benchmark', icon: Trophy },
+  { href: '/radar', label: 'Radar', icon: Radar },
   { href: '/content-gen', label: 'Content', icon: FileVideo },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
