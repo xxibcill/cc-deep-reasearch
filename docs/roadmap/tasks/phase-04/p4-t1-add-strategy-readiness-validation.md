@@ -25,3 +25,17 @@ Add explicit validation rules for strategy completeness and quality so weak stra
 
 - The system can reject invalid strategy states and warn on weak ones.
 - Operators can see which fields or ratios are causing readiness failures.
+
+## Status
+
+**Done**
+
+Implemented:
+- `StrategyReadiness` enum: `INVALID`, `INCOMPLETE`, `HEALTHY`
+- `StrategyReadinessIssue` model with `code`, `label`, `severity` (`blocking`/`warning`), `field_path`, `detail`, `suggestion`
+- `StrategyReadinessResult` model with `readiness`, `overall_score`, `issues`, `summary`, plus helper methods (`has_blockers()`, `is_healthy()`, `blocking_issues()`, `warning_issues()`)
+- `StrategyStore.check_readiness()` running 9 checks: niche (blocking), content_pillars (blocking), expertise_edge, proof_standards, forbidden_claims, platforms, audience_segments, tone_rules, past_winners (all warning)
+- `GET /api/content-gen/strategy/readiness` endpoint exposing validation results
+- Frontend `ReadinessPanel` component in strategy workspace showing readiness level, completeness score, and per-issue cards with severity badges and suggestions
+- TypeScript types: `StrategyReadiness`, `StrategyReadinessIssue`, `StrategyReadinessResult` in `dashboard/src/types/content-gen.ts`
+- API functions: `getStrategyReadiness()` in `dashboard/src/lib/content-gen-api.ts`

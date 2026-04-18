@@ -3,6 +3,7 @@
 Use these docs as the current contributor entry points:
 
 - [`USAGE.md`](USAGE.md): CLI commands, configuration, and operator workflows
+- [`opportunity-radar-prd.md`](opportunity-radar-prd.md): detailed product requirements doc for the proposed proactive opportunity-discovery workspace
 - [`PREFLIGHT.md`](PREFLIGHT.md): Low-cost preflight validation before running live research
 - [`DASHBOARD_GUIDE.md`](DASHBOARD_GUIDE.md): comprehensive dashboard guide covering architecture, usage, APIs, telemetry flow, and caveats
 - [`../dashboard/README.md`](../dashboard/README.md): frontend development commands, runtime env vars, and backend wiring for the Next.js dashboard
