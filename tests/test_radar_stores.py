@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 from cc_deep_research.radar.models import (
     Opportunity,
     OpportunityFeedback,
     OpportunityScore,
-    OpportunitySignalLink,
     OpportunityStatus,
     OpportunityType,
-    PriorityLabel,
     RadarSource,
     RawSignal,
     SourceStatus,

@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-from pydantic import ValidationError
-
 from cc_deep_research.radar.models import (
     FeedbackType,
     FreshnessState,

@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 from unittest.mock import MagicMock
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from cc_deep_research.event_router import EventRouter
 from cc_deep_research.radar.router import register_radar_routes
 from cc_deep_research.radar.service import RadarService
 from cc_deep_research.radar.storage import RadarStore

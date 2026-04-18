@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -21,7 +21,6 @@ from cc_deep_research.radar.models import (
     OpportunityScore,
     OpportunityStatus,
     OpportunityType,
-    PriorityLabel,
     RadarSource,
     RawSignal,
     SourceStatus,
@@ -29,16 +28,12 @@ from cc_deep_research.radar.models import (
 )
 from cc_deep_research.radar.scanner import (
     RSSScanner,
-    ScanError,
-    SourceScanner,
-    UnsupportedSourceTypeError,
+    compute_content_hash,
     is_due_for_scan,
     parse_cadence,
     strip_html,
-    compute_content_hash,
 )
 from cc_deep_research.radar.storage import RadarStore
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

@@ -8,18 +8,11 @@ import pytest
 
 from cc_deep_research.radar.models import (
     FeedbackType,
-    FreshnessState,
-    Opportunity,
-    OpportunityFeedback,
-    OpportunityScore,
     OpportunityStatus,
     OpportunityType,
     PriorityLabel,
-    RadarSource,
-    RawSignal,
     SourceStatus,
     SourceType,
-    WorkflowLink,
     WorkflowType,
 )
 from cc_deep_research.radar.service import RadarService
