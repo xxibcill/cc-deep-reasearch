@@ -147,6 +147,11 @@ class PerformanceLearningStore:
         learnings: list[PerformanceLearning] = []
         now = _now_iso()
 
+        metrics = dict(analysis.metrics or {})
+        baseline = self._compute_baseline_comparison(metrics)
+        confidence = self._compute_confidence(metrics)
+        review_after = self._compute_review_date(now, confidence)
+
         # Extract hook learnings
         if analysis.hook_diagnosis:
             durability = self._infer_durability(analysis.hook_diagnosis, analysis.metrics)
@@ -157,11 +162,18 @@ class PerformanceLearningStore:
                     observation=analysis.hook_diagnosis,
                     implication="The hook determines initial retention and click-through.",
                     guidance=self._derive_hook_guidance(analysis.hook_diagnosis),
+                    exact_pattern=analysis.hook_diagnosis[:200] if analysis.hook_diagnosis else "",
                     source_video_ids=[video_id],
-                    source_metrics=dict(analysis.metrics or {}),
+                    source_metrics=metrics,
+                    evidence_count=1,
+                    baseline_comparison=baseline,
+                    confidence=confidence,
+                    review_after=review_after,
                     created_at=now,
                     updated_at=now,
                     platform=platform,
+                    content_type=metrics.get("content_type", ""),
+                    audience_context=metrics.get("audience_segment", ""),
                 )
             )
 
@@ -183,11 +195,18 @@ class PerformanceLearningStore:
                     observation=item,
                     implication="This pattern should be validated with more data before becoming durable.",
                     guidance=f"Continue testing variations of: {item}",
+                    exact_pattern=item[:200],
                     source_video_ids=[video_id],
-                    source_metrics=dict(analysis.metrics or {}),
+                    source_metrics=metrics,
+                    evidence_count=1,
+                    baseline_comparison=baseline,
+                    confidence=min(confidence, 0.5),  # Lower confidence for single-observation learnings
+                    review_after=review_after,
                     created_at=now,
                     updated_at=now,
                     platform=platform,
+                    content_type=metrics.get("content_type", ""),
+                    audience_context=metrics.get("audience_segment", ""),
                 )
             )
 
@@ -209,11 +228,18 @@ class PerformanceLearningStore:
                     observation=item,
                     implication="This pattern should be avoided or significantly modified in future content.",
                     guidance=f"Avoid or change: {item}",
+                    exact_pattern=item[:200],
                     source_video_ids=[video_id],
-                    source_metrics=dict(analysis.metrics or {}),
+                    source_metrics=metrics,
+                    evidence_count=1,
+                    baseline_comparison=baseline,
+                    confidence=min(confidence, 0.5),
+                    review_after=review_after,
                     created_at=now,
                     updated_at=now,
                     platform=platform,
+                    content_type=metrics.get("content_type", ""),
+                    audience_context=metrics.get("audience_segment", ""),
                 )
             )
 
@@ -226,11 +252,18 @@ class PerformanceLearningStore:
                     observation=signal,
                     implication="Audience responded distinctly to this signal.",
                     guidance=f"Explore more content around: {signal}",
+                    exact_pattern=signal[:200],
                     source_video_ids=[video_id],
-                    source_metrics=dict(analysis.metrics or {}),
+                    source_metrics=metrics,
+                    evidence_count=1,
+                    baseline_comparison=baseline,
+                    confidence=min(confidence, 0.4),
+                    review_after=review_after,
                     created_at=now,
                     updated_at=now,
                     platform=platform,
+                    content_type=metrics.get("content_type", ""),
+                    audience_context=metrics.get("audience_segment", ""),
                 )
             )
 
@@ -243,11 +276,18 @@ class PerformanceLearningStore:
                     observation=hypothesis,
                     implication="Retention dropped at this point; structural issue likely.",
                     guidance=f"Address pacing issue: {hypothesis}",
+                    exact_pattern=hypothesis[:200],
                     source_video_ids=[video_id],
-                    source_metrics=dict(analysis.metrics or {}),
+                    source_metrics=metrics,
+                    evidence_count=1,
+                    baseline_comparison=baseline,
+                    confidence=min(confidence, 0.4),
+                    review_after=review_after,
                     created_at=now,
                     updated_at=now,
                     platform=platform,
+                    content_type=metrics.get("content_type", ""),
+                    audience_context=metrics.get("audience_segment", ""),
                 )
             )
 
@@ -257,6 +297,96 @@ class PerformanceLearningStore:
         self.save_raw_learnings(existing)
 
         return PerformanceLearningSet(video_id=video_id, learnings=learnings, source_analysis=analysis)
+
+    def _compute_baseline_comparison(self, metrics: dict[str, Any]) -> str:
+        """Compute a baseline comparison string from performance metrics.
+
+        Shows how the current content performed vs typical performance.
+        """
+        views = metrics.get("views", 0) or metrics.get("impressions", 0)
+        engagement_rate = metrics.get("engagement_rate", 0) or metrics.get("likes_per_view", 0)
+        retention = metrics.get("retention_rate", 0) or metrics.get("avg_watch_percentage", 0)
+
+        parts = []
+        if views > 0:
+            # Assume baseline of 1000 views for context
+            ratio = views / 1000
+            if ratio > 5:
+                parts.append(f"+{((ratio - 1) * 100):.0f}% views vs typical")
+            elif ratio < 0.5:
+                parts.append(f"{((ratio - 1) * 100):.0f}% views vs typical")
+
+        if engagement_rate > 0:
+            if engagement_rate > 0.08:
+                parts.append(f"high engagement ({engagement_rate:.1%})")
+            elif engagement_rate < 0.02:
+                parts.append(f"low engagement ({engagement_rate:.1%})")
+
+        if retention > 0:
+            if retention > 0.6:
+                parts.append(f"strong retention ({retention:.0%})")
+            elif retention < 0.3:
+                parts.append(f"weak retention ({retention:.0%})")
+
+        return "; ".join(parts) if parts else "atypical performance"
+
+    def _compute_confidence(self, metrics: dict[str, Any]) -> float:
+        """Compute a confidence score (0.0-1.0) based on sample size and effect size.
+
+        Higher views and engagement = more confidence in the learning.
+        """
+        views = metrics.get("views", 0) or metrics.get("impressions", 0)
+        engagement_rate = metrics.get("engagement_rate", 0) or metrics.get("likes_per_view", 0)
+
+        # Sample size confidence (0-0.5 based on views)
+        if views > 50000:
+            sample_confidence = 0.5
+        elif views > 10000:
+            sample_confidence = 0.4
+        elif views > 5000:
+            sample_confidence = 0.3
+        elif views > 1000:
+            sample_confidence = 0.2
+        else:
+            sample_confidence = 0.1
+
+        # Effect size confidence (0-0.5 based on engagement strength)
+        if engagement_rate > 0.1:
+            effect_confidence = 0.5
+        elif engagement_rate > 0.05:
+            effect_confidence = 0.4
+        elif engagement_rate > 0.03:
+            effect_confidence = 0.3
+        elif engagement_rate > 0.01:
+            effect_confidence = 0.2
+        else:
+            effect_confidence = 0.1
+
+        return min(sample_confidence + effect_confidence, 1.0)
+
+    def _compute_review_date(self, created_at: str, confidence: float) -> str:
+        """Compute when this learning should be reviewed based on confidence.
+
+        Lower confidence = sooner review. Uses 30/60/90 day tiers.
+        """
+        from datetime import datetime, timedelta
+
+        try:
+            created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            created = datetime.now(tz=UTC)
+
+        if confidence >= 0.8:
+            days = 90
+        elif confidence >= 0.6:
+            days = 60
+        elif confidence >= 0.4:
+            days = 30
+        else:
+            days = 14
+
+        review = created + timedelta(days=days)
+        return review.isoformat()
 
     def _categorize_from_text(
         self,

@@ -109,4 +109,29 @@ def packaging_user(
 
     if strategy.platforms:
         parts.append(f"Active platforms: {', '.join(strategy.platforms)}")
+
+    # P3-T1: Platform-specific packaging rules
+    if strategy.platform_rules:
+        for pr in strategy.platform_rules:
+            if pr.guidance:
+                parts.append(f"Platform rule [{pr.platform}]: {pr.guidance}")
+
+    # P3-T1: CTA strategy for packaging
+    if strategy.cta_strategy:
+        if strategy.cta_strategy.allowed_cta_types:
+            parts.append(f"Allowed CTA types: {', '.join(strategy.cta_strategy.allowed_cta_types)}")
+        if strategy.cta_strategy.default_by_content_goal:
+            defaults = [f"{k}: {v}" for k, v in strategy.cta_strategy.default_by_content_goal.items()]
+            parts.append(f"CTA defaults by goal: {'; '.join(defaults[:3])}")
+
+    # P3-T1: Performance learnings - hook patterns
+    pg = strategy.performance_guidance
+    if pg.winning_hooks:
+        parts.append(f"\nWinning hook patterns: {'; '.join(pg.winning_hooks[:3])}")
+    if pg.failed_hooks:
+        parts.append(f"Failed hook patterns to avoid: {'; '.join(pg.failed_hooks[:3])}")
+    if pg.platform_guidance:
+        for platform_key, hints in list(pg.platform_guidance.items())[:3]:
+            parts.append(f"Platform guidance [{platform_key}]: {'; '.join(hints[:2])}")
+
     return "\n".join(parts)

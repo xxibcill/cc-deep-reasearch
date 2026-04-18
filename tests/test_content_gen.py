@@ -2111,6 +2111,7 @@ def test_pipeline_job_registry_creates_unique_resume_job_ids(tmp_path: Path) -> 
 
 def test_strategy_store_roundtrip(tmp_path: Path) -> None:
     """StrategyStore should persist and load correctly."""
+    from cc_deep_research.content_gen.models import ContentPillar
     from cc_deep_research.content_gen.storage import StrategyStore
 
     store = StrategyStore(tmp_path / "strategy.yaml")
@@ -2119,7 +2120,7 @@ def test_strategy_store_roundtrip(tmp_path: Path) -> None:
 
     loaded = store.load()
     assert loaded.niche == "fitness"
-    assert loaded.content_pillars == ["strength", "mobility"]
+    assert loaded.content_pillars == [ContentPillar(name="strength"), ContentPillar(name="mobility")]
 
 
 def test_strategy_store_uses_configured_path() -> None:
@@ -2145,13 +2146,278 @@ def test_strategy_store_returns_blank_when_missing(tmp_path: Path) -> None:
 
 def test_strategy_store_update(tmp_path: Path) -> None:
     """StrategyStore.update should merge fields."""
+    from cc_deep_research.content_gen.models import ContentPillar
     from cc_deep_research.content_gen.storage import StrategyStore
 
     store = StrategyStore(tmp_path / "strategy.yaml")
     store.save(StrategyMemory(niche="old"))
     updated = store.update({"niche": "new", "content_pillars": ["a", "b"]})
     assert updated.niche == "new"
-    assert updated.content_pillars == ["a", "b"]
+    assert updated.content_pillars == [ContentPillar(name="a"), ContentPillar(name="b")]
+
+
+# ---------------------------------------------------------------------------
+# Phase 01 schema expansion tests
+# ---------------------------------------------------------------------------
+
+
+def test_strategy_memory_new_identity_fields() -> None:
+    """StrategyMemory should expose positioning and business_objective."""
+    from cc_deep_research.content_gen.models import StrategyMemory
+
+    mem = StrategyMemory(
+        positioning="B2B authority brand",
+        business_objective="Generate inbound qualified leads",
+    )
+    assert mem.positioning == "B2B authority brand"
+    assert mem.business_objective == "Generate inbound qualified leads"
+
+
+def test_strategy_memory_audience_and_topic_boundaries() -> None:
+    """StrategyMemory should expose allowed_audience_universe and forbidden_topics."""
+    from cc_deep_research.content_gen.models import StrategyMemory
+
+    mem = StrategyMemory(
+        allowed_audience_universe=["B2B founders", "consultants"],
+        forbidden_topics=["politics", "religion"],
+    )
+    assert mem.allowed_audience_universe == ["B2B founders", "consultants"]
+    assert mem.forbidden_topics == ["politics", "religion"]
+
+
+def test_strategy_memory_cta_strategy() -> None:
+    """StrategyMemory should expose a structured CTAStrategy."""
+    from cc_deep_research.content_gen.models import CTAStrategy, StrategyMemory
+
+    mem = StrategyMemory(
+        cta_strategy=CTAStrategy(
+            allowed_cta_types=["follow", "DM"],
+            default_by_content_goal={"authority": "follow", "lead_gen": "DM"},
+        )
+    )
+    assert mem.cta_strategy.allowed_cta_types == ["follow", "DM"]
+    assert mem.cta_strategy.default_by_content_goal["authority"] == "follow"
+
+
+def test_strategy_memory_claim_to_proof_rules() -> None:
+    """StrategyMemory should expose structured claim-to-proof mapping."""
+    from cc_deep_research.content_gen.models import ClaimToProofRule, StrategyMemory
+
+    mem = StrategyMemory(
+        claim_to_proof_rules=[
+            ClaimToProofRule(
+                claim_type="revenue claim",
+                required_proof=["case study", "pipeline signal"],
+            )
+        ]
+    )
+    assert len(mem.claim_to_proof_rules) == 1
+    assert mem.claim_to_proof_rules[0].claim_type == "revenue claim"
+    assert "case study" in mem.claim_to_proof_rules[0].required_proof
+
+
+def test_strategy_memory_platform_rules() -> None:
+    """StrategyMemory should expose structured PlatformRule objects."""
+    from cc_deep_research.content_gen.models import PlatformRule, StrategyMemory
+
+    mem = StrategyMemory(
+        platform_rules=[
+            PlatformRule(
+                platform="tiktok",
+                format_preferences=["vertical", "under 60s"],
+                cta_norms=["soft follow CTA"],
+            )
+        ]
+    )
+    assert mem.platform_rules[0].platform == "tiktok"
+    assert "vertical" in mem.platform_rules[0].format_preferences
+
+
+def test_platform_rule_guidance_summarizes_structured_fields() -> None:
+    """PlatformRule.guidance should render a prompt-friendly summary."""
+    from cc_deep_research.content_gen.models import PlatformRule
+
+    rule = PlatformRule(
+        platform="youtube",
+        format_preferences=["vertical", "demo-first"],
+        length_constraints="60s max",
+        style_constraints=["direct", "fast-paced"],
+        cta_norms=["soft CTA"],
+    )
+
+    assert "vertical" in rule.guidance
+    assert "60s max" in rule.guidance
+    assert "direct" in rule.guidance
+    assert "soft CTA" in rule.guidance
+
+
+def test_content_pillar_structured_model() -> None:
+    """ContentPillar model should have name, description, and content_types."""
+    from cc_deep_research.content_gen.models import ContentPillar
+
+    pillar = ContentPillar(name="workflow design", description="How to build systems", content_types=["short-form"])
+    assert pillar.name == "workflow design"
+    assert pillar.description == "How to build systems"
+    assert pillar.content_types == ["short-form"]
+
+
+def test_strategy_memory_content_pillars_coercion_from_strings() -> None:
+    """content_pillars should coerce strings to ContentPillar objects."""
+    from cc_deep_research.content_gen.models import ContentPillar, StrategyMemory
+
+    mem = StrategyMemory(content_pillars=["workflow design", "content ops"])
+    assert mem.content_pillars == [
+        ContentPillar(name="workflow design"),
+        ContentPillar(name="content ops"),
+    ]
+
+
+def test_strategy_memory_content_pillars_accepts_objects() -> None:
+    """content_pillars should also accept structured ContentPillar dicts."""
+    from cc_deep_research.content_gen.models import ContentPillar, StrategyMemory
+
+    mem = StrategyMemory(
+        content_pillars=[{"name": "workflow design", "description": "Systems thinking"}]
+    )
+    assert mem.content_pillars[0] == ContentPillar(name="workflow design", description="Systems thinking")
+
+
+def test_strategy_memory_backward_compat_old_yaml_shape(tmp_path: Path) -> None:
+    """Old strategy YAML with string content_pillars should load without error."""
+    import yaml
+
+    from cc_deep_research.content_gen.models import ContentPillar
+    from cc_deep_research.content_gen.storage import StrategyStore
+
+    old_yaml = {
+        "niche": "B2B SaaS",
+        "content_pillars": ["thought leadership", "use cases"],
+        "platforms": ["linkedin"],
+        "forbidden_claims": ["guaranteed ROI"],
+    }
+    path = tmp_path / "strategy.yaml"
+    path.write_text(yaml.dump(old_yaml))
+
+    store = StrategyStore(path)
+    loaded = store.load()
+    assert loaded.niche == "B2B SaaS"
+    assert loaded.content_pillars == [
+        ContentPillar(name="thought leadership"),
+        ContentPillar(name="use cases"),
+    ]
+    assert loaded.platforms == ["linkedin"]
+
+
+def test_strategy_store_update_deep_merges_nested_objects(tmp_path: Path) -> None:
+    """StrategyStore.update should deep-merge nested strategy objects, not replace them."""
+    from cc_deep_research.content_gen.models import CTAStrategy, StrategyMemory
+    from cc_deep_research.content_gen.storage import StrategyStore
+
+    store = StrategyStore(tmp_path / "strategy.yaml")
+    initial = StrategyMemory(
+        cta_strategy=CTAStrategy(
+            allowed_cta_types=["follow"],
+            default_by_content_goal={"authority": "follow"},
+        )
+    )
+    store.save(initial)
+
+    updated = store.update({"cta_strategy": {"allowed_cta_types": ["follow", "DM"]}})
+    assert "follow" in updated.cta_strategy.allowed_cta_types
+    assert "DM" in updated.cta_strategy.allowed_cta_types
+    assert updated.cta_strategy.default_by_content_goal == {"authority": "follow"}
+
+
+def test_rule_version_history_includes_under_review_and_expired_rules() -> None:
+    """Rules already under review or expired should stay visible in the review queue."""
+    from cc_deep_research.content_gen.models import (
+        RuleChangeOperation,
+        RuleLifecycleStatus,
+        RuleVersion,
+        RuleVersionHistory,
+        RuleVersionKind,
+    )
+
+    history = RuleVersionHistory(
+        versions=[
+            RuleVersion(
+                version_id="rule-under-review",
+                kind=RuleVersionKind.HOOK,
+                operation=RuleChangeOperation.ADDED,
+                change_summary="Test hook rule",
+                lifecycle_status=RuleLifecycleStatus.UNDER_REVIEW,
+                confidence=0.9,
+                evidence_count=4,
+                created_at="2026-04-01T00:00:00+00:00",
+            ),
+            RuleVersion(
+                version_id="rule-expired",
+                kind=RuleVersionKind.FRAMING,
+                operation=RuleChangeOperation.ADDED,
+                change_summary="Expired framing rule",
+                lifecycle_status=RuleLifecycleStatus.EXPIRED,
+                confidence=0.8,
+                evidence_count=3,
+                created_at="2026-04-01T00:00:00+00:00",
+            ),
+            RuleVersion(
+                version_id="rule-stable",
+                kind=RuleVersionKind.PACKAGING_HEURISTIC,
+                operation=RuleChangeOperation.ADDED,
+                change_summary="Stable packaging rule",
+                lifecycle_status=RuleLifecycleStatus.PROMOTED,
+                confidence=0.9,
+                evidence_count=4,
+                review_after="2099-01-01T00:00:00+00:00",
+                created_at="2026-04-01T00:00:00+00:00",
+            ),
+        ]
+    )
+
+    rules = history.get_rules_needing_review()
+    version_ids = {rule.version_id for rule in rules}
+
+    assert "rule-under-review" in version_ids
+    assert "rule-expired" in version_ids
+    assert "rule-stable" not in version_ids
+
+
+def test_thesis_prompt_uses_tone_rules_not_tone_guide() -> None:
+    """thesis prompt should use strategy.tone_rules, not the nonexistent tone_guide."""
+    from cc_deep_research.content_gen.models import BacklogItem, StrategyMemory
+    from cc_deep_research.content_gen.prompts.thesis import thesis_user
+
+    strategy = StrategyMemory(tone_rules=["professional but approachable", "no hype"])
+    item = BacklogItem(idea="Test idea", audience="B2B operators")
+    result = thesis_user(item, strategy=strategy)
+    assert "professional but approachable" in result
+    assert "no hype" in result
+
+
+def test_opportunity_prompt_uses_pillar_names() -> None:
+    """opportunity prompt should correctly render ContentPillar names in the output."""
+    from cc_deep_research.content_gen.prompts.opportunity import plan_opportunity_user
+
+    strategy = StrategyMemory(
+        niche="B2B SaaS",
+        content_pillars=["workflow design", "content ops"],
+    )
+    result = plan_opportunity_user("automation", strategy)
+    assert "workflow design" in result
+    assert "content ops" in result
+
+
+def test_backlog_prompt_uses_pillar_names() -> None:
+    """backlog prompt should correctly render ContentPillar names in the output."""
+    from cc_deep_research.content_gen.prompts.backlog import build_backlog_user
+
+    strategy = StrategyMemory(
+        niche="fitness",
+        content_pillars=["strength", "mobility"],
+    )
+    result = build_backlog_user("training", strategy)
+    assert "strength" in result
+    assert "mobility" in result
 
 
 def test_backlog_store_roundtrip(tmp_path: Path) -> None:
@@ -7074,6 +7340,36 @@ def test_score_ideas_user_excludes_performance_guidance_when_empty() -> None:
     # Should not mention performance guidance when empty
     assert "Winning hook" not in user_prompt
     assert "Failed hook" not in user_prompt
+
+
+def test_angle_user_renders_platform_rule_guidance() -> None:
+    """angle prompt should render platform rules without crashing."""
+    from cc_deep_research.content_gen.models import BacklogItem, PlatformRule, StrategyMemory
+    from cc_deep_research.content_gen.prompts.angle import angle_user
+
+    item = BacklogItem(
+        idea_id="idea-1",
+        idea="Systemize your backlog triage",
+        potential_hook="Turn backlog cleanup into a weekly system",
+        evidence="Operators need a repeatable workflow",
+    )
+    strategy = StrategyMemory(
+        platform_rules=[
+            PlatformRule(
+                platform="youtube",
+                format_preferences=["vertical"],
+                length_constraints="60s max",
+                style_constraints=["direct"],
+                cta_norms=["soft CTA"],
+            )
+        ]
+    )
+
+    prompt = angle_user(item, strategy)
+
+    assert "Platform rule [youtube]:" in prompt
+    assert "vertical" in prompt
+    assert "60s max" in prompt
 
 
 # ---------------------------------------------------------------------------

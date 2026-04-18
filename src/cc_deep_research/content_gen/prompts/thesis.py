@@ -209,10 +209,48 @@ def thesis_user(
     if strategy:
         if strategy.positioning:
             parts.append(f"Brand positioning: {strategy.positioning}")
-        if strategy.tone_guide:
-            parts.append(f"Tone guide: {strategy.tone_guide}")
+        if strategy.tone_rules:
+            parts.append(f"Tone rules: {', '.join(strategy.tone_rules)}")
         if strategy.proof_standards:
-            parts.append(f"Proof standards: {strategy.proof_standards}")
+            parts.append(f"Proof standards: {', '.join(strategy.proof_standards)}")
+
+        # P3-T1: Performance learnings - framing and proof guidance
+        pg = strategy.performance_guidance
+        if pg.winning_framings:
+            parts.append(f"\nConfirmed winning framings: {'; '.join(pg.winning_framings[:3])}")
+        if pg.failed_framings:
+            parts.append(f"Failed framing patterns to avoid: {'; '.join(pg.failed_framings[:3])}")
+        if pg.proof_expectations:
+            parts.append(f"Proof expectations: {'; '.join(pg.proof_expectations[:3])}")
+        if pg.audience_resonance_notes:
+            parts.append(f"Audience resonance signals: {'; '.join(pg.audience_resonance_notes[:3])}")
+
+        # P3-T1: CTA strategy
+        if strategy.cta_strategy:
+            if strategy.cta_strategy.allowed_cta_types:
+                parts.append(f"Allowed CTA types: {', '.join(strategy.cta_strategy.allowed_cta_types)}")
+            if strategy.cta_strategy.default_by_content_goal:
+                defaults = [f"{k}: {v}" for k, v in strategy.cta_strategy.default_by_content_goal.items()]
+                parts.append(f"CTA defaults by goal: {'; '.join(defaults[:3])}")
+
+        # P3-T1: Forbidden content
+        if strategy.forbidden_claims:
+            parts.append(f"Forbidden claims: {', '.join(strategy.forbidden_claims)}")
+        if strategy.forbidden_topics:
+            parts.append(f"Forbidden topics: {', '.join(strategy.forbidden_topics)}")
+        if strategy.banned_tropes:
+            parts.append(f"Banned tropes: {', '.join(strategy.banned_tropes)}")
+
+        # P3-T1: Claim-to-proof mapping
+        if strategy.claim_to_proof_rules:
+            for cpr in strategy.claim_to_proof_rules[:3]:
+                parts.append(f"Claim-to-proof [{cpr.claim_type}]: {', '.join(cpr.required_proof)}")
+
+        # P3-T1: Platform rules (for thesis framing)
+        if strategy.platform_rules:
+            for pr in strategy.platform_rules[:2]:
+                if pr.guidance:
+                    parts.append(f"Platform guidance [{pr.platform}]: {pr.guidance}")
 
     if research_pack:
         parts.append("\n=== RESEARCH CONTEXT ===")
