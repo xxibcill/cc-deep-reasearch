@@ -41,6 +41,7 @@ from cc_deep_research.radar.service import RadarService
 from cc_deep_research.radar.telemetry import RadarTelemetryStore
 
 logger = logging.getLogger(__name__)
+RUN_CANCELLED_MESSAGE = "Research run was cancelled by the operator."
 
 
 def _get_service(request: Request) -> RadarService:
@@ -48,6 +49,36 @@ def _get_service(request: Request) -> RadarService:
     if hasattr(request.app.state, "radar_service") and request.app.state.radar_service is not None:
         return request.app.state.radar_service
     return RadarService()
+
+
+def _get_runtime_component(request: Request, attr_name: str, component_label: str) -> Any:
+    """Return a dashboard runtime component or raise when unavailable."""
+    runtime = getattr(request.app.state, "dashboard_runtime", None)
+    component = getattr(runtime, attr_name, None) if runtime is not None else None
+    if component is None:
+        raise RuntimeError(f"{component_label} is unavailable on this server")
+    return component
+
+
+def _raise_if_run_cancelled(job: Any) -> None:
+    """Raise the shared cancellation error when a stop has been requested."""
+    from cc_deep_research.research_runs.models import ResearchRunCancelled
+
+    if job.stop_requested:
+        raise ResearchRunCancelled(RUN_CANCELLED_MESSAGE)
+
+
+async def _publish_progress_event(
+    event_router: EventRouter | None,
+    channel: str,
+    payload: dict[str, Any],
+) -> None:
+    """Publish a progress event when the router exposes an async publish method."""
+    if event_router is None:
+        return
+    result = event_router.publish(channel, payload)
+    if asyncio.iscoroutine(result):
+        await result
 
 
 def register_radar_routes(
@@ -316,22 +347,56 @@ def register_radar_routes(
 
         opp = svc._store.get_opportunity(opportunity_id)
 
-        # Create a real research run via ResearchRunService
+        try:
+            job_registry = _get_runtime_component(request, "jobs", "Research job registry")
+        except RuntimeError as exc:
+            return JSONResponse(status_code=503, content={"error": str(exc)})
+
+        # Start a real research run in the shared registry
         from cc_deep_research.research_runs.models import (
             ResearchDepth,
             ResearchOutputFormat,
+            ResearchRunCancelled,
             ResearchRunRequest,
         )
         from cc_deep_research.research_runs.service import ResearchRunService
 
         req = ResearchRunRequest(
-            query=f"Radar Opportunity: {context['title']}",
+            query=context["query"],
             depth=ResearchDepth.STANDARD,
             output_format=ResearchOutputFormat.MARKDOWN,
         )
-        run_svc = ResearchRunService()
-        result = run_svc.run(req)
-        research_run_id = result.session.session_id
+        job = job_registry.create_job(req)
+        research_run_id = job.run_id
+
+        async def execute_research_run() -> None:
+            run_svc = ResearchRunService()
+
+            try:
+                if job.stop_requested:
+                    job_registry.mark_cancelled(job.run_id, error=RUN_CANCELLED_MESSAGE)
+                    return
+                job_registry.mark_running(job.run_id)
+                result = await asyncio.to_thread(
+                    run_svc.run,
+                    job.request,
+                    event_router=event_router,
+                    cancellation_check=lambda: _raise_if_run_cancelled(job),
+                    on_session_started=lambda session_id: job_registry.set_session_id(
+                        job.run_id,
+                        session_id=session_id,
+                    ),
+                )
+                job_registry.mark_completed(job.run_id, result=result)
+            except ResearchRunCancelled:
+                job_registry.mark_cancelled(job.run_id, error=RUN_CANCELLED_MESSAGE)
+            except asyncio.CancelledError:
+                job_registry.mark_cancelled(job.run_id, error=RUN_CANCELLED_MESSAGE)
+            except Exception as exc:
+                job_registry.mark_failed(job.run_id, error=str(exc))
+
+        task = asyncio.create_task(execute_research_run())
+        job_registry.attach_task(job.run_id, task)
 
         # Link the workflow
         svc.link_workflow(
@@ -375,8 +440,9 @@ def register_radar_routes(
         return JSONResponse(content={
             "research_run_id": research_run_id,
             "opportunity_id": opportunity_id,
-            "session_id": research_run_id,
-        }, status_code=201)
+            "status": str(job.status),
+            "session_id": None,
+        }, status_code=202)
 
     @app.post("/api/radar/opportunities/{opportunity_id}/launch-brief", response_model=LaunchBriefResponse)
     async def launch_brief_from_opportunity(
@@ -437,6 +503,12 @@ def register_radar_routes(
             opportunity_id=opportunity_id,
             feedback_type="converted_to_content",
             metadata=feedback_metadata,
+        )
+
+        svc.update_opportunity_status(
+            opportunity_id,
+            "acted_on",
+            reason="converted_to_brief",
         )
 
         _emit_radar_event(
@@ -511,6 +583,12 @@ def register_radar_routes(
             metadata=feedback_metadata,
         )
 
+        svc.update_opportunity_status(
+            opportunity_id,
+            "acted_on",
+            reason="converted_to_backlog_item",
+        )
+
         _emit_radar_event(
             event_type="radar.backlog_added",
             category="radar",
@@ -534,21 +612,121 @@ def register_radar_routes(
     ) -> JSONResponse:
         """Launch a content pipeline from a Radar opportunity.
 
-        This is a stub for V1 that records the intent and creates a workflow link.
-        Full pipeline integration would be implemented in a follow-up.
+        Starts a real content pipeline job in the shared pipeline registry.
         """
         svc = _get_service(request)
 
-        # Verify opportunity exists
-        detail = svc.get_opportunity_detail(opportunity_id)
-        if detail is None:
+        context = svc.get_opportunity_context_for_brief(opportunity_id)
+        if context is None:
             return JSONResponse(
                 status_code=404,
                 content={"error": "Opportunity not found"},
             )
 
-        # Create a placeholder pipeline ID
-        pipeline_id = f"radar-pipeline-{uuid.uuid4().hex[:12]}"
+        opp = svc._store.get_opportunity(opportunity_id)
+        try:
+            job_registry = _get_runtime_component(request, "pipeline_jobs", "Pipeline job registry")
+        except RuntimeError as exc:
+            return JSONResponse(status_code=503, content={"error": str(exc)})
+
+        from cc_deep_research.config import load_config
+        from cc_deep_research.content_gen.models import PIPELINE_STAGE_LABELS, PIPELINE_STAGES
+        from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator, RunConstraints
+
+        config = load_config()
+        end = len(PIPELINE_STAGES) - 1
+        job = job_registry.create_job(
+            theme=context["title"],
+            from_stage=0,
+            to_stage=end,
+        )
+        pipeline_id = job.pipeline_id
+
+        async def run_content_pipeline() -> None:
+            orch = ContentGenOrchestrator(config)
+            job_registry.mark_running(job.pipeline_id)
+
+            def _progress(stage_idx: int, label: str) -> None:
+                if job.stop_requested:
+                    raise RuntimeError(f"Pipeline {job.pipeline_id} was cancelled")
+                asyncio.get_running_loop().create_task(
+                    _publish_progress_event(
+                        event_router,
+                        job.pipeline_id,
+                        {
+                            "type": "pipeline_stage_started",
+                            "stage_index": stage_idx,
+                            "stage_label": label,
+                            "timestamp": datetime.now(UTC).isoformat(),
+                        },
+                    )
+                )
+
+            def _stage_completed(stage_idx: int, status: str, detail: str, stage_ctx: Any) -> None:
+                job_registry.update_context(job.pipeline_id, stage_ctx)
+                payload: dict[str, Any] = {
+                    "stage_index": stage_idx,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "context": stage_ctx.model_dump(mode="json"),
+                }
+                if status == "failed":
+                    payload.update({
+                        "type": "pipeline_stage_failed",
+                        "stage_label": PIPELINE_STAGE_LABELS.get(PIPELINE_STAGES[stage_idx], ""),
+                        "error": detail,
+                    })
+                elif status == "skipped":
+                    payload.update({
+                        "type": "pipeline_stage_skipped",
+                        "stage_label": PIPELINE_STAGE_LABELS.get(PIPELINE_STAGES[stage_idx], ""),
+                        "reason": detail,
+                    })
+                else:
+                    payload.update({
+                        "type": "pipeline_stage_completed",
+                        "stage_status": status,
+                        "stage_detail": detail,
+                    })
+
+                asyncio.get_running_loop().create_task(
+                    _publish_progress_event(event_router, job.pipeline_id, payload)
+                )
+
+            try:
+                ctx = await orch.run_full_pipeline(
+                    context["title"],
+                    from_stage=0,
+                    to_stage=end,
+                    progress_callback=_progress,
+                    stage_completed_callback=_stage_completed,
+                    run_constraints=RunConstraints(),
+                )
+                job_registry.update_context(job.pipeline_id, ctx)
+                job_registry.mark_completed(job.pipeline_id, context=ctx)
+                await _publish_progress_event(
+                    event_router,
+                    job.pipeline_id,
+                    {
+                        "type": "pipeline_completed",
+                        "current_stage": ctx.current_stage,
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    },
+                )
+            except Exception as exc:
+                logger.exception("Pipeline %s failed", job.pipeline_id)
+                job_registry.mark_failed(job.pipeline_id, error=str(exc))
+                await _publish_progress_event(
+                    event_router,
+                    job.pipeline_id,
+                    {
+                        "type": "pipeline_error",
+                        "error": str(exc),
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    },
+                )
+
+        task = asyncio.create_task(run_content_pipeline())
+        job_registry.attach_task(job.pipeline_id, task)
 
         # Link the workflow
         svc.link_workflow(
@@ -557,19 +735,21 @@ def register_radar_routes(
             workflow_id=pipeline_id,
         )
 
-        # Record feedback
-        opp_type_val = None
-        if hasattr(detail["opportunity"], "opportunity_type") and detail["opportunity"].opportunity_type:
-            opp_type_val = detail["opportunity"].opportunity_type.value
         svc.record_feedback(
             opportunity_id=opportunity_id,
             feedback_type="converted_to_content",
             metadata={
                 "sub_type": "content_pipeline",
                 "pipeline_id": pipeline_id,
-                "opportunity_title": detail["opportunity"].title,
-                "opportunity_type": opp_type_val,
+                "opportunity_title": context["title"],
+                "opportunity_type": opp.opportunity_type.value if opp else None,
             },
+        )
+
+        svc.update_opportunity_status(
+            opportunity_id,
+            "acted_on",
+            reason="converted_to_content_pipeline",
         )
 
         _emit_radar_event(
@@ -586,8 +766,8 @@ def register_radar_routes(
         return JSONResponse(content={
             "pipeline_id": pipeline_id,
             "opportunity_id": opportunity_id,
-            "note": "Content pipeline launch stubbed for V1 - full integration pending",
-        }, status_code=201)
+            "status": str(job.status),
+        }, status_code=202)
 
     # -- Analytics endpoints ---------------------------------------------------
 
