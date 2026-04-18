@@ -260,7 +260,10 @@ export function BacklogItemForm({
         type="button"
         variant="ghost"
         size="icon"
-        onClick={() => handleOpenChange(true)}
+        onClick={(e) => {
+          e.stopPropagation()
+          handleOpenChange(true)
+        }}
         className="h-8 w-8 text-muted-foreground/60 hover:text-primary"
         title={isEditMode ? 'Edit item' : 'New item'}
       >
