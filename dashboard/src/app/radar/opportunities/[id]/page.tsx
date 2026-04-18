@@ -27,7 +27,7 @@ import {
   type OpportunityStatusUpdate,
   type FeedbackTypeInput,
 } from '@/lib/api';
-import type { OpportunityDetail as OpportunityDetailType } from '@/types/radar';
+import type { OpportunityDetail as OpportunityDetailType, OpportunityStatus } from '@/types/radar';
 
 const PRIORITY_CONFIG = {
   act_now: { label: 'Act Now', variant: 'destructive' as const },
@@ -45,7 +45,7 @@ const STATUS_CONFIG = {
   archived: { label: 'Archived', variant: 'secondary' as const },
 };
 
-const STATUS_TRANSITIONS: Record<string, { label: string; icon: typeof CheckCircle2; status: OpportunityStatusUpdate }[]> = {
+const STATUS_TRANSITIONS: Record<OpportunityStatus, { label: string; icon: typeof CheckCircle2; status: OpportunityStatusUpdate }[]> = {
   new: [
     { label: 'Save', icon: Bookmark, status: 'saved' },
     { label: 'Start monitoring', icon: Clock, status: 'monitoring' },
@@ -98,7 +98,9 @@ export default function OpportunityDetailPage({
   const [detail, setDetail] = useState<OpportunityDetailType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [updating, setUpdating] = useState(false);
+  const [statusUpdating, setStatusUpdating] = useState(false);
+  const [feedbackUpdating, setFeedbackUpdating] = useState(false);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -127,8 +129,8 @@ export default function OpportunityDetailPage({
   }, [id]);
 
   const handleStatusChange = async (status: OpportunityStatusUpdate) => {
-    if (!detail || updating) return;
-    setUpdating(true);
+    if (!detail || statusUpdating) return;
+    setStatusUpdating(true);
     try {
       const updated = await updateRadarOpportunityStatus(id, status);
       setDetail((prev) =>
@@ -142,19 +144,21 @@ export default function OpportunityDetailPage({
     } catch (err) {
       console.error('Failed to update status:', err);
     } finally {
-      setUpdating(false);
+      setStatusUpdating(false);
     }
   };
 
   const handleFeedback = async (feedbackType: FeedbackTypeInput) => {
-    if (!detail || updating) return;
-    setUpdating(true);
+    if (!detail || feedbackUpdating) return;
+    setFeedbackError(null);
+    setFeedbackUpdating(true);
     try {
       await recordRadarOpportunityFeedback(id, feedbackType);
     } catch (err) {
       console.error('Failed to record feedback:', err);
+      setFeedbackError(getApiErrorMessage(err, 'Failed to record feedback.'));
     } finally {
-      setUpdating(false);
+      setFeedbackUpdating(false);
     }
   };
 
@@ -201,7 +205,6 @@ export default function OpportunityDetailPage({
         <Breadcrumb
           items={[
             { label: 'Radar', href: '/radar' },
-            { label: 'Opportunities', href: '/radar' },
             { label: opportunity.id },
           ]}
         />
@@ -297,7 +300,12 @@ export default function OpportunityDetailPage({
                 <CardTitle className="text-[1.4rem]">Feedback</CardTitle>
               </CardHeader>
               <CardContent className="pt-4">
-                {feedback.length === 0 ? (
+                {feedbackError && (
+                  <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                    {feedbackError}
+                  </div>
+                )}
+                {feedback.length === 0 && !feedbackError ? (
                   <p className="text-sm text-muted-foreground">No feedback recorded yet.</p>
                 ) : (
                   <div className="space-y-3">
@@ -376,7 +384,7 @@ export default function OpportunityDetailPage({
                     variant="outline"
                     className="w-full justify-start"
                     onClick={() => void handleStatusChange(newStatus)}
-                    disabled={updating}
+                    disabled={statusUpdating}
                   >
                     <Icon className="mr-2 h-4 w-4" />
                     {label}

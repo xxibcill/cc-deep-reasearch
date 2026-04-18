@@ -274,7 +274,7 @@ test("radar page filters opportunities by status", async ({ page }) => {
 
   await page.goto("/radar");
 
-  await page.selectOption('select[value="all"]', "new");
+  await page.locator('select').selectOption("new");
   await page.waitForResponse("**/api/radar/opportunities?status=new");
 
   await expect(page.getByText("Anthropic Enterprise tier expansion")).toBeVisible();
