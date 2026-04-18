@@ -103,6 +103,7 @@ class LaunchResearchResponse(BaseModel):
 
     research_run_id: str
     opportunity_id: str
+    status: str = "queued"
     session_id: str | None = None
 
 
@@ -125,7 +126,7 @@ class LaunchContentPipelineResponse(BaseModel):
 
     pipeline_id: str
     opportunity_id: str
-    note: str = "Content pipeline launch stubbed for V1"
+    status: str = "queued"
 
 
 class StatusHistoryResponse(BaseModel):
