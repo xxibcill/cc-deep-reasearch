@@ -40,14 +40,27 @@ export function CTAStrategyEditor({ strategy, onChange }: CTAStrategyEditorProps
             Default by content goal
           </label>
           {Object.entries(draft.default_by_content_goal).map(([goal, cta], i) => (
-            <div key={goal} className="flex items-center gap-2">
+            <div key={i} className="flex items-center gap-2">
               <Input
                 value={goal}
                 onChange={(e) => {
                   const next = { ...draft.default_by_content_goal }
-                  delete next[goal]
-                  next[e.target.value] = cta
+                  const oldKey = goal
+                  const oldValue = next[oldKey]
+                  delete next[oldKey]
+                  next[e.target.value] = oldValue
                   setDraft({ ...draft, default_by_content_goal: next })
+                }}
+                onBlur={(e) => {
+                  // Trim whitespace from goal key on blur
+                  const trimmed = e.target.value.trim()
+                  if (trimmed !== goal && trimmed) {
+                    const next = { ...draft.default_by_content_goal }
+                    const oldValue = next[goal]
+                    delete next[goal]
+                    next[trimmed] = oldValue
+                    setDraft({ ...draft, default_by_content_goal: next })
+                  }
                 }}
                 placeholder="Content goal"
                 className="flex-1"
@@ -73,6 +86,7 @@ export function CTAStrategyEditor({ strategy, onChange }: CTAStrategyEditorProps
                   delete next[goal]
                   setDraft({ ...draft, default_by_content_goal: next })
                 }}
+                title="Remove mapping"
               >
                 <X className="h-3.5 w-3.5" />
               </Button>

@@ -154,11 +154,11 @@ export function ContentPillarEditor({ pillars, onChange }: ContentPillarEditorPr
         <DraggableList
           items={draggableItems}
           onReorder={handleReorder}
-          renderItem={(item) => (
+          renderItem={(item, index) => (
             <ContentPillarCard
               pillar={item.data}
-              onUpdate={(updated) => updatePillar(pillars.indexOf(item.data), updated)}
-              onArchive={() => archivePillar(pillars.indexOf(item.data))}
+              onUpdate={(updated) => updatePillar(index, updated)}
+              onArchive={() => archivePillar(index)}
             />
           )}
         />
