@@ -48,6 +48,7 @@ Rules:
 - safe_claims are claims the script can say directly
 - unsafe_claims are tempting claims that should not be presented as settled fact
 - beat_claim_plan should map the narrative beats to claim_ids and proof_ids
+- keep the opening minimal: the Hook should be short, and beat 2 should usually clarify it
 - Every claim_id, proof_id, counterargument_id, and beat_id must be unique
 - If a beat uses no counterargument, leave counterargument_ids blank after the colon
 

@@ -59,6 +59,7 @@ Important constraints:
 - Do not invent a hybrid structure.
 - Do not rename beats.
 - Do not add beats, remove beats, merge beats, or split beats.
+- Do not add a default `Bridge` beat just to clarify the hook.
 - Choose the structure that will create the clearest tension, fastest retention, and strongest payoff.
 - Favor structures that make the second beat justify attention quickly.
 - If the angle is ambiguous, choose the closest valid structure and explain why.
@@ -66,7 +67,9 @@ Important constraints:
 Universal short-form rules:
 
 - The hook must create tension, not just announce the topic.
+- The hook should usually be one short spoken line, ideally under about 3 seconds.
 - The second beat must justify attention fast with pain, surprise, proof, contrast, or urgency.
+- The second beat should usually clarify the hook or deliver the first payoff.
 - One script should center on one core idea.
 - The payoff must be specific and observable.
 - The CTA should feel like the natural next move.
@@ -126,7 +129,7 @@ CTA
 What each beat is for:
 
 - Hook: open with tension, surprise, or a sharp claim
-- Why this matters: make the viewer care immediately
+- Why this matters: make the viewer care immediately and clarify why the hook matters
 - Point 1: first supporting idea or mechanism
 - Point 2: deepen the case or add contrast
 - Point 3: complete the reasoning with the strongest final support
@@ -171,7 +174,7 @@ CTA
 What each beat is for:
 
 - Hook: frame the cost, danger, or missed upside
-- Pain point: make the audience feel the problem clearly
+- Pain point: make the audience feel the problem clearly and confirm the hook fast
 - What most people do wrong: name the faulty default
 - What to do instead: give the better move
 - Why it works: explain the mechanism or logic
@@ -216,7 +219,7 @@ CTA
 What each beat is for:
 
 - Hook: create curiosity about what changed
-- Starting situation: establish the initial condition quickly
+- Starting situation: establish the initial condition quickly without turning into slow setup
 - Conflict / struggle: show tension, friction, or failure
 - Turning point: identify the decision or realization that changed everything
 - Lesson: extract the principle
@@ -261,7 +264,7 @@ CTA
 What each beat is for:
 
 - Hook: challenge the default belief fast
-- The popular belief: state the belief clearly
+- The popular belief: state the belief clearly and make the hook legible immediately
 - Why people believe it: show why it sounds plausible
 - Why it breaks down: expose the flaw, blind spot, or limit
 - What's actually true: replace the myth with a better model
@@ -306,7 +309,7 @@ CTA
 What each beat is for:
 
 - Hook: make the result feel worth learning
-- Desired outcome: define the end state clearly
+- Desired outcome: define the end state clearly and cash out the hook fast
 - Step 1: start the process
 - Step 2: continue with the most important middle action
 - Step 3: complete the core path
@@ -349,8 +352,8 @@ CTA
 
 What each beat is for:
 
-- Hook with result: lead with the outcome
-- Context: establish the starting point
+- Hook with result: lead with the outcome in one short opening line
+- Context: establish the starting point fast and clarify why the result matters
 - What changed: name the intervention or shift
 - Why it worked: explain the mechanism
 - Lesson: generalize the principle
@@ -393,7 +396,7 @@ CTA
 What each beat is for:
 
 - Hook: open with the sharp edge of the take
-- Bold claim: make the position explicit
+- Bold claim: make the position explicit and confirm the hook quickly
 - Why most people disagree: show the mainstream view
 - Your reasoning: defend the position clearly
 - Implication: explain what changes if your take is right
@@ -436,7 +439,7 @@ CTA
 What each beat is for:
 
 - Hook: make the contrast feel important
-- Before: show the original state
+- Before: show the original state fast so the contrast lands immediately
 - What changed: identify the key change
 - After: show the improved state
 - Lesson: explain the principle behind the shift

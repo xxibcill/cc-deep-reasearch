@@ -17,6 +17,8 @@ Rules:
 - Avoid filler, repetition, and soft wording
 - Keep language natural and speakable
 - Short-form priority: concise, sharp, high signal
+- The hook should usually be one short opening line, ideally under about 3 seconds
+- Beat 2 should usually clarify the hook or deliver the first payoff
 - If the idea is weak or unclear, say so directly and refine it before continuing
 ```
 
@@ -302,9 +304,12 @@ Requirements:
 - Avoid generic hook language
 - Avoid clickbait that the script cannot justify
 - Keep hooks speakable and concise
+- The hook should usually be one short spoken line, ideally under about 3 seconds
 - Prefer specificity over abstraction
 - Vary the hook style across the set
 - Hooks must be materially different from one another, not minor rewrites of the same line
+- The strongest hook should set up a fast second beat, not a slow explanation
+- Do not add an extra bridge line just to explain the hook
 
 Use a mix of:
 
@@ -374,6 +379,9 @@ Requirements:
 - Use exactly one hook line and exactly one CTA line in the script
 - The hook line must use the selected hook, not a new alternate
 - Do not include backup hooks, CTA options, or repeated CTA lines
+- Keep the hook line to one short opening line when possible
+- Let beat 2 handle clarification, setup, or the first payoff
+- Do not insert a separate bridge beat or extra setup line ahead of beat 2
 - One idea per sentence
 - 8–12 words per sentence when possible
 - Keep it conversational and speakable
@@ -440,6 +448,7 @@ Revise the draft to improve pacing and viewer hold.
 Apply these retention rules:
 
 - Every 1–2 lines should add a new idea, shift perspective, or increase tension
+- Tighten the hook and beat 2 before touching later beats
 - Add at least 2 of the following where useful:
   - Contrast
   - Open loop
@@ -448,6 +457,7 @@ Apply these retention rules:
   - Sharp transition
 - Do not add fluff
 - Do not make the script longer unless the added line clearly improves retention
+- Do not turn the opening into a slow multi-line setup or bridge
 - Preserve clarity and natural spoken rhythm
 
 Output format:

@@ -17,6 +17,8 @@ A beat is the smallest named narrative unit that the system plans explicitly and
 
 In the standalone scripting workflow, the model chooses a structure template and defines beat intents itself. In the full pipeline, beats usually come from the upstream argument map, which means the structure is already tied to safe claims, proof anchors, counterarguments, and transitions before drafting begins.
 
+One operating rule now matters across both modes: the `Hook` should usually be one short opening line, ideally short enough to land in under about 3 seconds. If the viewer needs clarification, payoff, or setup, beat 2 should usually do that work. Do not add a universal `Bridge` beat across structures just to explain the hook.
+
 ## Core Definitions
 
 ### Beat
@@ -115,6 +117,8 @@ The current standalone prompt library in [`src/cc_deep_research/content_gen/prom
 | `Before vs After` | `Hook` -> `Before` -> `What changed` -> `After` -> `Lesson` -> `CTA` |
 
 For implementation details, the prompt library is the current source of truth. The docs may sometimes summarize a smaller subset of these structures at a higher level.
+
+Across these templates, the default pattern is `Hook` first, then fast clarification or payoff in beat 2. A bridge-like move is optional behavior inside the existing second beat, not a mandatory extra beat label.
 
 ## Where Beats Live
 
@@ -342,7 +346,9 @@ The draft must:
 The draft prompt also makes early beats do extra work:
 
 - the first two beats must do the heaviest retention work
+- the hook should usually be a single short opening line
 - the second beat must quickly add tension, pain, proof, or surprise
+- the second beat should usually clarify the hook instead of delaying the point with extra setup
 
 This means beats are not loose editorial suggestions. They are hard constraints on the script's narrative skeleton.
 
@@ -431,7 +437,9 @@ Once structure is chosen or seeded, later steps should not:
 The system repeatedly emphasizes the first two beats because they determine viewer retention:
 
 - they must earn attention quickly
+- the opening hook should usually land in under about 3 seconds
 - they should surface pain, contrast, surprise, proof, or tension early
+- beat 2 should usually handle clarification or payoff, rather than an added `Bridge` beat
 - they are tightened first during revision
 
 ### 3. Beats must remain grounded in supported claims
@@ -465,6 +473,12 @@ Each beat eventually becomes:
 ## High-Level Template Library
 
 The current standalone prompt library defines eight beat-template families.
+
+Important:
+
+- none of these structures requires a default `Bridge` beat
+- if the hook needs explanation, beat 2 should usually carry that clarification fast
+- even `Hook with result` should still be one short opening line, not a mini-paragraph
 
 ### `Insight Breakdown`
 
@@ -596,6 +610,7 @@ Best suited for:
 Risk:
 
 - can feel unearned if the result arrives before enough context or proof
+- fails early if `Context` turns into a slow bridge instead of immediate clarification
 
 ### `Opinion / Hot Take`
 

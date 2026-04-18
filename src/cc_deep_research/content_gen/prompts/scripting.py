@@ -125,7 +125,10 @@ CTA"""
 UNIVERSAL_SHORT_FORM_RULES = """\
 Universal short-form performance rules:
 - The hook must create tension, not just announce the topic
+- The hook should usually be one short opening line, ideally under about 3 seconds
 - The second beat must justify attention fast with pain, surprise, proof, or urgency
+- The second beat should usually clarify the hook or deliver the first payoff
+- Do not add a default Bridge beat or extra bridge line just to explain the hook
 - One video = one core idea; supporting points must reinforce the same thesis
 - The payoff must be specific and observable, not generic
 - Prefer proof, example, or contrast when the claim needs support
@@ -409,6 +412,7 @@ Requirements:
 - Briefly justify the choice
 - Select one structure template and keep the exact same beat sequence as that template
 - Do not add beats, remove beats, merge beats, split beats, or rename beats
+- Do not add a default Bridge beat to clarify the hook
 - If none of the templates fit cleanly, choose the closest valid template instead of inventing a hybrid
 - Make sure the first two beats earn attention quickly
 - Prefer structures that surface proof, example, or contrast before the payoff feels delayed
@@ -458,6 +462,7 @@ Requirements:
 - Each beat should state what it must accomplish
 - Each beat must move the viewer forward
 - Avoid vague intent like "explain more" or "add detail"
+- Keep the hook intent minimal and high-tension; put fast clarification or payoff in beat 2 when needed
 - If a beat has no strong purpose, revise or remove it
 - If an Argument Map is provided, use it as the primary grounding source
 - Map beats only to safe claims and proof anchors that support what the script can honestly say
@@ -525,12 +530,14 @@ Requirements:
 - Avoid generic hook language
 - Avoid clickbait that the script cannot justify
 - Keep hooks speakable and concise
+- Each hook should usually fit as one short opening line, ideally under about 3 seconds
 - Prefer specificity over abstraction
 - Vary the hook style across the set
 - Hooks must be materially different from one another, not minor rewrites of the same line
 - Avoid topic-only hooks that do not imply a payoff or consequence
 - At least 3 hooks should make the payoff concrete through a result, contrast, or example
 - The strongest hook should set up a fast second beat, not a slow explanation
+- Do not rely on an extra bridge line to make the hook understandable
 - If an Argument Map is provided, only imply or state safe claims that the script can support
 - Do not turn unsafe claims into bold factual hooks
 
@@ -683,7 +690,9 @@ Requirements:
 - The hook line must use the selected hook, not a rewritten alternate
 - Do not include multiple opening hooks, backup hooks, CTA variants, or repeated CTA lines
 - Make the first two beats do the heaviest retention work
+- Keep the hook line to one short opening line when possible
 - The second beat must quickly add tension, pain, proof, or surprise
+- Let the second beat handle clarification, setup, or first payoff instead of adding a bridge line
 - Keep the script centered on one core idea
 - Make the payoff specific and observable for the stated audience
 - Use proof, example, or contrast when the structure calls for it
@@ -793,6 +802,7 @@ Apply these retention rules:
 - Do not make the script longer unless the added line clearly improves retention
 - Preserve clarity and natural spoken rhythm
 - If the payoff lands late, move proof or example earlier
+- Do not expand the opening into a slow bridge or multi-line setup block
 - Preserve the supported-claim boundaries from the Argument Map
 - Preserve exactly one hook line and at most one CTA line
 - Do not turn the opening into multiple hook lines

@@ -99,9 +99,9 @@ Argument Safety Rules:
 
 Beat Plan:
 Map narrative beats to claim_ids and proof_anchors:
-- Hook: Grab attention, establish the belief to challenge
-- Reframe: Present the thesis and core mechanism
-- Proof: Support with evidence anchors
+- Hook: Open with one short high-tension line that challenges the belief
+- Reframe: Clarify the hook immediately and present the thesis and core mechanism
+- Proof: Support with evidence anchors early enough to justify attention
 - Close: Reinforce takeaway and CTA
 
 Output format:

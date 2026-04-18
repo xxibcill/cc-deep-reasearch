@@ -42,8 +42,8 @@ flagging issues for the human reviewer. You must not approve for publish —
 that decision belongs to the human.
 
 Checklist:
-- Is the hook clear in the first 1-2 seconds?
-- Does the second beat create momentum instead of stalling in setup?
+- Is the hook clear and sharp in the first roughly 3 seconds?
+- Does the second beat clarify the hook or create momentum instead of stalling in setup?
 - Is there any factual nonsense, unsupported claim, or overstated certainty?
 - Is there weak or generic wording?
 - Is the payoff specific, not generic?
