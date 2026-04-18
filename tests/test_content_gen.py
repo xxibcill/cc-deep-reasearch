@@ -2233,6 +2233,24 @@ def test_strategy_memory_platform_rules() -> None:
     assert "vertical" in mem.platform_rules[0].format_preferences
 
 
+def test_platform_rule_guidance_summarizes_structured_fields() -> None:
+    """PlatformRule.guidance should render a prompt-friendly summary."""
+    from cc_deep_research.content_gen.models import PlatformRule
+
+    rule = PlatformRule(
+        platform="youtube",
+        format_preferences=["vertical", "demo-first"],
+        length_constraints="60s max",
+        style_constraints=["direct", "fast-paced"],
+        cta_norms=["soft CTA"],
+    )
+
+    assert "vertical" in rule.guidance
+    assert "60s max" in rule.guidance
+    assert "direct" in rule.guidance
+    assert "soft CTA" in rule.guidance
+
+
 def test_content_pillar_structured_model() -> None:
     """ContentPillar model should have name, description, and content_types."""
     from cc_deep_research.content_gen.models import ContentPillar
@@ -2307,6 +2325,60 @@ def test_strategy_store_update_deep_merges_nested_objects(tmp_path: Path) -> Non
     assert "follow" in updated.cta_strategy.allowed_cta_types
     assert "DM" in updated.cta_strategy.allowed_cta_types
     assert updated.cta_strategy.default_by_content_goal == {"authority": "follow"}
+
+
+def test_rule_version_history_includes_under_review_and_expired_rules() -> None:
+    """Rules already under review or expired should stay visible in the review queue."""
+    from cc_deep_research.content_gen.models import (
+        RuleChangeOperation,
+        RuleLifecycleStatus,
+        RuleVersion,
+        RuleVersionHistory,
+        RuleVersionKind,
+    )
+
+    history = RuleVersionHistory(
+        versions=[
+            RuleVersion(
+                version_id="rule-under-review",
+                kind=RuleVersionKind.HOOK,
+                operation=RuleChangeOperation.ADDED,
+                change_summary="Test hook rule",
+                lifecycle_status=RuleLifecycleStatus.UNDER_REVIEW,
+                confidence=0.9,
+                evidence_count=4,
+                created_at="2026-04-01T00:00:00+00:00",
+            ),
+            RuleVersion(
+                version_id="rule-expired",
+                kind=RuleVersionKind.FRAMING,
+                operation=RuleChangeOperation.ADDED,
+                change_summary="Expired framing rule",
+                lifecycle_status=RuleLifecycleStatus.EXPIRED,
+                confidence=0.8,
+                evidence_count=3,
+                created_at="2026-04-01T00:00:00+00:00",
+            ),
+            RuleVersion(
+                version_id="rule-stable",
+                kind=RuleVersionKind.PACKAGING_HEURISTIC,
+                operation=RuleChangeOperation.ADDED,
+                change_summary="Stable packaging rule",
+                lifecycle_status=RuleLifecycleStatus.PROMOTED,
+                confidence=0.9,
+                evidence_count=4,
+                review_after="2099-01-01T00:00:00+00:00",
+                created_at="2026-04-01T00:00:00+00:00",
+            ),
+        ]
+    )
+
+    rules = history.get_rules_needing_review()
+    version_ids = {rule.version_id for rule in rules}
+
+    assert "rule-under-review" in version_ids
+    assert "rule-expired" in version_ids
+    assert "rule-stable" not in version_ids
 
 
 def test_thesis_prompt_uses_tone_rules_not_tone_guide() -> None:
@@ -7267,6 +7339,36 @@ def test_score_ideas_user_excludes_performance_guidance_when_empty() -> None:
     # Should not mention performance guidance when empty
     assert "Winning hook" not in user_prompt
     assert "Failed hook" not in user_prompt
+
+
+def test_angle_user_renders_platform_rule_guidance() -> None:
+    """angle prompt should render platform rules without crashing."""
+    from cc_deep_research.content_gen.models import BacklogItem, PlatformRule, StrategyMemory
+    from cc_deep_research.content_gen.prompts.angle import angle_user
+
+    item = BacklogItem(
+        idea_id="idea-1",
+        idea="Systemize your backlog triage",
+        potential_hook="Turn backlog cleanup into a weekly system",
+        evidence="Operators need a repeatable workflow",
+    )
+    strategy = StrategyMemory(
+        platform_rules=[
+            PlatformRule(
+                platform="youtube",
+                format_preferences=["vertical"],
+                length_constraints="60s max",
+                style_constraints=["direct"],
+                cta_norms=["soft CTA"],
+            )
+        ]
+    )
+
+    prompt = angle_user(item, strategy)
+
+    assert "Platform rule [youtube]:" in prompt
+    assert "vertical" in prompt
+    assert "60s max" in prompt
 
 
 # ---------------------------------------------------------------------------

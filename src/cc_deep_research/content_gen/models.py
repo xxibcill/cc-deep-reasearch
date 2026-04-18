@@ -891,6 +891,20 @@ class PlatformRule(BaseModel):
     style_constraints: list[str] = Field(default_factory=list)
     cta_norms: list[str] = Field(default_factory=list)
 
+    @property
+    def guidance(self) -> str:
+        """Render structured platform constraints as prompt-friendly guidance."""
+        parts: list[str] = []
+        if self.format_preferences:
+            parts.append(f"formats: {', '.join(self.format_preferences)}")
+        if self.length_constraints:
+            parts.append(f"length: {self.length_constraints}")
+        if self.style_constraints:
+            parts.append(f"style: {', '.join(self.style_constraints)}")
+        if self.cta_norms:
+            parts.append(f"CTA norms: {', '.join(self.cta_norms)}")
+        return "; ".join(parts)
+
 
 class CTAStrategy(BaseModel):
     """Global CTA policy: allowed types and defaults by content goal."""
@@ -3562,27 +3576,37 @@ class RuleVersionHistory(BaseModel):
         return sorted(versions, key=lambda v: v.created_at)
 
     def get_rules_needing_review(self) -> list[RuleVersion]:
-        """Return promoted rules that are due for review or have low confidence.
+        """Return rules that require operator review.
 
-        P4-T2: Identifies rules that need operator attention based on review date
-        or insufficient evidence.
+        P4-T2: Identifies rules that are already under review, have expired,
+        or need attention based on review date or insufficient evidence.
         """
         from datetime import UTC, datetime
 
         now = datetime.now(tz=UTC)
         candidates = []
         for v in self.versions:
-            if v.lifecycle_status == RuleLifecycleStatus.PROMOTED:
-                if v.review_after:
-                    try:
-                        review_dt = datetime.fromisoformat(v.review_after.replace("Z", "+00:00"))
-                        if review_dt <= now:
-                            candidates.append(v)
-                            continue
-                    except ValueError:
-                        pass
-                if v.confidence < 0.6 or v.evidence_count < 2:
-                    candidates.append(v)
+            if v.lifecycle_status in {
+                RuleLifecycleStatus.UNDER_REVIEW,
+                RuleLifecycleStatus.EXPIRED,
+            }:
+                candidates.append(v)
+                continue
+
+            if v.lifecycle_status != RuleLifecycleStatus.PROMOTED:
+                continue
+
+            if v.review_after:
+                try:
+                    review_dt = datetime.fromisoformat(v.review_after.replace("Z", "+00:00"))
+                    if review_dt <= now:
+                        candidates.append(v)
+                        continue
+                except ValueError:
+                    pass
+
+            if v.confidence < 0.6 or v.evidence_count < 2:
+                candidates.append(v)
         return candidates
 
     def get_deprecated_rules(self) -> list[RuleVersion]:
