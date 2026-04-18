@@ -152,14 +152,9 @@ class RadarSource(BaseModel):
     scan_cadence: str = "6h"
     last_scanned_at: str | None = None
     created_at: str = Field(default_factory=_now_iso)
+    created_at: str = Field(default_factory=_now_iso)
     updated_at: str = Field(default_factory=_now_iso)
     metadata: dict[str, Any] = Field(default_factory=dict)
-
-    @field_validator("updated_at", mode="after")
-    @classmethod
-    def _touch_updated_at(cls, _: Any) -> str:
-        """Update the updated_at timestamp on every serialization."""
-        return _now_iso()
 
 
 # ---------------------------------------------------------------------------
@@ -422,12 +417,6 @@ class Opportunity(BaseModel):
     created_at: str = Field(default_factory=_now_iso)
     updated_at: str = Field(default_factory=_now_iso)
     metadata: dict[str, Any] = Field(default_factory=dict)
-
-    @field_validator("updated_at", mode="after")
-    @classmethod
-    def _touch_updated_at(cls, _: Any) -> str:
-        """Update the updated_at timestamp on every serialization."""
-        return _now_iso()
 
     def is_active(self) -> bool:
         """Return True if this opportunity is in an active state."""

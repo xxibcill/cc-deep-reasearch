@@ -23,8 +23,10 @@ from cc_deep_research.radar.models import (
     FreshnessState,
     Opportunity,
     OpportunityScore,
+    OpportunityStatus,
     OpportunityType,
     RawSignal,
+    StatusHistoryEntry,
 )
 from cc_deep_research.radar.scanner import SourceScanner
 from cc_deep_research.radar.storage import RadarStore
@@ -883,10 +885,9 @@ class RadarEngine:
         existing_hashes: set[str] = set()
 
         for sig in existing_signals:
-            if sig.source_id not in existing_by_source:
-                existing_by_source[sig.source_id] = set()
+            source_external_ids = existing_by_source.setdefault(sig.source_id, set())
             if sig.external_id:
-                existing_by_source[sig.source_id].add(sig.external_id)
+                source_external_ids.add(sig.external_id)
             if sig.content_hash:
                 existing_hashes.add(sig.content_hash)
 
@@ -894,6 +895,8 @@ class RadarEngine:
         seen_hashes: set[str] = set()
 
         for sig in new_signals:
+            source_external_ids = existing_by_source.setdefault(sig.source_id, set())
+
             # Skip if we already decided to skip this hash in this batch
             if sig.content_hash and sig.content_hash in seen_hashes:
                 continue
@@ -902,17 +905,16 @@ class RadarEngine:
             is_dup = False
             if sig.content_hash and sig.content_hash in existing_hashes:
                 is_dup = True
-            elif sig.external_id and sig.source_id in existing_by_source:
-                if sig.external_id in existing_by_source[sig.source_id]:
-                    is_dup = True
+            elif sig.external_id and sig.external_id in source_external_ids:
+                is_dup = True
 
             if not is_dup:
                 unique_signals.append(sig)
                 if sig.content_hash:
                     seen_hashes.add(sig.content_hash)
                     existing_hashes.add(sig.content_hash)
-                if sig.external_id and sig.source_id in existing_by_source:
-                    existing_by_source[sig.source_id].add(sig.external_id)
+                if sig.external_id:
+                    source_external_ids.add(sig.external_id)
 
         return unique_signals
 
@@ -975,8 +977,11 @@ class RadarEngine:
         opp_updated = 0
 
         for cluster in clusters:
-            self._process_cluster(cluster, recent_signals)
-            opp_created += 1
+            is_new = self._process_cluster(cluster, recent_signals)
+            if is_new:
+                opp_created += 1
+            else:
+                opp_updated += 1
 
         return {
             "signals_scanned": len(scanned_signals),
@@ -990,7 +995,7 @@ class RadarEngine:
         self,
         cluster: SignalCluster,
         all_signals: list[RawSignal],
-    ) -> Opportunity:
+    ) -> bool:
         """Process a single signal cluster into an opportunity.
 
         Args:
@@ -998,7 +1003,7 @@ class RadarEngine:
             all_signals: All signals (for looking up cluster members).
 
         Returns:
-            The created or updated Opportunity.
+            True if a new opportunity was created, False if an existing one was updated.
         """
         signal_map = {s.id: s for s in all_signals}
         cluster_signals = [signal_map[sid] for sid in cluster.signal_ids if sid in signal_map]
@@ -1014,12 +1019,12 @@ class RadarEngine:
 
         if existing_opp_id:
             # Update existing opportunity
-            opp = self._update_opportunity_from_cluster(existing_opp_id, cluster, cluster_signals)
-            return opp
+            self._update_opportunity_from_cluster(existing_opp_id, cluster, cluster_signals)
+            return False
         else:
             # Create new opportunity
-            opp = self._create_opportunity_from_cluster(cluster, cluster_signals)
-            return opp
+            self._create_opportunity_from_cluster(cluster, cluster_signals)
+            return True
 
     def _create_opportunity_from_cluster(
         self,
@@ -1050,6 +1055,16 @@ class RadarEngine:
         )
 
         self._store.add_opportunity(opp)
+
+        # Record initial status history entry
+        self._store.add_status_history_entry(
+            StatusHistoryEntry(
+                opportunity_id=opp.id,
+                previous_status=OpportunityStatus.NEW,
+                new_status=OpportunityStatus.NEW,
+                reason="opportunity_created",
+            )
+        )
 
         # Link all signals
         for sig_id in cluster.signal_ids:

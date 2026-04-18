@@ -540,6 +540,28 @@ class TestEngineDeduplication:
         unique = engine.deduplicate_signals(new_signals)
         assert len(unique) == 0
 
+    def test_duplicate_external_id_filtered_within_same_batch(self, engine: RadarEngine) -> None:
+        new_signals = [
+            RawSignal(
+                id="sig-new-1",
+                source_id="src1",
+                title="First version",
+                external_id="guid-123",
+                content_hash="hash-1",
+            ),
+            RawSignal(
+                id="sig-new-2",
+                source_id="src1",
+                title="Second version",
+                external_id="guid-123",
+                content_hash="hash-2",
+            ),
+        ]
+
+        unique = engine.deduplicate_signals(new_signals)
+        assert len(unique) == 1
+        assert unique[0].id == "sig-new-1"
+
     def test_different_source_different_content_not_dupe(self, engine: RadarEngine) -> None:
         # Different content from different sources = not duplicates
         existing = RawSignal(

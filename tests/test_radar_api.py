@@ -137,6 +137,11 @@ class TestRadarSourcesAPI:
         assert data["count"] == 1
         assert data["items"][0]["label"] == "Active"
 
+    def test_list_sources_invalid_status_returns_422(self, client: TestClient) -> None:
+        """GET /api/radar/sources rejects invalid status filters."""
+        response = client.get("/api/radar/sources", params={"status": "bogus"})
+        assert response.status_code == 422
+
 
 class TestRadarOpportunitiesAPI:
     """Tests for Radar opportunity API endpoints."""
@@ -173,6 +178,23 @@ class TestRadarOpportunitiesAPI:
         data = response.json()
         assert data["count"] == 1
         assert data["items"][0]["status"] == "new"
+
+    @pytest.mark.parametrize(
+        ("params"),
+        [
+            {"status": "bogus"},
+            {"opportunity_type": "bogus"},
+            {"freshness": "bogus"},
+        ],
+    )
+    def test_list_opportunities_invalid_filters_return_422(
+        self,
+        client: TestClient,
+        params: dict[str, str],
+    ) -> None:
+        """GET /api/radar/opportunities rejects invalid filters."""
+        response = client.get("/api/radar/opportunities", params=params)
+        assert response.status_code == 422
 
     def test_get_opportunity_detail(self, client: TestClient, service: RadarService) -> None:
         """GET /api/radar/opportunities/{id} returns full detail."""

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from cc_deep_research.config import get_default_config_path
+from cc_deep_research.radar._path_utils import allowed_prefixes, is_safe_path
 from cc_deep_research.radar.models import (
     FeedbackType,
     Opportunity,
@@ -30,35 +31,6 @@ from cc_deep_research.radar.storage import RadarStore
 RADAR_ANALYTICS_SUBDIR = "radar_analytics"
 
 
-def _allowed_prefixes() -> tuple[str, ...]:
-    """Compute allowed path prefixes at runtime."""
-    import os
-    import tempfile
-    from pathlib import Path
-
-    return (
-        str(Path.home() / ".config"),
-        "/tmp",
-        os.path.realpath(tempfile.gettempdir()),
-        str(Path.cwd().resolve()),
-    )
-
-
-def _is_safe_path(path: Path) -> bool:
-    """Reject paths that escape intended storage directories."""
-    try:
-        resolved = path.resolve()
-        for prefix in _allowed_prefixes():
-            resolved_prefix = Path(prefix).resolve()
-            if str(resolved).startswith(str(resolved_prefix)):
-                return True
-        if not path.is_absolute():
-            return True
-        return False
-    except (OSError, ValueError):
-        return False
-
-
 def _default_analytics_dir() -> Path:
     """Return the default radar analytics directory."""
     return get_default_config_path().parent / RADAR_ANALYTICS_SUBDIR
@@ -70,7 +42,7 @@ def resolve_analytics_file_path(
 ) -> Path:
     """Resolve an analytics file path from explicit path or defaults."""
     if explicit_path is not None:
-        if not _is_safe_path(explicit_path):
+        if not is_safe_path(explicit_path):
             raise ValueError(f"Explicit path {explicit_path} escapes allowed directories")
         return explicit_path
 
@@ -109,7 +81,7 @@ class RadarTelemetryStore:
         """
         self._store = store or RadarStore()
         if analytics_dir is not None:
-            if not _is_safe_path(analytics_dir):
+            if not is_safe_path(analytics_dir):
                 raise ValueError(f"analytics_dir {analytics_dir} escapes allowed directories")
             self._analytics_dir = analytics_dir
         else:
@@ -143,26 +115,52 @@ class RadarTelemetryStore:
         for fb in feedback_entries:
             feedback_counts[fb.feedback_type.value] += 1
 
-        # Compute conversion rates
-        conversion_counts: Counter[str] = Counter()
+        # Compute conversion rates using unique opportunities per workflow type.
         acted_on_count = status_counts.get("acted_on", 0)
-        total_converted = sum(1 for wl in workflow_links if wl.workflow_type == WorkflowType.RESEARCH_RUN)
-        conversion_rates: dict[str, float] = {}
-
-        if acted_on_count > 0:
-            conversion_rates["research_run"] = total_converted / acted_on_count
-        else:
-            conversion_rates["research_run"] = 0.0
-
-        # Count brief and backlog conversions
-        brief_count = sum(1 for wl in workflow_links if wl.workflow_type == WorkflowType.BRIEF)
-        backlog_count = sum(1 for wl in workflow_links if wl.workflow_type == WorkflowType.BACKLOG_ITEM)
-        pipeline_count = sum(1 for wl in workflow_links if wl.workflow_type == WorkflowType.CONTENT_PIPELINE)
-
-        if acted_on_count > 0:
-            conversion_rates["brief"] = brief_count / acted_on_count
-            conversion_rates["backlog_item"] = backlog_count / acted_on_count
-            conversion_rates["content_pipeline"] = pipeline_count / acted_on_count
+        workflow_opportunities = {
+            WorkflowType.RESEARCH_RUN: {
+                wl.opportunity_id
+                for wl in workflow_links
+                if wl.workflow_type == WorkflowType.RESEARCH_RUN
+            },
+            WorkflowType.BRIEF: {
+                wl.opportunity_id
+                for wl in workflow_links
+                if wl.workflow_type == WorkflowType.BRIEF
+            },
+            WorkflowType.BACKLOG_ITEM: {
+                wl.opportunity_id
+                for wl in workflow_links
+                if wl.workflow_type == WorkflowType.BACKLOG_ITEM
+            },
+            WorkflowType.CONTENT_PIPELINE: {
+                wl.opportunity_id
+                for wl in workflow_links
+                if wl.workflow_type == WorkflowType.CONTENT_PIPELINE
+            },
+        }
+        conversion_rates = {
+            "research_run": (
+                len(workflow_opportunities[WorkflowType.RESEARCH_RUN]) / acted_on_count
+                if acted_on_count > 0
+                else 0.0
+            ),
+            "brief": (
+                len(workflow_opportunities[WorkflowType.BRIEF]) / acted_on_count
+                if acted_on_count > 0
+                else 0.0
+            ),
+            "backlog_item": (
+                len(workflow_opportunities[WorkflowType.BACKLOG_ITEM]) / acted_on_count
+                if acted_on_count > 0
+                else 0.0
+            ),
+            "content_pipeline": (
+                len(workflow_opportunities[WorkflowType.CONTENT_PIPELINE]) / acted_on_count
+                if acted_on_count > 0
+                else 0.0
+            ),
+        }
 
         # Compute average time to action
         avg_time_to_action = self._compute_avg_time_to_action(opportunities, feedback_entries)

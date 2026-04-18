@@ -9,6 +9,7 @@ This module provides:
 
 from __future__ import annotations
 
+import calendar
 import hashlib
 import logging
 import re
@@ -285,13 +286,13 @@ class RSSScanner(BaseScanner):
         published_at = None
         if hasattr(entry, "published_parsed") and entry.published_parsed:
             try:
-                published_at = datetime.fromtimestamp(time.mktime(entry.published_parsed), tz=UTC)
+                published_at = datetime.fromtimestamp(calendar.timegm(entry.published_parsed), tz=UTC)
                 published_at = published_at.isoformat()
             except (ValueError, OSError):
                 pass
         elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
             try:
-                published_at = datetime.fromtimestamp(time.mktime(entry.updated_parsed), tz=UTC)
+                published_at = datetime.fromtimestamp(calendar.timegm(entry.updated_parsed), tz=UTC)
                 published_at = published_at.isoformat()
             except (ValueError, OSError):
                 pass

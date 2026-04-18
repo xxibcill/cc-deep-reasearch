@@ -79,6 +79,16 @@ class TestRadarServiceSources:
         assert len(active_sources) == 1
         assert active_sources[0].label == "Active Source"
 
+    def test_list_sources_accepts_enum_status(self, service: RadarService) -> None:
+        """list_sources accepts SourceStatus values from the API layer."""
+        service.create_source("news", "Active Source", "http://active.com")
+        inactive = service.create_source("news", "Inactive Source", "http://inactive.com")
+        service.update_source_status(inactive.id, "inactive")
+
+        active_sources = service.list_sources(status=SourceStatus.ACTIVE)
+        assert len(active_sources) == 1
+        assert active_sources[0].label == "Active Source"
+
     def test_update_source_status(self, service: RadarService) -> None:
         """update_source_status changes the source status."""
         src = service.create_source("forum", "Forum", "http://forum.com")
@@ -143,6 +153,18 @@ class TestRadarServiceOpportunities:
         service.create_opportunity("Type B", "Summary", "rising_topic")
 
         results = service.list_opportunities(opportunity_type="rising_topic")
+        assert len(results) == 1
+        assert results[0].opportunity_type == OpportunityType.RISING_TOPIC
+
+    def test_list_opportunities_accepts_enum_filters(self, service: RadarService) -> None:
+        """list_opportunities accepts enum values from the API layer."""
+        service.create_opportunity("Type A", "Summary", "competitor_move")
+        service.create_opportunity("Type B", "Summary", "rising_topic")
+
+        results = service.list_opportunities(
+            status=OpportunityStatus.NEW,
+            opportunity_type=OpportunityType.RISING_TOPIC,
+        )
         assert len(results) == 1
         assert results[0].opportunity_type == OpportunityType.RISING_TOPIC
 

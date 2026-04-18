@@ -31,7 +31,7 @@ from cc_deep_research.radar.api_models import (
     StatusHistoryResponse,
     UpdateOpportunityStatusRequest,
 )
-from cc_deep_research.radar.models import OpportunityType
+from cc_deep_research.radar.models import FreshnessState, OpportunityStatus, OpportunityType, SourceStatus
 from cc_deep_research.radar.service import RadarService
 from cc_deep_research.radar.telemetry import RadarTelemetryStore
 
@@ -87,7 +87,7 @@ def register_radar_routes(
             loop = asyncio.get_running_loop()
             coro = event_router.publish("radar", payload)
             if asyncio.iscoroutine(coro):
-                loop.call_soon(lambda: asyncio.create_task(coro))
+                asyncio.create_task(coro)
         except Exception:
             pass
 
@@ -107,7 +107,7 @@ def register_radar_routes(
     @app.get("/api/radar/sources", response_model=SourceListResponse)
     async def list_sources(
         request: Request,
-        status: str | None = None,
+        status: SourceStatus | None = None,
     ) -> JSONResponse:
         """List all Radar sources, optionally filtered by status."""
         svc = _get_service(request)
@@ -149,9 +149,9 @@ def register_radar_routes(
     @app.get("/api/radar/opportunities", response_model=OpportunityListResponse)
     async def list_opportunities(
         request: Request,
-        status: str | None = None,
-        opportunity_type: str | None = None,
-        freshness: str | None = None,
+        status: OpportunityStatus | None = None,
+        opportunity_type: OpportunityType | None = None,
+        freshness: FreshnessState | None = None,
         limit: int | None = None,
     ) -> JSONResponse:
         """List all opportunities with optional filtering."""

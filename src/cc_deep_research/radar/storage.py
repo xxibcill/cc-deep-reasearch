@@ -17,8 +17,6 @@ This follows the existing content-gen storage pattern of one file per entity typ
 
 from __future__ import annotations
 
-import os
-import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -26,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from cc_deep_research.config import get_default_config_path
+from cc_deep_research.radar._path_utils import allowed_prefixes, is_safe_path
 from cc_deep_research.radar.models import (
     FeedbackType,
     FreshnessState,
@@ -70,31 +69,6 @@ FILE_NAMES = {
 }
 
 
-def _allowed_prefixes() -> tuple[str, ...]:
-    """Compute allowed path prefixes at runtime."""
-    return (
-        str(Path.home() / ".config"),
-        "/tmp",
-        os.path.realpath(tempfile.gettempdir()),
-        str(Path.cwd().resolve()),
-    )
-
-
-def _is_safe_path(path: Path) -> bool:
-    """Reject paths that escape intended storage directories."""
-    try:
-        resolved = path.resolve()
-        for prefix in _allowed_prefixes():
-            resolved_prefix = Path(prefix).resolve()
-            if str(resolved).startswith(str(resolved_prefix)):
-                return True
-        if not path.is_absolute():
-            return True
-        return False
-    except (OSError, ValueError):
-        return False
-
-
 def _default_radar_dir() -> Path:
     """Return the default radar directory."""
     return get_default_config_path().parent / RADAR_SUBDIR_NAME
@@ -112,7 +86,7 @@ def resolve_radar_file_path(
         explicit_path: Optional explicit path override.
     """
     if explicit_path is not None:
-        if not _is_safe_path(explicit_path):
+        if not is_safe_path(explicit_path):
             raise ValueError(f"Explicit path {explicit_path} escapes allowed directories")
         return explicit_path
 
@@ -178,7 +152,7 @@ class RadarStore:
             config: Optional config instance (unused, for API consistency).
         """
         if radar_dir is not None:
-            if not _is_safe_path(radar_dir):
+            if not is_safe_path(radar_dir):
                 raise ValueError(f"radar_dir {radar_dir} escapes allowed directories")
             self._radar_dir = radar_dir
         else:
@@ -236,6 +210,7 @@ class RadarStore:
                 if unsupported:
                     raise ValueError(f"Unsupported source fields: {', '.join(unsupported)}")
                 updated_data.update(patch)
+                updated_data["updated_at"] = _now_iso()
                 updated = RadarSource.model_validate(updated_data)
                 sources.sources[i] = updated
                 self.save_sources(sources.sources)
@@ -344,6 +319,7 @@ class RadarStore:
                         f"Unsupported opportunity fields: {', '.join(unsupported)}"
                     )
                 updated_data.update(patch)
+                updated_data["updated_at"] = _now_iso()
                 updated = Opportunity.model_validate(updated_data)
                 opportunities.opportunities[i] = updated
                 self.save_opportunities(opportunities.opportunities)
