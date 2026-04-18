@@ -3480,11 +3480,25 @@ class RuleChangeOperation(StrEnum):
     REMOVED = "removed"
 
 
+class RuleLifecycleStatus(StrEnum):
+    """Lifecycle state of a reusable rule.
+
+    P4-T2: Governs promotion, review, expiry, and deprecation of durable rules.
+    """
+
+    PROMOTED = "promoted"  # Active and in use
+    UNDER_REVIEW = "under_review"  # Awaiting operator review
+    DEPRECATED = "deprecated"  # No longer recommended
+    EXPIRED = "expired"  # Past review date, needs attention
+
+
 class RuleVersion(BaseModel):
     """A single versioned change to strategy rules.
 
     P7-T2: Rules are versioned so operators can see when guidance changed.
     Each version records what changed, when, and why it was changed.
+
+    P4-T2: Extended with lifecycle metadata for promotion and retirement.
     """
 
     version_id: str = Field(default_factory=lambda: f"rulev_{uuid4().hex[:8]}")
@@ -3504,6 +3518,16 @@ class RuleVersion(BaseModel):
     approved_by: str = ""
     # When this rule version was created
     created_at: str = ""
+    # P4-T2: Lifecycle state
+    lifecycle_status: RuleLifecycleStatus = RuleLifecycleStatus.PROMOTED
+    # P4-T2: Confidence score (0.0-1.0) based on evidence count
+    confidence: float = 0.0
+    # P4-T2: Number of evidence sources supporting this rule
+    evidence_count: int = 0
+    # P4-T2: When this rule should be reviewed next
+    review_after: str = ""
+    # P4-T2: Review notes from operator
+    review_notes: str = ""
 
 
 class RuleVersionHistory(BaseModel):
@@ -3536,6 +3560,97 @@ class RuleVersionHistory(BaseModel):
         if kind is not None:
             versions = [v for v in versions if v.kind == kind]
         return sorted(versions, key=lambda v: v.created_at)
+
+    def get_rules_needing_review(self) -> list[RuleVersion]:
+        """Return promoted rules that are due for review or have low confidence.
+
+        P4-T2: Identifies rules that need operator attention based on review date
+        or insufficient evidence.
+        """
+        from datetime import UTC, datetime
+
+        now = datetime.now(tz=UTC)
+        candidates = []
+        for v in self.versions:
+            if v.lifecycle_status == RuleLifecycleStatus.PROMOTED:
+                if v.review_after:
+                    try:
+                        review_dt = datetime.fromisoformat(v.review_after.replace("Z", "+00:00"))
+                        if review_dt <= now:
+                            candidates.append(v)
+                            continue
+                    except ValueError:
+                        pass
+                if v.confidence < 0.6 or v.evidence_count < 2:
+                    candidates.append(v)
+        return candidates
+
+    def get_deprecated_rules(self) -> list[RuleVersion]:
+        """Return all deprecated rule versions."""
+        return [v for v in self.versions if v.lifecycle_status == RuleLifecycleStatus.DEPRECATED]
+
+    def get_stale_rules(self, days_threshold: int = 90) -> list[RuleVersion]:
+        """Return rules that have not been updated in specified days.
+
+        P4-T2: Identifies rules that may be outdated based on time elapsed.
+        """
+        from datetime import UTC, datetime, timedelta
+
+        cutoff = datetime.now(tz=UTC) - timedelta(days=days_threshold)
+        stale = []
+        for v in self.versions:
+            if v.lifecycle_status == RuleLifecycleStatus.PROMOTED:
+                try:
+                    created = datetime.fromisoformat(v.created_at.replace("Z", "+00:00"))
+                    if created <= cutoff:
+                        stale.append(v)
+                except ValueError:
+                    pass
+        return stale
+
+    def can_promote(self, version: RuleVersion) -> tuple[bool, str]:
+        """Check if a rule version meets promotion criteria.
+
+        P4-T2: Enforces minimum evidence and confidence thresholds before promotion.
+
+        Returns:
+            (eligible, reason) tuple
+        """
+        if version.evidence_count < 2:
+            return False, f"Insufficient evidence: {version.evidence_count} sources (minimum 2)"
+        if version.confidence < 0.6:
+            return False, f"Confidence too low: {version.confidence:.0%} (minimum 60%)"
+        if not version.change_summary.strip():
+            return False, "Missing change summary"
+        return True, "Eligible for promotion"
+
+    def should_retire(self, version: RuleVersion) -> tuple[bool, str]:
+        """Determine if a rule should be retired based on decay signals.
+
+        P4-T2: Retirement criteria include extended staleness, repeated failures,
+        or better alternatives surfacing.
+        """
+        from datetime import UTC, datetime, timedelta
+
+        if version.lifecycle_status == RuleLifecycleStatus.DEPRECATED:
+            return True, "Already deprecated"
+
+        if version.lifecycle_status == RuleLifecycleStatus.EXPIRED:
+            return True, "Review period expired"
+
+        if version.review_after:
+            try:
+                review_dt = datetime.fromisoformat(version.review_after.replace("Z", "+00:00"))
+                if review_dt <= datetime.now(tz=UTC):
+                    return True, "Past review date"
+            except ValueError:
+                pass
+
+        stale_rules = self.get_stale_rules(days_threshold=180)
+        if any(v.version_id == version.version_id for v in stale_rules):
+            return True, "Rule has not been updated in 180+ days"
+
+        return False, "No retirement signals detected"
 
 
 class OperatingFitnessMetrics(BaseModel):
@@ -3633,6 +3748,66 @@ class OperatingFitnessMetrics(BaseModel):
     period_end: str = ""
     total_runs: int = 0
 
+    # P4-T3: Strategy drift and bias indicators
+    # Derived from rule version history comparisons over time
+    rule_churn_rate: float = 0.0  # How many rules changed per week
+    deprecated_rules_count: int = 0  # Rules retired in this period
+    new_rules_count: int = 0  # Rules added in this period
+    avg_rule_confidence: float = 0.0  # Average confidence of active rules
+    rules_needing_review_count: int = 0  # Rules past their review date
+
+    # P4-T3: Learning bias signals
+    hook_rule_count: int = 0  # Imbalance: too many hook rules vs other types
+    framing_rule_count: int = 0
+    scoring_rule_count: int = 0
+    packaging_rule_count: int = 0
+    other_rule_count: int = 0
+
+    @computed_field(return_type=float)
+    @property
+    def rule_diversity_ratio(self) -> float:
+        """Ratio of non-hook rules to hook rules (1.0 = perfectly balanced)."""
+        non_hook = self.framing_rule_count + self.scoring_rule_count + self.packaging_rule_count + self.other_rule_count
+        if not self.hook_rule_count:
+            return 2.0 if non_hook else 0.0
+        return round(non_hook / self.hook_rule_count, 3)
+
+    @computed_field(return_type=float)
+    @property
+    def learning_bias_score(self) -> float:
+        """Indicates hook overrepresentation vs balanced learning system.
+
+        0.0 = perfectly balanced, higher = hook-heavy bias.
+        """
+        total = self.hook_rule_count + self.framing_rule_count + self.scoring_rule_count + self.packaging_rule_count + self.other_rule_count
+        if not total:
+            return 0.0
+        hook_share = self.hook_rule_count / total
+        # Hook should be ~15-20% of learnings, not 80%
+        expected_hook_share = 0.17
+        bias = hook_share - expected_hook_share
+        return round(max(0.0, bias), 3)
+
+    @computed_field(return_type=str)
+    @property
+    def drift_summary(self) -> str:
+        """Human-readable strategy drift and bias summary."""
+        parts = []
+        if self.rule_churn_rate > 0.5:
+            parts.append(f"High rule churn: {self.rule_churn_rate:.1f}/week")
+        if self.deprecated_rules_count > 0:
+            parts.append(f"{self.deprecated_rules_count} rules deprecated")
+        if self.rules_needing_review_count > 0:
+            parts.append(f"{self.rules_needing_review_count} rules need review")
+        bias = self.learning_bias_score
+        if bias > 0.3:
+            parts.append("Hook overrepresentation detected")
+        elif bias > 0.1:
+            parts.append("Slight hook bias")
+        if not parts:
+            parts.append("Strategy stable")
+        return "; ".join(parts)
+
     def to_summary(self) -> str:
         """Human-readable operating fitness summary."""
         lines = [
@@ -3646,6 +3821,66 @@ class OperatingFitnessMetrics(BaseModel):
             f"  Period: {self.period_start} to {self.period_end}",
         ]
         return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# P4-T1: Strategy Readiness Validation
+# ---------------------------------------------------------------------------
+
+
+class StrategyReadiness(StrEnum):
+    """Readiness level for a strategy memory.
+
+    P4-T1: Validates strategy completeness and quality so weak states
+    are visible and can be blocked when necessary.
+    """
+
+    INVALID = "invalid"  # Critical required fields missing, blocks pipeline
+    INCOMPLETE = "incomplete"  # Has niche/pillars but weak overall, warns
+    HEALTHY = "healthy"  # Core strategy is well-populated
+
+
+class StrategyReadinessIssue(BaseModel):
+    """A single readiness issue found during validation.
+
+    P4-T1: Reports which fields or ratios are causing readiness failures.
+    """
+
+    code: str = ""
+    label: str = ""
+    severity: Literal["blocking", "warning"] = "warning"
+    field_path: str = ""
+    detail: str = ""
+    suggestion: str = ""
+
+
+class StrategyReadinessResult(BaseModel):
+    """Result of strategy readiness validation.
+
+    P4-T1: Differentiates between invalid, incomplete, and healthy strategy states
+    and reports specific issues found.
+    """
+
+    readiness: StrategyReadiness = StrategyReadiness.INCOMPLETE
+    overall_score: float = 0.0  # 0.0 to 1.0
+    issues: list[StrategyReadinessIssue] = Field(default_factory=list)
+    summary: str = ""
+
+    def blocking_issues(self) -> list[StrategyReadinessIssue]:
+        """Return issues that must be resolved before pipeline can run."""
+        return [i for i in self.issues if i.severity == "blocking"]
+
+    def warning_issues(self) -> list[StrategyReadinessIssue]:
+        """Return issues that are recommended but not blocking."""
+        return [i for i in self.issues if i.severity == "warning"]
+
+    def has_blockers(self) -> bool:
+        """True if any blocking issues exist."""
+        return len(self.blocking_issues()) > 0
+
+    def is_healthy(self) -> bool:
+        """True if strategy is in good shape (no blocking issues)."""
+        return self.readiness == StrategyReadiness.HEALTHY
 
 
 # ---------------------------------------------------------------------------

@@ -2052,6 +2052,63 @@ def register_content_gen_routes(
         updated = store.update(request.patch)
         return JSONResponse(content=json.loads(updated.model_dump_json()))
 
+    @app.get("/api/content-gen/strategy/readiness")
+    async def get_strategy_readiness() -> JSONResponse:
+        """Check strategy readiness and return validation results.
+
+        P4-T1: Returns blocking and warning issues so operators can see
+        which fields or ratios are causing readiness failures.
+        """
+        store = StrategyStore()
+        result = store.check_readiness()
+        return JSONResponse(content=json.loads(result.model_dump_json()))
+
+    @app.get("/api/content-gen/strategy/rules-for-review")
+    async def get_rules_for_review() -> JSONResponse:
+        """Get all rules that need operator review.
+
+        P4-T2: Returns rules that are under_review, expired, or past their
+        review date.
+        """
+        store = StrategyStore()
+        rules = store.get_rules_for_review()
+        return JSONResponse(
+            content={"items": [json.loads(r.model_dump_json()) for r in rules], "count": len(rules)}
+        )
+
+    @app.patch("/api/content-gen/strategy/rule-lifecycle/{version_id}")
+    async def update_rule_lifecycle(
+        version_id: str,
+        status: str | None = None,
+        confidence: float | None = None,
+        evidence_count: int | None = None,
+        review_after: str | None = None,
+        review_notes: str | None = None,
+    ) -> JSONResponse:
+        """Update lifecycle metadata for a rule version.
+
+        P4-T2: Allows operators to promote, deprecate, or schedule review
+        for durable rules.
+        """
+        from cc_deep_research.content_gen.models import RuleLifecycleStatus
+
+        store = StrategyStore()
+        normalized_status = RuleLifecycleStatus(status) if status else None
+        version = store.update_rule_lifecycle(
+            version_id,
+            status=normalized_status,
+            confidence=confidence,
+            evidence_count=evidence_count,
+            review_after=review_after,
+            review_notes=review_notes,
+        )
+        if version is None:
+            return JSONResponse(
+                content={"error": "Rule version not found"},
+                status_code=404,
+            )
+        return JSONResponse(content=json.loads(version.model_dump_json()))
+
     @app.get("/api/content-gen/learnings")
     async def list_learnings(
         category: str | None = None,

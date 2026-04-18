@@ -7,7 +7,7 @@ P7-T3: Tracks operating fitness metrics including cycle time, kill rate,
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -233,10 +233,86 @@ class ContentGenTelemetryStore:
             period_start=period_start or runs[0].created_at if runs else "",
             period_end=period_end or runs[-1].created_at if runs else "",
             total_runs=total,
+            **self._compute_drift_metrics(runs, weeks),
         )
 
         self.save_operating_fitness(metrics)
         return metrics
+
+    def _compute_drift_metrics(
+        self,
+        runs: list[ContentGenRunMetrics],
+        weeks: float,
+    ) -> dict[str, Any]:
+        """Compute strategy drift and learning bias signals from run data.
+
+        P4-T3: Derives rule churn, diversity ratio, and bias score from
+        operating fitness and rule version history.
+        """
+        # Load rule versions to compute churn and diversity
+        history = self.load_rule_version_history()
+        versions = history.versions
+
+        # Filter to relevant time window (last 30 days of runs)
+        cutoff = datetime.now(tz=UTC) - timedelta(days=30)
+        recent_versions = [v for v in versions if v.created_at >= cutoff.isoformat()]
+
+        # Rule churn rate
+        rule_churn_rate = len(recent_versions) / weeks if weeks > 0 else 0.0
+
+        # Count by lifecycle and kind
+        deprecated_count = sum(
+            1 for v in versions if v.lifecycle_status.value == "deprecated"
+        )
+        promoted_versions = [v for v in versions if v.lifecycle_status.value == "promoted"]
+
+        new_count = sum(
+            1 for v in recent_versions if v.operation.value == "added"
+        )
+
+        # Average confidence of active rules
+        active_confidences = [v.confidence for v in promoted_versions if v.confidence > 0]
+        avg_confidence = sum(active_confidences) / len(active_confidences) if active_confidences else 0.0
+
+        # Rules needing review
+        from cc_deep_research.content_gen.models import RuleLifecycleStatus
+
+        now = datetime.now(tz=UTC)
+        needs_review = 0
+        for v in promoted_versions:
+            if v.review_after:
+                try:
+                    review_dt = datetime.fromisoformat(v.review_after.replace("Z", "+00:00"))
+                    if review_dt <= now:
+                        needs_review += 1
+                        continue
+                except ValueError:
+                    pass
+            if v.confidence < 0.6 or v.evidence_count < 2:
+                needs_review += 1
+
+        # Rule type counts for bias analysis
+        hook_count = sum(1 for v in versions if v.kind.value == "hook")
+        framing_count = sum(1 for v in versions if v.kind.value == "framing")
+        scoring_count = sum(1 for v in versions if v.kind.value == "scoring_threshold")
+        packaging_count = sum(1 for v in versions if v.kind.value == "packaging_heuristic")
+        other_count = sum(
+            1 for v in versions
+            if v.kind.value not in ("hook", "framing", "scoring_threshold", "packaging_heuristic")
+        )
+
+        return {
+            "rule_churn_rate": round(rule_churn_rate, 3),
+            "deprecated_rules_count": deprecated_count,
+            "new_rules_count": new_count,
+            "avg_rule_confidence": round(avg_confidence, 3),
+            "rules_needing_review_count": needs_review,
+            "hook_rule_count": hook_count,
+            "framing_rule_count": framing_count,
+            "scoring_rule_count": scoring_count,
+            "packaging_rule_count": packaging_count,
+            "other_rule_count": other_count,
+        }
 
     # ---------------------------------------------------------------------------
     # Rule Version History
