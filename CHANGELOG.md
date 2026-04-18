@@ -348,6 +348,31 @@ Phase 03 - Close the learning loop:
 - Added audit history for AI proposals, approvals, and applied backlog mutations with operator-visible change records
 - Added background AI maintenance workflows for stale review, gap summaries, duplicate watchlists, and rescoring recommendations
 
+#### Opportunity Radar Backend Foundations (3 tasks)
+
+- Created `src/cc_deep_research/radar/` package with typed domain models (`RadarSource`, `RawSignal`, `Opportunity`, `OpportunityScore`, `OpportunityFeedback`, `OpportunityWorkflowLink`) and Pydantic validation
+- Implemented SQLite-backed stores and service layer for Radar entities with create/list/update operations for sources and opportunities
+- Added FastAPI route module (`radar/router.py`) and telemetry hooks (`radar.opportunity_status_updated`, `radar.feedback_recorded`, `radar.source_created`)
+
+#### Opportunity Radar Ingestion And Opportunity Engine (3 tasks)
+
+- Implemented source scanner interface and initial scanners (web/changelog/RSS) with `last_scanned_at`, `last_scan_status`, `last_scan_error` metadata persistence
+- Built normalization layer (`radar/normalization.py`) converting scanner outputs into `RawSignal` records with fingerprint-based deduplication
+- Added explainable scoring engine (`radar/scoring.py`) with strategic relevance, novelty, urgency, evidence strength, business value, workflow fit components; priority labels (Act Now, High Potential, Monitor, Low Priority); human-readable explanations; freshness decay lifecycle
+
+#### Opportunity Radar Dashboard Experience (3 tasks)
+
+- Added TypeScript types, API client methods, and dashboard routes for Radar (`dashboard/src/types/radar.ts`, `/radar` page shell, `/radar/sources` page shell)
+- Built Radar inbox with ranked opportunity cards showing title, summary, priority label, why-it-matters snippet, freshness, evidence count; added opportunity detail surface with status and feedback controls
+- Added source management UI with health indicators, truthful empty/loading/error states, and Playwright coverage for main Radar flows
+
+#### Opportunity Radar Workflow Conversion And Quality Loops (4 tasks)
+
+- Added `POST /api/radar/opportunities/{id}/convert` endpoint converting opportunities into prefilled research runs with `OpportunityWorkflowLink` persistence
+- Implemented content-gen conversion paths (backlog item creation) from Radar opportunities with workflow linkage back to originating opportunity
+- Added status history persistence (`StatusHistoryEntry`) and feedback events (saved, dismissed, acted_on, converted_to_research, converted_to_content) with minimal ranking-loop inputs
+- Added analytics telemetry for opportunity-to-action rate, dismissal rate, freshness latency with operator playbook documentation and calibration guidance
+
 #### CI/CD and Dashboard Reliability (8 tasks)
 
 - Added Python preflight CI workflow with lint, type check, and pytest subsets running on PRs and pushes
@@ -402,6 +427,7 @@ Phase 6 - Harden, migrate, and roll out:
 - Removed completed dashboard-upgrade planning documents `docs/tasks/20-trace-bundle-export-workspace.md` through `docs/tasks/29-dashboard-fixture-and-scenario-library.md` after consolidating their delivered work into this changelog
 - Removed completed "necessary 80%" task-pack planning documents `docs/tasks/30_snapshot_session_metadata_contract.md` through `docs/tasks/47_add_canonical_necessary_80_preflight.md` and `docs/tasks/80_20_necessary_work_task_set.md` after consolidating their delivered work into this changelog
 - Removed task-pack planning documents from `docs/tasks/` after consolidating their delivered work into this changelog, including decision graph observability, dashboard config editor, dashboard agent prompt editor, content generation expert workflow, backlog management, content-gen backlog details page, phase 01, phase 02, phase 03, backlog chat assistant, content-gen chat page upgrade, backlog single-item start, and opportunity planning improvement task packs
+- Removed completed Opportunity Radar roadmap documents from `docs/roadmap/` after consolidating their delivered work into this changelog
 
 ## [0.1.0] - 2026-03-11
 
