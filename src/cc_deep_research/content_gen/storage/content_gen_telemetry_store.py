@@ -274,9 +274,6 @@ class ContentGenTelemetryStore:
         active_confidences = [v.confidence for v in promoted_versions if v.confidence > 0]
         avg_confidence = sum(active_confidences) / len(active_confidences) if active_confidences else 0.0
 
-        # Rules needing review
-        from cc_deep_research.content_gen.models import RuleLifecycleStatus
-
         now = datetime.now(tz=UTC)
         needs_review = 0
         for v in promoted_versions:

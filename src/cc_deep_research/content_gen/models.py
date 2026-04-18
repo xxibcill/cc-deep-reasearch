@@ -3654,7 +3654,7 @@ class RuleVersionHistory(BaseModel):
         P4-T2: Retirement criteria include extended staleness, repeated failures,
         or better alternatives surfacing.
         """
-        from datetime import UTC, datetime, timedelta
+        from datetime import UTC, datetime
 
         if version.lifecycle_status == RuleLifecycleStatus.DEPRECATED:
             return True, "Already deprecated"

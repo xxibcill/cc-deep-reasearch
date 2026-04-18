@@ -319,9 +319,7 @@ class StrategyStore:
         blocking_issues = [i for i in issues if i.severity == "blocking"]
         if blocking_issues:
             readiness = StrategyReadiness.INVALID
-        elif len(issues) > 4:
-            readiness = StrategyReadiness.INCOMPLETE
-        elif overall_score < 0.7:
+        elif len(issues) > 4 or overall_score < 0.7:
             readiness = StrategyReadiness.INCOMPLETE
         else:
             readiness = StrategyReadiness.HEALTHY

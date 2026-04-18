@@ -2285,6 +2285,7 @@ def test_strategy_memory_content_pillars_accepts_objects() -> None:
 def test_strategy_memory_backward_compat_old_yaml_shape(tmp_path: Path) -> None:
     """Old strategy YAML with string content_pillars should load without error."""
     import yaml
+
     from cc_deep_research.content_gen.models import ContentPillar
     from cc_deep_research.content_gen.storage import StrategyStore
 
