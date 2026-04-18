@@ -4,15 +4,26 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from pathlib import Path
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from cc_deep_research.config import Config
+from cc_deep_research.content_gen.models import PipelineContext
+from cc_deep_research.content_gen.progress import PipelineRunJobRegistry
+from cc_deep_research.models import ResearchSession
 from cc_deep_research.radar.router import register_radar_routes
 from cc_deep_research.radar.service import RadarService
 from cc_deep_research.radar.storage import RadarStore
+from cc_deep_research.research_runs.jobs import ResearchRunJobRegistry
+from cc_deep_research.research_runs.models import (
+    ResearchOutputFormat,
+    ResearchRunReport,
+    ResearchRunResult,
+)
 
 
 @pytest.fixture
@@ -38,16 +49,23 @@ def mock_event_router() -> Generator[MagicMock, None, None]:
     """Return a mock EventRouter that tracks published events."""
     router = MagicMock()
     router.is_active.return_value = True
-    router.publish.return_value = None
+    router.publish = AsyncMock(return_value=None)
     yield router
 
 
 @pytest.fixture
-def app(service: RadarService, mock_event_router: MagicMock) -> Generator[FastAPI, None, None]:
+def app(
+    service: RadarService,
+    mock_event_router: MagicMock,
+    temp_radar_dir: Path,
+) -> Generator[FastAPI, None, None]:
     """Create a test FastAPI app with Radar routes registered."""
     application = FastAPI()
-    application.state.dashboard_runtime = MagicMock()
-    application.state.dashboard_runtime.event_router = mock_event_router
+    application.state.dashboard_runtime = SimpleNamespace(
+        event_router=mock_event_router,
+        jobs=ResearchRunJobRegistry(),
+        pipeline_jobs=PipelineRunJobRegistry(path=temp_radar_dir / "pipeline-jobs"),
+    )
 
     register_radar_routes(application, mock_event_router, service=service)
 
@@ -272,3 +290,129 @@ class TestRadarOpportunitiesAPI:
         )
         assert response.status_code == 404
         assert response.json()["error"] == "Opportunity not found"
+
+
+class TestRadarWorkflowLaunchAPI:
+    """Tests for Radar workflow launch endpoints."""
+
+    def test_launch_research_starts_background_job(
+        self,
+        client: TestClient,
+        app: FastAPI,
+        service: RadarService,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Launching research should queue a browser-style research job."""
+        opp = service.create_opportunity(
+            "AI pricing shifts",
+            "Pricing trends across AI tools",
+            "rising_topic",
+            why_it_matters="Customers are re-evaluating vendors.",
+        )
+
+        class FakeResearchRunService:
+            def run(self, request, *, on_session_started=None, **_kwargs) -> ResearchRunResult:
+                if on_session_started is not None:
+                    on_session_started("session-radar-123")
+                return ResearchRunResult(
+                    session=ResearchSession(
+                        session_id="session-radar-123",
+                        query=request.query,
+                    ),
+                    report=ResearchRunReport(
+                        format=ResearchOutputFormat.MARKDOWN,
+                        content="# report",
+                        media_type="text/markdown",
+                    ),
+                )
+
+        monkeypatch.setattr(
+            "cc_deep_research.research_runs.service.ResearchRunService",
+            FakeResearchRunService,
+        )
+
+        response = client.post(f"/api/radar/opportunities/{opp.id}/launch-research")
+
+        assert response.status_code == 202
+        data = response.json()
+        assert data["opportunity_id"] == opp.id
+        assert data["research_run_id"].startswith("run-")
+        assert data["status"] in {"queued", "running"}
+        assert data["session_id"] is None
+
+        job = app.state.dashboard_runtime.jobs.get_job(data["research_run_id"])
+        assert job is not None
+        assert job.request.query.startswith("AI pricing shifts")
+
+        updated = service._store.get_opportunity(opp.id)
+        assert updated is not None
+        assert updated.status.value == "acted_on"
+
+        links = service._store.get_workflow_links_for_opportunity(opp.id)
+        assert [link.workflow_id for link in links] == [data["research_run_id"]]
+
+    def test_launch_content_pipeline_starts_real_pipeline_job(
+        self,
+        client: TestClient,
+        app: FastAPI,
+        service: RadarService,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Launching a content pipeline should create a tracked pipeline job."""
+        opp = service.create_opportunity(
+            "Video essay on AI pricing",
+            "Explain the new pricing psychology for AI buyers",
+            "rising_topic",
+            why_it_matters="The market is shifting quickly.",
+        )
+
+        class FakeOrchestrator:
+            def __init__(self, _config: Config) -> None:
+                pass
+
+            async def run_full_pipeline(
+                self,
+                theme: str,
+                *,
+                from_stage: int = 0,
+                to_stage: int | None = None,
+                progress_callback=None,
+                stage_completed_callback=None,
+                run_constraints=None,
+                **_kwargs,
+            ) -> PipelineContext:
+                assert theme == "Video essay on AI pricing"
+                assert from_stage == 0
+                assert to_stage is not None
+                assert run_constraints is not None
+                if progress_callback is not None:
+                    progress_callback(0, "Loading strategy memory")
+                ctx = PipelineContext(theme=theme, current_stage=to_stage)
+                if stage_completed_callback is not None:
+                    stage_completed_callback(0, "completed", "", ctx)
+                return ctx
+
+        monkeypatch.setattr("cc_deep_research.config.load_config", lambda: Config())
+        monkeypatch.setattr(
+            "cc_deep_research.content_gen.orchestrator.ContentGenOrchestrator",
+            FakeOrchestrator,
+        )
+
+        response = client.post(f"/api/radar/opportunities/{opp.id}/launch-content-pipeline")
+
+        assert response.status_code == 202
+        data = response.json()
+        assert data["opportunity_id"] == opp.id
+        assert data["pipeline_id"]
+        assert data["status"] in {"queued", "running"}
+
+        job = app.state.dashboard_runtime.pipeline_jobs.get_job(data["pipeline_id"])
+        assert job is not None
+        assert job.theme == "Video essay on AI pricing"
+
+        updated = service._store.get_opportunity(opp.id)
+        assert updated is not None
+        assert updated.status.value == "acted_on"
+
+        links = service._store.get_workflow_links_for_opportunity(opp.id)
+        assert [link.workflow_id for link in links] == [data["pipeline_id"]]
