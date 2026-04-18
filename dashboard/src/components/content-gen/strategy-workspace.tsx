@@ -86,31 +86,14 @@ export function StrategyWorkspace() {
       setError(null)
 
       const patch: Record<string, unknown> = {}
-      if (strategy.niche !== originalStrategy?.niche) patch.niche = strategy.niche
-      if (JSON.stringify(strategy.content_pillars) !== JSON.stringify(originalStrategy?.content_pillars))
-        patch.content_pillars = strategy.content_pillars
-      if (JSON.stringify(strategy.tone_rules) !== JSON.stringify(originalStrategy?.tone_rules))
-        patch.tone_rules = strategy.tone_rules
-      if (JSON.stringify(strategy.platforms) !== JSON.stringify(originalStrategy?.platforms))
-        patch.platforms = strategy.platforms
-      if (JSON.stringify(strategy.forbidden_claims) !== JSON.stringify(originalStrategy?.forbidden_claims))
-        patch.forbidden_claims = strategy.forbidden_claims
-      if (JSON.stringify(strategy.proof_standards) !== JSON.stringify(originalStrategy?.proof_standards))
-        patch.proof_standards = strategy.proof_standards
-      if (JSON.stringify(strategy.offer_cta_rules) !== JSON.stringify(originalStrategy?.offer_cta_rules))
-        patch.offer_cta_rules = strategy.offer_cta_rules
-      if (JSON.stringify(strategy.forbidden_topics) !== JSON.stringify(originalStrategy?.forbidden_topics))
-        patch.forbidden_topics = strategy.forbidden_topics
-      if (JSON.stringify(strategy.audience_segments) !== JSON.stringify(originalStrategy?.audience_segments))
-        patch.audience_segments = strategy.audience_segments
-      if (JSON.stringify(strategy.platform_rules) !== JSON.stringify(originalStrategy?.platform_rules))
-        patch.platform_rules = strategy.platform_rules
-      if (JSON.stringify(strategy.cta_strategy) !== JSON.stringify(originalStrategy?.cta_strategy))
-        patch.cta_strategy = strategy.cta_strategy
-      if (JSON.stringify(strategy.past_winners) !== JSON.stringify(originalStrategy?.past_winners))
-        patch.past_winners = strategy.past_winners
-      if (JSON.stringify(strategy.past_losers) !== JSON.stringify(originalStrategy?.past_losers))
-        patch.past_losers = strategy.past_losers
+      const currentStrategy = strategy as unknown as Record<string, unknown>
+      const previousStrategy = (originalStrategy ?? {}) as unknown as Record<string, unknown>
+
+      for (const [key, value] of Object.entries(currentStrategy)) {
+        if (JSON.stringify(value) !== JSON.stringify(previousStrategy[key])) {
+          patch[key] = value
+        }
+      }
 
       if (Object.keys(patch).length === 0) {
         setSaved(true)
@@ -418,7 +401,16 @@ export function StrategyWorkspace() {
           </DialogHeader>
           <DialogBody>
             <div className="flex gap-2">
-              <Button type="button" variant="destructive" onClick={() => { setDiscardOpen(false); setHasChanges(false) }}>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => {
+                  setStrategy(originalStrategy)
+                  setDiscardOpen(false)
+                  setError(null)
+                  setHasChanges(false)
+                }}
+              >
                 Discard changes
               </Button>
               <Button type="button" variant="ghost" onClick={() => setDiscardOpen(false)}>
