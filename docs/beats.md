@@ -76,6 +76,46 @@ During iterative QC, beats can be classified as:
 
 This classification lives in `TargetedRevisionPlan`.
 
+## Beat List Overview
+
+If you just want a quick overview of the beat lists the system uses, split them into two buckets:
+
+- full-pipeline beat lists, which are dynamic and usually come from `ArgumentMap.beat_claim_plan`
+- standalone scripting beat lists, which come from the current prompt template library
+
+### Full Pipeline: Dynamic Beat Lists
+
+In the full content pipeline, the beat list is usually seeded from upstream planning rather than chosen from a fixed template.
+
+The source of truth is:
+
+- `ArgumentMap.beat_claim_plan`
+- then `ScriptStructure.beat_list = [beat.beat_name for beat in argument_map.beat_claim_plan]`
+
+That means the beat names can vary by topic. A representative seeded beat list looks like:
+
+- Hook
+- Reframe
+- Proof
+- Close
+
+### Standalone Scripting: Current Template Beat Lists
+
+The current standalone prompt library in [`src/cc_deep_research/content_gen/prompts/scripting.py`](../src/cc_deep_research/content_gen/prompts/scripting.py) defines these beat lists:
+
+| Template | Beat list |
+| --- | --- |
+| `Insight Breakdown` | `Hook` -> `Why this matters` -> `Point 1` -> `Point 2` -> `Point 3` -> `Core takeaway` -> `CTA` |
+| `Mistake to Fix` | `Hook` -> `Pain point` -> `What most people do wrong` -> `What to do instead` -> `Why it works` -> `Expected result` -> `CTA` |
+| `Story-Based` | `Hook` -> `Starting situation` -> `Conflict / struggle` -> `Turning point` -> `Lesson` -> `Payoff / result` -> `CTA` |
+| `Myth vs Truth` | `Hook` -> `The popular belief` -> `Why people believe it` -> `Why it breaks down` -> `What's actually true` -> `What to do with that truth` -> `CTA` |
+| `Tutorial / How-To` | `Hook` -> `Desired outcome` -> `Step 1` -> `Step 2` -> `Step 3` -> `Common pitfall` -> `CTA` |
+| `Result-First / Case Study` | `Hook with result` -> `Context` -> `What changed` -> `Why it worked` -> `Lesson` -> `CTA` |
+| `Opinion / Hot Take` | `Hook` -> `Bold claim` -> `Why most people disagree` -> `Your reasoning` -> `Implication` -> `CTA` |
+| `Before vs After` | `Hook` -> `Before` -> `What changed` -> `After` -> `Lesson` -> `CTA` |
+
+For implementation details, the prompt library is the current source of truth. The docs may sometimes summarize a smaller subset of these structures at a higher level.
+
 ## Where Beats Live
 
 Beat-related state exists in several artifacts, each with a different purpose.
@@ -272,14 +312,18 @@ The standalone scripting workflow is a 10-step sub-pipeline:
 9. add visual notes
 10. run QC
 
-In this mode, the LLM itself chooses a structure template and then defines a beat intent map. The high-level standalone structure templates documented in [`docs/scripting.md`](./scripting.md) are:
+In this mode, the LLM itself chooses a structure template and then defines a beat intent map. The current standalone prompt library includes these template families:
 
 - `Insight Breakdown`
-- `Mistake -> Fix`
+- `Mistake to Fix`
 - `Story-Based`
 - `Myth vs Truth`
+- `Tutorial / How-To`
+- `Result-First / Case Study`
+- `Opinion / Hot Take`
+- `Before vs After`
 
-These templates define the beat sequence the rest of the scripting process must preserve.
+These templates define the beat sequence the rest of the scripting process must preserve. For the exact beat lists, see [Beat List Overview](#beat-list-overview).
 
 ### 5. Beats Constrain Drafting
 
@@ -420,18 +464,18 @@ Each beat eventually becomes:
 
 ## High-Level Template Library
 
-The high-level scripting docs currently describe four generic beat-template families.
+The current standalone prompt library defines eight beat-template families.
 
 ### `Insight Breakdown`
 
 Beat sequence:
 
 - Hook
-- Context / Setup
-- Main Point 1
-- Main Point 2
-- Main Point 3
-- Payoff / Insight
+- Why this matters
+- Point 1
+- Point 2
+- Point 3
+- Core takeaway
 - CTA
 
 Best suited for:
@@ -444,15 +488,16 @@ Risk:
 
 - can become slow if proof or contrast arrives too late
 
-### `Mistake -> Fix`
+### `Mistake to Fix`
 
 Beat sequence:
 
 - Hook
-- Problem
-- Common Mistake
-- Better Approach
-- Expected Result
+- Pain point
+- What most people do wrong
+- What to do instead
+- Why it works
+- Expected result
 - CTA
 
 Best suited for:
@@ -470,10 +515,11 @@ Risk:
 Beat sequence:
 
 - Hook
-- Setup
-- Turning Point
+- Starting situation
+- Conflict / struggle
+- Turning point
 - Lesson
-- Payoff
+- Payoff / result
 - CTA
 
 Best suited for:
@@ -491,10 +537,11 @@ Risk:
 Beat sequence:
 
 - Hook
-- Common Belief
-- Why It Fails
-- What's True
-- Implication
+- The popular belief
+- Why people believe it
+- Why it breaks down
+- What's actually true
+- What to do with that truth
 - CTA
 
 Best suited for:
@@ -506,6 +553,91 @@ Best suited for:
 Risk:
 
 - fails if the myth is weak or the truth is not more useful than the myth
+
+### `Tutorial / How-To`
+
+Beat sequence:
+
+- Hook
+- Desired outcome
+- Step 1
+- Step 2
+- Step 3
+- Common pitfall
+- CTA
+
+Best suited for:
+
+- process explanation
+- tactical teaching
+- stepwise implementation
+
+Risk:
+
+- can become generic if the steps are obvious or interchangeable
+
+### `Result-First / Case Study`
+
+Beat sequence:
+
+- Hook with result
+- Context
+- What changed
+- Why it worked
+- Lesson
+- CTA
+
+Best suited for:
+
+- outcome-led examples
+- credibility-building proof
+- showing a change in practice
+
+Risk:
+
+- can feel unearned if the result arrives before enough context or proof
+
+### `Opinion / Hot Take`
+
+Beat sequence:
+
+- Hook
+- Bold claim
+- Why most people disagree
+- Your reasoning
+- Implication
+- CTA
+
+Best suited for:
+
+- strong point-of-view content
+- expert disagreement
+- concise argumentative pieces
+
+Risk:
+
+- falls apart if the disagreement is overstated or the reasoning is thin
+
+### `Before vs After`
+
+Beat sequence:
+
+- Hook
+- Before
+- What changed
+- After
+- Lesson
+- CTA
+
+Best suited for:
+
+- transformation-focused content
+- process improvement examples
+- simple contrast-driven storytelling
+
+Risk:
+
+- can feel shallow if the change is asserted without a clear mechanism
 
 ## Full Pipeline vs Standalone Scripting
 
