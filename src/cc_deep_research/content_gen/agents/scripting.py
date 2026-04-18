@@ -23,6 +23,7 @@ from cc_deep_research.content_gen.models import (
     ScriptingStepTrace,
     ScriptStructure,
     ScriptVersion,
+    StrategyMemory,
     VisualNote,
 )
 from cc_deep_research.content_gen.prompts import scripting as prompts
@@ -295,7 +296,7 @@ class ScriptingAgent:
             raise ValueError(msg)
 
         system = prompts.STEP2_SYSTEM
-        user = prompts.step2_user(ctx.core_inputs, raw_idea=ctx.raw_idea)
+        user = prompts.step2_user(ctx.core_inputs, raw_idea=ctx.raw_idea, strategy=ctx.strategy)
         response = await self._call_llm(
             system, user, temperature=_STEP_TEMPERATURES["define_angle"]
         )
@@ -453,6 +454,7 @@ class ScriptingAgent:
             raw_idea=ctx.raw_idea,
             research_context=ctx.research_context,
             argument_map=ctx.argument_map,
+            strategy=ctx.strategy,
         )
         response = await self._call_llm(
             system, user, temperature=_STEP_TEMPERATURES["generate_hooks"]
@@ -562,6 +564,7 @@ class ScriptingAgent:
             argument_map=ctx.argument_map,
             tone=ctx.tone,
             cta=ctx.cta,
+            strategy=ctx.strategy,
         )
         response = await self._call_llm(
             system, user, temperature=_STEP_TEMPERATURES["draft_script"]
@@ -809,6 +812,7 @@ class ScriptingAgent:
             tone=ctx.tone,
             cta=ctx.cta,
             research_context=ctx.research_context,
+            strategy=ctx.strategy,
         )
         response = await self._call_llm(system, user, temperature=_STEP_TEMPERATURES["run_qc"])
         text = response.content
@@ -848,8 +852,9 @@ class ScriptingAgent:
         progress_callback: Callable[[int, str], None] | None = None,
         *,
         iteration: int = 1,
+        strategy: StrategyMemory | None = None,
     ) -> ScriptingContext:
-        ctx = ScriptingContext(raw_idea=raw_idea)
+        ctx = ScriptingContext(raw_idea=raw_idea, strategy=strategy)
         self._active_iteration = iteration
         try:
             for step_idx in range(len(SCRIPTING_STEPS)):

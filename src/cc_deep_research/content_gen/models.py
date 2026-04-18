@@ -556,6 +556,8 @@ class ScriptingContext(BaseModel):
     research_context: str = ""
     tone: str = ""
     cta: str = ""
+    # P3-T1: Strategy memory for pipeline-level guidance
+    strategy: StrategyMemory | None = None
     argument_map: ArgumentMap | None = None
     core_inputs: CoreInputs | None = None
     angle: AngleDefinition | None = None
@@ -948,10 +950,20 @@ class PerformanceLearning(BaseModel):
     implication: str = ""
     # What to do differently
     guidance: str = ""
+    # Precise pattern description (exact phrasing or structure that worked/failed)
+    exact_pattern: str = ""
     # Which video(s) this came from
     source_video_ids: list[str] = Field(default_factory=list)
     # Original performance metrics that prompted this learning
     source_metrics: dict[str, Any] = Field(default_factory=dict)
+    # How many data points support this learning (for evidence strength)
+    evidence_count: int = 0
+    # Comparison to baseline performance (e.g., "+23% engagement vs avg")
+    baseline_comparison: str = ""
+    # Confidence score (0.0-1.0) based on sample size and effect size
+    confidence: float = 0.0
+    # When this learning should be reviewed next (ISO date string)
+    review_after: str = ""
     # Whether this learning has been reviewed by an operator
     operator_reviewed: bool = False
     # Whether this learning is currently active (vs. superseded or rejected)
@@ -964,6 +976,10 @@ class PerformanceLearning(BaseModel):
     updated_at: str = ""
     # Which platform this applies to (empty = cross-platform)
     platform: str = ""
+    # Content type this learning applies to (empty = cross-type)
+    content_type: str = ""
+    # Audience segment context this learning applies to
+    audience_context: str = ""
 
 
 class PerformanceLearningSet(BaseModel):

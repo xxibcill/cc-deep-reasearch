@@ -124,9 +124,45 @@ def build_backlog_user(
         parts.append(f"Audience segments: {segs}")
     if strategy.forbidden_claims:
         parts.append(f"Forbidden claims: {', '.join(strategy.forbidden_claims)}")
+    if strategy.forbidden_topics:
+        parts.append(f"Forbidden topics: {', '.join(strategy.forbidden_topics)}")
+    if strategy.banned_tropes:
+        parts.append(f"Banned tropes: {', '.join(strategy.banned_tropes)}")
     if strategy.past_winners:
         winners = "; ".join(w.title for w in strategy.past_winners[:5])
         parts.append(f"Past winners: {winners}")
+
+    # P3-T1: Performance learnings for backlog generation
+    pg = strategy.performance_guidance
+    if pg.winning_hooks:
+        parts.append(f"\nWinning hook patterns: {'; '.join(pg.winning_hooks[:3])}")
+    if pg.failed_hooks:
+        parts.append(f"Failed hook patterns: {'; '.join(pg.failed_hooks[:3])}")
+    if pg.winning_framings:
+        parts.append(f"Winning framing patterns: {'; '.join(pg.winning_framings[:3])}")
+
+    # P3-T1: Platform rules
+    if strategy.platform_rules:
+        for pr in strategy.platform_rules[:3]:
+            if pr.guidance:
+                parts.append(f"Platform guidance [{pr.platform}]: {pr.guidance}")
+
+    # P3-T1: CTA strategy
+    if strategy.cta_strategy:
+        if strategy.cta_strategy.allowed_cta_types:
+            parts.append(f"Allowed CTA types: {', '.join(strategy.cta_strategy.allowed_cta_types)}")
+        if strategy.cta_strategy.default_by_content_goal:
+            defaults = [f"{k}: {v}" for k, v in strategy.cta_strategy.default_by_content_goal.items()]
+            parts.append(f"CTA defaults by goal: {'; '.join(defaults[:3])}")
+
+    # P3-T1: Claim-to-proof rules
+    if strategy.claim_to_proof_rules:
+        for cpr in strategy.claim_to_proof_rules[:3]:
+            parts.append(f"Claim-to-proof [{cpr.claim_type}]: {', '.join(cpr.required_proof)}")
+
+    # P3-T1: Allowed audience universe
+    if strategy.allowed_audience_universe:
+        parts.append(f"Allowed audience universe: {', '.join(strategy.allowed_audience_universe[:3])}")
 
     if opportunity_brief:
         if opportunity_brief.goal:
@@ -230,7 +266,7 @@ def score_ideas_user(
     if strategy.proof_standards:
         parts.append(f"Proof standards: {', '.join(strategy.proof_standards)}")
 
-    # Task 20: Include performance learnings in scoring context
+    # P3-T1: Include performance learnings in scoring context
     pg = strategy.performance_guidance
     if pg.winning_hooks:
         parts.append(f"\nWinning hook patterns (prior performance): {'; '.join(pg.winning_hooks[:3])}")
@@ -244,6 +280,22 @@ def score_ideas_user(
         parts.append(f"Confirmed audience resonance: {'; '.join(pg.audience_resonance_notes[:3])}")
     if pg.proof_expectations:
         parts.append(f"Proof expectations from prior content: {'; '.join(pg.proof_expectations[:3])}")
+    if pg.pending_tests:
+        parts.append(f"Pending A/B tests: {'; '.join(pg.pending_tests[:3])}")
+
+    # P3-T1: Forbidden content for scoring
+    if strategy.forbidden_claims:
+        parts.append(f"Forbidden claims: {', '.join(strategy.forbidden_claims)}")
+    if strategy.forbidden_topics:
+        parts.append(f"Forbidden topics: {', '.join(strategy.forbidden_topics)}")
+    if strategy.banned_tropes:
+        parts.append(f"Banned tropes: {', '.join(strategy.banned_tropes)}")
+
+    # P3-T1: Platform rules
+    if strategy.platform_rules:
+        for pr in strategy.platform_rules[:3]:
+            if pr.guidance:
+                parts.append(f"Platform rule [{pr.platform}]: {pr.guidance}")
 
     parts.append("")
     for item in items:

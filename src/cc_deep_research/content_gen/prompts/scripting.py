@@ -37,6 +37,7 @@ from cc_deep_research.content_gen.models import (
     CoreInputs,
     ScriptStructure,
     ScriptVersion,
+    StrategyMemory,
 )
 
 CONTRACT_VERSION = "1.2.0"
@@ -347,7 +348,11 @@ Core Tension:
 Why this angle works:"""
 
 
-def step2_user(inputs: CoreInputs, raw_idea: str = "") -> str:
+def step2_user(
+    inputs: CoreInputs,
+    raw_idea: str = "",
+    strategy: StrategyMemory | None = None,
+) -> str:
     parts = [
         f"Topic:\n{inputs.topic}",
         f"Outcome:\n{inputs.outcome}",
@@ -356,6 +361,28 @@ def step2_user(inputs: CoreInputs, raw_idea: str = "") -> str:
     brief = _render_original_brief(raw_idea)
     if brief:
         parts.append(brief)
+
+    # P3-T1: Strategy guidance for angle definition
+    if strategy:
+        if strategy.tone_rules:
+            parts.append(f"Tone rules: {', '.join(strategy.tone_rules)}")
+        if strategy.cta_strategy:
+            if strategy.cta_strategy.allowed_cta_types:
+                parts.append(f"Allowed CTA types: {', '.join(strategy.cta_strategy.allowed_cta_types)}")
+            if strategy.cta_strategy.default_by_content_goal:
+                defaults = [f"{k}: {v}" for k, v in strategy.cta_strategy.default_by_content_goal.items()]
+                parts.append(f"CTA defaults by goal: {'; '.join(defaults[:3])}")
+        if strategy.forbidden_topics:
+            parts.append(f"Forbidden topics: {', '.join(strategy.forbidden_topics)}")
+        if strategy.banned_tropes:
+            parts.append(f"Banned tropes: {', '.join(strategy.banned_tropes)}")
+        # Performance learnings for framing
+        pg = strategy.performance_guidance
+        if pg.winning_framings:
+            parts.append(f"Winning framing patterns: {'; '.join(pg.winning_framings[:3])}")
+        if pg.failed_framings:
+            parts.append(f"Failed framing patterns to avoid: {'; '.join(pg.failed_framings[:3])}")
+
     return "\n\n".join(parts)
 
 
@@ -544,6 +571,7 @@ def step5_user(
     raw_idea: str = "",
     research_context: str = "",
     argument_map: ArgumentMap | None = None,
+    strategy: StrategyMemory | None = None,
 ) -> str:
     beat_lines = "\n".join(_format_beat_intent_line(beat) for beat in beat_intents.beats)
     parts = [
@@ -563,6 +591,15 @@ def step5_user(
     research = _render_research_context(research_context)
     if research:
         parts.append(research)
+
+    # P3-T1: Strategy hook guidance
+    if strategy:
+        pg = strategy.performance_guidance
+        if pg.winning_hooks:
+            parts.append(f"\nWinning hook patterns: {'; '.join(pg.winning_hooks[:3])}")
+        if pg.failed_hooks:
+            parts.append(f"Failed hook patterns to avoid: {'; '.join(pg.failed_hooks[:3])}")
+
     return "\n".join(parts)
 
 
@@ -690,6 +727,7 @@ def step6_user(
     *,
     tone: str = "",
     cta: str = "",
+    strategy: StrategyMemory | None = None,
 ) -> str:
     beat_lines = "\n".join(_format_beat_intent_line(beat) for beat in beat_intents.beats)
     parts = [
@@ -715,6 +753,18 @@ def step6_user(
     research = _render_research_context(research_context)
     if research:
         parts.append(research)
+
+    # P3-T1: Strategy guidance for scripting
+    if strategy:
+        if strategy.proof_standards:
+            parts.append(f"Proof standards: {', '.join(strategy.proof_standards)}")
+        if strategy.claim_to_proof_rules:
+            for cpr in strategy.claim_to_proof_rules[:3]:
+                parts.append(f"Claim-to-proof [{cpr.claim_type}]: {', '.join(cpr.required_proof)}")
+        if strategy.cta_strategy:
+            if strategy.cta_strategy.allowed_cta_types:
+                parts.append(f"Allowed CTA types: {', '.join(strategy.cta_strategy.allowed_cta_types)}")
+
     return "\n".join(parts)
 
 
@@ -1012,6 +1062,7 @@ def step10_user(
     tone: str = "",
     cta: str = "",
     research_context: str = "",
+    strategy: StrategyMemory | None = None,
 ) -> str:
     parts = [f"{label}:\n{script.content}"]
     _append_context_handoff(
@@ -1027,4 +1078,14 @@ def step10_user(
         cta=cta,
         research_context=research_context,
     )
+
+    # P3-T1: Strategy guidance for QC
+    if strategy:
+        if strategy.proof_standards:
+            parts.append(f"Proof standards: {', '.join(strategy.proof_standards)}")
+        if strategy.forbidden_claims:
+            parts.append(f"Forbidden claims: {', '.join(strategy.forbidden_claims)}")
+        if strategy.banned_tropes:
+            parts.append(f"Banned tropes: {', '.join(strategy.banned_tropes)}")
+
     return "\n".join(parts)

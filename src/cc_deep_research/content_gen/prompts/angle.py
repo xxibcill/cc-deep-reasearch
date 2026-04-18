@@ -103,10 +103,68 @@ def angle_user(item: BacklogItem, strategy: StrategyMemory) -> str:
         f"Potential hook: {item.potential_hook}",
         f"Evidence: {item.evidence}",
     ]
+
+    # Core strategy fields
     if strategy.niche:
         parts.append(f"Niche: {strategy.niche}")
     if strategy.tone_rules:
         parts.append(f"Tone rules: {', '.join(strategy.tone_rules)}")
     if strategy.offer_cta_rules:
         parts.append(f"CTA rules: {', '.join(strategy.offer_cta_rules)}")
+
+    # P3-T1: Performance learnings - hook and framing guidance
+    pg = strategy.performance_guidance
+    if pg.winning_hooks:
+        parts.append(f"\nConfirmed winning hook patterns: {'; '.join(pg.winning_hooks[:3])}")
+    if pg.failed_hooks:
+        parts.append(f"Failed hook patterns to avoid: {'; '.join(pg.failed_hooks[:3])}")
+    if pg.winning_framings:
+        parts.append(f"Confirmed winning framings: {'; '.join(pg.winning_framings[:3])}")
+    if pg.failed_framings:
+        parts.append(f"Failed framing patterns to avoid: {'; '.join(pg.failed_framings[:3])}")
+    if pg.audience_resonance_notes:
+        parts.append(f"Audience resonance signals: {'; '.join(pg.audience_resonance_notes[:3])}")
+
+    # P3-T1: CTA strategy from strategy
+    if strategy.cta_strategy:
+        if strategy.cta_strategy.allowed_cta_types:
+            parts.append(f"Allowed CTA types: {', '.join(strategy.cta_strategy.allowed_cta_types)}")
+        if strategy.cta_strategy.default_by_content_goal:
+            defaults = [f"{k}: {v}" for k, v in strategy.cta_strategy.default_by_content_goal.items()]
+            parts.append(f"CTA defaults by goal: {'; '.join(defaults[:3])}")
+
+    # P3-T1: Platform rules
+    if strategy.platform_rules:
+        for pr in strategy.platform_rules[:3]:
+            if pr.guidance:
+                parts.append(f"Platform rule [{pr.platform}]: {pr.guidance}")
+
+    # P3-T1: Forbidden content
+    if strategy.forbidden_claims:
+        parts.append(f"Forbidden claims: {', '.join(strategy.forbidden_claims)}")
+    if strategy.forbidden_topics:
+        parts.append(f"Forbidden topics: {', '.join(strategy.forbidden_topics)}")
+    if strategy.banned_tropes:
+        parts.append(f"Banned tropes: {', '.join(strategy.banned_tropes)}")
+
+    # P3-T1: Proof requirements
+    if strategy.proof_rules:
+        parts.append(f"Proof rules: {'; '.join(strategy.proof_rules)}")
+    if strategy.proof_standards:
+        parts.append(f"Proof standards: {', '.join(strategy.proof_standards)}")
+
+    # P3-T1: Claim-to-proof mapping
+    if strategy.claim_to_proof_rules:
+        for cpr in strategy.claim_to_proof_rules[:3]:
+            parts.append(f"Claim-to-proof [{cpr.claim_type}]: {', '.join(cpr.required_proof)}")
+
+    # P3-T1: Audience universe
+    if strategy.allowed_audience_universe:
+        parts.append(f"Allowed audience universe: {', '.join(strategy.allowed_audience_universe[:3])}")
+
+    # P3-T1: Content pillars
+    if strategy.content_pillars:
+        pillar_names = [p.name for p in strategy.content_pillars]
+        parts.append(f"Content pillars: {', '.join(pillar_names)}")
+
     return "\n".join(parts)
