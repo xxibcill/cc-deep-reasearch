@@ -31,6 +31,7 @@ from cc_deep_research.radar.api_models import (
     StatusHistoryResponse,
     UpdateOpportunityStatusRequest,
 )
+from cc_deep_research.radar.models import OpportunityType
 from cc_deep_research.radar.service import RadarService
 from cc_deep_research.radar.telemetry import RadarTelemetryStore
 
@@ -308,8 +309,24 @@ def register_radar_routes(
                 content={"error": "Opportunity not found"},
             )
 
-        # Create a research run ID
-        research_run_id = f"radar-research-{uuid.uuid4().hex[:12]}"
+        opp = svc._store.get_opportunity(opportunity_id)
+
+        # Create a real research run via ResearchRunService
+        from cc_deep_research.research_runs.service import ResearchRunService
+        from cc_deep_research.research_runs.models import (
+            ResearchRunRequest,
+            ResearchDepth,
+            ResearchOutputFormat,
+        )
+
+        req = ResearchRunRequest(
+            query=f"Radar Opportunity: {context['title']}",
+            depth=ResearchDepth.STANDARD,
+            output_format=ResearchOutputFormat.MARKDOWN,
+        )
+        run_svc = ResearchRunService()
+        result = run_svc.run(req)
+        research_run_id = result.session.session_id
 
         # Link the workflow
         svc.link_workflow(
@@ -318,15 +335,17 @@ def register_radar_routes(
             workflow_id=research_run_id,
         )
 
-        # Record feedback
+        # Record feedback with real workflow metadata
+        feedback_metadata = {
+            "research_run_id": research_run_id,
+            "query": context["query"],
+            "opportunity_score": context["total_score"],
+            "opportunity_type": opp.opportunity_type.value if opp else None,
+        }
         svc.record_feedback(
             opportunity_id=opportunity_id,
             feedback_type="converted_to_research",
-            metadata={
-                "research_run_id": research_run_id,
-                "query": context["query"],
-                "opportunity_score": context["total_score"],
-            },
+            metadata=feedback_metadata,
         )
 
         # Update status to acted_on
@@ -351,7 +370,7 @@ def register_radar_routes(
         return JSONResponse(content={
             "research_run_id": research_run_id,
             "opportunity_id": opportunity_id,
-            "session_id": None,  # Session ID set when research run completes
+            "session_id": research_run_id,
         }, status_code=201)
 
     @app.post("/api/radar/opportunities/{opportunity_id}/launch-brief", response_model=LaunchBriefResponse)
@@ -374,25 +393,45 @@ def register_radar_routes(
                 content={"error": "Opportunity not found"},
             )
 
-        # Create a brief ID (actual brief creation would go through BriefService)
-        brief_id = f"radar-brief-{uuid.uuid4().hex[:12]}"
+        opp = svc._store.get_opportunity(opportunity_id)
+
+        # Create a real brief via BriefService
+        from cc_deep_research.content_gen.brief_service import BriefService
+        from cc_deep_research.content_gen.models import OpportunityBrief
+
+        brief_id = f"brief_{uuid.uuid4().hex[:12]}"
+        opp_brief = OpportunityBrief(
+            brief_id=brief_id,
+            theme=context["title"],
+            goal=context["topic"] or "",
+            content_objective=context["context"] or "",
+            primary_audience_segment="",
+            problem_statements=[context["topic"]] if context["topic"] else [],
+            research_hypotheses=[context["recommended_action"]] if context["recommended_action"] else [],
+        )
+
+        brief_svc = BriefService()
+        brief = brief_svc.create_from_opportunity(opp_brief)
+        managed_brief_id = brief.brief_id
 
         # Link the workflow
         svc.link_workflow(
             opportunity_id=opportunity_id,
             workflow_type="brief",
-            workflow_id=brief_id,
+            workflow_id=managed_brief_id,
         )
 
-        # Record feedback
+        # Record feedback with real workflow metadata
+        feedback_metadata = {
+            "sub_type": "brief",
+            "brief_id": managed_brief_id,
+            "opportunity_title": context["title"],
+            "opportunity_type": opp.opportunity_type.value if opp else None,
+        }
         svc.record_feedback(
             opportunity_id=opportunity_id,
             feedback_type="converted_to_content",
-            metadata={
-                "sub_type": "brief",
-                "brief_id": brief_id,
-                "opportunity_title": context["title"],
-            },
+            metadata=feedback_metadata,
         )
 
         _emit_radar_event(
@@ -402,12 +441,12 @@ def register_radar_routes(
             status="launched",
             metadata={
                 "opportunity_id": opportunity_id,
-                "brief_id": brief_id,
+                "brief_id": managed_brief_id,
             },
         )
 
         return JSONResponse(content={
-            "brief_id": brief_id,
+            "brief_id": managed_brief_id,
             "opportunity_id": opportunity_id,
         }, status_code=201)
 
@@ -431,8 +470,21 @@ def register_radar_routes(
                 content={"error": "Opportunity not found"},
             )
 
-        # Create a backlog item ID (actual backlog creation would go through BacklogService)
-        backlog_item_id = f"radar-backlog-{uuid.uuid4().hex[:12]}"
+        opp = svc._store.get_opportunity(opportunity_id)
+
+        # Create a real backlog item via BacklogService
+        from cc_deep_research.content_gen.backlog_service import BacklogService
+
+        backlog_svc = BacklogService()
+        item = backlog_svc.create_item(
+            title=context["title"],
+            one_line_summary=context["one_liner"] or "",
+            raw_idea=context["raw_idea"] or "",
+            source=f"radar:{opportunity_id}",
+            source_theme=str(opp.opportunity_type.value) if opp and opp.opportunity_type else "",
+            selection_reasoning=f"From Radar: {context.get('raw_idea', '')}",
+        )
+        backlog_item_id = item.idea_id
 
         # Link the workflow
         svc.link_workflow(
@@ -441,15 +493,17 @@ def register_radar_routes(
             workflow_id=backlog_item_id,
         )
 
-        # Record feedback
+        # Record feedback with real workflow metadata
+        feedback_metadata = {
+            "sub_type": "backlog_item",
+            "backlog_item_id": backlog_item_id,
+            "opportunity_title": context["title"],
+            "opportunity_type": opp.opportunity_type.value if opp and opp.opportunity_type else None,
+        }
         svc.record_feedback(
             opportunity_id=opportunity_id,
             feedback_type="converted_to_content",
-            metadata={
-                "sub_type": "backlog_item",
-                "backlog_item_id": backlog_item_id,
-                "opportunity_title": context["title"],
-            },
+            metadata=feedback_metadata,
         )
 
         _emit_radar_event(
@@ -499,6 +553,9 @@ def register_radar_routes(
         )
 
         # Record feedback
+        opp_type_val = None
+        if hasattr(detail["opportunity"], "opportunity_type") and detail["opportunity"].opportunity_type:
+            opp_type_val = detail["opportunity"].opportunity_type.value
         svc.record_feedback(
             opportunity_id=opportunity_id,
             feedback_type="converted_to_content",
@@ -506,6 +563,7 @@ def register_radar_routes(
                 "sub_type": "content_pipeline",
                 "pipeline_id": pipeline_id,
                 "opportunity_title": detail["opportunity"].title,
+                "opportunity_type": opp_type_val,
             },
         )
 
