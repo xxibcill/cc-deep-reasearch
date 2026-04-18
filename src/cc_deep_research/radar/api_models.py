@@ -96,3 +96,74 @@ class SourceListResponse(BaseModel):
 
     items: list[dict[str, Any]]
     count: int
+
+
+class LaunchResearchResponse(BaseModel):
+    """Response for launching a research run from an opportunity."""
+
+    research_run_id: str
+    opportunity_id: str
+    session_id: str | None = None
+
+
+class LaunchBriefResponse(BaseModel):
+    """Response for launching a brief from an opportunity."""
+
+    brief_id: str
+    opportunity_id: str
+
+
+class LaunchBacklogResponse(BaseModel):
+    """Response for adding opportunity to backlog."""
+
+    backlog_item_id: str
+    opportunity_id: str
+
+
+class LaunchContentPipelineResponse(BaseModel):
+    """Response for launching a content pipeline from an opportunity."""
+
+    pipeline_id: str
+    opportunity_id: str
+    note: str = "Content pipeline launch stubbed for V1"
+
+
+class StatusHistoryResponse(BaseModel):
+    """Response for status history of an opportunity."""
+
+    entries: list[dict[str, Any]]
+    count: int
+
+
+class RadarAnalyticsResponse(BaseModel):
+    """Response for radar analytics summary."""
+
+    total_opportunities: int
+    opportunities_by_status: dict[str, int]
+    opportunities_by_type: dict[str, int]
+    feedback_counts: dict[str, int]
+    conversion_rates: dict[str, float]
+    avg_time_to_action_hours: float | None
+    top_opportunity_types: list[tuple[str, int]]
+
+
+class ConversionFunnelResponse(BaseModel):
+    """Response for conversion funnel data."""
+
+    funnel: list[dict[str, Any]]
+    total: int
+
+
+class FeedbackTrendsResponse(BaseModel):
+    """Response for feedback trends data."""
+
+    daily_counts: dict[str, dict[str, int]]
+    days_back: int
+
+
+class ScoreDistributionResponse(BaseModel):
+    """Response for score distribution."""
+
+    distribution: dict[str, int]
+    total: int
+    avg_score: float

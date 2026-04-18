@@ -947,3 +947,138 @@ export async function recordRadarOpportunityFeedback(
     metadata: metadata ?? {},
   });
 }
+
+export interface LaunchResearchResponse {
+  research_run_id: string;
+  opportunity_id: string;
+  session_id: string | null;
+}
+
+export interface LaunchBriefResponse {
+  brief_id: string;
+  opportunity_id: string;
+}
+
+export interface LaunchBacklogResponse {
+  backlog_item_id: string;
+  opportunity_id: string;
+}
+
+export interface LaunchContentPipelineResponse {
+  pipeline_id: string;
+  opportunity_id: string;
+  note: string;
+}
+
+export interface StatusHistoryEntry {
+  id: string;
+  opportunity_id: string;
+  previous_status: string;
+  new_status: string;
+  reason: string | null;
+  changed_at: string;
+}
+
+export interface StatusHistoryResult {
+  entries: StatusHistoryEntry[];
+  count: number;
+}
+
+export async function launchRadarOpportunityResearch(
+  opportunityId: string
+): Promise<LaunchResearchResponse> {
+  const response = await apiClient.post<LaunchResearchResponse>(
+    `/radar/opportunities/${opportunityId}/launch-research`,
+    {}
+  );
+  return response.data;
+}
+
+export async function launchRadarOpportunityBrief(
+  opportunityId: string
+): Promise<LaunchBriefResponse> {
+  const response = await apiClient.post<LaunchBriefResponse>(
+    `/radar/opportunities/${opportunityId}/launch-brief`,
+    {}
+  );
+  return response.data;
+}
+
+export async function launchRadarOpportunityBacklog(
+  opportunityId: string
+): Promise<LaunchBacklogResponse> {
+  const response = await apiClient.post<LaunchBacklogResponse>(
+    `/radar/opportunities/${opportunityId}/launch-backlog`,
+    {}
+  );
+  return response.data;
+}
+
+export async function launchRadarOpportunityContentPipeline(
+  opportunityId: string
+): Promise<LaunchContentPipelineResponse> {
+  const response = await apiClient.post<LaunchContentPipelineResponse>(
+    `/radar/opportunities/${opportunityId}/launch-content-pipeline`,
+    {}
+  );
+  return response.data;
+}
+
+export async function getRadarOpportunityHistory(
+  opportunityId: string
+): Promise<StatusHistoryResult> {
+  const response = await apiClient.get<StatusHistoryResult>(
+    `/radar/opportunities/${opportunityId}/history`
+  );
+  return response.data;
+}
+
+export interface RadarAnalytics {
+  total_opportunities: number;
+  opportunities_by_status: Record<string, number>;
+  opportunities_by_type: Record<string, number>;
+  feedback_counts: Record<string, number>;
+  conversion_rates: Record<string, number>;
+  avg_time_to_action_hours: number | null;
+  top_opportunity_types: [string, number][];
+}
+
+export interface ConversionFunnel {
+  funnel: { stage: string; label: string; count: number }[];
+  total: number;
+}
+
+export interface ScoreDistribution {
+  distribution: Record<string, number>;
+  total: number;
+  avg_score: number;
+}
+
+export interface FeedbackTrends {
+  daily_counts: Record<string, Record<string, number>>;
+  days_back: number;
+}
+
+export async function getRadarAnalytics(): Promise<RadarAnalytics> {
+  const response = await apiClient.get<RadarAnalytics>('/radar/analytics');
+  return response.data;
+}
+
+export async function getRadarConversionFunnel(): Promise<ConversionFunnel> {
+  const response = await apiClient.get<ConversionFunnel>('/radar/analytics/funnel');
+  return response.data;
+}
+
+export async function getRadarScoreDistribution(): Promise<ScoreDistribution> {
+  const response = await apiClient.get<ScoreDistribution>('/radar/analytics/score-distribution');
+  return response.data;
+}
+
+export async function getRadarFeedbackTrends(daysBack: number = 30): Promise<FeedbackTrends> {
+  const response = await apiClient.get<FeedbackTrends>('/radar/analytics/feedback-trends', {
+    params: { days_back: daysBack },
+  });
+  return response.data;
+}
+
+

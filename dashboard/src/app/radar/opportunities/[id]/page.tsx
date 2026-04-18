@@ -13,6 +13,10 @@ import {
   MessageSquare,
   ExternalLink,
   ChevronRight,
+  PlayCircle,
+  FileText,
+  ListChecks,
+  Loader2,
 } from 'lucide-react';
 import { Breadcrumb } from '@/components/ui/breadcrumb';
 import { Badge } from '@/components/ui/badge';
@@ -24,10 +28,15 @@ import {
   getRadarOpportunityDetail,
   updateRadarOpportunityStatus,
   recordRadarOpportunityFeedback,
+  launchRadarOpportunityResearch,
+  launchRadarOpportunityBrief,
+  launchRadarOpportunityBacklog,
+  getRadarOpportunityHistory,
   type OpportunityStatusUpdate,
   type FeedbackTypeInput,
 } from '@/lib/api';
 import type { OpportunityDetail as OpportunityDetailType, OpportunityStatus } from '@/types/radar';
+import type { StatusHistoryEntry } from '@/lib/api';
 
 const PRIORITY_CONFIG = {
   act_now: { label: 'Act Now', variant: 'destructive' as const },
@@ -101,6 +110,9 @@ export default function OpportunityDetailPage({
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [feedbackUpdating, setFeedbackUpdating] = useState(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
+  const [history, setHistory] = useState<StatusHistoryEntry[]>([]);
+  const [workflowLaunching, setWorkflowLaunching] = useState<string | null>(null);
+  const [launchMessage, setLaunchMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -109,9 +121,13 @@ export default function OpportunityDetailPage({
       setLoading(true);
       setError(null);
       try {
-        const data = await getRadarOpportunityDetail(id);
+        const [data, historyData] = await Promise.all([
+          getRadarOpportunityDetail(id),
+          getRadarOpportunityHistory(id),
+        ]);
         if (!mounted) return;
         setDetail(data);
+        setHistory(historyData.entries);
       } catch (err) {
         console.error('Failed to load opportunity detail:', err);
         if (mounted) {
@@ -159,6 +175,81 @@ export default function OpportunityDetailPage({
       setFeedbackError(getApiErrorMessage(err, 'Failed to record feedback.'));
     } finally {
       setFeedbackUpdating(false);
+    }
+  };
+
+  const handleLaunchResearch = async () => {
+    if (workflowLaunching) return;
+    setWorkflowLaunching('research');
+    setLaunchMessage(null);
+    try {
+      const result = await launchRadarOpportunityResearch(id);
+      setLaunchMessage({
+        type: 'success',
+        text: `Research run launched: ${result.research_run_id}`,
+      });
+      // Refresh detail to get updated workflow links
+      const updatedDetail = await getRadarOpportunityDetail(id);
+      setDetail(updatedDetail);
+      // Refresh history
+      const historyData = await getRadarOpportunityHistory(id);
+      setHistory(historyData.entries);
+    } catch (err) {
+      console.error('Failed to launch research:', err);
+      setLaunchMessage({
+        type: 'error',
+        text: getApiErrorMessage(err, 'Failed to launch research.'),
+      });
+    } finally {
+      setWorkflowLaunching(null);
+    }
+  };
+
+  const handleLaunchBrief = async () => {
+    if (workflowLaunching) return;
+    setWorkflowLaunching('brief');
+    setLaunchMessage(null);
+    try {
+      const result = await launchRadarOpportunityBrief(id);
+      setLaunchMessage({
+        type: 'success',
+        text: `Brief created: ${result.brief_id}`,
+      });
+      // Refresh detail to get updated workflow links
+      const updatedDetail = await getRadarOpportunityDetail(id);
+      setDetail(updatedDetail);
+    } catch (err) {
+      console.error('Failed to create brief:', err);
+      setLaunchMessage({
+        type: 'error',
+        text: getApiErrorMessage(err, 'Failed to create brief.'),
+      });
+    } finally {
+      setWorkflowLaunching(null);
+    }
+  };
+
+  const handleLaunchBacklog = async () => {
+    if (workflowLaunching) return;
+    setWorkflowLaunching('backlog');
+    setLaunchMessage(null);
+    try {
+      const result = await launchRadarOpportunityBacklog(id);
+      setLaunchMessage({
+        type: 'success',
+        text: `Added to backlog: ${result.backlog_item_id}`,
+      });
+      // Refresh detail to get updated workflow links
+      const updatedDetail = await getRadarOpportunityDetail(id);
+      setDetail(updatedDetail);
+    } catch (err) {
+      console.error('Failed to add to backlog:', err);
+      setLaunchMessage({
+        type: 'error',
+        text: getApiErrorMessage(err, 'Failed to add to backlog.'),
+      });
+    } finally {
+      setWorkflowLaunching(null);
     }
   };
 
@@ -346,6 +437,38 @@ export default function OpportunityDetailPage({
                 </CardContent>
               </Card>
             )}
+
+            {/* Status History */}
+            {history.length > 0 && (
+              <Card className="rounded-[1.45rem]">
+                <CardHeader className="border-b border-border/70">
+                  <CardTitle className="text-[1.4rem]">Status History</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <div className="space-y-3">
+                    {history.map((entry) => (
+                      <div key={entry.id} className="flex items-center gap-3 text-sm">
+                        <div className="flex items-center gap-1">
+                          <Badge variant="outline" className="text-[0.62rem] capitalize">
+                            {entry.previous_status.replace(/_/g, ' ')}
+                          </Badge>
+                          <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                          <Badge variant="secondary" className="text-[0.62rem] capitalize">
+                            {entry.new_status.replace(/_/g, ' ')}
+                          </Badge>
+                        </div>
+                        <span className="text-muted-foreground">
+                          {new Date(entry.changed_at).toLocaleDateString()}
+                        </span>
+                        {entry.reason && (
+                          <span className="text-xs text-muted-foreground">({entry.reason})</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           {/* Sidebar */}
@@ -378,18 +501,82 @@ export default function OpportunityDetailPage({
                 <CardTitle className="text-[1.4rem]">Actions</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 pt-4">
-                {transitions.map(({ label, icon: Icon, status: newStatus }) => (
+                {launchMessage && (
+                  <div
+                    className={`rounded-lg p-3 text-sm ${
+                      launchMessage.type === 'success'
+                        ? 'bg-success/10 border border-success/30 text-success'
+                        : 'bg-destructive/10 border border-destructive/30 text-destructive'
+                    }`}
+                  >
+                    {launchMessage.text}
+                  </div>
+                )}
+
+                {/* Workflow Launch Buttons */}
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                    Convert to Workflow
+                  </p>
                   <Button
-                    key={newStatus}
                     variant="outline"
                     className="w-full justify-start"
-                    onClick={() => void handleStatusChange(newStatus)}
-                    disabled={statusUpdating}
+                    onClick={() => void handleLaunchResearch()}
+                    disabled={workflowLaunching === 'research'}
                   >
-                    <Icon className="mr-2 h-4 w-4" />
-                    {label}
+                    {workflowLaunching === 'research' ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <PlayCircle className="mr-2 h-4 w-4" />
+                    )}
+                    Launch Research
                   </Button>
-                ))}
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => void handleLaunchBrief()}
+                    disabled={workflowLaunching === 'brief'}
+                  >
+                    {workflowLaunching === 'brief' ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <FileText className="mr-2 h-4 w-4" />
+                    )}
+                    Create Brief
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => void handleLaunchBacklog()}
+                    disabled={workflowLaunching === 'backlog'}
+                  >
+                    {workflowLaunching === 'backlog' ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <ListChecks className="mr-2 h-4 w-4" />
+                    )}
+                    Add to Backlog
+                  </Button>
+                </div>
+
+                {/* Divider */}
+                <div className="border-t border-border/50 pt-3">
+                  <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground mb-2">
+                    Change Status
+                  </p>
+                  {transitions.map(({ label, icon: Icon, status: newStatus }) => (
+                    <Button
+                      key={newStatus}
+                      variant="outline"
+                      className="w-full justify-start"
+                      onClick={() => void handleStatusChange(newStatus)}
+                      disabled={statusUpdating}
+                    >
+                      <Icon className="mr-2 h-4 w-4" />
+                      {label}
+                    </Button>
+                  ))}
+                </div>
               </CardContent>
             </Card>
 

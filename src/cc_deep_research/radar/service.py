@@ -20,6 +20,7 @@ from cc_deep_research.radar.models import (
     OpportunityType,
     RadarSource,
     RawSignal,
+    StatusHistoryEntry,
     WorkflowLink,
     WorkflowType,
 )
@@ -263,19 +264,40 @@ class RadarService:
         self,
         opportunity_id: str,
         status: str,
+        *,
+        reason: str | None = None,
     ) -> Opportunity | None:
         """Update the status of an opportunity.
+
+        Also records the status change in the history log.
 
         Args:
             opportunity_id: The opportunity to update.
             status: New status value.
+            reason: Optional reason for the change.
 
         Returns:
             Updated Opportunity or None if not found.
         """
+        opp = self._store.get_opportunity(opportunity_id)
+        if opp is None:
+            return None
+
+        previous_status = opp.status
+        new_status = OpportunityStatus(status)
+
+        # Record history entry
+        history_entry = StatusHistoryEntry(
+            opportunity_id=opportunity_id,
+            previous_status=previous_status,
+            new_status=new_status,
+            reason=reason,
+        )
+        self._store.add_status_history_entry(history_entry)
+
         return self._store.update_opportunity(
             opportunity_id,
-            {"status": OpportunityStatus(status)},
+            {"status": new_status},
         )
 
     # -- Score operations ----------------------------------------------------
@@ -392,3 +414,105 @@ class RadarService:
         )
         self._store.add_workflow_link(link)
         return link
+
+    # -- Status history operations --------------------------------------------
+
+    def get_status_history(self, opportunity_id: str) -> list[StatusHistoryEntry]:
+        """Get the status history for an opportunity.
+
+        Args:
+            opportunity_id: The opportunity to get history for.
+
+        Returns:
+            List of status history entries, oldest first.
+        """
+        entries = self._store.get_status_history_for_opportunity(opportunity_id)
+        entries.sort(key=lambda e: e.changed_at)
+        return entries
+
+    # -- Workflow launch helpers ----------------------------------------------
+
+    def get_opportunity_context_for_research(
+        self,
+        opportunity_id: str,
+    ) -> dict[str, Any] | None:
+        """Build a research query from opportunity context.
+
+        Extracts title, summary, and why_it_matters to construct
+        a research query that can be used to launch a research run.
+
+        Args:
+            opportunity_id: The opportunity to build context from.
+
+        Returns:
+            Dict with query, title, summary, why_it_matters, or None if not found.
+        """
+        opp = self._store.get_opportunity(opportunity_id)
+        if opp is None:
+            return None
+
+        # Build research query from opportunity context
+        query_parts = [opp.title]
+        if opp.summary:
+            query_parts.append(f": {opp.summary}")
+        if opp.why_it_matters:
+            query_parts.append(f" - {opp.why_it_matters}")
+
+        return {
+            "query": "".join(query_parts),
+            "title": opp.title,
+            "summary": opp.summary,
+            "why_it_matters": opp.why_it_matters,
+            "recommended_action": opp.recommended_action,
+            "opportunity_type": opp.opportunity_type.value,
+            "total_score": opp.total_score,
+        }
+
+    def get_opportunity_context_for_brief(
+        self,
+        opportunity_id: str,
+    ) -> dict[str, Any] | None:
+        """Build brief context from opportunity.
+
+        Args:
+            opportunity_id: The opportunity to build context from.
+
+        Returns:
+            Dict with title, topic, context, or None if not found.
+        """
+        opp = self._store.get_opportunity(opportunity_id)
+        if opp is None:
+            return None
+
+        return {
+            "title": opp.title,
+            "topic": opp.summary,
+            "context": opp.why_it_matters or "",
+            "opportunity_type": opp.opportunity_type.value,
+            "recommended_action": opp.recommended_action,
+        }
+
+    def get_opportunity_context_for_backlog(
+        self,
+        opportunity_id: str,
+    ) -> dict[str, Any] | None:
+        """Build backlog item context from opportunity.
+
+        Args:
+            opportunity_id: The opportunity to build context from.
+
+        Returns:
+            Dict with title, one_liner, raw_idea, why_now, or None if not found.
+        """
+        opp = self._store.get_opportunity(opportunity_id)
+        if opp is None:
+            return None
+
+        return {
+            "title": opp.title,
+            "one_liner": opp.summary,
+            "raw_idea": f"{opp.summary}\n\n{opp.why_it_matters or ''}".strip(),
+            "why_now": opp.recommended_action or "",
+            "opportunity_id": opportunity_id,
+        }
+

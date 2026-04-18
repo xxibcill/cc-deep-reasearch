@@ -41,6 +41,8 @@ from cc_deep_research.radar.models import (
     RadarSourceList,
     RawSignal,
     RawSignalList,
+    StatusHistoryEntry,
+    StatusHistoryList,
     WorkflowLink,
     WorkflowLinkList,
 )
@@ -62,6 +64,7 @@ FILE_NAMES = {
     "signal_links": "radar_signal_links.yaml",
     "feedback": "radar_feedback.yaml",
     "workflow_links": "radar_workflow_links.yaml",
+    "status_history": "radar_status_history.yaml",
 }
 
 
@@ -554,3 +557,39 @@ class RadarStore:
         """Get all workflow links for an opportunity."""
         links = self.load_workflow_links()
         return [link for link in links.links if link.opportunity_id == opportunity_id]
+
+    # -- Status history operations -------------------------------------------
+
+    def _status_history_path(self) -> Path:
+        return self._radar_dir / FILE_NAMES["status_history"]
+
+    def load_status_history(self) -> StatusHistoryList:
+        """Load all status history entries from disk."""
+        path = self._status_history_path()
+        if not path.exists():
+            return StatusHistoryList()
+        data = yaml.safe_load(path.read_text()) or {}
+        return StatusHistoryList.model_validate(data)
+
+    def save_status_history(self, entries: list[StatusHistoryEntry]) -> None:
+        """Persist all status history entries to disk."""
+        path = self._status_history_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        container = StatusHistoryList(entries=entries, last_updated=_now_iso())
+        data = _serialize_model_to_dict(container)
+        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+
+    def add_status_history_entry(self, entry: StatusHistoryEntry) -> None:
+        """Append a status history entry and persist."""
+        history = self.load_status_history()
+        history.entries.append(entry)
+        self.save_status_history(history.entries)
+
+    def get_status_history_for_opportunity(
+        self,
+        opportunity_id: str,
+    ) -> list[StatusHistoryEntry]:
+        """Get all status history entries for an opportunity."""
+        history = self.load_status_history()
+        return [e for e in history.entries if e.opportunity_id == opportunity_id]
+

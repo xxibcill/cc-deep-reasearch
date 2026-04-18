@@ -297,6 +297,34 @@ class OpportunityScore(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# StatusHistoryEntry
+# ---------------------------------------------------------------------------
+
+
+class StatusHistoryEntry(BaseModel):
+    """Records a status transition for an opportunity.
+
+    Each time an opportunity's status changes, a new entry is appended to
+    provide a full audit trail for analytics and ranking improvements.
+
+    Attributes:
+        id: Unique identifier for this history entry.
+        opportunity_id: The opportunity that changed status.
+        previous_status: The status before the transition.
+        new_status: The status after the transition.
+        reason: Optional reason for the change (e.g., "user_action", "auto_expire").
+        changed_at: When the transition occurred.
+    """
+
+    id: str = Field(default_factory=lambda: _generate_id("sh"))
+    opportunity_id: str
+    previous_status: OpportunityStatus
+    new_status: OpportunityStatus
+    reason: str | None = None
+    changed_at: str = Field(default_factory=_now_iso)
+
+
+# ---------------------------------------------------------------------------
 # OpportunityFeedback
 # ---------------------------------------------------------------------------
 
@@ -474,3 +502,40 @@ class WorkflowLinkList(BaseModel):
 
     links: list[WorkflowLink] = Field(default_factory=list)
     last_updated: str = Field(default_factory=_now_iso)
+
+
+class StatusHistoryList(BaseModel):
+    """Container for storing all status history entries."""
+
+    entries: list[StatusHistoryEntry] = Field(default_factory=list)
+    last_updated: str = Field(default_factory=_now_iso)
+
+
+# ---------------------------------------------------------------------------
+# Analytics models
+# ---------------------------------------------------------------------------
+
+
+class RadarAnalytics(BaseModel):
+    """Aggregated analytics for the Radar feature.
+
+    Provides summary statistics for operators to understand radar performance
+    and tune the system over time.
+
+    Attributes:
+        total_opportunities: Total number of opportunities ever created.
+        opportunities_by_status: Count of opportunities per status.
+        opportunities_by_type: Count of opportunities per type.
+        feedback_counts: Count of each feedback type.
+        conversion_rates: Percentage of opportunities that received each workflow type.
+        avg_time_to_action: Average hours from creation to first action.
+        top_opportunity_types: Most common opportunity types by count.
+    """
+
+    total_opportunities: int = 0
+    opportunities_by_status: dict[str, int] = Field(default_factory=dict)
+    opportunities_by_type: dict[str, int] = Field(default_factory=dict)
+    feedback_counts: dict[str, int] = Field(default_factory=dict)
+    conversion_rates: dict[str, float] = Field(default_factory=dict)
+    avg_time_to_action_hours: float | None = None
+    top_opportunity_types: list[tuple[str, int]] = Field(default_factory=list)
