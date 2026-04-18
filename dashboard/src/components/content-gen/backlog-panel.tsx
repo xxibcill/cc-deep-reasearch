@@ -136,7 +136,10 @@ export function BacklogPanel({
             type="button"
             variant="ghost"
             size="icon"
-            onClick={() => setStartConfirm({ ideaId: item.idea_id, title: backlogTitle(item) })}
+            onClick={(e) => {
+              e.stopPropagation()
+              setStartConfirm({ ideaId: item.idea_id, title: backlogTitle(item) })
+            }}
             disabled={!onStartProduction || busyKey === `${rowKey}-start`}
             className="h-8 w-8 text-primary/70 transition-all duration-200 hover:-translate-y-0.5 hover:text-primary motion-reduce:transition-none"
             title="Start Production"
@@ -148,7 +151,8 @@ export function BacklogPanel({
           type="button"
           variant="ghost"
           size="icon"
-          onClick={() => {
+          onClick={(e) => {
+            e.stopPropagation()
             if (onSelect) {
               void runAction(`${rowKey}-select`, () => onSelect(item.idea_id))
             }
@@ -163,7 +167,8 @@ export function BacklogPanel({
           type="button"
           variant="ghost"
           size="icon"
-          onClick={() => {
+          onClick={(e) => {
+            e.stopPropagation()
             if (onArchive) {
               void runAction(`${rowKey}-archive`, () => onArchive(item.idea_id))
             }
@@ -178,7 +183,8 @@ export function BacklogPanel({
           type="button"
           variant="ghost"
           size="icon"
-          onClick={() => {
+          onClick={(e) => {
+            e.stopPropagation()
             if (onDelete) {
               setDeleteConfirm({ ideaId: item.idea_id, title: backlogTitle(item) })
             }
@@ -313,7 +319,7 @@ export function BacklogPanel({
           </Button>
         </div>
       ) : viewMode === 'grid' ? (
-        <>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {filteredItems.map((item) => {
             const rowKey = item.idea_id
 
@@ -421,6 +427,7 @@ export function BacklogPanel({
                     <NativeSelect
                       value={item.status}
                       onChange={(event) => {
+                        event.stopPropagation()
                         if (onUpdateStatus) {
                           void runAction(`${rowKey}-status`, async () =>
                             onUpdateStatus(item.idea_id, { status: event.target.value }),
@@ -444,7 +451,7 @@ export function BacklogPanel({
               </article>
             )
           })}
-        </>
+        </div>
       ) : (
         <DataTable
           columns={[

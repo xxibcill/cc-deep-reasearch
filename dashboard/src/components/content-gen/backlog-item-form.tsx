@@ -244,6 +244,7 @@ export function BacklogItemForm({
 
       return cloneElement(trigger, {
         onClick: (event: React.MouseEvent<HTMLElement>) => {
+          event.stopPropagation()
           if (typeof originalOnClick === 'function') {
             ;(originalOnClick as (e: React.MouseEvent<HTMLElement>) => void)(event)
           }
