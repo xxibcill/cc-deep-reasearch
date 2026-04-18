@@ -380,7 +380,7 @@ class ScoreCalculator:
         from cc_deep_research.content_gen.models import ContentPillar
 
         keywords: set[str] = set()
-        keyword_set = set(k.lower() for k in _FALLBACK_KEYWORDS)
+        keyword_set = {k.lower() for k in _FALLBACK_KEYWORDS}
 
         # Pull niche words
         if hasattr(memory, "niche") and memory.niche:
@@ -902,11 +902,10 @@ class RadarEngine:
                 continue
 
             # Check against existing signals
-            is_dup = False
-            if sig.content_hash and sig.content_hash in existing_hashes:
-                is_dup = True
-            elif sig.external_id and sig.external_id in source_external_ids:
-                is_dup = True
+            is_dup = (
+                (sig.content_hash and sig.content_hash in existing_hashes)
+                or (sig.external_id and sig.external_id in source_external_ids)
+            )
 
             if not is_dup:
                 unique_signals.append(sig)

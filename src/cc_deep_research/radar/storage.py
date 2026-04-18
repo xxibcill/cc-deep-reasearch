@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from cc_deep_research.config import get_default_config_path
-from cc_deep_research.radar._path_utils import allowed_prefixes, is_safe_path
+from cc_deep_research.radar._path_utils import is_safe_path
 from cc_deep_research.radar.models import (
     FeedbackType,
     FreshnessState,
@@ -515,7 +515,7 @@ class RadarStore:
             Dict mapping FeedbackType to count.
         """
         cutoff = (datetime.now(tz=UTC) - timedelta(days=days_back)).isoformat()
-        counts: dict[FeedbackType, int] = {ft: 0 for ft in FeedbackType}
+        counts: dict[FeedbackType, int] = dict.fromkeys(FeedbackType, 0)
         for fb in self.load_feedback().feedback_entries:
             if fb.created_at < cutoff:
                 continue

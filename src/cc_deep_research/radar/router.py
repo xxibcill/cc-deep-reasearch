@@ -31,7 +31,12 @@ from cc_deep_research.radar.api_models import (
     StatusHistoryResponse,
     UpdateOpportunityStatusRequest,
 )
-from cc_deep_research.radar.models import FreshnessState, OpportunityStatus, OpportunityType, SourceStatus
+from cc_deep_research.radar.models import (
+    FreshnessState,
+    OpportunityStatus,
+    OpportunityType,
+    SourceStatus,
+)
 from cc_deep_research.radar.service import RadarService
 from cc_deep_research.radar.telemetry import RadarTelemetryStore
 
@@ -312,12 +317,12 @@ def register_radar_routes(
         opp = svc._store.get_opportunity(opportunity_id)
 
         # Create a real research run via ResearchRunService
-        from cc_deep_research.research_runs.service import ResearchRunService
         from cc_deep_research.research_runs.models import (
-            ResearchRunRequest,
             ResearchDepth,
             ResearchOutputFormat,
+            ResearchRunRequest,
         )
+        from cc_deep_research.research_runs.service import ResearchRunService
 
         req = ResearchRunRequest(
             query=f"Radar Opportunity: {context['title']}",

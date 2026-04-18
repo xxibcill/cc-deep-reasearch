@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from cc_deep_research.config import get_default_config_path
-from cc_deep_research.radar._path_utils import allowed_prefixes, is_safe_path
+from cc_deep_research.radar._path_utils import is_safe_path
 from cc_deep_research.radar.models import (
     FeedbackType,
     Opportunity,
