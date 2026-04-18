@@ -33,7 +33,7 @@ export function RulesForReviewPanel() {
     try {
       setLoading(true)
       const data = await getRulesForReview()
-      setRules(data.items ?? [])
+      setRules(data)
     } catch {
       // governance is optional, don't block on errors
     } finally {
