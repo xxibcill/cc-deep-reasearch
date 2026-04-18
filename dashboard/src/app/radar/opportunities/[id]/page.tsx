@@ -218,6 +218,8 @@ export default function OpportunityDetailPage({
       // Refresh detail to get updated workflow links
       const updatedDetail = await getRadarOpportunityDetail(id);
       setDetail(updatedDetail);
+      const historyData = await getRadarOpportunityHistory(id);
+      setHistory(historyData.entries);
     } catch (err) {
       console.error('Failed to create brief:', err);
       setLaunchMessage({
@@ -242,6 +244,8 @@ export default function OpportunityDetailPage({
       // Refresh detail to get updated workflow links
       const updatedDetail = await getRadarOpportunityDetail(id);
       setDetail(updatedDetail);
+      const historyData = await getRadarOpportunityHistory(id);
+      setHistory(historyData.entries);
     } catch (err) {
       console.error('Failed to add to backlog:', err);
       setLaunchMessage({

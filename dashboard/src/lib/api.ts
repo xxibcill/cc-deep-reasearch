@@ -951,6 +951,7 @@ export async function recordRadarOpportunityFeedback(
 export interface LaunchResearchResponse {
   research_run_id: string;
   opportunity_id: string;
+  status: string;
   session_id: string | null;
 }
 
@@ -967,7 +968,7 @@ export interface LaunchBacklogResponse {
 export interface LaunchContentPipelineResponse {
   pipeline_id: string;
   opportunity_id: string;
-  note: string;
+  status: string;
 }
 
 export interface StatusHistoryEntry {
@@ -1080,5 +1081,4 @@ export async function getRadarFeedbackTrends(daysBack: number = 30): Promise<Fee
   });
   return response.data;
 }
-
 
