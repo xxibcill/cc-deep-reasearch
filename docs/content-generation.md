@@ -19,19 +19,19 @@ When editing prompts, update the prompt docstring and the shared registry togeth
 
 | Stage | Prompt Module | Contract Version | Failure Mode |
 |-------|--------------|------------------|--------------|
-| Opportunity planning | `prompts/opportunity.py` | 1.0.0 | fail-fast |
-| Backlog build | `prompts/backlog.py` | 1.0.0 | tolerant/degraded |
-| Idea scoring | `prompts/backlog.py` | 1.0.0 | tolerant/degraded |
-| Angle generation | `prompts/angle.py` | 1.0.0 | fail-fast |
-| Research pack | `prompts/research_pack.py` | 1.1.0 | tolerant |
-| Argument map | `prompts/argument_map.py` | 1.0.0 | fail-fast |
-| Scripting (all 10 steps) | `prompts/scripting.py` | 1.1.0 | mostly fail-fast |
+| Opportunity planning | `prompts/opportunity.py` | 1.2.0 | fail-fast |
+| Backlog build | `prompts/backlog.py` | 1.2.0 | tolerant/degraded |
+| Idea scoring | `prompts/backlog.py` | 1.2.0 | tolerant/degraded |
+| Angle generation | `prompts/angle.py` | 1.1.0 | fail-fast |
+| Research pack | `prompts/research_pack.py` | 1.3.0 | tolerant |
+| Argument map | `prompts/argument_map.py` | 1.1.0 | fail-fast |
+| Scripting (all 10 steps) | `prompts/scripting.py` | 1.2.0 | mostly fail-fast |
 | Visual translation | `prompts/visual.py` | 1.0.0 | fail-fast |
 | Production brief | `prompts/production.py` | 1.0.0 | tolerant |
-| Packaging | `prompts/packaging.py` | 1.0.0 | fail-fast |
-| QC review | `prompts/qc.py` | 1.1.0 | human-gated |
+| Packaging | `prompts/packaging.py` | 1.1.0 | fail-fast |
+| QC review | `prompts/qc.py` | 1.2.0 | human-gated |
 | Publish queue | `prompts/publish.py` | 1.0.0 | tolerant |
-| Performance analysis | `prompts/performance.py` | 1.0.0 | tolerant |
+| Performance analysis | `prompts/performance.py` | 1.1.0 | tolerant |
 | Shared registry/models | `models.py` | 1.3.0 | n/a |
 
 The models in `models.py` define the Python types that result from parsing LLM output. Major changes to prompt output formats should be accompanied by:
@@ -650,9 +650,9 @@ CLI:
 cc-deep-research content-gen production --from-file visual.json -o production.json
 ```
 
-**P5-T2: Format-Aware Planning Depth:**
+**P5-T2: Format-Aware Planning Depth:** *(planned, not yet implemented)*
 
-For formats where `use_combined_execution_brief=True` (newsletter, article, thread, carousel), the system generates a combined `VisualProductionExecutionBrief` instead of separate visual and production artifacts. This:
+For formats where `use_combined_execution_brief=True` (newsletter, article, thread, carousel), the system will generate a combined `VisualProductionExecutionBrief` instead of separate visual and production artifacts. This:
 
 - Combines visual mapping and execution planning into one reusable execution brief
 - Reduces planning overhead for light assets (simple talking-head shorts, text-based formats)
@@ -660,9 +660,9 @@ For formats where `use_combined_execution_brief=True` (newsletter, article, thre
 
 The content type profile's `visual_complexity` and `production_depth` fields determine which path is taken.
 
-**P5-T3: Fallback And Asset Reuse Planning:**
+**P5-T3: Fallback And Asset Reuse Planning:** *(planned, not yet implemented)*
 
-The combined execution brief includes:
+The combined execution brief will include:
 
 - `location_fallback`: Alternate location if primary is unavailable
 - `prop_fallbacks`: Alternate prop options
@@ -1032,6 +1032,10 @@ Practical impact:
 
 The search-query builder now uses labeled retrieval families with current-year freshness logic, but it is still a small fixed plan rather than a dynamic fanout strategy.
 
+### P5-T2 and P5-T3 (combined execution brief, fallback planning) are not yet implemented
+
+The docs describe a `VisualProductionExecutionBrief` that combines visual and production planning for light formats, with fields like `location_fallback`, `prop_fallbacks`, `existing_assets`, and `asset_reuse_plan`. This model does not exist yet. Light formats (newsletter, article, thread, carousel) currently still use the standard separate visual and production brief path.
+
 ## Extension Opportunities
 
 The most obvious next improvements are:
@@ -1041,6 +1045,7 @@ The most obvious next improvements are:
 3. Persist backlog outputs automatically when operators request a managed workflow.
 4. Expand tolerant-stage metadata so production, publish, and performance stages can record degraded empty-response outcomes more explicitly.
 5. Expand retrieval planning beyond the fixed expert-query family set when broader fanout is needed.
+6. Implement P5-T2 combined execution brief and P5-T3 fallback/asset-reuse planning for light formats.
 
 ## Source Map
 
