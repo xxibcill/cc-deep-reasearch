@@ -51,14 +51,14 @@ class ParallelSourceCollectionStrategy:
         config: Config,
         monitor: ResearchMonitor,
         session_state: OrchestratorSessionState,
-        num_researchers: int,
+        max_concurrent_sources: int,
         hydrate_sources: Callable[[list[SearchResultItem], ResearchDepth], Awaitable[list[SearchResultItem]]],
         aggregate_sources: Callable[[list[SearchResultItem]], list[SearchResultItem]],
     ) -> None:
         self._config = config
         self._monitor = monitor
         self._session_state = session_state
-        self._num_researchers = num_researchers
+        self._max_concurrent_sources = max_concurrent_sources
         self._hydrate_sources = hydrate_sources
         self._aggregate_sources = aggregate_sources
 
@@ -80,7 +80,7 @@ class ParallelSourceCollectionStrategy:
 
         max_results_per_researcher = (
             min_sources or self._config.research.min_sources.__dict__[depth.value]
-        ) // self._num_researchers
+        ) // self._max_concurrent_sources
 
         provider_warnings = self._build_provider_warnings()
         self._session_state.set_provider_metadata(

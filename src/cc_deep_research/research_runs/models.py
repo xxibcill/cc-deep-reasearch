@@ -67,8 +67,8 @@ class ResearchRunRequest(BaseModel):
     search_providers: list[str] | None = Field(default=None)
     cross_reference_enabled: bool | None = Field(default=None)
     team_size: int | None = Field(default=None, ge=2, le=8)
-    parallel_mode: bool | None = Field(default=None)
-    num_researchers: int | None = Field(default=None, ge=1, le=8)
+    concurrent_source_collection: bool | None = Field(default=None)
+    max_concurrent_sources: int | None = Field(default=None, ge=1, le=8)
     realtime_enabled: bool = Field(default=False)
     pdf_enabled: bool = Field(default=False)
     workflow: ResearchWorkflow = Field(

@@ -292,7 +292,7 @@ class SourceCollectionService:
         config: Config,
         monitor: ResearchMonitor,
         session_state: OrchestratorSessionState,
-        num_researchers: int,
+        max_concurrent_sources: int,
     ) -> None:
         self._config = config
         self._monitor = monitor
@@ -310,7 +310,7 @@ class SourceCollectionService:
             config=config,
             monitor=monitor,
             session_state=session_state,
-            num_researchers=num_researchers,
+            max_concurrent_sources=max_concurrent_sources,
             hydrate_sources=self._hydrate_sources,
             aggregate_sources=self._aggregation.aggregate_parallel_sources,
         )

@@ -48,15 +48,15 @@ class OrchestratorRuntime:
         *,
         config: Config,
         monitor: ResearchMonitor,
-        parallel_mode: bool,
-        num_researchers: int,
+        concurrent_source_collection: bool,
+        max_concurrent_sources: int,
         llm_event_callback: Any = None,
         prompt_registry: PromptRegistry | None = None,
     ) -> None:
         self._config = config
         self._monitor = monitor
-        self._parallel_mode = parallel_mode
-        self._num_researchers = num_researchers
+        self._concurrent_source_collection = concurrent_source_collection
+        self._max_concurrent_sources = max_concurrent_sources
         self._llm_event_callback = llm_event_callback
         self._prompt_registry = prompt_registry or PromptRegistry()
         self._state: OrchestratorRuntimeState | None = None
@@ -77,7 +77,7 @@ class OrchestratorRuntime:
             llm_registry=llm_registry,
             llm_router=llm_router,
             prompt_registry=self._prompt_registry,
-            parallel_pool_initialized=self._parallel_mode,
+            parallel_pool_initialized=self._concurrent_source_collection,
         )
         return self._state
 

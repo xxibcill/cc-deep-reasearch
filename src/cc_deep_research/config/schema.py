@@ -233,10 +233,10 @@ class AgentTeamConfig(BaseModel):
 
     enabled: bool = Field(default=True)
     team_size: int = Field(default=4, ge=2, le=8)
-    parallel_execution: bool = Field(default=True)
+    concurrent_source_collection: bool = Field(default=True)
     timeout_seconds: int = Field(default=300, ge=30, le=600)
     fallback_to_sequential: bool = Field(default=True)
-    num_researchers: int = Field(default=3, ge=1, le=8)
+    max_concurrent_sources: int = Field(default=3, ge=1, le=8)
     researcher_timeout: int = Field(default=120, ge=30, le=300)
     enable_reflection: bool = Field(default=True)
     max_reflection_points: int = Field(default=5, ge=1, le=10)

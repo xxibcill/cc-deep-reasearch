@@ -201,8 +201,8 @@ class ResearchRunService:
             orchestrator = self.orchestrator_factory(
                 config=prepared.config,
                 monitor=active_monitor,
-                parallel_mode=prepared.request.parallel_mode,
-                num_researchers=prepared.request.num_researchers,
+                concurrent_source_collection=prepared.request.concurrent_source_collection,
+                max_concurrent_sources=prepared.request.max_concurrent_sources,
                 prompt_registry=prepared.prompt_registry,
                 workflow_config=prepared.workflow_config,
             )
