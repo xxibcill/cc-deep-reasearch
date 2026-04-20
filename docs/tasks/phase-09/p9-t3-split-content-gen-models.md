@@ -6,7 +6,7 @@ Decompose the 5,234-line `content_gen/models.py` into a `content_gen/models/` su
 
 ## Status
 
-**Partially Complete - Significant Progress Made**
+**Committed (Partial Progress)** - The subpackage structure is committed (1036 tests pass). However, 30 API tests still fail due to model field differences between the simplified subpackage and the original data format expectations. Further work needed to fully complete.
 
 The subpackage structure is in place and functional for core research functionality (**1036 tests pass** including all research orchestrator tests. However, **30 API tests fail** due to model field differences between the simplified subpackage and the original data format expectations.
 
