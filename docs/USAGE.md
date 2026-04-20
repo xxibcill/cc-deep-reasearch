@@ -262,7 +262,7 @@ research_agent:
 search_team:
   enabled: true # Retained for compatibility with existing config
   team_size: 4 # Describes local specialist roster metadata
-  parallel_execution: true # Run source collection in parallel local tasks
+  concurrent_source_collection: true # Run source collection concurrently
   timeout_seconds: 300 # Local parallel-task timeout (30-600 seconds)
   fallback_to_sequential: true # Fall back to sequential on error
 
@@ -331,7 +331,7 @@ cc-deep-research config init --force
 | `research_agent.max_turns`         | `10`                  | Max conversation turns                    |
 | `search_team.enabled`              | `true`                | Compatibility flag for the local runtime  |
 | `search_team.team_size`            | `4`                   | Specialist roster metadata size           |
-| `search_team.parallel_execution`   | `true`                | Parallel local source collection          |
+| `search_team.concurrent_source_collection`   | `true`                | Concurrent source collection          |
 | `search_team.timeout_seconds`      | `300`                 | Local parallel-task timeout               |
 | `output.format`                    | `"markdown"`          | Output format                             |
 | `output.auto_save`                 | `true`                | Auto-save reports                         |
@@ -1381,7 +1381,7 @@ Configure local pipeline and parallel collection behavior:
 search_team:
   enabled: true # Compatibility flag
   team_size: 4 # Specialist roster metadata
-  parallel_execution: true # Run source collection in parallel local tasks
+  concurrent_source_collection: true # Run source collection concurrently
   timeout_seconds: 300 # Local source-collection timeout (30-600 seconds)
   fallback_to_sequential: true # Fall back on error
 ```

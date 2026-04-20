@@ -55,8 +55,8 @@ Default settings:
 - `research.default_depth: "deep"`
 - `research.min_sources.deep: 50`
 - `search_team.enabled: true`
-- `search_team.parallel_execution: true`
-- `search_team.num_researchers: 3`
+- `search_team.concurrent_source_collection: true`
+- `search_team.max_concurrent_sources: 3`
 
 Environment variable overrides:
 - `TAVILY_API_KEYS`

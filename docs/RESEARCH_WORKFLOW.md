@@ -109,7 +109,7 @@ The `research` command controls the workflow through flags such as:
 Important implementation detail:
 
 - `--no-team` forces sequential source collection. It does not switch to a separate non-agent pipeline or disable the local specialist components.
-- Parallel behavior is driven by `parallel_mode` and `config.search_team.parallel_execution`.
+- Parallel behavior is driven by `concurrent_source_collection` and `config.search_team.concurrent_source_collection`.
 
 ## Configuration That Shapes the Workflow
 
@@ -132,8 +132,8 @@ The most relevant settings are:
 - `research.top_sources_for_content`: how many sources get full-page enrichment
 - `research.ai_integration_method`: `heuristic`, `api`, or `hybrid`
 - routed LLM analysis is configured through `llm.route_defaults` and provider-specific `llm.*` settings
-- `search_team.parallel_execution`: default parallel collection mode
-- `search_team.num_researchers`: number of parallel local collection tasks
+- `search_team.concurrent_source_collection`: default concurrent collection mode
+- `search_team.max_concurrent_sources`: maximum concurrent source collection tasks
 - `search_team.researcher_timeout`: timeout per parallel local collection task
 
 ## Data Model

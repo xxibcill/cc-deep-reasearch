@@ -706,8 +706,8 @@ Request body fields currently supported by the shared request model in [`src/cc_
 - `search_providers`
 - `cross_reference_enabled`
 - `team_size`
-- `parallel_mode`
-- `num_researchers`
+- `concurrent_source_collection`
+- `max_concurrent_sources`
 - `realtime_enabled`
 - `pdf_enabled`
 
