@@ -14,6 +14,7 @@ Use these docs as the current contributor entry points:
 - [`content-generation/content-gen-artifact.md`](content-generation/content-gen-artifact.md): pipeline artifacts, persistence layers, dashboard control surface, and production boundary
 - [`beats.md`](beats.md): detailed guide to beat structure, beat lifecycle, beat constraints, targeted revision, and visual handoff in the content-generation pipeline
 - [`select-beat-structure-prompts.md`](select-beat-structure-prompts.md): self-contained prompt for choosing a beat structure from only a content pillar and angle statement
+- [`script-from-beat-structure-prompts.md`](script-from-beat-structure-prompts.md): self-contained prompt for drafting a script after a beat structure has already been selected
 - [`brief-management.md`](brief-management.md): persistent brief management, lifecycle states, revision history, approval workflows, and rollout guide
 - [`TELEMETRY.md`](TELEMETRY.md): persisted telemetry model and monitoring workflow
 - [`REALTIME_MONITORING.md`](REALTIME_MONITORING.md): FastAPI + Next.js operator console for live monitoring
