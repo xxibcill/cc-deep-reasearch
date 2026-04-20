@@ -239,19 +239,19 @@ class TestResearchRunConfigOverrides:
                 search_providers=["CLAUDE"],
                 cross_reference_enabled=False,
                 team_size=6,
-                parallel_mode=False,
+                concurrent_source_collection=False,
             ),
         )
 
         assert updated.search.providers == ["claude"]
         assert updated.research.enable_cross_ref is False
         assert updated.search_team.team_size == 6
-        assert updated.search_team.parallel_execution is False
+        assert updated.search_team.concurrent_source_collection is False
 
         assert config.search.providers == ["tavily"]
         assert config.research.enable_cross_ref is True
         assert config.search_team.team_size == 4
-        assert config.search_team.parallel_execution is True
+        assert config.search_team.concurrent_source_collection is True
 
 
 class TestLoadConfig:

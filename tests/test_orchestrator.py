@@ -541,7 +541,7 @@ class TestTeamResearchOrchestrator:
     ) -> None:
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         collector = FakeCollectorAgent(available=["tavily"], warnings=[])
@@ -595,7 +595,7 @@ class TestTeamResearchOrchestrator:
     ) -> None:
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         collector = FakeCollectorAgent(available=["tavily"], warnings=[])
@@ -631,7 +631,7 @@ class TestTeamResearchOrchestrator:
         """Duplicate URLs should retain provenance from all contributing query families."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         shared = SearchResultItem(
@@ -726,7 +726,7 @@ class TestTeamResearchOrchestrator:
         orchestrator = TeamResearchOrchestrator(
             config,
             ResearchMonitor(enabled=False),
-            parallel_mode=True,
+            concurrent_source_collection=True,
         )
         orchestrator._agents = {AGENT_TYPE_COLLECTOR: object()}
         orchestrator._monitor.set_session = MagicMock()
@@ -784,7 +784,7 @@ class TestTeamResearchOrchestrator:
     async def test_execute_research_uses_sequential_collection_when_parallel_disabled(self) -> None:
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         orchestrator._agents = {AGENT_TYPE_COLLECTOR: object()}
@@ -1205,7 +1205,7 @@ class TestSourceCollectionOrchestratorIntegration:
         """Orchestrator preserves query family provenance through collection."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         collector = FakeCollectorAgent(
@@ -1254,7 +1254,7 @@ class TestSourceCollectionOrchestratorIntegration:
         """Duplicate URLs from different queries merge provenance in orchestrator."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         shared_source = SearchResultItem(
             url="https://example.com/shared-article",
@@ -1295,7 +1295,7 @@ class TestSourceCollectionOrchestratorIntegration:
         """Empty source collection still produces stable session metadata."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         collector = FakeCollectorAgent(
@@ -1319,7 +1319,7 @@ class TestSourceCollectionOrchestratorIntegration:
         """Source limiting respects depth-specific requirements."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
 
@@ -1354,7 +1354,7 @@ class TestOrchestratorFixtureEndToEnd:
         """Smoke test for STANDARD depth with fixture-backed components."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         collector = FakeCollectorAgent(
@@ -1446,7 +1446,7 @@ class TestOrchestratorFixtureEndToEnd:
         """Smoke test for DEEP analysis mode with fixture-backed components."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         collector = FakeCollectorAgent(
@@ -1555,7 +1555,7 @@ class TestOrchestratorFixtureEndToEnd:
         """Verify late-stage schema mismatches between phases are caught."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         collector = FakeCollectorAgent(
@@ -1714,12 +1714,12 @@ class TestOrchestratorFailurePathRegressions:
         """Orchestrator should explicitly record fallback transitions in metadata."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = True
+        config.search_team.concurrent_source_collection = True
 
         orchestrator = TeamResearchOrchestrator(
             config,
             ResearchMonitor(enabled=False),
-            parallel_mode=True,
+            concurrent_source_collection=True,
         )
         orchestrator._agent_pool = object()
         orchestrator._agents = {AGENT_TYPE_COLLECTOR: object()}
@@ -1801,7 +1801,7 @@ class TestOrchestratorFailurePathRegressions:
         """Orchestrator should return partial sources when some queries fail."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
 
@@ -1917,7 +1917,7 @@ class TestSessionMetadataContract:
         """QUICK depth must produce documented minimum metadata contract."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         collector = FakeCollectorAgent(available=["tavily"], warnings=[])
@@ -1945,7 +1945,7 @@ class TestSessionMetadataContract:
         """STANDARD depth must produce documented minimum metadata contract."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         collector = FakeCollectorAgent(available=["tavily"], warnings=[])
@@ -1973,7 +1973,7 @@ class TestSessionMetadataContract:
         """DEEP depth must produce documented minimum metadata contract."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         collector = FakeCollectorAgent(available=["tavily"], warnings=[])
@@ -2036,7 +2036,7 @@ class TestSessionMetadataContract:
         orchestrator = TeamResearchOrchestrator(
             config,
             ResearchMonitor(enabled=False),
-            parallel_mode=True,
+            concurrent_source_collection=True,
         )
         orchestrator._agents = {AGENT_TYPE_COLLECTOR: object()}
         orchestrator._monitor.set_session = MagicMock()

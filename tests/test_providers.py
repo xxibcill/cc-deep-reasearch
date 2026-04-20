@@ -527,7 +527,7 @@ class TestProviderFactoryIntegration:
             config=config,
             monitor=monitor,
             session_state=session_state,
-            num_researchers=2,
+            max_concurrent_sources=2,
             hydrate_sources=lambda sources, _depth: asyncio.sleep(0, result=sources),
             aggregate_sources=lambda sources: sources,
         )
@@ -595,7 +595,7 @@ class TestProviderFactoryIntegration:
             config=config,
             monitor=monitor,
             session_state=session_state,
-            num_researchers=2,
+            max_concurrent_sources=2,
             hydrate_sources=lambda sources, _depth: asyncio.sleep(0, result=sources),
             aggregate_sources=lambda sources: sources,
         )
@@ -632,7 +632,7 @@ class TestProviderFactoryIntegration:
             config=config,
             monitor=monitor,
             session_state=session_state,
-            num_researchers=2,
+            max_concurrent_sources=2,
         )
 
         async def fake_parallel_collect(**kwargs):
@@ -973,7 +973,7 @@ class TestSourceCollectionFixtureIntegration:
             config=config,
             monitor=monitor,
             session_state=session_state,
-            num_researchers=2,
+            max_concurrent_sources=2,
         )
 
         query_families = [

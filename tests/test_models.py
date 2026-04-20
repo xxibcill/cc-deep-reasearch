@@ -279,7 +279,7 @@ class TestResearchRunRequest:
         request = ResearchRunRequest(query="test query")
 
         assert request.output_format == ResearchOutputFormat.MARKDOWN
-        assert request.parallel_mode is None
+        assert request.concurrent_source_collection is None
         assert request.cross_reference_enabled is None
 
     def test_normalizes_prompt_overrides(self) -> None:

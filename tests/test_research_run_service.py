@@ -103,7 +103,7 @@ def test_run_executes_shared_workflow_and_materializes_result() -> None:
         depth=ResearchDepth.STANDARD,
         min_sources=3,
         search_providers=["CLAUDE"],
-        parallel_mode=False,
+        concurrent_source_collection=False,
         realtime_enabled=True,
     )
     adapter = AsyncioResearchRunExecutionAdapter()
@@ -120,8 +120,8 @@ def test_run_executes_shared_workflow_and_materializes_result() -> None:
 
     orchestrator_kwargs = captured["orchestrator_kwargs"]
     assert isinstance(orchestrator_kwargs, dict)
-    assert orchestrator_kwargs["parallel_mode"] is False
-    assert orchestrator_kwargs["num_researchers"] is None
+    assert orchestrator_kwargs["concurrent_source_collection"] is False
+    assert orchestrator_kwargs["max_concurrent_sources"] is None
     assert orchestrator_kwargs["config"].search.providers == ["claude"]
 
     execute_args = captured["execute_args"]
