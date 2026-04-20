@@ -327,7 +327,7 @@ class SourceCollectionService:
     ) -> list[SearchResultItem]:
         """Collect sources, falling back to sequential mode when parallel fails."""
         policy = build_parallel_collection_policy(self._config)
-        if prefer_parallel and agent_pool is not None:
+        if prefer_parallel and agent_pool:
             try:
                 return await self.parallel_research(
                     agent_pool=agent_pool,

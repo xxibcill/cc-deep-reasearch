@@ -6,7 +6,6 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.config import Config
-from cc_deep_research.coordination import LocalAgentPool, LocalMessageBus
 from cc_deep_research.models import (
     AnalysisResult,
     IterationHistoryRecord,
@@ -36,7 +35,6 @@ from cc_deep_research.orchestration import (
 )
 from cc_deep_research.orchestration.helpers import build_follow_up_queries, normalize_query_families
 from cc_deep_research.prompts import PromptRegistry
-from cc_deep_research.teams import LocalResearchTeam
 
 if TYPE_CHECKING:
     from cc_deep_research.themes import WorkflowConfig
@@ -76,7 +74,6 @@ class TeamResearchOrchestrator:
         self._monitor = monitor or ResearchMonitor(enabled=False)
         self._prompt_registry = prompt_registry or PromptRegistry()
         self._workflow_config = workflow_config
-        self._team: LocalResearchTeam | None = None
         self._agents: dict[str, Any] = {}
         self._runtime_state: OrchestratorRuntimeState | None = None
         # Use config defaults if not specified
@@ -84,8 +81,6 @@ class TeamResearchOrchestrator:
             parallel_mode if parallel_mode is not None else config.search_team.parallel_execution
         )
         self._num_researchers = num_researchers or config.search_team.num_researchers
-        self._message_bus: LocalMessageBus | None = None
-        self._agent_pool: LocalAgentPool | None = None
         self._agent_access = AgentAccess(lambda: self._agents)
         self._session_state = OrchestratorSessionState(configured_providers=[])
         self._session_builder = SessionBuilder()
@@ -200,9 +195,10 @@ class TeamResearchOrchestrator:
         min_sources: int | None,
     ) -> list[SearchResultItem]:
         """Collect sources using the configured execution mode."""
+        agent_pool = self._runtime_state if self._runtime_state and self._runtime_state.parallel_pool_initialized else None
         return await self._source_collection.collect_with_fallback(
             collector=self._agent_access.collector(),
-            agent_pool=self._agent_pool,
+            agent_pool=agent_pool,
             query_families=query_families,
             depth=depth,
             min_sources=min_sources,
@@ -229,7 +225,7 @@ class TeamResearchOrchestrator:
         Creates a team with specialized agents for different
         aspects of research.
         """
-        runtime_state = await self._runtime.initialize(self._team)
+        runtime_state = await self._runtime.initialize()
         self._apply_runtime_state(runtime_state)
         self._planning = ResearchPlanningService(
             monitor=self._monitor,
@@ -465,9 +461,10 @@ class TeamResearchOrchestrator:
         min_sources: int | None,
     ) -> list[SearchResultItem]:
         """Collect follow-up sources and merge them with existing sources."""
+        agent_pool = self._runtime_state if self._runtime_state and self._runtime_state.parallel_pool_initialized else None
         new_sources = await self._source_collection.collect_follow_up_sources(
             collector=self._agent_access.collector(),
-            agent_pool=self._agent_pool,
+            agent_pool=agent_pool,
             follow_up_queries=follow_up_queries,
             depth=depth,
             min_sources=min_sources,
@@ -537,18 +534,12 @@ class TeamResearchOrchestrator:
     def _apply_runtime_state(self, runtime_state: OrchestratorRuntimeState) -> None:
         """Mirror runtime state into compatibility attributes used by tests and helpers."""
         self._runtime_state = runtime_state
-        self._team = runtime_state.team
         self._agents = runtime_state.agents
-        self._message_bus = runtime_state.message_bus
-        self._agent_pool = runtime_state.agent_pool
 
     def _clear_runtime_state(self) -> None:
         """Clear compatibility attributes after runtime shutdown."""
         self._runtime_state = None
-        self._team = None
         self._agents = {}
-        self._message_bus = None
-        self._agent_pool = None
 
 
 class OrchestratorError(Exception):

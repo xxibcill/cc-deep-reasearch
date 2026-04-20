@@ -54,18 +54,9 @@ Key modules:
 - `src/cc_deep_research/llm/` - LLM routing and transport clients (anthropic, openrouter, cerebras, registry, route_planner)
 - `src/cc_deep_research/providers/` - Search providers (tavily)
 
-### Agent Naming vs Reality
+### Parallel Mode
 
-The codebase uses agent-oriented naming, but the current implementation is **local specialized Python objects**, not external distributed agents:
-
-| Component | Status |
-|-----------|--------|
-| `TeamResearchOrchestrator` | Real and authoritative |
-| `LocalResearchTeam` | Local scaffolding only, not a distributed runtime |
-| `LocalAgentPool` | Local task state tracking, not external workers |
-| `LocalMessageBus` | Local async queue, not cross-process messaging |
-
-Parallel mode (`--parallel-mode`) means **concurrent asyncio task execution in one process**, not spawned external agents.
+Parallel mode (`--parallel-mode`) means **concurrent asyncio task execution in one process**, not spawned external agents. The `SourceCollectionService` fans out source collection to parallel tasks when enabled.
 
 ### LLM Routing
 
@@ -91,7 +82,7 @@ Config file: `~/.config/cc-deep-research/config.yaml`. Also supports env var ove
 
 ### Content Generation
 
-A separate content-gen workflow exists in `src/cc_deep_research/content_gen/` with its own telemetry store, models, and pipeline for short-form video content. This runs under a different entry point and is documented in `docs/content-generation/`.
+A separate content-gen workflow exists in `src/cc_deep_research/content_gen/` with its own telemetry store, models, and pipeline for short-form video content. This runs under a different entry point and is documented in `docs/content-generation/`. The `content_gen/` package is kept co-located within `cc_deep_research/` rather than split into a separate package because it has no imports from the parent package, maintains its own independent telemetry and models, and splitting would duplicate config, LLM routing, and infrastructure code while providing no independent deployment benefit.
 
 ### Dashboard Frontend
 
