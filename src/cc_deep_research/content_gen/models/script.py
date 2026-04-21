@@ -90,6 +90,8 @@ class QCResult(BaseModel):
 
     passed: bool = True
     issues: list[QCCheck] = Field(default_factory=list)
+    # Legacy field from old QCResult
+    final_script: str = ""
 
 
 class ScriptingLLMCallTrace(BaseModel):
@@ -116,6 +118,11 @@ class ScriptingStepTrace(BaseModel):
 class ScriptingContext(BaseModel):
     """Output of the scripting stage."""
 
+    # Legacy fields (for backward compat with stored data and router.py)
+    raw_idea: str = ""
+    research_context: str = ""
+    tone: str = ""
+    # Current stage output
     idea_id: str = ""
     hook: str = ""
     thesis: str = ""
@@ -127,8 +134,8 @@ class ScriptingContext(BaseModel):
     parse_mode: str = "json"
     # Claim ledger for evidence tracking
     claim_ledger: "ClaimTraceLedger | None" = None
-    # QC result
-    qc_result: QCResult | None = None
+    # QC result (named qc for backward compat with old ScriptingContext)
+    qc: QCResult | None = None
     # Traces
     llm_traces: list[ScriptingLLMCallTrace] = Field(default_factory=list)
     step_traces: list[ScriptingStepTrace] = Field(default_factory=list)
@@ -140,15 +147,23 @@ class ScriptingContext(BaseModel):
     # Warnings
     warnings: list[str] = Field(default_factory=list)
 
+    @property
+    def qc_result(self) -> QCResult | None:
+        """Backward compat alias for qc."""
+        return self.qc
+
 
 class SavedScriptRun(BaseModel):
     """Saved standalone scripting run for analysis."""
 
     run_id: str | None = None
+    saved_at: str = ""
     raw_idea: str = ""
-    script: str = ""
     word_count: int = 0
-    context: ScriptingContext
+    script_path: str = ""
+    context_path: str = ""
+    result_path: str | None = None
+    context: ScriptingContext | None = None
     execution_mode: Literal["single_pass", "iterative"] = "single_pass"
 
 

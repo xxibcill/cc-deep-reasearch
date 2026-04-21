@@ -320,6 +320,7 @@ __all__ = [
     "ContentExecutionFields",
     "IdeaCoreFields",
     "IdeaScores",
+    "PipelineCandidate",
     "PrioritizationFields",
     "ScoringOutput",
     "TriageOperation",
@@ -384,6 +385,8 @@ __all__ = [
     # Research
     "ClaimTraceEntry",
     "ClaimTraceLedger",
+    "ClaimTraceStage",
+    "ClaimTraceStatus",
     "FactRiskGate",
     "FactRiskGateOutput",
     "FactRiskGateResult",
@@ -425,6 +428,8 @@ __all__ = [
 
 # Rebuild PipelineContext to resolve forward references after all models are loaded
 from .pipeline import PipelineContext
+from .script import ScriptingContext
 
 PipelineContext.model_rebuild()
+ScriptingContext.model_rebuild()
 

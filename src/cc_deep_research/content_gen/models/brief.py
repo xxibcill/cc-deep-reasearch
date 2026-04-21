@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -19,7 +20,7 @@ from .pipeline import (
 class BriefRevision(BaseModel):
     """An immutable snapshot of an OpportunityBrief at a point in time."""
 
-    revision_id: str = Field(default_factory=lambda: f"rev__placeholder__")
+    revision_id: str = Field(default_factory=lambda: f"rev_{uuid.uuid4().hex[:10]}")
     brief_id: str = ""
     version: int = 0
     theme: str = ""

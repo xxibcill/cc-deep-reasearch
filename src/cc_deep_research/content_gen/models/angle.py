@@ -192,7 +192,7 @@ class StrategyMemory(BaseModel):
     niche: str = ""
     pillars: list[str] = Field(default_factory=list)
     audience_segments: list[str] = Field(default_factory=list)
-    proof_standards: str = ""
+    proof_standards: list[str] = Field(default_factory=list)
     differentiation_gaps: list[str] = Field(default_factory=list)
     common_objections: list[str] = Field(default_factory=list)
     voice_guide: str = ""
