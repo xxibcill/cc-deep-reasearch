@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from .research import ClaimTraceLedger
+
 
 class ScriptStructure(BaseModel):
     """Per-beat script structure for a single beat in the video."""
@@ -77,42 +79,46 @@ class VisualNote(BaseModel):
 
 
 class QCCheck(BaseModel):
-    """Single QC check for the script."""
+    """Single QC checklist item."""
 
-    check_id: str = ""
-    check_type: str = ""
+    item: str = ""
     passed: bool = True
-    issue: str = ""
 
 
 class QCResult(BaseModel):
-    """QC result for the script."""
+    """Step 10 output: QC review."""
 
-    passed: bool = True
-    issues: list[QCCheck] = Field(default_factory=list)
-    # Legacy field from old QCResult
+    checks: list[QCCheck] = Field(default_factory=list)
+    weakest_parts: list[str] = Field(default_factory=list)
     final_script: str = ""
 
 
 class ScriptingLLMCallTrace(BaseModel):
-    """Trace of a single LLM call within scripting."""
+    """Trace for a single LLM call inside a scripting step."""
 
-    call_id: str = ""
+    call_index: int = 0
+    temperature: float = 0.0
+    system_prompt: str = ""
+    user_prompt: str = ""
+    raw_response: str = ""
+    provider: str = ""
+    model: str = ""
+    transport: str = ""
+    latency_ms: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
-    model: str = ""
-    beat_id: str = ""
+    finish_reason: str | None = None
 
 
 class ScriptingStepTrace(BaseModel):
-    """Trace of a single scripting step."""
+    """Trace record for one completed scripting step."""
 
-    step_id: str = ""
-    step_type: str = ""
-    beat_id: str = ""
+    step_index: int = 0
+    step_name: str = ""
+    step_label: str = ""
+    iteration: int = 1
     llm_calls: list[ScriptingLLMCallTrace] = Field(default_factory=list)
-    duration_ms: int = 0
-    parse_success: bool = True
+    parsed_output: Any = None
 
 
 class ScriptingContext(BaseModel):
@@ -133,7 +139,7 @@ class ScriptingContext(BaseModel):
     version_id: str = ""
     parse_mode: str = "json"
     # Claim ledger for evidence tracking
-    claim_ledger: "ClaimTraceLedger | None" = None
+    claim_ledger: ClaimTraceLedger | None = None
     # QC result (named qc for backward compat with old ScriptingContext)
     qc: QCResult | None = None
     # Traces
