@@ -221,6 +221,94 @@ def test_resume_pipeline_creates_distinct_jobs_per_attempt(
     assert pipeline_jobs.get_job(second_job_id) is not None
 
 
+def test_resume_context_isolation_from_original_failed_job(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Resuming a failed pipeline must not mutate the original job's context snapshot.
+
+    Regression test for: Resume jobs reuse the original PipelineContext object
+    instead of cloning it, causing the failed run's saved state to change when
+    the resumed run mutates current_stage or later stage outputs.
+    """
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    class FakeOrchestrator:
+        def __init__(self, _config) -> None:
+            pass
+
+        def validate_resume_context(self, *, from_stage: int, ctx: PipelineContext) -> str | None:
+            del from_stage, ctx
+            return None
+
+        async def run_full_pipeline(
+            self,
+            theme: str,
+            *,
+            from_stage: int = 0,
+            to_stage: int | None = None,
+            initial_context: PipelineContext | None = None,
+            progress_callback=None,
+            stage_completed_callback=None,
+        ) -> PipelineContext:
+            # Clone like the real orchestrator does (legacy_orchestrator.py line 1536)
+            ctx = initial_context.model_copy(deep=True) if initial_context else PipelineContext(theme=theme)
+            ctx.current_stage = 6
+            if stage_completed_callback:
+                stage_completed_callback(5, "completed", "stage 5 done", ctx)
+            return ctx
+
+    import cc_deep_research.content_gen.orchestrator as content_gen_orchestrator_module
+    import cc_deep_research.content_gen.router as content_gen_router_module
+
+    monkeypatch.setattr(content_gen_router_module, "load_config", lambda: object())
+    monkeypatch.setattr(
+        content_gen_orchestrator_module,
+        "ContentGenOrchestrator",
+        FakeOrchestrator,
+    )
+
+    app = create_app()
+    pipeline_jobs = get_pipeline_job_registry(app)
+
+    # Create a failed job with a saved context
+    failed_job = pipeline_jobs.create_job(
+        "pricing anchors",
+        from_stage=0,
+        to_stage=8,
+        pipeline_id="cgp-isolate-test",
+    )
+    original_ctx = PipelineContext(theme="pricing anchors", current_stage=4)
+    pipeline_jobs.update_context(failed_job.pipeline_id, original_ctx)
+    pipeline_jobs.mark_failed(failed_job.pipeline_id, error="interrupted at stage 4")
+
+    # Capture the original context's current_stage before resume
+    original_stage_before_resume = failed_job.pipeline_context.current_stage
+
+    client = TestClient(app)
+    resume_response = client.post(
+        "/api/content-gen/pipelines/cgp-isolate-test/resume",
+        json={"from_stage": 5},
+    )
+    assert resume_response.status_code == 200
+
+    # Wait for the async task to complete
+    resume_job_id = resume_response.json()["pipeline_id"]
+    for _ in range(50):
+        resumed_job = pipeline_jobs.get_job(resume_job_id)
+        if resumed_job and resumed_job.status in {"completed", "failed"}:
+            break
+        time.sleep(0.05)
+
+    # The original failed job's context must NOT reflect mutations made by the resume run
+    refreshed_failed_job = pipeline_jobs.get_job("cgp-isolate-test")
+    assert refreshed_failed_job is not None
+    assert refreshed_failed_job.pipeline_context is not None
+    assert (
+        refreshed_failed_job.pipeline_context.current_stage == original_stage_before_resume
+    ), "Original failed job's context was mutated by the resumed run"
+
+
 def test_run_scripting_endpoint_can_force_single_pass(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

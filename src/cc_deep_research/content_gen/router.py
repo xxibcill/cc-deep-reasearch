@@ -576,8 +576,9 @@ def register_content_gen_routes(
             from_stage=request.from_stage,
             to_stage=end,
         )
-        # Carry forward existing context
-        job_registry.update_context(new_job.pipeline_id, ctx)
+        # Clone the context so the original failed job's snapshot stays stable
+        # while the resumed run mutates its own copy.
+        job_registry.update_context(new_job.pipeline_id, ctx.model_copy(deep=True))
 
         async def _run() -> None:
             job_registry.mark_running(new_job.pipeline_id)
@@ -598,8 +599,9 @@ def register_content_gen_routes(
                 )
 
             def _stage_completed(stage_idx: int, status: str, detail: str, stage_ctx) -> None:
-                # Update job registry with latest context after each stage
-                job_registry.update_context(new_job.pipeline_id, stage_ctx)
+                # Clone the context so the registry never holds a reference to the
+                # orchestrator's live object (which is mutated between callback invocations).
+                job_registry.update_context(new_job.pipeline_id, stage_ctx.model_copy(deep=True))
                 serialized_context = stage_ctx.model_dump(mode="json")
 
                 if status == "failed":
