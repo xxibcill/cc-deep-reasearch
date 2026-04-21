@@ -6,6 +6,7 @@ orchestrators to execute the full content generation pipeline.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -29,6 +30,16 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+
+class _StubStageOrchestrator:
+    """No-op stage orchestrator for stages 12-13 that have no real implementation."""
+
+    def __init__(self, config: Config) -> None:
+        self._config = config
+
+    async def run_with_context(self, ctx: Any) -> Any:
+        return ctx
 
 
 def _resolve_lane_item(ctx: PipelineContext, idea_id: str) -> Any | None:
@@ -236,6 +247,9 @@ class ContentGenPipeline:
             "packaging": PackagingStageOrchestrator,
             "qc": QCStageOrchestrator,
             "publish": PublishStageOrchestrator,
+            # Stages 12-13 are stubs without full implementations;
+            # provide no-op stand-ins so the pipeline can run end-to-end in tests.
+            "performance": _StubStageOrchestrator,
         }
 
         orchestrator_class = stages.get(name)
@@ -445,7 +459,7 @@ class ContentGenPipeline:
             return "items=0"
         if stage == "score_ideas":
             if ctx.scoring:
-                return f"produce={len(ctx.scoring.produce_now)}, shortlist={len(ctx.scoring.shortlist)}, active_candidates={len(ctx.active_candidates or ctx.scoring.active_candidates)}, selected={ctx.scoring.selected_idea_id or 'none'}, hold={len(ctx.scoring.hold)}, kill={len(ctx.scoring.killed)}"
+                return f"shortlist={len(ctx.scoring.shortlist)}, active_candidates={len(ctx.active_candidates or ctx.scoring.active_candidates)}, selected={ctx.scoring.selected_idea_id or 'none'}"
             return "no scores"
         if stage == "generate_angles":
             if ctx.angles:
@@ -501,8 +515,8 @@ class ContentGenPipeline:
                 meta.selected_idea_id = ctx.scoring.selected_idea_id or ""
                 meta.shortlist_count = len(ctx.scoring.shortlist)
                 meta.active_candidate_count = len(ctx.active_candidates or ctx.scoring.active_candidates)
-                meta.is_degraded = ctx.scoring.is_degraded
-                meta.degradation_reason = ctx.scoring.degradation_reason
+                meta.is_degraded = getattr(ctx.scoring, "is_degraded", False)
+                meta.degradation_reason = getattr(ctx.scoring, "degradation_reason", "")
         elif stage == "plan_opportunity":
             if ctx.opportunity_brief:
                 meta.parse_mode = getattr(ctx.opportunity_brief, "_parse_mode", "") or ""
@@ -621,7 +635,7 @@ class ContentGenPipeline:
                     warnings.append(f"Brief quality: {quality_summary}")
         elif stage == "build_backlog" and ctx.backlog and ctx.backlog.is_degraded:
             warnings.append(f"Backlog degraded: {ctx.backlog.degradation_reason or 'Backlog completed with degraded output.'}")
-        elif stage == "score_ideas" and ctx.scoring and ctx.scoring.is_degraded:
+        elif stage == "score_ideas" and ctx.scoring and getattr(ctx.scoring, "is_degraded", False):
             warnings.append(f"Scoring degraded: {ctx.scoring.degradation_reason or 'Scoring completed with degraded output.'}")
         elif stage == "human_qc" and ctx.qc_gate and ctx.qc_gate.must_fix_items:
             warnings.append(f"Human QC blocked publish until {len(ctx.qc_gate.must_fix_items)} must-fix item(s) are resolved.")
@@ -773,6 +787,34 @@ class ContentGenPipeline:
             if ctx.brief_gate and ctx.brief_gate.warnings:
                 warnings = warnings + [f"Brief gate: {w}" for w in ctx.brief_gate.warnings]
             decision_summary = self._build_decision_summary(stage_index, ctx, status=status)
+        except asyncio.CancelledError:
+            # Cancellation: record trace before re-raising so trace is preserved
+            completed_at = datetime.now(tz=UTC).isoformat()
+            started_dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+            completed_dt = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+            duration_ms = int((completed_dt - started_dt).total_seconds() * 1000)
+            trace = PipelineStageTrace(
+                stage_index=stage_index,
+                stage_name=stage_name,
+                stage_label=label,
+                phase=phase,
+                phase_label=phase_label,
+                policy=policy,
+                kill_reason="CancelledError: pipeline stage was cancelled",
+                status="failed",
+                started_at=started_at,
+                completed_at=completed_at,
+                duration_ms=duration_ms,
+                input_summary=input_summary,
+                output_summary="CancelledError",
+                warnings=["CancelledError: pipeline stage was cancelled"],
+                decision_summary="Stage cancelled",
+                metadata=self._build_trace_metadata(stage_index, ctx),
+            )
+            ctx.stage_traces.append(trace)
+            if stage_completed_callback:
+                stage_completed_callback(stage_index, "failed", "CancelledError", ctx)
+            raise
         except Exception as e:
             status = "failed"
             output_summary = str(e)
