@@ -373,6 +373,29 @@ Phase 03 - Close the learning loop:
 - Added status history persistence (`StatusHistoryEntry`) and feedback events (saved, dismissed, acted_on, converted_to_research, converted_to_content) with minimal ranking-loop inputs
 - Added analytics telemetry for opportunity-to-action rate, dismissal rate, freshness latency with operator playbook documentation and calibration guidance
 
+#### Opportunity Radar Source Scanning And Engine Completion (3 tasks)
+
+- Verified RSS/Atom source scanning entry points, cadence helpers, scanner routing, graceful scan failure handling, and `last_scanned_at` source updates
+- Verified raw-signal normalization, source-scoped deduplication by `content_hash` and `external_id`, clustering, opportunity creation, and end-to-end ingest cycle behavior
+- Verified explainable scoring, freshness lifecycle transitions, rescore-on-new-signal behavior, and engine-level regression coverage
+
+#### Opportunity Radar Workflow Bridges And Analytics (4 tasks)
+
+- Verified Radar opportunity launch endpoints for research runs, briefs, backlog items, and content pipeline jobs with feedback recording and workflow-link persistence
+- Verified status history persistence, feedback metadata enrichment, status-history API access, and opportunity-detail dashboard history display
+- Verified Radar analytics endpoints, frontend analytics page, conversion/funnel metrics, operator playbook, and runtime score calibration helpers
+- Consolidated the completed Phase 08 Radar workflow task pack into this changelog
+
+#### Content Generation Refactor And Architecture Cleanup (7 tasks)
+
+- Removed dead `coordination/` and `teams/` scaffolding references from contributor docs and kept the research workflow documentation aligned with concurrent source collection terminology
+- Documented the staged and planner research orchestrator split in `CLAUDE.md`, with workflow selection controlled by `ResearchWorkflow`
+- Completed the `content_gen.models` subpackage migration, removed the obsolete 5,234-line `content_gen/models.py`, and restored legacy scripting QC/trace payload compatibility in the new model modules
+- Replaced the 4,302-line `content_gen/orchestrator.py` public module with a compatibility facade and kept pipeline/stage entry points under `content_gen/pipeline.py` and `content_gen/stages/`
+- Verified the `parallel_mode`/`num_researchers` misnomers are gone from code paths and refreshed docs to describe `concurrent_source_collection` and `max_concurrent_sources`
+- Verified unused `AGENT_REGISTRY`/`get_agent_class()` registry scaffolding has been removed in favor of explicit agent imports
+- Documented the decision to keep `content_gen/` co-located inside `cc_deep_research/` because it shares LLM routing, model types, and config schema
+
 #### CI/CD and Dashboard Reliability (8 tasks)
 
 - Added Python preflight CI workflow with lint, type check, and pytest subsets running on PRs and pushes
@@ -428,6 +451,7 @@ Phase 6 - Harden, migrate, and roll out:
 - Removed completed "necessary 80%" task-pack planning documents `docs/tasks/30_snapshot_session_metadata_contract.md` through `docs/tasks/47_add_canonical_necessary_80_preflight.md` and `docs/tasks/80_20_necessary_work_task_set.md` after consolidating their delivered work into this changelog
 - Removed task-pack planning documents from `docs/tasks/` after consolidating their delivered work into this changelog, including decision graph observability, dashboard config editor, dashboard agent prompt editor, content generation expert workflow, backlog management, content-gen backlog details page, phase 01, phase 02, phase 03, backlog chat assistant, content-gen chat page upgrade, backlog single-item start, and opportunity planning improvement task packs
 - Removed completed Opportunity Radar roadmap documents from `docs/roadmap/` after consolidating their delivered work into this changelog
+- Removed completed Phase 06, Phase 08, and Phase 09 task-planning documents from `docs/tasks/` after verifying their implementation and consolidating the delivered work into this changelog
 
 ## [0.1.0] - 2026-03-11
 

@@ -92,7 +92,7 @@ Those fields are stage-output metadata from backlog generation. They are not the
 
 ## Backlog Item Structure
 
-The canonical schema lives in [`BacklogItem`](../src/cc_deep_research/content_gen/models.py).
+The canonical schema lives in [`BacklogItem`](../src/cc_deep_research/content_gen/models/).
 
 ### Editorial fields
 
@@ -186,7 +186,7 @@ That persistence step:
 
 Relevant code:
 
-- stage implementation: [`src/cc_deep_research/content_gen/orchestrator.py`](../src/cc_deep_research/content_gen/orchestrator.py)
+- stage implementation: [`src/cc_deep_research/content_gen/stages/backlog.py`](../src/cc_deep_research/content_gen/stages/backlog.py)
 - service logic: [`src/cc_deep_research/content_gen/backlog_service.py`](../src/cc_deep_research/content_gen/backlog_service.py)
 
 ### 2. CLI backlog build
@@ -396,13 +396,13 @@ So backlog status is pipeline-state truth, not guaranteed external platform trut
 
 ## Key Source Files
 
-- models: [`src/cc_deep_research/content_gen/models.py`](../src/cc_deep_research/content_gen/models.py)
+- models: [`src/cc_deep_research/content_gen/models/`](../src/cc_deep_research/content_gen/models/)
 - service: [`src/cc_deep_research/content_gen/backlog_service.py`](../src/cc_deep_research/content_gen/backlog_service.py)
 - store: [`src/cc_deep_research/content_gen/storage/backlog_store.py`](../src/cc_deep_research/content_gen/storage/backlog_store.py)
 - prompt contract: [`src/cc_deep_research/content_gen/prompts/backlog.py`](../src/cc_deep_research/content_gen/prompts/backlog.py)
 - agent/parser: [`src/cc_deep_research/content_gen/agents/backlog.py`](../src/cc_deep_research/content_gen/agents/backlog.py)
 - API routes: [`src/cc_deep_research/content_gen/router.py`](../src/cc_deep_research/content_gen/router.py)
-- orchestration hooks: [`src/cc_deep_research/content_gen/orchestrator.py`](../src/cc_deep_research/content_gen/orchestrator.py)
+- orchestration hooks: [`src/cc_deep_research/content_gen/pipeline.py`](../src/cc_deep_research/content_gen/pipeline.py)
 - dashboard state: [`dashboard/src/hooks/useContentGen.ts`](../dashboard/src/hooks/useContentGen.ts)
 - dashboard views: [`dashboard/src/components/content-gen/backlog-panel.tsx`](../dashboard/src/components/content-gen/backlog-panel.tsx) and [`dashboard/src/app/content-gen/backlog/[ideaId]/page.tsx`](../dashboard/src/app/content-gen/backlog/[ideaId]/page.tsx)
 
@@ -412,6 +412,6 @@ If you are new to the feature, read in this order:
 
 1. this document
 2. [`content-generation.md`](content-generation.md) for the full workflow
-3. [`src/cc_deep_research/content_gen/models.py`](../src/cc_deep_research/content_gen/models.py) for the canonical schema
+3. [`src/cc_deep_research/content_gen/models/`](../src/cc_deep_research/content_gen/models/) for the canonical schema
 4. [`src/cc_deep_research/content_gen/backlog_service.py`](../src/cc_deep_research/content_gen/backlog_service.py) for lifecycle rules
 5. [`src/cc_deep_research/content_gen/router.py`](../src/cc_deep_research/content_gen/router.py) if you need the API contract

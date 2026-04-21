@@ -5,8 +5,8 @@ This document describes the full content-generation system as it is currently im
 ## Contract Versioning
 
 The canonical inventory for prompt-output contracts lives in
-[`CONTENT_GEN_STAGE_CONTRACTS`](../src/cc_deep_research/content_gen/models.py) in
-[`src/cc_deep_research/content_gen/models.py`](../src/cc_deep_research/content_gen/models.py).
+[`CONTENT_GEN_STAGE_CONTRACTS`](../src/cc_deep_research/content_gen/models/) in
+[`src/cc_deep_research/content_gen/models/`](../src/cc_deep_research/content_gen/models/).
 Each prompt-backed stage also carries a prompt-module `CONTRACT_VERSION`.
 
 Each contract includes:
@@ -58,7 +58,7 @@ The content-generation subsystem is separate from the research-report pipeline. 
 - publish scheduling
 - post-publish performance review
 
-At the center is [`ContentGenOrchestrator`](../src/cc_deep_research/content_gen/orchestrator.py), which coordinates individual stage agents and accumulates outputs into [`PipelineContext`](../src/cc_deep_research/content_gen/models.py).
+At the center is [`ContentGenPipeline`](../src/cc_deep_research/content_gen/pipeline.py) plus the per-stage orchestrators in [`content_gen/stages/`](../src/cc_deep_research/content_gen/stages/). [`ContentGenOrchestrator`](../src/cc_deep_research/content_gen/orchestrator.py) remains as a backward-compatible import facade.
 
 ## Architecture At A Glance
 
@@ -67,13 +67,13 @@ The system has three layers:
 1. CLI layer
    Exposed through `cc-deep-research content-gen ...` in [`src/cc_deep_research/content_gen/cli.py`](../src/cc_deep_research/content_gen/cli.py).
 2. Orchestration layer
-   [`ContentGenOrchestrator`](../src/cc_deep_research/content_gen/orchestrator.py) runs either standalone modules or the full pipeline.
+   [`ContentGenPipeline`](../src/cc_deep_research/content_gen/pipeline.py) coordinates per-stage orchestrators; `ContentGenOrchestrator` remains available for existing callers.
 3. Agent layer
    Each stage has its own prompt module and LLM-backed agent under [`src/cc_deep_research/content_gen/agents/`](../src/cc_deep_research/content_gen/agents/).
 
 Supporting layers:
 
-- data contracts: [`src/cc_deep_research/content_gen/models.py`](../src/cc_deep_research/content_gen/models.py)
+- data contracts: [`src/cc_deep_research/content_gen/models/`](../src/cc_deep_research/content_gen/models/)
 - prompt templates: [`src/cc_deep_research/content_gen/prompts/`](../src/cc_deep_research/content_gen/prompts/)
 - local persistence: [`src/cc_deep_research/content_gen/storage/`](../src/cc_deep_research/content_gen/storage/)
 - LLM routing: [`src/cc_deep_research/llm/`](../src/cc_deep_research/llm/)
@@ -102,9 +102,9 @@ The scripting agent is the strictest implementation. It validates missing fields
 
 The workflow revolves around two context objects:
 
-- [`PipelineContext`](../src/cc_deep_research/content_gen/models.py)
+- [`PipelineContext`](../src/cc_deep_research/content_gen/models/)
   The top-level 14-stage pipeline state.
-- [`ScriptingContext`](../src/cc_deep_research/content_gen/models.py)
+- [`ScriptingContext`](../src/cc_deep_research/content_gen/models/)
   The nested 10-step script-generation state machine.
 
 Important stage models:
@@ -179,7 +179,7 @@ Phase 01 defines the canonical seven-phase operating model as the operator-frien
 | 6 | QC & Approval | `packaging`, `human_qc` | Generate packaging and human QC |
 | 7 | Publish & Learn | `publish_queue`, `performance_analysis` | Schedule publish and analyze |
 
-The phase definitions are in `OperatingPhase` enum and `PHASE_TO_STAGES_MAPPING` in [`models.py`](../src/cc_deep_research/content_gen/models.py).
+The phase definitions are in `OperatingPhase` enum and `PHASE_TO_STAGES_MAPPING` in [`models.py`](../src/cc_deep_research/content_gen/models/).
 
 ### Phase Governance
 
@@ -218,7 +218,7 @@ The mapping is defined in `STAGE_TO_PHASE_MAPPING`:
 
 ## End-To-End Flow
 
-The implemented pipeline order is defined by `PIPELINE_STAGES` in [`src/cc_deep_research/content_gen/models.py`](../src/cc_deep_research/content_gen/models.py):
+The implemented pipeline order is defined by `PIPELINE_STAGES` in [`src/cc_deep_research/content_gen/models/`](../src/cc_deep_research/content_gen/models/):
 
 1. `load_strategy`
 2. `plan_opportunity`
@@ -427,7 +427,7 @@ P2-T1 Decision Lane: Scoring produces four explicit dispositions:
 - `kill`: fails hard criteria (e.g., weak evidence AND weak hook) — rejected
 - `reuse_recommended`: hold ideas with strong fundamentals (hook≥4, evidence≥3, relevance≥4) — flagged for future reuse when conditions improve
 
-P2-T3 Content-Type Branching: Scoring carries a `content_type_profile` derived from `RunConstraints.content_type`. Each profile defines research/drafting/production/packaging depth and which stages to skip. Known profiles: `short_form_video` (default), `newsletter`, `article`, `webinar`, `launch_asset`, `thread`, `carousel`. Profiles are defined in [`ContentTypeProfile`](../src/cc_deep_research/content_gen/models.py) and resolved via `get_content_type_profile()`.
+P2-T3 Content-Type Branching: Scoring carries a `content_type_profile` derived from `RunConstraints.content_type`. Each profile defines research/drafting/production/packaging depth and which stages to skip. Known profiles: `short_form_video` (default), `newsletter`, `article`, `webinar`, `launch_asset`, `thread`, `carousel`. Profiles are defined in [`ContentTypeProfile`](../src/cc_deep_research/content_gen/models/) and resolved via `get_content_type_profile()`.
 
 **P5-T1: Production Complexity Branching:** Profiles now include `visual_complexity` (NONE/LIGHT/STANDARD/RICH) and `use_combined_execution_brief` (bool). Light formats (newsletter, thread, article, carousel) use combined execution brief instead of separate visual and production planning.
 
@@ -1051,9 +1051,11 @@ The most obvious next improvements are:
 
 Primary implementation files:
 
-- orchestrator: [`src/cc_deep_research/content_gen/orchestrator.py`](../src/cc_deep_research/content_gen/orchestrator.py)
+- pipeline: [`src/cc_deep_research/content_gen/pipeline.py`](../src/cc_deep_research/content_gen/pipeline.py)
+- stage orchestrators: [`src/cc_deep_research/content_gen/stages/`](../src/cc_deep_research/content_gen/stages/)
+- compatibility facade: [`src/cc_deep_research/content_gen/orchestrator.py`](../src/cc_deep_research/content_gen/orchestrator.py)
 - CLI: [`src/cc_deep_research/content_gen/cli.py`](../src/cc_deep_research/content_gen/cli.py)
-- models: [`src/cc_deep_research/content_gen/models.py`](../src/cc_deep_research/content_gen/models.py)
+- models: [`src/cc_deep_research/content_gen/models/`](../src/cc_deep_research/content_gen/models/)
 - brief service: [`src/cc_deep_research/content_gen/brief_service.py`](../src/cc_deep_research/content_gen/brief_service.py)
 - brief migration: [`src/cc_deep_research/content_gen/brief_migration.py`](../src/cc_deep_research/content_gen/brief_migration.py)
 - agents: [`src/cc_deep_research/content_gen/agents/`](../src/cc_deep_research/content_gen/agents/)

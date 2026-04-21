@@ -21,7 +21,7 @@ The system does not actually film, record, or render the final video. It generat
 
 ## Core Pipeline Container
 
-The canonical full-run artifact is [`PipelineContext`](src/cc_deep_research/content_gen/models.py), defined in [`src/cc_deep_research/content_gen/models.py`](src/cc_deep_research/content_gen/models.py). It is the accumulated state for the full content pipeline and is the main object that gets saved for resumable pipeline runs.
+The canonical full-run artifact is [`PipelineContext`](src/cc_deep_research/content_gen/models/), defined in [`src/cc_deep_research/content_gen/models/`](src/cc_deep_research/content_gen/models/). It is the accumulated state for the full content pipeline and is the main object that gets saved for resumable pipeline runs.
 
 `PipelineContext` currently contains these major fields:
 
@@ -56,7 +56,7 @@ The canonical full-run artifact is [`PipelineContext`](src/cc_deep_research/cont
 
 Relevant source:
 
-- [`src/cc_deep_research/content_gen/models.py`](src/cc_deep_research/content_gen/models.py)
+- [`src/cc_deep_research/content_gen/models/`](src/cc_deep_research/content_gen/models/)
 - [`docs/content-generation.md`](docs/content-generation.md)
 
 ## Pipeline Artifact Inventory
@@ -629,7 +629,7 @@ Main implementation and documentation references used for this note:
 
 - [`docs/content-generation.md`](docs/content-generation.md)
 - [`docs/DASHBOARD_GUIDE.md`](docs/DASHBOARD_GUIDE.md)
-- [`src/cc_deep_research/content_gen/models.py`](src/cc_deep_research/content_gen/models.py)
+- [`src/cc_deep_research/content_gen/models/`](src/cc_deep_research/content_gen/models/)
 - [`src/cc_deep_research/content_gen/progress.py`](src/cc_deep_research/content_gen/progress.py)
 - [`src/cc_deep_research/content_gen/router.py`](src/cc_deep_research/content_gen/router.py)
 - [`src/cc_deep_research/content_gen/storage/strategy_store.py`](src/cc_deep_research/content_gen/storage/strategy_store.py)
