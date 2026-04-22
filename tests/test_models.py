@@ -555,7 +555,7 @@ class TestCrossReferenceClaim:
             url="https://www.sec.gov/example-filing",
             title="Company Filing",
             snippet="Primary filing evidence",
-            source_metadata={"published_date": "2026-02-20"},
+            source_metadata={"published_date": "2026-04-01"},
             query_provenance=[
                 QueryProvenance(
                     query="company filing revenue guidance",

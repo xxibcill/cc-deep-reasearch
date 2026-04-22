@@ -383,9 +383,9 @@ def test_run_scripting_endpoint_can_force_single_pass(
             del raw_idea, progress_callback, max_iterations
             raise AssertionError("Iterative path should not run")
 
-    monkeypatch.setattr("cc_deep_research.content_gen.router.ScriptingStore", FakeStore)
+    monkeypatch.setattr("cc_deep_research.content_gen.scripting_api_service.ScriptingStore", FakeStore)
     monkeypatch.setattr(
-        "cc_deep_research.content_gen.orchestrator.ContentGenOrchestrator",
+        "cc_deep_research.content_gen.scripting_api_service.ContentGenOrchestrator",
         FakeOrchestrator,
     )
 
@@ -507,9 +507,9 @@ def test_run_scripting_endpoint_accepts_iteration_overrides(
                 ),
             )
 
-    monkeypatch.setattr("cc_deep_research.content_gen.router.ScriptingStore", FakeStore)
+    monkeypatch.setattr("cc_deep_research.content_gen.scripting_api_service.ScriptingStore", FakeStore)
     monkeypatch.setattr(
-        "cc_deep_research.content_gen.orchestrator.ContentGenOrchestrator",
+        "cc_deep_research.content_gen.scripting_api_service.ContentGenOrchestrator",
         FakeOrchestrator,
     )
 
@@ -599,7 +599,7 @@ def test_get_saved_script_returns_full_saved_result(
                 execution_mode="iterative",
             )
 
-    monkeypatch.setattr("cc_deep_research.content_gen.router.ScriptingStore", FakeStore)
+    monkeypatch.setattr("cc_deep_research.content_gen.scripting_api_service.ScriptingStore", FakeStore)
 
     client = TestClient(create_app())
     response = client.get("/api/content-gen/scripts/run-123")
