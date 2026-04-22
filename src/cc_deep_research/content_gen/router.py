@@ -375,9 +375,16 @@ def register_content_gen_routes(
     job_registry: PipelineRunJobRegistry,
 ) -> None:
     """Register all content-gen API and WebSocket routes on *app*."""
+    from cc_deep_research.content_gen.backlog_api_service import (
+        BacklogApiService,
+        BacklogItemNotFoundError,
+        BacklogValidationError,
+        DuplicateActivePipelineError,
+    )
     from cc_deep_research.content_gen.pipeline_run_service import PipelineRunService
 
     service = PipelineRunService(job_registry=job_registry, event_router=event_router)
+    backlog_api_service = BacklogApiService(backlog_service=None, pipeline_service=service)
 
     @app.get("/api/content-gen/pipelines")
     async def list_pipelines() -> JSONResponse:
@@ -767,116 +774,60 @@ def register_content_gen_routes(
 
     @app.post("/api/content-gen/backlog")
     async def create_backlog_item(request: CreateBacklogItemRequest) -> JSONResponse:
-        config = load_config()
-        service = BacklogService(config)
         try:
-            item = service.create_item(
-                title=request.title,
-                one_line_summary=request.one_line_summary,
-                raw_idea=request.raw_idea,
-                constraints=request.constraints,
-                idea=request.idea,
-                category=request.category,
-                audience=request.audience,
-                persona_detail=request.persona_detail,
-                problem=request.problem,
-                emotional_driver=request.emotional_driver,
-                urgency_level=request.urgency_level,
-                source=request.source,
-                why_now=request.why_now,
-                hook=request.hook,
-                content_type=request.content_type,
-                format_duration=request.format_duration,
-                key_message=request.key_message,
-                call_to_action=request.call_to_action,
-                evidence=request.evidence,
-                proof_gap_note=request.proof_gap_note,
-                expertise_reason=request.expertise_reason,
-                genericity_risk=request.genericity_risk,
-                risk_level=request.risk_level,
-                source_theme=request.source_theme,
-                selection_reasoning=request.selection_reasoning,
-            )
-        except ValueError as exc:
+            item = backlog_api_service.create_item(request.model_dump())
+        except BacklogValidationError as exc:
             return JSONResponse(status_code=400, content={"error": str(exc)})
-        return JSONResponse(content=json.loads(item.model_dump_json()), status_code=201)
+        return JSONResponse(
+            content=BacklogApiService.serialize_item(item),
+            status_code=201,
+        )
 
     @app.get("/api/content-gen/backlog")
     async def list_backlog() -> JSONResponse:
-        config = load_config()
-        service = BacklogService(config)
-        backlog = service.load()
-        return JSONResponse(
-            content={
-                "path": str(service.path),
-                "items": [json.loads(item.model_dump_json()) for item in backlog.items],
-            }
-        )
+        return JSONResponse(content=backlog_api_service.serialize_list())
 
     @app.patch("/api/content-gen/backlog/{idea_id}")
     async def update_backlog_item(idea_id: str, request: UpdateBacklogItemRequest) -> JSONResponse:
-        config = load_config()
-        service = BacklogService(config)
         try:
-            updated = service.update_item(idea_id, request.patch)
-        except ValueError as exc:
+            updated = backlog_api_service.update_item(idea_id, request.patch)
+        except BacklogValidationError as exc:
             return JSONResponse(status_code=400, content={"error": str(exc)})
-        if updated is None:
+        except BacklogItemNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
-        return JSONResponse(content=json.loads(updated.model_dump_json()))
+        return JSONResponse(content=BacklogApiService.serialize_item(updated))
 
     @app.post("/api/content-gen/backlog/{idea_id}/select")
     async def select_backlog_item(idea_id: str) -> JSONResponse:
-        config = load_config()
-        service = BacklogService(config)
-        selected = service.select_item(idea_id)
-        if selected is None:
+        try:
+            selected = backlog_api_service.select_item(idea_id)
+        except BacklogItemNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
-        return JSONResponse(content=json.loads(selected.model_dump_json()))
+        return JSONResponse(content=BacklogApiService.serialize_item(selected))
 
     @app.post("/api/content-gen/backlog/{idea_id}/archive")
     async def archive_backlog_item(idea_id: str) -> JSONResponse:
-        config = load_config()
-        service = BacklogService(config)
-        archived = service.archive_item(idea_id)
-        if archived is None:
+        try:
+            archived = backlog_api_service.archive_item(idea_id)
+        except BacklogItemNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
-        return JSONResponse(content=json.loads(archived.model_dump_json()))
+        return JSONResponse(content=BacklogApiService.serialize_item(archived))
 
     @app.delete("/api/content-gen/backlog/{idea_id}")
     async def delete_backlog_item(idea_id: str) -> JSONResponse:
-        config = load_config()
-        service = BacklogService(config)
-        removed = service.delete_item(idea_id)
-        if not removed:
+        try:
+            backlog_api_service.delete_item(idea_id)
+        except BacklogItemNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
         return JSONResponse(content={"removed": 1})
 
     @app.post("/api/content-gen/backlog/{idea_id}/start", status_code=202)
     async def start_backlog_item(idea_id: str) -> JSONResponse:
-        from cc_deep_research.content_gen.pipeline_run_service import DuplicateActiveItemError
-
-        config = load_config()
-        backlog_service = BacklogService(config)
-        backlog = backlog_service.load()
-
-        item = next((i for i in backlog.items if i.idea_id == idea_id), None)
-        if item is None:
-            return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
-
         try:
-            result = service.start_from_backlog_item(item)
-            return JSONResponse(
-                status_code=202,
-                content={
-                    "pipeline_id": result.pipeline_id,
-                    "status": result.status,
-                    "idea_id": idea_id,
-                    "from_stage": 4,
-                    "to_stage": result.to_stage,
-                },
-            )
-        except DuplicateActiveItemError as e:
+            result = backlog_api_service.start_from_item(idea_id)
+        except BacklogItemNotFoundError:
+            return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
+        except DuplicateActivePipelineError as e:
             return JSONResponse(
                 status_code=409,
                 content={
@@ -884,6 +835,16 @@ def register_content_gen_routes(
                     "pipeline_id": e.pipeline_id,
                 },
             )
+        return JSONResponse(
+            status_code=202,
+            content={
+                "pipeline_id": result.pipeline_id,
+                "status": result.status,
+                "idea_id": idea_id,
+                "from_stage": result.from_stage,
+                "to_stage": result.to_stage,
+            },
+        )
 
     # ------------------------------------------------------------------
     # Brief management
