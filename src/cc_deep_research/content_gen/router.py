@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
-from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any, Literal
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from cc_deep_research.config import load_config
 from cc_deep_research.content_gen.agents.backlog_chat import (
@@ -27,35 +26,40 @@ from cc_deep_research.content_gen.agents.backlog_triage import (
 )
 from cc_deep_research.content_gen.agents.execution_brief import ExecutionBriefAgent
 from cc_deep_research.content_gen.agents.next_action import NextActionAgent
-from cc_deep_research.content_gen.maintenance_workflow import (
-    MaintenanceJobType,
-    MaintenanceProposalStatus,
-    MaintenanceScheduler,
-    MaintenanceStore,
-)
 from cc_deep_research.content_gen.models import (
     BacklogItem,
-    HookSet,
     OpportunityBrief,
     ReleaseState,
     RunConstraints,
-    ScriptingContext,
-    ScriptingIterations,
-    ScriptingIterationSummary,
-    ScriptingRunResult,
 )
 from cc_deep_research.content_gen.progress import PipelineRunJobRegistry
-from cc_deep_research.content_gen.storage import (
-    AuditActor,
-    AuditEventType,
-    AuditStore,
-    PublishQueueStore,
-    ScriptingStore,
-    StrategyStore,
-)
+from cc_deep_research.content_gen.storage import AuditActor, AuditEventType, AuditStore
 from cc_deep_research.event_router import EventRouter, WebSocketConnection
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Service imports (extracted from route handlers)
+# ---------------------------------------------------------------------------
+from cc_deep_research.content_gen.maintenance_api_service import (
+    MaintenanceApiService,
+    ProposalNotFoundError,
+    UnknownJobTypeError,
+)
+from cc_deep_research.content_gen.publish_queue_audit_service import (
+    PublishQueueAuditService,
+)
+from cc_deep_research.content_gen.scripting_api_service import (
+    ScriptContextNotFoundError,
+    ScriptingApiError,
+    ScriptingApiService,
+    ScriptMissingFieldsError,
+    ScriptRunNotFoundError,
+)
+from cc_deep_research.content_gen.strategy_api_service import (
+    RuleVersionNotFoundError,
+    StrategyApiService,
+)
 
 # ---------------------------------------------------------------------------
 # Request / response models
@@ -313,57 +317,6 @@ class BriefAssistantApplyRequest(BaseModel):
     revision_notes: str = Field(default="", description="Notes about what changed in this revision")
 
 
-def _build_scripting_iterations(iter_state: Any) -> ScriptingIterations | None:
-    if iter_state is None:
-        return None
-    return ScriptingIterations(
-        count=iter_state.current_iteration,
-        max_iterations=iter_state.max_iterations,
-        converged=iter_state.is_converged,
-        quality_history=[
-            ScriptingIterationSummary(
-                iteration=q.iteration_number,
-                score=q.overall_quality_score,
-                passes=q.passes_threshold,
-            )
-            for q in iter_state.quality_history
-        ],
-    )
-
-
-def _build_scripting_result(
-    ctx: ScriptingContext,
-    *,
-    run_id: str | None = None,
-    execution_mode: Literal["single_pass", "iterative"] = "single_pass",
-    iterations: ScriptingIterations | None = None,
-) -> ScriptingRunResult:
-    script = ScriptingStore.extract_script(ctx)
-    return ScriptingRunResult(
-        run_id=run_id,
-        raw_idea=ctx.raw_idea,
-        script=script,
-        word_count=len(script.split()) if script else 0,
-        context=ctx,
-        execution_mode=execution_mode,
-        iterations=iterations,
-    )
-
-
-def _serialize_scripting_payload(result: ScriptingRunResult) -> dict[str, Any]:
-    payload = result.model_dump(mode="json")
-    if payload.get("iterations") is None:
-        payload.pop("iterations", None)
-    return payload
-
-
-def _serialize_saved_script_run(run: Any) -> dict[str, Any]:
-    payload = run.model_dump(mode="json")
-    if payload.get("iterations") is None:
-        payload.pop("iterations", None)
-    return payload
-
-
 # ---------------------------------------------------------------------------
 # Router registration
 # ---------------------------------------------------------------------------
@@ -538,105 +491,42 @@ def register_content_gen_routes(
     # Standalone scripting
     # ------------------------------------------------------------------
 
-    @app.post("/api/content-gen/scripting")
-    async def run_scripting(request: RunScriptingRequest) -> JSONResponse:
-        config = load_config()
-        from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
-
-        orch = ContentGenOrchestrator(config)
-        iter_state = None
-        iterative_enabled = (
-            config.content_gen.enable_iterative_mode
-            if request.iterative_mode is None
-            else request.iterative_mode
-        )
-        try:
-            if iterative_enabled:
-                ctx, iter_state = await orch.run_scripting_iterative(
-                    request.idea,
-                    llm_route=request.llm_route,
-                    max_iterations=request.max_iterations,
-                )
-            else:
-                ctx = await orch.run_scripting(request.idea, llm_route=request.llm_route)
-        except Exception as exc:
-            logger.exception("Scripting run failed")
-            return JSONResponse(status_code=500, content={"error": str(exc)})
-
-        store = ScriptingStore()
-        execution_mode: Literal["single_pass", "iterative"] = (
-            "iterative" if iter_state is not None else "single_pass"
-        )
-        iterations = _build_scripting_iterations(iter_state)
-        saved = store.save(ctx, execution_mode=execution_mode, iterations=iterations)
-        response_content = _build_scripting_result(
-            ctx,
-            run_id=saved.run_id,
-            execution_mode=execution_mode,
-            iterations=iterations,
-        )
-        return JSONResponse(content=_serialize_scripting_payload(response_content))
-
-    # ------------------------------------------------------------------
-    # Saved scripts history
-    # ------------------------------------------------------------------
-
-    @app.get("/api/content-gen/scripts")
-    async def list_scripts() -> JSONResponse:
-        store = ScriptingStore()
-        runs = store.list_runs(limit=50)
-        items = [_serialize_saved_script_run(r) for r in runs]
-        return JSONResponse(content={"items": items})
-
-    @app.get("/api/content-gen/scripts/{run_id}")
-    async def get_script(run_id: str) -> JSONResponse:
-        store = ScriptingStore()
-        run = store.get(run_id)
-        if run is None:
-            return JSONResponse(status_code=404, content={"error": "Script run not found"})
-        if run.result_path:
-            result_text = ""
-            with suppress(Exception):
-                from pathlib import Path
-
-                result_text = Path(run.result_path).read_text()
-            if result_text:
-                return JSONResponse(content=json.loads(result_text))
-
-        script_text = ""
-        with suppress(Exception):
-            from pathlib import Path
-
-            script_text = Path(run.script_path).read_text()
-        context: ScriptingContext | None = None
-        with suppress(Exception):
-            from pathlib import Path
-
-            context_text = Path(run.context_path).read_text()
-            if context_text:
-                context = ScriptingContext.model_validate_json(context_text)
-
-        if context is None:
-            context = ScriptingContext(raw_idea=run.raw_idea)
-
-        response = _build_scripting_result(
-            context,
-            run_id=run.run_id,
-            execution_mode=run.execution_mode,
-            iterations=run.iterations,
-        )
-        if script_text:
-            response.script = script_text
-            response.word_count = len(script_text.split())
-        return JSONResponse(content=json.loads(response.model_dump_json()))
-
-    # ------------------------------------------------------------------
-    # Script variant generation & update
-    # ------------------------------------------------------------------
+    scripting_api_service = ScriptingApiService()
 
     class GenerateVariantsRequest(BaseModel):
         tone: str | None = None
         cta_goal: str | None = None
+
+    class UpdateScriptRequest(BaseModel):
+        hook: str | None = None
+        cta: str | None = None
+        script: str | None = None
+
+    @app.post("/api/content-gen/scripting")
+    async def run_scripting(request: RunScriptingRequest) -> JSONResponse:
+        try:
+            result = await scripting_api_service.run_scripting(
+                idea=request.idea,
+                iterative_mode=request.iterative_mode,
+                max_iterations=request.max_iterations,
+                llm_route=request.llm_route,
+            )
+        except ScriptingApiError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": exc.message})
+        return JSONResponse(content=scripting_api_service.serialize_result(result))
+
+    @app.get("/api/content-gen/scripts")
+    async def list_scripts() -> JSONResponse:
+        items = scripting_api_service.list_scripts(limit=50)
+        return JSONResponse(content={"items": items})
+
+    @app.get("/api/content-gen/scripts/{run_id}")
+    async def get_script(run_id: str) -> JSONResponse:
+        try:
+            result = scripting_api_service.get_script(run_id)
+        except ScriptRunNotFoundError:
+            return JSONResponse(status_code=404, content={"error": "Script run not found"})
+        return JSONResponse(content=scripting_api_service.serialize_result(result))
 
     @app.post("/api/content-gen/scripts/{run_id}/generate-variants")
     async def generate_script_variants(
@@ -644,72 +534,21 @@ def register_content_gen_routes(
         request: GenerateVariantsRequest,
     ) -> JSONResponse:
         """Generate new hook and CTA variants for an existing script run."""
-        store = ScriptingStore()
-        run = store.get(run_id)
-        if run is None:
-            return JSONResponse(status_code=404, content={"error": "Script run not found"})
-
-        # Load context
-        context: ScriptingContext | None = None
         try:
-            from pathlib import Path
-
-            context_text = Path(run.context_path).read_text()
-            if context_text:
-                context = ScriptingContext.model_validate_json(context_text)
-        except (FileNotFoundError, json.JSONDecodeError, ValidationError):
-            pass
-
-        if context is None:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "Script context not found - cannot generate variants"},
+            result = await scripting_api_service.generate_variants(
+                run_id,
+                tone=request.tone,
+                cta_goal=request.cta_goal,
             )
-
-        # Ensure required fields exist
-        if context.core_inputs is None or context.angle is None:
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "error": "Script is missing core_inputs or angle - run full scripting first"
-                },
-            )
-
-        # Override tone if provided
-        if request.tone is not None:
-            context.tone = request.tone
-        if request.cta_goal is not None:
-            context.cta = request.cta_goal
-
-        # Generate hooks and CTA using ScriptingAgent
-        from cc_deep_research.content_gen.agents.scripting import ScriptingAgent
-        from cc_deep_research.llm import LLMRouter
-
-        config = load_config()
-        llm = LLMRouter(config.content_gen.llm)
-        agent = ScriptingAgent(llm)
-
-        # Generate hooks (step 5)
-        context = await agent.generate_hooks(context)
-
-        # Generate CTA (step 5b)
-        context = await agent.generate_cta(context)
-
-        # Save updated context
-        store = ScriptingStore()
-        store._save_context(run_id, context)
-
-        return JSONResponse(
-            content={
-                "hooks": json.loads(context.hooks.model_dump_json()),
-                "cta_variants": json.loads(context.cta_variants.model_dump_json()),
-            }
-        )
-
-    class UpdateScriptRequest(BaseModel):
-        hook: str | None = None
-        cta: str | None = None
-        script: str | None = None
+        except ScriptRunNotFoundError:
+            return JSONResponse(status_code=404, content={"error": "Script run not found"})
+        except ScriptContextNotFoundError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": exc.message})
+        except ScriptMissingFieldsError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": exc.message})
+        except ScriptingApiError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": exc.message})
+        return JSONResponse(content=result)
 
     @app.patch("/api/content-gen/scripts/{run_id}")
     async def update_script(
@@ -717,56 +556,20 @@ def register_content_gen_routes(
         request: UpdateScriptRequest,
     ) -> JSONResponse:
         """Update a script run with new hook, CTA, or full script content."""
-        if request.hook is None and request.cta is None and request.script is None:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "At least one field (hook, cta, or script) must be provided"},
-            )
-
-        store = ScriptingStore()
-        run = store.get(run_id)
-        if run is None:
-            return JSONResponse(status_code=404, content={"error": "Script run not found"})
-
-        # Load context
-        context: ScriptingContext | None = None
         try:
-            from pathlib import Path
-
-            context_text = Path(run.context_path).read_text()
-            if context_text:
-                context = ScriptingContext.model_validate_json(context_text)
-        except (FileNotFoundError, json.JSONDecodeError, ValidationError):
-            pass
-
-        if context is None:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "Script context not found"},
+            result = scripting_api_service.update_script(
+                run_id,
+                hook=request.hook,
+                cta=request.cta,
+                script=request.script,
             )
-
-        # Update fields
-        if request.hook is not None:
-            if context.hooks is None:
-                context.hooks = HookSet(hooks=[], best_hook=request.hook, best_hook_reason="")
-            else:
-                context.hooks.best_hook = request.hook
-
-        if request.cta is not None:
-            context.cta = request.cta
-
-        if request.script is not None:
-            # Update script_path with new script content
-            from pathlib import Path
-
-            script_path = Path(run.script_path)
-            script_path.parent.mkdir(parents=True, exist_ok=True)
-            script_path.write_text(request.script)
-
-        # Save updated context
-        store._save_context(run_id, context)
-
-        return JSONResponse(content={"success": True, "run_id": run_id})
+        except ScriptRunNotFoundError:
+            return JSONResponse(status_code=404, content={"error": "Script run not found"})
+        except ScriptContextNotFoundError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": exc.message})
+        except ScriptingApiError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": exc.message})
+        return JSONResponse(content=result)
 
     # ------------------------------------------------------------------
     # Backlog
@@ -1628,17 +1431,17 @@ def register_content_gen_routes(
     # Strategy
     # ------------------------------------------------------------------
 
+    strategy_api_service = StrategyApiService()
+
     @app.get("/api/content-gen/strategy")
     async def get_strategy() -> JSONResponse:
-        store = StrategyStore()
-        memory = store.load()
-        return JSONResponse(content=json.loads(memory.model_dump_json()))
+        memory = strategy_api_service.get_strategy()
+        return JSONResponse(content=strategy_api_service.serialize_strategy(memory))
 
     @app.put("/api/content-gen/strategy")
     async def update_strategy(request: UpdateStrategyRequest) -> JSONResponse:
-        store = StrategyStore()
-        updated = store.update(request.patch)
-        return JSONResponse(content=json.loads(updated.model_dump_json()))
+        updated = strategy_api_service.update_strategy(request.patch)
+        return JSONResponse(content=strategy_api_service.serialize_strategy(updated))
 
     @app.get("/api/content-gen/strategy/readiness")
     async def get_strategy_readiness() -> JSONResponse:
@@ -1647,9 +1450,8 @@ def register_content_gen_routes(
         P4-T1: Returns blocking and warning issues so operators can see
         which fields or ratios are causing readiness failures.
         """
-        store = StrategyStore()
-        result = store.check_readiness()
-        return JSONResponse(content=json.loads(result.model_dump_json()))
+        result = strategy_api_service.check_readiness()
+        return JSONResponse(content=strategy_api_service.serialize_readiness(result))
 
     @app.get("/api/content-gen/strategy/rules-for-review")
     async def get_rules_for_review() -> JSONResponse:
@@ -1658,10 +1460,12 @@ def register_content_gen_routes(
         P4-T2: Returns rules that are under_review, expired, or past their
         review date.
         """
-        store = StrategyStore()
-        rules = store.get_rules_for_review()
+        rules = strategy_api_service.get_rules_for_review()
         return JSONResponse(
-            content={"items": [json.loads(r.model_dump_json()) for r in rules], "count": len(rules)}
+            content={
+                "items": [strategy_api_service.serialize_rule_version(r) for r in rules],
+                "count": len(rules),
+            }
         )
 
     @app.patch("/api/content-gen/strategy/rule-lifecycle/{version_id}")
@@ -1678,83 +1482,71 @@ def register_content_gen_routes(
         P4-T2: Allows operators to promote, deprecate, or schedule review
         for durable rules.
         """
-        from cc_deep_research.content_gen.models import RuleLifecycleStatus
-
-        store = StrategyStore()
-        normalized_status = RuleLifecycleStatus(status) if status else None
-        version = store.update_rule_lifecycle(
-            version_id,
-            status=normalized_status,
-            confidence=confidence,
-            evidence_count=evidence_count,
-            review_after=review_after,
-            review_notes=review_notes,
-        )
-        if version is None:
+        try:
+            version = strategy_api_service.update_rule_lifecycle(
+                version_id,
+                status=status,
+                confidence=confidence,
+                evidence_count=evidence_count,
+                review_after=review_after,
+                review_notes=review_notes,
+            )
+        except RuleVersionNotFoundError:
             return JSONResponse(
                 content={"error": "Rule version not found"},
                 status_code=404,
             )
-        return JSONResponse(content=json.loads(version.model_dump_json()))
+        return JSONResponse(content=strategy_api_service.serialize_rule_version(version))
 
     @app.get("/api/content-gen/learnings")
     async def list_learnings(
         category: str | None = None,
         durability: str | None = None,
     ) -> JSONResponse:
-        from cc_deep_research.content_gen.models import LearningCategory, LearningDurability
-        from cc_deep_research.content_gen.storage import PerformanceLearningStore
-
-        store = PerformanceLearningStore()
-        items = store.get_active_learnings(
-            category=LearningCategory(category) if category else None,
-            durability=LearningDurability(durability) if durability else None,
-        )
+        items, count = strategy_api_service.list_learnings(category=category, durability=durability)
         return JSONResponse(
-            content={"items": [json.loads(item.model_dump_json()) for item in items], "count": len(items)}
+            content={
+                "items": [strategy_api_service.serialize_learning(item) for item in items],
+                "count": count,
+            }
         )
 
     @app.post("/api/content-gen/learnings/apply")
     async def apply_learnings(request: ApplyLearningsRequest) -> JSONResponse:
-        from cc_deep_research.content_gen.storage import PerformanceLearningStore
-
-        store = PerformanceLearningStore()
-        guidance = store.apply_learnings_to_strategy(
+        guidance = strategy_api_service.apply_learnings(
             request.learning_ids,
             operator_approved=request.operator_approved,
-            record_versions=True,
         )
         return JSONResponse(content=json.loads(guidance.model_dump_json()))
 
     @app.get("/api/content-gen/rule-versions")
     async def list_rule_versions(kind: str | None = None) -> JSONResponse:
-        from cc_deep_research.telemetry.query import query_content_gen_rule_versions
-
-        return JSONResponse(content=query_content_gen_rule_versions(kind=kind))
+        items = strategy_api_service.list_rule_versions(kind=kind)
+        return JSONResponse(content=items)
 
     @app.get("/api/content-gen/operating-fitness")
     async def get_operating_fitness() -> JSONResponse:
-        from cc_deep_research.telemetry.query import query_content_gen_operating_fitness
-
-        return JSONResponse(content=query_content_gen_operating_fitness())
+        result = strategy_api_service.get_operating_fitness()
+        return JSONResponse(content=result)
 
     # ------------------------------------------------------------------
     # Publish queue
     # ------------------------------------------------------------------
 
+    publish_audit_service = PublishQueueAuditService()
+
     @app.get("/api/content-gen/publish")
     async def list_publish_queue() -> JSONResponse:
-        store = PublishQueueStore()
-        items = store.load()
-        return JSONResponse(content={"items": [json.loads(i.model_dump_json()) for i in items]})
+        items = publish_audit_service.list_publish_queue()
+        return JSONResponse(
+            content={
+                "items": [publish_audit_service.serialize_publish_item(i) for i in items]
+            }
+        )
 
     @app.delete("/api/content-gen/publish/{idea_id}/{platform}")
     async def remove_from_queue(idea_id: str, platform: str) -> JSONResponse:
-        store = PublishQueueStore()
-        items = store.load()
-        filtered = [i for i in items if not (i.idea_id == idea_id and i.platform == platform)]
-        store.save(filtered)
-        removed = len(items) - len(filtered)
+        removed = publish_audit_service.remove_from_queue(idea_id, platform)
         return JSONResponse(content={"removed": removed})
 
     # ------------------------------------------------------------------
@@ -1776,38 +1568,25 @@ def register_content_gen_routes(
         - actor: filter to entries from a specific actor (operator, ai_proposal, system, maintenance)
         - limit: max entries to return (default 100)
         """
-        store = AuditStore()
-        event_type_enum = AuditEventType(event_type) if event_type else None
-        actor_enum = AuditActor(actor) if actor else None
-        entries = store.load_entries(
+        entries, count = publish_audit_service.list_audit_entries(
             idea_id=idea_id,
-            event_type=event_type_enum,
-            actor=actor_enum,
+            event_type=event_type,
+            actor=actor,
             limit=limit,
         )
-        return JSONResponse(
-            content={
-                "items": [entry.to_dict() for entry in entries],
-                "count": len(entries),
-            }
-        )
+        return JSONResponse(content={"items": entries, "count": count})
 
     @app.get("/api/content-gen/audit/{idea_id}")
     async def get_audit_for_item(idea_id: str, limit: int = 50) -> JSONResponse:
         """Get audit history for a specific backlog item."""
-        store = AuditStore()
-        entries = store.load_entries(idea_id=idea_id, limit=limit)
-        return JSONResponse(
-            content={
-                "idea_id": idea_id,
-                "items": [entry.to_dict() for entry in entries],
-                "count": len(entries),
-            }
-        )
+        entries, count = publish_audit_service.get_audit_for_item(idea_id=idea_id, limit=limit)
+        return JSONResponse(content={"idea_id": idea_id, "items": entries, "count": count})
 
     # ------------------------------------------------------------------
     # Maintenance workflows
     # ------------------------------------------------------------------
+
+    maintenance_api_service = MaintenanceApiService()
 
     @app.get("/api/content-gen/maintenance/proposals")
     async def list_maintenance_proposals(
@@ -1822,16 +1601,12 @@ def register_content_gen_routes(
         - job_type: filter by job type (stale_item_review, gap_summary, duplicate_watchlist, rescoring_recommend)
         - limit: max proposals to return (default 50)
         """
-        store = MaintenanceStore()
-        status_enum = MaintenanceProposalStatus(status) if status else None
-        job_type_enum = MaintenanceJobType(job_type) if job_type else None
-        proposals = store.load_proposals(status=status_enum, job_type=job_type_enum, limit=limit)
-        return JSONResponse(
-            content={
-                "items": [p.to_dict() for p in proposals],
-                "count": len(proposals),
-            }
+        proposals, count = maintenance_api_service.list_proposals(
+            status=status,
+            job_type=job_type,
+            limit=limit,
         )
+        return JSONResponse(content={"items": proposals, "count": count})
 
     @app.post("/api/content-gen/maintenance/proposals/{proposal_id}/resolve")
     async def resolve_maintenance_proposal(
@@ -1846,31 +1621,11 @@ def register_content_gen_routes(
         Query params:
         - decision: "approved" or "rejected"
         """
-        store = MaintenanceStore()
-        config = load_config()
-        service = BacklogService(config)
-
-        proposal = store.resolve_proposal(proposal_id, decision=decision)
-        if proposal is None:
+        try:
+            result = maintenance_api_service.resolve_proposal(proposal_id, decision=decision)
+        except ProposalNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Proposal not found"})
-
-        # Apply approved proposals to backlog items
-        if decision == "approved" and proposal.suggested_patch:
-            for idea_id in proposal.affected_idea_ids:
-                service.update_item(idea_id, dict(proposal.suggested_patch))
-
-        # Log to audit
-        audit_store = AuditStore(config=config)
-        for idea_id in proposal.affected_idea_ids:
-            audit_store.log_backlog_mutation(
-                event_type=AuditEventType.MAINTENANCE_PROPOSAL,
-                idea_id=idea_id,
-                actor=AuditActor.OPERATOR,
-                patch={"proposal_id": proposal_id, "decision": decision},
-                outcome=decision,
-            )
-
-        return JSONResponse(content=proposal.to_dict())
+        return JSONResponse(content=result)
 
     @app.post("/api/content-gen/maintenance/jobs/{job_type}/trigger")
     async def trigger_maintenance_job(request: Request, job_type: str) -> JSONResponse:
@@ -1879,44 +1634,23 @@ def register_content_gen_routes(
         Path params:
         - job_type: one of stale_item_review, gap_summary, duplicate_watchlist, rescoring_recommend
         """
-        try:
-            job_type_enum = MaintenanceJobType(job_type)
-        except ValueError:
-            return JSONResponse(
-                status_code=400,
-                content={"error": f"Unknown job type: {job_type}"},
-            )
-
         # Use app-state scheduler if available (started with app lifecycle)
         runtime = getattr(request.app.state, "dashboard_runtime", None)
-        scheduler: MaintenanceScheduler | None = None
+        scheduler = None
         if runtime is not None:
             scheduler = getattr(runtime, "maintenance_scheduler", None)
-        if scheduler is None:
-            scheduler = MaintenanceScheduler()
 
-        run = scheduler.trigger_job(job_type_enum)
-
-        return JSONResponse(
-            content={
-                "run": run.to_dict(),
-                "proposals_generated": run.proposals_count,
-                "outcome": run.outcome,
-                "error": run.error or None,
-            }
-        )
+        try:
+            result = maintenance_api_service.trigger_job(job_type, scheduler=scheduler)
+        except UnknownJobTypeError as exc:
+            return JSONResponse(status_code=400, content={"error": exc.message})
+        return JSONResponse(content=result)
 
     @app.get("/api/content-gen/maintenance/runs")
     async def list_maintenance_runs(limit: int = 20) -> JSONResponse:
         """List recent maintenance run records."""
-        store = MaintenanceStore()
-        runs = store.load_runs(limit=limit)
-        return JSONResponse(
-            content={
-                "items": [r.to_dict() for r in runs],
-                "count": len(runs),
-            }
-        )
+        runs, count = maintenance_api_service.list_runs(limit=limit)
+        return JSONResponse(content={"items": runs, "count": count})
 
     # ------------------------------------------------------------------
     # WebSocket for pipeline progress
