@@ -27,7 +27,6 @@ from cc_deep_research.content_gen.agents.backlog_triage import (
 )
 from cc_deep_research.content_gen.agents.execution_brief import ExecutionBriefAgent
 from cc_deep_research.content_gen.agents.next_action import NextActionAgent
-from cc_deep_research.content_gen.backlog_service import BacklogService
 from cc_deep_research.content_gen.maintenance_workflow import (
     MaintenanceJobType,
     MaintenanceProposalStatus,
@@ -37,6 +36,7 @@ from cc_deep_research.content_gen.maintenance_workflow import (
 from cc_deep_research.content_gen.models import (
     BacklogItem,
     HookSet,
+    OpportunityBrief,
     ReleaseState,
     RunConstraints,
     ScriptingContext,
@@ -850,18 +850,22 @@ def register_content_gen_routes(
     # Brief management
     # ------------------------------------------------------------------
 
-    from cc_deep_research.content_gen.brief_service import BriefService, ConcurrentModificationError
-    from cc_deep_research.content_gen.models import (
-        BriefLifecycleState,
-        BriefProvenance,
-        OpportunityBrief,
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+    from cc_deep_research.content_gen.brief_api_service import (
+        BriefApiService,
+        BriefConcurrentModificationError,
+        BriefNotFoundError,
+        BriefValidationError,
     )
+    from cc_deep_research.content_gen.brief_service import BriefService
 
     def _brief_service() -> BriefService:
         config = load_config()
         service = BriefService(config)
         service.set_audit_store(AuditStore(config=config))
         return service
+
+    brief_api_service = BriefApiService()
 
     @app.get("/api/content-gen/briefs")
     async def list_briefs(
@@ -874,24 +878,11 @@ def register_content_gen_routes(
         - lifecycle_state: filter by state (draft, approved, superseded, archived)
         - limit: max briefs to return (default 50)
         """
-        service = _brief_service()
-        output = service.load()
-        briefs = output.briefs
-
-        if lifecycle_state:
-            try:
-                state = BriefLifecycleState(lifecycle_state)
-                briefs = [b for b in briefs if b.lifecycle_state == state]
-            except ValueError:
-                return JSONResponse(status_code=400, content={"error": f"Invalid lifecycle_state: {lifecycle_state}"})
-
-        # Sort by updated_at desc, take limit
-        briefs = sorted(briefs, key=lambda b: b.updated_at, reverse=True)[:limit]
-
-        return JSONResponse(content={
-            "items": [json.loads(b.model_dump_json()) for b in briefs],
-            "count": len(briefs),
-        })
+        try:
+            result = brief_api_service.list_briefs(lifecycle_state=lifecycle_state, limit=limit)
+        except BriefValidationError as exc:
+            return JSONResponse(status_code=400, content={"error": exc.message})
+        return JSONResponse(content=brief_api_service.serialize_list(result))
 
     @app.post("/api/content-gen/briefs", status_code=201)
     async def create_brief(request: CreateBriefRequest) -> JSONResponse:
@@ -900,41 +891,27 @@ def register_content_gen_routes(
         This creates a new brief resource with a single initial revision.
         The brief starts in DRAFT state.
         """
-        service = _brief_service()
         try:
-            brief_data = request.brief
-            if isinstance(brief_data, dict):
-                opportunity = OpportunityBrief.model_validate(brief_data)
-            else:
-                return JSONResponse(status_code=400, content={"error": "brief must be a dictionary"})
-
-            provenance = BriefProvenance(request.provenance) if request.provenance else BriefProvenance.GENERATED
-
-            managed = service.create_from_opportunity(
-                opportunity,
-                provenance=provenance,
+            managed = brief_api_service.create_brief(
+                request.brief,
+                provenance=request.provenance,
                 source_pipeline_id=request.source_pipeline_id,
                 revision_notes=request.revision_notes,
             )
-            return JSONResponse(content=json.loads(managed.model_dump_json()))
-        except ValueError as exc:
-            return JSONResponse(status_code=400, content={"error": str(exc)})
+        except BriefValidationError as exc:
+            return JSONResponse(status_code=400, content={"error": exc.message})
+        return JSONResponse(content=json.loads(managed.model_dump_json()))
 
     @app.get("/api/content-gen/briefs/{brief_id}")
     async def get_brief(brief_id: str) -> JSONResponse:
         """Get a single brief with its current head revision content."""
-        service = _brief_service()
-        managed = service.get_brief(brief_id)
-        if managed is None:
+        try:
+            managed, revision = brief_api_service.get_brief_with_revision(brief_id)
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
-
-        # Attach current head revision content
-        current_revision = service.get_revision(managed.current_revision_id)
-        response = json.loads(managed.model_dump_json())
-        if current_revision:
-            response["current_revision"] = json.loads(current_revision.model_dump_json())
-
-        return JSONResponse(content=response)
+        return JSONResponse(
+            content=brief_api_service.serialize_brief_with_revision(managed, revision)
+        )
 
     @app.patch("/api/content-gen/briefs/{brief_id}")
     async def update_brief(brief_id: str, request: UpdateBriefRequest) -> JSONResponse:
@@ -942,31 +919,34 @@ def register_content_gen_routes(
 
         Note: Use save_revision() to create new content revisions.
         """
-        service = _brief_service()
         try:
-            updated = service.update_brief(
+            updated = brief_api_service.update_brief(
                 brief_id,
                 request.patch,
                 expected_updated_at=request.expected_updated_at,
             )
-        except ConcurrentModificationError as exc:
+        except BriefConcurrentModificationError as exc:
             return JSONResponse(
                 status_code=409,
                 content={
-                    "error": str(exc),
+                    "error": exc.message,
                     "expected_updated_at": exc.expected_updated_at,
                     "actual_updated_at": exc.actual_updated_at,
                 },
             )
-        if updated is None:
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
+        except BriefValidationError as exc:
+            return JSONResponse(status_code=400, content={"error": exc.message})
         return JSONResponse(content=json.loads(updated.model_dump_json()))
 
     @app.get("/api/content-gen/briefs/{brief_id}/revisions")
     async def list_brief_revisions(brief_id: str, limit: int = 50) -> JSONResponse:
         """List all revisions for a brief, most recent first."""
-        service = _brief_service()
-        revisions = service.list_revisions(brief_id, limit=limit)
+        try:
+            revisions = brief_api_service.list_revisions(brief_id, limit=limit)
+        except BriefNotFoundError:
+            return JSONResponse(status_code=404, content={"error": "Brief not found"})
         return JSONResponse(content={
             "items": [json.loads(r.model_dump_json()) for r in revisions],
             "count": len(revisions),
@@ -975,8 +955,7 @@ def register_content_gen_routes(
     @app.get("/api/content-gen/briefs/{brief_id}/revisions/{revision_id}")
     async def get_brief_revision(brief_id: str, revision_id: str) -> JSONResponse:
         """Get a specific revision by ID."""
-        service = _brief_service()
-        revision = service.get_revision(revision_id)
+        revision = brief_api_service.get_revision(revision_id)
         if revision is None or revision.brief_id != brief_id:
             return JSONResponse(status_code=404, content={"error": "Revision not found"})
         return JSONResponse(content=json.loads(revision.model_dump_json()))
@@ -988,130 +967,120 @@ def register_content_gen_routes(
         The current_revision_id (head) is NOT changed by this operation.
         Use /apply-revision to promote a revision to head.
         """
-        service = _brief_service()
         try:
-            brief_data = request.brief
-            if isinstance(brief_data, dict):
-                opportunity = OpportunityBrief.model_validate(brief_data)
-            else:
-                return JSONResponse(status_code=400, content={"error": "brief must be a dictionary"})
-
-            revision = service.save_revision(
+            revision = brief_api_service.save_revision(
                 brief_id,
-                opportunity,
+                request.brief,
                 revision_notes=request.revision_notes,
                 source_pipeline_id=request.source_pipeline_id,
                 expected_updated_at=request.expected_updated_at,
             )
-        except ConcurrentModificationError as exc:
+        except BriefConcurrentModificationError as exc:
             return JSONResponse(
                 status_code=409,
                 content={
-                    "error": str(exc),
+                    "error": exc.message,
                     "expected_updated_at": exc.expected_updated_at,
                     "actual_updated_at": exc.actual_updated_at,
                 },
             )
-        if revision is None:
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
+        except BriefValidationError as exc:
+            return JSONResponse(status_code=400, content={"error": exc.message})
         return JSONResponse(content=json.loads(revision.model_dump_json()), status_code=201)
 
     @app.post("/api/content-gen/briefs/{brief_id}/apply-revision")
     async def apply_revision(brief_id: str, request: ApplyRevisionRequest) -> JSONResponse:
         """Apply a revision as the current head (promote it to active)."""
-        service = _brief_service()
         try:
-            updated = service.update_head(
+            updated = brief_api_service.update_head(
                 brief_id,
                 request.revision_id,
                 expected_updated_at=request.expected_updated_at,
             )
-        except ConcurrentModificationError as exc:
+        except BriefConcurrentModificationError as exc:
             return JSONResponse(
                 status_code=409,
                 content={
-                    "error": str(exc),
+                    "error": exc.message,
                     "expected_updated_at": exc.expected_updated_at,
                     "actual_updated_at": exc.actual_updated_at,
                 },
             )
-        if updated is None:
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
         return JSONResponse(content=json.loads(updated.model_dump_json()))
 
     @app.post("/api/content-gen/briefs/{brief_id}/approve")
     async def approve_brief(brief_id: str, expected_updated_at: str | None = None) -> JSONResponse:
         """Transition a brief to the approved state."""
-        service = _brief_service()
         try:
-            updated = service.approve(brief_id, expected_updated_at=expected_updated_at)
-        except ConcurrentModificationError as exc:
+            updated = brief_api_service.approve_brief(brief_id, expected_updated_at=expected_updated_at)
+        except BriefConcurrentModificationError as exc:
             return JSONResponse(
                 status_code=409,
                 content={
-                    "error": str(exc),
+                    "error": exc.message,
                     "expected_updated_at": exc.expected_updated_at,
                     "actual_updated_at": exc.actual_updated_at,
                 },
             )
-        if updated is None:
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
         return JSONResponse(content=json.loads(updated.model_dump_json()))
 
     @app.post("/api/content-gen/briefs/{brief_id}/archive")
     async def archive_brief(brief_id: str, expected_updated_at: str | None = None) -> JSONResponse:
         """Archive a brief."""
-        service = _brief_service()
         try:
-            updated = service.archive(brief_id, expected_updated_at=expected_updated_at)
-        except ConcurrentModificationError as exc:
+            updated = brief_api_service.archive_brief(brief_id, expected_updated_at=expected_updated_at)
+        except BriefConcurrentModificationError as exc:
             return JSONResponse(
                 status_code=409,
                 content={
-                    "error": str(exc),
+                    "error": exc.message,
                     "expected_updated_at": exc.expected_updated_at,
                     "actual_updated_at": exc.actual_updated_at,
                 },
             )
-        if updated is None:
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
         return JSONResponse(content=json.loads(updated.model_dump_json()))
 
     @app.post("/api/content-gen/briefs/{brief_id}/supersede")
     async def supersede_brief(brief_id: str, expected_updated_at: str | None = None) -> JSONResponse:
         """Mark a brief as superseded."""
-        service = _brief_service()
         try:
-            updated = service.supersede(brief_id, expected_updated_at=expected_updated_at)
-        except ConcurrentModificationError as exc:
+            updated = brief_api_service.supersede_brief(brief_id, expected_updated_at=expected_updated_at)
+        except BriefConcurrentModificationError as exc:
             return JSONResponse(
                 status_code=409,
                 content={
-                    "error": str(exc),
+                    "error": exc.message,
                     "expected_updated_at": exc.expected_updated_at,
                     "actual_updated_at": exc.actual_updated_at,
                 },
             )
-        if updated is None:
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
         return JSONResponse(content=json.loads(updated.model_dump_json()))
 
     @app.post("/api/content-gen/briefs/{brief_id}/revert-to-draft")
     async def revert_brief_to_draft(brief_id: str, expected_updated_at: str | None = None) -> JSONResponse:
         """Revert a brief back to draft state."""
-        service = _brief_service()
         try:
-            updated = service.revert_to_draft(brief_id, expected_updated_at=expected_updated_at)
-        except ConcurrentModificationError as exc:
+            updated = brief_api_service.revert_to_draft(brief_id, expected_updated_at=expected_updated_at)
+        except BriefConcurrentModificationError as exc:
             return JSONResponse(
                 status_code=409,
                 content={
-                    "error": str(exc),
+                    "error": exc.message,
                     "expected_updated_at": exc.expected_updated_at,
                     "actual_updated_at": exc.actual_updated_at,
                 },
             )
-        if updated is None:
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
         return JSONResponse(content=json.loads(updated.model_dump_json()))
 
@@ -1122,9 +1091,9 @@ def register_content_gen_routes(
         The clone starts with the same current head revision but is otherwise
         independent. Returns the new brief in DRAFT state.
         """
-        service = _brief_service()
-        cloned = service.clone_brief(brief_id, new_title=request.new_title)
-        if cloned is None:
+        try:
+            cloned = brief_api_service.clone_brief(brief_id, new_title=request.new_title)
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
         return JSONResponse(content=json.loads(cloned.model_dump_json()), status_code=201)
 
@@ -1142,18 +1111,18 @@ def register_content_gen_routes(
         - actor: filter by actor (operator, ai_proposal, system, maintenance)
         - limit: max entries to return (default 100)
         """
-        store = AuditStore()
-        event_type_enum = AuditEventType(event_type) if event_type else None
-        actor_enum = AuditActor(actor) if actor else None
-        entries = store.load_entries(
-            brief_id=brief_id,
-            event_type=event_type_enum,
-            actor=actor_enum,
-            limit=limit,
-        )
+        try:
+            entries = brief_api_service.get_audit_history(
+                brief_id=brief_id,
+                event_type=event_type,
+                actor=actor,
+                limit=limit,
+            )
+        except BriefNotFoundError:
+            return JSONResponse(status_code=404, content={"error": "Brief not found"})
         return JSONResponse(content={
             "brief_id": brief_id,
-            "items": [entry.to_dict() for entry in entries],
+            "items": entries,
             "count": len(entries),
         })
 
@@ -1173,14 +1142,14 @@ def register_content_gen_routes(
         This endpoint is advisory only — it never writes to persistent state.
         Use /apply to persist any proposed revisions.
         """
-        service = _brief_service()
-        managed = service.get_brief(brief_id)
-        if managed is None:
+        try:
+            managed = brief_api_service.get_brief(brief_id)
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
 
         # Load the revision to discuss
         revision_id = request.revision_id or managed.current_revision_id
-        revision = service.get_revision(revision_id)
+        revision = brief_api_service.get_revision(revision_id)
         if revision is None or revision.brief_id != brief_id:
             return JSONResponse(status_code=404, content={"error": "Revision not found"})
 
@@ -1202,13 +1171,13 @@ def register_content_gen_routes(
         This is the only write path for assistant-proposed revisions.
         Returns structured errors instead of crashing on invalid proposals.
         """
-        service = _brief_service()
-        managed = service.get_brief(brief_id)
-        if managed is None:
+        try:
+            managed, _ = brief_api_service.get_brief_with_revision(brief_id)
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
 
         # Build the opportunity from merged proposals
-        current_revision = service.get_revision(managed.current_revision_id)
+        current_revision = brief_api_service.get_revision(managed.current_revision_id)
         if current_revision is None:
             return JSONResponse(status_code=400, content={"error": "No current revision to base changes on"})
 
@@ -1252,22 +1221,26 @@ def register_content_gen_routes(
         # Create a new revision with the merged opportunity
         try:
             opportunity = OpportunityBrief.model_validate(opportunity_data)
-            revision = service.save_revision(
+            revision = brief_api_service.save_revision(
                 brief_id,
-                opportunity,
+                opportunity.model_dump(),
                 revision_notes=request.revision_notes or "AI-assisted revision",
                 source_pipeline_id="",
             )
         except Exception as exc:
             return JSONResponse(status_code=400, content={"error": str(exc), "applied": 0})
+        except BriefNotFoundError:
+            return JSONResponse(status_code=404, content={"error": "Brief not found"})
+        except BriefConcurrentModificationError as exc:
+            return JSONResponse(status_code=409, content={"error": exc.message, "applied": 0})
+        except BriefValidationError as exc:
+            return JSONResponse(status_code=400, content={"error": exc.message, "applied": 0})
 
         # Log the assistant origin
-        if service._audit_store is not None:
-            from cc_deep_research.content_gen.storage import AuditActor, AuditEventType
-
-            service._audit_mutation(
-                AuditEventType.BRIEF_REVISION_SAVED,
-                brief_id,
+        if brief_api_service._audit_store is not None:
+            brief_api_service._audit_store.log_brief_mutation(
+                event_type=AuditEventType.BRIEF_REVISION_SAVED,
+                brief_id=brief_id,
                 actor=AuditActor.AI_PROPOSAL,
                 patch={"revision_id": revision.revision_id, "proposals_count": applied_count},
                 brief_snapshot=managed,
@@ -1300,13 +1273,11 @@ def register_content_gen_routes(
         This endpoint is advisory only — it never writes to the backlog.
         Use /apply-backlog to persist any proposed items.
         """
-        service = _brief_service()
-        managed = service.get_brief(brief_id)
-        if managed is None:
+        try:
+            managed, revision = brief_api_service.get_brief_with_revision(brief_id)
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
 
-        # Load the current head revision
-        revision = service.get_revision(managed.current_revision_id)
         if revision is None:
             return JSONResponse(status_code=400, content={"error": "No current revision found"})
 
@@ -1323,16 +1294,16 @@ def register_content_gen_routes(
 
         This persists items to the backlog with trace links back to the brief.
         """
-        service = _brief_service()
-        managed = service.get_brief(brief_id)
-        if managed is None:
+        try:
+            managed, revision = brief_api_service.get_brief_with_revision(brief_id)
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
 
-        revision = service.get_revision(managed.current_revision_id)
         if revision is None:
             return JSONResponse(status_code=400, content={"error": "No current revision found"})
 
         backlog_service = BacklogService(load_config())
+
         applied_count = 0
         created_items: list[BacklogItem] = []
         errors: list[str] = []
@@ -1413,13 +1384,13 @@ def register_content_gen_routes(
         Unlike clone (for reuse), branch is for creating variants for different
         themes, channels, or experiments.
         """
-        service = _brief_service()
-        branched = service.branch_brief(
-            brief_id,
-            new_title=request.new_title,
-            branch_reason=request.branch_reason,
-        )
-        if branched is None:
+        try:
+            branched = brief_api_service.branch_brief(
+                brief_id,
+                new_title=request.new_title,
+                branch_reason=request.branch_reason,
+            )
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
         return JSONResponse(content=json.loads(branched.model_dump_json()), status_code=201)
 
@@ -1430,23 +1401,14 @@ def register_content_gen_routes(
         Returns all briefs that were branched from the same source,
         including the source brief itself.
         """
-        service = _brief_service()
-        managed = service.get_brief(brief_id)
-        if managed is None:
+        try:
+            siblings = brief_api_service.list_sibling_briefs(brief_id)
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
 
-        siblings = service.list_sibling_briefs(brief_id)
-
-        # Include the source brief itself if this is a branch
-        result_briefs = [managed]
-        if managed.source_brief_id:
-            source = service.get_brief(managed.source_brief_id)
-            if source:
-                result_briefs = [source] + siblings
-
         return JSONResponse(content={
-            "items": [json.loads(b.model_dump_json()) for b in result_briefs],
-            "count": len(result_briefs),
+            "items": [json.loads(b.model_dump_json()) for b in siblings],
+            "count": len(siblings),
         })
 
     @app.get("/api/content-gen/briefs/{brief_id}/compare/{other_brief_id}")
@@ -1455,16 +1417,12 @@ def register_content_gen_routes(
 
         Returns both briefs with their current head revisions for comparison.
         """
-        service = _brief_service()
-
-        brief_a = service.get_brief(brief_id)
-        brief_b = service.get_brief(other_brief_id)
-
-        if brief_a is None or brief_b is None:
+        try:
+            brief_a, revision_a, brief_b, revision_b = brief_api_service.compare_briefs(
+                brief_id, other_brief_id
+            )
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "One or both briefs not found"})
-
-        revision_a = service.get_revision(brief_a.current_revision_id)
-        revision_b = service.get_revision(brief_b.current_revision_id)
 
         return JSONResponse(content={
             "brief_a": json.loads(brief_a.model_dump_json()),

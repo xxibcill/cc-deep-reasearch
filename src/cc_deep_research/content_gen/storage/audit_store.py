@@ -13,6 +13,7 @@ only new entries are added.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
@@ -133,6 +134,7 @@ class AuditEntry:
         self.actor = AuditActor(actor) if isinstance(actor, str) else actor
         self.actor_label = actor_label
         self.idea_id = idea_id
+        self.brief_id = brief_id
         self.proposal_id = proposal_id
         self.pipeline_id = pipeline_id
         self.description = description
@@ -362,7 +364,7 @@ class AuditStore:
         """Record a mutation to a backlog item."""
         snapshot: dict[str, Any] = {}
         if item_snapshot is not None:
-            snapshot = item_snapshot.model_dump(exclude_none=True)
+            snapshot = json.loads(item_snapshot.model_dump_json())
 
         entry = AuditEntry(
             event_type=event_type,
@@ -390,7 +392,7 @@ class AuditStore:
         """Record a mutation to a managed brief."""
         snapshot: dict[str, Any] = {}
         if brief_snapshot is not None:
-            snapshot = brief_snapshot.model_dump(exclude_none=True)
+            snapshot = json.loads(brief_snapshot.model_dump_json())
 
         entry = AuditEntry(
             event_type=event_type,
