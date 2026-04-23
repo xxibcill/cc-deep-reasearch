@@ -22,6 +22,14 @@ History before `0.1.0` is summarized from the repository state captured on 2026-
 - Added pipeline boundary tests covering full run, cancellation, resume, seeded backlog starts, and skip/block behavior
 - Deprecated `ContentGenOrchestrator` path; normal execution now routes through `ContentGenPipeline` with backwards-compatible stub for legacy imports
 
+#### Refactor - Phase 02: Content-Gen API Service Split (5 tasks)
+
+- Extracted `PipelineRunService` owning pipeline start/stop/resume/status orchestration with 31 service tests covering success, cancellation, duplicate active item, and resume paths
+- Extracted `BacklogApiService` as route-facing service wrapping `BacklogService`; route handlers delegate to service methods with proper HTTP error mapping
+- Extracted `BriefApiService` wrapping `BriefService` with 33 tests covering lifecycle transitions, concurrent modification, clone/branch/compare; route handlers are thin
+- Extracted remaining route-facing services: `StrategyApiService`, `ScriptingApiService`, `MaintenanceApiService`, `PublishQueueAuditService` — each owns HTTP composition and error classification
+- Content-gen route tests focused on HTTP contracts; service tests cover domain decisions; all 1170 tests pass
+
 #### Phase 01 - Strategy Schema And Foundations (4 tasks)
 
 - Expanded `StrategyMemory` with structured `ContentPillar`, `PlatformRule`, `CTAStrategy`, `ClaimToProofRule` models and new fields (`positioning`, `business_objective`, `allowed_audience_universe`, `forbidden_topics`, `cta_strategy`, `claim_to_proof_rules`, `platform_rules`)
