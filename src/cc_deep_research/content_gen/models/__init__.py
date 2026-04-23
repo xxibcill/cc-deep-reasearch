@@ -47,13 +47,6 @@ from .brief import (
     StrategyReadinessIssue,
     StrategyReadinessResult,
 )
-
-# Contracts
-from .contracts import (
-    CONTENT_GEN_STAGE_CONTRACTS,
-    CONTRACT_VERSION,
-    ContentGenStageContract,
-)
 from .learning import (
     ContentGenRunMetrics,
     OperatingFitnessMetrics,
@@ -310,6 +303,8 @@ __all__ = [
     "PerformanceLearningSet",
     "PlanningLearning",
     "PlanningMetrics",
+    "RuleVersion",
+    "RuleVersionHistory",
     "StrategyPerformanceGuidance",
     # Pipeline
     "DEFAULT_PHASE_POLICIES",
@@ -339,10 +334,12 @@ __all__ = [
     "HumanQCGate",
     "IterationState",
     "MissingAssetDecision",
+    "PackagingOutput",
     "PlatformPackage",
     "ProductionBrief",
     "PublishItem",
     "QualityEvaluation",
+    "RunConstraints",
     "TargetedRevisionPlan",
     "TargetedRewriteAction",
     "VisualPlanOutput",
@@ -357,6 +354,7 @@ __all__ = [
     "FactRiskGateResult",
     "ProgressiveQCIssue",
     "ProgressiveQCCheckpoint",
+    "ResearchClaim",
     "ResearchCounterpoint",
     "ResearchDepthRouting",
     "ResearchFinding",
@@ -368,6 +366,11 @@ __all__ = [
     "RetrievalPlan",
     "ScriptClaimStatement",
     # Script
+    "ArgumentBeatClaim",
+    "ArgumentClaim",
+    "ArgumentCounterargument",
+    "ArgumentMap",
+    "ArgumentProofAnchor",
     "BeatIntent",
     "BeatIntentMap",
     "CtAVariants",
@@ -391,14 +394,12 @@ __all__ = [
 ]
 
 
-# Rebuild models to resolve forward references after all models are loaded
-# Import Literal at runtime to ensure it's available during model_rebuild
-from typing import Literal  # noqa: E402
-
 PipelineContext.model_rebuild()
 ScriptingContext.model_rebuild()
 
 # Rebuild PipelineBriefReference to resolve OpportunityBrief forward reference
-from .brief import PipelineBriefReference
+from .brief import ManagedBriefOutput, ManagedOpportunityBrief, PipelineBriefReference
 
 PipelineBriefReference.model_rebuild()
+ManagedOpportunityBrief.model_rebuild()
+ManagedBriefOutput.model_rebuild()

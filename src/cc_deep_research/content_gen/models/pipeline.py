@@ -6,11 +6,38 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from .backlog import PipelineCandidate
-from .shared import (
-    OperatingPhase,
+from .angle import (
+    AngleOutput,
+    DerivativeOpportunity,
+    EarlyPackagingSignals,
+    StrategyMemory,
+    ThesisArtifact,
 )
-
+from .backlog import BacklogOutput, PipelineCandidate, ScoringOutput
+from .brief import BriefExecutionGate, OpportunityBrief, PipelineBriefReference
+from .learning import PerformanceAnalysis
+from .production import (
+    HumanQCGate,
+    IterationState,
+    PackagingOutput,
+    ProductionBrief,
+    PublishItem,
+    RunConstraints,
+    VisualPlanOutput,
+    VisualProductionExecutionBrief,
+)
+from .research import (
+    ClaimTraceLedger,
+    FactRiskGate,
+    ProgressiveQCCheckpoint,
+    ProgressiveQCIssue,
+    ResearchPack,
+)
+from .script import (
+    ArgumentMap,
+    ScriptingContext,
+)
+from .shared import DraftLaneDecision, OperatingPhase
 
 # ---------------------------------------------------------------------------
 # Stage-to-phase mapping
@@ -395,24 +422,24 @@ class PipelineLaneContext(BaseModel):
     role: Literal["primary", "runner_up"] = "primary"
     status: Literal["selected", "runner_up", "in_production", "published"] = "selected"
     last_completed_stage: int = -1
-    thesis_artifact: "ThesisArtifact | None" = None
-    angles: "AngleOutput | None" = None
-    research_pack: "ResearchPack | None" = None
-    argument_map: "ArgumentMap | None" = None
-    scripting: "ScriptingContext | None" = None
-    visual_plan: "VisualPlanOutput | None" = None
-    production_brief: "ProductionBrief | None" = None
-    execution_brief: "VisualProductionExecutionBrief | None" = None
-    packaging: "PackagingOutput | None" = None
-    qc_gate: "HumanQCGate | None" = None
-    fact_risk_gate: "FactRiskGate | None" = None
-    progressive_qc_issues: list["ProgressiveQCIssue"] = Field(default_factory=list)
-    progressive_qc_checkpoints: list["ProgressiveQCCheckpoint"] = Field(default_factory=list)
-    early_packaging_signals: "EarlyPackagingSignals | None" = None
-    derivative_opportunities: list["DerivativeOpportunity"] = Field(default_factory=list)
-    draft_decision: "DraftLaneDecision | None" = None
+    thesis_artifact: ThesisArtifact | None = None
+    angles: AngleOutput | None = None
+    research_pack: ResearchPack | None = None
+    argument_map: ArgumentMap | None = None
+    scripting: ScriptingContext | None = None
+    visual_plan: VisualPlanOutput | None = None
+    production_brief: ProductionBrief | None = None
+    execution_brief: VisualProductionExecutionBrief | None = None
+    packaging: PackagingOutput | None = None
+    qc_gate: HumanQCGate | None = None
+    fact_risk_gate: FactRiskGate | None = None
+    progressive_qc_issues: list[ProgressiveQCIssue] = Field(default_factory=list)
+    progressive_qc_checkpoints: list[ProgressiveQCCheckpoint] = Field(default_factory=list)
+    early_packaging_signals: EarlyPackagingSignals | None = None
+    derivative_opportunities: list[DerivativeOpportunity] = Field(default_factory=list)
+    draft_decision: DraftLaneDecision | None = None
     decision_reason: str = ""
-    publish_items: list["PublishItem"] = Field(default_factory=list)
+    publish_items: list[PublishItem] = Field(default_factory=list)
 
 
 class PipelineContext(BaseModel):
@@ -422,36 +449,36 @@ class PipelineContext(BaseModel):
     theme: str = ""
     created_at: str = ""
     current_stage: int = 0
-    strategy: "StrategyMemory | None" = None
-    opportunity_brief: "OpportunityBrief | None" = None
-    brief_reference: "PipelineBriefReference | None" = None
-    run_constraints: "RunConstraints | None" = None
-    backlog: "BacklogOutput | None" = None
-    scoring: "ScoringOutput | None" = None
+    strategy: StrategyMemory | None = None
+    opportunity_brief: OpportunityBrief | None = None
+    brief_reference: PipelineBriefReference | None = None
+    run_constraints: RunConstraints | None = None
+    backlog: BacklogOutput | None = None
+    scoring: ScoringOutput | None = None
     shortlist: list[str] = Field(default_factory=list)
     selected_idea_id: str = ""
     selection_reasoning: str = ""
     runner_up_idea_ids: list[str] = Field(default_factory=list)
-    active_candidates: list["PipelineCandidate"] = Field(default_factory=list)
+    active_candidates: list[PipelineCandidate] = Field(default_factory=list)
     lane_contexts: list[PipelineLaneContext] = Field(default_factory=list)
-    thesis_artifact: "ThesisArtifact | None" = None
-    angles: "AngleOutput | None" = None
-    research_pack: "ResearchPack | None" = None
-    argument_map: "ArgumentMap | None" = None
-    fact_risk_gate: "FactRiskGate | None" = None
-    scripting: "ScriptingContext | None" = None
-    visual_plan: "VisualPlanOutput | None" = None
-    production_brief: "ProductionBrief | None" = None
-    execution_brief: "VisualProductionExecutionBrief | None" = None
-    packaging: "PackagingOutput | None" = None
-    qc_gate: "HumanQCGate | None" = None
-    publish_items: list["PublishItem"] = Field(default_factory=list)
-    publish_item: "PublishItem | None" = None
-    performance: "PerformanceAnalysis | None" = None
-    iteration_state: "IterationState | None" = None
+    thesis_artifact: ThesisArtifact | None = None
+    angles: AngleOutput | None = None
+    research_pack: ResearchPack | None = None
+    argument_map: ArgumentMap | None = None
+    fact_risk_gate: FactRiskGate | None = None
+    scripting: ScriptingContext | None = None
+    visual_plan: VisualPlanOutput | None = None
+    production_brief: ProductionBrief | None = None
+    execution_brief: VisualProductionExecutionBrief | None = None
+    packaging: PackagingOutput | None = None
+    qc_gate: HumanQCGate | None = None
+    publish_items: list[PublishItem] = Field(default_factory=list)
+    publish_item: PublishItem | None = None
+    performance: PerformanceAnalysis | None = None
+    iteration_state: IterationState | None = None
     stage_traces: list[PipelineStageTrace] = Field(default_factory=list)
-    claim_ledger: "ClaimTraceLedger | None" = None
-    brief_gate: "BriefExecutionGate | None" = None
+    claim_ledger: ClaimTraceLedger | None = None
+    brief_gate: BriefExecutionGate | None = None
 
     @model_validator(mode="after")
     def _populate_candidate_queue(self) -> PipelineContext:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.config import Config
 
@@ -38,7 +38,7 @@ class PublishStageOrchestrator(BaseStageOrchestrator):
     # Pipeline-context aware run method (P1-T2, P1-T3)
     # ------------------------------------------------------------------
 
-    async def run_with_context(self, ctx: "PipelineContext") -> "PipelineContext":
+    async def run_with_context(self, ctx: PipelineContext) -> PipelineContext:
         """Run publish queue stage (stage 12) with full pipeline context."""
         from cc_deep_research.content_gen.models import PipelineCandidate, ReleaseState
 
@@ -70,9 +70,7 @@ class PublishStageOrchestrator(BaseStageOrchestrator):
             effective_approved = False
             effective_state = qc.release_state
 
-            if qc.release_state == ReleaseState.APPROVED:
-                effective_approved = True
-            elif qc.release_state == ReleaseState.APPROVED_WITH_KNOWN_RISKS:
+            if qc.release_state == ReleaseState.APPROVED or qc.release_state == ReleaseState.APPROVED_WITH_KNOWN_RISKS:
                 effective_approved = True
             elif qc.release_state == ReleaseState.BLOCKED and getattr(qc, "approved_for_publish", False):
                 effective_approved = True
@@ -106,5 +104,5 @@ class PublishStageOrchestrator(BaseStageOrchestrator):
 
         return ctx
 
-    def _resolve_lane_context(self, ctx: "PipelineContext", idea_id: str) -> Any | None:
-        return next((l for l in ctx.lane_contexts if l.idea_id == idea_id), None)
+    def _resolve_lane_context(self, ctx: PipelineContext, idea_id: str) -> Any | None:
+        return next((lane_ctx for lane_ctx in ctx.lane_contexts if lane_ctx.idea_id == idea_id), None)

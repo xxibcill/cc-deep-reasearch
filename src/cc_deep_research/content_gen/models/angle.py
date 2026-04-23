@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from .research import ClaimTraceLedger
+
 
 class CoreInputs(BaseModel):
     """Shared inputs that persist across all stages."""
@@ -172,7 +174,7 @@ class ThesisArtifact(BaseModel):
     derivative_opportunities: list[DerivativeOpportunity] = Field(default_factory=list)
 
     # P4-T3: Claim trace reference
-    claim_ledger: "ClaimTraceLedger | None" = None
+    claim_ledger: ClaimTraceLedger | None = None
 
     def get_beats(self) -> list[str]:
         """Return the beat plan as a list of strings."""

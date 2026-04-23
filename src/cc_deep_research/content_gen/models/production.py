@@ -6,11 +6,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from .angle import EarlyPackagingSignals
 from .shared import (
     DraftLaneDecision,
     EffortTier,
     MissingAssetDecision,
-    ProductionComplexity,
     ReleaseState,
     RevisionMode,
     RewriteActionType,
@@ -130,7 +130,7 @@ class PackagingOutput(BaseModel):
     idea_id: str = ""
     platform_packages: list[PlatformPackage] = Field(default_factory=list)
     draft_hooks: list[str] = Field(default_factory=list)
-    early_packaging_signals: "EarlyPackagingSignals | None" = None
+    early_packaging_signals: EarlyPackagingSignals | None = None
 
 
 class HumanQCGate(BaseModel):
@@ -149,7 +149,7 @@ class HumanQCGate(BaseModel):
     must_fix_items: list[str] = Field(default_factory=list)
     approved_for_publish: bool = False
     success_criteria_results: list[str] = Field(default_factory=list)
-    release_state: "ReleaseState" = Field(
+    release_state: ReleaseState = Field(
         default="blocked",
     )
     override_actor: str = ""
@@ -173,7 +173,7 @@ class TargetedRewriteAction(BaseModel):
     """A single repair action targeting a specific beat or claim."""
 
     action_id: str = Field(default_factory=lambda: f"rewrite_{uuid4().hex[:8]}")
-    action_type: "RewriteActionType"
+    action_type: RewriteActionType
     beat_id: str = ""
     beat_name: str = ""
     weak_claim_ids: list[str] = Field(default_factory=list)
@@ -233,7 +233,7 @@ class QualityEvaluation(BaseModel):
     rationale: str = ""
     iteration_number: int = 1
     targeted_revision_plan: TargetedRevisionPlan | None = None
-    revision_mode: "RevisionMode" = Field(default="none")
+    revision_mode: RevisionMode = Field(default="none")
 
     @property
     def has_blocking_claim_issues(self) -> bool:
@@ -251,7 +251,7 @@ class IterationState(BaseModel):
     is_converged: bool = False
     convergence_reason: str = ""
     should_rerun_research: bool = False
-    revision_mode: "RevisionMode" = "full"
+    revision_mode: RevisionMode = "full"
     targeted_revision_plan: TargetedRevisionPlan | None = None
 
     @property
@@ -285,7 +285,7 @@ class PublishItem(BaseModel):
     cross_post_targets: list[str] = Field(default_factory=list)
     first_30_minute_engagement_plan: str = ""
     status: str = "scheduled"
-    draft_decision: "DraftLaneDecision | None" = None
+    draft_decision: DraftLaneDecision | None = None
     decision_reason: str = ""
     claim_status_summary: str = ""
     override_actor: str = ""

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.config import Config
-from cc_deep_research.content_gen.models import ResearchPack
 
 from .base import BaseStageOrchestrator
+
+if TYPE_CHECKING:
+    from cc_deep_research.content_gen.models import PipelineCandidate, PipelineContext
 
 
 class ResearchStageOrchestrator(BaseStageOrchestrator):
@@ -36,9 +38,9 @@ class ResearchStageOrchestrator(BaseStageOrchestrator):
     # Pipeline-context aware run method (P1-T2, P1-T3)
     # ------------------------------------------------------------------
 
-    async def run_with_context(self, ctx: "PipelineContext") -> "PipelineContext":
+    async def run_with_context(self, ctx: PipelineContext) -> PipelineContext:
         """Run research pack stage (stage 5) with full pipeline context."""
-        from cc_deep_research.content_gen.models import PipelineCandidate, StrategyMemory
+        from cc_deep_research.content_gen.models import PipelineCandidate
 
         if ctx.current_stage != 5:
             return ctx
@@ -117,9 +119,9 @@ class ResearchStageOrchestrator(BaseStageOrchestrator):
 
         return ctx
 
-    def _resolve_lane_angle(self, ctx: "PipelineContext", idea_id: str) -> Any | None:
+    def _resolve_lane_angle(self, ctx: PipelineContext, idea_id: str) -> Any | None:
         from cc_deep_research.content_gen.models import AngleOption
-        lane = next((l for l in ctx.lane_contexts if l.idea_id == idea_id), None)
+        lane = next((lane_ctx for lane_ctx in ctx.lane_contexts if lane_ctx.idea_id == idea_id), None)
         if lane is None:
             return None
         if lane.thesis_artifact is not None:
@@ -152,8 +154,8 @@ class ResearchStageOrchestrator(BaseStageOrchestrator):
 
     def _record_lane_completion(
         self,
-        ctx: "PipelineContext",
-        candidate: "PipelineCandidate",
+        ctx: PipelineContext,
+        candidate: PipelineCandidate,
         *,
         stage_index: int,
         stage_field: str,
@@ -164,9 +166,9 @@ class ResearchStageOrchestrator(BaseStageOrchestrator):
         lane.last_completed_stage = max(lane.last_completed_stage, stage_index)
         self._sync_primary_lane(ctx)
 
-    def _ensure_lane_context(self, ctx: "PipelineContext", idea_id: str, role: str, status: str) -> Any:
+    def _ensure_lane_context(self, ctx: PipelineContext, idea_id: str, role: str, status: str) -> Any:
         from cc_deep_research.content_gen.models import PipelineLaneContext
-        lane = next((l for l in ctx.lane_contexts if l.idea_id == idea_id), None)
+        lane = next((lane_ctx for lane_ctx in ctx.lane_contexts if lane_ctx.idea_id == idea_id), None)
         if lane is not None:
             lane.role = role
             lane.status = status
@@ -175,8 +177,8 @@ class ResearchStageOrchestrator(BaseStageOrchestrator):
         ctx.lane_contexts.append(lane)
         return lane
 
-    def _sync_primary_lane(self, ctx: "PipelineContext") -> None:
-        primary_lane = next((l for l in ctx.lane_contexts if l.role == "primary"), None) or (
+    def _sync_primary_lane(self, ctx: PipelineContext) -> None:
+        primary_lane = next((lane_ctx for lane_ctx in ctx.lane_contexts if lane_ctx.role == "primary"), None) or (
             ctx.lane_contexts[0] if ctx.lane_contexts else None
         )
         if primary_lane is None:
@@ -195,7 +197,7 @@ class ResearchStageOrchestrator(BaseStageOrchestrator):
         ctx.publish_items = list(primary_lane.publish_items)
         ctx.publish_item = ctx.publish_items[0] if ctx.publish_items else None
 
-    def _compute_research_depth_routing(self, ctx: "PipelineContext", candidate: "PipelineCandidate") -> Any:
+    def _compute_research_depth_routing(self, ctx: PipelineContext, candidate: PipelineCandidate) -> Any:
         """Compute research depth routing from scoring outputs."""
         from cc_deep_research.content_gen.models import ResearchDepthRouting, ResearchDepthTier
         routing = ResearchDepthRouting(tier=ResearchDepthTier.STANDARD, effort_tier_source="default")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 
@@ -11,9 +12,9 @@ from .shared import (
     BriefLifecycleState,
     BriefProvenance,
 )
-from .pipeline import (
-    OperatingPhasePolicy,
-)
+
+if TYPE_CHECKING:
+    from .pipeline import OperatingPhasePolicy
 
 
 class BriefRevision(BaseModel):
@@ -48,7 +49,7 @@ class BriefRevision(BaseModel):
 class ManagedOpportunityBrief(BaseModel):
     """A durable, version-aware opportunity brief resource."""
 
-    brief_id: str = Field(default_factory=lambda: f"mbrief__placeholder__")
+    brief_id: str = Field(default_factory=lambda: "mbrief__placeholder__")
     title: str = ""
     lifecycle_state: BriefLifecycleState = Field(default=BriefLifecycleState.DRAFT)
     current_revision_id: str = ""
@@ -82,7 +83,7 @@ class PipelineBriefReference(BaseModel):
     brief_id: str = Field(default="", description="The managed brief resource ID")
     revision_id: str = Field(default="", description="The specific revision ID this run referenced")
     revision_version: int = Field(default=0, description="Human-readable version number for display")
-    snapshot: "OpportunityBrief | None" = Field(default=None, description="Inline brief snapshot for observability")
+    snapshot: OpportunityBrief | None = Field(default=None, description="Inline brief snapshot for observability")
     lifecycle_state: BriefLifecycleState = Field(default=BriefLifecycleState.DRAFT)
     reference_type: Literal["managed", "inline_fallback", "imported"] = Field(default="managed")
     seeded_from_revision_id: str = Field(default="", description="For seeded runs: revision ID explicitly chosen to seed this run")
@@ -173,7 +174,7 @@ class BriefExecutionGate(BaseModel):
 class OpportunityBrief(BaseModel):
     """Structured planning artifact (stage 1)."""
 
-    brief_id: str = Field(default_factory=lambda: f"brief__placeholder__")
+    brief_id: str = Field(default_factory=lambda: "brief__placeholder__")
     theme: str = ""
     goal: str = ""
     primary_audience_segment: str = ""
@@ -210,7 +211,7 @@ class StrategyReadinessIssue(BaseModel):
 class StrategyReadinessResult(BaseModel):
     """Result of strategy readiness validation."""
 
-    readiness: "StrategyReadiness" = Field(default="incomplete")
+    readiness: Literal["invalid", "incomplete", "healthy"] = Field(default="incomplete")
     overall_score: float = 0.0
     issues: list[StrategyReadinessIssue] = Field(default_factory=list)
     summary: str = ""

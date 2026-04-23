@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.config import Config
 
 from .base import BaseStageOrchestrator
+
+if TYPE_CHECKING:
+    from cc_deep_research.content_gen.models import (
+        PipelineCandidate,
+        PipelineContext,
+    )
 
 
 class AngleStageOrchestrator(BaseStageOrchestrator):
@@ -40,7 +46,7 @@ class AngleStageOrchestrator(BaseStageOrchestrator):
     # Pipeline-context aware run method (P1-T2, P1-T3)
     # ------------------------------------------------------------------
 
-    async def run_with_context(self, ctx: "PipelineContext") -> "PipelineContext":
+    async def run_with_context(self, ctx: PipelineContext) -> PipelineContext:
         """Run angle generation stage (stage 4) with full pipeline context.
 
         This handles per-lane thesis artifact generation for the generate_angles stage.
@@ -86,8 +92,8 @@ class AngleStageOrchestrator(BaseStageOrchestrator):
 
     def _record_lane_completion(
         self,
-        ctx: "PipelineContext",
-        candidate: "PipelineCandidate",
+        ctx: PipelineContext,
+        candidate: PipelineCandidate,
         *,
         stage_index: int,
         stage_field: str,
@@ -96,9 +102,9 @@ class AngleStageOrchestrator(BaseStageOrchestrator):
         """Record stage completion in lane context and sync primary lane."""
         # Find or create lane
         lane = None
-        for l in ctx.lane_contexts:
-            if l.idea_id == candidate.idea_id:
-                lane = l
+        for lane_ctx in ctx.lane_contexts:
+            if lane_ctx.idea_id == candidate.idea_id:
+                lane = lane_ctx
                 break
         if lane is None:
             from cc_deep_research.content_gen.models import PipelineLaneContext
@@ -113,10 +119,10 @@ class AngleStageOrchestrator(BaseStageOrchestrator):
         # Sync to primary lane
         self._sync_primary_lane(ctx)
 
-    def _sync_primary_lane(self, ctx: "PipelineContext") -> None:
+    def _sync_primary_lane(self, ctx: PipelineContext) -> None:
         """Sync primary lane outputs back to context level."""
         primary_lane = next(
-            (l for l in ctx.lane_contexts if l.role == "primary"),
+            (lane_ctx for lane_ctx in ctx.lane_contexts if lane_ctx.role == "primary"),
             ctx.lane_contexts[0] if ctx.lane_contexts else None,
         )
         if primary_lane is None:

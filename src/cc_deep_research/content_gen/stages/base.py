@@ -36,7 +36,7 @@ class BaseStageOrchestrator:
         """Create a new agent instance. Override in subclasses for custom agent creation."""
         raise NotImplementedError
 
-    async def run_with_context(self, ctx: "PipelineContext") -> "PipelineContext":
+    async def run_with_context(self, ctx: PipelineContext) -> PipelineContext:
         """Run this stage with full pipeline context.
 
         Override in subclasses to integrate with the content-gen pipeline.

@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 from cc_deep_research.models.search import QueryProvenance
 
 from .shared import (
-    ClaimStatus,
     ClaimTraceStage,
     ClaimTraceStatus,
     EvidenceDirectness,
@@ -228,7 +227,7 @@ class RetrievalPlan(BaseModel):
     expanded_queries: list[str] = Field(default_factory=list)
     decisions: list[RetrievalDecision] = Field(default_factory=list)
     mode: RetrievalMode = Field(default=RetrievalMode.BASELINE)
-    research_depth_routing: "ResearchDepthRouting | None" = Field(default=None)
+    research_depth_routing: ResearchDepthRouting | None = Field(default=None)
     research_hypotheses: list[str] = Field(default_factory=list)
     coverage_notes: list[str] = Field(default_factory=list)
     is_complete: bool = Field(default=False)
@@ -246,9 +245,7 @@ def _dedupe_research_sources(sources: list[ResearchSource]) -> list[ResearchSour
     """Deduplicate sources by URL, keeping highest-ranked."""
     seen: dict[str, ResearchSource] = {}
     for src in sources:
-        if src.url and src.url not in seen:
-            seen[src.url] = src
-        elif src.url and src.quality_rank > seen[src.url].quality_rank:
+        if src.url and src.url not in seen or src.url and src.quality_rank > seen[src.url].quality_rank:
             seen[src.url] = src
     return list(seen.values())
 

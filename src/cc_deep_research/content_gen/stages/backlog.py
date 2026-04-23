@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.config import Config
 from cc_deep_research.content_gen.models import OpportunityBrief
 
 from .base import BaseStageOrchestrator
+
+if TYPE_CHECKING:
+    from cc_deep_research.content_gen.models import PipelineContext
 
 
 class BacklogStageOrchestrator(BaseStageOrchestrator):
@@ -58,14 +61,14 @@ class BacklogStageOrchestrator(BaseStageOrchestrator):
     # Pipeline-context aware run method (P1-T2, P1-T3)
     # ------------------------------------------------------------------
 
-    async def run_with_context(self, ctx: "PipelineContext") -> "PipelineContext":
+    async def run_with_context(self, ctx: PipelineContext) -> PipelineContext:
         """Run backlog stages (build_backlog, score_ideas) with full pipeline context.
 
         This method handles both stage 2 (build_backlog) and stage 3 (score_ideas).
         The stage index is determined from ctx.current_stage.
         """
         from cc_deep_research.content_gen.backlog_service import BacklogService
-        from cc_deep_research.content_gen.models import PipelineCandidate, StrategyMemory
+        from cc_deep_research.content_gen.models import StrategyMemory
         from cc_deep_research.content_gen.storage import StrategyStore
 
         idx = ctx.current_stage

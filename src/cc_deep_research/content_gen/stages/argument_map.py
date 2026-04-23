@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.config import Config
 from cc_deep_research.content_gen.models import ResearchPack
@@ -10,7 +10,7 @@ from cc_deep_research.content_gen.models import ResearchPack
 from .base import BaseStageOrchestrator
 
 if TYPE_CHECKING:
-    from cc_deep_research.content_gen.models import PipelineContext
+    from cc_deep_research.content_gen.models import PipelineCandidate, PipelineContext
 
 
 class ArgumentMapStageOrchestrator(BaseStageOrchestrator):
@@ -39,7 +39,7 @@ class ArgumentMapStageOrchestrator(BaseStageOrchestrator):
     # Pipeline-context aware run method (P1-T2, P1-T3)
     # ------------------------------------------------------------------
 
-    async def run_with_context(self, ctx: "PipelineContext") -> "PipelineContext":
+    async def run_with_context(self, ctx: PipelineContext) -> PipelineContext:
         """Run argument map stage (stage 6) with full pipeline context."""
         from cc_deep_research.content_gen.models import PipelineCandidate
 
@@ -75,7 +75,11 @@ class ArgumentMapStageOrchestrator(BaseStageOrchestrator):
             if lane.thesis_artifact is not None:
                 from cc_deep_research.content_gen.models import ArgumentMap
                 th = lane.thesis_artifact
-                from cc_deep_research.content_gen.models import ArgumentClaim, ArgumentBeatClaim, ArgumentProofAnchor
+                from cc_deep_research.content_gen.models import (
+                    ArgumentBeatClaim,
+                    ArgumentClaim,
+                    ArgumentProofAnchor,
+                )
 
                 # Build proof anchors from thesis
                 proof_anchors = [
@@ -136,12 +140,12 @@ class ArgumentMapStageOrchestrator(BaseStageOrchestrator):
 
         return ctx
 
-    def _resolve_lane_item(self, ctx: "PipelineContext", idea_id: str) -> Any | None:
+    def _resolve_lane_item(self, ctx: PipelineContext, idea_id: str) -> Any | None:
         if ctx.backlog is None:
             return None
         return next((i for i in ctx.backlog.items if i.idea_id == idea_id), None)
 
-    def _resolve_lane_angle(self, ctx: "PipelineContext", idea_id: str) -> Any | None:
+    def _resolve_lane_angle(self, ctx: PipelineContext, idea_id: str) -> Any | None:
         from cc_deep_research.content_gen.models import AngleOption
         lane = self._resolve_lane_context(ctx, idea_id)
         if lane is None:
@@ -174,13 +178,13 @@ class ArgumentMapStageOrchestrator(BaseStageOrchestrator):
                 return angle
         return lane.angles.angle_options[0] if lane.angles.angle_options else None
 
-    def _resolve_lane_context(self, ctx: "PipelineContext", idea_id: str) -> Any | None:
-        return next((l for l in ctx.lane_contexts if l.idea_id == idea_id), None)
+    def _resolve_lane_context(self, ctx: PipelineContext, idea_id: str) -> Any | None:
+        return next((lane_ctx for lane_ctx in ctx.lane_contexts if lane_ctx.idea_id == idea_id), None)
 
     def _record_lane_completion(
         self,
-        ctx: "PipelineContext",
-        candidate: "PipelineCandidate",
+        ctx: PipelineContext,
+        candidate: PipelineCandidate,
         *,
         stage_index: int,
         stage_field: str,
@@ -191,7 +195,7 @@ class ArgumentMapStageOrchestrator(BaseStageOrchestrator):
         lane.last_completed_stage = max(lane.last_completed_stage, stage_index)
         self._sync_primary_lane(ctx)
 
-    def _ensure_lane_context(self, ctx: "PipelineContext", idea_id: str, role: str, status: str) -> Any:
+    def _ensure_lane_context(self, ctx: PipelineContext, idea_id: str, role: str, status: str) -> Any:
         from cc_deep_research.content_gen.models import PipelineLaneContext
         lane = self._resolve_lane_context(ctx, idea_id)
         if lane is not None:
@@ -202,8 +206,8 @@ class ArgumentMapStageOrchestrator(BaseStageOrchestrator):
         ctx.lane_contexts.append(lane)
         return lane
 
-    def _sync_primary_lane(self, ctx: "PipelineContext") -> None:
-        primary_lane = next((l for l in ctx.lane_contexts if l.role == "primary"), None) or (
+    def _sync_primary_lane(self, ctx: PipelineContext) -> None:
+        primary_lane = next((lane_ctx for lane_ctx in ctx.lane_contexts if lane_ctx.role == "primary"), None) or (
             ctx.lane_contexts[0] if ctx.lane_contexts else None
         )
         if primary_lane is None:

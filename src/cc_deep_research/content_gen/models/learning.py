@@ -19,7 +19,7 @@ from .shared import (
 class PerformanceLearning(BaseModel):
     """A single structured learning extracted from performance analysis."""
 
-    learning_id: str = Field(default_factory=lambda: f"learn__placeholder__")
+    learning_id: str = Field(default_factory=lambda: "learn__placeholder__")
     category: LearningCategory = LearningCategory.HOOK_EFFECTIVENESS
     durability: LearningDurability = LearningDurability.TRANSIENT
     observation: str = ""
@@ -47,7 +47,7 @@ class PerformanceLearningSet(BaseModel):
 
     video_id: str = ""
     learnings: list[PerformanceLearning] = Field(default_factory=list)
-    source_analysis: "PerformanceAnalysis | None" = None
+    source_analysis: PerformanceAnalysis | None = None
 
 
 class PerformanceAnalysis(BaseModel):
@@ -281,7 +281,7 @@ class OperatingFitnessMetrics(BaseModel):
 class PlanningLearning(BaseModel):
     """A reusable opportunity-planning pattern extracted from runs."""
 
-    learning_id: str = Field(default_factory=lambda: f"planlearn__placeholder__")
+    learning_id: str = Field(default_factory=lambda: "planlearn__placeholder__")
     category: PlanningLearningCategory = PlanningLearningCategory.BRIEF_SPECIFICITY
     pattern: str = ""
     implication: str = ""

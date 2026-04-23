@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.config import Config
 
 from .base import BaseStageOrchestrator
 
 if TYPE_CHECKING:
-    from cc_deep_research.content_gen.models import PipelineContext
+    from cc_deep_research.content_gen.models import PipelineCandidate, PipelineContext
 
 
 class PackagingStageOrchestrator(BaseStageOrchestrator):
@@ -60,7 +60,7 @@ class PackagingStageOrchestrator(BaseStageOrchestrator):
     # Pipeline-context aware run method (P1-T2, P1-T3)
     # ------------------------------------------------------------------
 
-    async def run_with_context(self, ctx: "PipelineContext") -> "PipelineContext":
+    async def run_with_context(self, ctx: PipelineContext) -> PipelineContext:
         """Run packaging stage (stage 10) with full pipeline context."""
         from cc_deep_research.content_gen.models import PipelineCandidate, ScriptVersion
 
@@ -119,7 +119,7 @@ class PackagingStageOrchestrator(BaseStageOrchestrator):
 
         return ctx
 
-    def _resolve_lane_angle(self, ctx: "PipelineContext", idea_id: str) -> Any | None:
+    def _resolve_lane_angle(self, ctx: PipelineContext, idea_id: str) -> Any | None:
         from cc_deep_research.content_gen.models import AngleOption
         lane = self._resolve_lane_context(ctx, idea_id)
         if lane is None:
@@ -147,13 +147,13 @@ class PackagingStageOrchestrator(BaseStageOrchestrator):
             return next((opt for opt in lane.angles.angle_options if opt.angle_id == lane.angles.selected_angle_id), None)
         return lane.angles.angle_options[0] if lane.angles.angle_options else None
 
-    def _resolve_lane_context(self, ctx: "PipelineContext", idea_id: str) -> Any | None:
-        return next((l for l in ctx.lane_contexts if l.idea_id == idea_id), None)
+    def _resolve_lane_context(self, ctx: PipelineContext, idea_id: str) -> Any | None:
+        return next((lane_ctx for lane_ctx in ctx.lane_contexts if lane_ctx.idea_id == idea_id), None)
 
     def _record_lane_completion(
         self,
-        ctx: "PipelineContext",
-        candidate: "PipelineCandidate",
+        ctx: PipelineContext,
+        candidate: PipelineCandidate,
         *,
         stage_index: int,
         stage_field: str,
@@ -164,7 +164,7 @@ class PackagingStageOrchestrator(BaseStageOrchestrator):
         lane.last_completed_stage = max(lane.last_completed_stage, stage_index)
         self._sync_primary_lane(ctx)
 
-    def _ensure_lane_context(self, ctx: "PipelineContext", idea_id: str, role: str, status: str) -> Any:
+    def _ensure_lane_context(self, ctx: PipelineContext, idea_id: str, role: str, status: str) -> Any:
         from cc_deep_research.content_gen.models import PipelineLaneContext
         lane = self._resolve_lane_context(ctx, idea_id)
         if lane is not None:
@@ -175,8 +175,8 @@ class PackagingStageOrchestrator(BaseStageOrchestrator):
         ctx.lane_contexts.append(lane)
         return lane
 
-    def _sync_primary_lane(self, ctx: "PipelineContext") -> None:
-        primary_lane = next((l for l in ctx.lane_contexts if l.role == "primary"), None) or (
+    def _sync_primary_lane(self, ctx: PipelineContext) -> None:
+        primary_lane = next((lane_ctx for lane_ctx in ctx.lane_contexts if lane_ctx.role == "primary"), None) or (
             ctx.lane_contexts[0] if ctx.lane_contexts else None
         )
         if primary_lane is None:
