@@ -16,7 +16,6 @@ from fastapi.testclient import TestClient
 
 from cc_deep_research.web_server import create_app
 
-
 # ---------------------------------------------------------------------------
 # Respond route
 # ---------------------------------------------------------------------------

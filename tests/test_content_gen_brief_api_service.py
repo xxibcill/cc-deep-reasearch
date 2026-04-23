@@ -21,8 +21,6 @@ from cc_deep_research.content_gen.brief_api_service import (
 from cc_deep_research.content_gen.models import (
     BriefLifecycleState,
     BriefProvenance,
-    BriefRevision,
-    ManagedOpportunityBrief,
     OpportunityBrief,
 )
 from cc_deep_research.content_gen.storage import (
@@ -30,7 +28,6 @@ from cc_deep_research.content_gen.storage import (
     BriefRevisionStore,
     SqliteBriefStore,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

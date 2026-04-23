@@ -15,14 +15,12 @@ import json
 import pytest
 
 from cc_deep_research.content_gen.agents.backlog_chat import (
-    BacklogChatAgent,
     BacklogChatOperation,
     apply_operations,
     build_apply_operations,
 )
 from cc_deep_research.content_gen.backlog_service import BacklogService
 from cc_deep_research.content_gen.models import BacklogItem
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
