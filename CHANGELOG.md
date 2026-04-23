@@ -8,6 +8,12 @@ History before `0.1.0` is summarized from the repository state captured on 2026-
 
 <!-- Add Added/Changed/Fixed entries here before cutting a release. -->
 
+#### Phase 00 - Baseline And Refactor Safety (3 tasks)
+
+- Captured working tree baseline: documented `refactor` branch state, dirty files (`content_gen/progress.py`, `content_gen/router.py`, `tests/test_web_server.py`), and generated artifacts to preserve during refactor
+- Recorded quality baselines: pytest (1170 passed, 15 warnings), ruff (2 pre-existing failures: I001 import sorting in models/__init__.py, F821 undefined names in pipeline.py), mypy (clean), dashboard lint (passed)
+- Mapped refactor boundaries: identified content-gen pipeline execution as first refactor target; documented API route ownership, dashboard state contracts, model/storage boundaries, and recommended boundary tests
+
 #### Refactor - Phase 01: Content-Gen Pipeline Boundary (5 tasks)
 
 - Extracted `ContentGenPipeline` as the primary pipeline coordinator with explicit `run_stage()` contract and stage sequencing ownership
