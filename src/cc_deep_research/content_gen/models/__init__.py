@@ -8,15 +8,157 @@ Contract Version: 1.8.0
 
 from __future__ import annotations
 
+# Stage-specific models
+from .angle import (
+    AngleDefinition,
+    AngleOption,
+    AngleOutput,
+    BeatIntent,
+    BeatIntentMap,
+    CoreInputs,
+    CtAVariants,
+    DerivativeOpportunity,
+    EarlyPackagingSignals,
+    HookSet,
+    StrategyMemory,
+    ThesisArtifact,
+)
+from .backlog import (
+    AudienceProblemFitFields,
+    BacklogItem,
+    BacklogOutput,
+    ContentExecutionFields,
+    IdeaCoreFields,
+    IdeaScores,
+    PipelineCandidate,
+    PrioritizationFields,
+    ScoringOutput,
+    TriageOperation,
+    TriageResponse,
+    ValidationLayerFields,
+)
+from .brief import (
+    BriefExecutionGate,
+    BriefRevision,
+    ManagedBriefOutput,
+    ManagedOpportunityBrief,
+    OpportunityBrief,
+    PipelineBriefReference,
+    StrategyReadinessIssue,
+    StrategyReadinessResult,
+)
+
 # Contracts
 from .contracts import (
-    CONTRACT_VERSION,
     CONTENT_GEN_STAGE_CONTRACTS,
+    CONTRACT_VERSION,
     ContentGenStageContract,
 )
+from .learning import (
+    ContentGenRunMetrics,
+    OperatingFitnessMetrics,
+    PerformanceAnalysis,
+    PerformanceLearning,
+    PerformanceLearningSet,
+    PlanningLearning,
+    PlanningMetrics,
+    RuleVersion,
+    RuleVersionHistory,
+    StrategyPerformanceGuidance,
+)
+from .pipeline import (
+    DEFAULT_PHASE_POLICIES,
+    OPERATING_PHASE_LABELS,
+    PHASE_TO_STAGES_MAPPING,
+    PIPELINE_STAGE_LABELS,
+    PIPELINE_STAGES,
+    STAGE_TO_PHASE_MAPPING,
+    OperatingPhasePolicy,
+    PhaseExitCriteria,
+    PhaseKillCondition,
+    PhaseReuseOpportunity,
+    PhaseSkipCondition,
+    PipelineContext,
+    PipelineLaneContext,
+    PipelineStageTrace,
+    StageTraceMetadata,
+    get_phase_for_stage,
+    get_phase_policy,
+    get_stages_for_phase,
+)
+from .production import (
+    CONTENT_TYPE_PROFILES,
+    AssetFallback,
+    BeatRevisionScope,
+    BeatVisual,
+    ContentTypeProfile,
+    HumanQCGate,
+    IterationState,
+    MissingAssetDecision,
+    PackagingOutput,
+    PlatformPackage,
+    ProductionBrief,
+    PublishItem,
+    QualityEvaluation,
+    RunConstraints,
+    TargetedRevisionPlan,
+    TargetedRewriteAction,
+    VisualPlanOutput,
+    VisualProductionExecutionBrief,
+    get_content_type_profile,
+)
+from .research import (
+    ClaimTraceEntry,
+    ClaimTraceLedger,
+    FactRiskGate,
+    FactRiskGateOutput,
+    FactRiskGateResult,
+    ProgressiveQCCheckpoint,
+    ProgressiveQCIssue,
+    ResearchClaim,
+    ResearchCounterpoint,
+    ResearchDepthRouting,
+    ResearchFinding,
+    ResearchPack,
+    ResearchSource,
+    ResearchUncertaintyFlag,
+    RetrievalBudget,
+    RetrievalDecision,
+    RetrievalPlan,
+    ScriptClaimStatement,
+)
+from .script import (
+    ArgumentBeatClaim,
+    ArgumentClaim,
+    ArgumentCounterargument,
+    ArgumentMap,
+    ArgumentProofAnchor,
+    BeatIntent,
+    BeatIntentMap,
+    CtAVariants,
+    HookSet,
+    QCCheck,
+    QCResult,
+    SavedScriptRun,
+    ScriptingContext,
+    ScriptingIterations,
+    ScriptingIterationSummary,
+    ScriptingLLMCallTrace,
+    ScriptingRunResult,
+    ScriptingStepTrace,
+    ScriptStructure,
+    ScriptVersion,
+    VisualNote,
+)
+
+# Aliases for backward compatibility
+CtaVariants = CtAVariants
 
 # Shared enums and types
 from .shared import (
+    BriefExecutionPolicyMode,
+    BriefLifecycleState,
+    BriefProvenance,
     ClaimStatus,
     ClaimTraceStage,
     ClaimTraceStatus,
@@ -48,182 +190,7 @@ from .shared import (
     StrategyReadiness,
     TriageOperationKind,
     VisualComplexity,
-    BriefExecutionPolicyMode,
-    BriefLifecycleState,
-    BriefProvenance,
 )
-
-# Stage-specific models
-from .angle import (
-    AngleDefinition,
-    AngleOption,
-    AngleOutput,
-    BeatIntent,
-    BeatIntentMap,
-    CoreInputs,
-    CtAVariants,
-    DerivativeOpportunity,
-    EarlyPackagingSignals,
-    HookSet,
-    StrategyMemory,
-    ThesisArtifact,
-)
-
-from .backlog import (
-    AudienceProblemFitFields,
-    BacklogItem,
-    BacklogOutput,
-    ContentExecutionFields,
-    IdeaCoreFields,
-    IdeaScores,
-    PrioritizationFields,
-    ScoringOutput,
-    TriageOperation,
-    TriageResponse,
-    ValidationLayerFields,
-)
-
-from .brief import (
-    BriefExecutionGate,
-    BriefRevision,
-    ManagedBriefOutput,
-    ManagedOpportunityBrief,
-    OpportunityBrief,
-    PipelineBriefReference,
-    StrategyReadinessIssue,
-    StrategyReadinessResult,
-)
-from .pipeline import (
-    PhaseExitCriteria,
-    PhaseKillCondition,
-    PhaseReuseOpportunity,
-    PhaseSkipCondition,
-)
-
-from .learning import (
-    ContentGenRunMetrics,
-    OperatingFitnessMetrics,
-    PerformanceAnalysis,
-    PerformanceLearning,
-    PerformanceLearningSet,
-    PlanningLearning,
-    PlanningMetrics,
-    RuleVersion,
-    RuleVersionHistory,
-    StrategyPerformanceGuidance,
-)
-
-from .pipeline import (
-    DEFAULT_PHASE_POLICIES,
-    OPERATING_PHASE_LABELS,
-    PHASE_TO_STAGES_MAPPING,
-    PIPELINE_STAGE_LABELS,
-    PIPELINE_STAGES,
-    STAGE_TO_PHASE_MAPPING,
-    OperatingPhasePolicy,
-    PhaseExitCriteria,
-    PhaseKillCondition,
-    PhaseReuseOpportunity,
-    PhaseSkipCondition,
-    PipelineContext,
-    PipelineLaneContext,
-    PipelineStageTrace,
-    StageTraceMetadata,
-    get_phase_for_stage,
-    get_phase_policy,
-    get_stages_for_phase,
-)
-
-from .production import (
-    AssetFallback,
-    BeatRevisionScope,
-    BeatVisual,
-    HumanQCGate,
-    IterationState,
-    MissingAssetDecision,
-    PlatformPackage,
-    ProductionBrief,
-    PublishItem,
-    QualityEvaluation,
-    TargetedRevisionPlan,
-    TargetedRewriteAction,
-    VisualPlanOutput,
-    VisualProductionExecutionBrief,
-)
-
-from .research import (
-    ClaimTraceEntry,
-    ClaimTraceLedger,
-    FactRiskGate,
-    FactRiskGateOutput,
-    FactRiskGateResult,
-    ProgressiveQCIssue,
-    ProgressiveQCCheckpoint,
-    ResearchClaim,
-    ResearchCounterpoint,
-    ResearchDepthRouting,
-    ResearchFinding,
-    ResearchPack,
-    ResearchSource,
-    ResearchUncertaintyFlag,
-    RetrievalBudget,
-    RetrievalDecision,
-    RetrievalPlan,
-    ScriptClaimStatement,
-)
-
-from .script import (
-    ArgumentBeatClaim,
-    ArgumentClaim,
-    ArgumentCounterargument,
-    ArgumentMap,
-    ArgumentProofAnchor,
-    BeatIntent,
-    BeatIntentMap,
-    CtaVariants,
-    HookSet,
-    QCResult,
-    QCCheck,
-    SavedScriptRun,
-    ScriptStructure,
-    ScriptVersion,
-    ScriptingContext,
-    ScriptingIterationSummary,
-    ScriptingIterations,
-    ScriptingLLMCallTrace,
-    ScriptingRunResult,
-    ScriptingStepTrace,
-    VisualNote,
-)
-
-# Backward-compat: re-export ClaimTraceLedger in research.py for
-# models that still reference it from there
-from .research import ClaimTraceLedger as _ClaimTraceLedger
-
-# Pipeline context and lane context - assembled here to avoid circular imports
-from .pipeline import PipelineStageTrace, StageTraceMetadata
-from .angle import ThesisArtifact
-from .research import ResearchPack
-from .script import ScriptingContext
-from .production import (
-    BeatVisual,
-    HumanQCGate,
-    ProductionBrief,
-    VisualPlanOutput,
-    VisualProductionExecutionBrief,
-    PackagingOutput,
-    PlatformPackage,
-    PublishItem,
-    IterationState,
-    QualityEvaluation,
-    TargetedRevisionPlan,
-    RunConstraints,
-)
-from .brief import PipelineBriefReference, BriefExecutionGate
-from .backlog import BacklogOutput, ScoringOutput, PipelineCandidate
-from .angle import AngleOutput
-from .learning import PerformanceAnalysis
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Legacy constants and helpers that lived in models.py
@@ -254,10 +221,6 @@ SCRIPTING_STEP_LABELS: dict[str, str] = {
     "add_visual_notes": "Adding visual notes",
     "run_qc": "Running QC",
 }
-
-
-# Content type profiles
-from .production import ContentTypeProfile, CONTENT_TYPE_PROFILES, get_content_type_profile
 
 
 __all__ = [
@@ -360,6 +323,8 @@ __all__ = [
     "PhaseKillCondition",
     "PhaseReuseOpportunity",
     "PhaseSkipCondition",
+    "PipelineContext",
+    "PipelineLaneContext",
     "PipelineStageTrace",
     "StageTraceMetadata",
     "get_phase_for_stage",
@@ -426,10 +391,14 @@ __all__ = [
 ]
 
 
-# Rebuild PipelineContext to resolve forward references after all models are loaded
-from .pipeline import PipelineContext
-from .script import ScriptingContext
+# Rebuild models to resolve forward references after all models are loaded
+# Import Literal at runtime to ensure it's available during model_rebuild
+from typing import Literal  # noqa: E402
 
 PipelineContext.model_rebuild()
 ScriptingContext.model_rebuild()
 
+# Rebuild PipelineBriefReference to resolve OpportunityBrief forward reference
+from .brief import PipelineBriefReference
+
+PipelineBriefReference.model_rebuild()
