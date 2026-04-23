@@ -26,8 +26,6 @@ from cc_deep_research.llm import LLMRouter, LLMRouteRegistry
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.prompts import PromptRegistry
 
-from .resilience import build_orchestration_timeout_policy
-
 
 @dataclass(slots=True)
 class OrchestratorRuntimeState:
