@@ -262,7 +262,7 @@ research_agent:
 search_team:
   enabled: true # Retained for compatibility with existing config
   team_size: 4 # Describes local specialist roster metadata
-  parallel_execution: true # Run source collection in parallel local tasks
+  concurrent_source_collection: true # Run source collection concurrently
   timeout_seconds: 300 # Local parallel-task timeout (30-600 seconds)
   fallback_to_sequential: true # Fall back to sequential on error
 
@@ -331,7 +331,7 @@ cc-deep-research config init --force
 | `research_agent.max_turns`         | `10`                  | Max conversation turns                    |
 | `search_team.enabled`              | `true`                | Compatibility flag for the local runtime  |
 | `search_team.team_size`            | `4`                   | Specialist roster metadata size           |
-| `search_team.parallel_execution`   | `true`                | Parallel local source collection          |
+| `search_team.concurrent_source_collection`   | `true`                | Concurrent source collection          |
 | `search_team.timeout_seconds`      | `300`                 | Local parallel-task timeout               |
 | `output.format`                    | `"markdown"`          | Output format                             |
 | `output.auto_save`                 | `true`                | Auto-save reports                         |
@@ -511,8 +511,8 @@ cc-deep-research research [OPTIONS] QUERY
 | `--claude-only`     |       | flag   | false         | Select only the `claude` provider (currently emits provider warnings)    |
 | `--no-team`         |       | flag   | false         | Run source collection sequentially instead of using parallel local tasks |
 | `--team-size`       |       | int    | (from config) | Override local roster metadata size (compatibility only)                 |
-| `--parallel-mode`   |       | flag   | false         | Force parallel local source collection for this run                      |
-| `--num-researchers` |       | int    | (from config) | Override the number of parallel local collection tasks (1-8)             |
+| `--concurrent-source-collection`   |       | flag   | false         | Force parallel local source collection for this run                      |
+| `--max-concurrent-sources` |       | int    | (from config) | Override the number of parallel local collection tasks (1-8)             |
 | `--progress`        |       | flag   | true          | Show progress indicators                                                 |
 | `--quiet`           |       | flag   | false         | Suppress output                                                          |
 | `--verbose`         |       | flag   | false         | Show detailed output                                                     |
@@ -542,7 +542,7 @@ cc-deep-research research -s 30 --format html -o ml.html "Machine learning algor
 cc-deep-research research --monitor "Complex topic requiring deep analysis"
 
 # Show a parallel execution timeline after the run completes
-cc-deep-research research --parallel-mode --num-researchers 4 --show-timeline \
+cc-deep-research research --concurrent-source-collection --max-concurrent-sources 4 --show-timeline \
   "Complex topic requiring deep analysis"
 
 # Generate PDF output alongside the main report
@@ -1031,17 +1031,17 @@ Override the configured local roster size metadata. This is a compatibility sett
 cc-deep-research research --team-size 6 "Complex topic"
 ```
 
-#### `--parallel-mode`
+#### `--concurrent-source-collection`
 
 Force parallel local source collection for this run when you want to override the configured mode.
 
 **Example:**
 
 ```bash
-cc-deep-research research --parallel-mode "Complex topic"
+cc-deep-research research --concurrent-source-collection "Complex topic"
 ```
 
-#### `--num-researchers`
+#### `--max-concurrent-sources`
 
 Override the number of parallel local collection tasks used during source collection.
 
@@ -1050,7 +1050,7 @@ Override the number of parallel local collection tasks used during source collec
 **Example:**
 
 ```bash
-cc-deep-research research --parallel-mode --num-researchers 4 "Complex topic"
+cc-deep-research research --concurrent-source-collection --max-concurrent-sources 4 "Complex topic"
 ```
 
 ### Display Options
@@ -1126,12 +1126,12 @@ cc-deep-research research --monitor "Complex topic"
 
 Show a terminal timeline after a parallel run completes.
 
-Use this with `--parallel-mode` when you want a compact execution trace without opening the browser dashboard.
+Use this with `--concurrent-source-collection` when you want a compact execution trace without opening the browser dashboard.
 
 **Example:**
 
 ```bash
-cc-deep-research research --parallel-mode --show-timeline "Complex topic"
+cc-deep-research research --concurrent-source-collection --show-timeline "Complex topic"
 ```
 
 #### `--enable-realtime`
@@ -1381,7 +1381,7 @@ Configure local pipeline and parallel collection behavior:
 search_team:
   enabled: true # Compatibility flag
   team_size: 4 # Specialist roster metadata
-  parallel_execution: true # Run source collection in parallel local tasks
+  concurrent_source_collection: true # Run source collection concurrently
   timeout_seconds: 300 # Local source-collection timeout (30-600 seconds)
   fallback_to_sequential: true # Fall back on error
 ```
@@ -1698,7 +1698,7 @@ cc-deep-research research --monitor "Complex topic"
 **Parallel timeline in the terminal:**
 
 ```bash
-cc-deep-research research --parallel-mode --show-timeline "Complex topic"
+cc-deep-research research --concurrent-source-collection --show-timeline "Complex topic"
 ```
 
 **Verbose output for troubleshooting:**

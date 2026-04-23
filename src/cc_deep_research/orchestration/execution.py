@@ -49,16 +49,16 @@ class ResearchExecutionService:
         phase_runner: PhaseRunner,
         session_builder: SessionBuilder,
         configured_providers: Callable[[], list[str]],
-        parallel_mode: bool,
-        num_researchers: int,
+        concurrent_source_collection: bool,
+        max_concurrent_sources: int,
     ) -> None:
         self._config = config
         self._monitor = monitor
         self._phase_runner = phase_runner
         self._session_builder = session_builder
         self._configured_providers = configured_providers
-        self._parallel_mode = parallel_mode
-        self._num_researchers = num_researchers
+        self._concurrent_source_collection = concurrent_source_collection
+        self._max_concurrent_sources = max_concurrent_sources
 
     async def execute(
         self,
@@ -88,7 +88,7 @@ class ResearchExecutionService:
                 description="Initializing agent team",
                 operation=hooks.initialize_team,
                 cancellation_check=cancellation_check,
-                input_ref={"parallel_mode": self._parallel_mode, "num_researchers": self._num_researchers},
+                input_ref={"concurrent_source_collection": self._concurrent_source_collection, "max_concurrent_sources": self._max_concurrent_sources},
             )
             strategy = await self._phase_runner.run_phase(
                 phase_hook=phase_hook,
@@ -232,8 +232,8 @@ class ResearchExecutionService:
             session_id=session_id,
             query=query,
             depth=depth.value,
-            parallel_mode=self._parallel_mode,
-            configured_researchers=self._num_researchers,
+            concurrent_source_collection=self._concurrent_source_collection,
+            configured_researchers=self._max_concurrent_sources,
         )
 
         # Emit session start checkpoint
@@ -243,8 +243,8 @@ class ResearchExecutionService:
             input_ref={
                 "query": query,
                 "depth": depth.value,
-                "parallel_mode": self._parallel_mode,
-                "num_researchers": self._num_researchers,
+                "concurrent_source_collection": self._concurrent_source_collection,
+                "max_concurrent_sources": self._max_concurrent_sources,
             },
             replayable=True,
         )

@@ -265,7 +265,9 @@ class PipelineRunJobRegistry:
             if job.status == PipelineRunStatus.CANCELLED:
                 return job
             job.status = PipelineRunStatus.COMPLETED
-            job.pipeline_context = context
+            # Clone so that callers who retain a reference to the original
+            # object do not see subsequent mutations.
+            job.pipeline_context = context.model_copy(deep=True)
             job.error = None
             job.completed_at = datetime.now(UTC)
             self._persist_job(job)
@@ -320,7 +322,9 @@ class PipelineRunJobRegistry:
         """Update the pipeline context after a stage completes."""
         job = self._require_job(pipeline_id)
         with self._lock:
-            job.pipeline_context = context
+            # Clone on write so that callers who retain a reference to the original
+            # object do not see subsequent mutations made by other stages or runs.
+            job.pipeline_context = context.model_copy(deep=True)
             self._persist_job(job)
         return job
 

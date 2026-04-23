@@ -289,9 +289,9 @@ npm run dev
 
 Content-generation runs emit specialized telemetry for measuring workflow speed and operating fitness:
 
-- **Run Metrics**: [`ContentGenRunMetrics`](src/cc_deep_research/content_gen/models.py) captures idea score, content type, effort tier, stage-level timing, release state, and cost signals for every content-gen run.
-- **Operating Fitness**: [`OperatingFitnessMetrics`](src/cc_deep_research/content_gen/models.py) tracks cycle time, kill rate, reuse rate, and cost per published asset.
-- **Rule Versioning**: [`RuleVersionHistory`](src/cc_deep_research/content_gen/models.py) records when strategy guidance changed so operators can trace scoring and packaging behavior to observed results.
+- **Run Metrics**: [`ContentGenRunMetrics`](src/cc_deep_research/content_gen/models/) captures idea score, content type, effort tier, stage-level timing, release state, and cost signals for every content-gen run.
+- **Operating Fitness**: [`OperatingFitnessMetrics`](src/cc_deep_research/content_gen/models/) tracks cycle time, kill rate, reuse rate, and cost per published asset.
+- **Rule Versioning**: [`RuleVersionHistory`](src/cc_deep_research/content_gen/models/) records when strategy guidance changed so operators can trace scoring and packaging behavior to observed results.
 
 Content-gen telemetry is stored separately from research telemetry in:
 

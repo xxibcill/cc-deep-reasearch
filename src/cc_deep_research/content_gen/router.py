@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any, Literal
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from cc_deep_research.config import load_config
 from cc_deep_research.content_gen.agents.backlog_chat import (
@@ -28,41 +26,40 @@ from cc_deep_research.content_gen.agents.backlog_triage import (
 )
 from cc_deep_research.content_gen.agents.execution_brief import ExecutionBriefAgent
 from cc_deep_research.content_gen.agents.next_action import NextActionAgent
-from cc_deep_research.content_gen.backlog_service import BacklogService
-from cc_deep_research.content_gen.maintenance_workflow import (
-    MaintenanceJobType,
-    MaintenanceProposalStatus,
-    MaintenanceScheduler,
-    MaintenanceStore,
-)
 from cc_deep_research.content_gen.models import (
-    PIPELINE_STAGE_LABELS,
-    PIPELINE_STAGES,
     BacklogItem,
-    HookSet,
-    PipelineContext,
+    OpportunityBrief,
     ReleaseState,
     RunConstraints,
-    ScriptingContext,
-    ScriptingIterations,
-    ScriptingIterationSummary,
-    ScriptingRunResult,
 )
-from cc_deep_research.content_gen.progress import (
-    PipelineRunJob,
-    PipelineRunJobRegistry,
-)
-from cc_deep_research.content_gen.storage import (
-    AuditActor,
-    AuditEventType,
-    AuditStore,
-    PublishQueueStore,
-    ScriptingStore,
-    StrategyStore,
-)
+from cc_deep_research.content_gen.progress import PipelineRunJobRegistry
+from cc_deep_research.content_gen.storage import AuditActor, AuditEventType, AuditStore
 from cc_deep_research.event_router import EventRouter, WebSocketConnection
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Service imports (extracted from route handlers)
+# ---------------------------------------------------------------------------
+from cc_deep_research.content_gen.maintenance_api_service import (
+    MaintenanceApiService,
+    ProposalNotFoundError,
+    UnknownJobTypeError,
+)
+from cc_deep_research.content_gen.publish_queue_audit_service import (
+    PublishQueueAuditService,
+)
+from cc_deep_research.content_gen.scripting_api_service import (
+    ScriptContextNotFoundError,
+    ScriptingApiError,
+    ScriptingApiService,
+    ScriptMissingFieldsError,
+    ScriptRunNotFoundError,
+)
+from cc_deep_research.content_gen.strategy_api_service import (
+    RuleVersionNotFoundError,
+    StrategyApiService,
+)
 
 # ---------------------------------------------------------------------------
 # Request / response models
@@ -320,57 +317,6 @@ class BriefAssistantApplyRequest(BaseModel):
     revision_notes: str = Field(default="", description="Notes about what changed in this revision")
 
 
-def _build_scripting_iterations(iter_state: Any) -> ScriptingIterations | None:
-    if iter_state is None:
-        return None
-    return ScriptingIterations(
-        count=iter_state.current_iteration,
-        max_iterations=iter_state.max_iterations,
-        converged=iter_state.is_converged,
-        quality_history=[
-            ScriptingIterationSummary(
-                iteration=q.iteration_number,
-                score=q.overall_quality_score,
-                passes=q.passes_threshold,
-            )
-            for q in iter_state.quality_history
-        ],
-    )
-
-
-def _build_scripting_result(
-    ctx: ScriptingContext,
-    *,
-    run_id: str | None = None,
-    execution_mode: Literal["single_pass", "iterative"] = "single_pass",
-    iterations: ScriptingIterations | None = None,
-) -> ScriptingRunResult:
-    script = ScriptingStore.extract_script(ctx)
-    return ScriptingRunResult(
-        run_id=run_id,
-        raw_idea=ctx.raw_idea,
-        script=script,
-        word_count=len(script.split()) if script else 0,
-        context=ctx,
-        execution_mode=execution_mode,
-        iterations=iterations,
-    )
-
-
-def _serialize_scripting_payload(result: ScriptingRunResult) -> dict[str, Any]:
-    payload = result.model_dump(mode="json")
-    if payload.get("iterations") is None:
-        payload.pop("iterations", None)
-    return payload
-
-
-def _serialize_saved_script_run(run: Any) -> dict[str, Any]:
-    payload = run.model_dump(mode="json")
-    if payload.get("iterations") is None:
-        payload.pop("iterations", None)
-    return payload
-
-
 # ---------------------------------------------------------------------------
 # Router registration
 # ---------------------------------------------------------------------------
@@ -382,297 +328,107 @@ def register_content_gen_routes(
     job_registry: PipelineRunJobRegistry,
 ) -> None:
     """Register all content-gen API and WebSocket routes on *app*."""
+    from cc_deep_research.content_gen.backlog_api_service import (
+        BacklogApiService,
+        BacklogItemNotFoundError,
+        BacklogValidationError,
+        DuplicateActivePipelineError,
+    )
+    from cc_deep_research.content_gen.pipeline_run_service import PipelineRunService
+
+    service = PipelineRunService(job_registry=job_registry, event_router=event_router)
+    backlog_api_service = BacklogApiService(backlog_service=None, pipeline_service=service)
 
     @app.get("/api/content-gen/pipelines")
     async def list_pipelines() -> JSONResponse:
-        jobs = job_registry.list_jobs()
-        items = []
-        for job in jobs:
-            items.append(_job_summary(job))
+        items = service.list_pipelines()
         return JSONResponse(content={"items": items})
 
     @app.post("/api/content-gen/pipelines", status_code=202)
     async def start_pipeline(request: StartPipelineRequest) -> JSONResponse:
-        config = load_config()
-        end = request.to_stage if request.to_stage is not None else len(PIPELINE_STAGES) - 1
-
-        job = job_registry.create_job(
-            theme=request.theme,
-            from_stage=request.from_stage,
-            to_stage=end,
+        run_constraints = RunConstraints(
+            content_type=request.content_type,
+            effort_tier=request.effort_tier,
+            owner=request.owner,
+            channel_goal=request.channel_goal,
+            success_target=request.success_target,
+            research_depth_override=request.research_depth_override,
+            research_override_reason=request.research_override_reason,
         )
-
-        async def _run() -> None:
-            from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
-
-            orch = ContentGenOrchestrator(config)
-            job_registry.mark_running(job.pipeline_id)
-
-            def _progress(stage_idx: int, label: str) -> None:
-                if job.stop_requested:
-                    raise _PipelineCancelled(job.pipeline_id)
-                asyncio.get_running_loop().create_task(
-                    event_router.publish(
-                        job.pipeline_id,
-                        {
-                            "type": "pipeline_stage_started",
-                            "stage_index": stage_idx,
-                            "stage_label": label,
-                            "timestamp": datetime.now(UTC).isoformat(),
-                        },
-                    )
-                )
-
-            def _stage_completed(stage_idx: int, status: str, detail: str, stage_ctx) -> None:
-                # Update job registry with latest context after each stage
-                job_registry.update_context(job.pipeline_id, stage_ctx)
-                serialized_context = stage_ctx.model_dump(mode="json")
-
-                if status == "failed":
-                    asyncio.get_running_loop().create_task(
-                        event_router.publish(
-                            job.pipeline_id,
-                            {
-                                "type": "pipeline_stage_failed",
-                                "stage_index": stage_idx,
-                                "stage_label": PIPELINE_STAGE_LABELS.get(
-                                    PIPELINE_STAGES[stage_idx], ""
-                                ),
-                                "error": detail,
-                                "context": serialized_context,
-                                "timestamp": datetime.now(UTC).isoformat(),
-                            },
-                        )
-                    )
-                elif status == "skipped":
-                    asyncio.get_running_loop().create_task(
-                        event_router.publish(
-                            job.pipeline_id,
-                            {
-                                "type": "pipeline_stage_skipped",
-                                "stage_index": stage_idx,
-                                "stage_label": PIPELINE_STAGE_LABELS.get(
-                                    PIPELINE_STAGES[stage_idx], ""
-                                ),
-                                "reason": detail,
-                                "context": serialized_context,
-                                "timestamp": datetime.now(UTC).isoformat(),
-                            },
-                        )
-                    )
-                else:
-                    asyncio.get_running_loop().create_task(
-                        event_router.publish(
-                            job.pipeline_id,
-                            {
-                                "type": "pipeline_stage_completed",
-                                "stage_index": stage_idx,
-                                "stage_status": status,
-                                "stage_detail": detail,
-                                "context": serialized_context,
-                                "timestamp": datetime.now(UTC).isoformat(),
-                            },
-                        )
-                    )
-
-            try:
-                run_constraints = RunConstraints(
-                    content_type=request.content_type,
-                    effort_tier=request.effort_tier,
-                    owner=request.owner,
-                    channel_goal=request.channel_goal,
-                    success_target=request.success_target,
-                    research_depth_override=request.research_depth_override,
-                    research_override_reason=request.research_override_reason,
-                )
-                ctx = await orch.run_full_pipeline(
-                    request.theme,
-                    from_stage=request.from_stage,
-                    to_stage=end,
-                    progress_callback=_progress,
-                    stage_completed_callback=_stage_completed,
-                    run_constraints=run_constraints,
-                )
-
-                job_registry.update_context(job.pipeline_id, ctx)
-                job_registry.mark_completed(job.pipeline_id, context=ctx)
-
-                await event_router.publish(
-                    job.pipeline_id,
-                    {
-                        "type": "pipeline_completed",
-                        "current_stage": ctx.current_stage,
-                        "timestamp": datetime.now(UTC).isoformat(),
-                    },
-                )
-            except _PipelineCancelled:
-                job_registry.mark_cancelled(job.pipeline_id)
-                await event_router.publish(
-                    job.pipeline_id,
-                    {"type": "pipeline_cancelled", "timestamp": datetime.now(UTC).isoformat()},
-                )
-            except Exception as exc:
-                logger.exception("Pipeline %s failed", job.pipeline_id)
-                job_registry.mark_failed(job.pipeline_id, error=str(exc))
-                await event_router.publish(
-                    job.pipeline_id,
-                    {
-                        "type": "pipeline_error",
-                        "error": str(exc),
-                        "timestamp": datetime.now(UTC).isoformat(),
-                    },
-                )
-
-        task = asyncio.create_task(_run())
-        job_registry.attach_task(job.pipeline_id, task)
-        return JSONResponse(status_code=202, content=_job_summary(job))
+        result = service.start_pipeline(
+            request.theme,
+            from_stage=request.from_stage,
+            to_stage=request.to_stage,
+            run_constraints=run_constraints,
+        )
+        return JSONResponse(
+            status_code=202,
+            content={
+                "pipeline_id": result.pipeline_id,
+                "theme": result.theme,
+                "from_stage": result.from_stage,
+                "to_stage": result.to_stage,
+                "status": result.status,
+                "current_stage": result.current_stage,
+                "error": result.error,
+                "created_at": result.created_at.isoformat(),
+                "started_at": result.started_at.isoformat() if result.started_at else None,
+                "completed_at": result.completed_at.isoformat() if result.completed_at else None,
+            },
+        )
 
     @app.get("/api/content-gen/pipelines/{pipeline_id}")
     async def get_pipeline(pipeline_id: str) -> JSONResponse:
-        job = job_registry.get_job(pipeline_id)
-        if job is None:
+        result = service.get_pipeline_status(pipeline_id)
+        if result is None:
             return JSONResponse(status_code=404, content={"error": "Pipeline not found"})
-        result = _job_summary(job)
-        if job.pipeline_context is not None:
-            result["context"] = json.loads(job.pipeline_context.model_dump_json())
         return JSONResponse(content=result)
 
     @app.post("/api/content-gen/pipelines/{pipeline_id}/stop")
     async def stop_pipeline(pipeline_id: str) -> JSONResponse:
-        job = job_registry.get_job(pipeline_id)
-        if job is None:
+        from cc_deep_research.content_gen.pipeline_run_service import (
+            PipelineNotActiveError,
+            PipelineNotFoundError,
+        )
+
+        try:
+            result = service.stop_pipeline(pipeline_id)
+            return JSONResponse(content=result)
+        except PipelineNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Pipeline not found"})
-        if not job.is_active:
+        except PipelineNotActiveError:
             return JSONResponse(status_code=409, content={"error": "Pipeline is not active"})
-        job_registry.request_cancel(pipeline_id)
-        return JSONResponse(content={"pipeline_id": pipeline_id, "status": "cancelling"})
 
     @app.post("/api/content-gen/pipelines/{pipeline_id}/resume")
     async def resume_pipeline(pipeline_id: str, request: ResumePipelineRequest) -> JSONResponse:
-        job = job_registry.get_job(pipeline_id)
-        if job is None:
-            return JSONResponse(status_code=404, content={"error": "Pipeline not found"})
-        if job.is_active:
-            return JSONResponse(status_code=409, content={"error": "Pipeline is already active"})
-
-        config = load_config()
-        ctx = job.pipeline_context
-        if ctx is None:
-            return JSONResponse(status_code=400, content={"error": "No saved context to resume"})
-
-        end = job.to_stage if job.to_stage is not None else len(PIPELINE_STAGES) - 1
-        from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
-
-        orch = ContentGenOrchestrator(config)
-        resume_error = orch.validate_resume_context(from_stage=request.from_stage, ctx=ctx)
-        if resume_error:
-            return JSONResponse(status_code=400, content={"error": resume_error})
-
-        # Create a distinct job for each resume attempt so concurrent retries
-        # cannot overwrite one another in the registry.
-        new_job = job_registry.create_resume_job(
-            pipeline_id,
-            theme=job.theme,
-            from_stage=request.from_stage,
-            to_stage=end,
+        from cc_deep_research.content_gen.pipeline_run_service import (
+            PipelineNotActiveError,
+            PipelineNotFoundError,
+            ResumeContextError,
         )
-        # Carry forward existing context
-        job_registry.update_context(new_job.pipeline_id, ctx)
 
-        async def _run() -> None:
-            job_registry.mark_running(new_job.pipeline_id)
-
-            def _progress(stage_idx: int, label: str) -> None:
-                if new_job.stop_requested:
-                    raise _PipelineCancelled(new_job.pipeline_id)
-                asyncio.get_running_loop().create_task(
-                    event_router.publish(
-                        new_job.pipeline_id,
-                        {
-                            "type": "pipeline_stage_started",
-                            "stage_index": stage_idx,
-                            "stage_label": label,
-                            "timestamp": datetime.now(UTC).isoformat(),
-                        },
-                    )
-                )
-
-            def _stage_completed(stage_idx: int, status: str, detail: str, stage_ctx) -> None:
-                # Update job registry with latest context after each stage
-                job_registry.update_context(new_job.pipeline_id, stage_ctx)
-                serialized_context = stage_ctx.model_dump(mode="json")
-
-                if status == "failed":
-                    asyncio.get_running_loop().create_task(
-                        event_router.publish(
-                            new_job.pipeline_id,
-                            {
-                                "type": "pipeline_stage_failed",
-                                "stage_index": stage_idx,
-                                "stage_label": PIPELINE_STAGE_LABELS.get(
-                                    PIPELINE_STAGES[stage_idx], ""
-                                ),
-                                "error": detail,
-                                "context": serialized_context,
-                                "timestamp": datetime.now(UTC).isoformat(),
-                            },
-                        )
-                    )
-                elif status == "skipped":
-                    asyncio.get_running_loop().create_task(
-                        event_router.publish(
-                            new_job.pipeline_id,
-                            {
-                                "type": "pipeline_stage_skipped",
-                                "stage_index": stage_idx,
-                                "stage_label": PIPELINE_STAGE_LABELS.get(
-                                    PIPELINE_STAGES[stage_idx], ""
-                                ),
-                                "reason": detail,
-                                "context": serialized_context,
-                                "timestamp": datetime.now(UTC).isoformat(),
-                            },
-                        )
-                    )
-                else:
-                    asyncio.get_running_loop().create_task(
-                        event_router.publish(
-                            new_job.pipeline_id,
-                            {
-                                "type": "pipeline_stage_completed",
-                                "stage_index": stage_idx,
-                                "stage_status": status,
-                                "stage_detail": detail,
-                                "context": serialized_context,
-                                "timestamp": datetime.now(UTC).isoformat(),
-                            },
-                        )
-                    )
-
-            try:
-                result_ctx = await orch.run_full_pipeline(
-                    job.theme,
-                    from_stage=request.from_stage,
-                    to_stage=end,
-                    initial_context=ctx,
-                    progress_callback=_progress,
-                    stage_completed_callback=_stage_completed,
-                )
-                job_registry.update_context(new_job.pipeline_id, result_ctx)
-                job_registry.mark_completed(new_job.pipeline_id, context=result_ctx)
-                await event_router.publish(
-                    new_job.pipeline_id,
-                    {"type": "pipeline_completed", "timestamp": datetime.now(UTC).isoformat()},
-                )
-            except _PipelineCancelled:
-                job_registry.mark_cancelled(new_job.pipeline_id)
-            except Exception as exc:
-                logger.exception("Pipeline %s resume failed", new_job.pipeline_id)
-                job_registry.mark_failed(new_job.pipeline_id, error=str(exc))
-
-        task = asyncio.create_task(_run())
-        job_registry.attach_task(new_job.pipeline_id, task)
-        return JSONResponse(content=_job_summary(new_job))
+        try:
+            result = service.resume_pipeline(pipeline_id, from_stage=request.from_stage)
+            return JSONResponse(
+                content={
+                    "pipeline_id": result.pipeline_id,
+                    "theme": result.theme,
+                    "from_stage": result.from_stage,
+                    "to_stage": result.to_stage,
+                    "status": result.status,
+                    "current_stage": result.current_stage,
+                    "error": result.error,
+                    "created_at": result.created_at.isoformat(),
+                    "started_at": result.started_at.isoformat() if result.started_at else None,
+                    "completed_at": result.completed_at.isoformat() if result.completed_at else None,
+                },
+            )
+        except PipelineNotFoundError:
+            return JSONResponse(status_code=404, content={"error": "Pipeline not found"})
+        except PipelineNotActiveError:
+            return JSONResponse(status_code=409, content={"error": "Pipeline is already active"})
+        except ResumeContextError as e:
+            return JSONResponse(status_code=400, content={"error": str(e)})
 
     # ------------------------------------------------------------------
     # QC approve
@@ -735,105 +491,42 @@ def register_content_gen_routes(
     # Standalone scripting
     # ------------------------------------------------------------------
 
-    @app.post("/api/content-gen/scripting")
-    async def run_scripting(request: RunScriptingRequest) -> JSONResponse:
-        config = load_config()
-        from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
-
-        orch = ContentGenOrchestrator(config)
-        iter_state = None
-        iterative_enabled = (
-            config.content_gen.enable_iterative_mode
-            if request.iterative_mode is None
-            else request.iterative_mode
-        )
-        try:
-            if iterative_enabled:
-                ctx, iter_state = await orch.run_scripting_iterative(
-                    request.idea,
-                    llm_route=request.llm_route,
-                    max_iterations=request.max_iterations,
-                )
-            else:
-                ctx = await orch.run_scripting(request.idea, llm_route=request.llm_route)
-        except Exception as exc:
-            logger.exception("Scripting run failed")
-            return JSONResponse(status_code=500, content={"error": str(exc)})
-
-        store = ScriptingStore()
-        execution_mode: Literal["single_pass", "iterative"] = (
-            "iterative" if iter_state is not None else "single_pass"
-        )
-        iterations = _build_scripting_iterations(iter_state)
-        saved = store.save(ctx, execution_mode=execution_mode, iterations=iterations)
-        response_content = _build_scripting_result(
-            ctx,
-            run_id=saved.run_id,
-            execution_mode=execution_mode,
-            iterations=iterations,
-        )
-        return JSONResponse(content=_serialize_scripting_payload(response_content))
-
-    # ------------------------------------------------------------------
-    # Saved scripts history
-    # ------------------------------------------------------------------
-
-    @app.get("/api/content-gen/scripts")
-    async def list_scripts() -> JSONResponse:
-        store = ScriptingStore()
-        runs = store.list_runs(limit=50)
-        items = [_serialize_saved_script_run(r) for r in runs]
-        return JSONResponse(content={"items": items})
-
-    @app.get("/api/content-gen/scripts/{run_id}")
-    async def get_script(run_id: str) -> JSONResponse:
-        store = ScriptingStore()
-        run = store.get(run_id)
-        if run is None:
-            return JSONResponse(status_code=404, content={"error": "Script run not found"})
-        if run.result_path:
-            result_text = ""
-            with suppress(Exception):
-                from pathlib import Path
-
-                result_text = Path(run.result_path).read_text()
-            if result_text:
-                return JSONResponse(content=json.loads(result_text))
-
-        script_text = ""
-        with suppress(Exception):
-            from pathlib import Path
-
-            script_text = Path(run.script_path).read_text()
-        context: ScriptingContext | None = None
-        with suppress(Exception):
-            from pathlib import Path
-
-            context_text = Path(run.context_path).read_text()
-            if context_text:
-                context = ScriptingContext.model_validate_json(context_text)
-
-        if context is None:
-            context = ScriptingContext(raw_idea=run.raw_idea)
-
-        response = _build_scripting_result(
-            context,
-            run_id=run.run_id,
-            execution_mode=run.execution_mode,
-            iterations=run.iterations,
-        )
-        if script_text:
-            response.script = script_text
-            response.word_count = len(script_text.split())
-        return JSONResponse(content=json.loads(response.model_dump_json()))
-
-    # ------------------------------------------------------------------
-    # Script variant generation & update
-    # ------------------------------------------------------------------
+    scripting_api_service = ScriptingApiService()
 
     class GenerateVariantsRequest(BaseModel):
         tone: str | None = None
         cta_goal: str | None = None
+
+    class UpdateScriptRequest(BaseModel):
+        hook: str | None = None
+        cta: str | None = None
+        script: str | None = None
+
+    @app.post("/api/content-gen/scripting")
+    async def run_scripting(request: RunScriptingRequest) -> JSONResponse:
+        try:
+            result = await scripting_api_service.run_scripting(
+                idea=request.idea,
+                iterative_mode=request.iterative_mode,
+                max_iterations=request.max_iterations,
+                llm_route=request.llm_route,
+            )
+        except ScriptingApiError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": exc.message})
+        return JSONResponse(content=scripting_api_service.serialize_result(result))
+
+    @app.get("/api/content-gen/scripts")
+    async def list_scripts() -> JSONResponse:
+        items = scripting_api_service.list_scripts(limit=50)
+        return JSONResponse(content={"items": items})
+
+    @app.get("/api/content-gen/scripts/{run_id}")
+    async def get_script(run_id: str) -> JSONResponse:
+        try:
+            result = scripting_api_service.get_script(run_id)
+        except ScriptRunNotFoundError:
+            return JSONResponse(status_code=404, content={"error": "Script run not found"})
+        return JSONResponse(content=scripting_api_service.serialize_result(result))
 
     @app.post("/api/content-gen/scripts/{run_id}/generate-variants")
     async def generate_script_variants(
@@ -841,72 +534,21 @@ def register_content_gen_routes(
         request: GenerateVariantsRequest,
     ) -> JSONResponse:
         """Generate new hook and CTA variants for an existing script run."""
-        store = ScriptingStore()
-        run = store.get(run_id)
-        if run is None:
-            return JSONResponse(status_code=404, content={"error": "Script run not found"})
-
-        # Load context
-        context: ScriptingContext | None = None
         try:
-            from pathlib import Path
-
-            context_text = Path(run.context_path).read_text()
-            if context_text:
-                context = ScriptingContext.model_validate_json(context_text)
-        except (FileNotFoundError, json.JSONDecodeError, ValidationError):
-            pass
-
-        if context is None:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "Script context not found - cannot generate variants"},
+            result = await scripting_api_service.generate_variants(
+                run_id,
+                tone=request.tone,
+                cta_goal=request.cta_goal,
             )
-
-        # Ensure required fields exist
-        if context.core_inputs is None or context.angle is None:
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "error": "Script is missing core_inputs or angle - run full scripting first"
-                },
-            )
-
-        # Override tone if provided
-        if request.tone is not None:
-            context.tone = request.tone
-        if request.cta_goal is not None:
-            context.cta = request.cta_goal
-
-        # Generate hooks and CTA using ScriptingAgent
-        from cc_deep_research.content_gen.agents.scripting import ScriptingAgent
-        from cc_deep_research.llm import LLMRouter
-
-        config = load_config()
-        llm = LLMRouter(config.content_gen.llm)
-        agent = ScriptingAgent(llm)
-
-        # Generate hooks (step 5)
-        context = await agent.generate_hooks(context)
-
-        # Generate CTA (step 5b)
-        context = await agent.generate_cta(context)
-
-        # Save updated context
-        store = ScriptingStore()
-        store._save_context(run_id, context)
-
-        return JSONResponse(
-            content={
-                "hooks": json.loads(context.hooks.model_dump_json()),
-                "cta_variants": json.loads(context.cta_variants.model_dump_json()),
-            }
-        )
-
-    class UpdateScriptRequest(BaseModel):
-        hook: str | None = None
-        cta: str | None = None
-        script: str | None = None
+        except ScriptRunNotFoundError:
+            return JSONResponse(status_code=404, content={"error": "Script run not found"})
+        except ScriptContextNotFoundError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": exc.message})
+        except ScriptMissingFieldsError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": exc.message})
+        except ScriptingApiError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": exc.message})
+        return JSONResponse(content=result)
 
     @app.patch("/api/content-gen/scripts/{run_id}")
     async def update_script(
@@ -914,56 +556,20 @@ def register_content_gen_routes(
         request: UpdateScriptRequest,
     ) -> JSONResponse:
         """Update a script run with new hook, CTA, or full script content."""
-        if request.hook is None and request.cta is None and request.script is None:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "At least one field (hook, cta, or script) must be provided"},
-            )
-
-        store = ScriptingStore()
-        run = store.get(run_id)
-        if run is None:
-            return JSONResponse(status_code=404, content={"error": "Script run not found"})
-
-        # Load context
-        context: ScriptingContext | None = None
         try:
-            from pathlib import Path
-
-            context_text = Path(run.context_path).read_text()
-            if context_text:
-                context = ScriptingContext.model_validate_json(context_text)
-        except (FileNotFoundError, json.JSONDecodeError, ValidationError):
-            pass
-
-        if context is None:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "Script context not found"},
+            result = scripting_api_service.update_script(
+                run_id,
+                hook=request.hook,
+                cta=request.cta,
+                script=request.script,
             )
-
-        # Update fields
-        if request.hook is not None:
-            if context.hooks is None:
-                context.hooks = HookSet(hooks=[], best_hook=request.hook, best_hook_reason="")
-            else:
-                context.hooks.best_hook = request.hook
-
-        if request.cta is not None:
-            context.cta = request.cta
-
-        if request.script is not None:
-            # Update script_path with new script content
-            from pathlib import Path
-
-            script_path = Path(run.script_path)
-            script_path.parent.mkdir(parents=True, exist_ok=True)
-            script_path.write_text(request.script)
-
-        # Save updated context
-        store._save_context(run_id, context)
-
-        return JSONResponse(content={"success": True, "run_id": run_id})
+        except ScriptRunNotFoundError:
+            return JSONResponse(status_code=404, content={"error": "Script run not found"})
+        except ScriptContextNotFoundError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": exc.message})
+        except ScriptingApiError as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": exc.message})
+        return JSONResponse(content=result)
 
     # ------------------------------------------------------------------
     # Backlog
@@ -971,248 +577,75 @@ def register_content_gen_routes(
 
     @app.post("/api/content-gen/backlog")
     async def create_backlog_item(request: CreateBacklogItemRequest) -> JSONResponse:
-        config = load_config()
-        service = BacklogService(config)
         try:
-            item = service.create_item(
-                title=request.title,
-                one_line_summary=request.one_line_summary,
-                raw_idea=request.raw_idea,
-                constraints=request.constraints,
-                idea=request.idea,
-                category=request.category,
-                audience=request.audience,
-                persona_detail=request.persona_detail,
-                problem=request.problem,
-                emotional_driver=request.emotional_driver,
-                urgency_level=request.urgency_level,
-                source=request.source,
-                why_now=request.why_now,
-                hook=request.hook,
-                content_type=request.content_type,
-                format_duration=request.format_duration,
-                key_message=request.key_message,
-                call_to_action=request.call_to_action,
-                evidence=request.evidence,
-                proof_gap_note=request.proof_gap_note,
-                expertise_reason=request.expertise_reason,
-                genericity_risk=request.genericity_risk,
-                risk_level=request.risk_level,
-                source_theme=request.source_theme,
-                selection_reasoning=request.selection_reasoning,
-            )
-        except ValueError as exc:
+            item = backlog_api_service.create_item(request.model_dump())
+        except BacklogValidationError as exc:
             return JSONResponse(status_code=400, content={"error": str(exc)})
-        return JSONResponse(content=json.loads(item.model_dump_json()), status_code=201)
+        return JSONResponse(
+            content=BacklogApiService.serialize_item(item),
+            status_code=201,
+        )
 
     @app.get("/api/content-gen/backlog")
     async def list_backlog() -> JSONResponse:
-        config = load_config()
-        service = BacklogService(config)
-        backlog = service.load()
-        return JSONResponse(
-            content={
-                "path": str(service.path),
-                "items": [json.loads(item.model_dump_json()) for item in backlog.items],
-            }
-        )
+        return JSONResponse(content=backlog_api_service.serialize_list())
 
     @app.patch("/api/content-gen/backlog/{idea_id}")
     async def update_backlog_item(idea_id: str, request: UpdateBacklogItemRequest) -> JSONResponse:
-        config = load_config()
-        service = BacklogService(config)
         try:
-            updated = service.update_item(idea_id, request.patch)
-        except ValueError as exc:
+            updated = backlog_api_service.update_item(idea_id, request.patch)
+        except BacklogValidationError as exc:
             return JSONResponse(status_code=400, content={"error": str(exc)})
-        if updated is None:
+        except BacklogItemNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
-        return JSONResponse(content=json.loads(updated.model_dump_json()))
+        return JSONResponse(content=BacklogApiService.serialize_item(updated))
 
     @app.post("/api/content-gen/backlog/{idea_id}/select")
     async def select_backlog_item(idea_id: str) -> JSONResponse:
-        config = load_config()
-        service = BacklogService(config)
-        selected = service.select_item(idea_id)
-        if selected is None:
+        try:
+            selected = backlog_api_service.select_item(idea_id)
+        except BacklogItemNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
-        return JSONResponse(content=json.loads(selected.model_dump_json()))
+        return JSONResponse(content=BacklogApiService.serialize_item(selected))
 
     @app.post("/api/content-gen/backlog/{idea_id}/archive")
     async def archive_backlog_item(idea_id: str) -> JSONResponse:
-        config = load_config()
-        service = BacklogService(config)
-        archived = service.archive_item(idea_id)
-        if archived is None:
+        try:
+            archived = backlog_api_service.archive_item(idea_id)
+        except BacklogItemNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
-        return JSONResponse(content=json.loads(archived.model_dump_json()))
+        return JSONResponse(content=BacklogApiService.serialize_item(archived))
 
     @app.delete("/api/content-gen/backlog/{idea_id}")
     async def delete_backlog_item(idea_id: str) -> JSONResponse:
-        config = load_config()
-        service = BacklogService(config)
-        removed = service.delete_item(idea_id)
-        if not removed:
+        try:
+            backlog_api_service.delete_item(idea_id)
+        except BacklogItemNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
         return JSONResponse(content={"removed": 1})
 
     @app.post("/api/content-gen/backlog/{idea_id}/start", status_code=202)
     async def start_backlog_item(idea_id: str) -> JSONResponse:
-        config = load_config()
-        service = BacklogService(config)
-        backlog = service.load()
-
-        item = next((i for i in backlog.items if i.idea_id == idea_id), None)
-        if item is None:
+        try:
+            result = backlog_api_service.start_from_item(idea_id)
+        except BacklogItemNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
-
-        # Check for duplicate active run
-        for job in job_registry.active_jobs():
-            if (
-                job.pipeline_context is not None
-                and job.pipeline_context.selected_idea_id == idea_id
-            ):
-                return JSONResponse(
-                    status_code=409,
-                    content={
-                        "error": "Backlog item is already in an active pipeline",
-                        "pipeline_id": job.pipeline_id,
-                    },
-                )
-
-        from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
-
-        orch = ContentGenOrchestrator(config)
-
-        # Create job starting at generate_angles (stage 4)
-        end = len(PIPELINE_STAGES) - 1
-        job = job_registry.create_job(
-            theme=item.source_theme or item.title or item.idea,
-            from_stage=4,
-            to_stage=end,
-        )
-
-        # Build seeded context with the single backlog item as primary candidate
-        ctx = _build_seeded_context_from_backlog_item(job.pipeline_id, item)
-        job_registry.update_context(job.pipeline_id, ctx)
-
-        async def _run() -> None:
-            job_registry.mark_running(job.pipeline_id)
-
-            def _progress(stage_idx: int, label: str) -> None:
-                if job.stop_requested:
-                    raise _PipelineCancelled(job.pipeline_id)
-                asyncio.get_running_loop().create_task(
-                    event_router.publish(
-                        job.pipeline_id,
-                        {
-                            "type": "pipeline_stage_started",
-                            "stage_index": stage_idx,
-                            "stage_label": label,
-                            "timestamp": datetime.now(UTC).isoformat(),
-                        },
-                    )
-                )
-
-            def _stage_completed(stage_idx: int, status: str, detail: str, stage_ctx) -> None:
-                job_registry.update_context(job.pipeline_id, stage_ctx)
-                serialized_context = stage_ctx.model_dump(mode="json")
-
-                if status == "failed":
-                    asyncio.get_running_loop().create_task(
-                        event_router.publish(
-                            job.pipeline_id,
-                            {
-                                "type": "pipeline_stage_failed",
-                                "stage_index": stage_idx,
-                                "stage_label": PIPELINE_STAGE_LABELS.get(
-                                    PIPELINE_STAGES[stage_idx], ""
-                                ),
-                                "error": detail,
-                                "context": serialized_context,
-                                "timestamp": datetime.now(UTC).isoformat(),
-                            },
-                        )
-                    )
-                elif status == "skipped":
-                    asyncio.get_running_loop().create_task(
-                        event_router.publish(
-                            job.pipeline_id,
-                            {
-                                "type": "pipeline_stage_skipped",
-                                "stage_index": stage_idx,
-                                "stage_label": PIPELINE_STAGE_LABELS.get(
-                                    PIPELINE_STAGES[stage_idx], ""
-                                ),
-                                "reason": detail,
-                                "context": serialized_context,
-                                "timestamp": datetime.now(UTC).isoformat(),
-                            },
-                        )
-                    )
-                else:
-                    asyncio.get_running_loop().create_task(
-                        event_router.publish(
-                            job.pipeline_id,
-                            {
-                                "type": "pipeline_stage_completed",
-                                "stage_index": stage_idx,
-                                "stage_status": status,
-                                "stage_detail": detail,
-                                "context": serialized_context,
-                                "timestamp": datetime.now(UTC).isoformat(),
-                            },
-                        )
-                    )
-
-            try:
-                result_ctx = await orch.run_full_pipeline(
-                    ctx.theme,
-                    from_stage=4,
-                    to_stage=end,
-                    initial_context=ctx,
-                    progress_callback=_progress,
-                    stage_completed_callback=_stage_completed,
-                )
-                job_registry.update_context(job.pipeline_id, result_ctx)
-                job_registry.mark_completed(job.pipeline_id, context=result_ctx)
-                await event_router.publish(
-                    job.pipeline_id,
-                    {
-                        "type": "pipeline_completed",
-                        "current_stage": result_ctx.current_stage,
-                        "timestamp": datetime.now(UTC).isoformat(),
-                    },
-                )
-            except _PipelineCancelled:
-                job_registry.mark_cancelled(job.pipeline_id)
-                await event_router.publish(
-                    job.pipeline_id,
-                    {"type": "pipeline_cancelled", "timestamp": datetime.now(UTC).isoformat()},
-                )
-            except Exception as exc:
-                logger.exception("Pipeline %s failed", job.pipeline_id)
-                job_registry.mark_failed(job.pipeline_id, error=str(exc))
-                await event_router.publish(
-                    job.pipeline_id,
-                    {
-                        "type": "pipeline_error",
-                        "error": str(exc),
-                        "timestamp": datetime.now(UTC).isoformat(),
-                    },
-                )
-
-        task = asyncio.create_task(_run())
-        job_registry.attach_task(job.pipeline_id, task)
-
+        except DuplicateActivePipelineError as e:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": "Backlog item is already in an active pipeline",
+                    "pipeline_id": e.pipeline_id,
+                },
+            )
         return JSONResponse(
             status_code=202,
             content={
-                "pipeline_id": job.pipeline_id,
-                "status": str(job.status),
+                "pipeline_id": result.pipeline_id,
+                "status": result.status,
                 "idea_id": idea_id,
-                "from_stage": 4,
-                "to_stage": end,
+                "from_stage": result.from_stage,
+                "to_stage": result.to_stage,
             },
         )
 
@@ -1220,18 +653,22 @@ def register_content_gen_routes(
     # Brief management
     # ------------------------------------------------------------------
 
-    from cc_deep_research.content_gen.brief_service import BriefService, ConcurrentModificationError
-    from cc_deep_research.content_gen.models import (
-        BriefLifecycleState,
-        BriefProvenance,
-        OpportunityBrief,
+    from cc_deep_research.content_gen.backlog_service import BacklogService
+    from cc_deep_research.content_gen.brief_api_service import (
+        BriefApiService,
+        BriefConcurrentModificationError,
+        BriefNotFoundError,
+        BriefValidationError,
     )
+    from cc_deep_research.content_gen.brief_service import BriefService
 
     def _brief_service() -> BriefService:
         config = load_config()
         service = BriefService(config)
         service.set_audit_store(AuditStore(config=config))
         return service
+
+    brief_api_service = BriefApiService()
 
     @app.get("/api/content-gen/briefs")
     async def list_briefs(
@@ -1244,24 +681,11 @@ def register_content_gen_routes(
         - lifecycle_state: filter by state (draft, approved, superseded, archived)
         - limit: max briefs to return (default 50)
         """
-        service = _brief_service()
-        output = service.load()
-        briefs = output.briefs
-
-        if lifecycle_state:
-            try:
-                state = BriefLifecycleState(lifecycle_state)
-                briefs = [b for b in briefs if b.lifecycle_state == state]
-            except ValueError:
-                return JSONResponse(status_code=400, content={"error": f"Invalid lifecycle_state: {lifecycle_state}"})
-
-        # Sort by updated_at desc, take limit
-        briefs = sorted(briefs, key=lambda b: b.updated_at, reverse=True)[:limit]
-
-        return JSONResponse(content={
-            "items": [json.loads(b.model_dump_json()) for b in briefs],
-            "count": len(briefs),
-        })
+        try:
+            result = brief_api_service.list_briefs(lifecycle_state=lifecycle_state, limit=limit)
+        except BriefValidationError as exc:
+            return JSONResponse(status_code=400, content={"error": exc.message})
+        return JSONResponse(content=brief_api_service.serialize_list(result))
 
     @app.post("/api/content-gen/briefs", status_code=201)
     async def create_brief(request: CreateBriefRequest) -> JSONResponse:
@@ -1270,41 +694,27 @@ def register_content_gen_routes(
         This creates a new brief resource with a single initial revision.
         The brief starts in DRAFT state.
         """
-        service = _brief_service()
         try:
-            brief_data = request.brief
-            if isinstance(brief_data, dict):
-                opportunity = OpportunityBrief.model_validate(brief_data)
-            else:
-                return JSONResponse(status_code=400, content={"error": "brief must be a dictionary"})
-
-            provenance = BriefProvenance(request.provenance) if request.provenance else BriefProvenance.GENERATED
-
-            managed = service.create_from_opportunity(
-                opportunity,
-                provenance=provenance,
+            managed = brief_api_service.create_brief(
+                request.brief,
+                provenance=request.provenance,
                 source_pipeline_id=request.source_pipeline_id,
                 revision_notes=request.revision_notes,
             )
-            return JSONResponse(content=json.loads(managed.model_dump_json()))
-        except ValueError as exc:
-            return JSONResponse(status_code=400, content={"error": str(exc)})
+        except BriefValidationError as exc:
+            return JSONResponse(status_code=400, content={"error": exc.message})
+        return JSONResponse(content=json.loads(managed.model_dump_json()))
 
     @app.get("/api/content-gen/briefs/{brief_id}")
     async def get_brief(brief_id: str) -> JSONResponse:
         """Get a single brief with its current head revision content."""
-        service = _brief_service()
-        managed = service.get_brief(brief_id)
-        if managed is None:
+        try:
+            managed, revision = brief_api_service.get_brief_with_revision(brief_id)
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
-
-        # Attach current head revision content
-        current_revision = service.get_revision(managed.current_revision_id)
-        response = json.loads(managed.model_dump_json())
-        if current_revision:
-            response["current_revision"] = json.loads(current_revision.model_dump_json())
-
-        return JSONResponse(content=response)
+        return JSONResponse(
+            content=brief_api_service.serialize_brief_with_revision(managed, revision)
+        )
 
     @app.patch("/api/content-gen/briefs/{brief_id}")
     async def update_brief(brief_id: str, request: UpdateBriefRequest) -> JSONResponse:
@@ -1312,31 +722,34 @@ def register_content_gen_routes(
 
         Note: Use save_revision() to create new content revisions.
         """
-        service = _brief_service()
         try:
-            updated = service.update_brief(
+            updated = brief_api_service.update_brief(
                 brief_id,
                 request.patch,
                 expected_updated_at=request.expected_updated_at,
             )
-        except ConcurrentModificationError as exc:
+        except BriefConcurrentModificationError as exc:
             return JSONResponse(
                 status_code=409,
                 content={
-                    "error": str(exc),
+                    "error": exc.message,
                     "expected_updated_at": exc.expected_updated_at,
                     "actual_updated_at": exc.actual_updated_at,
                 },
             )
-        if updated is None:
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
+        except BriefValidationError as exc:
+            return JSONResponse(status_code=400, content={"error": exc.message})
         return JSONResponse(content=json.loads(updated.model_dump_json()))
 
     @app.get("/api/content-gen/briefs/{brief_id}/revisions")
     async def list_brief_revisions(brief_id: str, limit: int = 50) -> JSONResponse:
         """List all revisions for a brief, most recent first."""
-        service = _brief_service()
-        revisions = service.list_revisions(brief_id, limit=limit)
+        try:
+            revisions = brief_api_service.list_revisions(brief_id, limit=limit)
+        except BriefNotFoundError:
+            return JSONResponse(status_code=404, content={"error": "Brief not found"})
         return JSONResponse(content={
             "items": [json.loads(r.model_dump_json()) for r in revisions],
             "count": len(revisions),
@@ -1345,8 +758,7 @@ def register_content_gen_routes(
     @app.get("/api/content-gen/briefs/{brief_id}/revisions/{revision_id}")
     async def get_brief_revision(brief_id: str, revision_id: str) -> JSONResponse:
         """Get a specific revision by ID."""
-        service = _brief_service()
-        revision = service.get_revision(revision_id)
+        revision = brief_api_service.get_revision(revision_id)
         if revision is None or revision.brief_id != brief_id:
             return JSONResponse(status_code=404, content={"error": "Revision not found"})
         return JSONResponse(content=json.loads(revision.model_dump_json()))
@@ -1358,130 +770,120 @@ def register_content_gen_routes(
         The current_revision_id (head) is NOT changed by this operation.
         Use /apply-revision to promote a revision to head.
         """
-        service = _brief_service()
         try:
-            brief_data = request.brief
-            if isinstance(brief_data, dict):
-                opportunity = OpportunityBrief.model_validate(brief_data)
-            else:
-                return JSONResponse(status_code=400, content={"error": "brief must be a dictionary"})
-
-            revision = service.save_revision(
+            revision = brief_api_service.save_revision(
                 brief_id,
-                opportunity,
+                request.brief,
                 revision_notes=request.revision_notes,
                 source_pipeline_id=request.source_pipeline_id,
                 expected_updated_at=request.expected_updated_at,
             )
-        except ConcurrentModificationError as exc:
+        except BriefConcurrentModificationError as exc:
             return JSONResponse(
                 status_code=409,
                 content={
-                    "error": str(exc),
+                    "error": exc.message,
                     "expected_updated_at": exc.expected_updated_at,
                     "actual_updated_at": exc.actual_updated_at,
                 },
             )
-        if revision is None:
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
+        except BriefValidationError as exc:
+            return JSONResponse(status_code=400, content={"error": exc.message})
         return JSONResponse(content=json.loads(revision.model_dump_json()), status_code=201)
 
     @app.post("/api/content-gen/briefs/{brief_id}/apply-revision")
     async def apply_revision(brief_id: str, request: ApplyRevisionRequest) -> JSONResponse:
         """Apply a revision as the current head (promote it to active)."""
-        service = _brief_service()
         try:
-            updated = service.update_head(
+            updated = brief_api_service.update_head(
                 brief_id,
                 request.revision_id,
                 expected_updated_at=request.expected_updated_at,
             )
-        except ConcurrentModificationError as exc:
+        except BriefConcurrentModificationError as exc:
             return JSONResponse(
                 status_code=409,
                 content={
-                    "error": str(exc),
+                    "error": exc.message,
                     "expected_updated_at": exc.expected_updated_at,
                     "actual_updated_at": exc.actual_updated_at,
                 },
             )
-        if updated is None:
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
         return JSONResponse(content=json.loads(updated.model_dump_json()))
 
     @app.post("/api/content-gen/briefs/{brief_id}/approve")
     async def approve_brief(brief_id: str, expected_updated_at: str | None = None) -> JSONResponse:
         """Transition a brief to the approved state."""
-        service = _brief_service()
         try:
-            updated = service.approve(brief_id, expected_updated_at=expected_updated_at)
-        except ConcurrentModificationError as exc:
+            updated = brief_api_service.approve_brief(brief_id, expected_updated_at=expected_updated_at)
+        except BriefConcurrentModificationError as exc:
             return JSONResponse(
                 status_code=409,
                 content={
-                    "error": str(exc),
+                    "error": exc.message,
                     "expected_updated_at": exc.expected_updated_at,
                     "actual_updated_at": exc.actual_updated_at,
                 },
             )
-        if updated is None:
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
         return JSONResponse(content=json.loads(updated.model_dump_json()))
 
     @app.post("/api/content-gen/briefs/{brief_id}/archive")
     async def archive_brief(brief_id: str, expected_updated_at: str | None = None) -> JSONResponse:
         """Archive a brief."""
-        service = _brief_service()
         try:
-            updated = service.archive(brief_id, expected_updated_at=expected_updated_at)
-        except ConcurrentModificationError as exc:
+            updated = brief_api_service.archive_brief(brief_id, expected_updated_at=expected_updated_at)
+        except BriefConcurrentModificationError as exc:
             return JSONResponse(
                 status_code=409,
                 content={
-                    "error": str(exc),
+                    "error": exc.message,
                     "expected_updated_at": exc.expected_updated_at,
                     "actual_updated_at": exc.actual_updated_at,
                 },
             )
-        if updated is None:
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
         return JSONResponse(content=json.loads(updated.model_dump_json()))
 
     @app.post("/api/content-gen/briefs/{brief_id}/supersede")
     async def supersede_brief(brief_id: str, expected_updated_at: str | None = None) -> JSONResponse:
         """Mark a brief as superseded."""
-        service = _brief_service()
         try:
-            updated = service.supersede(brief_id, expected_updated_at=expected_updated_at)
-        except ConcurrentModificationError as exc:
+            updated = brief_api_service.supersede_brief(brief_id, expected_updated_at=expected_updated_at)
+        except BriefConcurrentModificationError as exc:
             return JSONResponse(
                 status_code=409,
                 content={
-                    "error": str(exc),
+                    "error": exc.message,
                     "expected_updated_at": exc.expected_updated_at,
                     "actual_updated_at": exc.actual_updated_at,
                 },
             )
-        if updated is None:
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
         return JSONResponse(content=json.loads(updated.model_dump_json()))
 
     @app.post("/api/content-gen/briefs/{brief_id}/revert-to-draft")
     async def revert_brief_to_draft(brief_id: str, expected_updated_at: str | None = None) -> JSONResponse:
         """Revert a brief back to draft state."""
-        service = _brief_service()
         try:
-            updated = service.revert_to_draft(brief_id, expected_updated_at=expected_updated_at)
-        except ConcurrentModificationError as exc:
+            updated = brief_api_service.revert_to_draft(brief_id, expected_updated_at=expected_updated_at)
+        except BriefConcurrentModificationError as exc:
             return JSONResponse(
                 status_code=409,
                 content={
-                    "error": str(exc),
+                    "error": exc.message,
                     "expected_updated_at": exc.expected_updated_at,
                     "actual_updated_at": exc.actual_updated_at,
                 },
             )
-        if updated is None:
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
         return JSONResponse(content=json.loads(updated.model_dump_json()))
 
@@ -1492,9 +894,9 @@ def register_content_gen_routes(
         The clone starts with the same current head revision but is otherwise
         independent. Returns the new brief in DRAFT state.
         """
-        service = _brief_service()
-        cloned = service.clone_brief(brief_id, new_title=request.new_title)
-        if cloned is None:
+        try:
+            cloned = brief_api_service.clone_brief(brief_id, new_title=request.new_title)
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
         return JSONResponse(content=json.loads(cloned.model_dump_json()), status_code=201)
 
@@ -1512,18 +914,18 @@ def register_content_gen_routes(
         - actor: filter by actor (operator, ai_proposal, system, maintenance)
         - limit: max entries to return (default 100)
         """
-        store = AuditStore()
-        event_type_enum = AuditEventType(event_type) if event_type else None
-        actor_enum = AuditActor(actor) if actor else None
-        entries = store.load_entries(
-            brief_id=brief_id,
-            event_type=event_type_enum,
-            actor=actor_enum,
-            limit=limit,
-        )
+        try:
+            entries = brief_api_service.get_audit_history(
+                brief_id=brief_id,
+                event_type=event_type,
+                actor=actor,
+                limit=limit,
+            )
+        except BriefNotFoundError:
+            return JSONResponse(status_code=404, content={"error": "Brief not found"})
         return JSONResponse(content={
             "brief_id": brief_id,
-            "items": [entry.to_dict() for entry in entries],
+            "items": entries,
             "count": len(entries),
         })
 
@@ -1543,14 +945,14 @@ def register_content_gen_routes(
         This endpoint is advisory only — it never writes to persistent state.
         Use /apply to persist any proposed revisions.
         """
-        service = _brief_service()
-        managed = service.get_brief(brief_id)
-        if managed is None:
+        try:
+            managed = brief_api_service.get_brief(brief_id)
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
 
         # Load the revision to discuss
         revision_id = request.revision_id or managed.current_revision_id
-        revision = service.get_revision(revision_id)
+        revision = brief_api_service.get_revision(revision_id)
         if revision is None or revision.brief_id != brief_id:
             return JSONResponse(status_code=404, content={"error": "Revision not found"})
 
@@ -1572,13 +974,13 @@ def register_content_gen_routes(
         This is the only write path for assistant-proposed revisions.
         Returns structured errors instead of crashing on invalid proposals.
         """
-        service = _brief_service()
-        managed = service.get_brief(brief_id)
-        if managed is None:
+        try:
+            managed, _ = brief_api_service.get_brief_with_revision(brief_id)
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
 
         # Build the opportunity from merged proposals
-        current_revision = service.get_revision(managed.current_revision_id)
+        current_revision = brief_api_service.get_revision(managed.current_revision_id)
         if current_revision is None:
             return JSONResponse(status_code=400, content={"error": "No current revision to base changes on"})
 
@@ -1622,22 +1024,26 @@ def register_content_gen_routes(
         # Create a new revision with the merged opportunity
         try:
             opportunity = OpportunityBrief.model_validate(opportunity_data)
-            revision = service.save_revision(
+            revision = brief_api_service.save_revision(
                 brief_id,
-                opportunity,
+                opportunity.model_dump(),
                 revision_notes=request.revision_notes or "AI-assisted revision",
                 source_pipeline_id="",
             )
         except Exception as exc:
             return JSONResponse(status_code=400, content={"error": str(exc), "applied": 0})
+        except BriefNotFoundError:
+            return JSONResponse(status_code=404, content={"error": "Brief not found"})
+        except BriefConcurrentModificationError as exc:
+            return JSONResponse(status_code=409, content={"error": exc.message, "applied": 0})
+        except BriefValidationError as exc:
+            return JSONResponse(status_code=400, content={"error": exc.message, "applied": 0})
 
         # Log the assistant origin
-        if service._audit_store is not None:
-            from cc_deep_research.content_gen.storage import AuditActor, AuditEventType
-
-            service._audit_mutation(
-                AuditEventType.BRIEF_REVISION_SAVED,
-                brief_id,
+        if brief_api_service._audit_store is not None:
+            brief_api_service._audit_store.log_brief_mutation(
+                event_type=AuditEventType.BRIEF_REVISION_SAVED,
+                brief_id=brief_id,
                 actor=AuditActor.AI_PROPOSAL,
                 patch={"revision_id": revision.revision_id, "proposals_count": applied_count},
                 brief_snapshot=managed,
@@ -1670,13 +1076,11 @@ def register_content_gen_routes(
         This endpoint is advisory only — it never writes to the backlog.
         Use /apply-backlog to persist any proposed items.
         """
-        service = _brief_service()
-        managed = service.get_brief(brief_id)
-        if managed is None:
+        try:
+            managed, revision = brief_api_service.get_brief_with_revision(brief_id)
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
 
-        # Load the current head revision
-        revision = service.get_revision(managed.current_revision_id)
         if revision is None:
             return JSONResponse(status_code=400, content={"error": "No current revision found"})
 
@@ -1693,16 +1097,16 @@ def register_content_gen_routes(
 
         This persists items to the backlog with trace links back to the brief.
         """
-        service = _brief_service()
-        managed = service.get_brief(brief_id)
-        if managed is None:
+        try:
+            managed, revision = brief_api_service.get_brief_with_revision(brief_id)
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
 
-        revision = service.get_revision(managed.current_revision_id)
         if revision is None:
             return JSONResponse(status_code=400, content={"error": "No current revision found"})
 
         backlog_service = BacklogService(load_config())
+
         applied_count = 0
         created_items: list[BacklogItem] = []
         errors: list[str] = []
@@ -1783,13 +1187,13 @@ def register_content_gen_routes(
         Unlike clone (for reuse), branch is for creating variants for different
         themes, channels, or experiments.
         """
-        service = _brief_service()
-        branched = service.branch_brief(
-            brief_id,
-            new_title=request.new_title,
-            branch_reason=request.branch_reason,
-        )
-        if branched is None:
+        try:
+            branched = brief_api_service.branch_brief(
+                brief_id,
+                new_title=request.new_title,
+                branch_reason=request.branch_reason,
+            )
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
         return JSONResponse(content=json.loads(branched.model_dump_json()), status_code=201)
 
@@ -1800,23 +1204,14 @@ def register_content_gen_routes(
         Returns all briefs that were branched from the same source,
         including the source brief itself.
         """
-        service = _brief_service()
-        managed = service.get_brief(brief_id)
-        if managed is None:
+        try:
+            siblings = brief_api_service.list_sibling_briefs(brief_id)
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
 
-        siblings = service.list_sibling_briefs(brief_id)
-
-        # Include the source brief itself if this is a branch
-        result_briefs = [managed]
-        if managed.source_brief_id:
-            source = service.get_brief(managed.source_brief_id)
-            if source:
-                result_briefs = [source] + siblings
-
         return JSONResponse(content={
-            "items": [json.loads(b.model_dump_json()) for b in result_briefs],
-            "count": len(result_briefs),
+            "items": [json.loads(b.model_dump_json()) for b in siblings],
+            "count": len(siblings),
         })
 
     @app.get("/api/content-gen/briefs/{brief_id}/compare/{other_brief_id}")
@@ -1825,16 +1220,12 @@ def register_content_gen_routes(
 
         Returns both briefs with their current head revisions for comparison.
         """
-        service = _brief_service()
-
-        brief_a = service.get_brief(brief_id)
-        brief_b = service.get_brief(other_brief_id)
-
-        if brief_a is None or brief_b is None:
+        try:
+            brief_a, revision_a, brief_b, revision_b = brief_api_service.compare_briefs(
+                brief_id, other_brief_id
+            )
+        except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "One or both briefs not found"})
-
-        revision_a = service.get_revision(brief_a.current_revision_id)
-        revision_b = service.get_revision(brief_b.current_revision_id)
 
         return JSONResponse(content={
             "brief_a": json.loads(brief_a.model_dump_json()),
@@ -2040,17 +1431,17 @@ def register_content_gen_routes(
     # Strategy
     # ------------------------------------------------------------------
 
+    strategy_api_service = StrategyApiService()
+
     @app.get("/api/content-gen/strategy")
     async def get_strategy() -> JSONResponse:
-        store = StrategyStore()
-        memory = store.load()
-        return JSONResponse(content=json.loads(memory.model_dump_json()))
+        memory = strategy_api_service.get_strategy()
+        return JSONResponse(content=strategy_api_service.serialize_strategy(memory))
 
     @app.put("/api/content-gen/strategy")
     async def update_strategy(request: UpdateStrategyRequest) -> JSONResponse:
-        store = StrategyStore()
-        updated = store.update(request.patch)
-        return JSONResponse(content=json.loads(updated.model_dump_json()))
+        updated = strategy_api_service.update_strategy(request.patch)
+        return JSONResponse(content=strategy_api_service.serialize_strategy(updated))
 
     @app.get("/api/content-gen/strategy/readiness")
     async def get_strategy_readiness() -> JSONResponse:
@@ -2059,9 +1450,8 @@ def register_content_gen_routes(
         P4-T1: Returns blocking and warning issues so operators can see
         which fields or ratios are causing readiness failures.
         """
-        store = StrategyStore()
-        result = store.check_readiness()
-        return JSONResponse(content=json.loads(result.model_dump_json()))
+        result = strategy_api_service.check_readiness()
+        return JSONResponse(content=strategy_api_service.serialize_readiness(result))
 
     @app.get("/api/content-gen/strategy/rules-for-review")
     async def get_rules_for_review() -> JSONResponse:
@@ -2070,10 +1460,12 @@ def register_content_gen_routes(
         P4-T2: Returns rules that are under_review, expired, or past their
         review date.
         """
-        store = StrategyStore()
-        rules = store.get_rules_for_review()
+        rules = strategy_api_service.get_rules_for_review()
         return JSONResponse(
-            content={"items": [json.loads(r.model_dump_json()) for r in rules], "count": len(rules)}
+            content={
+                "items": [strategy_api_service.serialize_rule_version(r) for r in rules],
+                "count": len(rules),
+            }
         )
 
     @app.patch("/api/content-gen/strategy/rule-lifecycle/{version_id}")
@@ -2090,83 +1482,71 @@ def register_content_gen_routes(
         P4-T2: Allows operators to promote, deprecate, or schedule review
         for durable rules.
         """
-        from cc_deep_research.content_gen.models import RuleLifecycleStatus
-
-        store = StrategyStore()
-        normalized_status = RuleLifecycleStatus(status) if status else None
-        version = store.update_rule_lifecycle(
-            version_id,
-            status=normalized_status,
-            confidence=confidence,
-            evidence_count=evidence_count,
-            review_after=review_after,
-            review_notes=review_notes,
-        )
-        if version is None:
+        try:
+            version = strategy_api_service.update_rule_lifecycle(
+                version_id,
+                status=status,
+                confidence=confidence,
+                evidence_count=evidence_count,
+                review_after=review_after,
+                review_notes=review_notes,
+            )
+        except RuleVersionNotFoundError:
             return JSONResponse(
                 content={"error": "Rule version not found"},
                 status_code=404,
             )
-        return JSONResponse(content=json.loads(version.model_dump_json()))
+        return JSONResponse(content=strategy_api_service.serialize_rule_version(version))
 
     @app.get("/api/content-gen/learnings")
     async def list_learnings(
         category: str | None = None,
         durability: str | None = None,
     ) -> JSONResponse:
-        from cc_deep_research.content_gen.models import LearningCategory, LearningDurability
-        from cc_deep_research.content_gen.storage import PerformanceLearningStore
-
-        store = PerformanceLearningStore()
-        items = store.get_active_learnings(
-            category=LearningCategory(category) if category else None,
-            durability=LearningDurability(durability) if durability else None,
-        )
+        items, count = strategy_api_service.list_learnings(category=category, durability=durability)
         return JSONResponse(
-            content={"items": [json.loads(item.model_dump_json()) for item in items], "count": len(items)}
+            content={
+                "items": [strategy_api_service.serialize_learning(item) for item in items],
+                "count": count,
+            }
         )
 
     @app.post("/api/content-gen/learnings/apply")
     async def apply_learnings(request: ApplyLearningsRequest) -> JSONResponse:
-        from cc_deep_research.content_gen.storage import PerformanceLearningStore
-
-        store = PerformanceLearningStore()
-        guidance = store.apply_learnings_to_strategy(
+        guidance = strategy_api_service.apply_learnings(
             request.learning_ids,
             operator_approved=request.operator_approved,
-            record_versions=True,
         )
         return JSONResponse(content=json.loads(guidance.model_dump_json()))
 
     @app.get("/api/content-gen/rule-versions")
     async def list_rule_versions(kind: str | None = None) -> JSONResponse:
-        from cc_deep_research.telemetry.query import query_content_gen_rule_versions
-
-        return JSONResponse(content=query_content_gen_rule_versions(kind=kind))
+        items = strategy_api_service.list_rule_versions(kind=kind)
+        return JSONResponse(content=items)
 
     @app.get("/api/content-gen/operating-fitness")
     async def get_operating_fitness() -> JSONResponse:
-        from cc_deep_research.telemetry.query import query_content_gen_operating_fitness
-
-        return JSONResponse(content=query_content_gen_operating_fitness())
+        result = strategy_api_service.get_operating_fitness()
+        return JSONResponse(content=result)
 
     # ------------------------------------------------------------------
     # Publish queue
     # ------------------------------------------------------------------
 
+    publish_audit_service = PublishQueueAuditService()
+
     @app.get("/api/content-gen/publish")
     async def list_publish_queue() -> JSONResponse:
-        store = PublishQueueStore()
-        items = store.load()
-        return JSONResponse(content={"items": [json.loads(i.model_dump_json()) for i in items]})
+        items = publish_audit_service.list_publish_queue()
+        return JSONResponse(
+            content={
+                "items": [publish_audit_service.serialize_publish_item(i) for i in items]
+            }
+        )
 
     @app.delete("/api/content-gen/publish/{idea_id}/{platform}")
     async def remove_from_queue(idea_id: str, platform: str) -> JSONResponse:
-        store = PublishQueueStore()
-        items = store.load()
-        filtered = [i for i in items if not (i.idea_id == idea_id and i.platform == platform)]
-        store.save(filtered)
-        removed = len(items) - len(filtered)
+        removed = publish_audit_service.remove_from_queue(idea_id, platform)
         return JSONResponse(content={"removed": removed})
 
     # ------------------------------------------------------------------
@@ -2188,38 +1568,25 @@ def register_content_gen_routes(
         - actor: filter to entries from a specific actor (operator, ai_proposal, system, maintenance)
         - limit: max entries to return (default 100)
         """
-        store = AuditStore()
-        event_type_enum = AuditEventType(event_type) if event_type else None
-        actor_enum = AuditActor(actor) if actor else None
-        entries = store.load_entries(
+        entries, count = publish_audit_service.list_audit_entries(
             idea_id=idea_id,
-            event_type=event_type_enum,
-            actor=actor_enum,
+            event_type=event_type,
+            actor=actor,
             limit=limit,
         )
-        return JSONResponse(
-            content={
-                "items": [entry.to_dict() for entry in entries],
-                "count": len(entries),
-            }
-        )
+        return JSONResponse(content={"items": entries, "count": count})
 
     @app.get("/api/content-gen/audit/{idea_id}")
     async def get_audit_for_item(idea_id: str, limit: int = 50) -> JSONResponse:
         """Get audit history for a specific backlog item."""
-        store = AuditStore()
-        entries = store.load_entries(idea_id=idea_id, limit=limit)
-        return JSONResponse(
-            content={
-                "idea_id": idea_id,
-                "items": [entry.to_dict() for entry in entries],
-                "count": len(entries),
-            }
-        )
+        entries, count = publish_audit_service.get_audit_for_item(idea_id=idea_id, limit=limit)
+        return JSONResponse(content={"idea_id": idea_id, "items": entries, "count": count})
 
     # ------------------------------------------------------------------
     # Maintenance workflows
     # ------------------------------------------------------------------
+
+    maintenance_api_service = MaintenanceApiService()
 
     @app.get("/api/content-gen/maintenance/proposals")
     async def list_maintenance_proposals(
@@ -2234,16 +1601,12 @@ def register_content_gen_routes(
         - job_type: filter by job type (stale_item_review, gap_summary, duplicate_watchlist, rescoring_recommend)
         - limit: max proposals to return (default 50)
         """
-        store = MaintenanceStore()
-        status_enum = MaintenanceProposalStatus(status) if status else None
-        job_type_enum = MaintenanceJobType(job_type) if job_type else None
-        proposals = store.load_proposals(status=status_enum, job_type=job_type_enum, limit=limit)
-        return JSONResponse(
-            content={
-                "items": [p.to_dict() for p in proposals],
-                "count": len(proposals),
-            }
+        proposals, count = maintenance_api_service.list_proposals(
+            status=status,
+            job_type=job_type,
+            limit=limit,
         )
+        return JSONResponse(content={"items": proposals, "count": count})
 
     @app.post("/api/content-gen/maintenance/proposals/{proposal_id}/resolve")
     async def resolve_maintenance_proposal(
@@ -2258,31 +1621,11 @@ def register_content_gen_routes(
         Query params:
         - decision: "approved" or "rejected"
         """
-        store = MaintenanceStore()
-        config = load_config()
-        service = BacklogService(config)
-
-        proposal = store.resolve_proposal(proposal_id, decision=decision)
-        if proposal is None:
+        try:
+            result = maintenance_api_service.resolve_proposal(proposal_id, decision=decision)
+        except ProposalNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Proposal not found"})
-
-        # Apply approved proposals to backlog items
-        if decision == "approved" and proposal.suggested_patch:
-            for idea_id in proposal.affected_idea_ids:
-                service.update_item(idea_id, dict(proposal.suggested_patch))
-
-        # Log to audit
-        audit_store = AuditStore(config=config)
-        for idea_id in proposal.affected_idea_ids:
-            audit_store.log_backlog_mutation(
-                event_type=AuditEventType.MAINTENANCE_PROPOSAL,
-                idea_id=idea_id,
-                actor=AuditActor.OPERATOR,
-                patch={"proposal_id": proposal_id, "decision": decision},
-                outcome=decision,
-            )
-
-        return JSONResponse(content=proposal.to_dict())
+        return JSONResponse(content=result)
 
     @app.post("/api/content-gen/maintenance/jobs/{job_type}/trigger")
     async def trigger_maintenance_job(request: Request, job_type: str) -> JSONResponse:
@@ -2291,44 +1634,23 @@ def register_content_gen_routes(
         Path params:
         - job_type: one of stale_item_review, gap_summary, duplicate_watchlist, rescoring_recommend
         """
-        try:
-            job_type_enum = MaintenanceJobType(job_type)
-        except ValueError:
-            return JSONResponse(
-                status_code=400,
-                content={"error": f"Unknown job type: {job_type}"},
-            )
-
         # Use app-state scheduler if available (started with app lifecycle)
         runtime = getattr(request.app.state, "dashboard_runtime", None)
-        scheduler: MaintenanceScheduler | None = None
+        scheduler = None
         if runtime is not None:
             scheduler = getattr(runtime, "maintenance_scheduler", None)
-        if scheduler is None:
-            scheduler = MaintenanceScheduler()
 
-        run = scheduler.trigger_job(job_type_enum)
-
-        return JSONResponse(
-            content={
-                "run": run.to_dict(),
-                "proposals_generated": run.proposals_count,
-                "outcome": run.outcome,
-                "error": run.error or None,
-            }
-        )
+        try:
+            result = maintenance_api_service.trigger_job(job_type, scheduler=scheduler)
+        except UnknownJobTypeError as exc:
+            return JSONResponse(status_code=400, content={"error": exc.message})
+        return JSONResponse(content=result)
 
     @app.get("/api/content-gen/maintenance/runs")
     async def list_maintenance_runs(limit: int = 20) -> JSONResponse:
         """List recent maintenance run records."""
-        store = MaintenanceStore()
-        runs = store.load_runs(limit=limit)
-        return JSONResponse(
-            content={
-                "items": [r.to_dict() for r in runs],
-                "count": len(runs),
-            }
-        )
+        runs, count = maintenance_api_service.list_runs(limit=limit)
+        return JSONResponse(content={"items": runs, "count": count})
 
     # ------------------------------------------------------------------
     # WebSocket for pipeline progress
@@ -2385,70 +1707,4 @@ def register_content_gen_routes(
 
 
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _job_summary(job: PipelineRunJob) -> dict[str, Any]:
-    """Serialize a pipeline job into a JSON-friendly summary."""
-    return {
-        "pipeline_id": job.pipeline_id,
-        "theme": job.theme,
-        "from_stage": job.from_stage,
-        "to_stage": job.to_stage,
-        "status": str(job.status),
-        "current_stage": (
-            job.pipeline_context.current_stage if job.pipeline_context else job.from_stage
-        ),
-        "error": job.error,
-        "created_at": job.created_at.isoformat(),
-        "started_at": job.started_at.isoformat() if job.started_at else None,
-        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
-    }
-
-
-def _build_seeded_context_from_backlog_item(pipeline_id: str, item: BacklogItem) -> PipelineContext:
-    """Build a minimal valid PipelineContext seeded from one backlog item.
-
-    The context is seeded so that the orchestrator can start at generate_angles
-    (stage 4) without needing upstream scoring or backlog regeneration.
-    """
-    from cc_deep_research.content_gen.models import (
-        BacklogOutput,
-        PipelineCandidate,
-        PipelineContext,
-    )
-    from cc_deep_research.content_gen.storage import StrategyStore
-
-    strategy = StrategyStore().load()
-
-    return PipelineContext(
-        pipeline_id=pipeline_id,
-        theme=item.source_theme or item.title or item.idea,
-        created_at=datetime.now(tz=UTC).isoformat(),
-        current_stage=4,
-        strategy=strategy,
-        backlog=BacklogOutput(items=[item]),
-        selected_idea_id=item.idea_id,
-        shortlist=[item.idea_id],
-        selection_reasoning=(
-            item.selection_reasoning
-            if item.selection_reasoning
-            else "Started explicitly by operator from backlog."
-        ),
-        runner_up_idea_ids=[],
-        active_candidates=[
-            PipelineCandidate(
-                idea_id=item.idea_id,
-                role="primary",
-                status="selected",
-            )
-        ],
-    )
-
-
-class _PipelineCancelled(Exception):
-    """Internal sentinel to break out of the orchestrator progress loop."""
-
-
 __all__ = ["register_content_gen_routes"]

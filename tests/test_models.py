@@ -279,7 +279,7 @@ class TestResearchRunRequest:
         request = ResearchRunRequest(query="test query")
 
         assert request.output_format == ResearchOutputFormat.MARKDOWN
-        assert request.parallel_mode is None
+        assert request.concurrent_source_collection is None
         assert request.cross_reference_enabled is None
 
     def test_normalizes_prompt_overrides(self) -> None:
@@ -555,7 +555,7 @@ class TestCrossReferenceClaim:
             url="https://www.sec.gov/example-filing",
             title="Company Filing",
             snippet="Primary filing evidence",
-            source_metadata={"published_date": "2026-02-20"},
+            source_metadata={"published_date": "2026-04-01"},
             query_provenance=[
                 QueryProvenance(
                     query="company filing revenue guidance",

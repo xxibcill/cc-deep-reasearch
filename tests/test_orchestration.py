@@ -469,7 +469,7 @@ class TestSourceCollectionService:
             config=config,
             monitor=monitor,
             session_state=session_state,
-            num_researchers=2,
+            max_concurrent_sources=2,
         )
         expected = [_make_source("sequential-fallback")]
         collection.parallel_research = AsyncMock(
@@ -512,7 +512,7 @@ class TestSourceCollectionService:
             config=config,
             monitor=monitor,
             session_state=session_state,
-            num_researchers=2,
+            max_concurrent_sources=2,
         )
 
         class FailureAwareCollector:
@@ -693,8 +693,8 @@ class TestResearchExecutionService:
             phase_runner=phase_runner,
             session_builder=SessionBuilder(),
             configured_providers=lambda: ["tavily"],
-            parallel_mode=False,
-            num_researchers=2,
+            concurrent_source_collection=False,
+            max_concurrent_sources=2,
         )
         strategy = _make_strategy("market structure", ResearchDepth.STANDARD, 3)
         query_families = [
@@ -753,8 +753,8 @@ class TestResearchExecutionService:
             phase_runner=phase_runner,
             session_builder=SessionBuilder(),
             configured_providers=lambda: ["tavily"],
-            parallel_mode=False,
-            num_researchers=2,
+            concurrent_source_collection=False,
+            max_concurrent_sources=2,
         )
         shutdown_team = AsyncMock()
 
@@ -793,8 +793,8 @@ class TestResearchExecutionService:
             phase_runner=phase_runner,
             session_builder=SessionBuilder(),
             configured_providers=lambda: ["tavily"],
-            parallel_mode=False,
-            num_researchers=2,
+            concurrent_source_collection=False,
+            max_concurrent_sources=2,
         )
         strategy = _make_strategy("market structure", ResearchDepth.STANDARD, 3)
         query_families = [
@@ -856,8 +856,8 @@ class TestResearchExecutionService:
             phase_runner=phase_runner,
             session_builder=SessionBuilder(),
             configured_providers=lambda: ["tavily"],
-            parallel_mode=False,
-            num_researchers=2,
+            concurrent_source_collection=False,
+            max_concurrent_sources=2,
         )
         strategy = _make_strategy("market structure", ResearchDepth.STANDARD, 3)
         query_families = [
@@ -921,8 +921,8 @@ class TestResearchExecutionService:
             phase_runner=phase_runner,
             session_builder=SessionBuilder(),
             configured_providers=lambda: ["tavily"],
-            parallel_mode=False,
-            num_researchers=2,
+            concurrent_source_collection=False,
+            max_concurrent_sources=2,
         )
         strategy = _make_strategy("market structure", ResearchDepth.STANDARD, 3)
         query_families = [

@@ -165,4 +165,4 @@ These constraints should be preserved by future feature work:
 | `src/cc_deep_research/content_gen/storage/sqlite_brief_store.py` | SQLite persistence |
 | `src/cc_deep_research/content_gen/storage/revision_store.py` | Revision storage |
 | `src/cc_deep_research/content_gen/brief_migration.py` | Legacy migration utilities |
-| `src/cc_deep_research/content_gen/models.py` | `ManagedOpportunityBrief`, `BriefRevision`, `PipelineBriefReference` models |
+| `src/cc_deep_research/content_gen/models/` | `ManagedOpportunityBrief`, `BriefRevision`, `PipelineBriefReference` models |

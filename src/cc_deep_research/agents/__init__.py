@@ -40,34 +40,6 @@ AGENT_TYPE_RESEARCHER = "researcher"
 AGENT_TYPE_REPORT_QUALITY_EVALUATOR = "report_quality_evaluator"
 AGENT_TYPE_REPORT_REFINER = "report_refiner"
 
-# Agent factory
-AGENT_REGISTRY: dict[str, type] = {
-    AGENT_TYPE_LEAD: ResearchLeadAgent,
-    AGENT_TYPE_COLLECTOR: SourceCollectorAgent,
-    AGENT_TYPE_EXPANDER: QueryExpanderAgent,
-    AGENT_TYPE_ANALYZER: AnalyzerAgent,
-    AGENT_TYPE_DEEP_ANALYZER: DeepAnalyzerAgent,
-    AGENT_TYPE_PLANNER: PlannerAgent,
-    AGENT_TYPE_REPORTER: ReporterAgent,
-    AGENT_TYPE_VALIDATOR: ValidatorAgent,
-    AGENT_TYPE_RESEARCHER: ResearcherAgent,
-    AGENT_TYPE_REPORT_QUALITY_EVALUATOR: ReportQualityEvaluatorAgent,
-    AGENT_TYPE_REPORT_REFINER: ReportRefinerAgent,
-}
-
-
-def get_agent_class(agent_type: str) -> type | None:
-    """Get agent class by type.
-
-    Args:
-        agent_type: Type identifier for the agent.
-
-    Returns:
-        Agent class if found, None otherwise.
-    """
-    return AGENT_REGISTRY.get(agent_type)
-
-
 __all__ = [
     "ResearchLeadAgent",
     "SourceCollectorAgent",
@@ -93,5 +65,4 @@ __all__ = [
     "AGENT_TYPE_RESEARCHER",
     "AGENT_TYPE_REPORT_QUALITY_EVALUATOR",
     "AGENT_TYPE_REPORT_REFINER",
-    "get_agent_class",
 ]

@@ -5,12 +5,12 @@ import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-BACKEND_MODELS_PATH = REPO_ROOT / "src/cc_deep_research/content_gen/models.py"
+BACKEND_PIPELINE_MODELS_PATH = REPO_ROOT / "src/cc_deep_research/content_gen/models/pipeline.py"
 FRONTEND_TYPES_PATH = REPO_ROOT / "dashboard/src/types/content-gen.ts"
 
 
 def _load_backend_pipeline_stages() -> list[str]:
-    module = ast.parse(BACKEND_MODELS_PATH.read_text(encoding="utf-8"))
+    module = ast.parse(BACKEND_PIPELINE_MODELS_PATH.read_text(encoding="utf-8"))
     for node in module.body:
         if isinstance(node, ast.Assign):
             targets = node.targets
@@ -21,7 +21,9 @@ def _load_backend_pipeline_stages() -> list[str]:
         else:
             continue
 
-        if not any(isinstance(target, ast.Name) and target.id == "PIPELINE_STAGES" for target in targets):
+        if not any(
+            isinstance(target, ast.Name) and target.id == "PIPELINE_STAGES" for target in targets
+        ):
             continue
         if not isinstance(value, ast.List):
             raise AssertionError("PIPELINE_STAGES is no longer a list literal")

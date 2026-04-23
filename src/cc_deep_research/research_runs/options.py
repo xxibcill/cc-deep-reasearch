@@ -38,8 +38,8 @@ def apply_research_request_config_overrides(
     if request.search_providers is not None:
         updated.search.providers = request.search_providers
 
-    if request.parallel_mode is not None:
-        updated.search_team.parallel_execution = request.parallel_mode
+    if request.concurrent_source_collection is not None:
+        updated.search_team.concurrent_source_collection = request.concurrent_source_collection
 
     return updated
 

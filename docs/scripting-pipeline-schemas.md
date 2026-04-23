@@ -1,6 +1,6 @@
 # Scripting Pipeline Input/Output Schemas
 
-The scripting pipeline (pipeline stage 5, `run_scripting`) is a 10-step sub-pipeline. Each step reads required fields from `ScriptingContext`, calls the LLM, and writes its output back into the context. All models are Pydantic classes defined in `src/cc_deep_research/content_gen/models.py`.
+The scripting pipeline (pipeline stage 5, `run_scripting`) is a 10-step sub-pipeline. Each step reads required fields from `ScriptingContext`, calls the LLM, and writes its output back into the context. All models are Pydantic classes defined in `src/cc_deep_research/content_gen/models/`.
 
 ## Accumulated Context
 

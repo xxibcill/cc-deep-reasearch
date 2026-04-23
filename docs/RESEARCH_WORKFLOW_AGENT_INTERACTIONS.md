@@ -12,7 +12,7 @@ The runtime is an orchestrator-led local pipeline:
 - The orchestrator runs a fixed sequence of phases: planning, query expansion, source collection, analysis, validation, optional follow-up loops, and session assembly.
 - Specialized agents exist, but they do not directly coordinate with each other in the main path.
 - The orchestrator is the real coordinator. Most agent interaction is orchestrator-to-agent, not agent-to-agent.
-- Parallel mode is limited to source collection. It uses concurrent local researcher tasks, not a distributed agent swarm.
+- Concurrent source collection is limited to source collection. It uses local async researcher tasks, not a distributed agent swarm.
 
 ## Reality Check
 
@@ -45,22 +45,6 @@ These parts are part of the real execution path for a normal CLI run:
 
 These components do real work when a user runs the CLI.
 
-### What is mostly scaffolding today
-
-These classes mostly describe a future or more ambitious architecture shape:
-
-- `LocalResearchTeam`
-- `LocalMessageBus`
-- `LocalAgentPool`
-
-They matter because they show what the project might grow into, but they are not the main engine of the current workflow.
-
-In plain terms:
-
-- `LocalResearchTeam` is not the thing that executes the whole research pipeline
-- `LocalMessageBus` is not how normal research phases talk to each other
-- `LocalAgentPool` is not a real distributed worker fleet
-
 ### The easiest mental model
 
 Think of the current system like this:
@@ -88,20 +72,6 @@ flowchart LR
 
 The current repo is mostly the first diagram, not the second.
 
-### What "scaffolding" means here
-
-In this document, "scaffolding" means:
-
-- the class exists
-- the class may hold metadata, placeholders, or compatibility behavior
-- but the class is not the main place where the actual research work happens
-
-Concrete examples:
-
-- `LocalResearchTeam.execute_research()` raises `NotImplementedError`, so it is not the true workflow runner
-- `LocalMessageBus` supports sending and receiving messages, but the main research run does not depend on it
-- `LocalAgentPool` tracks local task state, but it does not launch real external agents
-
 ### What "hot path" means here
 
 "Hot path" just means the code path used on a normal real run.
@@ -116,26 +86,26 @@ For this repo, the hot path is roughly:
 
 If a class is not involved in that path, it is not part of the main runtime.
 
-### Parallel mode is narrower than it sounds
+### Concurrent source collection is narrower than it sounds
 
 It is easy to read "multi-agent" and imagine several autonomous workers reasoning together.
 
 That is not what currently happens.
 
-What actually happens in parallel mode is:
+What actually happens in concurrent source collection is:
 
 - query families are decomposed into tasks
 - `ResearcherAgent.execute_multiple_tasks()` runs those tasks concurrently
 - results are merged back into one source list
 
-So parallel mode is a search fan-out optimization, not a conversational multi-agent society.
+So concurrent source collection is a search fan-out optimization, not a conversational multi-agent society.
 
 ### Why this distinction matters
 
 If you are extending the project, this section tells you where to make changes:
 
 - if you want to change real workflow behavior, edit the orchestrator, orchestration services, or active specialist agents
-- if you edit only `LocalResearchTeam` or `LocalMessageBus`, you may change architecture scaffolding without changing the main CLI behavior
+- if you want to change source fan-out behavior, edit the source collection services and their tests
 
 ### Local runtime boundary
 
@@ -144,10 +114,7 @@ runtime boundary used by the orchestrator.
 
 That module is responsible for:
 
-- building the local team metadata wrapper
 - instantiating the in-process specialist agents
-- creating the optional local message bus
-- creating the optional local agent pool for parallel source fan-out
 - shutting those local resources down after the run
 
 It still does not implement a distributed worker runtime. It makes the existing
@@ -163,7 +130,7 @@ flowchart TD
     D --> E[ResearchExecutionService.execute]
 
     E --> F[Phase team_init]
-    F --> G[Create local team wrapper and agent registry]
+    F --> G[Create local agent registry]
 
     G --> H[Phase strategy]
     H --> I[ResearchLeadAgent.analyze_query]
@@ -171,7 +138,7 @@ flowchart TD
     I --> J[Phase query_expansion]
     J --> K[QueryExpanderAgent.expand_query]
 
-    K --> L{Parallel source collection}
+    K --> L{Concurrent source collection}
     L -- No --> M[SourceCollectorAgent.collect_sources or collect_multiple_queries]
     L -- Yes --> N[ResearcherAgent.execute_multiple_tasks]
 
@@ -213,7 +180,7 @@ The CLI:
 
 - parses user flags
 - loads config
-- resolves execution mode such as `--no-team` or `--parallel-mode`
+- resolves execution mode such as `--no-team` or concurrent source collection settings
 - constructs `TeamResearchOrchestrator`
 - runs the async research workflow
 - saves the returned `ResearchSession`
@@ -222,7 +189,7 @@ The CLI:
 Important detail:
 
 - `--no-team` does not switch to a different architecture
-- it only disables parallel source collection
+- it only disables concurrent source collection
 
 ### 2. Strategy analysis
 
@@ -272,7 +239,7 @@ That provenance is important because the system later stores which query variant
 Primary components:
 
 - `SourceCollectorAgent`
-- `ResearcherAgent` in parallel mode
+- `ResearcherAgent` in concurrent source collection mode
 
 Main implementations:
 
@@ -289,7 +256,7 @@ Sequential mode:
 - the collector searches one query or many query families
 - results are aggregated and deduplicated
 
-Parallel mode:
+Concurrent source collection mode:
 
 - the orchestrator fans query families into task dictionaries
 - `ResearcherAgent.execute_multiple_tasks()` runs those tasks concurrently with `asyncio.gather`
@@ -534,19 +501,7 @@ These are active in the actual workflow:
 - `SessionBuilder`
 - the specialist agent classes
 
-### Scaffolding or compatibility layer
-
-These exist, but they are not the core of the current execution model:
-
-- `LocalResearchTeam`
-- `LocalMessageBus`
-- `LocalAgentPool`
-
-Why this matters:
-
-- They make the architecture look more like a future external agent system.
-- They do not currently drive most of the research work.
-- Parallel research still happens through local async task execution.
+Concurrent research still happens through local async task execution.
 
 ## Shared Data Contracts Between Phases
 
@@ -579,7 +534,7 @@ These details are important if you are extending the system:
 
 - `runtime.py` now makes the local runtime boundary explicit, but it still describes only one-process execution.
 - Tavily is the only implemented search provider. `claude` is accepted in config and CLI flags, but there is no working Claude search provider in the collector.
-- Parallel mode does not create truly separate specialist agents that talk over the message bus. It uses local concurrent search tasks.
+- Concurrent source collection does not create separate specialist agents. It uses local async search tasks.
 - `ReportRefinerAgent` exists but is not wired into the normal research run.
 
 ## Recommended Mental Model
@@ -588,7 +543,7 @@ If you need to reason about this project quickly, use this model:
 
 1. Treat the orchestrator as the single source of control flow.
 2. Treat each agent as a specialized phase implementation.
-3. Treat parallel mode as a search fan-out optimization, not a full agent society.
+3. Treat concurrent source collection as a search fan-out optimization, not a full agent society.
 4. Treat `ResearchSession.metadata` as the stable handoff contract for persistence and reporting.
 
 That model matches the code much better than a fully decentralized multi-agent interpretation.

@@ -1,6 +1,6 @@
 # Research Workflow Design
 
-This document explains how the research workflow in `cc-deep-research` is designed, how the runtime moves through each phase, which modules own each responsibility, and where the current implementation diverges from the broader multi-agent direction still visible in some internal naming.
+This document explains how the research workflow in `cc-deep-research` is designed, how the runtime moves through each phase, and which modules own each responsibility.
 
 ## Purpose
 
@@ -8,7 +8,7 @@ The system is designed to turn a single user query into a persisted research ses
 
 - query planning
 - multi-query source collection
-- optional parallel execution
+- optional concurrent source collection
 - source deduplication and content enrichment
 - AI-assisted synthesis
 - quality validation
@@ -16,7 +16,7 @@ The system is designed to turn a single user query into a persisted research ses
 - final report generation
 - telemetry and session persistence
 
-At a high level, the workflow is a staged local pipeline managed by the orchestrator, not by the `LocalResearchTeam` wrapper.
+At a high level, the workflow is a staged local pipeline managed by the orchestrator.
 
 ## Primary Runtime Path
 
@@ -24,10 +24,10 @@ The main runtime path for a CLI research run is:
 
 1. CLI parses flags and loads configuration.
 2. CLI builds a `TeamResearchOrchestrator`.
-3. Orchestrator initializes local workflow components and optional parallel coordination primitives.
+3. Orchestrator initializes local workflow components and optional concurrent source collection.
 4. Lead agent derives a strategy from the query and depth.
 5. Query expander produces search variations when depth requires it.
-6. Source collector or parallel local collection tasks gather results from providers.
+6. Source collector or concurrent local collection tasks gather results from providers.
 7. Results are deduplicated and top-ranked sources are enriched with fetched page content.
 8. Analyzer produces findings, themes, cross-reference output, and gaps.
 9. Deep mode adds a second analysis layer with multi-pass synthesis.
@@ -42,10 +42,10 @@ The main runtime path for a CLI research run is:
 flowchart TD
     A["CLI research command"] --> B["load_config()"]
     B --> C["TeamResearchOrchestrator.execute_research()"]
-    C --> D["Initialize local workflow components and optional parallel coordination"]
+    C --> D["Initialize local workflow components and optional concurrent source collection"]
     D --> E["ResearchLeadAgent.analyze_query()"]
     E --> F["QueryExpanderAgent.expand_query()"]
-    F --> G{"Parallel mode?"}
+    F --> G{"Concurrent source collection?"}
     G -- "No" --> H["SourceCollectorAgent.collect_*()"]
     G -- "Yes" --> I["ResearcherAgent.execute_multiple_tasks()"]
     H --> J["Aggregate + deduplicate results"]
@@ -73,12 +73,10 @@ The stable public workflow entry point is [`src/cc_deep_research/orchestrator.py
 - phase ordering
 - monitor events
 - runtime initialization for local workflow components
-- sequential versus parallel source collection
+- sequential versus concurrent source collection
 - iterative follow-up passes
 - session assembly
 - cleanup
-
-The codebase includes a `LocalResearchTeam` wrapper, but it is local lifecycle metadata only. It does not execute the research workflow itself.
 
 ## Entry Point and User Controls
 
@@ -100,8 +98,8 @@ The `research` command controls the workflow through flags such as:
 - `--tavily-only`
 - `--claude-only`
 - `--no-team`
-- `--parallel-mode`
-- `--num-researchers`
+- `--concurrent-source-collection`
+- `--max-concurrent-sources`
 - `--monitor`
 - `--show-timeline`
 - `--pdf`
@@ -109,7 +107,7 @@ The `research` command controls the workflow through flags such as:
 Important implementation detail:
 
 - `--no-team` forces sequential source collection. It does not switch to a separate non-agent pipeline or disable the local specialist components.
-- Parallel behavior is driven by `parallel_mode` and `config.search_team.parallel_execution`.
+- Parallel behavior is driven by `concurrent_source_collection` and `config.search_team.concurrent_source_collection`.
 
 ## Configuration That Shapes the Workflow
 
@@ -132,8 +130,8 @@ The most relevant settings are:
 - `research.top_sources_for_content`: how many sources get full-page enrichment
 - `research.ai_integration_method`: `heuristic`, `api`, or `hybrid`
 - routed LLM analysis is configured through `llm.route_defaults` and provider-specific `llm.*` settings
-- `search_team.parallel_execution`: default parallel collection mode
-- `search_team.num_researchers`: number of parallel local collection tasks
+- `search_team.concurrent_source_collection`: default concurrent collection mode
+- `search_team.max_concurrent_sources`: maximum concurrent source collection tasks
 - `search_team.researcher_timeout`: timeout per parallel local collection task
 
 ## Data Model
@@ -175,9 +173,8 @@ Initialization happens in `TeamResearchOrchestrator._initialize_team()`.
 
 This phase creates:
 
-- a local `LocalResearchTeam` wrapper
 - a local registry of specialized agents
-- optional `LocalMessageBus` and `LocalAgentPool` helper instances for parallel mode
+- optional concurrent source collection settings
 
 The actual agent instances used by the workflow are local Python objects:
 
@@ -198,7 +195,7 @@ Design intent:
 Current reality:
 
 - the local Python agent objects perform the real work
-- `LocalResearchTeam`, `LocalAgentPool`, and `LocalMessageBus` are local scaffolding, not a distributed runtime
+- concurrent source collection uses asyncio task fan-out inside one process
 
 ### 2. Strategy Analysis
 
@@ -411,9 +408,9 @@ Iteration history is stored in `session.metadata["iteration_history"]`.
 
 ### 11. Parallel Research Mode
 
-Parallel collection is implemented inside the orchestrator and [`src/cc_deep_research/agents/researcher.py`](../src/cc_deep_research/agents/researcher.py).
+Concurrent collection is implemented inside the orchestrator and [`src/cc_deep_research/agents/researcher.py`](../src/cc_deep_research/agents/researcher.py).
 
-In parallel mode:
+In concurrent source collection mode:
 
 - the orchestrator decomposes query variations into task dictionaries
 - a `ResearcherAgent` executes those tasks concurrently with `asyncio.gather`
@@ -428,9 +425,8 @@ Design intent:
 Current implementation detail:
 
 - this is concurrent task execution inside one process, not true distributed or spawned external agents
-- `LocalAgentPool` and `LocalMessageBus` are initialized, but they are not the mechanism actually used to run task bodies today
 
-That distinction matters when changing the architecture. The codebase talks about agent teams, but the runtime is currently closer to "specialized local components with optional concurrent retrieval."
+That distinction matters when changing the architecture. The runtime is specialized local components with optional concurrent retrieval.
 
 ### 12. Report Generation
 
@@ -556,7 +552,7 @@ Type: `SessionExecutionMetadata`
 
 ```python
 {
-    "parallel_requested": bool,      # Required: Whether parallel mode was requested
+    "parallel_requested": bool,      # Required: Whether concurrent source collection mode was requested
     "parallel_used": bool,            # Required: Whether parallel collection ran
     "degraded": bool,                 # Required: Whether any degradation occurred
     "degraded_reasons": list[str],    # Required: List of degradation reasons
@@ -695,9 +691,6 @@ The project uses agent-oriented naming, but the current architecture is mixed. T
 | `DeepAnalyzerAgent` | Multi-pass deep synthesis | Real |
 | `ValidatorAgent` | Quality gate and loop trigger | Real |
 | `ReporterAgent` | Final report assembly | Real |
-| `LocalResearchTeam` | Local lifecycle metadata wrapper | Real, local-only scaffolding |
-| `LocalAgentPool` | Track local parallel collection-task state | Real, local-only scaffolding |
-| `LocalMessageBus` | Local async coordination queue | Real, local-only scaffolding |
 
 ## Design Principles Visible in the Code
 
@@ -740,9 +733,9 @@ The repository includes team and coordination primitives, but the orchestrator s
 
 `claude` can be selected in configuration, but no real Claude search provider is implemented. Source collection is effectively Tavily-centric today.
 
-### Parallel mode is narrower than it sounds
+### Concurrent source collection mode is narrower than it sounds
 
-Parallel mode currently means concurrent execution of retrieval tasks in one runtime. It is not external worker orchestration.
+Concurrent source collection mode currently means concurrent execution of retrieval tasks in one runtime. It is not external worker orchestration.
 
 ### Report generation is downstream-only
 
@@ -783,9 +776,8 @@ The safest places to extend the workflow are:
 - add stronger quality metrics
 - keep `follow_up_queries` and `needs_follow_up` semantics stable
 
-### Introduce real multi-agent execution
+### Keep orchestration explicit
 
-- treat `LocalResearchTeam`, `LocalAgentPool`, and `LocalMessageBus` as local scaffolding
 - keep the orchestrator as the coordination boundary
 - migrate one phase at a time rather than replacing the whole pipeline at once
 
@@ -797,7 +789,7 @@ When changing the workflow:
 2. Treat `ResearchSession.metadata` as part of the workflow API.
 3. Preserve graceful fallback behavior.
 4. Keep iterative search semantics intact unless intentionally redesigning them.
-5. Be explicit about whether a change affects sequential mode, parallel mode, or both.
+5. Be explicit about whether a change affects sequential mode, concurrent source collection, or both.
 6. Update tests around follow-up query generation, iteration stopping conditions, and output metadata when behavior changes.
 
 ## Relevant Files

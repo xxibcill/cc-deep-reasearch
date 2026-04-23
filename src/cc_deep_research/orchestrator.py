@@ -6,7 +6,6 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.config import Config
-from cc_deep_research.coordination import LocalAgentPool, LocalMessageBus
 from cc_deep_research.models import (
     AnalysisResult,
     IterationHistoryRecord,
@@ -36,7 +35,6 @@ from cc_deep_research.orchestration import (
 )
 from cc_deep_research.orchestration.helpers import build_follow_up_queries, normalize_query_families
 from cc_deep_research.prompts import PromptRegistry
-from cc_deep_research.teams import LocalResearchTeam
 
 if TYPE_CHECKING:
     from cc_deep_research.themes import WorkflowConfig
@@ -55,8 +53,8 @@ class TeamResearchOrchestrator:
         self,
         config: Config,
         monitor: ResearchMonitor | None = None,
-        parallel_mode: bool | None = None,
-        num_researchers: int | None = None,
+        concurrent_source_collection: bool | None = None,
+        max_concurrent_sources: int | None = None,
         prompt_registry: PromptRegistry | None = None,
         workflow_config: WorkflowConfig | None = None,
     ) -> None:
@@ -65,10 +63,10 @@ class TeamResearchOrchestrator:
         Args:
             config: Application configuration.
             monitor: Optional research monitor for progress tracking.
-            parallel_mode: Whether to enable parallel researcher execution.
-                          If None, uses config.search_team.parallel_execution.
-            num_researchers: Number of parallel researchers to spawn.
-                          If None, uses config.search_team.num_researchers.
+            concurrent_source_collection: Whether to enable concurrent source collection.
+                          If None, uses config.search_team.concurrent_source_collection.
+            max_concurrent_sources: Maximum concurrent source collection tasks.
+                          If None, uses config.search_team.max_concurrent_sources.
             prompt_registry: Optional prompt registry with overrides applied.
             workflow_config: Optional theme workflow configuration for customizing phases.
         """
@@ -76,16 +74,15 @@ class TeamResearchOrchestrator:
         self._monitor = monitor or ResearchMonitor(enabled=False)
         self._prompt_registry = prompt_registry or PromptRegistry()
         self._workflow_config = workflow_config
-        self._team: LocalResearchTeam | None = None
         self._agents: dict[str, Any] = {}
         self._runtime_state: OrchestratorRuntimeState | None = None
         # Use config defaults if not specified
-        self._parallel_mode = (
-            parallel_mode if parallel_mode is not None else config.search_team.parallel_execution
+        self._concurrent_source_collection = (
+            concurrent_source_collection
+            if concurrent_source_collection is not None
+            else config.search_team.concurrent_source_collection
         )
-        self._num_researchers = num_researchers or config.search_team.num_researchers
-        self._message_bus: LocalMessageBus | None = None
-        self._agent_pool: LocalAgentPool | None = None
+        self._max_concurrent_sources = max_concurrent_sources or config.search_team.max_concurrent_sources
         self._agent_access = AgentAccess(lambda: self._agents)
         self._session_state = OrchestratorSessionState(configured_providers=[])
         self._session_builder = SessionBuilder()
@@ -93,7 +90,7 @@ class TeamResearchOrchestrator:
             config=config,
             monitor=self._monitor,
             session_state=self._session_state,
-            num_researchers=self._num_researchers,
+            max_concurrent_sources=self._max_concurrent_sources,
         )
         self._analysis_workflow = AnalysisWorkflow(config=config, monitor=self._monitor)
         self._planning = ResearchPlanningService(
@@ -105,8 +102,8 @@ class TeamResearchOrchestrator:
         self._runtime = OrchestratorRuntime(
             config=config,
             monitor=self._monitor,
-            parallel_mode=self._parallel_mode,
-            num_researchers=self._num_researchers,
+            concurrent_source_collection=self._concurrent_source_collection,
+            max_concurrent_sources=self._max_concurrent_sources,
             llm_event_callback=self._session_state.handle_llm_router_event,
             prompt_registry=self._prompt_registry,
         )
@@ -116,8 +113,8 @@ class TeamResearchOrchestrator:
             phase_runner=self._phase_runner,
             session_builder=self._session_builder,
             configured_providers=lambda: list(self._config.search.providers),
-            parallel_mode=self._parallel_mode,
-            num_researchers=self._num_researchers,
+            concurrent_source_collection=self._concurrent_source_collection,
+            max_concurrent_sources=self._max_concurrent_sources,
         )
     async def execute_research(
         self,
@@ -189,7 +186,7 @@ class TeamResearchOrchestrator:
             analysis=analysis,
             validation=validation,
             iteration_history=iteration_history,
-            parallel_requested=self._parallel_mode,
+            parallel_requested=self._concurrent_source_collection,
         )
 
     async def _collect_sources(
@@ -200,13 +197,14 @@ class TeamResearchOrchestrator:
         min_sources: int | None,
     ) -> list[SearchResultItem]:
         """Collect sources using the configured execution mode."""
+        agent_pool = self._runtime_state if self._runtime_state and self._runtime_state.parallel_pool_initialized else None
         return await self._source_collection.collect_with_fallback(
             collector=self._agent_access.collector(),
-            agent_pool=self._agent_pool,
+            agent_pool=agent_pool,
             query_families=query_families,
             depth=depth,
             min_sources=min_sources,
-            prefer_parallel=self._parallel_mode,
+            prefer_parallel=self._concurrent_source_collection,
         )
 
     def _log_session_summary(
@@ -229,7 +227,7 @@ class TeamResearchOrchestrator:
         Creates a team with specialized agents for different
         aspects of research.
         """
-        runtime_state = await self._runtime.initialize(self._team)
+        runtime_state = await self._runtime.initialize()
         self._apply_runtime_state(runtime_state)
         self._planning = ResearchPlanningService(
             monitor=self._monitor,
@@ -465,13 +463,14 @@ class TeamResearchOrchestrator:
         min_sources: int | None,
     ) -> list[SearchResultItem]:
         """Collect follow-up sources and merge them with existing sources."""
+        agent_pool = self._runtime_state if self._runtime_state and self._runtime_state.parallel_pool_initialized else None
         new_sources = await self._source_collection.collect_follow_up_sources(
             collector=self._agent_access.collector(),
-            agent_pool=self._agent_pool,
+            agent_pool=agent_pool,
             follow_up_queries=follow_up_queries,
             depth=depth,
             min_sources=min_sources,
-            prefer_parallel=self._parallel_mode,
+            prefer_parallel=self._concurrent_source_collection,
         )
 
         self._monitor.section("Iterative Follow-up Search")
@@ -537,18 +536,12 @@ class TeamResearchOrchestrator:
     def _apply_runtime_state(self, runtime_state: OrchestratorRuntimeState) -> None:
         """Mirror runtime state into compatibility attributes used by tests and helpers."""
         self._runtime_state = runtime_state
-        self._team = runtime_state.team
         self._agents = runtime_state.agents
-        self._message_bus = runtime_state.message_bus
-        self._agent_pool = runtime_state.agent_pool
 
     def _clear_runtime_state(self) -> None:
         """Clear compatibility attributes after runtime shutdown."""
         self._runtime_state = None
-        self._team = None
         self._agents = {}
-        self._message_bus = None
-        self._agent_pool = None
 
 
 class OrchestratorError(Exception):

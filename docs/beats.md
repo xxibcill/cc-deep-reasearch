@@ -135,17 +135,18 @@ Beat-related state exists in several artifacts, each with a different purpose.
 
 Primary source files:
 
-- [`src/cc_deep_research/content_gen/models.py`](../src/cc_deep_research/content_gen/models.py)
+- [`src/cc_deep_research/content_gen/models/`](../src/cc_deep_research/content_gen/models/)
 - [`src/cc_deep_research/content_gen/prompts/scripting.py`](../src/cc_deep_research/content_gen/prompts/scripting.py)
 - [`src/cc_deep_research/content_gen/prompts/argument_map.py`](../src/cc_deep_research/content_gen/prompts/argument_map.py)
 - [`src/cc_deep_research/content_gen/prompts/visual.py`](../src/cc_deep_research/content_gen/prompts/visual.py)
-- [`src/cc_deep_research/content_gen/orchestrator.py`](../src/cc_deep_research/content_gen/orchestrator.py)
+- [`src/cc_deep_research/content_gen/pipeline.py`](../src/cc_deep_research/content_gen/pipeline.py)
+- [`src/cc_deep_research/content_gen/stages/`](../src/cc_deep_research/content_gen/stages/)
 
 ## Data Model Reference
 
 ### `ScriptStructure`
 
-Defined in [`models.py`](../src/cc_deep_research/content_gen/models.py).
+Defined in [`models.py`](../src/cc_deep_research/content_gen/models/).
 
 Fields:
 
@@ -821,10 +822,11 @@ Because later stages key off beat names and IDs, careless renaming can break con
 
 ## Source Files Worth Reading
 
-- [`src/cc_deep_research/content_gen/models.py`](../src/cc_deep_research/content_gen/models.py)
+- [`src/cc_deep_research/content_gen/models/`](../src/cc_deep_research/content_gen/models/)
 - [`src/cc_deep_research/content_gen/agents/scripting.py`](../src/cc_deep_research/content_gen/agents/scripting.py)
 - [`src/cc_deep_research/content_gen/prompts/scripting.py`](../src/cc_deep_research/content_gen/prompts/scripting.py)
 - [`src/cc_deep_research/content_gen/prompts/argument_map.py`](../src/cc_deep_research/content_gen/prompts/argument_map.py)
 - [`src/cc_deep_research/content_gen/prompts/quality_evaluator.py`](../src/cc_deep_research/content_gen/prompts/quality_evaluator.py)
 - [`src/cc_deep_research/content_gen/prompts/visual.py`](../src/cc_deep_research/content_gen/prompts/visual.py)
-- [`src/cc_deep_research/content_gen/orchestrator.py`](../src/cc_deep_research/content_gen/orchestrator.py)
+- [`src/cc_deep_research/content_gen/pipeline.py`](../src/cc_deep_research/content_gen/pipeline.py)
+- [`src/cc_deep_research/content_gen/stages/`](../src/cc_deep_research/content_gen/stages/)

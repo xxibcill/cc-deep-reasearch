@@ -38,34 +38,23 @@ cc-deep-research benchmark run --depth standard --output-dir benchmark_runs/late
 
 ### Core Workflow
 
-The research pipeline is a staged local workflow managed by `TeamResearchOrchestrator` (`src/cc_deep_research/orchestrator.py`), not by the `LocalResearchTeam` wrapper. The primary flow:
+The research pipeline is managed by two alternative orchestrators selected via `ResearchWorkflow`:
 
-1. CLI parses flags and loads config
-2. `TeamResearchOrchestrator.execute_research()` runs the pipeline
-3. Phases execute sequentially through `src/cc_deep_research/orchestration/`
-4. Iterative follow-up collection can loop back based on validation
-5. `ResearchSession` is returned and persisted via `SessionStore`
+1. **`TeamResearchOrchestrator`** (`src/cc_deep_research/orchestrator.py`) - The **staged workflow** (default). Phases execute sequentially: strategy → query expansion → source collection → analysis → validation → report. Iterative follow-up collection can loop back based on validation.
+
+2. **`PlannerResearchOrchestrator`** (`src/cc_deep_research/orchestration/planner_orchestrator.py`) - The **planner workflow**. Uses a Planner Agent to create a research plan with subtasks, then executes them via a TaskDispatcher.
+
+The workflow is selected via `ResearchRunRequest.workflow` (defaults to `ResearchWorkflow.STAGED`). Both return a `ResearchSession`.
 
 Key modules:
-- `src/cc_deep_research/cli/` - CLI command handlers (research, config, session, telemetry, dashboard)
-- `src/cc_deep_research/orchestrator.py` - Public facade for the research pipeline
-- `src/cc_deep_research/orchestration/` - Phase execution services (phases.py, execution.py, runtime.py, session_state.py, planner_orchestrator.py)
+- `src/cc_deep_research/orchestrator.py` - `TeamResearchOrchestrator` (staged pipeline)
+- `src/cc_deep_research/orchestration/planner_orchestrator.py` - `PlannerResearchOrchestrator` (planner-based pipeline)
+- `src/cc_deep_research/orchestration/` - Phase execution services (phases.py, execution.py, runtime.py, session_state.py)
 - `src/cc_deep_research/agents/` - Specialized agents (analyzer, deep_analyzer, reporter, validator, research_lead, query_expander, source_collector, planner)
-- `src/cc_deep_research/llm/` - LLM routing and transport clients (anthropic, openrouter, cerebras, registry, route_planner)
-- `src/cc_deep_research/providers/` - Search providers (tavily)
 
-### Agent Naming vs Reality
+### Concurrent Source Collection
 
-The codebase uses agent-oriented naming, but the current implementation is **local specialized Python objects**, not external distributed agents:
-
-| Component | Status |
-|-----------|--------|
-| `TeamResearchOrchestrator` | Real and authoritative |
-| `LocalResearchTeam` | Local scaffolding only, not a distributed runtime |
-| `LocalAgentPool` | Local task state tracking, not external workers |
-| `LocalMessageBus` | Local async queue, not cross-process messaging |
-
-Parallel mode (`--parallel-mode`) means **concurrent asyncio task execution in one process**, not spawned external agents.
+Concurrent source collection (`concurrent_source_collection`) means **concurrent asyncio task execution in one process**, not spawned external agents. The `SourceCollectionService` fans out source collection to concurrent tasks when enabled.
 
 ### LLM Routing
 
@@ -91,7 +80,7 @@ Config file: `~/.config/cc-deep-research/config.yaml`. Also supports env var ove
 
 ### Content Generation
 
-A separate content-gen workflow exists in `src/cc_deep_research/content_gen/` with its own telemetry store, models, and pipeline for short-form video content. This runs under a different entry point and is documented in `docs/content-generation/`.
+A separate content-gen workflow exists in `src/cc_deep_research/content_gen/` with its own telemetry store, models, and pipeline for short-form video content. This runs under a different entry point and is documented in `docs/content-generation/`. The `content_gen/` package is kept co-located within `cc_deep_research/` rather than split into a separate package because it shares the `llm/` routing infrastructure, `models/` data types, and `config/` schema with the research package. Splitting would duplicate these shared dependencies while providing no independent deployment benefit.
 
 ### Dashboard Frontend
 

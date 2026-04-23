@@ -17,8 +17,6 @@ from cc_deep_research.agents import (
 from cc_deep_research.agents.query_expander import QueryExpanderAgent
 from cc_deep_research.aggregation import deduplicate_by_url
 from cc_deep_research.config import Config
-from cc_deep_research.coordination.agent_pool import LocalAgentPool
-from cc_deep_research.coordination.message_bus import LocalMessageBus
 from cc_deep_research.models import (
     AnalysisFinding,
     AnalysisGap,
@@ -36,7 +34,6 @@ from cc_deep_research.models import (
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.orchestration import OrchestratorRuntimeState
 from cc_deep_research.orchestrator import TeamExecutionError, TeamResearchOrchestrator
-from cc_deep_research.teams import LocalResearchTeam
 
 
 def _make_strategy(query: str, depth: ResearchDepth, query_variations: int) -> StrategyResult:
@@ -367,15 +364,15 @@ class FakePlannerAgent:
 def test_local_runtime_types_use_explicit_local_names() -> None:
     """Test that runtime-facing helper types are imported via their local names."""
     runtime_state = OrchestratorRuntimeState(
-        team=MagicMock(spec=LocalResearchTeam),
         agents={},
-        message_bus=MagicMock(spec=LocalMessageBus),
-        agent_pool=MagicMock(spec=LocalAgentPool),
+        llm_registry=None,
+        llm_router=None,
+        prompt_registry=None,
+        parallel_pool_initialized=False,
     )
 
-    assert runtime_state.team is not None
-    assert runtime_state.message_bus is not None
-    assert runtime_state.agent_pool is not None
+    assert runtime_state.agents is not None
+    assert runtime_state.parallel_pool_initialized is False
 
 
 def _install_fake_team(
@@ -407,6 +404,13 @@ def _install_fake_team(
             AGENT_TYPE_DEEP_ANALYZER: deep_analyzer,
             AGENT_TYPE_VALIDATOR: validator,
         }
+        orchestrator._runtime_state = MagicMock(
+            agents=orchestrator._agents,
+            llm_registry=None,
+            llm_router=None,
+            prompt_registry=None,
+            parallel_pool_initialized=False,
+        )
 
     async def fetch_content(
         *,
@@ -447,7 +451,6 @@ class TestTeamResearchOrchestrator:
 
         assert orchestrator._config == config
         assert orchestrator._monitor == monitor
-        assert orchestrator._team is None
         assert orchestrator._runtime_state is None
 
     @pytest.mark.asyncio
@@ -458,9 +461,6 @@ class TestTeamResearchOrchestrator:
         await orchestrator._initialize_team()
 
         assert isinstance(orchestrator._runtime_state, OrchestratorRuntimeState)
-        assert orchestrator._team is orchestrator._runtime_state.team
-        assert orchestrator._team is not None
-        assert orchestrator._team.is_active is True
         assert set(orchestrator._agents) == {
             AGENT_TYPE_LEAD,
             AGENT_TYPE_COLLECTOR,
@@ -470,11 +470,6 @@ class TestTeamResearchOrchestrator:
             AGENT_TYPE_DEEP_ANALYZER,
             AGENT_TYPE_VALIDATOR,
         }
-        assert orchestrator._message_bus is orchestrator._runtime_state.message_bus
-        assert orchestrator._message_bus is not None
-        assert orchestrator._message_bus.is_active is True
-        assert orchestrator._agent_pool is not None
-        assert orchestrator._agent_pool.is_active is True
         assert orchestrator._runtime_state.llm_registry is not None
         assert orchestrator._runtime_state.llm_router is not None
         assert orchestrator._planning._registry is orchestrator._runtime_state.llm_registry
@@ -518,25 +513,15 @@ class TestTeamResearchOrchestrator:
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         await orchestrator._initialize_team()
 
-        team = orchestrator._team
-        message_bus = orchestrator._message_bus
-        agent_pool = orchestrator._agent_pool
         runtime_state = orchestrator._runtime_state
+        agents = orchestrator._agents
 
         await orchestrator._shutdown_team()
 
         assert runtime_state is not None
-        assert team is not None
-        assert message_bus is not None
-        assert agent_pool is not None
-        assert team.is_active is False
-        assert message_bus.is_active is False
-        assert agent_pool.is_active is False
+        assert agents is not None
         assert orchestrator._runtime_state is None
-        assert orchestrator._team is None
         assert orchestrator._agents == {}
-        assert orchestrator._message_bus is None
-        assert orchestrator._agent_pool is None
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -556,7 +541,7 @@ class TestTeamResearchOrchestrator:
     ) -> None:
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         collector = FakeCollectorAgent(available=["tavily"], warnings=[])
@@ -610,7 +595,7 @@ class TestTeamResearchOrchestrator:
     ) -> None:
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         collector = FakeCollectorAgent(available=["tavily"], warnings=[])
@@ -646,7 +631,7 @@ class TestTeamResearchOrchestrator:
         """Duplicate URLs should retain provenance from all contributing query families."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         shared = SearchResultItem(
@@ -741,9 +726,8 @@ class TestTeamResearchOrchestrator:
         orchestrator = TeamResearchOrchestrator(
             config,
             ResearchMonitor(enabled=False),
-            parallel_mode=True,
+            concurrent_source_collection=True,
         )
-        orchestrator._agent_pool = object()
         orchestrator._agents = {AGENT_TYPE_COLLECTOR: object()}
         orchestrator._monitor.set_session = MagicMock()
         orchestrator._initialize_team = AsyncMock()
@@ -755,6 +739,8 @@ class TestTeamResearchOrchestrator:
         orchestrator._source_collection.parallel_research = AsyncMock(
             side_effect=RuntimeError("parallel boom")
         )
+        # Simulate runtime state with parallel pool initialized
+        orchestrator._runtime_state = MagicMock(parallel_pool_initialized=True)
 
         sources = _make_sources("fallback", 2)
 
@@ -798,7 +784,7 @@ class TestTeamResearchOrchestrator:
     async def test_execute_research_uses_sequential_collection_when_parallel_disabled(self) -> None:
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         orchestrator._agents = {AGENT_TYPE_COLLECTOR: object()}
@@ -1219,7 +1205,7 @@ class TestSourceCollectionOrchestratorIntegration:
         """Orchestrator preserves query family provenance through collection."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         collector = FakeCollectorAgent(
@@ -1268,7 +1254,7 @@ class TestSourceCollectionOrchestratorIntegration:
         """Duplicate URLs from different queries merge provenance in orchestrator."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         shared_source = SearchResultItem(
             url="https://example.com/shared-article",
@@ -1309,7 +1295,7 @@ class TestSourceCollectionOrchestratorIntegration:
         """Empty source collection still produces stable session metadata."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         collector = FakeCollectorAgent(
@@ -1333,7 +1319,7 @@ class TestSourceCollectionOrchestratorIntegration:
         """Source limiting respects depth-specific requirements."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
 
@@ -1368,7 +1354,7 @@ class TestOrchestratorFixtureEndToEnd:
         """Smoke test for STANDARD depth with fixture-backed components."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         collector = FakeCollectorAgent(
@@ -1460,7 +1446,7 @@ class TestOrchestratorFixtureEndToEnd:
         """Smoke test for DEEP analysis mode with fixture-backed components."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         collector = FakeCollectorAgent(
@@ -1569,7 +1555,7 @@ class TestOrchestratorFixtureEndToEnd:
         """Verify late-stage schema mismatches between phases are caught."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         collector = FakeCollectorAgent(
@@ -1728,12 +1714,12 @@ class TestOrchestratorFailurePathRegressions:
         """Orchestrator should explicitly record fallback transitions in metadata."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = True
+        config.search_team.concurrent_source_collection = True
 
         orchestrator = TeamResearchOrchestrator(
             config,
             ResearchMonitor(enabled=False),
-            parallel_mode=True,
+            concurrent_source_collection=True,
         )
         orchestrator._agent_pool = object()
         orchestrator._agents = {AGENT_TYPE_COLLECTOR: object()}
@@ -1815,7 +1801,7 @@ class TestOrchestratorFailurePathRegressions:
         """Orchestrator should return partial sources when some queries fail."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
 
@@ -1931,7 +1917,7 @@ class TestSessionMetadataContract:
         """QUICK depth must produce documented minimum metadata contract."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         collector = FakeCollectorAgent(available=["tavily"], warnings=[])
@@ -1959,7 +1945,7 @@ class TestSessionMetadataContract:
         """STANDARD depth must produce documented minimum metadata contract."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         collector = FakeCollectorAgent(available=["tavily"], warnings=[])
@@ -1987,7 +1973,7 @@ class TestSessionMetadataContract:
         """DEEP depth must produce documented minimum metadata contract."""
         config = Config()
         config.search.providers = ["tavily"]
-        config.search_team.parallel_execution = False
+        config.search_team.concurrent_source_collection = False
 
         orchestrator = TeamResearchOrchestrator(config, ResearchMonitor(enabled=False))
         collector = FakeCollectorAgent(available=["tavily"], warnings=[])
@@ -2050,9 +2036,8 @@ class TestSessionMetadataContract:
         orchestrator = TeamResearchOrchestrator(
             config,
             ResearchMonitor(enabled=False),
-            parallel_mode=True,
+            concurrent_source_collection=True,
         )
-        orchestrator._agent_pool = object()
         orchestrator._agents = {AGENT_TYPE_COLLECTOR: object()}
         orchestrator._monitor.set_session = MagicMock()
         orchestrator._initialize_team = AsyncMock()
@@ -2064,6 +2049,8 @@ class TestSessionMetadataContract:
         orchestrator._source_collection.parallel_research = AsyncMock(
             side_effect=RuntimeError("parallel boom")
         )
+        # Simulate runtime state with parallel pool initialized
+        orchestrator._runtime_state = MagicMock(parallel_pool_initialized=True)
 
         sources = _make_sources("fallback", 2)
 
