@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
+from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
-from cc_deep_research.event_router import EventRouter, WebSocketConnection
+from cc_deep_research.event_router import WebSocketConnection
 from cc_deep_research.telemetry import (
-    get_default_dashboard_db_path,
     get_default_telemetry_dir,
-    query_live_session_detail,
-    query_session_detail,
 )
 from cc_deep_research.telemetry.tree import empty_decision_graph
 
@@ -24,7 +21,7 @@ def _serialize_timestamp(value: Any) -> str | None:
     if value is None:
         return None
     if hasattr(value, "isoformat"):
-        return value.isoformat()
+        return value.isoformat()  # type: ignore[no-any-return]
     return str(value)
 
 
@@ -40,12 +37,13 @@ def _query_session_api_detail_for_websocket(
 ) -> dict[str, Any]:
     """Return session detail for WebSocket event streaming."""
     from datetime import UTC, datetime, timedelta
+
+    from cc_deep_research.session_store import SessionStore
     from cc_deep_research.telemetry import (
         get_default_dashboard_db_path,
         query_live_session_detail,
         query_session_detail,
     )
-    from cc_deep_research.session_store import SessionStore
 
     STALE_LIVE_SESSION_AFTER = timedelta(minutes=15)
 
@@ -145,7 +143,8 @@ def register_websocket_routes(app: FastAPI) -> None:
     Args:
         app: The FastAPI application instance.
     """
-    from contextlib import asynccontextmanager, suppress
+    from contextlib import suppress
+
     from cc_deep_research.web_server import get_event_router
 
     @app.websocket("/ws/session/{session_id}")

@@ -20,7 +20,7 @@ from .resilience import (
     build_parallel_collection_policy,
 )
 from .source_collection_parallel import ParallelSourceCollectionStrategy, _emit_agent_lifecycle
-from .source_collection_sequential import SequentialSourceCollectionStrategy
+from .source_collection_sequential import SequentialSourceCollectionStrategy, _SequentialCollector
 
 
 class SourceAggregationService:
@@ -318,7 +318,7 @@ class SourceCollectionService:
     async def collect_with_fallback(
         self,
         *,
-        collector: object,
+        collector: _SequentialCollector,
         agent_pool: object | None,
         query_families: list[QueryFamily],
         depth: ResearchDepth,
@@ -364,7 +364,7 @@ class SourceCollectionService:
     async def collect_follow_up_sources(
         self,
         *,
-        collector: object,
+        collector: _SequentialCollector,
         agent_pool: object | None,
         follow_up_queries: list[str],
         depth: ResearchDepth,
@@ -391,7 +391,7 @@ class SourceCollectionService:
     async def collect_sources(
         self,
         *,
-        collector: object,
+        collector: _SequentialCollector,
         query_families: list[QueryFamily],
         depth: ResearchDepth,
     ) -> list[SearchResultItem]:

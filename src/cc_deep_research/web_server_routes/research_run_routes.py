@@ -5,17 +5,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import uuid4
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from cc_deep_research.config import load_config
-from cc_deep_research.event_router import EventRouter
-from cc_deep_research.reporting import ReportGenerator
-from cc_deep_research.research_runs.jobs import ResearchRunJob, ResearchRunJobRegistry
+from cc_deep_research.research_runs.jobs import ResearchRunJob
 from cc_deep_research.research_runs.models import (
     ResearchOutputFormat,
     ResearchRunCancelled,
@@ -23,7 +21,6 @@ from cc_deep_research.research_runs.models import (
     ResearchRunStatus,
 )
 from cc_deep_research.research_runs.service import ResearchRunService  # noqa: F401
-from cc_deep_research.session_store import SessionStore
 from cc_deep_research.telemetry import (
     get_default_telemetry_dir,
     query_live_session_detail,
@@ -39,7 +36,7 @@ def _serialize_timestamp(value: Any) -> str | None:
     if value is None:
         return None
     if hasattr(value, "isoformat"):
-        return value.isoformat()
+        return value.isoformat()  # type: ignore[no-any-return]
     return str(value)
 
 
@@ -194,9 +191,11 @@ def register_research_run_routes(app: FastAPI) -> None:
                     job.request,
                     event_router=event_router,
                     cancellation_check=lambda: _raise_if_run_cancelled(job),
-                    on_session_started=lambda session_id: job_registry.set_session_id(
-                        job.run_id,
-                        session_id=session_id,
+                    on_session_started=cast(
+                        "Callable[[str], None]",
+                        lambda session_id: job_registry.set_session_id(
+                            job.run_id, session_id=session_id
+                        ),
                     ),
                 )
                 job_registry.mark_completed(job.run_id, result=result)

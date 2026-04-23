@@ -16,8 +16,6 @@ from cc_deep_research.search_cache import SearchCacheStore
 from cc_deep_research.session_store import SessionStore
 from cc_deep_research.telemetry import (
     _load_dashboard_connection,
-    get_default_dashboard_db_path,
-    query_session_checkpoints,
 )
 
 
@@ -26,7 +24,7 @@ def _serialize_timestamp(value: Any) -> str | None:
     if value is None:
         return None
     if hasattr(value, "isoformat"):
-        return value.isoformat()
+        return value.isoformat()  # type: ignore[no-any-return]
     return str(value)
 
 
@@ -91,7 +89,7 @@ def _query_analytics_data(
         [days_back],
     ).fetchone()
 
-    report_count = conn.execute(
+    report_count_row = conn.execute(
         """
         SELECT COUNT(*)
         FROM telemetry_sessions
@@ -99,9 +97,10 @@ def _query_analytics_data(
         AND summary_json->>'has_report' = 'true'
         """,
         [days_back],
-    ).fetchone()[0] or 0
+    ).fetchone()
 
     total_with_report = summary[0] if summary else 0
+    report_count = report_count_row[0] if report_count_row else 0
     report_rate = (report_count / total_with_report * 100) if total_with_report > 0 else 0.0
 
     status_counts = conn.execute(

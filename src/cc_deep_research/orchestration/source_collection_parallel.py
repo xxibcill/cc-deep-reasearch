@@ -139,7 +139,7 @@ class ParallelSourceCollectionStrategy:
         families_by_query = {family.query: family for family in query_families}
         for result in results:
             task_id = result["task_id"]
-            agent_event_id = task_agent_ids.get(task_id)
+            agent_event_id = task_agent_ids.get(task_id) or ""
 
             if result["status"] == "success":
                 family = families_by_query.get(

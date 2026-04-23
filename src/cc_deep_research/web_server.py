@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import cast
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -27,9 +27,9 @@ from cc_deep_research.content_gen.progress import (
 from cc_deep_research.content_gen.router import register_content_gen_routes
 from cc_deep_research.event_router import EventRouter
 from cc_deep_research.radar.router import register_radar_routes
-from cc_deep_research.research_runs.jobs import ResearchRunJob, ResearchRunJobRegistry
-from cc_deep_research.research_runs.service import ResearchRunService
 from cc_deep_research.reporting import ReportGenerator
+from cc_deep_research.research_runs.jobs import ResearchRunJobRegistry
+from cc_deep_research.research_runs.service import ResearchRunService
 from cc_deep_research.web_server_routes import (
     register_misc_routes,
     register_research_run_routes,
@@ -65,7 +65,7 @@ class DashboardBackendRuntime:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Manage application lifecycle."""
     runtime = get_backend_runtime(app)
     await runtime.start()
@@ -171,7 +171,6 @@ def register_routes(app: FastAPI) -> None:
     Args:
         app: The FastAPI application instance.
     """
-    from cc_deep_research.config import load_config
 
     @app.get("/")
     async def root() -> dict[str, str]:

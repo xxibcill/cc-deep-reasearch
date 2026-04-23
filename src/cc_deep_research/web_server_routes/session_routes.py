@@ -7,7 +7,6 @@ import logging
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
-from uuid import uuid4
 
 from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
@@ -57,7 +56,7 @@ def _serialize_timestamp(value: Any) -> str | None:
     if value is None:
         return None
     if hasattr(value, "isoformat"):
-        return value.isoformat()
+        return value.isoformat()  # type: ignore[no-any-return]
     return str(value)
 
 
@@ -999,6 +998,7 @@ def register_session_routes(app: FastAPI) -> None:
     async def rerun_step(request: dict) -> JSONResponse:
         """Rerun a single step from a checkpoint in debug mode."""
         from pydantic import ValidationError
+
         from cc_deep_research.models.checkpoint import RerunStepRequest, RerunStepResult
 
         try:

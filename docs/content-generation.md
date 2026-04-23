@@ -67,7 +67,7 @@ The system has three layers:
 1. CLI layer
    Exposed through `cc-deep-research content-gen ...` in [`src/cc_deep_research/content_gen/cli.py`](../src/cc_deep_research/content_gen/cli.py).
 2. Orchestration layer
-   [`ContentGenPipeline`](../src/cc_deep_research/content_gen/pipeline.py) coordinates per-stage orchestrators; `ContentGenOrchestrator` remains available for existing callers.
+   [`ContentGenPipeline`](../src/cc_deep_research/content_gen/pipeline.py) coordinates per-stage orchestrators; `ContentGenOrchestrator` remains available as a backward-compatible facade.
 3. Agent layer
    Each stage has its own prompt module and LLM-backed agent under [`src/cc_deep_research/content_gen/agents/`](../src/cc_deep_research/content_gen/agents/).
 
@@ -1051,16 +1051,41 @@ The most obvious next improvements are:
 
 Primary implementation files:
 
-- pipeline: [`src/cc_deep_research/content_gen/pipeline.py`](../src/cc_deep_research/content_gen/pipeline.py)
-- stage orchestrators: [`src/cc_deep_research/content_gen/stages/`](../src/cc_deep_research/content_gen/stages/)
-- compatibility facade: [`src/cc_deep_research/content_gen/orchestrator.py`](../src/cc_deep_research/content_gen/orchestrator.py)
-- CLI: [`src/cc_deep_research/content_gen/cli.py`](../src/cc_deep_research/content_gen/cli.py)
-- models: [`src/cc_deep_research/content_gen/models/`](../src/cc_deep_research/content_gen/models/)
-- brief service: [`src/cc_deep_research/content_gen/brief_service.py`](../src/cc_deep_research/content_gen/brief_service.py)
-- brief migration: [`src/cc_deep_research/content_gen/brief_migration.py`](../src/cc_deep_research/content_gen/brief_migration.py)
-- agents: [`src/cc_deep_research/content_gen/agents/`](../src/cc_deep_research/content_gen/agents/)
-- prompts: [`src/cc_deep_research/content_gen/prompts/`](../src/cc_deep_research/content_gen/prompts/)
-- storage: [`src/cc_deep_research/content_gen/storage/`](../src/cc_deep_research/content_gen/storage/)
-- tests: [`tests/test_content_gen.py`](../tests/test_content_gen.py) and [`tests/test_content_gen_briefs.py`](../tests/test_content_gen_briefs.py)
+- **pipeline orchestration**: [`content_gen/pipeline.py`](../src/cc_deep_research/content_gen/pipeline.py)
+  The main `ContentGenPipeline` coordinates all 14 stages. Normal pipeline execution routes through here.
+- **legacy orchestrator** (quarantined): [`content_gen/legacy_orchestrator.py`](../src/cc_deep_research/content_gen/legacy_orchestrator.py)
+  The original monolithic orchestrator is retained as a backward-compatible shim for `ContentGenOrchestrator`. It is not used for normal pipeline execution. Two helper functions (`_build_claim_ledger`, `_format_research_context`) are still imported by `stages/scripting.py` and should be migrated in a future refactor.
+- **compatibility facade**: [`content_gen/orchestrator.py`](../src/cc_deep_research/content_gen/orchestrator.py)
+  Exports `ContentGenOrchestrator` (deprecated), `ContentGenPipeline`, and `RunConstraints`. New code should use `ContentGenPipeline` directly.
+- **stage orchestrators**: [`content_gen/stages/`](../src/cc_deep_research/content_gen/stages/)
+  Per-stage executors for each pipeline stage (opportunity, backlog, angle, research, scripting, visual, production, packaging, qc, publish, strategy).
+- **agents**: [`content_gen/agents/`](../src/cc_deep_research/content_gen/agents/)
+  LLM-backed agents (OpportunityPlanningAgent, BacklogAgent, AngleAgent, ResearchPackAgent, ScriptingAgent, VisualAgent, ProductionAgent, PackagingAgent, QCAgent, PublishAgent, PerformanceAgent).
+- **API routes**: [`content_gen/router.py`](../src/cc_deep_research/content_gen/router.py)
+  FastAPI router registering all content-gen HTTP endpoints.
+- **CLI**: [`content_gen/cli.py`](../src/cc_deep_research/content_gen/cli.py)
+- **models**: [`content_gen/models/`](../src/cc_deep_research/content_gen/models/)
+- **brief service**: [`content_gen/brief_service.py`](../src/cc_deep_research/content_gen/brief_service.py)
+- **brief migration**: [`content_gen/brief_migration.py`](../src/cc_deep_research/content_gen/brief_migration.py)
+- **prompts**: [`content_gen/prompts/`](../src/cc_deep_research/content_gen/prompts/)
+- **storage**: [`content_gen/storage/`](../src/cc_deep_research/content_gen/storage/)
+- **tests**: [`tests/test_content_gen.py`](../tests/test_content_gen.py) and [`tests/test_content_gen_briefs.py`](../tests/test_content_gen_briefs.py)
+
+### Dashboard API Client Ownership
+
+Dashboard frontend code lives in `dashboard/src/lib/content-gen/`. Each sub-module maps to a backend service:
+
+| Dashboard Module | Backend Owner | Notes |
+|-----------------|---------------|-------|
+| `client.ts` | `content_gen/router.py` | Shared Axios client and error handling |
+| `pipeline.ts` | `content_gen/pipeline.py` | Pipeline execution and stage events |
+| `backlog.ts` | `content_gen/backlog_service.py` | Backlog CRUD via `backlog_api_service.py` |
+| `brief.ts` | `content_gen/brief_service.py` | Managed brief lifecycle via `brief_api_service.py` |
+| `scripts.ts` | `content_gen/storage/scripting_store.py` | Scripting context autosave |
+| `strategy.ts` | `content_gen/storage/strategy_store.py` | Strategy memory persistence |
+| `publish.ts` | `content_gen/storage/publish_queue_store.py` | Publish queue |
+| `backlog-ai.ts` | `content_gen/backlog_service.py` | AI-assisted backlog operations |
+
+Dashboard state hooks live in `dashboard/src/hooks/` (`usePipeline`, `useBacklog`, `useBriefs`, `useStrategy`, `usePublish`, `useScripts`, `useBacklogChat`, `useBacklogTriage`).
 
 If you are changing workflow behavior, update the prompts, parsers, CLI contract, and this document together. They are tightly coupled.
