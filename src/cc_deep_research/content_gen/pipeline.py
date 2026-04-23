@@ -51,7 +51,7 @@ def _resolve_lane_item(ctx: PipelineContext, idea_id: str) -> Any | None:
 
 def _resolve_lane_angle(ctx: PipelineContext, idea_id: str) -> Any | None:
     """Resolve the angle for a lane."""
-    lane = next((l for l in ctx.lane_contexts if l.idea_id == idea_id), None)
+    lane = next((lane_ctx for lane_ctx in ctx.lane_contexts if lane_ctx.idea_id == idea_id), None)
     if lane is None:
         return None
     # P3-T2: Check thesis_artifact first
@@ -136,7 +136,7 @@ def _record_lane_completion(
 
 def _sync_primary_lane(ctx: PipelineContext) -> None:
     primary_lane = next(
-        (l for l in ctx.lane_contexts if l.role == "primary"),
+        (lane_ctx for lane_ctx in ctx.lane_contexts if lane_ctx.role == "primary"),
         ctx.lane_contexts[0] if ctx.lane_contexts else None,
     )
     if primary_lane is None:
@@ -547,7 +547,7 @@ class ContentGenPipeline:
                 meta.claim_count = len(ctx.argument_map.safe_claims)
                 meta.unsafe_claim_count = len(ctx.argument_map.unsafe_claims)
                 meta.beats_count = len(ctx.argument_map.beat_claim_plan)
-            primary_lane = next((l for l in ctx.lane_contexts if l.role == "primary"), None)
+            primary_lane = next((lane_ctx for lane_ctx in ctx.lane_contexts if lane_ctx.role == "primary"), None)
             if primary_lane and primary_lane.fact_risk_gate:
                 meta.fact_risk_decision = primary_lane.fact_risk_gate.decision.value
                 meta.progressive_issue_count = len(primary_lane.progressive_qc_issues)
@@ -573,7 +573,7 @@ class ContentGenPipeline:
                     meta.proof_count = len(ctx.scripting.argument_map.proof_anchors)
                     meta.claim_count = len(ctx.scripting.argument_map.safe_claims)
                     meta.beats_count = len(ctx.scripting.argument_map.beat_claim_plan)
-            primary_lane = next((l for l in ctx.lane_contexts if l.role == "primary"), None)
+            primary_lane = next((lane_ctx for lane_ctx in ctx.lane_contexts if lane_ctx.role == "primary"), None)
             if primary_lane:
                 meta.progressive_issue_count = len(primary_lane.progressive_qc_issues)
                 meta.checkpoint_count = len(primary_lane.progressive_qc_checkpoints)
@@ -591,7 +591,7 @@ class ContentGenPipeline:
                 meta.selected_idea_id = ctx.production_brief.idea_id or _resolve_selected_idea_id(ctx)
                 meta.is_degraded = ctx.production_brief.is_degraded
                 meta.degradation_reason = ctx.production_brief.degradation_reason
-            primary_lane = next((l for l in ctx.lane_contexts if l.role == "primary"), None)
+            primary_lane = next((lane_ctx for lane_ctx in ctx.lane_contexts if lane_ctx.role == "primary"), None)
             if primary_lane:
                 meta.progressive_issue_count = len(primary_lane.progressive_qc_issues)
                 meta.checkpoint_count = len(primary_lane.progressive_qc_checkpoints)
@@ -604,7 +604,7 @@ class ContentGenPipeline:
         elif stage == "human_qc" and ctx.qc_gate:
             from cc_deep_research.content_gen.models import ReleaseState
             meta.approved = ctx.qc_gate.release_state in (ReleaseState.APPROVED, ReleaseState.APPROVED_WITH_KNOWN_RISKS)
-            primary_lane = next((l for l in ctx.lane_contexts if l.role == "primary"), None)
+            primary_lane = next((lane_ctx for lane_ctx in ctx.lane_contexts if lane_ctx.role == "primary"), None)
             if primary_lane:
                 meta.progressive_issue_count = len(primary_lane.progressive_qc_issues)
                 meta.checkpoint_count = len(primary_lane.progressive_qc_checkpoints)
