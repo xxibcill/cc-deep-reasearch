@@ -8,6 +8,14 @@ History before `0.1.0` is summarized from the repository state captured on 2026-
 
 <!-- Add Added/Changed/Fixed entries here before cutting a release. -->
 
+#### Refactor - Phase 01: Content-Gen Pipeline Boundary (5 tasks)
+
+- Extracted `ContentGenPipeline` as the primary pipeline coordinator with explicit `run_stage()` contract and stage sequencing ownership
+- Migrated stage dispatch from `legacy_orchestrator.py` into `ContentGenPipeline` via 13 stage orchestrators in `stages/` directory
+- Ported stage gates (prerequisites, brief execution gate), trace creation (`PipelineStageTrace`), and phase policy handling into the new pipeline boundary
+- Added pipeline boundary tests covering full run, cancellation, resume, seeded backlog starts, and skip/block behavior
+- Deprecated `ContentGenOrchestrator` path; normal execution now routes through `ContentGenPipeline` with backwards-compatible stub for legacy imports
+
 #### Phase 01 - Strategy Schema And Foundations (4 tasks)
 
 - Expanded `StrategyMemory` with structured `ContentPillar`, `PlatformRule`, `CTAStrategy`, `ClaimToProofRule` models and new fields (`positioning`, `business_objective`, `allowed_audience_universe`, `forbidden_topics`, `cta_strategy`, `claim_to_proof_rules`, `platform_rules`)
