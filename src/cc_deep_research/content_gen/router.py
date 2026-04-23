@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, model_validator
 
 from cc_deep_research.config import load_config
+from cc_deep_research.content_gen._serialization import model_list_to_json, model_to_json
 from cc_deep_research.content_gen.agents.backlog_chat import (
     BacklogChatAgent,
     apply_operations,
@@ -703,7 +704,7 @@ def register_content_gen_routes(
             )
         except BriefValidationError as exc:
             return JSONResponse(status_code=400, content={"error": exc.message})
-        return JSONResponse(content=json.loads(managed.model_dump_json()))
+        return JSONResponse(content=model_to_json(managed))
 
     @app.get("/api/content-gen/briefs/{brief_id}")
     async def get_brief(brief_id: str) -> JSONResponse:
@@ -741,7 +742,7 @@ def register_content_gen_routes(
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
         except BriefValidationError as exc:
             return JSONResponse(status_code=400, content={"error": exc.message})
-        return JSONResponse(content=json.loads(updated.model_dump_json()))
+        return JSONResponse(content=model_to_json(updated))
 
     @app.get("/api/content-gen/briefs/{brief_id}/revisions")
     async def list_brief_revisions(brief_id: str, limit: int = 50) -> JSONResponse:
@@ -751,7 +752,7 @@ def register_content_gen_routes(
         except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
         return JSONResponse(content={
-            "items": [json.loads(r.model_dump_json()) for r in revisions],
+            "items": model_list_to_json(revisions),
             "count": len(revisions),
         })
 
@@ -761,7 +762,7 @@ def register_content_gen_routes(
         revision = brief_api_service.get_revision(revision_id)
         if revision is None or revision.brief_id != brief_id:
             return JSONResponse(status_code=404, content={"error": "Revision not found"})
-        return JSONResponse(content=json.loads(revision.model_dump_json()))
+        return JSONResponse(content=model_to_json(revision))
 
     @app.post("/api/content-gen/briefs/{brief_id}/revisions")
     async def save_brief_revision(brief_id: str, request: SaveRevisionRequest) -> JSONResponse:
@@ -791,7 +792,7 @@ def register_content_gen_routes(
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
         except BriefValidationError as exc:
             return JSONResponse(status_code=400, content={"error": exc.message})
-        return JSONResponse(content=json.loads(revision.model_dump_json()), status_code=201)
+        return JSONResponse(content=model_to_json(revision), status_code=201)
 
     @app.post("/api/content-gen/briefs/{brief_id}/apply-revision")
     async def apply_revision(brief_id: str, request: ApplyRevisionRequest) -> JSONResponse:
@@ -813,7 +814,7 @@ def register_content_gen_routes(
             )
         except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
-        return JSONResponse(content=json.loads(updated.model_dump_json()))
+        return JSONResponse(content=model_to_json(updated))
 
     @app.post("/api/content-gen/briefs/{brief_id}/approve")
     async def approve_brief(brief_id: str, expected_updated_at: str | None = None) -> JSONResponse:
@@ -831,7 +832,7 @@ def register_content_gen_routes(
             )
         except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
-        return JSONResponse(content=json.loads(updated.model_dump_json()))
+        return JSONResponse(content=model_to_json(updated))
 
     @app.post("/api/content-gen/briefs/{brief_id}/archive")
     async def archive_brief(brief_id: str, expected_updated_at: str | None = None) -> JSONResponse:
@@ -849,7 +850,7 @@ def register_content_gen_routes(
             )
         except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
-        return JSONResponse(content=json.loads(updated.model_dump_json()))
+        return JSONResponse(content=model_to_json(updated))
 
     @app.post("/api/content-gen/briefs/{brief_id}/supersede")
     async def supersede_brief(brief_id: str, expected_updated_at: str | None = None) -> JSONResponse:
@@ -867,7 +868,7 @@ def register_content_gen_routes(
             )
         except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
-        return JSONResponse(content=json.loads(updated.model_dump_json()))
+        return JSONResponse(content=model_to_json(updated))
 
     @app.post("/api/content-gen/briefs/{brief_id}/revert-to-draft")
     async def revert_brief_to_draft(brief_id: str, expected_updated_at: str | None = None) -> JSONResponse:
@@ -885,7 +886,7 @@ def register_content_gen_routes(
             )
         except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
-        return JSONResponse(content=json.loads(updated.model_dump_json()))
+        return JSONResponse(content=model_to_json(updated))
 
     @app.post("/api/content-gen/briefs/{brief_id}/clone")
     async def clone_brief(brief_id: str, request: CloneBriefRequest) -> JSONResponse:
@@ -898,7 +899,7 @@ def register_content_gen_routes(
             cloned = brief_api_service.clone_brief(brief_id, new_title=request.new_title)
         except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
-        return JSONResponse(content=json.loads(cloned.model_dump_json()), status_code=201)
+        return JSONResponse(content=model_to_json(cloned), status_code=201)
 
     @app.get("/api/content-gen/briefs/{brief_id}/audit")
     async def get_brief_audit_history(
@@ -965,7 +966,7 @@ def register_content_gen_routes(
             mode=request.mode,
         )
 
-        return JSONResponse(content=json.loads(response.model_dump_json()))
+        return JSONResponse(content=model_to_json(response))
 
     @app.post("/api/content-gen/briefs/{brief_id}/assistant/apply")
     async def brief_assistant_apply(brief_id: str, request: BriefAssistantApplyRequest) -> JSONResponse:
@@ -1054,7 +1055,7 @@ def register_content_gen_routes(
             status_code=201,
             content={
                 "applied": applied_count,
-                "revision": json.loads(revision.model_dump_json()) if revision else None,
+                "revision": model_to_json(revision) if revision else None,
                 "errors": errors,
             },
         )
@@ -1086,7 +1087,7 @@ def register_content_gen_routes(
 
         result = await generate_backlog_from_brief(revision)
 
-        return JSONResponse(content=json.loads(result.model_dump_json()))
+        return JSONResponse(content=model_to_json(result))
 
     @app.post("/api/content-gen/briefs/{brief_id}/apply-backlog")
     async def apply_backlog_from_brief(
@@ -1163,7 +1164,7 @@ def register_content_gen_routes(
         return JSONResponse(
             content={
                 "applied": applied_count,
-                "items": [json.loads(item.model_dump_json()) for item in created_items],
+                "items": model_list_to_json(created_items),
                 "errors": errors,
             },
         )
@@ -1195,7 +1196,7 @@ def register_content_gen_routes(
             )
         except BriefNotFoundError:
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
-        return JSONResponse(content=json.loads(branched.model_dump_json()), status_code=201)
+        return JSONResponse(content=model_to_json(branched), status_code=201)
 
     @app.get("/api/content-gen/briefs/{brief_id}/siblings")
     async def list_sibling_briefs(brief_id: str) -> JSONResponse:
@@ -1210,7 +1211,7 @@ def register_content_gen_routes(
             return JSONResponse(status_code=404, content={"error": "Brief not found"})
 
         return JSONResponse(content={
-            "items": [json.loads(b.model_dump_json()) for b in siblings],
+            "items": model_list_to_json(siblings),
             "count": len(siblings),
         })
 
@@ -1228,10 +1229,10 @@ def register_content_gen_routes(
             return JSONResponse(status_code=404, content={"error": "One or both briefs not found"})
 
         return JSONResponse(content={
-            "brief_a": json.loads(brief_a.model_dump_json()),
-            "brief_b": json.loads(brief_b.model_dump_json()),
-            "revision_a": json.loads(revision_a.model_dump_json()) if revision_a else None,
-            "revision_b": json.loads(revision_b.model_dump_json()) if revision_b else None,
+            "brief_a": model_to_json(brief_a),
+            "brief_b": model_to_json(brief_b),
+            "revision_a": model_to_json(revision_a) if revision_a else None,
+            "revision_b": model_to_json(revision_b) if revision_b else None,
         })
 
     # ------------------------------------------------------------------
@@ -1260,7 +1261,7 @@ def register_content_gen_routes(
             mode=request.mode,
         )
 
-        return JSONResponse(content=json.loads(response.model_dump_json()))
+        return JSONResponse(content=model_to_json(response))
 
     @app.post("/api/content-gen/backlog-chat/apply")
     async def backlog_chat_apply(request: BacklogChatApplyRequest) -> JSONResponse:
@@ -1286,7 +1287,7 @@ def register_content_gen_routes(
         return JSONResponse(
             content={
                 "applied": applied,
-                "items": [json.loads(item.model_dump_json()) for item in items],
+                "items": model_list_to_json(items),
                 "errors": errors,
             }
         )
@@ -1313,7 +1314,7 @@ def register_content_gen_routes(
             strategy=request.strategy,
         )
 
-        return JSONResponse(content=json.loads(response.model_dump_json()))
+        return JSONResponse(content=model_to_json(response))
 
     @app.post("/api/content-gen/backlog-ai/triage/apply")
     async def backlog_triage_apply(request: TriageApplyRequest) -> JSONResponse:
@@ -1339,7 +1340,7 @@ def register_content_gen_routes(
         return JSONResponse(
             content={
                 "applied": applied,
-                "items": [json.loads(item.model_dump_json()) for item in items],
+                "items": model_list_to_json(items),
                 "errors": errors,
             }
         )
@@ -1368,7 +1369,7 @@ def register_content_gen_routes(
             strategy_context=request.strategy,
         )
 
-        return JSONResponse(content=json.loads(response.model_dump_json()))
+        return JSONResponse(content=model_to_json(response))
 
     @app.post("/api/content-gen/backlog-ai/next-action/batch")
     async def get_next_action_batch(
@@ -1394,7 +1395,7 @@ def register_content_gen_routes(
                     item,
                     strategy_context=request.strategy,
                 )
-                recommendations.append(json.loads(response.model_dump_json()))
+                recommendations.append(model_to_json(response))
             except Exception as exc:
                 warnings.append(f"{item.idea_id}: {exc}")
 
@@ -1425,7 +1426,7 @@ def register_content_gen_routes(
             strategy_context=request.strategy,
         )
 
-        return JSONResponse(content=json.loads(response.model_dump_json()))
+        return JSONResponse(content=model_to_json(response))
 
     # ------------------------------------------------------------------
     # Strategy
@@ -1517,7 +1518,7 @@ def register_content_gen_routes(
             request.learning_ids,
             operator_approved=request.operator_approved,
         )
-        return JSONResponse(content=json.loads(guidance.model_dump_json()))
+        return JSONResponse(content=model_to_json(guidance))
 
     @app.get("/api/content-gen/rule-versions")
     async def list_rule_versions(kind: str | None = None) -> JSONResponse:
@@ -1676,7 +1677,7 @@ def register_content_gen_routes(
                 ),
             }
             if job.pipeline_context is not None:
-                initial["context"] = json.loads(job.pipeline_context.model_dump_json())
+                initial["context"] = model_to_json(job.pipeline_context)
             await connection.send_json(initial)
 
         try:

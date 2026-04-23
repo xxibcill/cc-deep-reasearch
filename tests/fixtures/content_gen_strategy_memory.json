@@ -1,0 +1,26 @@
+{
+  "theme": "pricing anchors for enterprise SaaS",
+  "niche": "B2B SaaS growth",
+  "pillars": ["pricing strategy", "sales messaging"],
+  "audience_segments": ["SaaS founders", "growth marketers"],
+  "proof_standards": ["use concrete examples", "cite real pricing pages"],
+  "differentiation_gaps": [
+    "competitors rarely explain why the premium tier exists",
+    "teams default to discounting instead of anchor reframing"
+  ],
+  "common_objections": [
+    "buyers just want the cheapest option",
+    "our enterprise buyers are different"
+  ],
+  "voice_guide": "direct and diagnostic — avoid hype, be specific, use concrete examples",
+  "hook_library": [
+    "If buyers jump to cheapest, your anchor tier is broken",
+    "Your enterprise tier may only exist to make pro look cheap"
+  ],
+  "content_type_examples": ["pricing teardown", "framework explainer", "contrarian breakdown"],
+  "content_type_profiles": {
+    "teardown": "face-camera with pricing page overlays, sharp diagnostic tone",
+    "framework": "voice-over with screen recorded pricing walkthrough",
+    "contrarian": "direct face-camera with bold opening claim"
+  }
+}

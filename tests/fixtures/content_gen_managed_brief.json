@@ -1,0 +1,58 @@
+{
+  "brief_id": "mbrief-fixture-001",
+  "title": "Pricing anchors for enterprise SaaS",
+  "lifecycle_state": "draft",
+  "current_revision_id": "rev-fixture-001",
+  "latest_revision_id": "rev-fixture-001",
+  "revision_count": 1,
+  "provenance": "generated",
+  "created_at": "2026-01-15T10:00:00Z",
+  "updated_at": "2026-01-15T10:00:00Z",
+  "revision_history": ["rev-fixture-001"],
+  "source_brief_id": "",
+  "branch_reason": "",
+  "operating_policies": [],
+  "override_history": [],
+  "current_revision": {
+    "revision_id": "rev-fixture-001",
+    "brief_id": "mbrief-fixture-001",
+    "version": 1,
+    "theme": "Pricing anchors for enterprise SaaS",
+    "goal": "Turn a broad pricing topic into a concrete short-form breakdown",
+    "primary_audience_segment": "SaaS founders",
+    "secondary_audience_segments": ["growth marketers"],
+    "problem_statements": [
+      "buyers do not understand why the premium tier exists"
+    ],
+    "content_objective": "Show how anchor tiers reduce price shock",
+    "proof_requirements": [
+      "real pricing page examples",
+      "clear before/after framing"
+    ],
+    "platform_constraints": ["deliver in under 45 seconds"],
+    "risk_constraints": ["avoid universal pricing promises"],
+    "freshness_rationale": "SaaS teams are revisiting pricing in a tighter market",
+    "sub_angles": [
+      "bad-better-best framing",
+      "enterprise decoy tier mistakes"
+    ],
+    "research_hypotheses": [
+      "premium anchor tiers increase perceived plan value"
+    ],
+    "success_criteria": [
+      "viewer can explain why the middle plan feels safer"
+    ],
+    "expert_take": "Anchor tiers work best when the middle tier genuinely solves the customer's primary problem",
+    "non_obvious_claims_to_test": [
+      "Premium decoys increase perceived value of middle tier"
+    ],
+    "genericity_risks": [
+      "Generic framing without proof weakens the argument"
+    ],
+    "provenance": "generated",
+    "is_generated": true,
+    "revision_notes": "Initial fixture revision",
+    "source_pipeline_id": "p4-fixture-001",
+    "created_at": "2026-01-15T10:00:00Z"
+  }
+}
