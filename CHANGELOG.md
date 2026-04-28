@@ -30,6 +30,38 @@ History before `0.1.0` is summarized from the repository state captured on 2026-
 - Extracted remaining route-facing services: `StrategyApiService`, `ScriptingApiService`, `MaintenanceApiService`, `PublishQueueAuditService` — each owns HTTP composition and error classification
 - Content-gen route tests focused on HTTP contracts; service tests cover domain decisions; all 1170 tests pass
 
+#### Refactor - Phase 03: Core Dashboard API Route Split (5 tasks)
+
+- Extracted research run routes to `web_server_routes/research_run_routes.py` (start/status/stop); `web_server.py` reduced from 2526 lines to 265 lines
+- Extracted session routes to `web_server_routes/session_routes.py` (list/detail/delete/archive/restore/events/report/bundle/artifacts/checkpoints/resume/rerun-step)
+- Extracted search cache, benchmark, theme, and analytics routes to `web_server_routes/misc_routes.py`
+- Extracted WebSocket connection handling to `web_server_routes/websocket_adapter.py` preserving EventRouter behavior
+- Split monolithic web server route tests into domain files for content-gen, research-run, session, config, and misc routes; app/runtime smoke tests remain in a small `test_web_server.py`
+
+#### Refactor - Phase 04: Model And Storage Contract Hardening (5 tasks)
+
+- Added JSON contract fixtures for PipelineContext, BacklogItem, ManagedBrief, ScoringOutput, ScriptingResult, StrategyMemory in `tests/fixtures/`
+- Added storage migration contract tests in `tests/test_content_gen_storage_migration.py` covering YAML-to-SQLite migration, legacy field normalization (idea→title, potential_hook→hook), missing/partial data recovery
+- Added `_serialization.py` with `model_to_json()` and `model_list_to_json()` helpers; replaced repeated `json.loads(model_dump_json())` in router.py
+- Narrowed model imports at route-facing service and pipeline boundaries while keeping public compatibility re-exports available
+- Dashboard TypeScript types aligned with backend contract fixtures; Phase 04 section tags added to content-gen types
+
+#### Refactor - Phase 05: Dashboard State And Client Split (5 tasks)
+
+- Split content-gen API client into feature modules: `backlog.ts`, `backlog-ai.ts`, `brief.ts`, `client.ts`, `pipeline.ts`, `publish.ts`, `scripts.ts`, `strategy.ts` in `dashboard/src/lib/content-gen/`
+- Split `useContentGen` store into feature hooks: `useBacklog.ts`, `useBriefs.ts`, `usePipeline.ts`, `usePublish.ts`, `useScripts.ts`, `useStrategy.ts`; `useContentGen` remains as backwards-compatible facade
+- Extracted `useBacklogTriage.ts` and `useBacklogChat.ts` from large components; UI components now presentational
+- Added Vitest unit tests for store reducers and API error handling in `useBacklog.test.ts` and `client.test.ts`
+- Dashboard regression suite: build passes, lint passes, Playwright e2e tests pass
+
+#### Refactor - Phase 06: Quality Gates And Long-Term Cleanup (5 tasks)
+
+- Enabled strict mypy for 11 refactored module groups via `[[tool.mypy.overrides]]` in pyproject.toml; all mypy checks pass on enabled modules
+- Tightened ruff lint in new code: auto-fixed 25 unused imports in web_server and web_server_routes; all ruff checks pass
+- Normal pipeline execution now instantiates `ContentGenPipeline`; scripting claim-trace helpers moved out of `legacy_orchestrator.py` into `claim_trace.py`, leaving the legacy module as a compatibility path
+- Updated `content-generation.md` Source Map section with backend and dashboard ownership tables describing pipeline → stages → router → services → stores and client.ts → router.py boundaries
+- Added `docs/REFACTOR_REGRESSION_CHECKLIST.md` (99 lines) with backend checks, dashboard checks, contract fixture rules, and boundary-specific verification for content-gen pipeline, API routes, orchestration, models/storage, and dashboard
+
 #### Phase 01 - Strategy Schema And Foundations (4 tasks)
 
 - Expanded `StrategyMemory` with structured `ContentPillar`, `PlatformRule`, `CTAStrategy`, `ClaimToProofRule` models and new fields (`positioning`, `business_objective`, `allowed_audience_universe`, `forbidden_topics`, `cta_strategy`, `claim_to_proof_rules`, `platform_rules`)
