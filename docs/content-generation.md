@@ -1054,7 +1054,7 @@ Primary implementation files:
 - **pipeline orchestration**: [`content_gen/pipeline.py`](../src/cc_deep_research/content_gen/pipeline.py)
   The main `ContentGenPipeline` coordinates all 14 stages. Normal pipeline execution routes through here.
 - **legacy orchestrator** (quarantined): [`content_gen/legacy_orchestrator.py`](../src/cc_deep_research/content_gen/legacy_orchestrator.py)
-  The original monolithic orchestrator is retained as a backward-compatible shim for `ContentGenOrchestrator`. It is not used for normal pipeline execution. Two helper functions (`_build_claim_ledger`, `_format_research_context`) are still imported by `stages/scripting.py` and should be migrated in a future refactor.
+  The original monolithic orchestrator is retained behind the deprecated `ContentGenOrchestrator` import path for compatibility. It is not used for normal pipeline execution.
 - **compatibility facade**: [`content_gen/orchestrator.py`](../src/cc_deep_research/content_gen/orchestrator.py)
   Exports `ContentGenOrchestrator` (deprecated), `ContentGenPipeline`, and `RunConstraints`. New code should use `ContentGenPipeline` directly.
 - **stage orchestrators**: [`content_gen/stages/`](../src/cc_deep_research/content_gen/stages/)

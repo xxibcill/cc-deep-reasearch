@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.config import Config, load_config
 from cc_deep_research.content_gen.backlog_service import BacklogService
-from cc_deep_research.content_gen.models import BacklogItem
+from cc_deep_research.content_gen.models.backlog import BacklogItem
 from cc_deep_research.content_gen.pipeline_run_service import DuplicateActiveItemError
 
 if TYPE_CHECKING:

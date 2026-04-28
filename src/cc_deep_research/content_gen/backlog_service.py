@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from cc_deep_research.content_gen.models import BacklogItem, BacklogOutput, ScoringOutput
+from cc_deep_research.content_gen.models.backlog import BacklogItem, BacklogOutput, ScoringOutput
 from cc_deep_research.content_gen.storage import (
     AuditActor,
     AuditEventType,

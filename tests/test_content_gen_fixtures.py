@@ -6,10 +6,6 @@ into the expected Pydantic model types.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
 from tests.helpers.fixture_loader import (
     load_content_gen_backlog_item,
     load_content_gen_managed_brief,

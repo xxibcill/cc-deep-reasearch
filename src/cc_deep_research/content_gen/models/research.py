@@ -49,8 +49,16 @@ class ClaimTraceLedger(BaseModel):
 
     idea_id: str = ""
     entries: list[ClaimTraceEntry] = Field(default_factory=list)
+    script_claims: list[ScriptClaimStatement] = Field(default_factory=list)
     unverified_claims: list[str] = Field(default_factory=list)
     weak_claims: list[str] = Field(default_factory=list)
+    introduced_late_claims: list[str] = Field(default_factory=list)
+    dropped_claims: list[str] = Field(default_factory=list)
+    unsupported_script_claims: list[str] = Field(default_factory=list)
+
+    def get_claim(self, claim_id: str) -> ClaimTraceEntry | None:
+        """Return a ledger entry by claim id."""
+        return next((entry for entry in self.entries if entry.claim_id == claim_id), None)
 
     def supported_claims(self) -> list[ClaimTraceEntry]:
         """Return claims with SUPPORTED status."""

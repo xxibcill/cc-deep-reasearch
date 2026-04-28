@@ -12,13 +12,13 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from cc_deep_research.content_gen.models import (
+from cc_deep_research.content_gen.models.angle import StrategyMemory
+from cc_deep_research.content_gen.models.brief import StrategyReadinessResult
+from cc_deep_research.content_gen.models.learning import RuleVersion
+from cc_deep_research.content_gen.models.shared import (
     LearningCategory,
     LearningDurability,
     RuleLifecycleStatus,
-    RuleVersion,
-    StrategyMemory,
-    StrategyReadinessResult,
 )
 from cc_deep_research.content_gen.storage import PerformanceLearningStore
 from cc_deep_research.content_gen.storage.strategy_store import StrategyStore

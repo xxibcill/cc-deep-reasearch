@@ -394,7 +394,7 @@ class TestRadarWorkflowLaunchAPI:
 
         monkeypatch.setattr("cc_deep_research.config.load_config", lambda: Config())
         monkeypatch.setattr(
-            "cc_deep_research.content_gen.orchestrator.ContentGenOrchestrator",
+            "cc_deep_research.content_gen.pipeline.ContentGenPipeline",
             FakeOrchestrator,
         )
 

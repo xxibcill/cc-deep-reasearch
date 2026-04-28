@@ -13,18 +13,18 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.config import Config
-from cc_deep_research.content_gen.models import (
+from cc_deep_research.content_gen.models.brief import BriefExecutionGate
+from cc_deep_research.content_gen.models.pipeline import (
     PIPELINE_STAGE_LABELS,
     PIPELINE_STAGES,
-    BriefExecutionGate,
-    BriefLifecycleState,
-    FactRiskDecision,
     PipelineContext,
     PipelineStageTrace,
     StageTraceMetadata,
     get_phase_for_stage,
     get_phase_policy,
 )
+from cc_deep_research.content_gen.models.production import RunConstraints
+from cc_deep_research.content_gen.models.shared import BriefLifecycleState, FactRiskDecision
 
 if TYPE_CHECKING:
     pass
@@ -56,7 +56,7 @@ def _resolve_lane_angle(ctx: PipelineContext, idea_id: str) -> Any | None:
         return None
     # P3-T2: Check thesis_artifact first
     if lane.thesis_artifact is not None:
-        from cc_deep_research.content_gen.models import AngleOption
+        from cc_deep_research.content_gen.models.angle import AngleOption
         th = lane.thesis_artifact
         return AngleOption(
             angle_id=th.angle_id,
@@ -96,7 +96,7 @@ def _ensure_lane_context(ctx: PipelineContext, idea_id: str, role: str, status: 
         lane.role = role
         lane.status = status
         return lane
-    from cc_deep_research.content_gen.models import PipelineLaneContext
+    from cc_deep_research.content_gen.models.pipeline import PipelineLaneContext
     lane = PipelineLaneContext(idea_id=idea_id, role=role, status=status)
     ctx.lane_contexts.append(lane)
     return lane
@@ -110,7 +110,7 @@ def _lane_candidates(ctx: PipelineContext) -> list[Any]:
     selected_idea_id = _resolve_selected_idea_id(ctx)
     if not selected_idea_id:
         return []
-    from cc_deep_research.content_gen.models import PipelineCandidate
+    from cc_deep_research.content_gen.models.backlog import PipelineCandidate
     return [PipelineCandidate(idea_id=selected_idea_id, role="primary", status="selected")]
 
 
@@ -160,13 +160,13 @@ def _use_combined_execution_brief(ctx: PipelineContext) -> bool:
     """Check if the current content type should use combined execution brief."""
     if ctx.run_constraints is None or not ctx.run_constraints.content_type:
         return False
-    from cc_deep_research.content_gen.models import get_content_type_profile
+    from cc_deep_research.content_gen.models.production import get_content_type_profile
     profile = get_content_type_profile(ctx.run_constraints.content_type)
     return profile.use_combined_execution_brief
 
 
 def _lane_publish_prereqs_met(ctx: PipelineContext) -> bool:
-    from cc_deep_research.content_gen.models import ReleaseState
+    from cc_deep_research.content_gen.models.shared import ReleaseState
     def _is_approved(lane: Any) -> bool:
         qc = lane.qc_gate
         if qc is None:
@@ -256,6 +256,89 @@ class ContentGenPipeline:
         if orchestrator_class is None:
             raise ValueError(f"Unknown stage: {name}")
         return orchestrator_class(self._config)
+
+    async def run_full_pipeline(
+        self,
+        theme: str,
+        *,
+        from_stage: int = 0,
+        to_stage: int | None = None,
+        initial_context: PipelineContext | None = None,
+        bypass_ideation: bool = False,
+        progress_callback: Callable[[int, str], None] | None = None,
+        stage_completed_callback: Callable[[int, str, str, PipelineContext], None] | None = None,
+        brief_id: str | None = None,
+        brief_snapshot: Any | None = None,
+        run_constraints: RunConstraints | None = None,
+    ) -> PipelineContext:
+        """Run a pipeline through the stage coordinator without legacy dispatch."""
+        del brief_id, brief_snapshot
+        ctx = self._initial_context(theme, initial_context, run_constraints)
+        final_stage = to_stage if to_stage is not None else len(PIPELINE_STAGES) - 1
+
+        for stage_index in self._stage_indices(from_stage, final_stage, bypass_ideation):
+            ctx = await self.run_stage(
+                stage_index,
+                ctx,
+                progress_callback=progress_callback,
+                stage_completed_callback=stage_completed_callback,
+            )
+        return ctx
+
+    def validate_resume_context(
+        self,
+        *,
+        from_stage: int,
+        ctx: PipelineContext,
+        bypass_ideation: bool = False,
+    ) -> str | None:
+        """Return a validation message when a saved context cannot be resumed."""
+        del ctx
+        if from_stage < 0 or from_stage >= len(PIPELINE_STAGES):
+            return f"from_stage must be between 0 and {len(PIPELINE_STAGES) - 1}."
+        if bypass_ideation and 1 <= from_stage <= 3:
+            return (
+                "--idea bypasses stages 1-3; use --from-stage 0 to reload strategy "
+                "or resume from stage 4 or later."
+            )
+        return None
+
+    def _initial_context(
+        self,
+        theme: str,
+        initial_context: PipelineContext | None,
+        run_constraints: RunConstraints | None,
+    ) -> PipelineContext:
+        if initial_context is None:
+            ctx = PipelineContext(theme=theme, created_at=datetime.now(tz=UTC).isoformat())
+        else:
+            ctx = initial_context.model_copy(deep=True)
+            if theme and not ctx.theme:
+                ctx.theme = theme
+            if not ctx.created_at:
+                ctx.created_at = datetime.now(tz=UTC).isoformat()
+
+        if run_constraints is not None:
+            ctx.run_constraints = run_constraints
+        elif ctx.run_constraints is None:
+            ctx.run_constraints = RunConstraints()
+        return ctx
+
+    def _stage_indices(
+        self,
+        from_stage: int,
+        to_stage: int,
+        bypass_ideation: bool,
+    ) -> list[int]:
+        final_stage = min(to_stage, len(PIPELINE_STAGES) - 1)
+        if not bypass_ideation:
+            return list(range(from_stage, final_stage + 1))
+
+        indices: list[int] = []
+        if from_stage == 0 and final_stage >= 0:
+            indices.append(0)
+        indices.extend(range(max(from_stage, 4), final_stage + 1))
+        return indices
 
     def _check_prerequisites(self, idx: int, ctx: PipelineContext) -> tuple[bool, str]:
         """Check if prerequisites for a stage are met. Returns (met, reason_if_not)."""
@@ -387,7 +470,7 @@ class ContentGenPipeline:
         self,
         brief_state: BriefLifecycleState = BriefLifecycleState.DRAFT,
     ) -> BriefExecutionGate:
-        from cc_deep_research.content_gen.models import BriefExecutionPolicyMode
+        from cc_deep_research.content_gen.models.shared import BriefExecutionPolicyMode
         policy_mode = getattr(self._config.content_gen, "brief_gate_policy", None) or BriefExecutionPolicyMode.PERMISSIVE
         gate = BriefExecutionGate(policy_mode=policy_mode, brief_state_at_start=brief_state)
         can_proceed, message = gate.check_gate(brief_state, "plan_opportunity")
@@ -602,7 +685,7 @@ class ContentGenPipeline:
             elif ctx.publish_item:
                 meta.selected_idea_id = ctx.publish_item.idea_id or _resolve_selected_idea_id(ctx)
         elif stage == "human_qc" and ctx.qc_gate:
-            from cc_deep_research.content_gen.models import ReleaseState
+            from cc_deep_research.content_gen.models.shared import ReleaseState
             meta.approved = ctx.qc_gate.release_state in (ReleaseState.APPROVED, ReleaseState.APPROVED_WITH_KNOWN_RISKS)
             primary_lane = next((lane_ctx for lane_ctx in ctx.lane_contexts if lane_ctx.role == "primary"), None)
             if primary_lane:
@@ -682,7 +765,7 @@ class ContentGenPipeline:
         if stage == "build_argument_map" and ctx.argument_map:
             return ctx.argument_map.thesis
         if stage == "human_qc" and ctx.qc_gate:
-            from cc_deep_research.content_gen.models import ReleaseState
+            from cc_deep_research.content_gen.models.shared import ReleaseState
             rs = ctx.qc_gate.release_state
             if rs == ReleaseState.APPROVED:
                 return "Human QC approved the package for publish."

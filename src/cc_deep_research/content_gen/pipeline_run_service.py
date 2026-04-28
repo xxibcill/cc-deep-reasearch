@@ -21,18 +21,18 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.config import Config, load_config
-from cc_deep_research.content_gen.models import (
+from cc_deep_research.content_gen.models.backlog import BacklogItem
+from cc_deep_research.content_gen.models.pipeline import (
     PIPELINE_STAGE_LABELS,
     PIPELINE_STAGES,
-    BacklogItem,
     PipelineContext,
-    RunConstraints,
 )
+from cc_deep_research.content_gen.models.production import RunConstraints
 from cc_deep_research.content_gen.progress import PipelineRunJob, PipelineRunJobRegistry
 from cc_deep_research.event_router import EventRouter
 
 if TYPE_CHECKING:
-    from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
+    from cc_deep_research.content_gen.pipeline import ContentGenPipeline
 
 
 logger = logging.getLogger(__name__)
@@ -111,23 +111,23 @@ class PipelineRunService:
         job_registry: Registry for tracking pipeline jobs.
         event_router: Router for publishing progress events.
         pipeline_factory: Factory for creating pipeline orchestrators.
-            If None, creates ContentGenOrchestrator instances.
+            If None, creates ContentGenPipeline instances.
     """
 
     def __init__(
         self,
         job_registry: PipelineRunJobRegistry,
         event_router: EventRouter,
-        pipeline_factory: Callable[[Config], ContentGenOrchestrator] | None = None,
+        pipeline_factory: Callable[[Config], ContentGenPipeline] | None = None,
     ) -> None:
         self._job_registry = job_registry
         self._event_router = event_router
         self._pipeline_factory = pipeline_factory or self._default_pipeline_factory
 
-    def _default_pipeline_factory(self, config: Config) -> ContentGenOrchestrator:
-        from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
+    def _default_pipeline_factory(self, config: Config) -> ContentGenPipeline:
+        from cc_deep_research.content_gen.pipeline import ContentGenPipeline
 
-        return ContentGenOrchestrator(config)
+        return ContentGenPipeline(config)
 
     # -------------------------------------------------------------------------
     # Public API
@@ -424,7 +424,7 @@ class PipelineRunService:
         job: PipelineRunJob,
         config: Config,
         initial_context: PipelineContext,
-        orch: ContentGenOrchestrator,
+        orch: ContentGenPipeline,
     ) -> None:
         """Start the asyncio task for a resumed pipeline run."""
 
@@ -652,7 +652,7 @@ class PipelineRunService:
         The context is seeded so that the orchestrator can start at generate_angles
         (stage 4) without needing upstream scoring or backlog regeneration.
         """
-        from cc_deep_research.content_gen.models import (
+        from cc_deep_research.content_gen.models.backlog import (
             BacklogOutput,
             PipelineCandidate,
         )

@@ -27,12 +27,10 @@ from cc_deep_research.content_gen.agents.backlog_triage import (
 )
 from cc_deep_research.content_gen.agents.execution_brief import ExecutionBriefAgent
 from cc_deep_research.content_gen.agents.next_action import NextActionAgent
-from cc_deep_research.content_gen.models import (
-    BacklogItem,
-    OpportunityBrief,
-    ReleaseState,
-    RunConstraints,
-)
+from cc_deep_research.content_gen.models.backlog import BacklogItem
+from cc_deep_research.content_gen.models.brief import OpportunityBrief
+from cc_deep_research.content_gen.models.production import RunConstraints
+from cc_deep_research.content_gen.models.shared import ReleaseState
 from cc_deep_research.content_gen.progress import PipelineRunJobRegistry
 from cc_deep_research.content_gen.storage import AuditActor, AuditEventType, AuditStore
 from cc_deep_research.event_router import EventRouter, WebSocketConnection

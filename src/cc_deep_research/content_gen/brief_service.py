@@ -8,15 +8,17 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from cc_deep_research.content_gen.models import (
-    BriefLifecycleState,
-    BriefProvenance,
+from cc_deep_research.content_gen.models.brief import (
     BriefRevision,
     ManagedBriefOutput,
     ManagedOpportunityBrief,
-    OperatingPhase,
     OpportunityBrief,
-    get_phase_policy,
+)
+from cc_deep_research.content_gen.models.pipeline import get_phase_policy
+from cc_deep_research.content_gen.models.shared import (
+    BriefLifecycleState,
+    BriefProvenance,
+    OperatingPhase,
 )
 from cc_deep_research.content_gen.storage import (
     AuditActor,

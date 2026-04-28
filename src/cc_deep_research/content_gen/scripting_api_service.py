@@ -16,7 +16,7 @@ from typing import Any, Literal
 from pydantic import ValidationError
 
 from cc_deep_research.config import Config, load_config
-from cc_deep_research.content_gen.models import (
+from cc_deep_research.content_gen.models.script import (
     HookSet,
     SavedScriptRun,
     ScriptingContext,

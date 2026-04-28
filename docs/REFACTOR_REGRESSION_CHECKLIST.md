@@ -47,7 +47,7 @@ If you added a new model or changed prompt output format:
 ### Content-gen pipeline (`content_gen/pipeline.py`, `content_gen/stages/`, `content_gen/agents/`)
 - [ ] Pipeline stage order unchanged or deliberately modified
 - [ ] `ContentGenPipeline` is the entry point, not `ContentGenOrchestrator` (legacy shim is for compat only)
-- [ ] No new imports from `legacy_orchestrator.py` (except `_build_claim_ledger` and `_format_research_context` which are pending migration)
+- [ ] No new imports from `legacy_orchestrator.py`
 - [ ] Stage trace events are still emitted correctly
 - [ ] Contract version bumped if prompt output format changed
 

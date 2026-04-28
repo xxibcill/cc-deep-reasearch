@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.config import Config
+from cc_deep_research.content_gen.claim_trace import build_claim_ledger, format_research_context
 from cc_deep_research.content_gen.models import ScriptingContext
 
 from .base import BaseStageOrchestrator
@@ -84,8 +85,7 @@ class ScriptingStageOrchestrator(BaseStageOrchestrator):
             scripting = await agent.run_from_step(seeded_ctx, start_step)
 
             # Build claim traceability ledger
-            from cc_deep_research.content_gen.legacy_orchestrator import _build_claim_ledger
-            claim_ledger = _build_claim_ledger(lane.research_pack, lane.argument_map, scripting)
+            claim_ledger = build_claim_ledger(lane.research_pack, lane.argument_map, scripting)
             scripting.claim_ledger = claim_ledger
 
             # P4-T1: Capture draft hooks for packaging selection
@@ -132,8 +132,7 @@ class ScriptingStageOrchestrator(BaseStageOrchestrator):
         if lane.scripting and lane.scripting.research_context:
             research_context = lane.scripting.research_context
         elif lane.research_pack:
-            from cc_deep_research.content_gen.legacy_orchestrator import _format_research_context
-            research_context = _format_research_context(lane.research_pack)
+            research_context = format_research_context(lane.research_pack)
 
         # P3-T2: Use thesis_artifact fields when available
         if lane.thesis_artifact is not None:

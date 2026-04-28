@@ -468,7 +468,7 @@ def register_radar_routes(
 
         # Create a real brief via BriefService
         from cc_deep_research.content_gen.brief_service import BriefService
-        from cc_deep_research.content_gen.models import OpportunityBrief
+        from cc_deep_research.content_gen.models.brief import OpportunityBrief
 
         brief_id = f"brief_{uuid.uuid4().hex[:12]}"
         opp_brief = OpportunityBrief(
@@ -630,8 +630,12 @@ def register_radar_routes(
             return JSONResponse(status_code=503, content={"error": str(exc)})
 
         from cc_deep_research.config import load_config
-        from cc_deep_research.content_gen.models import PIPELINE_STAGE_LABELS, PIPELINE_STAGES
-        from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator, RunConstraints
+        from cc_deep_research.content_gen.models.pipeline import (
+            PIPELINE_STAGE_LABELS,
+            PIPELINE_STAGES,
+        )
+        from cc_deep_research.content_gen.models.production import RunConstraints
+        from cc_deep_research.content_gen.pipeline import ContentGenPipeline
 
         config = load_config()
         end = len(PIPELINE_STAGES) - 1
@@ -643,7 +647,7 @@ def register_radar_routes(
         pipeline_id = job.pipeline_id
 
         async def run_content_pipeline() -> None:
-            orch = ContentGenOrchestrator(config)
+            orch = ContentGenPipeline(config)
             job_registry.mark_running(job.pipeline_id)
 
             def _progress(stage_idx: int, label: str) -> None:

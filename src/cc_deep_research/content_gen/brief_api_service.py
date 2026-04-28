@@ -17,13 +17,12 @@ from cc_deep_research.content_gen.brief_service import (
     BriefService,
     ConcurrentModificationError,
 )
-from cc_deep_research.content_gen.models import (
-    BriefLifecycleState,
-    BriefProvenance,
+from cc_deep_research.content_gen.models.brief import (
     BriefRevision,
     ManagedOpportunityBrief,
     OpportunityBrief,
 )
+from cc_deep_research.content_gen.models.shared import BriefLifecycleState, BriefProvenance
 from cc_deep_research.content_gen.storage import AuditActor, AuditEventType, AuditStore
 
 if TYPE_CHECKING:

@@ -19,7 +19,6 @@ from cc_deep_research.content_gen.backlog_service import _normalize_backlog_patc
 from cc_deep_research.content_gen.models import BacklogItem, BacklogOutput
 from cc_deep_research.content_gen.storage import BacklogStore, SqliteBacklogStore
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
