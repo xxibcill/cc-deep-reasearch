@@ -380,5 +380,65 @@ def register_knowledge_routes(app: FastAPI) -> None:
             "wiki_page_count": wiki_pages,
         })
 
+    @app.get("/api/knowledge/graph")
+    async def get_knowledge_graph_full() -> JSONResponse:
+        """Get the full knowledge graph snapshot for D3 visualization.
+
+        P8-T5: Returns nodes and edges in a format suitable for force-directed graph rendering.
+        """
+        index = _open_graph_index()
+        if index is None:
+            return JSONResponse(
+                content={"error": "Vault not initialized or graph index not found"},
+                status_code=404,
+            )
+
+        snap = index.snapshot()
+        return JSONResponse(content=snap.model_dump(mode="json"))
+
+    @app.get("/api/knowledge/nodes/{node_id}/neighbors")
+    async def get_knowledge_node_neighbors(node_id: str) -> JSONResponse:
+        """Get neighboring nodes and edges for a given node.
+
+        P8-T5: Returns node neighborhood for graph expansion on selection.
+        """
+        index = _open_graph_index()
+        if index is None:
+            return JSONResponse(
+                content={"error": "Vault not initialized"},
+                status_code=404,
+            )
+
+        node = index.node(node_id)
+        if node is None:
+            return JSONResponse(
+                content={"error": f"Node not found: {node_id}"},
+                status_code=404,
+            )
+
+        # Get edges connected to this node
+        all_edges = index.all_edges()
+        neighbors_edges = [e for e in all_edges if e.source_id == node_id or e.target_id == node_id]
+
+        # Get neighbor nodes
+        neighbor_ids: set[str] = set()
+        for edge in neighbors_edges:
+            if edge.source_id == node_id:
+                neighbor_ids.add(edge.target_id)
+            else:
+                neighbor_ids.add(edge.source_id)
+
+        neighbor_nodes = []
+        for nid in neighbor_ids:
+            n = index.node(nid)
+            if n is not None:
+                neighbor_nodes.append(n)
+
+        return JSONResponse(content={
+            "node": node.model_dump(mode="json"),
+            "neighbors": [n.model_dump(mode="json") for n in neighbor_nodes],
+            "edges": [e.model_dump(mode="json") for e in neighbors_edges],
+        })
+
 
 __all__ = ["register_knowledge_routes"]
