@@ -2,7 +2,7 @@
 
 This service handles HTTP-level composition (request parsing, response shaping,
 error classification) while delegating domain behavior to ScriptingStore,
-ScriptingAgent, and ContentGenOrchestrator.
+ScriptingAgent, and ScriptingRunService.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from cc_deep_research.content_gen.models.script import (
     ScriptingIterationSummary,
     ScriptingRunResult,
 )
-from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
+from cc_deep_research.content_gen.scripting_run_service import ScriptingRunService
 from cc_deep_research.content_gen.storage import ScriptingStore
 
 logger = logging.getLogger(__name__)
@@ -76,21 +76,21 @@ class ScriptingApiService:
     - HTTP workflow composition
 
     Domain behavior is delegated to ScriptingStore, ScriptingAgent, and
-    ContentGenOrchestrator.
+    ScriptingRunService.
     """
 
     def __init__(
         self,
         config: Config | None = None,
         scripting_store: ScriptingStore | None = None,
-        orchestrator_factory: Any | None = None,
+        scripting_run_factory=None,
     ) -> None:
         self._config = config or load_config()
         self._store = scripting_store or ScriptingStore()
-        self._orchestrator_factory = orchestrator_factory or self._default_orchestrator_factory
+        self._scripting_run_factory = scripting_run_factory or self._default_scripting_run_factory
 
-    def _default_orchestrator_factory(self) -> ContentGenOrchestrator:
-        return ContentGenOrchestrator(self._config)
+    def _default_scripting_run_factory(self) -> ScriptingRunService:
+        return ScriptingRunService(self._config)
 
     # ------------------------------------------------------------------
     # Run scripting
@@ -117,7 +117,7 @@ class ScriptingApiService:
         Raises:
             ScriptingApiError: If scripting fails.
         """
-        orch = self._orchestrator_factory()
+        run_service = self._scripting_run_factory()
         iterative_enabled = (
             self._config.content_gen.enable_iterative_mode
             if iterative_mode is None
@@ -126,14 +126,14 @@ class ScriptingApiService:
 
         try:
             if iterative_enabled:
-                ctx, iter_state = await orch.run_scripting_iterative(
+                ctx, iter_state = await run_service.run_scripting_iterative(
                     idea,
                     llm_route=llm_route,
                     max_iterations=max_iterations,
                 )
                 iterations = self._build_scripting_iterations(iter_state)
             else:
-                ctx = await orch.run_scripting(idea, llm_route=llm_route)
+                ctx = await run_service.run_scripting(idea, llm_route=llm_route)
                 iterations = None
         except Exception as exc:
             logger.exception("Scripting run failed")

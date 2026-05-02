@@ -294,7 +294,7 @@ def test_run_scripting_endpoint_can_force_single_pass(
 
     monkeypatch.setattr("cc_deep_research.content_gen.scripting_api_service.ScriptingStore", FakeStore)
     monkeypatch.setattr(
-        "cc_deep_research.content_gen.scripting_api_service.ContentGenOrchestrator",
+        "cc_deep_research.content_gen.scripting_api_service.ScriptingRunService",
         FakeOrchestrator,
     )
 
@@ -418,7 +418,7 @@ def test_run_scripting_endpoint_accepts_iteration_overrides(
 
     monkeypatch.setattr("cc_deep_research.content_gen.scripting_api_service.ScriptingStore", FakeStore)
     monkeypatch.setattr(
-        "cc_deep_research.content_gen.scripting_api_service.ContentGenOrchestrator",
+        "cc_deep_research.content_gen.scripting_api_service.ScriptingRunService",
         FakeOrchestrator,
     )
 
