@@ -20,6 +20,7 @@ from cc_deep_research.config import (
     build_config_response,
     update_config,
 )
+from cc_deep_research.content_gen._services import build_content_gen_services
 from cc_deep_research.content_gen.maintenance_workflow import MaintenanceScheduler
 from cc_deep_research.content_gen.progress import (
     PipelineRunJobRegistry,
@@ -126,7 +127,13 @@ def create_app(
 
     # Content generation routes
     runtime = get_backend_runtime(app)
-    register_content_gen_routes(app, runtime.event_router, runtime.pipeline_jobs)
+    config = load_config()
+    services = build_content_gen_services(
+        config=config,
+        event_router=runtime.event_router,
+        job_registry=runtime.pipeline_jobs,
+    )
+    register_content_gen_routes(app, runtime.event_router, runtime.pipeline_jobs, services)
 
     # Radar routes
     register_radar_routes(app, runtime.event_router)
