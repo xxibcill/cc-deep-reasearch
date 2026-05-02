@@ -5,7 +5,11 @@ import dynamic from 'next/dynamic'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Play, FileText, ArrowRight, Link2, X } from 'lucide-react'
-import useContentGen from '@/hooks/useContentGen'
+import { usePipeline } from '@/hooks/usePipeline'
+import { useBacklog } from '@/hooks/useBacklog'
+import { usePublish } from '@/hooks/usePublish'
+import { useStrategy } from '@/hooks/useStrategy'
+import { useScripts } from '@/hooks/useScripts'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -106,23 +110,23 @@ export default function ContentGenPage() {
   const searchParams = useSearchParams()
   const activeTab = searchParams.get('tab') || 'overview'
 
-  const pipelines = useContentGen((s) => s.pipelines)
-  const publishQueue = useContentGen((s) => s.publishQueue)
-  const backlog = useContentGen((s) => s.backlog)
-  const backlogPath = useContentGen((s) => s.backlogPath)
-  const backlogLoading = useContentGen((s) => s.backlogLoading)
-  const loadPipelines = useContentGen((s) => s.loadPipelines)
-  const loadScripts = useContentGen((s) => s.loadScripts)
-  const loadPublishQueue = useContentGen((s) => s.loadPublishQueue)
-  const loadBacklog = useContentGen((s) => s.loadBacklog)
-  const loadStrategy = useContentGen((s) => s.loadStrategy)
-  const removeFromQueue = useContentGen((s) => s.removeFromQueue)
-  const updateBacklogItem = useContentGen((s) => s.updateBacklogItem)
-  const selectBacklogItem = useContentGen((s) => s.selectBacklogItem)
-  const archiveBacklogItem = useContentGen((s) => s.archiveBacklogItem)
-  const deleteBacklogItem = useContentGen((s) => s.deleteBacklogItem)
-  const createBacklogItem = useContentGen((s) => s.createBacklogItem)
-  const error = useContentGen((s) => s.error)
+  const pipelines = usePipeline((s) => s.pipelines)
+  const publishQueue = usePublish((s) => s.publishQueue)
+  const backlog = useBacklog((s) => s.backlog)
+  const backlogPath = useBacklog((s) => s.backlogPath)
+  const backlogLoading = useBacklog((s) => s.backlogLoading)
+  const loadPipelines = usePipeline((s) => s.loadPipelines)
+  const loadScripts = useScripts((s) => s.loadScripts)
+  const loadPublishQueue = usePublish((s) => s.loadPublishQueue)
+  const loadBacklog = useBacklog((s) => s.loadBacklog)
+  const loadStrategy = useStrategy((s) => s.loadStrategy)
+  const removeFromQueue = usePublish((s) => s.removeFromQueue)
+  const updateBacklogItem = useBacklog((s) => s.updateBacklogItem)
+  const selectBacklogItem = useBacklog((s) => s.selectBacklogItem)
+  const archiveBacklogItem = useBacklog((s) => s.archiveBacklogItem)
+  const deleteBacklogItem = useBacklog((s) => s.deleteBacklogItem)
+  const createBacklogItem = useBacklog((s) => s.createBacklogItem)
+  const error = usePipeline((s) => s.error)
 
   const [newPipelineOpen, setNewPipelineOpen] = useState(false)
   const [quickScriptOpen, setQuickScriptOpen] = useState(false)

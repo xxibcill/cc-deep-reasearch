@@ -37,7 +37,8 @@ import { BacklogItemForm } from '@/components/content-gen/backlog-item-form'
 import { IdeaBacklogHeader } from '@/components/content-gen/idea-backlog-header'
 import { NextActionCard } from '@/components/content-gen/next-action-card'
 import { ExecutionBriefPanel } from '@/components/content-gen/execution-brief-panel'
-import useContentGen from '@/hooks/useContentGen'
+import { useBacklog } from '@/hooks/useBacklog'
+import { useStrategy } from '@/hooks/useStrategy'
 
 function DetailSection({
   title,
@@ -81,16 +82,16 @@ export default function BacklogDetailPage() {
   const router = useRouter()
   const ideaId = params.ideaId as string
 
-  const backlog = useContentGen((s) => s.backlog)
-  const backlogLoading = useContentGen((s) => s.backlogLoading)
-  const error = useContentGen((s) => s.error)
-  const loadBacklog = useContentGen((s) => s.loadBacklog)
-  const updateBacklogItem = useContentGen((s) => s.updateBacklogItem)
-  const selectBacklogItem = useContentGen((s) => s.selectBacklogItem)
-  const archiveBacklogItem = useContentGen((s) => s.archiveBacklogItem)
-  const deleteBacklogItem = useContentGen((s) => s.deleteBacklogItem)
-  const startBacklogItem = useContentGen((s) => s.startBacklogItem)
-  const strategy = useContentGen((s) => s.strategy)
+  const backlog = useBacklog((s) => s.backlog)
+  const backlogLoading = useBacklog((s) => s.backlogLoading)
+  const error = useBacklog((s) => s.error)
+  const loadBacklog = useBacklog((s) => s.loadBacklog)
+  const updateBacklogItem = useBacklog((s) => s.updateBacklogItem)
+  const selectBacklogItem = useBacklog((s) => s.selectBacklogItem)
+  const archiveBacklogItem = useBacklog((s) => s.archiveBacklogItem)
+  const deleteBacklogItem = useBacklog((s) => s.deleteBacklogItem)
+  const startBacklogItem = useBacklog((s) => s.startBacklogItem)
+  const strategy = useStrategy((s) => s.strategy)
 
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)

@@ -37,7 +37,7 @@ import { BriefAssistantPanel } from '@/components/content-gen/brief-assistant-pa
 import { BriefToBacklogPanel } from '@/components/content-gen/brief-to-backlog-panel'
 import { LineagePanel } from '@/components/content-gen/lineage-panel'
 import { CompareBriefsDialog } from '@/components/content-gen/compare-briefs-dialog'
-import useContentGen from '@/hooks/useContentGen'
+import { useBriefs } from '@/hooks/useBriefs'
 import type { BriefRevision, ManagedOpportunityBrief } from '@/types/content-gen'
 
 export default function BriefDetailPage() {
@@ -45,21 +45,21 @@ export default function BriefDetailPage() {
   const router = useRouter()
   const briefId = params.id as string
 
-  const loadBrief = useContentGen((s) => s.loadBrief)
-  const loadBriefRevisions = useContentGen((s) => s.loadBriefRevisions)
-  const approveBrief = useContentGen((s) => s.approveBrief)
-  const archiveBrief = useContentGen((s) => s.archiveBrief)
-  const supersedeBrief = useContentGen((s) => s.supersedeBrief)
-  const revertBriefToDraft = useContentGen((s) => s.revertBriefToDraft)
-  const cloneBrief = useContentGen((s) => s.cloneBrief)
-  const branchBrief = useContentGen((s) => s.branchBrief)
-  const loadSiblingBriefs = useContentGen((s) => s.loadSiblingBriefs)
-  const saveBriefRevision = useContentGen((s) => s.saveBriefRevision)
-  const applyRevision = useContentGen((s) => s.applyRevision)
-  const briefs = useContentGen((s) => s.briefs)
-  const activeBriefRevisions = useContentGen((s) => s.activeBriefRevisions)
-  const siblingBriefs = useContentGen((s) => s.siblingBriefs)
-  const error = useContentGen((s) => s.error)
+  const loadBrief = useBriefs((s) => s.loadBrief)
+  const loadBriefRevisions = useBriefs((s) => s.loadBriefRevisions)
+  const approveBrief = useBriefs((s) => s.approveBrief)
+  const archiveBrief = useBriefs((s) => s.archiveBrief)
+  const supersedeBrief = useBriefs((s) => s.supersedeBrief)
+  const revertBriefToDraft = useBriefs((s) => s.revertBriefToDraft)
+  const cloneBrief = useBriefs((s) => s.cloneBrief)
+  const branchBrief = useBriefs((s) => s.branchBrief)
+  const loadSiblingBriefs = useBriefs((s) => s.loadSiblingBriefs)
+  const saveBriefRevision = useBriefs((s) => s.saveBriefRevision)
+  const applyRevision = useBriefs((s) => s.applyRevision)
+  const briefs = useBriefs((s) => s.briefs)
+  const activeBriefRevisions = useBriefs((s) => s.activeBriefRevisions)
+  const siblingBriefs = useBriefs((s) => s.siblingBriefs)
+  const error = useBriefs((s) => s.error)
 
   const [brief, setBrief] = useState<(ManagedOpportunityBrief & { current_revision?: BriefRevision }) | null>(null)
   const [loading, setLoading] = useState(true)

@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 import { ItemsView, ItemsViewHeader, ItemsViewLoading, ItemsViewEmpty, ItemsViewToggle, type ItemsViewMode } from '@/components/content-gen/items-view'
 import { DataTable, type DataTableColumn } from '@/components/content-gen/data-table'
-import useContentGen from '@/hooks/useContentGen'
+import { useScripts } from '@/hooks/useScripts'
 import type { SavedScriptRun } from '@/types/content-gen'
 
 interface ScriptsPanelProps {
@@ -16,9 +16,9 @@ interface ScriptsPanelProps {
 type ScriptsViewMode = ItemsViewMode
 
 export function ScriptsPanel({ onReuseInputs }: ScriptsPanelProps) {
-  const scripts = useContentGen((s) => s.scripts)
-  const loadScripts = useContentGen((s) => s.loadScripts)
-  const loading = useContentGen((s) => s.scriptsLoading)
+  const scripts = useScripts((s) => s.scripts)
+  const loadScripts = useScripts((s) => s.loadScripts)
+  const loading = useScripts((s) => s.scriptsLoading)
 
   const [viewMode, setViewMode] = useState<ScriptsViewMode>('grid')
   const router = useRouter()

@@ -14,7 +14,9 @@ import {
   Settings,
 } from 'lucide-react'
 
-import useContentGen from '@/hooks/useContentGen'
+import { usePipeline } from '@/hooks/usePipeline'
+import { useScripts } from '@/hooks/useScripts'
+import { usePublish } from '@/hooks/usePublish'
 import { cn } from '@/lib/utils'
 
 const WORKFLOW_NAV_ITEMS = [
@@ -48,12 +50,12 @@ export function ContentGenNavigation() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
-  const loadPipelines = useContentGen((s) => s.loadPipelines)
-  const loadScripts = useContentGen((s) => s.loadScripts)
-  const loadPublishQueue = useContentGen((s) => s.loadPublishQueue)
-  const pipelines = useContentGen((s) => s.pipelines)
-  const scripts = useContentGen((s) => s.scripts)
-  const publishQueue = useContentGen((s) => s.publishQueue)
+  const loadPipelines = usePipeline((s) => s.loadPipelines)
+  const loadScripts = useScripts((s) => s.loadScripts)
+  const loadPublishQueue = usePublish((s) => s.loadPublishQueue)
+  const pipelines = usePipeline((s) => s.pipelines)
+  const scripts = useScripts((s) => s.scripts)
+  const publishQueue = usePublish((s) => s.publishQueue)
 
   const isPipelineDetail = pathname.match(/\/content-gen\/pipeline\/[^/]+$/)
   const isBacklogDetail = pathname.match(/\/content-gen\/backlog\/[^/]+$/)

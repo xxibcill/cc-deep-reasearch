@@ -23,7 +23,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { backlogTitle } from '@/components/content-gen/backlog-shared'
 import { cn } from '@/lib/utils'
 import { backlogTriageRespond, backlogTriageApply } from '@/lib/content-gen-api'
-import useContentGen from '@/hooks/useContentGen'
+import { useBacklog } from '@/hooks/useBacklog'
 import type { TriageOperation, TriageProposalKind, BacklogItem } from '@/types/content-gen'
 
 const PROPOSAL_LABELS: Record<TriageProposalKind, { label: string; icon: typeof Sparkles; color: string }> = {
@@ -52,8 +52,8 @@ interface TriageWorkspaceProps {
 }
 
 export function TriageWorkspace({ onClose }: TriageWorkspaceProps) {
-  const backlog = useContentGen((s) => s.backlog)
-  const mergeBacklogItems = useContentGen((s) => s.mergeBacklogItems)
+  const backlog = useBacklog((s) => s.backlog)
+  const mergeBacklogItems = useBacklog((s) => s.mergeBacklogItems)
 
   const [allProposals, setAllProposals] = useState<TriageOperation[]>([])
   const [loading, setLoading] = useState(false)

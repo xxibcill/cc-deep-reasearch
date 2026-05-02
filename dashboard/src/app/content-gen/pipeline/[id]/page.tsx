@@ -11,7 +11,7 @@ import { StageTraceSummary } from '@/components/content-gen/stage-trace-summary'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import useContentGen from '@/hooks/useContentGen'
+import { usePipeline } from '@/hooks/usePipeline'
 import type { PipelineContext, PipelineStageName, PipelineStageTrace } from '@/types/content-gen'
 import {
   PIPELINE_STAGE_ORDER,
@@ -166,13 +166,13 @@ export default function PipelineDetailPage() {
   const pipelineId = params.id as string
   const wsRef = useRef<WebSocket | null>(null)
 
-  const selectPipeline = useContentGen((state) => state.selectPipeline)
-  const stopPipeline = useContentGen((state) => state.stopPipeline)
-  const approveQC = useContentGen((state) => state.approveQC)
-  const updatePipelineContext = useContentGen((state) => state.updatePipelineContext)
-  const pipelineContext = useContentGen((state) => state.pipelineContext)
-  const pipelines = useContentGen((state) => state.pipelines)
-  const error = useContentGen((state) => state.error)
+  const selectPipeline = usePipeline((state) => state.selectPipeline)
+  const stopPipeline = usePipeline((state) => state.stopPipeline)
+  const approveQC = usePipeline((state) => state.approveQC)
+  const updatePipelineContext = usePipeline((state) => state.updatePipelineContext)
+  const pipelineContext = usePipeline((state) => state.pipelineContext)
+  const pipelines = usePipeline((state) => state.pipelines)
+  const error = usePipeline((state) => state.error)
 
   const currentPipeline = pipelines.find((pipeline) => pipeline.pipeline_id === pipelineId)
   const status = currentPipeline?.status ?? 'unknown'
