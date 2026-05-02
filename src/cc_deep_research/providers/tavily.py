@@ -9,6 +9,7 @@ import httpx
 
 from cc_deep_research.key_rotation import AllKeysExhaustedError, KeyRotationManager
 from cc_deep_research.models import SearchOptions, SearchResult, SearchResultItem
+from cc_deep_research.models.search import SourceType
 from cc_deep_research.providers import (
     AuthenticationError,
     NetworkError,
@@ -290,14 +291,21 @@ class TavilySearchProvider(SearchProvider):
         Returns:
             List of SearchResultItem objects.
         """
+        from cc_deep_research.credibility import SourceCredibilityScorer
+
+        scorer = SourceCredibilityScorer()
         results = []
         for item in data.get("results", []):
             score = item.get("score")
             if score is None:
                 score = 0.0
 
+            url = item.get("url", "")
+            authority_score, source_type_str = scorer._get_domain_credibility(scorer._extract_domain(url))
+            source_type = _map_source_type(source_type_str)
+
             result = SearchResultItem(
-                url=item.get("url", ""),
+                url=url,
                 title=item.get("title", ""),
                 snippet=item.get("content", ""),
                 content=item.get("raw_content"),
@@ -305,6 +313,10 @@ class TavilySearchProvider(SearchProvider):
                 source_metadata={
                     "published_date": item.get("published_date"),
                 },
+                # P7-T4: source quality metadata
+                source_type=source_type,
+                freshness=item.get("published_date"),
+                authority_score=authority_score,
             )
             results.append(result)
         return results
@@ -328,6 +340,36 @@ class TavilySearchProvider(SearchProvider):
     async def __aexit__(self, *args: Any) -> None:
         """Async context manager exit."""
         await self.close()
+
+
+def _map_source_type(source_type_str: str) -> SourceType:
+    """Map credibility source type string to SourceType enum."""
+    mapping = {
+        "Peer-Reviewed": SourceType.ACADEMIC,
+        "Government": SourceType.GOVERNMENT,
+        "Educational": SourceType.ACADEMIC,
+        "Academic": SourceType.ACADEMIC,
+        "Medical Institution": SourceType.ACADEMIC,
+        "Medical Reference": SourceType.ACADEMIC,
+        "Medical News": SourceType.NEWS,
+        "News Agency": SourceType.NEWS,
+        "News": SourceType.NEWS,
+        "Business News": SourceType.COMMERCIAL,
+        "Encyclopedia": SourceType.OTHER,
+        "Reference": SourceType.OTHER,
+        "Blog Platform": SourceType.OTHER,
+        "Social Media": SourceType.OTHER,
+        "Video Platform": SourceType.OTHER,
+        "Web Source": SourceType.OTHER,
+        "Organization": SourceType.ORGANIZATION,
+        "Commercial": SourceType.COMMERCIAL,
+        "Tech Startup": SourceType.COMMERCIAL,
+        "Network": SourceType.OTHER,
+        "Information": SourceType.OTHER,
+        "Blog": SourceType.OTHER,
+        "Preprint": SourceType.ACADEMIC,
+    }
+    return SourceType(mapping.get(source_type_str, "other"))
 
 
 __all__ = ["TavilySearchProvider"]

@@ -10,6 +10,27 @@ from typing import Any
 from pydantic import BaseModel, Field, model_validator
 
 
+class SourceType(StrEnum):
+    """Source type classification."""
+
+    GOVERNMENT = "government"
+    ACADEMIC = "academic"
+    NEWS = "news"
+    ORGANIZATION = "organization"
+    COMMERCIAL = "commercial"
+    OTHER = "other"
+
+
+class HydrationStatus(StrEnum):
+    """Content hydration status."""
+
+    PROVIDER_CONTENT = "provider_content"
+    FETCHED = "fetched"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+    UNAVAILABLE = "unavailable"
+
+
 class ResearchDepth(StrEnum):
     """Research depth modes."""
 
@@ -81,6 +102,12 @@ class SearchResultItem(BaseModel):
     score: float = Field(default=0.0, ge=0.0, le=1.0)
     source_metadata: dict[str, Any] = Field(default_factory=dict)
     query_provenance: list[QueryProvenance] = Field(default_factory=list)
+    # P7-T4: source quality metadata
+    source_type: SourceType | None = Field(default=None)
+    freshness: str | None = Field(default=None)  # ISO date string
+    authority_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    provenance_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    hydration_status: HydrationStatus = Field(default=HydrationStatus.PROVIDER_CONTENT)
 
     model_config = {"frozen": False}
 
@@ -173,6 +200,7 @@ class QueryFamily(BaseModel):
 
 
 __all__ = [
+    "HydrationStatus",
     "QueryFamily",
     "QueryProfile",
     "QueryProvenance",
@@ -180,4 +208,5 @@ __all__ = [
     "SearchOptions",
     "SearchResult",
     "SearchResultItem",
+    "SourceType",
 ]

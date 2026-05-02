@@ -109,7 +109,10 @@ def _merge_duplicate_items(
     primary: SearchResultItem,
     secondary: SearchResultItem,
 ) -> SearchResultItem:
-    """Merge duplicate items while preserving query provenance."""
+    """Merge duplicate items while preserving query provenance.
+
+    P7-T4: Boosts provenance_score when source appears in multiple query families.
+    """
     payload = primary.model_dump(mode="python")
     payload["score"] = max(primary.score, secondary.score)
     payload["title"] = primary.title or secondary.title
@@ -123,6 +126,19 @@ def _merge_duplicate_items(
         *primary.model_dump(mode="python").get("query_provenance", []),
         *secondary.model_dump(mode="python").get("query_provenance", []),
     ]
+
+    # P7-T4: Compute provenance_score boost from query family diversity
+    all_provenance = payload["query_provenance"]
+    families = set()
+    for entry in all_provenance:
+        if isinstance(entry, dict):
+            families.add(entry.get("family", "baseline"))
+        elif hasattr(entry, "family"):
+            families.add(entry.family)
+    if len(families) > 1:
+        # Boost provenance_score proportionally to family diversity
+        payload["provenance_score"] = min(1.0, primary.provenance_score + 0.1 * (len(families) - 1))
+
     return SearchResultItem.model_validate(payload)
 
 
