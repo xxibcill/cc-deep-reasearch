@@ -20,7 +20,7 @@ def test_load_benchmark_corpus_uses_repo_default() -> None:
     """The default corpus file should load as a valid typed object."""
     corpus = load_benchmark_corpus()
 
-    assert corpus.version == "1.0"
+    assert corpus.version == "1.1"
     assert len(corpus.cases) >= 5
     assert any(case.date_sensitive for case in corpus.cases)
     assert {case.category for case in corpus.cases} == {
@@ -75,7 +75,7 @@ def test_benchmark_corpus_model_can_validate_loaded_json() -> None:
 
     corpus = BenchmarkCorpus.model_validate(payload)
 
-    assert corpus.model_dump(mode="json")["version"] == "1.0"
+    assert corpus.model_dump(mode="json")["version"] == "1.1"
 
 
 def test_run_benchmark_corpus_sync_writes_diffable_outputs(tmp_path: Path) -> None:

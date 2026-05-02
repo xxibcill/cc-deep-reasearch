@@ -196,6 +196,8 @@ class ResearchRunService:
             orchestrator = PlannerResearchOrchestrator(
                 config=prepared.config,
                 monitor=active_monitor,
+                prompt_registry=prepared.prompt_registry,
+                workflow_config=prepared.workflow_config,
             )
         else:
             orchestrator = self.orchestrator_factory(

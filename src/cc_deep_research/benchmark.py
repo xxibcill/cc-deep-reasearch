@@ -68,6 +68,10 @@ class BenchmarkCaseMetrics(BaseModel):
     iteration_count: int = Field(default=0, ge=0)
     latency_ms: int = Field(default=0, ge=0)
     validation_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    report_quality_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    unsupported_claim_count: int = Field(default=0, ge=0)
+    citation_error_count: int = Field(default=0, ge=0)
+    hydration_success_rate: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 class BenchmarkCaseReport(BaseModel):
@@ -99,20 +103,28 @@ class BenchmarkScorecard(BaseModel):
     average_iteration_count: float = 0.0
     average_latency_ms: float = 0.0
     average_validation_score: float | None = None
+    average_report_quality_score: float | None = None
+    average_unsupported_claim_count: float = 0.0
+    average_citation_error_count: float = 0.0
+    average_hydration_success_rate: float | None = None
     date_sensitive_cases: int = Field(default=0, ge=0)
     stop_reasons: dict[str, int] = Field(default_factory=dict)
     categories: dict[str, int] = Field(default_factory=dict)
+    workflow_mode: str = Field(default="staged")
+    provider_mode: str = Field(default="default")
 
 
 class BenchmarkRunReport(BaseModel):
     """Structured, diffable output for a full benchmark corpus run."""
 
-    harness_version: str = Field(default="1.0")
+    harness_version: str = Field(default="1.1")
     corpus_version: str = Field(..., min_length=1)
     generated_at: str = Field(..., min_length=1)
     configuration: dict[str, Any] = Field(default_factory=dict)
     scorecard: BenchmarkScorecard
     cases: list[BenchmarkCaseReport] = Field(default_factory=list)
+
+    model_config = {"extra": "allow"}
 
 
 def _extract_domain(url: str) -> str:
@@ -147,6 +159,8 @@ def build_benchmark_case_report(
     session: ResearchSession,
     *,
     configured_depth: str,
+    workflow_mode: str | None = None,
+    provider_mode: str | None = None,
 ) -> BenchmarkCaseReport:
     """Project one research session into a benchmark report row."""
     domains = sorted({_extract_domain(source.url) for source in session.sources if source.url})
@@ -158,6 +172,8 @@ def build_benchmark_case_report(
     )
     metadata = session.metadata if isinstance(session.metadata, dict) else {}
     iteration_history = metadata.get("iteration_history", []) if isinstance(metadata, dict) else []
+    execution_metadata = metadata.get("execution", {}) if isinstance(metadata, dict) else {}
+    providers_metadata = metadata.get("providers", {}) if isinstance(metadata, dict) else {}
 
     return BenchmarkCaseReport(
         case_id=case.case_id,
@@ -173,6 +189,10 @@ def build_benchmark_case_report(
             iteration_count=len(iteration_history) if isinstance(iteration_history, list) else 0,
             latency_ms=int(round(session.execution_time_seconds * 1000)),
             validation_score=_coerce_validation_score(validation_payload),
+            report_quality_score=_coerce_validation_score(metadata.get("report_quality", {})),
+            unsupported_claim_count=metadata.get("unsupported_claim_count", 0) or 0,
+            citation_error_count=metadata.get("citation_error_count", 0) or 0,
+            hydration_success_rate=_coerce_float(metadata.get("hydration_success_rate")),
         ),
         session_id=session.session_id,
         configured_depth=configured_depth,
@@ -199,6 +219,19 @@ def _coerce_string_list(value: Any) -> list[str]:
     if isinstance(value, list):
         return [str(item) for item in value]
     return []
+
+
+def _coerce_float(value: Any) -> float | None:
+    """Extract a float from metadata."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _average_float(values: list[float | None]) -> float | None:
+    """Compute average of non-None floats."""
+    non_none = [v for v in values if v is not None]
+    return round(sum(non_none) / len(non_none), 3) if non_none else None
 
 
 def build_benchmark_scorecard(case_reports: list[BenchmarkCaseReport]) -> BenchmarkScorecard:
@@ -237,6 +270,18 @@ def build_benchmark_scorecard(case_reports: list[BenchmarkCaseReport]) -> Benchm
         ),
         average_validation_score=(
             round(sum(validation_scores) / len(validation_scores), 3) if validation_scores else None
+        ),
+        average_report_quality_score=_average_float(
+            [r.metrics.report_quality_score for r in case_reports]
+        ),
+        average_unsupported_claim_count=round(
+            sum(r.metrics.unsupported_claim_count for r in case_reports) / total_cases, 3
+        ),
+        average_citation_error_count=round(
+            sum(r.metrics.citation_error_count for r in case_reports) / total_cases, 3
+        ),
+        average_hydration_success_rate=_average_float(
+            [r.metrics.hydration_success_rate for r in case_reports]
         ),
         date_sensitive_cases=sum(1 for report in case_reports if report.date_sensitive),
         stop_reasons=stop_reasons,
