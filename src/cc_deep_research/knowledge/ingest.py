@@ -6,7 +6,7 @@ import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from cc_deep_research.knowledge import (
     EdgeKind,
@@ -32,7 +32,7 @@ from cc_deep_research.knowledge.vault import (
 
 if TYPE_CHECKING:
     from cc_deep_research.models import ResearchSession
-    from cc_deep_research.models.analysis import CrossReferenceClaim
+    from cc_deep_research.models.quality import CrossReferenceClaim
     from cc_deep_research.models.search import SearchResultItem
 
 
@@ -155,7 +155,7 @@ def _yaml_frontmatter(fm: PageFrontmatter) -> str:
 
 def _write_page(
     content: str,
-    dir_fn: callable,
+    dir_fn: Callable[[Path | None], Path],
     filename: str,
     config_path: Path | None = None,
 ) -> Path:
@@ -539,7 +539,7 @@ def ingest_session(
     cross_ref_claims: list[CrossReferenceClaim] = []
     try:
         raw_claims = analysis.get("cross_reference_claims", [])
-        from cc_deep_research.models.analysis import CrossReferenceClaim
+        from cc_deep_research.models.quality import CrossReferenceClaim
 
         for raw in raw_claims:
             try:
@@ -571,7 +571,7 @@ def ingest_session(
     raw_gaps = analysis.get("gaps", [])
     for raw_gap in raw_gaps:
         try:
-            gap_desc = raw_gap.get("gap_description") if isinstance(raw_gap, dict) else str(raw_gap)
+            gap_desc = (raw_gap.get("gap_description") if isinstance(raw_gap, dict) else str(raw_gap)) or ""
             gap_queries = raw_gap.get("suggested_queries", []) if isinstance(raw_gap, dict) else []
             gap_importance = raw_gap.get("importance") if isinstance(raw_gap, dict) else None
 
