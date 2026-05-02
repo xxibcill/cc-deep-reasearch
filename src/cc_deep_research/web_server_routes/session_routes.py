@@ -31,6 +31,7 @@ from cc_deep_research.telemetry import (
     query_session_detail,
 )
 from cc_deep_research.telemetry.tree import empty_decision_graph
+from cc_deep_research.web_server_routes._shared import parse_timestamp, serialize_timestamp
 
 STALE_LIVE_SESSION_AFTER = timedelta(minutes=15)
 logger = logging.getLogger(__name__)
@@ -51,38 +52,12 @@ class SessionSortBy(StrEnum):
     TOTAL_TIME_MS = "total_time_ms"
 
 
-def _serialize_timestamp(value: Any) -> str | None:
-    """Return a JSON-safe timestamp string."""
-    if value is None:
-        return None
-    if hasattr(value, "isoformat"):
-        return value.isoformat()  # type: ignore[no-any-return]
-    return str(value)
-
-
-def _parse_timestamp(value: Any) -> datetime | None:
-    """Parse ISO-like timestamps used by telemetry files and DuckDB results."""
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
-    if not isinstance(value, str) or not value:
-        return None
-
-    normalized = value.replace("Z", "+00:00")
-    try:
-        parsed = datetime.fromisoformat(normalized)
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
-
-
 def _normalize_live_session_state(session: dict[str, Any]) -> dict[str, Any]:
     """Mark abandoned live sessions as interrupted instead of running forever."""
     if not session.get("active"):
         return session
 
-    last_activity = _parse_timestamp(session.get("last_event_at")) or _parse_timestamp(
+    last_activity = parse_timestamp(session.get("last_event_at")) or parse_timestamp(
         session.get("created_at")
     )
     if last_activity is None:
@@ -124,8 +99,8 @@ def _normalize_saved_session_summary(saved: dict[str, Any] | None) -> dict[str, 
     return {
         "query": _normalize_optional_string(saved.get("query")),
         "depth": _normalize_optional_string(saved.get("depth")),
-        "started_at": _serialize_timestamp(saved.get("started_at")),
-        "completed_at": _serialize_timestamp(saved.get("completed_at")),
+        "started_at": serialize_timestamp(saved.get("started_at")),
+        "completed_at": serialize_timestamp(saved.get("completed_at")),
         "total_sources": saved.get("total_sources"),
         "has_session_payload": bool(saved.get("has_session_payload")),
         "has_report": bool(saved.get("has_report")),
@@ -149,9 +124,9 @@ def _build_session_list_row(
     """Build the normalized session-list payload shared across storage layers."""
     saved_summary = _normalize_saved_session_summary(saved)
     query = saved_summary["query"]
-    created_at_value = _serialize_timestamp(created_at) or saved_summary["started_at"]
+    created_at_value = serialize_timestamp(created_at) or saved_summary["started_at"]
     completed_at_value = saved_summary["completed_at"]
-    last_event_value = _serialize_timestamp(last_event_at) or completed_at_value or created_at_value
+    last_event_value = serialize_timestamp(last_event_at) or completed_at_value or created_at_value
     total_sources_value = total_sources
     if total_sources_value is None:
         total_sources_value = saved_summary["total_sources"]
@@ -257,7 +232,7 @@ def _normalize_historical_session(
     """Convert a persisted telemetry row into the public API session shape."""
     return {
         "session_id": row[0],
-        "created_at": _serialize_timestamp(row[1]),
+        "created_at": serialize_timestamp(row[1]),
         "status": row[2],
         "total_time_ms": row[3],
         "total_sources": row[4],
@@ -274,7 +249,7 @@ def _normalize_historical_event(row: tuple[Any, ...], *, session_id: str) -> dic
         "event_id": row[0],
         "parent_event_id": row[1],
         "sequence_number": row[2],
-        "timestamp": _serialize_timestamp(row[3]),
+        "timestamp": serialize_timestamp(row[3]),
         "session_id": session_id,
         "event_type": row[4],
         "category": row[5],
@@ -352,7 +327,7 @@ def register_session_routes(app: FastAPI) -> None:
                 if existing.get("total_sources") in (None, 0):
                     existing["total_sources"] = session_data[3]
                 if existing.get("created_at") is None:
-                    existing["created_at"] = _serialize_timestamp(session_data[1])
+                    existing["created_at"] = serialize_timestamp(session_data[1])
                 if existing.get("last_event_at") is None:
                     existing["last_event_at"] = existing.get("completed_at") or existing.get(
                         "created_at"

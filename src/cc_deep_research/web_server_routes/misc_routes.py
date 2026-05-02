@@ -17,15 +17,7 @@ from cc_deep_research.session_store import SessionStore
 from cc_deep_research.telemetry import (
     _load_dashboard_connection,
 )
-
-
-def _serialize_timestamp(value: Any) -> str | None:
-    """Return a JSON-safe timestamp string."""
-    if value is None:
-        return None
-    if hasattr(value, "isoformat"):
-        return value.isoformat()  # type: ignore[no-any-return]
-    return str(value)
+from cc_deep_research.web_server_routes._shared import serialize_timestamp
 
 
 def _get_research_theme_list() -> list[dict[str, str]]:
@@ -212,7 +204,7 @@ def _query_analytics_data(
         ],
         "sources_trend": [
             {
-                "day": _serialize_timestamp(row[0]),
+                "day": serialize_timestamp(row[0]),
                 "run_count": int(row[1]),
                 "avg_sources": float(row[2]) if row[2] else 0.0,
                 "total_sources": int(row[3]) if row[3] else 0,
@@ -221,7 +213,7 @@ def _query_analytics_data(
         ],
         "daily_volume": [
             {
-                "day": _serialize_timestamp(row[0]),
+                "day": serialize_timestamp(row[0]),
                 "total_runs": int(row[1]),
                 "completed": int(row[2]),
                 "failed": int(row[3]),

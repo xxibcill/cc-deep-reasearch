@@ -25,19 +25,11 @@ from cc_deep_research.telemetry import (
     get_default_telemetry_dir,
     query_live_session_detail,
 )
+from cc_deep_research.web_server_routes._shared import parse_timestamp
 
 STALE_LIVE_SESSION_AFTER = timedelta(minutes=15)
 RUN_CANCELLED_MESSAGE = "Research run was cancelled by the operator."
 logger = logging.getLogger(__name__)
-
-
-def _serialize_timestamp(value: Any) -> str | None:
-    """Return a JSON-safe timestamp string."""
-    if value is None:
-        return None
-    if hasattr(value, "isoformat"):
-        return value.isoformat()  # type: ignore[no-any-return]
-    return str(value)
 
 
 def _raise_if_run_cancelled(job: ResearchRunJob) -> None:
@@ -55,7 +47,7 @@ def _build_interrupted_session_summary(
     """Build a summary payload for an operator-stopped live session."""
     events = detail.get("events", [])
     created_at = detail.get("session", {}).get("created_at")
-    created_at_dt = _parse_timestamp(created_at)
+    created_at_dt = parse_timestamp(created_at)
     total_time_ms = None
     if created_at_dt is not None:
         total_time_ms = max(int((interrupted_at - created_at_dt).total_seconds() * 1000), 0)
@@ -79,23 +71,6 @@ def _build_interrupted_session_summary(
         "event_count": len(events) + 1,
         "created_at": created_at or interrupted_at.isoformat(),
     }
-
-
-def _parse_timestamp(value: Any) -> datetime | None:
-    """Parse ISO-like timestamps used by telemetry files and DuckDB results."""
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
-    if not isinstance(value, str) or not value:
-        return None
-
-    normalized = value.replace("Z", "+00:00")
-    try:
-        parsed = datetime.fromisoformat(normalized)
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
 def _interrupt_live_session(session_id: str) -> None:
