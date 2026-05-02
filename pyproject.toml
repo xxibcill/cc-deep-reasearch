@@ -76,6 +76,9 @@ path = "src/cc_deep_research/__about__.py"
 [tool.hatch.build.targets.wheel]
 packages = ["src/cc_deep_research"]
 
+[project.scripts]
+cc-deep-research = "cc_deep_research.cli.main:main"
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
@@ -172,6 +175,14 @@ ignore_errors = false
 
 [[tool.mypy.overrides]]
 module = "cc_deep_research.post_validator"
+ignore_errors = false
+
+[[tool.mypy.overrides]]
+module = "cc_deep_research.knowledge.*"
+ignore_errors = false
+
+[[tool.mypy.overrides]]
+module = "cc_deep_research.cli.*"
 ignore_errors = false
 
 [[tool.mypy.overrides]]

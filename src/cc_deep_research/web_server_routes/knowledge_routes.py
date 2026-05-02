@@ -1,0 +1,384 @@
+"""Knowledge graph HTTP API routes for dashboard integration."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from fastapi import FastAPI, Query
+from fastapi.responses import JSONResponse
+
+from cc_deep_research.knowledge import (
+    NodeKind,
+)
+from cc_deep_research.knowledge.graph_index import GraphIndex
+from cc_deep_research.knowledge.planning_integration import KnowledgePlanningService
+from cc_deep_research.knowledge.vault import (
+    vault_root,
+    wiki_index_path,
+)
+
+
+def _open_graph_index(config_path: Path | None = None) -> GraphIndex | None:
+    """Open the graph index if the vault exists."""
+    from cc_deep_research.knowledge.vault import graph_sqlite_path
+
+    vault = vault_root(config_path)
+    if not vault.exists():
+        return None
+
+    db_path = graph_sqlite_path(config_path)
+    if not db_path.exists():
+        return None
+
+    return GraphIndex(db_path)
+
+
+def _graph_to_summary(index: GraphIndex) -> dict:
+    """Build a summary of the graph for the dashboard."""
+    nodes = index.all_nodes()
+    edges = index.all_edges()
+
+    nodes_by_kind: dict[str, int] = {}
+    for node in nodes:
+        kind = node.kind.value
+        nodes_by_kind[kind] = nodes_by_kind.get(kind, 0) + 1
+
+    edges_by_kind: dict[str, int] = {}
+    for edge in edges:
+        kind = edge.kind.value
+        edges_by_kind[kind] = edges_by_kind.get(kind, 0) + 1
+
+    return {
+        "total_nodes": len(nodes),
+        "total_edges": len(edges),
+        "nodes_by_kind": nodes_by_kind,
+        "edges_by_kind": edges_by_kind,
+    }
+
+
+def register_knowledge_routes(app: FastAPI) -> None:
+    """Register knowledge graph API routes.
+
+    Args:
+        app: The FastAPI application instance.
+    """
+
+    @app.get("/api/knowledge/summary")
+    async def get_knowledge_graph_summary() -> JSONResponse:
+        """Get a summary of the knowledge graph."""
+        index = _open_graph_index()
+        if index is None:
+            return JSONResponse(
+                content={
+                    "total_nodes": 0,
+                    "total_edges": 0,
+                    "nodes_by_kind": {},
+                    "edges_by_kind": {},
+                    "vault_initialized": False,
+                },
+            )
+
+        summary = _graph_to_summary(index)
+        summary["vault_initialized"] = True
+        return JSONResponse(content=summary)
+
+    @app.get("/api/knowledge/nodes/{node_id}")
+    async def get_knowledge_node(node_id: str) -> JSONResponse:
+        """Get details for a specific node."""
+        index = _open_graph_index()
+        if index is None:
+            return JSONResponse(
+                content={"error": "Vault not initialized"},
+                status_code=404,
+            )
+
+        node = index.node(node_id)
+        if node is None:
+            return JSONResponse(
+                content={"error": f"Node not found: {node_id}"},
+                status_code=404,
+            )
+
+        data = node.model_dump(mode="json")
+        data["kind"] = node.kind.value
+        return JSONResponse(content=data)
+
+    @app.get("/api/knowledge/nodes")
+    async def list_knowledge_nodes(
+        kind: str | None = Query(default=None, description="Filter by node kind"),
+        limit: int = Query(default=100, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+    ) -> JSONResponse:
+        """List knowledge graph nodes."""
+        index = _open_graph_index()
+        if index is None:
+            return JSONResponse(content={"nodes": [], "total": 0})
+
+        all_nodes = index.all_nodes()
+
+        if kind:
+            try:
+                node_kind = NodeKind(kind)
+                all_nodes = [n for n in all_nodes if n.kind == node_kind]
+            except ValueError:
+                return JSONResponse(
+                    content={"error": f"Unknown node kind: {kind}"},
+                    status_code=400,
+                )
+
+        total = len(all_nodes)
+        paginated = all_nodes[offset : offset + limit]
+
+        return JSONResponse(content={
+            "nodes": [n.model_dump(mode="json") for n in paginated],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        })
+
+    @app.get("/api/knowledge/edges/{edge_id}")
+    async def get_knowledge_edge(edge_id: str) -> JSONResponse:
+        """Get details for a specific edge."""
+        index = _open_graph_index()
+        if index is None:
+            return JSONResponse(
+                content={"error": "Vault not initialized"},
+                status_code=404,
+            )
+
+        edge = index.edge(edge_id)
+        if edge is None:
+            return JSONResponse(
+                content={"error": f"Edge not found: {edge_id}"},
+                status_code=404,
+            )
+
+        data = edge.model_dump(mode="json")
+        data["kind"] = edge.kind.value
+        return JSONResponse(content=data)
+
+    @app.get("/api/knowledge/pages/{page_kind}")
+    async def get_knowledge_pages(
+        page_kind: str,
+        limit: int = Query(default=50, ge=1, le=200),
+    ) -> JSONResponse:
+        """List wiki pages of a given kind.
+
+        page_kind: one of sessions, sources, claims, gaps, questions, concepts, entities
+        """
+        from cc_deep_research.knowledge.vault import (
+            claims_dir,
+            concepts_dir,
+            entities_dir,
+            questions_dir,
+            sessions_dir,
+            sources_dir,
+        )
+
+        vault = vault_root()
+        if not vault.exists():
+            return JSONResponse(content={"pages": [], "total": 0})
+
+        kind_to_dir = {
+            "sessions": sessions_dir,
+            "sources": sources_dir,
+            "claims": claims_dir,
+            "gaps": questions_dir,
+            "questions": questions_dir,
+            "concepts": concepts_dir,
+            "entities": entities_dir,
+        }
+
+        dir_fn = kind_to_dir.get(page_kind)
+        if dir_fn is None:
+            return JSONResponse(
+                content={"error": f"Unknown page kind: {page_kind}"},
+                status_code=400,
+            )
+
+        dir_path = dir_fn()
+        if not dir_path.exists():
+            return JSONResponse(content={"pages": [], "total": 0})
+
+        md_files = sorted(
+            (f for f in dir_path.iterdir() if f.suffix == ".md"),
+            key=lambda f: f.stat().st_mtime,
+            reverse=True,
+        )[:limit]
+
+        pages = []
+        for f in md_files:
+            try:
+                content = f.read_text(encoding="utf-8")
+                # Extract title from first H1 or use filename
+                title = content.split("\n")[0].lstrip("# ").strip() if content else f.stem
+                pages.append({
+                    "path": str(f),
+                    "filename": f.name,
+                    "title": title,
+                    "size": f.stat().st_size,
+                })
+            except Exception:
+                continue
+
+        return JSONResponse(content={"pages": pages, "total": len(pages)})
+
+    @app.get("/api/knowledge/lint-findings")
+    async def get_lint_findings() -> JSONResponse:
+        """Get lint findings for the knowledge vault."""
+        vault = vault_root()
+        if not vault.exists():
+            return JSONResponse(
+                content={"findings": [], "total": 0, "message": "Vault not initialized"},
+            )
+
+        findings: list[dict] = []
+
+        # Check for missing index
+        index_path = wiki_index_path()
+        if not index_path.exists():
+            findings.append({
+                "severity": "error",
+                "category": "missing_index",
+                "message": "Vault index.md is missing",
+                "page_path": str(index_path),
+            })
+
+        # Check empty directories
+        for subdir in ["claims", "sessions", "sources", "concepts", "entities", "questions"]:
+            dir_path = vault / "wiki" / subdir
+            if dir_path.exists() and not any(dir_path.iterdir()):
+                findings.append({
+                    "severity": "info",
+                    "category": "empty_directory",
+                    "message": f"Empty directory: wiki/{subdir}",
+                    "page_path": str(dir_path),
+                })
+
+        # Check for claims without source links
+        claims_dir_path = vault / "wiki" / "claims"
+        if claims_dir_path.exists():
+            for cf in claims_dir_path.iterdir():
+                if cf.suffix != ".md":
+                    continue
+                try:
+                    content = cf.read_text(encoding="utf-8")
+                    has_link = "http" in content
+                    if not has_link:
+                        findings.append({
+                            "severity": "warning",
+                            "category": "unsupported_claim",
+                            "message": "Claim page may lack source backing",
+                            "page_path": str(cf),
+                        })
+                except Exception:
+                    continue
+
+        return JSONResponse(content={
+            "findings": findings,
+            "total": len(findings),
+            "error_count": sum(1 for f in findings if f["severity"] == "error"),
+            "warning_count": sum(1 for f in findings if f["severity"] == "warning"),
+            "info_count": sum(1 for f in findings if f["severity"] == "info"),
+        })
+
+    @app.get("/api/knowledge/session-contribution/{session_id}")
+    async def get_session_contribution(session_id: str) -> JSONResponse:
+        """Get knowledge contribution trace for a session."""
+        service = KnowledgePlanningService()
+        influence = service.summarize_influence(session_id)
+
+        if not influence:
+            return JSONResponse(
+                content={
+                    "session_id": session_id,
+                    "knowledge_nodes_influenced": 0,
+                    "influenced_node_ids": [],
+                    "note": "No knowledge influence found for this session",
+                },
+            )
+
+        return JSONResponse(content=influence)
+
+    @app.get("/api/knowledge/export")
+    async def export_knowledge_graph(
+        format: str = Query(default="json", description="Export format: json or markdown"),
+    ) -> JSONResponse:
+        """Export the knowledge graph as JSON or markdown."""
+        index = _open_graph_index()
+        if index is None:
+            return JSONResponse(
+                content={"error": "Vault not initialized or graph index not found"},
+                status_code=404,
+            )
+
+        if format == "markdown":
+            snap = index.snapshot()
+            lines = [
+                "# Knowledge Graph Snapshot",
+                "",
+                f"Exported: {snap.exported_at.isoformat()}",
+                f"Nodes: {len(snap.nodes)}",
+                f"Edges: {len(snap.edges)}",
+                "",
+                "## Nodes",
+                "",
+            ]
+            for node in snap.nodes:
+                lines.append(f"### {node.id} ({node.kind.value})")
+                lines.append(f"- label: {node.label}")
+                if node.properties:
+                    for k, v in node.properties.items():
+                        lines.append(f"  - {k}: {v}")
+                lines.append("")
+
+            lines.append("## Edges")
+            for edge in snap.edges:
+                lines.append(f"- **{edge.kind.value}**: {edge.source_id} → {edge.target_id}")
+
+            return JSONResponse(content={"format": "markdown", "content": "\n".join(lines)})
+
+        # JSON
+        snap = index.snapshot()
+        return JSONResponse(content=snap.model_dump(mode="json"))
+
+    @app.get("/api/knowledge/status")
+    async def get_knowledge_vault_status() -> JSONResponse:
+        """Get the status of the knowledge vault."""
+        vault = vault_root()
+        initialized = vault.exists()
+
+        if not initialized:
+            return JSONResponse(content={
+                "initialized": False,
+                "vault_path": str(vault),
+                "can_initialize": True,
+            })
+
+        # Check what exists
+        wiki_index = wiki_index_path()
+        graph_path = vault / "graph" / "graph.sqlite"
+        raw_dir = vault / "raw"
+        wiki_dir = vault / "wiki"
+
+        raw_sessions = 0
+        if (raw_dir / "sessions").exists():
+            raw_sessions = len(list((raw_dir / "sessions").iterdir()))
+
+        wiki_pages = 0
+        if wiki_dir.exists():
+            for subdir in wiki_dir.iterdir():
+                if subdir.is_dir():
+                    wiki_pages += len(list(subdir.glob("*.md")))
+
+        return JSONResponse(content={
+            "initialized": True,
+            "vault_path": str(vault),
+            "has_index": wiki_index.exists(),
+            "has_graph_index": graph_path.exists(),
+            "raw_session_count": raw_sessions,
+            "wiki_page_count": wiki_pages,
+        })
+
+
+__all__ = ["register_knowledge_routes"]

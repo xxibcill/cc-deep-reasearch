@@ -31,6 +31,7 @@ from cc_deep_research.reporting import ReportGenerator
 from cc_deep_research.research_runs.jobs import ResearchRunJobRegistry
 from cc_deep_research.research_runs.service import ResearchRunService
 from cc_deep_research.web_server_routes import (
+    register_knowledge_routes,
     register_misc_routes,
     register_research_run_routes,
     register_session_routes,
@@ -129,6 +130,9 @@ def create_app(
 
     # Radar routes
     register_radar_routes(app, runtime.event_router)
+
+    # Knowledge graph routes
+    register_knowledge_routes(app)
 
     return app
 

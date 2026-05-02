@@ -19,6 +19,13 @@ from cc_deep_research.research_runs.models import (
 )
 from cc_deep_research.session_store import SessionStore
 
+# Optional: knowledge vault ingest (non-fatal)
+try:
+    from cc_deep_research.knowledge.ingest import ingest_session
+    _KNOWLEDGE_AVAILABLE = True
+except Exception:
+    _KNOWLEDGE_AVAILABLE = False
+
 
 def materialize_research_run_output(
     *,
@@ -94,6 +101,15 @@ def materialize_research_run_output(
             warnings.append(str(error))
         except Exception as error:  # pragma: no cover - defensive fallback
             warnings.append(f"Failed to generate PDF: {error}")
+
+    # Non-fatal post-run ingest into knowledge vault if configured
+    if _KNOWLEDGE_AVAILABLE and getattr(config.research, "knowledge_vault_enabled", True):
+        try:
+            ingest_result = ingest_session(session, markdown_report)
+            if ingest_result.warnings:
+                warnings.extend([f"[knowledge] {w}" for w in ingest_result.warnings])
+        except Exception as exc:
+            warnings.append(f"[knowledge] ingest failed: {exc}")
 
     return ResearchRunResult(
         session=session,
