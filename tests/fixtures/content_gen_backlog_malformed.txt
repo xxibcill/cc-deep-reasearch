@@ -1,5 +1,6 @@
 ---
 category: evergreen
+title: Vague founder workflow idea
 audience: Founders
 problem: Vague workflow issues
 ---

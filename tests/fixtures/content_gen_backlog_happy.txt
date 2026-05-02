@@ -1,6 +1,7 @@
 ---
 category: evergreen
 title: The 10-minute weekly finance review that stops founder cash surprises
+one_line_summary: A focused weekly finance review process that surfaces runway issues before they become crises
 audience: Bootstrapped SaaS founders
 problem: They notice runway issues too late because reporting is scattered
 source: Support calls and founder office hours
@@ -12,6 +13,7 @@ risk_level: low
 ---
 category: authority-building
 title: Why most pricing pages hide the one number buyers actually compare
+one_line_summary: Pricing pages that skip the comparison anchor miss the signal buyers use first
 audience: B2B startup marketers
 problem: They optimize copy but ignore the comparison anchor buyers notice first
 source: Sales call reviews and pricing page teardowns

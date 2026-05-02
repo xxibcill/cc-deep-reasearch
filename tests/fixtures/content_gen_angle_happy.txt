@@ -3,18 +3,101 @@ target_audience: B2B startup marketers revising pricing pages
 viewer_problem: They keep polishing copy while buyers still compare only price
 core_promise: Show the framing change that makes a higher tier feel justified
 primary_takeaway: Anchors shape perceived value before feature details matter
+thesis: Pricing pages that skip the comparison anchor miss the signal buyers use first
+audience_belief_to_challenge: Buyers evaluate pricing tiers by counting features
+core_mechanism: Anchoring changes perceived value before feature details are compared
 lens: buyer psychology teardown
 format: contrarian breakdown
 tone: sharp but practical
 cta: Audit your highest-priced plan against the decoy effect
 why_this_version_should_exist: It turns abstract pricing theory into a concrete page review
+
+proof_anchors:
+---
+proof_id: proof_01
+summary: The first price seen creates a reference point that distorts all subsequent evaluation
+source_ids: src_01, src_02
+---
+---
+proof_id: proof_02
+summary: The decoy effect is strongest when one tier makes the target tier feel more reasonable
+source_ids: src_01, src_03
+---
+
+safe_claims:
+---
+claim_id: claim_01
+claim: Anchoring changes perceived value when the higher-price option is presented first
+supporting_proof_ids: proof_01, proof_02
+---
+---
+claim_id: claim_02
+claim: Buyers compare relative differences more than absolute feature counts
+supporting_proof_ids: src_01
+---
+
+beat_claim_plan:
+---
+beat_id: beat_01
+beat_name: Hook
+goal: Make the pricing mistake feel obvious in retrospect
+claim_ids: claim_01
+proof_anchor_ids: proof_01
+---
+---
+beat_id: beat_02
+beat_name: Reframe
+goal: Show the comparison anchor buyers actually use
+claim_ids: claim_02
+proof_anchor_ids: proof_02
+---
+---
+beat_id: beat_03
+beat_name: CTA
+goal: Prompt one concrete change to the pricing card
+claim_ids: claim_01
+proof_anchor_ids:
+---
 ---
 target_audience: SaaS founders with discount-heavy sales cycles
 viewer_problem: Discounts are masking weak positioning
 core_promise: Explain how to tell when a pricing objection is really a packaging objection
 primary_takeaway: Repeated discounting usually means the offer ladder is unclear
+thesis: Repeated discounting usually signals an unclear offer ladder, not just a pricing problem
+audience_belief_to_challenge: Discount requests are pricing objections that need a discount to resolve
+core_mechanism: The ladder is unclear when buyers cannot see the value step-up between tiers
 lens: sales pattern diagnosis
 format: tactical explainer
 tone: direct and diagnostic
 cta: Pull three lost-call notes and tag the objection pattern
 why_this_version_should_exist: It links pricing strategy to day-to-day deal review
+
+proof_anchors:
+---
+proof_id: proof_03
+summary: Repeated discounting correlates with unclear positioning, not just price sensitivity
+source_ids: src_04
+---
+
+safe_claims:
+---
+claim_id: claim_03
+claim: Discount requests often signal ladder ambiguity, not price sensitivity
+supporting_proof_ids: proof_03
+---
+
+beat_claim_plan:
+---
+beat_id: beat_04
+beat_name: Hook
+goal: Surface the pattern of discounting as a positioning signal
+claim_ids: claim_03
+proof_anchor_ids: proof_03
+---
+---
+beat_id: beat_05
+beat_name: Reframe
+goal: Show what the ladder looks like when it is clear
+claim_ids: claim_03
+proof_anchor_ids:
+---

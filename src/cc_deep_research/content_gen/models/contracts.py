@@ -195,27 +195,34 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "run_scripting": ContentGenStageContract(
         stage_name="run_scripting",
         prompt_module="prompts/scripting.py",
-        contract_version="2.0.0",
+        contract_version="1.2.0",
         parser_location="agents/scripting.py::_parse_scripting_context",
         output_model="ScriptingContext",
         format_notes=(
-            "P3-T3: Unified script output that combines the hook, talking points, "
-            "beat structure, and evidence citations in a single structured format. "
-            "Removes the separation between header/dots/body and provides per-beat metadata "
-            "for evidence mapping and QC tracking."
+            "Unified script output per step. Step 1 emits Topic/Outcome/Audience, "
+            "Step 2 emits Angle/Content Type/Core Tension, Step 3 emits Chosen Structure/Beat List, "
+            "Step 4 emits grounded beat blocks, Step 5 emits numbered hooks with Best Hook, "
+            "Step 6 emits the script body, Steps 7-9 handle retention/tightening/visual notes "
+            "with section markers, Step 10 emits Pass/Fail QC checks."
         ),
         required_fields=("idea_id",),
         expected_sections=(
-            "hook",
-            "thesis",
-            "beats",
+            "Topic",
+            "Outcome",
+            "Audience",
+            "Angle",
+            "Chosen Structure",
+            "Beat List",
+            "Best Hook",
+            "Revised Script",
+            "Tightened Script",
         ),
         failure_mode="fail_fast",
     ),
     "visual_translation": ContentGenStageContract(
         stage_name="visual_translation",
         prompt_module="prompts/visual.py",
-        contract_version="1.1.0",
+        contract_version="1.0.0",
         parser_location="agents/visual.py::_parse_visual_plan",
         output_model="VisualPlanOutput",
         format_notes="Beat-level visual spec per spoken beat.",
@@ -262,7 +269,7 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "human_qc": ContentGenStageContract(
         stage_name="human_qc",
         prompt_module="prompts/qc.py",
-        contract_version="1.1.0",
+        contract_version="1.2.0",
         parser_location="agents/qc.py::_parse_qc_gate",
         output_model="HumanQCGate",
         format_notes="Structured QC output with issue categories.",
@@ -293,7 +300,7 @@ CONTENT_GEN_STAGE_CONTRACTS: dict[str, ContentGenStageContract] = {
     "performance_analysis": ContentGenStageContract(
         stage_name="performance_analysis",
         prompt_module="prompts/performance.py",
-        contract_version="1.0.0",
+        contract_version="1.1.0",
         parser_location="agents/performance.py::_parse_performance_analysis",
         output_model="PerformanceAnalysis",
         format_notes="Post-publish analysis with lessons and next steps.",

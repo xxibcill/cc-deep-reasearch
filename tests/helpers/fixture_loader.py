@@ -98,6 +98,16 @@ def load_content_gen_strategy_memory() -> dict[str, Any]:
     return load_fixture("content_gen_strategy_memory")
 
 
+def load_content_gen_argument_map_happy() -> str:
+    """Load the happy-path argument map fixture."""
+    return load_text_fixture("content_gen_argument_map_happy")
+
+
+def load_content_gen_argument_map_malformed() -> str:
+    """Load the malformed argument map fixture."""
+    return load_text_fixture("content_gen_argument_map_malformed")
+
+
 def list_fixtures() -> list[str]:
     """List all available fixture files.
 
@@ -124,5 +134,7 @@ __all__ = [
     "load_content_gen_managed_brief",
     "load_content_gen_scripting_result",
     "load_content_gen_strategy_memory",
+    "load_content_gen_argument_map_happy",
+    "load_content_gen_argument_map_malformed",
     "list_fixtures",
 ]
