@@ -115,6 +115,11 @@ class TeamResearchOrchestrator:
             configured_providers=lambda: list(self._config.search.providers),
             concurrent_source_collection=self._concurrent_source_collection,
             max_concurrent_sources=self._max_concurrent_sources,
+            runtime=self._runtime,
+            session_state=self._session_state,
+            planning=self._planning,
+            source_collection=self._source_collection,
+            analysis_workflow=self._analysis_workflow,
         )
     async def execute_research(
         self,
