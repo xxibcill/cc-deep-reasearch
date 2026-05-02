@@ -17,6 +17,12 @@ from cc_deep_research.content_gen.lifecycle import (
     StageGatePolicy,
     StagePrerequisitePolicy,
     StageTracePolicy,
+    _resolve_lane_item,
+    _resolve_lane_angle,
+    _resolve_lane_context,
+    _lane_candidates,
+    _resolve_selected_idea_id,
+    _use_combined_execution_brief,
 )
 from cc_deep_research.content_gen.models.pipeline import (
     PIPELINE_STAGE_LABELS,
@@ -42,120 +48,6 @@ class _StubStageOrchestrator:
 
     async def run_with_context(self, ctx: Any) -> Any:
         return ctx
-
-
-def _resolve_lane_item(ctx: PipelineContext, idea_id: str) -> Any | None:
-    """Resolve a backlog item by idea_id."""
-    if ctx.backlog is None:
-        return None
-    return next((item for item in ctx.backlog.items if item.idea_id == idea_id), None)
-
-
-def _resolve_lane_angle(ctx: PipelineContext, idea_id: str) -> Any | None:
-    """Resolve the angle for a lane."""
-    lane = next((lane_ctx for lane_ctx in ctx.lane_contexts if lane_ctx.idea_id == idea_id), None)
-    if lane is None:
-        return None
-    # P3-T2: Check thesis_artifact first
-    if lane.thesis_artifact is not None:
-        from cc_deep_research.content_gen.models.angle import AngleOption
-        th = lane.thesis_artifact
-        return AngleOption(
-            angle_id=th.angle_id,
-            target_audience=th.target_audience,
-            viewer_problem=th.viewer_problem,
-            core_promise=th.core_promise,
-            primary_takeaway=th.primary_takeaway,
-            lens=th.lens if hasattr(th, "lens") else "",
-            format=th.format if hasattr(th, "format") else "",
-            tone=th.tone if hasattr(th, "tone") else "",
-            cta=th.cta if hasattr(th, "cta") else "",
-            why_this_version_should_exist=th.what_this_contributes,
-            differentiation_summary=getattr(th, "differentiation_strategy", ""),
-            genericity_risks=getattr(th, "genericity_flags", []),
-            market_framing_challenged=getattr(th, "audience_belief_to_challenge", ""),
-        )
-    if lane.angles is None:
-        return None
-    if lane.angles.selected_angle_id:
-        angle = next(
-            (opt for opt in lane.angles.angle_options if opt.angle_id == lane.angles.selected_angle_id),
-            None,
-        )
-        if angle is not None:
-            return angle
-    return lane.angles.angle_options[0] if lane.angles.angle_options else None
-
-
-def _resolve_lane_context(ctx: PipelineContext, idea_id: str) -> Any | None:
-    return next((lane for lane in ctx.lane_contexts if lane.idea_id == idea_id), None)
-
-
-def _ensure_lane_context(ctx: PipelineContext, idea_id: str, role: str, status: str) -> Any:
-    """Ensure a lane context exists for the given idea_id."""
-    lane = _resolve_lane_context(ctx, idea_id)
-    if lane is not None:
-        lane.role = role
-        lane.status = status
-        return lane
-    from cc_deep_research.content_gen.models.pipeline import PipelineLaneContext
-    lane = PipelineLaneContext(idea_id=idea_id, role=role, status=status)
-    ctx.lane_contexts.append(lane)
-    return lane
-
-
-def _lane_candidates(ctx: PipelineContext) -> list[Any]:
-    """Get lane candidates from context."""
-    candidates = ctx.active_candidates or (ctx.scoring.active_candidates if ctx.scoring else [])
-    if candidates:
-        return candidates
-    selected_idea_id = _resolve_selected_idea_id(ctx)
-    if not selected_idea_id:
-        return []
-    from cc_deep_research.content_gen.models.backlog import PipelineCandidate
-    return [PipelineCandidate(idea_id=selected_idea_id, role="primary", status="selected")]
-
-
-def _resolve_selected_idea_id(ctx: PipelineContext) -> str:
-    if ctx.scoring and ctx.scoring.selected_idea_id:
-        return ctx.scoring.selected_idea_id
-    return ctx.selected_idea_id
-
-
-def _record_lane_completion(
-    ctx: PipelineContext,
-    candidate: Any,
-    *,
-    stage_index: int,
-    stage_field: str,
-    value: Any,
-) -> None:
-    lane = _ensure_lane_context(ctx, candidate.idea_id, candidate.role, candidate.status)
-    setattr(lane, stage_field, value)
-    lane.last_completed_stage = max(lane.last_completed_stage, stage_index)
-    _sync_primary_lane(ctx)
-
-
-def _sync_primary_lane(ctx: PipelineContext) -> None:
-    primary_lane = next(
-        (lane_ctx for lane_ctx in ctx.lane_contexts if lane_ctx.role == "primary"),
-        ctx.lane_contexts[0] if ctx.lane_contexts else None,
-    )
-    if primary_lane is None:
-        return
-    ctx.thesis_artifact = primary_lane.thesis_artifact
-    ctx.angles = primary_lane.angles
-    ctx.research_pack = primary_lane.research_pack
-    ctx.argument_map = primary_lane.argument_map
-    ctx.scripting = primary_lane.scripting
-    ctx.visual_plan = primary_lane.visual_plan
-    ctx.production_brief = primary_lane.production_brief
-    ctx.execution_brief = primary_lane.execution_brief
-    ctx.packaging = primary_lane.packaging
-    ctx.qc_gate = primary_lane.qc_gate
-    ctx.fact_risk_gate = primary_lane.fact_risk_gate
-    ctx.publish_items = list(primary_lane.publish_items)
-    ctx.publish_item = ctx.publish_items[0] if ctx.publish_items else None
 
 
 def _use_combined_execution_brief(ctx: PipelineContext) -> bool:
@@ -570,9 +462,9 @@ def _resolve_selected_angle(ctx: PipelineContext) -> Any | None:
         return None
     if ctx.angles.selected_angle_id:
         angle = next(
-            (opt for opt in ctx.angles.angle_options if opt.angle_id == ctx.angles.selected_angle_id),
+            (opt for opt in ctx.angles.options if opt.angle_id == ctx.angles.selected_angle_id),
             None,
         )
         if angle is not None:
             return angle
-    return ctx.angles.angle_options[0] if ctx.angles.angle_options else None
+    return ctx.angles.options[0] if ctx.angles.options else None

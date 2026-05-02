@@ -86,7 +86,7 @@ class BaseStageOrchestrator:
                 cta=getattr(th, "cta", "") or "",
                 why_this_version_should_exist=getattr(th, "what_this_contributes", ""),
                 differentiation_summary=getattr(th, "differentiation_strategy", ""),
-                genericity_risks=getattr(th, "generic_flags", []),
+                genericity_risks=getattr(th, "genericity_flags", []),
                 market_framing_challenged=getattr(th, "audience_belief_to_challenge", ""),
             )
         if lane.angles is None:

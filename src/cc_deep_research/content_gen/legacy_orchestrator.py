@@ -139,14 +139,14 @@ def _resolve_selected_angle(ctx: PipelineContext) -> Any | None:
         angle = next(
             (
                 option
-                for option in ctx.angles.angle_options
+                for option in ctx.angles.options
                 if option.angle_id == ctx.angles.selected_angle_id
             ),
             None,
         )
         if angle is not None:
             return angle
-    return ctx.angles.angle_options[0] if ctx.angles.angle_options else None
+    return ctx.angles.options[0] if ctx.angles.options else None
 
 
 def _lane_candidates(ctx: PipelineContext) -> list[PipelineCandidate]:
@@ -210,14 +210,14 @@ def _resolve_lane_angle(ctx: PipelineContext, idea_id: str) -> Any | None:
         angle = next(
             (
                 option
-                for option in lane.angles.angle_options
+                for option in lane.angles.options
                 if option.angle_id == lane.angles.selected_angle_id
             ),
             None,
         )
         if angle is not None:
             return angle
-    return lane.angles.angle_options[0] if lane.angles.angle_options else None
+    return lane.angles.options[0] if lane.angles.options else None
 
 
 def _thesis_to_angle_option_like(thesis: ThesisArtifact) -> Any:
@@ -238,10 +238,10 @@ def _thesis_to_angle_option_like(thesis: ThesisArtifact) -> Any:
         format=thesis.format,
         tone=thesis.tone,
         cta=thesis.cta,
-        why_this_version_should_exist=thesis.why_this_version_should_exist,
-        differentiation_summary=thesis.differentiation_summary,
-        genericity_risks=thesis.genericity_risks,
-        market_framing_challenged=thesis.market_framing_challenged,
+        why_this_version_should_exist=thesis.what_this_contributes,
+        differentiation_summary=thesis.differentiation_strategy,
+        genericity_risks=thesis.genericity_flags,
+        market_framing_challenged=thesis.audience_belief_to_challenge,
     )
 
 
@@ -2129,7 +2129,7 @@ class ContentGenOrchestrator:
             return "no scores"
         if stage == "generate_angles":
             if ctx.angles:
-                return f"options={len(ctx.angles.angle_options)}, selected={ctx.angles.selected_angle_id or 'none'}"
+                return f"options={len(ctx.angles.options)}, selected={ctx.angles.selected_angle_id or 'none'}"
             return "options=0"
         if stage == "build_research_pack":
             if ctx.research_pack:
@@ -2205,7 +2205,7 @@ class ContentGenOrchestrator:
             elif ctx.angles:
                 meta.selected_idea_id = ctx.angles.idea_id or _resolve_selected_idea_id(ctx)
                 meta.selected_angle_id = ctx.angles.selected_angle_id or ""
-                meta.option_count = len(ctx.angles.angle_options)
+                meta.option_count = len(ctx.angles.options)
             meta.active_candidate_count = len(ctx.active_candidates)
         elif stage == "build_research_pack":
             if ctx.research_pack:

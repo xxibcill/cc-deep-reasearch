@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from pathlib import Path
 
 import click
 
+from cc_deep_research.benchmark import (
+    BenchmarkRunReport,
+    compare_benchmark_runs,
+    load_benchmark_corpus,
+    run_benchmark_corpus_sync,
+)
 from cc_deep_research.knowledge import (
     LintFinding,
     LintSeverity,
@@ -502,13 +510,147 @@ def lint(config_path: Path | None, exit_code: bool) -> None:
 
 
 # ---------------------------------------------------------------------------
+# benchmark run
+# ---------------------------------------------------------------------------
+
+
+@click.group("benchmark")
+def benchmark() -> None:
+    """Run and compare research benchmark evaluations."""
+    pass
+
+
+@benchmark.command("run")
+@click.option(
+    "--workflow",
+    "workflow_mode",
+    type=click.Choice(["staged", "planner"]),
+    default="staged",
+    help="Research workflow mode",
+)
+@click.option(
+    "--depth",
+    type=click.Choice(["quick", "standard", "deep"]),
+    default="standard",
+    help="Research depth",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(path_type=Path),
+    required=True,
+    help="Output directory for benchmark run",
+)
+@click.option(
+    "--corpus",
+    "corpus_path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Path to custom benchmark corpus JSON",
+)
+def benchmark_run(
+    workflow_mode: str,
+    depth: str,
+    output_dir: Path,
+    corpus_path: Path | None,
+) -> None:
+    """Run benchmark corpus with the specified workflow and depth.
+
+    P7-T7: Enables benchmark runs with specific workflow modes.
+    """
+    corpus = load_benchmark_corpus(corpus_path)
+    configuration = {"workflow_mode": workflow_mode, "depth": depth}
+
+    from cc_deep_research.benchmark import BenchmarkCase
+    from cc_deep_research.models import ResearchDepth, ResearchSession
+    from cc_deep_research.research_runs.models import ResearchRunRequest, ResearchWorkflow
+    from cc_deep_research.research_runs.service import ResearchRunService
+
+    def run_case(case: BenchmarkCase) -> ResearchSession:
+        """Execute one benchmark case as a research run and return the session."""
+        loop = asyncio.get_event_loop()
+        service = ResearchRunService()
+        request = ResearchRunRequest(
+            query=case.query,
+            depth=ResearchDepth(depth),
+            workflow=ResearchWorkflow(workflow_mode),
+        )
+        return loop.run_in_executor(None, lambda: service.run(request)).result()
+
+    report = run_benchmark_corpus_sync(
+        corpus,
+        run_case=run_case,
+        output_dir=output_dir,
+        configuration=configuration,
+    )
+    click.echo(f"Benchmark run complete: {report.scorecard.total_cases} cases")
+    click.echo(f"  workflow: {report.scorecard.workflow_mode}")
+    click.echo(f"  avg sources: {report.scorecard.average_source_count}")
+    click.echo(f"  avg validation: {report.scorecard.average_validation_score}")
+    click.echo(f"  output: {output_dir}")
+
+
+@benchmark.command("compare")
+@click.argument("dir1", type=click.Path(path_type=Path))
+@click.argument("dir2", type=click.Path(path_type=Path))
+def benchmark_compare(dir1: Path, dir2: Path) -> None:
+    """Compare two benchmark run directories.
+
+    P7-T7: Produces delta report between staged and planner runs.
+    """
+    manifest1 = dir1 / "manifest.json"
+    manifest2 = dir2 / "manifest.json"
+    if not manifest1.exists():
+        click.echo(f"Missing manifest.json in {dir1}", err=True)
+        raise SystemExit(1)
+    if not manifest2.exists():
+        click.echo(f"Missing manifest.json in {dir2}", err=True)
+        raise SystemExit(1)
+
+    with manifest1.open() as f:
+        run1 = BenchmarkRunReport.model_validate(json.load(f))
+    with manifest2.open() as f:
+        run2 = BenchmarkRunReport.model_validate(json.load(f))
+
+    comparison = compare_benchmark_runs(run1, run2, run1_path=str(dir1), run2_path=str(dir2))
+
+    click.echo("Benchmark Comparison Report")
+    click.echo(f"  run1: {comparison.run1_path} ({comparison.run1_workflow_mode})")
+    click.echo(f"  run2: {comparison.run2_path} ({comparison.run2_workflow_mode})")
+    click.echo("")
+    click.echo("Metric Deltas (run2 - run1):")
+    for metric, delta in [
+        ("source_count", comparison.delta_source_count),
+        ("unique_domains", comparison.delta_unique_domains),
+        ("source_type_diversity", comparison.delta_source_type_diversity),
+        ("iteration_count", comparison.delta_iteration_count),
+        ("latency_ms", comparison.delta_latency_ms),
+        ("validation_score", comparison.delta_validation_score),
+        ("report_quality_score", comparison.delta_report_quality_score),
+        ("unsupported_claim_count", comparison.delta_unsupported_claim_count),
+        ("citation_error_count", comparison.delta_citation_error_count),
+        ("hydration_success_rate", comparison.delta_hydration_success_rate),
+    ]:
+        if delta is not None:
+            sign = "+" if delta > 0 else ""
+            click.echo(f"  {metric}: {sign}{delta}")
+        else:
+            click.echo(f"  {metric}: n/a")
+
+    if comparison.case_deltas:
+        click.echo("")
+        click.echo("Case-level changes:")
+        for cd in comparison.case_deltas[:5]:
+            click.echo(f"  {cd['case_id']}: sources {cd.get('delta_source_count', 0):+d}")
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
 
 def main() -> None:
     """Main CLI entry point."""
-    knowledge.main(standalone_mode=False)
+    benchmark.main(standalone_mode=False)
 
 
 if __name__ == "__main__":

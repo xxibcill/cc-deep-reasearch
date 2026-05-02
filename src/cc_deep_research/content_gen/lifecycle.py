@@ -61,12 +61,12 @@ def _resolve_lane_angle(ctx: PipelineContext, idea_id: str) -> any | None:
         return None
     if lane.angles.selected_angle_id:
         angle = next(
-            (opt for opt in lane.angles.angle_options if opt.angle_id == lane.angles.selected_angle_id),
+            (opt for opt in lane.angles.options if opt.angle_id == lane.angles.selected_angle_id),
             None,
         )
         if angle is not None:
             return angle
-    return lane.angles.angle_options[0] if lane.angles.angle_options else None
+    return lane.angles.options[0] if lane.angles.options else None
 
 
 def _resolve_lane_context(ctx: PipelineContext, idea_id: str) -> any | None:
@@ -371,7 +371,7 @@ class StageTracePolicy:
             return "no scores"
         if stage == "generate_angles":
             if ctx.angles:
-                return f"options={len(ctx.angles.angle_options)}, selected={ctx.angles.selected_angle_id or 'none'}"
+                return f"options={len(ctx.angles.options)}, selected={ctx.angles.selected_angle_id or 'none'}"
             return "options=0"
         if stage == "build_research_pack":
             if ctx.research_pack:
@@ -437,7 +437,7 @@ class StageTracePolicy:
             elif ctx.angles:
                 meta.selected_idea_id = ctx.angles.idea_id or _resolve_selected_idea_id(ctx)
                 meta.selected_angle_id = ctx.angles.selected_angle_id or ""
-                meta.option_count = len(ctx.angles.angle_options)
+                meta.option_count = len(ctx.angles.options)
             meta.active_candidate_count = len(ctx.active_candidates)
         elif stage == "build_research_pack":
             if ctx.research_pack:
@@ -646,9 +646,9 @@ def _resolve_selected_angle(ctx: PipelineContext) -> any | None:
         return None
     if ctx.angles.selected_angle_id:
         angle = next(
-            (opt for opt in ctx.angles.angle_options if opt.angle_id == ctx.angles.selected_angle_id),
+            (opt for opt in ctx.angles.options if opt.angle_id == ctx.angles.selected_angle_id),
             None,
         )
         if angle is not None:
             return angle
-    return ctx.angles.angle_options[0] if ctx.angles.angle_options else None
+    return ctx.angles.options[0] if ctx.angles.options else None

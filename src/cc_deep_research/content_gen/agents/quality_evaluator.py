@@ -185,11 +185,11 @@ def _summarize_argument_map(argument_map: ArgumentMap | None) -> str:
 
 
 def _summarize_angle(angle: AngleOutput | None) -> str:
-    if not angle or not angle.angle_options:
+    if not angle or not angle.options:
         return ""
     selected = next(
-        (a for a in angle.angle_options if a.angle_id == angle.selected_angle_id),
-        angle.angle_options[0],
+        (a for a in angle.options if a.angle_id == angle.selected_angle_id),
+        angle.options[0],
     )
     return f"Angle: {selected.core_promise}\nAudience: {selected.target_audience}"
 
