@@ -17,11 +17,6 @@ from cc_deep_research.content_gen.lifecycle import (
     StageGatePolicy,
     StagePrerequisitePolicy,
     StageTracePolicy,
-    _resolve_lane_item,
-    _resolve_lane_angle,
-    _resolve_lane_context,
-    _lane_candidates,
-    _resolve_selected_idea_id,
     _use_combined_execution_brief,
 )
 from cc_deep_research.content_gen.models.pipeline import (

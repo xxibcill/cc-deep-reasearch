@@ -15,11 +15,11 @@ from cc_deep_research.content_gen.brief_api_service import BriefApiService
 from cc_deep_research.content_gen.brief_service import BriefService
 from cc_deep_research.content_gen.maintenance_api_service import MaintenanceApiService
 from cc_deep_research.content_gen.pipeline_run_service import PipelineRunService
+from cc_deep_research.content_gen.progress import PipelineRunJobRegistry
 from cc_deep_research.content_gen.publish_queue_audit_service import PublishQueueAuditService
 from cc_deep_research.content_gen.scripting_api_service import ScriptingApiService
 from cc_deep_research.content_gen.storage import AuditStore
 from cc_deep_research.event_router import EventRouter
-from cc_deep_research.content_gen.progress import PipelineRunJobRegistry
 
 if TYPE_CHECKING:
     from cc_deep_research.content_gen.strategy_api_service import StrategyApiService

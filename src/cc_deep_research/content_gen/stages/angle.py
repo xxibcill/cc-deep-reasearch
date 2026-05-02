@@ -10,7 +10,6 @@ from .base import BaseStageOrchestrator
 
 if TYPE_CHECKING:
     from cc_deep_research.content_gen.models import (
-        PipelineCandidate,
         PipelineContext,
     )
 

@@ -27,6 +27,7 @@ from cc_deep_research.monitoring import (
     STOP_REASON_SUCCESS,
     ResearchMonitor,
 )
+from cc_deep_research.orchestration.agent_access import AgentAccess
 from cc_deep_research.orchestration.analysis_workflow import AnalysisWorkflow
 from cc_deep_research.orchestration.phases import PhaseRunner
 from cc_deep_research.orchestration.planning import ResearchPlanningService
@@ -34,7 +35,6 @@ from cc_deep_research.orchestration.runtime import OrchestratorRuntime
 from cc_deep_research.orchestration.session_builder import SessionBuilder
 from cc_deep_research.orchestration.session_state import OrchestratorSessionState
 from cc_deep_research.orchestration.source_collection import SourceCollectionService
-from cc_deep_research.orchestration.agent_access import AgentAccess
 
 
 def _strategy_checkpoint_output(result: StrategyResult) -> dict[str, Any]:
