@@ -102,7 +102,7 @@ def ingest_session_cmd(
 ) -> None:
     """Ingest a saved research session into the knowledge vault."""
     store = SessionStore()
-    session = store.get_session(session_id)
+    session = store.load_session(session_id)
     if session is None:
         click.echo(f"Error: Session '{session_id}' not found.", err=True)
         raise SystemExit(1)
@@ -175,7 +175,7 @@ def backfill(config_path: Path | None, limit: int | None, dry_run: bool) -> None
     failed = 0
     for sf in session_files:
         session_id = sf.stem
-        session = store.get_session(session_id)
+        session = store.load_session(session_id)
         if session is None:
             click.echo(f"  [SKIP] {session_id}: could not load")
             failed += 1
@@ -574,7 +574,7 @@ def benchmark_run(
             depth=ResearchDepth(depth),
             workflow=ResearchWorkflow(workflow_mode),
         )
-        return loop.run_in_executor(None, lambda: service.run(request)).result()
+        return loop.run_in_executor(None, lambda: service.run(request)).result().session
 
     report = run_benchmark_corpus_sync(
         corpus,
