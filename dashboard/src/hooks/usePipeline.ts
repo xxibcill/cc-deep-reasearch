@@ -30,6 +30,7 @@ interface PipelineState {
   updateStageProgress: (stageIndex: number, event: Record<string, unknown>) => void;
   updatePipelineContext: (context: PipelineContext) => void;
   clearError: () => void;
+  reset: () => void;
 }
 
 const initialState = {
@@ -145,6 +146,8 @@ export const usePipelineStore = create<PipelineState>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  reset: () => set(initialState),
 }));
 
 // Backwards compatibility alias

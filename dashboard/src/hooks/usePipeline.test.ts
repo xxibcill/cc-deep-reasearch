@@ -52,7 +52,7 @@ describe('usePipelineStore', () => {
     vi.clearAllMocks();
     const { result } = renderHook(() => usePipelineStore());
     act(() => {
-      result.current.clearError();
+      result.current.reset();
     });
   });
 
@@ -188,9 +188,9 @@ describe('usePipelineStore', () => {
 
       expect(result.current.pipelineStageProgress[2]).toMatchObject({
         status: 'completed',
-        started_at: undefined,
         completed_at: '2026-04-01T12:05:00Z',
       });
+      expect(result.current.pipelineStageProgress[2]).not.toHaveProperty('started_at');
     });
   });
 
