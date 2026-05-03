@@ -186,6 +186,14 @@ class ResearchPlanningService:
                     intent_tags=["baseline", strategy.strategy.intent],
                 )
             ]
+            knowledge_families, knowledge_influence = self._knowledge_query_families(
+                query=query,
+                depth=depth,
+            )
+            if knowledge_influence:
+                strategy.strategy.knowledge_influence = knowledge_influence
+            if knowledge_families:
+                query_families = self._merge_query_families(query_families, knowledge_families)
             strategy.strategy.query_families = query_families
             self._monitor.record_query_variations(
                 original_query=query,
@@ -205,6 +213,14 @@ class ResearchPlanningService:
             strategy=strategy,
             raw_families=cast(list[QueryFamily | str], raw_families),
         )
+        knowledge_families, knowledge_influence = self._knowledge_query_families(
+            query=query,
+            depth=depth,
+        )
+        if knowledge_influence:
+            strategy.strategy.knowledge_influence = knowledge_influence
+        if knowledge_families:
+            query_families = self._merge_query_families(query_families, knowledge_families)
         strategy.strategy.query_families = query_families
         self._monitor.log(f"Generated {len(query_families)} query variations")
         self._monitor.record_reasoning_summary(
@@ -219,3 +235,62 @@ class ResearchPlanningService:
             strategy_intent=strategy.strategy.intent,
         )
         return query_families
+
+    def _knowledge_query_families(
+        self,
+        *,
+        query: str,
+        depth: ResearchDepth,
+    ) -> tuple[list[QueryFamily], dict[str, object]]:
+        """Return prior-knowledge query families when the feature flag is enabled."""
+        if self._config is None or not self._config.research.knowledge_assisted_planning:
+            return [], {}
+
+        from cc_deep_research.knowledge.planning_integration import KnowledgePlanningService
+
+        result = KnowledgePlanningService().retrieve_for_planning(
+            query,
+            depth=depth.value,
+            enabled=True,
+        )
+        influence = {
+            "knowledge_retrieved": result.knowledge_retrieved,
+            "prior_sessions_count": len(result.prior_sessions),
+            "prior_claims_count": len(result.prior_claims),
+            "prior_gaps_count": len(result.prior_gaps),
+            "suggested_queries_from_knowledge": list(result.suggested_queries),
+            "fresh_claims_count": len(result.fresh_claims),
+            "stale_claims_count": len(result.stale_claims),
+            "unsupported_claims_count": len(result.unsupported_claims),
+            "prior_session_ids": [node.id for node in result.prior_sessions],
+            "prior_claim_ids": [node.id for node in result.prior_claims],
+            "prior_gap_ids": [node.id for node in result.prior_gaps],
+        }
+        families = [
+            QueryFamily(
+                query=suggested_query,
+                family="knowledge-gap",
+                intent_tags=["knowledge", "gap"],
+            )
+            for suggested_query in result.suggested_queries
+            if suggested_query.strip()
+        ]
+        if families:
+            self._monitor.log(f"Added {len(families)} knowledge-assisted query variations")
+        return families, influence
+
+    @staticmethod
+    def _merge_query_families(
+        primary: list[QueryFamily],
+        additional: list[QueryFamily],
+    ) -> list[QueryFamily]:
+        """Merge query families by normalized query text while preserving order."""
+        merged: list[QueryFamily] = []
+        seen: set[str] = set()
+        for family in [*primary, *additional]:
+            key = family.query.strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            merged.append(family)
+        return merged

@@ -26,6 +26,7 @@ class StrategyPlan(BaseModel):
     key_terms: list[str] = Field(default_factory=list)
     target_source_classes: list[str] = Field(default_factory=list)
     query_families: list[QueryFamily] = Field(default_factory=list)
+    knowledge_influence: dict[str, Any] = Field(default_factory=dict)
 
 
 class StrategyResult(BaseModel):
