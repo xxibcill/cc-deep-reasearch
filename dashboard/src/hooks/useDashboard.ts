@@ -37,8 +37,10 @@ export const DEFAULT_LIVE_STREAM_STATUS: LiveStreamStatus = {
   lastEventAt: null,
   lastHistoryAt: null,
   lastDisconnectAt: null,
+  lastSuccessAt: null,
   failureReason: null,
   canReconnect: false,
+  reconnectHistory: [],
 };
 
 interface DashboardState {
@@ -83,6 +85,7 @@ interface DashboardState {
   appendBufferedEvents: (events: TelemetryEvent[]) => void;
   setConnected: (connected: boolean) => void;
   setLiveStreamStatus: (status: Partial<LiveStreamStatus>) => void;
+  appendReconnectHistory: (entry: import('@/types/telemetry').ReconnectHistoryEntry) => void;
   setSelectedEvent: (event: TelemetryEvent | null) => void;
   resetSessionState: () => void;
 
@@ -322,6 +325,16 @@ const useDashboardStore = create<DashboardState>((set) => ({
         Object.prototype.hasOwnProperty.call(status, 'connected')
           ? Boolean(status.connected)
           : state.connected,
+    })),
+  appendReconnectHistory: (entry) =>
+    set((state) => ({
+      liveStreamStatus: {
+        ...state.liveStreamStatus,
+        reconnectHistory: [
+          ...state.liveStreamStatus.reconnectHistory,
+          entry,
+        ].slice(-20),
+      },
     })),
   setSelectedEvent: (selectedEvent) => set({ selectedEvent }),
   resetSessionState: () =>

@@ -1026,6 +1026,44 @@ def register_session_routes(app: FastAPI) -> None:
 
         return JSONResponse(content=result.model_dump(mode="json"), status_code=501)
 
+    @app.get("/api/sessions/{session_id}/debug-export")
+    async def get_session_debug_export(session_id: str) -> JSONResponse:
+        """Get a sanitized operator-facing debug export for incident review.
+
+        Returns route/session/request/websocket/UI-state context without secrets.
+        This is a bounded debug bundle separate from the full trace bundle export.
+        """
+        store = SessionStore()
+        session = store.load_session(session_id)
+
+        debug_export: dict[str, Any] = {
+            "schema_version": "1.0",
+            "exported_at": datetime.now(UTC).isoformat(),
+            "session_id": session_id,
+        }
+
+        if session is None:
+            debug_export["session_found"] = False
+            debug_export["error"] = f"Session not found: {session_id}"
+        else:
+            session_dict = session.model_dump(mode="json")
+            debug_export["session_found"] = True
+            debug_export["session"] = {
+                "session_id": session_dict.get("session_id"),
+                "status": session_dict.get("status"),
+                "active": session_dict.get("active"),
+                "created_at": session_dict.get("created_at"),
+                "completed_at": session_dict.get("completed_at"),
+                "total_time_ms": session_dict.get("total_time_ms"),
+                "total_sources": session_dict.get("total_sources"),
+                "depth": session_dict.get("depth"),
+                "event_count": session_dict.get("event_count"),
+                "has_session_payload": store.session_exists(session_id),
+                "has_report": bool(session_dict.get("analysis")),
+            }
+
+        return JSONResponse(content=debug_export)
+
 
 def _media_type_for_report(output_format: ResearchOutputFormat) -> str:
     """Return the response media type for one report format."""

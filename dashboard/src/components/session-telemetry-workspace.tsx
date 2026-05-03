@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertCircle, Loader2, Radar, RefreshCcw, Waves } from 'lucide-react';
+import { AlertCircle, Download, Loader2, Radar, RefreshCcw, Waves } from 'lucide-react';
 
 import useDashboardStore from '@/hooks/useDashboard';
 import { getApiErrorMessage, getSessionSummary, getSessionEventsPage, getSessionDerivedOutputs, getSessionPromptMetadata } from '@/lib/api';
@@ -16,6 +16,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useNotifications } from '@/components/ui/notification-center';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { getErrorGuidance } from '@/lib/error-messages';
+import { CollapsiblePanel } from '@/components/ui/collapsible-panel';
+import { useDebugExport } from '@/hooks/useDebugExport';
 import type {
   ResearchRunStatus,
   Session,
@@ -80,6 +82,7 @@ export function SessionTelemetryWorkspace({
   const { notify } = useNotifications();
   const selectedEvent = useDashboardStore((state) => state.selectedEvent);
   const viewMode = useDashboardStore((state) => state.viewMode);
+  const filters = useDashboardStore((state) => state.filters);
   const setSelectedEvent = useDashboardStore((state) => state.setSelectedEvent);
   const setViewMode = useDashboardStore((state) => state.setViewMode);
   const appendEvents = useDashboardStore((state) => state.appendEvents);
@@ -88,6 +91,7 @@ export function SessionTelemetryWorkspace({
     enabled: !liveStreamDisabled,
     historical: liveStreamDisabled,
   });
+  const { exportDebugBundle, isExporting: isExportingDebug } = useDebugExport(sessionId);
   const [derivedOutputs, setDerivedOutputs] = useState<DerivedOutputs | null>(null);
   const [promptMetadata, setPromptMetadata] = useState<SessionPromptMetadata | null>(null);
   const [loading, setLoading] = useState(true);
@@ -391,6 +395,19 @@ export function SessionTelemetryWorkspace({
                   Retry live stream
                 </Button>
               ) : null}
+              <Button
+                onClick={() => exportDebugBundle(liveStreamStatus, { viewMode, filters })}
+                type="button"
+                variant="outline"
+                disabled={isExportingDebug}
+              >
+                {isExportingDebug ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                Export debug
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -409,6 +426,58 @@ export function SessionTelemetryWorkspace({
             </div>
           </CardContent>
         </Card>
+      ) : null}
+
+      {liveStreamStatus.reconnectHistory.length > 0 &&
+      (liveStreamStatus.phase === 'reconnecting' ||
+        liveStreamStatus.phase === 'failed' ||
+        liveStreamStatus.phase === 'historical') ? (
+        <CollapsiblePanel
+          summary={
+            <div className="text-sm font-medium text-foreground">
+              Stream diagnostics — {liveStreamStatus.reconnectHistory.length} reconnect{' '}
+              {liveStreamStatus.reconnectHistory.length === 1 ? 'attempt' : 'attempts'}
+            </div>
+          }
+          meta={
+            liveStreamStatus.phase === 'failed' ? (
+              <Badge variant="destructive">{liveStreamStatus.reconnectAttempt} failed</Badge>
+            ) : liveStreamStatus.phase === 'reconnecting' ? (
+              <Badge variant="warning">Reconnecting</Badge>
+            ) : null
+          }
+          actions={
+            canRetryLiveStream ? (
+              <Button onClick={reconnect} type="button" size="sm" variant="outline">
+                Retry stream
+              </Button>
+            ) : null
+          }
+          defaultOpen={liveStreamStatus.phase === 'failed'}
+        >
+          <div className="space-y-2">
+            <div className="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground lg:grid-cols-2 xl:grid-cols-3">
+              <div className="contents">
+                <span className="font-medium text-foreground">Attempt</span>
+                <span className="font-medium text-foreground">Time</span>
+                <span className="font-medium text-foreground">Duration</span>
+                <span className="font-medium text-foreground">Close code</span>
+                <span className="font-medium text-foreground">Close reason</span>
+                <span className="font-medium text-foreground">Clean</span>
+              </div>
+              {liveStreamStatus.reconnectHistory.map((entry) => (
+                <div key={entry.attempt} className="contents">
+                  <span className="font-mono">{entry.attempt}</span>
+                  <span>{new Date(entry.timestamp).toLocaleTimeString()}</span>
+                  <span>{entry.tookMs}ms</span>
+                  <span className="font-mono">{entry.closeCode ?? '—'}</span>
+                  <span className="truncate">{entry.closeReason ?? '—'}</span>
+                  <span>{entry.wasClean == null ? '?' : entry.wasClean ? 'yes' : 'no'}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </CollapsiblePanel>
       ) : null}
 
       <SessionDetails

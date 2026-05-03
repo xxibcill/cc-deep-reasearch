@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Trophy, Clock, FileText, AlertCircle, ChevronRight, Activity, Play } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MetricCard } from '@/components/ui/metric-card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState } from '@/components/async-state';
 import { Select } from '@/components/ui/select';
 import {
   getBenchmarkCorpus,
@@ -44,41 +45,33 @@ export default function BenchmarkPage() {
   const [comparisonResult, setComparisonResult] = useState<BenchmarkComparisonReport | null>(null);
   const [loadingComparison, setLoadingComparison] = useState(false);
 
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const [corpusData, runsData] = await Promise.all([
+        getBenchmarkCorpus(),
+        listBenchmarkRuns(),
+      ]);
+
+      setCorpus(corpusData);
+      setRuns(runsData.runs);
+    } catch (err) {
+      console.error('Failed to load benchmark data:', err);
+      setError(getApiErrorMessage(err, 'Failed to load benchmark data.'));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     let mounted = true;
-
-    const loadData = async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const [corpusData, runsData] = await Promise.all([
-          getBenchmarkCorpus(),
-          listBenchmarkRuns(),
-        ]);
-
-        if (!mounted) return;
-
-        setCorpus(corpusData);
-        setRuns(runsData.runs);
-      } catch (err) {
-        console.error('Failed to load benchmark data:', err);
-        if (mounted) {
-          setError(getApiErrorMessage(err, 'Failed to load benchmark data.'));
-        }
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
-      }
-    };
-
     void loadData();
-
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [loadData]);
 
   const handleSelectRun = async (run: BenchmarkRun) => {
     setLoadingRuns(true);
@@ -128,9 +121,14 @@ export default function BenchmarkPage() {
   if (error && !corpus) {
     return (
       <div className="mx-auto max-w-content px-page-x py-page-y">
-        <EmptyState
-          description="There was a problem loading benchmark data."
-          icon={AlertCircle}
+        <ErrorState
+          error={error}
+          onRetry={() => {
+            setError(null);
+            setLoading(true);
+            void loadData();
+          }}
+          route="benchmark"
           title="Failed to load benchmarks"
         />
       </div>

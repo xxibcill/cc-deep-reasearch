@@ -51,11 +51,67 @@ import type {
   OpportunityListResult,
   SourceListResult,
 } from '@/types/radar';
+import {
+  generateRequestId,
+  classifyError,
+  recordRequestTelemetry,
+  getRecentRequestTelemetry,
+  sanitizeForExport,
+  type RequestTelemetryEntry,
+} from '@/lib/request-telemetry';
 
 const apiClient = axios.create({
   baseURL: dashboardRuntimeConfig.apiBaseUrl,
   timeout: 10000,
 });
+
+interface TelemetryWrappedResult<T> {
+  data: T;
+  requestId: string;
+  durationMs: number;
+}
+
+async function telemetryWrap<T>(
+  promise: Promise<import('axios').AxiosResponse<T>>,
+  method: string,
+  path: string
+): Promise<TelemetryWrappedResult<T>> {
+  const requestId = generateRequestId();
+  const start = Date.now();
+  let retryCount = 0;
+
+  try {
+    const response = await promise;
+    const durationMs = Date.now() - start;
+    recordRequestTelemetry({
+      requestId,
+      method,
+      path,
+      statusCode: response.status,
+      durationMs,
+      retryCount,
+      errorCategory: null,
+      errorMessage: null,
+      timestamp: new Date().toISOString(),
+    });
+    return { data: response.data, requestId, durationMs };
+  } catch (error) {
+    const durationMs = Date.now() - start;
+    const { category, message } = classifyError(error);
+    recordRequestTelemetry({
+      requestId,
+      method,
+      path,
+      statusCode: null,
+      durationMs,
+      retryCount,
+      errorCategory: category,
+      errorMessage: message,
+      timestamp: new Date().toISOString(),
+    });
+    throw error;
+  }
+}
 
 const SESSION_DETAIL_TIMEOUT_MS = 30000;
 const SESSION_REPORT_TIMEOUT_MS = 120000;
@@ -112,6 +168,8 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
   }
   return fallback;
 }
+
+export { getRecentRequestTelemetry, sanitizeForExport } from '@/lib/request-telemetry';
 
 export interface ConfigUpdateErrorDetails {
   message: string;
