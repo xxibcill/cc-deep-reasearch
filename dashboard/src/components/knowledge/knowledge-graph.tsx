@@ -9,6 +9,15 @@ interface GraphData {
   edges: KnowledgeEdge[];
 }
 
+interface D3GraphNode extends d3.SimulationNodeDatum {
+  id: string;
+}
+
+interface D3GraphLink extends d3.SimulationLinkDatum<D3GraphNode> {
+  source: string | D3GraphNode;
+  target: string | D3GraphNode;
+}
+
 interface KnowledgeGraphProps {
   data: GraphData;
   selectedNodeId: string | null;
@@ -49,16 +58,19 @@ export function KnowledgeGraph({
   const simulation = useMemo(() => {
     if (data.nodes.length === 0) return null;
 
-    const nodeData = data.nodes.map((n) => ({ ...n }));
-    const edgeData = data.edges.map((e) => ({ ...e }));
+    const nodeData = data.nodes.map((n) => ({ ...n })) as D3GraphNode[];
+    const edgeData: D3GraphLink[] = data.edges.map((e) => ({
+      source: e.source_id,
+      target: e.target_id,
+    }));
 
     return d3
-      .forceSimulation(nodeData as d3.SimulationNodeDatum[])
+      .forceSimulation(nodeData)
       .force(
         'link',
         d3
-          .forceLink(edgeData)
-          .id((d: d3.SimulationNodeDatum) => (d as KnowledgeNode).id)
+          .forceLink<D3GraphNode, D3GraphLink>(edgeData)
+          .id((d) => d.id)
           .distance(80),
       )
       .force('charge', d3.forceManyBody().strength(-200))
@@ -89,8 +101,7 @@ export function KnowledgeGraph({
   const getNodePositions = useCallback(() => {
     if (!simulation) return new Map<string, { x: number; y: number }>();
     const positions = new Map<string, { x: number; y: number }>();
-    // @ts-expect-error - simulation nodes are typed loosely
-    for (const node of simulation.nodes()) {
+    for (const node of simulation.nodes() as D3GraphNode[]) {
       positions.set(node.id, { x: node.x ?? 0, y: node.y ?? 0 });
     }
     return positions;
