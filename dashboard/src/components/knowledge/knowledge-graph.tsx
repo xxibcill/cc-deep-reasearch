@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as d3 from 'd3';
 import type { KnowledgeNode, KnowledgeEdge } from '@/lib/knowledge-client';
 
@@ -54,6 +54,9 @@ export function KnowledgeGraph({
 }: KnowledgeGraphProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const [positions, setPositions] = useState<Map<string, { x: number; y: number }>>(
+    () => new Map(),
+  );
 
   const simulation = useMemo(() => {
     if (data.nodes.length === 0) return null;
@@ -93,21 +96,25 @@ export function KnowledgeGraph({
         }),
     );
 
+    const updatePositions = () => {
+      setPositions(
+        new Map(
+          (simulation.nodes() as D3GraphNode[]).map((node) => [
+            node.id,
+            { x: node.x ?? 0, y: node.y ?? 0 },
+          ]),
+        ),
+      );
+    };
+    simulation.on('tick', updatePositions);
+    simulation.alpha(1).restart();
+    updatePositions();
+
     return () => {
+      simulation.on('tick', null);
       simulation.stop();
     };
   }, [simulation]);
-
-  const getNodePositions = useCallback(() => {
-    if (!simulation) return new Map<string, { x: number; y: number }>();
-    const positions = new Map<string, { x: number; y: number }>();
-    for (const node of simulation.nodes() as D3GraphNode[]) {
-      positions.set(node.id, { x: node.x ?? 0, y: node.y ?? 0 });
-    }
-    return positions;
-  }, [simulation]);
-
-  const positions = getNodePositions();
 
   if (data.nodes.length === 0) {
     return (
