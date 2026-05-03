@@ -117,7 +117,7 @@ class TestSourceCredibilityScorer:
             url="https://example.com",
             title="Test",
             snippet="Test",
-            source_metadata={"published_date": "2026-02-01"},
+            source_metadata={"published_date": "2026-04-15"},
         )
 
         score = scorer._calculate_freshness_score(item)

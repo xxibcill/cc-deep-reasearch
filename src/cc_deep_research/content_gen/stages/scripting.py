@@ -5,12 +5,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.config import Config
+from cc_deep_research.content_gen.claim_trace import build_claim_ledger, format_research_context
 from cc_deep_research.content_gen.models import ScriptingContext
 
 from .base import BaseStageOrchestrator
 
 if TYPE_CHECKING:
-    from cc_deep_research.content_gen.models import PipelineCandidate, PipelineContext
+    from cc_deep_research.content_gen.models import PipelineContext
 
 
 class ScriptingStageOrchestrator(BaseStageOrchestrator):
@@ -84,8 +85,7 @@ class ScriptingStageOrchestrator(BaseStageOrchestrator):
             scripting = await agent.run_from_step(seeded_ctx, start_step)
 
             # Build claim traceability ledger
-            from cc_deep_research.content_gen.legacy_orchestrator import _build_claim_ledger
-            claim_ledger = _build_claim_ledger(lane.research_pack, lane.argument_map, scripting)
+            claim_ledger = build_claim_ledger(lane.research_pack, lane.argument_map, scripting)
             scripting.claim_ledger = claim_ledger
 
             # P4-T1: Capture draft hooks for packaging selection
@@ -132,8 +132,7 @@ class ScriptingStageOrchestrator(BaseStageOrchestrator):
         if lane.scripting and lane.scripting.research_context:
             research_context = lane.scripting.research_context
         elif lane.research_pack:
-            from cc_deep_research.content_gen.legacy_orchestrator import _format_research_context
-            research_context = _format_research_context(lane.research_pack)
+            research_context = format_research_context(lane.research_pack)
 
         # P3-T2: Use thesis_artifact fields when available
         if lane.thesis_artifact is not None:
@@ -203,8 +202,8 @@ class ScriptingStageOrchestrator(BaseStageOrchestrator):
         if lane.angles is None:
             return None
         if lane.angles.selected_angle_id:
-            return next((opt for opt in lane.angles.angle_options if opt.angle_id == lane.angles.selected_angle_id), None)
-        return lane.angles.angle_options[0] if lane.angles.angle_options else None
+            return next((opt for opt in lane.angles.options if opt.angle_id == lane.angles.selected_angle_id), None)
+        return lane.angles.options[0] if lane.angles.options else None
 
     def _resolve_lane_item(self, ctx: PipelineContext, idea_id: str) -> Any | None:
         if ctx.backlog is None:
@@ -217,8 +216,10 @@ class ScriptingStageOrchestrator(BaseStageOrchestrator):
             return None
         return self._resolve_lane_angle_from_lane(lane)
 
-    def _resolve_lane_context(self, ctx: PipelineContext, idea_id: str) -> Any | None:
-        return next((lane_ctx for lane_ctx in ctx.lane_contexts if lane_ctx.idea_id == idea_id), None)
+    def _resolve_lane_item(self, ctx: PipelineContext, idea_id: str) -> Any | None:
+        if ctx.backlog is None:
+            return None
+        return next((i for i in ctx.backlog.items if i.idea_id == idea_id), None)
 
     def _seed_structure_from_argument_map(self, argument_map: Any | None) -> Any | None:
         if argument_map is None or not argument_map.beat_claim_plan:
@@ -248,51 +249,6 @@ class ScriptingStageOrchestrator(BaseStageOrchestrator):
                 for beat in argument_map.beat_claim_plan
             ]
         )
-
-    def _record_lane_completion(
-        self,
-        ctx: PipelineContext,
-        candidate: PipelineCandidate,
-        *,
-        stage_index: int,
-        stage_field: str,
-        value: Any,
-    ) -> None:
-        lane = self._ensure_lane_context(ctx, candidate.idea_id, candidate.role, candidate.status)
-        setattr(lane, stage_field, value)
-        lane.last_completed_stage = max(lane.last_completed_stage, stage_index)
-        self._sync_primary_lane(ctx)
-
-    def _ensure_lane_context(self, ctx: PipelineContext, idea_id: str, role: str, status: str) -> Any:
-        from cc_deep_research.content_gen.models import PipelineLaneContext
-        lane = self._resolve_lane_context(ctx, idea_id)
-        if lane is not None:
-            lane.role = role
-            lane.status = status
-            return lane
-        lane = PipelineLaneContext(idea_id=idea_id, role=role, status=status)
-        ctx.lane_contexts.append(lane)
-        return lane
-
-    def _sync_primary_lane(self, ctx: PipelineContext) -> None:
-        primary_lane = next((lane_ctx for lane_ctx in ctx.lane_contexts if lane_ctx.role == "primary"), None) or (
-            ctx.lane_contexts[0] if ctx.lane_contexts else None
-        )
-        if primary_lane is None:
-            return
-        ctx.thesis_artifact = primary_lane.thesis_artifact
-        ctx.angles = primary_lane.angles
-        ctx.research_pack = primary_lane.research_pack
-        ctx.argument_map = primary_lane.argument_map
-        ctx.scripting = primary_lane.scripting
-        ctx.visual_plan = primary_lane.visual_plan
-        ctx.production_brief = primary_lane.production_brief
-        ctx.execution_brief = primary_lane.execution_brief
-        ctx.packaging = primary_lane.packaging
-        ctx.qc_gate = primary_lane.qc_gate
-        ctx.fact_risk_gate = primary_lane.fact_risk_gate
-        ctx.publish_items = list(primary_lane.publish_items)
-        ctx.publish_item = ctx.publish_items[0] if ctx.publish_items else None
 
     def _record_progressive_checkpoint(
         self,

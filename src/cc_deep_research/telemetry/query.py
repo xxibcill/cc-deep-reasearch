@@ -750,7 +750,7 @@ def query_content_gen_rule_versions(
         Dict with rule version timeline
     """
     try:
-        from cc_deep_research.content_gen.models import RuleVersionKind
+        from cc_deep_research.content_gen.models.shared import RuleVersionKind
         from cc_deep_research.content_gen.storage.strategy_store import StrategyStore
     except ImportError:
         return {

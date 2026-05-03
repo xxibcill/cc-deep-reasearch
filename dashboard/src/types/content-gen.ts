@@ -217,7 +217,7 @@ export interface RuleVersion {
 }
 
 // =============================================================================
-// P4-T1: Strategy Readiness Types
+// P4-T5: Strategy Readiness Types
 // =============================================================================
 
 export type StrategyReadiness = 'invalid' | 'incomplete' | 'healthy';
@@ -1017,6 +1017,7 @@ export interface PipelineBriefReference {
   was_generated_in_run?: boolean;
 }
 
+// P4-T5: Managed Brief Types
 export interface BriefExecutionGate {
   policy_mode: string;
   is_satisfied: boolean;

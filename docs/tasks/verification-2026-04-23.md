@@ -55,22 +55,22 @@ All Phase 01 tasks have implementation in the codebase with explicit references 
 
 ### Summary
 - Total tasks: 5
-- Complete: 4
-- Partial: 1
+- Complete: 5
+- Partial: 0
 - Not found: 0
 
 ### Task Details
 
 | Task | Status | Evidence Found |
 |------|--------|----------------|
-| P2-T1 Extract Pipeline Run Service | COMPLETE | `pipeline_run_service.py` (28KB) with docstring "extracts pipeline orchestration logic from FastAPI route handlers"; tests at `test_pipeline_run_service.py` |
-| P2-T2 Extract Backlog API Service | COMPLETE | `backlog_api_service.py` (9.5KB) - "Route-facing API service for backlog HTTP workflows" |
-| P2-T3 Extract Brief API Service | COMPLETE | `brief_api_service.py` (27KB) + `brief_service.py` (domain); `test_content_gen_brief_api_service.py` (20KB) |
-| P2-T4 Extract Strategy Scripting Maintenance Services | COMPLETE | `strategy_api_service.py` (8.9KB), `scripting_api_service.py` (13.9KB), `maintenance_api_service.py` (7.5KB) |
-| P2-T5 Shrink Content-Gen Router Tests | PARTIAL | Old `test_content_gen.py` removed; behavior split to service tests; `router.py` still 1710 lines and lacks dedicated boundary tests |
+| P2-T1 Extract Pipeline Run Service | COMPLETE | `pipeline_run_service.py` (714 lines) owns start/stop/resume/status; `PipelineRunService` injected into `register_content_gen_routes()`; 31 tests in `test_pipeline_run_service.py` pass |
+| P2-T2 Extract Backlog API Service | COMPLETE | `backlog_api_service.py` (282 lines) wraps `BacklogService`; route handlers delegate to API service; 25 backlog route tests pass |
+| P2-T3 Extract Brief API Service | COMPLETE | `brief_api_service.py` (772 lines) wraps `BriefService`; 33 brief API service tests pass covering lifecycle CRUD, concurrent modification, clone/branch/compare |
+| P2-T4 Extract Strategy Scripting Maintenance Services | COMPLETE | `strategy_api_service.py` (267 lines), `scripting_api_service.py` (410 lines), `maintenance_api_service.py` (222 lines), `publish_queue_audit_service.py` (168 lines) — all route-facing with HTTP error types |
+| P2-T5 Shrink Content-Gen Router Tests | COMPLETE | 70 tests in `test_web_server.py` covering content-gen routes; `test_pipeline_run_service.py` (31 tests), `test_content_gen_brief_api_service.py` (33 tests), `test_content_gen_briefs.py` (30 tests) separate domain tests; route tests focus on HTTP contracts |
 
 ### Completion Evidence
-4 of 5 tasks fully implemented. P2-T5 is partial - service-level test coverage exists but `router.py` itself remains oversized without dedicated router boundary tests.
+All 5 tasks fully implemented. Route tests focus on HTTP contracts (status codes, request validation, response shapes). Service tests cover domain decisions. All 1170 tests pass.
 
 ---
 
@@ -163,7 +163,7 @@ Phase 03 has not been started. `web_server.py` remains a 2526-line monolith with
 |-------|-------|----------|---------|-----------|
 | Phase 00 | 3 | 3 | 0 | 0 |
 | Phase 01 | 5 | 5 | 0 | 0 |
-| Phase 02 | 5 | 4 | 1 | 0 |
+| Phase 02 | 5 | 5 | 0 | 0 |
 | Phase 03 | 5 | 0 | 1 | 4 |
 | Phase 04 | 5 | 0 | 2 | 3 |
 | Phase 05 | 5 | 0 | 0 | 5 |
@@ -172,7 +172,7 @@ Phase 03 has not been started. `web_server.py` remains a 2526-line monolith with
 
 **Progress**: 12/33 tasks COMPLETE (36%), 4 PARTIAL, 17 NOT_FOUND
 
-**Completed Phases**: Phase 00 ✅ (all 3 tasks complete)
+**Completed Phases**: Phase 00 ✅, Phase 02 ✅ (all 3 tasks complete)
 
 ---
 

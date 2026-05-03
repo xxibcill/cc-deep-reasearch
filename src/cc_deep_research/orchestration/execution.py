@@ -6,9 +6,11 @@ import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
+from cc_deep_research.agents import QueryExpanderAgent, ResearchLeadAgent, SourceCollectorAgent
 from cc_deep_research.config import Config
+from cc_deep_research.models import PlannerIterationDecision
 from cc_deep_research.models.analysis import (
     AnalysisResult,
     IterationHistoryRecord,
@@ -25,8 +27,14 @@ from cc_deep_research.monitoring import (
     STOP_REASON_SUCCESS,
     ResearchMonitor,
 )
+from cc_deep_research.orchestration.agent_access import AgentAccess
+from cc_deep_research.orchestration.analysis_workflow import AnalysisWorkflow
 from cc_deep_research.orchestration.phases import PhaseRunner
+from cc_deep_research.orchestration.planning import ResearchPlanningService
+from cc_deep_research.orchestration.runtime import OrchestratorRuntime
 from cc_deep_research.orchestration.session_builder import SessionBuilder
+from cc_deep_research.orchestration.session_state import OrchestratorSessionState
+from cc_deep_research.orchestration.source_collection import SourceCollectionService
 
 
 def _strategy_checkpoint_output(result: StrategyResult) -> dict[str, Any]:
@@ -51,6 +59,12 @@ class ResearchExecutionService:
         configured_providers: Callable[[], list[str]],
         concurrent_source_collection: bool,
         max_concurrent_sources: int,
+        # Collaborators for hook construction (optional for backward compatibility)
+        runtime: OrchestratorRuntime | None = None,
+        session_state: OrchestratorSessionState | None = None,
+        planning: ResearchPlanningService | None = None,
+        source_collection: SourceCollectionService | None = None,
+        analysis_workflow: AnalysisWorkflow | None = None,
     ) -> None:
         self._config = config
         self._monitor = monitor
@@ -59,6 +73,310 @@ class ResearchExecutionService:
         self._configured_providers = configured_providers
         self._concurrent_source_collection = concurrent_source_collection
         self._max_concurrent_sources = max_concurrent_sources
+        self._runtime = runtime
+        self._session_state = session_state
+        self._planning = planning
+        self._source_collection = source_collection
+        self._analysis_workflow = analysis_workflow
+
+    def _build_hooks(
+        self,
+        agent_access: AgentAccess | None = None,
+        analysis_workflow_run_callback: Callable[..., Awaitable[tuple[AnalysisResult, ValidationResult | None, list[SearchResultItem], list[IterationHistoryRecord]]]] | None = None,
+    ) -> ResearchExecutionHooks:
+        """Build the hook bundle from collaborators owned by the orchestrator.
+
+        Requires runtime and session_state to be set.
+        Raises RuntimeError if collaborators needed for self-built hooks are missing.
+        """
+        if self._runtime is None or self._session_state is None:
+            raise RuntimeError(
+                "runtime and session_state collaborators are required to build hooks automatically"
+            )
+
+        runtime = self._runtime
+        if agent_access is None:
+            agent_access = AgentAccess(lambda: runtime.agents)
+
+        analysis_callback = analysis_workflow_run_callback
+        if analysis_callback is None and self._analysis_workflow is not None:
+            analysis_callback = self._make_analysis_workflow_callback(agent_access)
+
+        if analysis_callback is None:
+            raise RuntimeError("analysis_workflow_run_callback is required when analysis_workflow is not available")
+
+        session_state = self._session_state
+        analysis_workflow = self._analysis_workflow
+
+        return ResearchExecutionHooks(
+            reset_session_state=lambda: session_state.reset(list(self._config.search.providers)),
+            initialize_team=self._initialize_team,
+            analyze_strategy=self._phase_analyze_strategy,
+            expand_queries=self._phase_expand_queries,
+            normalize_query_families=self._normalize_query_families,
+            collect_sources=self._collect_sources,
+            run_analysis_workflow=analysis_callback,
+            build_metadata=self._build_session_metadata,
+            log_session_summary=self._log_session_summary,
+            shutdown_team=self._shutdown_team,
+        )
+
+    def _make_analysis_workflow_callback(
+        self, agent_access: AgentAccess
+    ) -> Callable[..., Awaitable[tuple[AnalysisResult, ValidationResult | None, list[SearchResultItem], list[IterationHistoryRecord]]]]:
+        """Build the analysis workflow callback from the analysis workflow and phase runner."""
+        assert self._analysis_workflow is not None, "analysis_workflow required for hook-based execution"
+        analysis_workflow = self._analysis_workflow
+
+        async def callback(
+            query: str,
+            depth: ResearchDepth,
+            strategy: StrategyResult,
+            sources: list[SearchResultItem],
+            min_sources: int | None,
+            phase_hook: Callable[[str, str], None] | None,
+            cancellation_check: Callable[[], None] | None = None,
+        ) -> tuple[AnalysisResult, ValidationResult | None, list[SearchResultItem], list[IterationHistoryRecord]]:
+            return await analysis_workflow.run(
+                query=query,
+                depth=depth,
+                strategy=strategy,
+                sources=sources,
+                min_sources=min_sources,
+                phase_hook=phase_hook,
+                cancellation_check=cancellation_check,
+                run_single_pass=self._make_single_pass_callback(agent_access),
+                collect_follow_up_sources=self._make_collect_follow_up_callback(agent_access),
+                plan_iteration=self._make_plan_iteration_callback(agent_access),
+            )
+
+        return callback
+
+    def _make_single_pass_callback(
+        self, agent_access: AgentAccess
+    ) -> Callable[..., Awaitable[tuple[AnalysisResult, ValidationResult | None]]]:
+        phase_runner = self._phase_runner
+        analysis_workflow = self._analysis_workflow
+
+        async def callback(
+            query: str,
+            depth: ResearchDepth,
+            strategy: StrategyResult,
+            sources: list[SearchResultItem],
+            phase_hook: Callable[[str, str], None] | None,
+            cancellation_check: Callable[[], None] | None = None,
+        ) -> tuple[AnalysisResult, ValidationResult | None]:
+            async def analyze_findings(src: list[SearchResultItem], q: str, _: StrategyResult) -> AnalysisResult:
+                return agent_access.analyzer().analyze_sources(src, q)
+
+            async def deep_analyze(src: list[SearchResultItem], q: str, _: AnalysisResult) -> AnalysisResult:
+                result_dict = agent_access.deep_analyzer().deep_analyze(src, q)
+                return AnalysisResult(
+                    key_findings=result_dict.get("key_findings", []),
+                    themes=result_dict.get("themes", []),
+                    themes_detailed=result_dict.get("themes_detailed", []),
+                    consensus_points=result_dict.get("consensus_points", []),
+                    contention_points=result_dict.get("disagreement_points", []),
+                    cross_reference_claims=result_dict.get("cross_reference_claims", []),
+                    gaps=result_dict.get("gaps", []),
+                    source_count=result_dict.get("source_count", 0),
+                    analysis_method=result_dict.get("analysis_method", "empty"),
+                    deep_analysis_complete=result_dict.get("deep_analysis_complete", False),
+                    analysis_passes=result_dict.get("analysis_passes", 0),
+                    patterns=result_dict.get("patterns", []),
+                    disagreement_points=result_dict.get("disagreement_points", []),
+                    implications=result_dict.get("implications", []),
+                    comprehensive_synthesis=result_dict.get("comprehensive_synthesis", ""),
+                )
+
+            async def validate_research(q: str, d: ResearchDepth, src: list[SearchResultItem], a: AnalysisResult) -> ValidationResult:
+                from cc_deep_research.models.session import ResearchSession
+                session = ResearchSession(session_id="validation", query=q, sources=src)
+                return agent_access.validator().validate_research(
+                    session, a, query=q, min_sources_override=None
+                )
+
+            return await phase_runner.run_analysis_pass(
+                phase_hook=phase_hook,
+                query=query,
+                depth=depth,
+                strategy=strategy,
+                sources=sources,
+                cancellation_check=cancellation_check,
+                analyze_findings=analyze_findings,
+                deep_analyze=deep_analyze,
+                validate_research=validate_research,
+                log_validation_results=analysis_workflow.log_validation_results,  # type: ignore[union-attr]
+                workflow_config=None,
+            )
+
+        return callback
+
+    def _make_collect_follow_up_callback(
+        self, agent_access: AgentAccess
+    ) -> Callable[..., Awaitable[list[SearchResultItem]]]:
+        runtime = self._runtime
+        source_collection = self._source_collection
+        concurrent = self._concurrent_source_collection
+
+        async def callback(
+            existing_sources: list[SearchResultItem],
+            follow_up_queries: list[str],
+            depth: ResearchDepth,
+            min_sources: int | None,
+        ) -> list[SearchResultItem]:
+            assert runtime is not None and source_collection is not None, "runtime and source_collection required"
+            runtime_state = runtime.current_state()
+            agent_pool = runtime_state if runtime_state and runtime_state.parallel_pool_initialized else None
+            new_sources = await source_collection.collect_follow_up_sources(
+                collector=agent_access.collector(),
+                agent_pool=agent_pool,
+                follow_up_queries=follow_up_queries,
+                depth=depth,
+                min_sources=min_sources,
+                prefer_parallel=concurrent,
+            )
+            return source_collection.merge_sources(
+                existing_sources=existing_sources,
+                new_sources=new_sources,
+            )
+
+        return callback
+
+    def _make_plan_iteration_callback(
+        self, agent_access: AgentAccess
+    ) -> Callable[..., PlannerIterationDecision]:
+        def callback(
+            *,
+            query: str,
+            strategy: StrategyResult,
+            analysis: AnalysisResult,
+            validation: ValidationResult | None,
+            sources: list[SearchResultItem],
+            iteration: int,
+            max_iterations: int,
+            min_sources: int | None,
+            iteration_history: list[IterationHistoryRecord],
+        ) -> PlannerIterationDecision:
+            return agent_access.planner().decide_research_iteration(
+                query=query,
+                strategy=strategy,
+                analysis=analysis,
+                validation=validation,
+                sources=sources,
+                iteration=iteration,
+                max_iterations=max_iterations,
+                min_sources=min_sources,
+                iteration_history=iteration_history,
+                enable_iterative_search=self._config.research.enable_iterative_search,
+            )
+
+        return callback
+
+    async def _initialize_team(self) -> None:
+        assert self._runtime is not None, "runtime required - hooks must be built via _build_hooks()"
+        await self._runtime.initialize()
+
+    def _phase_analyze_strategy(self, query: str, depth: ResearchDepth) -> Awaitable[StrategyResult]:
+        # These methods are only called from hooks built after runtime init via _build_hooks()
+        assert self._runtime is not None, "runtime required - hooks must be built via _build_hooks()"
+        assert self._planning is not None, "planning required for hook-based execution"
+        agents = self._runtime.agents
+        lead = cast(ResearchLeadAgent, agents["lead"])
+        return self._planning.analyze_strategy(
+            lead=lead,
+            query=query,
+            depth=depth,
+        )
+
+    def _phase_expand_queries(
+        self, query: str, strategy: StrategyResult, depth: ResearchDepth
+    ) -> Awaitable[list[QueryFamily]]:
+        assert self._runtime is not None, "runtime required - hooks must be built via _build_hooks()"
+        assert self._planning is not None, "planning required for hook-based execution"
+        agents = self._runtime.agents
+        expander = cast(QueryExpanderAgent, agents["expander"])
+        return self._planning.expand_queries(
+            expander=expander,
+            query=query,
+            strategy=strategy,
+            depth=depth,
+        )
+
+    @staticmethod
+    def _normalize_query_families(
+        *,
+        original_query: str,
+        strategy: StrategyResult,
+        raw_families: list[QueryFamily | str],
+    ) -> list[QueryFamily]:
+        from cc_deep_research.orchestration.helpers import normalize_query_families as normalized
+        return normalized(
+            original_query=original_query,
+            strategy=strategy,
+            raw_families=raw_families,
+        )
+
+    def _collect_sources(
+        self,
+        *,
+        query_families: list[QueryFamily],
+        depth: ResearchDepth,
+        min_sources: int | None,
+    ) -> Awaitable[list[SearchResultItem]]:
+        assert self._runtime is not None, "runtime required - hooks must be built via _build_hooks()"
+        assert self._source_collection is not None, "source_collection required for hook-based execution"
+        runtime_state = self._runtime.current_state()
+        agent_pool = runtime_state if runtime_state and runtime_state.parallel_pool_initialized else None
+        agents = self._runtime.agents
+        # collector is only used when parallel collection is not available or fails
+        collector: SourceCollectorAgent | None = agents.get("collector") if agents else None
+        return self._source_collection.collect_with_fallback(
+            collector=collector,  # type: ignore[arg-type]  # SourceCollectorAgent satisfies _SequentialCollector structurally
+            agent_pool=agent_pool,
+            query_families=query_families,
+            depth=depth,
+            min_sources=min_sources,
+            prefer_parallel=self._concurrent_source_collection,
+        )
+
+    def _build_session_metadata(
+        self,
+        *,
+        depth: ResearchDepth,
+        sources: list[SearchResultItem],
+        strategy: StrategyResult,
+        analysis: AnalysisResult,
+        validation: ValidationResult | None,
+        iteration_history: list[IterationHistoryRecord],
+    ) -> dict[str, Any]:
+        assert self._session_state is not None, "session_state required for hook-based execution"
+        return self._session_state.build_metadata(
+            depth=depth,
+            sources=sources,
+            strategy=strategy,
+            analysis=analysis,
+            validation=validation,
+            iteration_history=iteration_history,
+            parallel_requested=self._concurrent_source_collection,
+        )
+
+    def _log_session_summary(
+        self,
+        *,
+        source_count: int,
+        finding_count: int,
+        validation: ValidationResult | None,
+    ) -> None:
+        self._phase_runner.log_session_summary(
+            source_count=source_count,
+            finding_count=finding_count,
+            validation=validation,
+        )
+
+    async def _shutdown_team(self) -> None:
+        assert self._runtime is not None, "runtime required - hooks must be built via _build_hooks()"
+        await self._runtime.shutdown()
 
     async def execute(
         self,
@@ -69,9 +387,16 @@ class ResearchExecutionService:
         phase_hook: Callable[[str, str], None] | None,
         cancellation_check: Callable[[], None] | None = None,
         on_session_started: Callable[[str], None] | None = None,
-        hooks: ResearchExecutionHooks,
+        hooks: ResearchExecutionHooks | None = None,
     ) -> ResearchSession:
-        """Execute a full research session using injected callbacks."""
+        """Execute a full research session.
+
+        When hooks is None, builds them from owned collaborators (deepened boundary).
+        When hooks is provided, uses them directly (backward-compatible facade).
+        """
+        hooks_built_here = hooks is None
+        hooks = hooks if hooks is not None else self._build_hooks()
+
         hooks.reset_session_state()
         start_time = datetime.utcnow()
         self._check_cancelled(cancellation_check)
@@ -90,6 +415,12 @@ class ResearchExecutionService:
                 cancellation_check=cancellation_check,
                 input_ref={"concurrent_source_collection": self._concurrent_source_collection, "max_concurrent_sources": self._max_concurrent_sources},
             )
+
+            # Re-build hooks now that runtime state is populated (agents available)
+            # Only needed when we built hooks ourselves (deepened boundary path)
+            if hooks_built_here:
+                hooks = self._build_hooks()
+
             strategy = await self._phase_runner.run_phase(
                 phase_hook=phase_hook,
                 phase_key="strategy",

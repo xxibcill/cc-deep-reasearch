@@ -197,6 +197,57 @@ class TestResearchPlanningService:
             "expert-analysis",
         ]
 
+    @pytest.mark.asyncio
+    async def test_expand_queries_adds_knowledge_suggestions_when_enabled(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        class FakeKnowledgePlanningService:
+            def retrieve_for_planning(
+                self,
+                query: str,
+                *,
+                depth: str | None = None,
+                enabled: bool = True,
+            ) -> SimpleNamespace:
+                assert query == "market structure"
+                assert depth == "standard"
+                assert enabled is True
+                return SimpleNamespace(
+                    knowledge_retrieved=True,
+                    prior_sessions=[],
+                    prior_claims=[],
+                    prior_gaps=[],
+                    suggested_queries=["market structure open questions"],
+                    fresh_claims=[],
+                    stale_claims=[],
+                    unsupported_claims=[],
+                )
+
+        monkeypatch.setattr(
+            "cc_deep_research.knowledge.planning_integration.KnowledgePlanningService",
+            FakeKnowledgePlanningService,
+        )
+        config = Config()
+        config.research.knowledge_assisted_planning = True
+        monitor = ResearchMonitor(enabled=False)
+        service = ResearchPlanningService(monitor=monitor, config=config)
+        strategy = _make_strategy("market structure", ResearchDepth.STANDARD, 3)
+
+        query_families = await service.expand_queries(
+            expander=FakeExpanderAgent(),
+            query="market structure",
+            strategy=strategy,
+            depth=ResearchDepth.STANDARD,
+        )
+
+        assert [family.family for family in query_families][-1] == "knowledge-gap"
+        assert query_families[-1].query == "market structure open questions"
+        assert strategy.strategy.knowledge_influence["knowledge_retrieved"] is True
+        assert strategy.strategy.knowledge_influence["suggested_queries_from_knowledge"] == [
+            "market structure open questions"
+        ]
+
 
 class TestTaskDispatcherRetryPolicy:
     @pytest.mark.asyncio

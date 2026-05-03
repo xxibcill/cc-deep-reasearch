@@ -1,5 +1,5 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "description": "Stable benchmark prompts for evaluating research workflow changes against a fixed corpus.",
   "cases": [
     {
@@ -41,6 +41,46 @@
       "rationale": "Market and policy query that requires combining regulatory detail with cross-border commercial effects.",
       "date_sensitive": false,
       "tags": ["market", "policy", "trade"]
+    },
+    {
+      "case_id": "planner-multifacet-climate-risk",
+      "query": "Map the main climate risk disclosure requirements affecting multinational manufacturers in the U.S., EU, and Singapore.",
+      "category": "comparison",
+      "rationale": "Planner stress test: decomposition across jurisdictions and synthesis of separate regulatory threads.",
+      "date_sensitive": false,
+      "tags": ["planner", "climate", "regulatory", "multi-jurisdiction"]
+    },
+    {
+      "case_id": "freshness-us-ai-policy",
+      "query": "What are the latest U.S. federal AI safety and export-control policy changes affecting frontier model labs?",
+      "category": "time_sensitive",
+      "rationale": "Freshness stress test: recency, explicit dates, and source freshness for date-sensitive cases.",
+      "date_sensitive": true,
+      "tags": ["freshness", "policy", "ai-safety", "recency"]
+    },
+    {
+      "case_id": "evidence-health-screen-time",
+      "query": "What does current evidence say about screen time limits and adolescent mental health outcomes?",
+      "category": "evidence_heavy_science_health",
+      "rationale": "Evidence stress test: nuanced evidence, uncertainty, and avoidance of overclaiming.",
+      "date_sensitive": false,
+      "tags": ["evidence", "health", "uncertainty", "science"]
+    },
+    {
+      "case_id": "source-conflict-company-claims",
+      "query": "Compare company claims and independent analysis about direct air capture cost trends.",
+      "category": "comparison",
+      "rationale": "Source conflict test: handling conflicting sources and attribution of competing claims.",
+      "date_sensitive": false,
+      "tags": ["source-conflict", "claims", "analysis"]
+    },
+    {
+      "case_id": "operator-actionable-market-entry",
+      "query": "Assess whether a B2B SaaS company should expand into Indonesia or Vietnam first, based on market, regulatory, and go-to-market factors.",
+      "category": "market_policy",
+      "rationale": "Decision-oriented stress test: decision research with recommendations and explicit limitations.",
+      "date_sensitive": false,
+      "tags": ["decision", "market-entry", "actionable"]
     }
   ]
 }

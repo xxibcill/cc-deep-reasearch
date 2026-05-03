@@ -95,6 +95,13 @@ class OrchestratorRuntime:
         """Return the currently initialized runtime state, if any."""
         return self._state
 
+    @property
+    def agents(self) -> dict[str, Any]:
+        """Return the current agent mapping, if initialized."""
+        if self._state is None:
+            return {}
+        return self._state.agents
+
     def _build_agents(self, *, llm_router: LLMRouter) -> dict[str, Any]:
         """Instantiate the local specialist objects used by the workflow."""
         research_settings = self._config.research.model_dump(mode="python")

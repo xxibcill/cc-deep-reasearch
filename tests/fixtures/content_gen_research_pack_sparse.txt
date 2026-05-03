@@ -9,7 +9,7 @@ evidence_note: Good enough to keep the script practical
 
 claims:
 ---
-claim_type: proof_point
+claim_type: safe
 claim: Anchoring affects perceived value before full feature evaluation
 source_ids: src_02
 confidence: medium

@@ -103,6 +103,3 @@ class PublishStageOrchestrator(BaseStageOrchestrator):
             lane.decision_reason = f"Based on QC release state={effective_state.value} and fact_risk={getattr(lane.fact_risk_gate, 'decision', 'N/A')}"
 
         return ctx
-
-    def _resolve_lane_context(self, ctx: PipelineContext, idea_id: str) -> Any | None:
-        return next((lane_ctx for lane_ctx in ctx.lane_contexts if lane_ctx.idea_id == idea_id), None)

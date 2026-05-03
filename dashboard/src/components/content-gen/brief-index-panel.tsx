@@ -19,7 +19,7 @@ import {
 } from '@/components/content-gen/brief-shared'
 import { ItemsView, ItemsViewHeader, ItemsViewLoading, ItemsViewEmpty, ItemsViewToggle, type ItemsViewMode } from '@/components/content-gen/items-view'
 import { DataTable, type DataTableColumn } from '@/components/content-gen/data-table'
-import useContentGen from '@/hooks/useContentGen'
+import { useBriefs } from '@/hooks/useBriefs'
 import type { ManagedOpportunityBrief } from '@/types/content-gen'
 
 interface BriefIndexPanelProps {
@@ -28,13 +28,13 @@ interface BriefIndexPanelProps {
 
 export function BriefIndexPanel({ initialLifecycleState }: BriefIndexPanelProps) {
   const router = useRouter()
-  const briefs = useContentGen((s) => s.briefs)
-  const loading = useContentGen((s) => s.briefsLoading)
-  const loadBriefs = useContentGen((s) => s.loadBriefs)
-  const archiveBrief = useContentGen((s) => s.archiveBrief)
-  const cloneBrief = useContentGen((s) => s.cloneBrief)
-  const approveBrief = useContentGen((s) => s.approveBrief)
-  const error = useContentGen((s) => s.error)
+  const briefs = useBriefs((s) => s.briefs)
+  const loading = useBriefs((s) => s.briefsLoading)
+  const loadBriefs = useBriefs((s) => s.loadBriefs)
+  const archiveBrief = useBriefs((s) => s.archiveBrief)
+  const cloneBrief = useBriefs((s) => s.cloneBrief)
+  const approveBrief = useBriefs((s) => s.approveBrief)
+  const error = useBriefs((s) => s.error)
 
   type BriefsViewMode = ItemsViewMode
 

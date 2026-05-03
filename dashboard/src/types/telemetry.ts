@@ -300,11 +300,11 @@ export interface ResearchRunRequest {
   output_format?: ResearchOutputFormat;
   search_providers?: string[] | null;
   cross_reference_enabled?: boolean | null;
-  team_size?: number | null;
-  parallel_mode?: boolean | null;
-  num_researchers?: number | null;
+  concurrent_source_collection?: boolean | null;
+  max_concurrent_sources?: number | null;
   realtime_enabled?: boolean;
   pdf_enabled?: boolean;
+  workflow?: 'staged' | 'planner';
   theme?: string | null;
   agent_prompt_overrides?: Record<string, AgentPromptOverride>;
 }

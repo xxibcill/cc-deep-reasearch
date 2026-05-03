@@ -8,7 +8,7 @@ import { List, Sparkles } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Button } from '@/components/ui/button'
-import useContentGen from '@/hooks/useContentGen'
+import { useBacklog } from '@/hooks/useBacklog'
 
 const BacklogPanel = dynamic(
   () => import('@/components/content-gen/backlog-panel').then((mod) => mod.BacklogPanel),
@@ -21,17 +21,17 @@ const BacklogPanel = dynamic(
 )
 
 export default function BacklogPage() {
-  const backlog = useContentGen((s) => s.backlog)
-  const backlogPath = useContentGen((s) => s.backlogPath)
-  const backlogLoading = useContentGen((s) => s.backlogLoading)
-  const error = useContentGen((s) => s.error)
-  const loadBacklog = useContentGen((s) => s.loadBacklog)
-  const createBacklogItem = useContentGen((s) => s.createBacklogItem)
-  const updateBacklogItem = useContentGen((s) => s.updateBacklogItem)
-  const selectBacklogItem = useContentGen((s) => s.selectBacklogItem)
-  const archiveBacklogItem = useContentGen((s) => s.archiveBacklogItem)
-  const deleteBacklogItem = useContentGen((s) => s.deleteBacklogItem)
-  const startBacklogItem = useContentGen((s) => s.startBacklogItem)
+  const backlog = useBacklog((s) => s.backlog)
+  const backlogPath = useBacklog((s) => s.backlogPath)
+  const backlogLoading = useBacklog((s) => s.backlogLoading)
+  const error = useBacklog((s) => s.error)
+  const loadBacklog = useBacklog((s) => s.loadBacklog)
+  const createBacklogItem = useBacklog((s) => s.createBacklogItem)
+  const updateBacklogItem = useBacklog((s) => s.updateBacklogItem)
+  const selectBacklogItem = useBacklog((s) => s.selectBacklogItem)
+  const archiveBacklogItem = useBacklog((s) => s.archiveBacklogItem)
+  const deleteBacklogItem = useBacklog((s) => s.deleteBacklogItem)
+  const startBacklogItem = useBacklog((s) => s.startBacklogItem)
 
   useEffect(() => {
     if (backlog.length === 0) {

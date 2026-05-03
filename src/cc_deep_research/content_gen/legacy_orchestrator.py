@@ -7,6 +7,12 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
+from cc_deep_research.content_gen.claim_trace import (
+    build_claim_ledger as _build_claim_ledger,
+)
+from cc_deep_research.content_gen.claim_trace import (
+    format_research_context as _format_research_context,
+)
 from cc_deep_research.content_gen.models import (
     PIPELINE_STAGE_LABELS,
     PIPELINE_STAGES,
@@ -20,10 +26,6 @@ from cc_deep_research.content_gen.models import (
     BriefLifecycleState,
     BriefProvenance,
     ClaimStatus,
-    ClaimTraceEntry,
-    ClaimTraceLedger,
-    ClaimTraceStage,
-    ClaimTraceStatus,
     ContentGenRunMetrics,
     ContentTypeProfile,
     CoreInputs,
@@ -47,7 +49,6 @@ from cc_deep_research.content_gen.models import (
     RevisionMode,
     RunConstraints,
     ScoringOutput,
-    ScriptClaimStatement,
     ScriptingContext,
     ScriptStructure,
     ScriptVersion,
@@ -138,14 +139,14 @@ def _resolve_selected_angle(ctx: PipelineContext) -> Any | None:
         angle = next(
             (
                 option
-                for option in ctx.angles.angle_options
+                for option in ctx.angles.options
                 if option.angle_id == ctx.angles.selected_angle_id
             ),
             None,
         )
         if angle is not None:
             return angle
-    return ctx.angles.angle_options[0] if ctx.angles.angle_options else None
+    return ctx.angles.options[0] if ctx.angles.options else None
 
 
 def _lane_candidates(ctx: PipelineContext) -> list[PipelineCandidate]:
@@ -209,14 +210,14 @@ def _resolve_lane_angle(ctx: PipelineContext, idea_id: str) -> Any | None:
         angle = next(
             (
                 option
-                for option in lane.angles.angle_options
+                for option in lane.angles.options
                 if option.angle_id == lane.angles.selected_angle_id
             ),
             None,
         )
         if angle is not None:
             return angle
-    return lane.angles.angle_options[0] if lane.angles.angle_options else None
+    return lane.angles.options[0] if lane.angles.options else None
 
 
 def _thesis_to_angle_option_like(thesis: ThesisArtifact) -> Any:
@@ -237,10 +238,10 @@ def _thesis_to_angle_option_like(thesis: ThesisArtifact) -> Any:
         format=thesis.format,
         tone=thesis.tone,
         cta=thesis.cta,
-        why_this_version_should_exist=thesis.why_this_version_should_exist,
-        differentiation_summary=thesis.differentiation_summary,
-        genericity_risks=thesis.genericity_risks,
-        market_framing_challenged=thesis.market_framing_challenged,
+        why_this_version_should_exist=thesis.what_this_contributes,
+        differentiation_summary=thesis.differentiation_strategy,
+        genericity_risks=thesis.genericity_flags,
+        market_framing_challenged=thesis.audience_belief_to_challenge,
     )
 
 
@@ -365,147 +366,6 @@ def _seed_beat_intents_from_argument_map(argument_map: ArgumentMap | None) -> Be
             for beat in argument_map.beat_claim_plan
         ]
     )
-
-
-def _build_claim_ledger(
-    research_pack: ResearchPack | None,
-    argument_map: ArgumentMap | None,
-    scripting: ScriptingContext | None,
-) -> ClaimTraceLedger:
-    """Build claim traceability ledger from research pack, argument map, and scripting context."""
-    from datetime import UTC, datetime
-
-    # Initialize from research pack
-    ledger = ClaimTraceLedger()
-    claim_text_to_id: dict[str, str] = {}
-
-    if research_pack:
-        for claim in research_pack.claims:
-            entry = ClaimTraceEntry(
-                claim_id=claim.claim_id,
-                claim_text=claim.claim,
-                first_seen_stage=ClaimTraceStage.RESEARCH_PACK,
-                research_claim_type=claim.claim_type,
-                source_ids=list(claim.source_ids),
-                status=ClaimTraceStatus.SUPPORTED
-                if claim.source_ids
-                else ClaimTraceStatus.UNSUPPORTED,
-            )
-            ledger.entries.append(entry)
-            claim_text_to_id[claim.claim] = claim.claim_id
-
-    # Update from argument map
-    if argument_map:
-        for arg_claim in argument_map.safe_claims:
-            if arg_claim.claim in claim_text_to_id:
-                existing_entry = ledger.get_claim(claim_text_to_id[arg_claim.claim])
-                if existing_entry:
-                    existing_entry.present_in_argument_map = True
-                    existing_entry.argument_claim_id = arg_claim.claim_id
-                    existing_entry.supporting_proof_ids = list(arg_claim.supporting_proof_ids)
-                    if not arg_claim.supporting_proof_ids:
-                        existing_entry.status = ClaimTraceStatus.UNSUPPORTED
-            else:
-                entry = ClaimTraceEntry(
-                    claim_id=arg_claim.claim_id,
-                    claim_text=arg_claim.claim,
-                    first_seen_stage=ClaimTraceStage.ARGUMENT_MAP,
-                    present_in_argument_map=True,
-                    argument_claim_id=arg_claim.claim_id,
-                    supporting_proof_ids=list(arg_claim.supporting_proof_ids),
-                    status=ClaimTraceStatus.SUPPORTED
-                    if arg_claim.supporting_proof_ids
-                    else ClaimTraceStatus.UNSUPPORTED,
-                )
-                ledger.entries.append(entry)
-                claim_text_to_id[arg_claim.claim] = arg_claim.claim_id
-
-        for beat in argument_map.beat_claim_plan:
-            for claim_id in beat.claim_ids:
-                existing_entry = ledger.get_claim(claim_id)
-                if existing_entry:
-                    existing_entry.present_in_beat_plan = True
-                    if beat.beat_id not in existing_entry.beat_ids:
-                        existing_entry.beat_ids.append(beat.beat_id)
-                else:
-                    entry = ClaimTraceEntry(
-                        claim_id=claim_id,
-                        claim_text="",
-                        first_seen_stage=ClaimTraceStage.BEAT_PLAN,
-                        present_in_beat_plan=True,
-                        beat_ids=[beat.beat_id],
-                        status=ClaimTraceStatus.UNKNOWN,
-                    )
-                    ledger.entries.append(entry)
-
-    # Analyze script for claim traceability
-    if scripting:
-        final_script = ""
-        if scripting.qc and scripting.qc.final_script:
-            final_script = scripting.qc.final_script
-        elif scripting.tightened:
-            final_script = scripting.tightened.content
-        elif scripting.draft:
-            final_script = scripting.draft.content
-
-        if final_script:
-            # Match script claims against known claims from argument map
-            arg_claims_by_text = {
-                c.claim: c for c in (argument_map.safe_claims if argument_map else [])
-            }
-
-            for claim_text, arg_claim in arg_claims_by_text.items():
-                if claim_text.lower() in final_script.lower():
-                    existing_entry = ledger.get_claim(arg_claim.claim_id)
-                    if existing_entry:
-                        existing_entry.present_in_script = True
-                        statement = ScriptClaimStatement(
-                            text=claim_text,
-                            beat_name=existing_entry.beat_ids[0] if existing_entry.beat_ids else "",
-                            claim_ids=[arg_claim.claim_id],
-                            proof_anchor_ids=list(arg_claim.supporting_proof_ids),
-                            status=ClaimTraceStatus.SUPPORTED
-                            if arg_claim.supporting_proof_ids
-                            else ClaimTraceStatus.UNSUPPORTED,
-                            status_reason="Matched to argument map claim with proof anchors"
-                            if arg_claim.supporting_proof_ids
-                            else "Matched to argument map claim without proof anchors",
-                        )
-                        ledger.script_claims.append(statement)
-                        existing_entry.script_statement_ids.append(statement.statement_id)
-
-            # Detect introduced late claims (mentioned in script but not in argument map)
-            for entry in ledger.entries:
-                if (
-                    not entry.present_in_argument_map
-                    and entry.first_seen_stage == ClaimTraceStage.RESEARCH_PACK
-                    and entry.claim_text.lower() in final_script.lower()
-                ):
-                    entry.status = ClaimTraceStatus.INTRODUCED_LATE
-                    entry.status_changed_at = datetime.now(tz=UTC).isoformat()
-                    ledger.introduced_late_claims.append(entry.claim_id)
-                    statement = ScriptClaimStatement(
-                        text=entry.claim_text,
-                        claim_ids=[entry.claim_id],
-                        status=ClaimTraceStatus.INTRODUCED_LATE,
-                        status_reason="Claim from research pack appeared in script but was not in argument map",
-                    )
-                    ledger.script_claims.append(statement)
-                    entry.script_statement_ids.append(statement.statement_id)
-
-            # Detect dropped claims (in argument map but not in script)
-            for entry in ledger.entries:
-                if entry.present_in_argument_map and not entry.present_in_script:
-                    entry.status = ClaimTraceStatus.DROPPED
-                    entry.status_changed_at = datetime.now(tz=UTC).isoformat()
-                    ledger.dropped_claims.append(entry.claim_id)
-
-            # Flag unsupported script claims
-            for stmt in ledger.script_claims:
-                if stmt.status == ClaimTraceStatus.UNSUPPORTED:
-                    ledger.unsupported_script_claims.append(stmt.statement_id)
-
-    return ledger
 
 
 def _compute_research_depth_routing(
@@ -2269,7 +2129,7 @@ class ContentGenOrchestrator:
             return "no scores"
         if stage == "generate_angles":
             if ctx.angles:
-                return f"options={len(ctx.angles.angle_options)}, selected={ctx.angles.selected_angle_id or 'none'}"
+                return f"options={len(ctx.angles.options)}, selected={ctx.angles.selected_angle_id or 'none'}"
             return "options=0"
         if stage == "build_research_pack":
             if ctx.research_pack:
@@ -2345,7 +2205,7 @@ class ContentGenOrchestrator:
             elif ctx.angles:
                 meta.selected_idea_id = ctx.angles.idea_id or _resolve_selected_idea_id(ctx)
                 meta.selected_angle_id = ctx.angles.selected_angle_id or ""
-                meta.option_count = len(ctx.angles.angle_options)
+                meta.option_count = len(ctx.angles.options)
             meta.active_candidate_count = len(ctx.active_candidates)
         elif stage == "build_research_pack":
             if ctx.research_pack:
@@ -4217,37 +4077,6 @@ _PIPELINE_HANDLERS = [
     _stage_publish_queue,
     _stage_performance,
 ]
-
-
-def _format_research_context(research_pack: ResearchPack | None) -> str:
-    if research_pack is None:
-        return ""
-
-    sections: list[str] = []
-    if research_pack.audience_insights:
-        sections.append("Audience insights:\n- " + "\n- ".join(research_pack.audience_insights[:3]))
-    if research_pack.key_facts:
-        sections.append("Key facts:\n- " + "\n- ".join(research_pack.key_facts[:3]))
-    if research_pack.proof_points:
-        sections.append("Proof points:\n- " + "\n- ".join(research_pack.proof_points[:5]))
-    if research_pack.examples:
-        sections.append("Examples:\n- " + "\n- ".join(research_pack.examples[:3]))
-    if research_pack.case_studies:
-        sections.append("Case studies:\n- " + "\n- ".join(research_pack.case_studies[:2]))
-    if research_pack.gaps_to_exploit:
-        sections.append("Competitor gaps:\n- " + "\n- ".join(research_pack.gaps_to_exploit[:2]))
-    if research_pack.claims_requiring_verification:
-        sections.append(
-            "Claims requiring verification:\n- "
-            + "\n- ".join(research_pack.claims_requiring_verification[:3])
-        )
-    if research_pack.unsafe_or_uncertain_claims:
-        sections.append(
-            "Unsafe or uncertain claims:\n- "
-            + "\n- ".join(research_pack.unsafe_or_uncertain_claims[:3])
-        )
-
-    return "\n\n".join(sections)
 
 
 def _format_qc_research_summary(research_pack: ResearchPack | None) -> str:

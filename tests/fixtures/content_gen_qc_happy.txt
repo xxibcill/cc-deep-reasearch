@@ -1,21 +1,17 @@
+- hook_strength: Pass
+- factual_accuracy: Pass
+- claim_support: Fail
+- visual_clarity: Pass
+- audio_quality: Pass
+- caption_accuracy: Pass
+- evidence_verification: Fail
+- legal_safety: Fail
+
 hook_strength: strong
-clarity_issues:
-- The payoff line could land one beat earlier
-factual_issues:
-- Verify that the example pricing page is a public asset
-visual_issues:
-- Add a clearer plan-card zoom when the premium tier is introduced
-audio_issues:
-- Tighten the pause before the CTA
-caption_issues:
-- Remove one repeated phrase from the second sentence
 unsupported_claims:
 - Saying the pricing page "always" lifts conversion is not supported by the research provided
 risky_claims:
 - The script implies a guaranteed revenue lift, which creates trust and legal risk
-required_fact_checks:
-- Confirm the featured pricing page screenshot is cleared for reuse
-- Verify the on-screen revenue example matches the underlying case study
 must_fix_items:
 - Confirm the screenshot can be shown on camera
 - Replace the vague "works better" claim with a concrete explanation

@@ -1,0 +1,77 @@
+{
+  "idea_id": "idea-fixture-002",
+  "raw_idea": "Use pricing anchors so your middle plan feels like the safe choice",
+  "research_context": "Pricing psychology research shows anchors shape perceived value before feature comparisons begin",
+  "tone": "direct and diagnostic",
+  "idea_id": "idea-fixture-002",
+  "hook": "If buyers jump to cheapest, your anchor tier is broken",
+  "thesis": "A visible premium anchor clarifies the value of the middle plan and reduces price shock",
+  "beats": [
+    {
+      "beat_id": "beat-001",
+      "beat_type": "hook",
+      "talking_points": [
+        "Call out the pricing mistake buyers spot first",
+        "Most pricing pages lead with features but buyers lead with price"
+      ],
+      "evidence_citations": [
+        "Behavioral pricing research from MIT SMR"
+      ],
+      "hook": "If buyers jump to cheapest, your anchor tier is broken",
+      "cta": "Audit your highest-priced plan",
+      "duration_seconds": 8
+    },
+    {
+      "beat_id": "beat-002",
+      "beat_type": "proof",
+      "talking_points": [
+        "Show the decoy-tier example",
+        "Compare two-tier vs three-tier pricing setups"
+      ],
+      "evidence_citations": [
+        "Public SaaS pricing page examples"
+      ],
+      "hook": "",
+      "cta": "",
+      "duration_seconds": 20
+    },
+    {
+      "beat_id": "beat-003",
+      "beat_type": "cta",
+      "talking_points": [
+        "Rewrite one pricing card today",
+        "Focus on what the middle tier solves, not what it includes"
+      ],
+      "evidence_citations": [],
+      "hook": "",
+      "cta": "Audit your middle plan against the decoy effect",
+      "duration_seconds": 10
+    }
+  ],
+  "cta": "Audit your middle plan against the decoy effect",
+  "word_count": 120,
+  "estimated_duration_seconds": 45,
+  "version_id": "sv-fixture-001",
+  "parse_mode": "json",
+  "qc": {
+    "hook_strength": "strong",
+    "clarity_issues": [],
+    "factual_issues": [],
+    "visual_issues": [],
+    "audio_issues": [],
+    "caption_issues": [],
+    "unsupported_claims": [],
+    "risky_claims": [],
+    "required_fact_checks": [],
+    "must_fix_items": []
+  },
+  "llm_traces": [],
+  "step_traces": [],
+  "iteration_number": 1,
+  "is_revised": false,
+  "beat_evidence_map": {
+    "beat-001": ["Behavioral pricing research from MIT SMR"],
+    "beat-002": ["Public SaaS pricing page examples"]
+  },
+  "warnings": []
+}

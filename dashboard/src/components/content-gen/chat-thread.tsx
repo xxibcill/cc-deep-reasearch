@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { cn } from '@/lib/utils'
 import { backlogChatRespond, backlogChatApply } from '@/lib/content-gen-api'
-import useContentGen from '@/hooks/useContentGen'
+import { useBacklog } from '@/hooks/useBacklog'
 import type { BacklogChatMessage, BacklogChatOperation, BacklogChatRespondMode, BacklogItem } from '@/types/content-gen'
 
 const STORAGE_KEY = 'content-gen-chat-session'
@@ -92,7 +92,7 @@ export function ChatThread({
   onApplyErrorsChange,
   variant = 'editor',
 }: ChatThreadProps) {
-  const mergeBacklogItems = useContentGen((s) => s.mergeBacklogItems)
+  const mergeBacklogItems = useBacklog((s) => s.mergeBacklogItems)
 
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([])
   const [input, setInput] = useState('')

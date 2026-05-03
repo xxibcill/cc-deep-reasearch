@@ -68,6 +68,46 @@ def load_content_gen_pipeline_smoke() -> dict[str, Any]:
     return load_fixture("content_gen_pipeline_smoke")
 
 
+def load_content_gen_pipeline_context() -> dict[str, Any]:
+    """Load the content-gen pipeline context fixture."""
+    return load_fixture("content_gen_pipeline_context")
+
+
+def load_content_gen_backlog_item() -> dict[str, Any]:
+    """Load the content-gen backlog item fixture."""
+    return load_fixture("content_gen_backlog_item")
+
+
+def load_content_gen_scoring_output() -> dict[str, Any]:
+    """Load the content-gen scoring output fixture."""
+    return load_fixture("content_gen_scoring_output")
+
+
+def load_content_gen_managed_brief() -> dict[str, Any]:
+    """Load the content-gen managed brief fixture."""
+    return load_fixture("content_gen_managed_brief")
+
+
+def load_content_gen_scripting_result() -> dict[str, Any]:
+    """Load the content-gen scripting result fixture."""
+    return load_fixture("content_gen_scripting_result")
+
+
+def load_content_gen_strategy_memory() -> dict[str, Any]:
+    """Load the content-gen strategy memory fixture."""
+    return load_fixture("content_gen_strategy_memory")
+
+
+def load_content_gen_argument_map_happy() -> str:
+    """Load the happy-path argument map fixture."""
+    return load_text_fixture("content_gen_argument_map_happy")
+
+
+def load_content_gen_argument_map_malformed() -> str:
+    """Load the malformed argument map fixture."""
+    return load_text_fixture("content_gen_argument_map_malformed")
+
+
 def list_fixtures() -> list[str]:
     """List all available fixture files.
 
@@ -88,5 +128,13 @@ __all__ = [
     "load_analysis_malformed",
     "load_analysis_cross_reference",
     "load_content_gen_pipeline_smoke",
+    "load_content_gen_pipeline_context",
+    "load_content_gen_backlog_item",
+    "load_content_gen_scoring_output",
+    "load_content_gen_managed_brief",
+    "load_content_gen_scripting_result",
+    "load_content_gen_strategy_memory",
+    "load_content_gen_argument_map_happy",
+    "load_content_gen_argument_map_malformed",
     "list_fixtures",
 ]

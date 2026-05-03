@@ -17,6 +17,7 @@ import { Textarea } from '@/components/ui/textarea'
 
 type ResearchDepth = 'quick' | 'standard' | 'deep'
 type LaunchPresetId = 'factual' | 'standard' | 'deep'
+type WorkflowType = 'staged' | 'planner'
 
 interface FormData {
   query: string
@@ -24,6 +25,7 @@ interface FormData {
   depth: ResearchDepth
   minSources: string
   theme: string | null
+  workflow: WorkflowType
 }
 
 interface LaunchPreset {
@@ -93,6 +95,7 @@ export function StartResearchForm() {
     depth: DEFAULT_PRESET.depth,
     minSources: DEFAULT_PRESET.minSources,
     theme: null,
+    workflow: 'staged',
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -209,6 +212,7 @@ export function StartResearchForm() {
         realtime_enabled: true,
         theme: formData.theme,
         agent_prompt_overrides: buildPromptOverrides(),
+        workflow: formData.workflow,
       }
 
       const response = await startResearchRun(request)
@@ -246,6 +250,7 @@ export function StartResearchForm() {
       depth: DEFAULT_PRESET.depth,
       minSources: DEFAULT_PRESET.minSources,
       theme: null,
+      workflow: 'staged',
     })
     setPromptPrefixes({
       analyzer: '',
@@ -383,6 +388,24 @@ export function StartResearchForm() {
                     <option value="standard">Standard: balanced coverage and synthesis</option>
                     <option value="deep">Deep: broader collection for higher-scrutiny topics</option>
                   </NativeSelect>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="workflow">Workflow</Label>
+                  <NativeSelect
+                    id="workflow"
+                    value={formData.workflow}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, workflow: e.target.value as WorkflowType }))
+                    }
+                    disabled={isSubmitting}
+                  >
+                    <option value="staged">Staged: sequential phase execution (default)</option>
+                    <option value="planner">Planner: task-graph decomposition (beta)</option>
+                  </NativeSelect>
+                  <p className="text-xs text-muted-foreground">
+                    Planner is an opt-in beta workflow using hierarchical task decomposition.
+                  </p>
                 </div>
 
                 <div className="space-y-2">

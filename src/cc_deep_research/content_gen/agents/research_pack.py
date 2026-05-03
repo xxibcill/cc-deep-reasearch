@@ -1306,7 +1306,7 @@ def _normalize_finding_type(value: str) -> ResearchFindingType:
     normalized = value.strip().lower()
     if normalized in {member.value for member in ResearchFindingType}:
         return ResearchFindingType(normalized)
-    return ResearchFindingType.AUDIENCE_INSIGHT
+    return ResearchFindingType.FACTUAL
 
 
 def _normalize_claim_type(value: str) -> ResearchClaimType:

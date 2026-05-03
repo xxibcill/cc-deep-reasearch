@@ -178,6 +178,14 @@ class ResearchConfig(BaseModel):
         description="Method for AI integration: 'heuristic', 'api', or 'hybrid'",
     )
     ai_temperature: float = Field(default=0.3, ge=0.0, le=1.0)
+    knowledge_assisted_planning: bool = Field(
+        default=False,
+        description="Whether to consult prior local knowledge when planning research.",
+    )
+    knowledge_vault_enabled: bool = Field(
+        default=True,
+        description="Whether the knowledge vault is active for ingest and retrieval.",
+    )
 
 
 class OutputConfig(BaseModel):

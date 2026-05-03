@@ -10,18 +10,11 @@ import type {
   ManagedOpportunityBrief,
   BriefRevision,
 } from '@/types/content-gen';
+import { listPipelines, startPipeline, getPipeline, stopPipeline as stopPipelineApi, approveQC } from '@/lib/content-gen/pipeline';
+import { listScripts, runScripting } from '@/lib/content-gen/scripts';
+import { getStrategy as getStrategyApi, updateStrategy as updateStrategyApi } from '@/lib/content-gen/strategy';
+import { listPublishQueue, removeFromQueue as removeFromQueueApi } from '@/lib/content-gen/publish';
 import {
-  listPipelines,
-  startPipeline,
-  getPipeline,
-  stopPipeline as stopPipelineApi,
-  approveQC,
-  runScripting as runScriptingApi,
-  listScripts,
-  getStrategy as getStrategyApi,
-  updateStrategy as updateStrategyApi,
-  listPublishQueue,
-  removeFromQueue as removeFromQueueApi,
   listBacklog,
   updateBacklogItem as updateBacklogItemApi,
   selectBacklogItem as selectBacklogItemApi,
@@ -29,6 +22,8 @@ import {
   deleteBacklogItem as deleteBacklogItemApi,
   createBacklogItem as createBacklogItemApi,
   startBacklogItem as startBacklogItemApi,
+} from '@/lib/content-gen/backlog';
+import {
   listBriefs,
   getBrief,
   createBrief as createBriefApi,
@@ -45,8 +40,13 @@ import {
   getBriefRevision,
   saveBriefRevision,
   applyRevision,
-} from '@/lib/content-gen-api';
+} from '@/lib/content-gen/brief';
 import { getApiErrorMessage } from '@/lib/api';
+
+// ---------------------------------------------------------------------------
+// Unified store - delegates to feature stores internally
+// This preserves the existing API while splitting internals
+// ---------------------------------------------------------------------------
 
 interface ContentGenState {
   // Pipeline runs
@@ -136,26 +136,26 @@ interface ContentGenState {
 }
 
 const initialState = {
-  pipelines: [],
+  pipelines: [] as PipelineRunSummary[],
   pipelinesLoading: false,
-  activePipelineId: null,
-  pipelineContext: null,
-  pipelineStageProgress: {},
-  strategy: null,
+  activePipelineId: null as string | null,
+  pipelineContext: null as PipelineContext | null,
+  pipelineStageProgress: {} as Record<number, StageProgress>,
+  strategy: null as StrategyMemory | null,
   strategyLoading: false,
-  publishQueue: [],
+  publishQueue: [] as PublishItem[],
   publishQueueLoading: false,
-  scripts: [],
+  scripts: [] as SavedScriptRun[],
   scriptsLoading: false,
-  backlog: [],
-  backlogPath: null,
+  backlog: [] as BacklogItem[],
+  backlogPath: null as string | null,
   backlogLoading: false,
-  briefs: [],
+  briefs: [] as ManagedOpportunityBrief[],
   briefsLoading: false,
-  activeBriefId: null,
-  activeBriefRevisions: [],
-  siblingBriefs: [],
-  error: null,
+  activeBriefId: null as string | null,
+  activeBriefRevisions: [] as BriefRevision[],
+  siblingBriefs: [] as ManagedOpportunityBrief[],
+  error: null as string | null,
 };
 
 const useContentGen = create<ContentGenState>((set, get) => ({
@@ -249,7 +249,7 @@ const useContentGen = create<ContentGenState>((set, get) => ({
   runScripting: async (idea) => {
     set({ error: null });
     try {
-      await runScriptingApi({ idea });
+      await runScripting({ idea });
       const scripts = await listScripts();
       set({ scripts });
     } catch (err) {
@@ -388,10 +388,10 @@ const useContentGen = create<ContentGenState>((set, get) => ({
   },
 
   selectBacklogItem: async (ideaId) => {
-    const previousBacklog = get().backlog
-    set({ error: null })
+    const previousBacklog = get().backlog;
+    set({ error: null });
     try {
-      const selected = await selectBacklogItemApi(ideaId)
+      const selected = await selectBacklogItemApi(ideaId);
       set((state) => ({
         backlog: state.backlog.map((item) =>
           item.idea_id === ideaId
@@ -400,9 +400,9 @@ const useContentGen = create<ContentGenState>((set, get) => ({
               ? { ...item, status: 'backlog' as const, selection_reasoning: '' }
               : item
         ),
-      }))
+      }));
     } catch (err) {
-      set({ backlog: previousBacklog, error: getApiErrorMessage(err, 'Failed to select backlog item.') })
+      set({ backlog: previousBacklog, error: getApiErrorMessage(err, 'Failed to select backlog item.') });
     }
   },
 

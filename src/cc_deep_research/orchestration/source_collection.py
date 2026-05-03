@@ -20,7 +20,7 @@ from .resilience import (
     build_parallel_collection_policy,
 )
 from .source_collection_parallel import ParallelSourceCollectionStrategy, _emit_agent_lifecycle
-from .source_collection_sequential import SequentialSourceCollectionStrategy
+from .source_collection_sequential import SequentialSourceCollectionStrategy, _SequentialCollector
 
 
 class SourceAggregationService:
@@ -253,16 +253,8 @@ class SourceContentHydrator:
             )
             return None
         except ImportError:
-            self._monitor.log("web_reader MCP not available, skipping content fetch")
-            self._monitor.emit_event(
-                event_type="tool.failed",
-                category="tool",
-                name="mcp.web_reader",
-                status="unavailable",
-                parent_event_id=tool_event_id,
-                metadata={"url": url, "error": "web_reader MCP not available"},
-            )
-            return None
+            self._monitor.log("web_reader MCP not available, attempting HTTP fallback")
+            return await self._http_fetch_fallback(url, tool_event_id)
         except Exception as exc:
             self._monitor.log(f"Error fetching page content: {exc}")
             self._monitor.emit_event(
@@ -275,6 +267,114 @@ class SourceContentHydrator:
             )
             self._monitor.record_tool_call(
                 tool_name="mcp.web_reader",
+                status="error",
+                duration_ms=0,
+                url=url,
+                error=str(exc),
+            )
+            return None
+
+    async def _http_fetch_fallback(self, url: str, tool_event_id: str | None = None) -> str | None:
+        """HTTP fallback for content fetching when MCP web_reader is unavailable.
+
+        P7-T4: Adds HTTP fallback with timeout and size limits.
+        """
+        try:
+            import httpx
+        except ImportError:
+            self._monitor.log("httpx not available, cannot fetch content")
+            self._monitor.emit_event(
+                event_type="tool.failed",
+                category="tool",
+                name="http_fetch_fallback",
+                status="unavailable",
+                parent_event_id=tool_event_id,
+                metadata={"url": url, "error": "httpx not installed"},
+            )
+            return None
+
+        try:
+            start_time = time.time()
+            timeout = httpx.Timeout(10.0, connect=5.0)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.get(
+                    url,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (compatible; CC-Deep-Research/1.0)",
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    },
+                    follow_redirects=True,
+                )
+                response.raise_for_status()
+
+                content_bytes = response.content
+                MAX_SIZE = 500 * 1024  # 500KB limit
+                if len(content_bytes) > MAX_SIZE:
+                    content_bytes = content_bytes[:MAX_SIZE]
+
+                content = content_bytes.decode("utf-8", errors="replace")
+                # Basic HTML-to-text cleanup
+                import re
+                content = re.sub(r"<script[^>]*>.*?</script>", "", content, flags=re.DOTALL)
+                content = re.sub(r"<style[^>]*>.*?</style>", "", content, flags=re.DOTALL)
+                content = re.sub(r"<[^>]+>", " ", content)
+                content = re.sub(r"\s+", " ", content).strip()
+
+                duration_ms = int((time.time() - start_time) * 1000)
+                self._content_cache[url] = content
+
+                self._monitor.emit_event(
+                    event_type="tool.completed",
+                    category="tool",
+                    name="http_fetch_fallback",
+                    status="completed",
+                    duration_ms=duration_ms,
+                    parent_event_id=tool_event_id,
+                    metadata={
+                        "url": url,
+                        "content_length": len(content),
+                        "fallback": True,
+                    },
+                )
+                self._monitor.record_tool_call(
+                    tool_name="http_fetch_fallback",
+                    status="success",
+                    duration_ms=duration_ms,
+                    url=url,
+                    fallback=True,
+                )
+                return content
+
+        except httpx.TimeoutException:
+            self._monitor.log(f"HTTP fetch timeout for {url}")
+            self._monitor.emit_event(
+                event_type="tool.failed",
+                category="tool",
+                name="http_fetch_fallback",
+                status="timeout",
+                parent_event_id=tool_event_id,
+                metadata={"url": url, "error": "timeout"},
+            )
+            self._monitor.record_tool_call(
+                tool_name="http_fetch_fallback",
+                status="timeout",
+                duration_ms=0,
+                url=url,
+                error="timeout",
+            )
+            return None
+        except Exception as exc:
+            self._monitor.log(f"HTTP fetch failed for {url}: {exc}")
+            self._monitor.emit_event(
+                event_type="tool.failed",
+                category="tool",
+                name="http_fetch_fallback",
+                status="failed",
+                parent_event_id=tool_event_id,
+                metadata={"url": url, "error": str(exc)},
+            )
+            self._monitor.record_tool_call(
+                tool_name="http_fetch_fallback",
                 status="error",
                 duration_ms=0,
                 url=url,
@@ -318,7 +418,7 @@ class SourceCollectionService:
     async def collect_with_fallback(
         self,
         *,
-        collector: object,
+        collector: _SequentialCollector,
         agent_pool: object | None,
         query_families: list[QueryFamily],
         depth: ResearchDepth,
@@ -364,7 +464,7 @@ class SourceCollectionService:
     async def collect_follow_up_sources(
         self,
         *,
-        collector: object,
+        collector: _SequentialCollector,
         agent_pool: object | None,
         follow_up_queries: list[str],
         depth: ResearchDepth,
@@ -391,7 +491,7 @@ class SourceCollectionService:
     async def collect_sources(
         self,
         *,
-        collector: object,
+        collector: _SequentialCollector,
         query_families: list[QueryFamily],
         depth: ResearchDepth,
     ) -> list[SearchResultItem]:

@@ -4,7 +4,9 @@ import Link from 'next/link'
 import { Clock3, FileText, Lightbulb } from 'lucide-react'
 
 import { ResearchContentActions } from '@/components/research-content-actions'
-import useContentGen from '@/hooks/useContentGen'
+import { useStrategy } from '@/hooks/useStrategy'
+import { useScripts } from '@/hooks/useScripts'
+import { usePublish } from '@/hooks/usePublish'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,9 +21,9 @@ interface OverviewSidebarProps {
 }
 
 export function OverviewSidebar({ onTabChange, researchBridge }: OverviewSidebarProps) {
-  const strategy = useContentGen((s) => s.strategy)
-  const scripts = useContentGen((s) => s.scripts)
-  const publishQueue = useContentGen((s) => s.publishQueue)
+  const strategy = useStrategy((s) => s.strategy)
+  const scripts = useScripts((s) => s.scripts)
+  const publishQueue = usePublish((s) => s.publishQueue)
 
   const recentScripts = scripts.slice(0, 5)
   const scheduledCount = publishQueue.filter((i) => i.status === 'scheduled').length

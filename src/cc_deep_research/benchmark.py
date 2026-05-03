@@ -68,6 +68,10 @@ class BenchmarkCaseMetrics(BaseModel):
     iteration_count: int = Field(default=0, ge=0)
     latency_ms: int = Field(default=0, ge=0)
     validation_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    report_quality_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    unsupported_claim_count: int = Field(default=0, ge=0)
+    citation_error_count: int = Field(default=0, ge=0)
+    hydration_success_rate: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 class BenchmarkCaseReport(BaseModel):
@@ -99,20 +103,28 @@ class BenchmarkScorecard(BaseModel):
     average_iteration_count: float = 0.0
     average_latency_ms: float = 0.0
     average_validation_score: float | None = None
+    average_report_quality_score: float | None = None
+    average_unsupported_claim_count: float = 0.0
+    average_citation_error_count: float = 0.0
+    average_hydration_success_rate: float | None = None
     date_sensitive_cases: int = Field(default=0, ge=0)
     stop_reasons: dict[str, int] = Field(default_factory=dict)
     categories: dict[str, int] = Field(default_factory=dict)
+    workflow_mode: str = Field(default="staged")
+    provider_mode: str = Field(default="default")
 
 
 class BenchmarkRunReport(BaseModel):
     """Structured, diffable output for a full benchmark corpus run."""
 
-    harness_version: str = Field(default="1.0")
+    harness_version: str = Field(default="1.1")
     corpus_version: str = Field(..., min_length=1)
     generated_at: str = Field(..., min_length=1)
     configuration: dict[str, Any] = Field(default_factory=dict)
     scorecard: BenchmarkScorecard
     cases: list[BenchmarkCaseReport] = Field(default_factory=list)
+
+    model_config = {"extra": "allow"}
 
 
 def _extract_domain(url: str) -> str:
@@ -123,7 +135,11 @@ def _extract_domain(url: str) -> str:
 
 def _infer_source_type(source: SearchResultItem) -> BenchmarkSourceType:
     """Infer a stable source-type label for scorecard diversity metrics."""
-    explicit = str(source.source_metadata.get("source_type", "")).strip().lower()
+    explicit = (
+        source.source_type.value
+        if source.source_type is not None
+        else str(source.source_metadata.get("source_type", "")).strip().lower()
+    )
     if explicit in {"government", "academic", "news", "organization", "commercial", "other"}:
         return explicit  # type: ignore[return-value]
 
@@ -147,6 +163,8 @@ def build_benchmark_case_report(
     session: ResearchSession,
     *,
     configured_depth: str,
+    workflow_mode: str | None = None,
+    provider_mode: str | None = None,
 ) -> BenchmarkCaseReport:
     """Project one research session into a benchmark report row."""
     domains = sorted({_extract_domain(source.url) for source in session.sources if source.url})
@@ -173,6 +191,10 @@ def build_benchmark_case_report(
             iteration_count=len(iteration_history) if isinstance(iteration_history, list) else 0,
             latency_ms=int(round(session.execution_time_seconds * 1000)),
             validation_score=_coerce_validation_score(validation_payload),
+            report_quality_score=_coerce_validation_score(metadata.get("report_quality", {})),
+            unsupported_claim_count=metadata.get("unsupported_claim_count", 0) or 0,
+            citation_error_count=metadata.get("citation_error_count", 0) or 0,
+            hydration_success_rate=_coerce_float(metadata.get("hydration_success_rate")),
         ),
         session_id=session.session_id,
         configured_depth=configured_depth,
@@ -201,10 +223,31 @@ def _coerce_string_list(value: Any) -> list[str]:
     return []
 
 
-def build_benchmark_scorecard(case_reports: list[BenchmarkCaseReport]) -> BenchmarkScorecard:
-    """Aggregate deterministic benchmark metrics across all case reports."""
+def _coerce_float(value: Any) -> float | None:
+    """Extract a float from metadata."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _average_float(values: list[float | None]) -> float | None:
+    """Compute average of non-None floats."""
+    non_none = [v for v in values if v is not None]
+    return round(sum(non_none) / len(non_none), 3) if non_none else None
+
+
+def build_benchmark_scorecard(
+    case_reports: list[BenchmarkCaseReport],
+    *,
+    workflow_mode: str = "staged",
+    provider_mode: str = "default",
+) -> BenchmarkScorecard:
+    """Aggregate deterministic benchmark metrics across all case reports.
+
+    P7-T7: Accepts workflow_mode and provider_mode to propagate into scorecard.
+    """
     if not case_reports:
-        return BenchmarkScorecard()
+        return BenchmarkScorecard(workflow_mode=workflow_mode, provider_mode=provider_mode)
 
     total_cases = len(case_reports)
     validation_scores = [
@@ -238,9 +281,23 @@ def build_benchmark_scorecard(case_reports: list[BenchmarkCaseReport]) -> Benchm
         average_validation_score=(
             round(sum(validation_scores) / len(validation_scores), 3) if validation_scores else None
         ),
+        average_report_quality_score=_average_float(
+            [r.metrics.report_quality_score for r in case_reports]
+        ),
+        average_unsupported_claim_count=round(
+            sum(r.metrics.unsupported_claim_count for r in case_reports) / total_cases, 3
+        ),
+        average_citation_error_count=round(
+            sum(r.metrics.citation_error_count for r in case_reports) / total_cases, 3
+        ),
+        average_hydration_success_rate=_average_float(
+            [r.metrics.hydration_success_rate for r in case_reports]
+        ),
         date_sensitive_cases=sum(1 for report in case_reports if report.date_sensitive),
         stop_reasons=stop_reasons,
         categories=categories,
+        workflow_mode=workflow_mode,
+        provider_mode=provider_mode,
     )
 
 
@@ -252,10 +309,15 @@ async def run_benchmark_corpus(
     configuration: dict[str, Any] | None = None,
     generated_at: str | None = None,
 ) -> BenchmarkRunReport:
-    """Run the full benchmark corpus with an injected case runner."""
+    """Run the full benchmark corpus with an injected case runner.
+
+    P7-T7: configuration accepts workflow_mode and provider_mode which propagate into scorecard.
+    """
     case_reports: list[BenchmarkCaseReport] = []
     run_configuration = dict(configuration or {})
     configured_depth = str(run_configuration.get("depth", "standard"))
+    workflow_mode = str(run_configuration.get("workflow_mode", "staged"))
+    provider_mode = str(run_configuration.get("provider_mode", "default"))
 
     for case in corpus.cases:
         session = await run_case(case)
@@ -271,7 +333,11 @@ async def run_benchmark_corpus(
         corpus_version=corpus.version,
         generated_at=generated_at or datetime.now(UTC).isoformat(),
         configuration=run_configuration,
-        scorecard=build_benchmark_scorecard(case_reports),
+        scorecard=build_benchmark_scorecard(
+            case_reports,
+            workflow_mode=workflow_mode,
+            provider_mode=provider_mode,
+        ),
         cases=case_reports,
     )
     if output_dir is not None:
@@ -331,3 +397,100 @@ def load_benchmark_corpus(path: Path | None = None) -> BenchmarkCorpus:
     with corpus_path.open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
     return BenchmarkCorpus.model_validate(payload)
+
+
+class BenchmarkComparisonReport(BaseModel):
+    """Comparison between two benchmark run reports for regression detection."""
+
+    run1_path: str
+    run2_path: str
+    generated_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    # Per-metric deltas (run2 - run1)
+    delta_source_count: float = 0.0
+    delta_unique_domains: float = 0.0
+    delta_source_type_diversity: float = 0.0
+    delta_iteration_count: float = 0.0
+    delta_latency_ms: float = 0.0
+    delta_validation_score: float | None = None
+    delta_report_quality_score: float | None = None
+    delta_unsupported_claim_count: float = 0.0
+    delta_citation_error_count: float = 0.0
+    delta_hydration_success_rate: float | None = None
+    # Workflow metadata
+    run1_workflow_mode: str = "staged"
+    run2_workflow_mode: str = "planner"
+    # Per-case diffs
+    case_deltas: list[dict[str, Any]] = Field(default_factory=list)
+
+
+def _delta(a: float | None, b: float | None) -> float | None:
+    """Compute delta between two nullable floats."""
+    if a is None or b is None:
+        return None
+    return round(b - a, 3)
+
+
+def compare_benchmark_runs(
+    run1: BenchmarkRunReport,
+    run2: BenchmarkRunReport,
+    *,
+    run1_path: str = "run1",
+    run2_path: str = "run2",
+) -> BenchmarkComparisonReport:
+    """Compare two benchmark runs and produce a delta report.
+
+    P7-T7: Enables workflow comparison between staged and planner runs.
+    """
+    s1 = run1.scorecard
+    s2 = run2.scorecard
+    case_deltas: list[dict[str, Any]] = []
+
+    # Match cases by case_id
+    by_id_1 = {c.case_id: c for c in run1.cases}
+    by_id_2 = {c.case_id: c for c in run2.cases}
+    all_ids = sorted(set(by_id_1.keys()) | set(by_id_2.keys()))
+    for case_id in all_ids:
+        c1 = by_id_1.get(case_id)
+        c2 = by_id_2.get(case_id)
+        if c1 is None or c2 is None:
+            continue
+        case_deltas.append(
+            {
+                "case_id": case_id,
+                "delta_source_count": c2.metrics.source_count - c1.metrics.source_count,
+                "delta_validation_score": _delta(
+                    c1.metrics.validation_score, c2.metrics.validation_score
+                ),
+                "delta_stop_reason": (
+                    f"{c1.stop_reason} → {c2.stop_reason}" if c1.stop_reason != c2.stop_reason else c1.stop_reason
+                ),
+            }
+        )
+
+    return BenchmarkComparisonReport(
+        run1_path=run1_path,
+        run2_path=run2_path,
+        delta_source_count=_delta(s1.average_source_count, s2.average_source_count) or 0.0,
+        delta_unique_domains=_delta(s1.average_unique_domains, s2.average_unique_domains) or 0.0,
+        delta_source_type_diversity=_delta(
+            s1.average_source_type_diversity, s2.average_source_type_diversity
+        ) or 0.0,
+        delta_iteration_count=_delta(s1.average_iteration_count, s2.average_iteration_count) or 0.0,
+        delta_latency_ms=_delta(s1.average_latency_ms, s2.average_latency_ms) or 0.0,
+        delta_validation_score=_delta(s1.average_validation_score, s2.average_validation_score),
+        delta_report_quality_score=_delta(
+            s1.average_report_quality_score, s2.average_report_quality_score
+        ),
+        delta_unsupported_claim_count=_delta(
+            s1.average_unsupported_claim_count, s2.average_unsupported_claim_count
+        ) or 0.0,
+        delta_citation_error_count=_delta(
+            s1.average_citation_error_count, s2.average_citation_error_count
+        ) or 0.0,
+        delta_hydration_success_rate=_delta(
+            s1.average_hydration_success_rate, s2.average_hydration_success_rate
+        ),
+        run1_workflow_mode=s1.workflow_mode,
+        run2_workflow_mode=s2.workflow_mode,
+        case_deltas=case_deltas,
+    )

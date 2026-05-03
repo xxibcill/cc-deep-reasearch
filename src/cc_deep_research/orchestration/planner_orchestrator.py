@@ -47,19 +47,29 @@ class PlannerResearchOrchestrator:
         self,
         config: Config,
         monitor: ResearchMonitor | None = None,
+        prompt_registry: Any | None = None,
+        workflow_config: Any | None = None,
     ) -> None:
         """Initialize the planner orchestrator.
 
         Args:
             config: Application configuration.
             monitor: Optional research monitor for progress tracking.
+            prompt_registry: Optional prompt registry with overrides applied.
+            workflow_config: Optional theme workflow configuration.
         """
         self._config = config
         self._monitor = monitor or ResearchMonitor(enabled=False)
+        self._prompt_registry = prompt_registry
+        self._workflow_config = workflow_config
         self._planner = PlannerAgent(config.model_dump())
         self._dispatcher: TaskDispatcher | None = None
         self._agents: dict[str, Any] = {}
         self._session_builder = SessionBuilder()
+        self._provider_metadata: dict[str, Any] = {"configured": [], "available": [], "warnings": []}
+        self._execution_degradations: list[str] = []
+        self._llm_routes: dict[str, Any] = {"planned_routes": {}, "actual_routes": {}, "usage_stats": {}, "fallback_events": []}
+        self._iteration_history: list[dict[str, Any]] = []
 
     async def execute_research(
         self,
@@ -87,17 +97,34 @@ class PlannerResearchOrchestrator:
             PlannerOrchestratorError: If research execution fails.
         """
         start_time = datetime.utcnow()
-
-        # Initialize session
         session_id = self._initialize_session(
             query=query,
             depth=depth,
             on_session_started=on_session_started,
         )
 
+        # Emit session start event with workflow context
+        self._monitor.emit_event(
+            event_type="session.started",
+            category="session",
+            name="planner-research",
+            status="started",
+            metadata={
+                "workflow": "planner",
+                "query": query,
+                "depth": depth.value if hasattr(depth, 'value') else str(depth),
+            },
+        )
+
+        # Check cancellation before starting
+        if cancellation_check:
+            cancellation_check()
+
         try:
             # Phase 1: Planning
             self._notify_phase(phase_hook, "planning", "Creating research plan")
+            if cancellation_check:
+                cancellation_check()
             planner_result = await self._create_plan(query, depth)
             plan = planner_result.plan
 
@@ -105,12 +132,39 @@ class PlannerResearchOrchestrator:
             self._monitor.log(f"Complexity: {planner_result.complexity_assessment}")
             self._monitor.log(f"Estimated time: {planner_result.estimated_time_minutes} minutes")
 
+            # Emit planning completion event
+            self._monitor.emit_event(
+                event_type="phase.completed",
+                category="planner",
+                name="planning",
+                status="completed",
+                metadata={
+                    "plan_id": plan.plan_id,
+                    "subtask_count": len(plan.subtasks),
+                    "complexity": planner_result.complexity_assessment,
+                    "confidence": planner_result.confidence,
+                },
+            )
+
             # Phase 2: Initialize agents and dispatcher
             self._notify_phase(phase_hook, "init", "Initializing agents")
+            if cancellation_check:
+                cancellation_check()
             await self._initialize_agents(depth)
+
+            # Emit agent initialization completion event
+            self._monitor.emit_event(
+                event_type="phase.completed",
+                category="planner",
+                name="agent_initialization",
+                status="completed",
+                metadata={"agent_count": len(self._agents)},
+            )
 
             # Phase 3: Execute plan
             self._notify_phase(phase_hook, "execution", "Executing research plan")
+            if cancellation_check:
+                cancellation_check()
             task_results = await self._execute_plan(
                 plan,
                 cancellation_check=cancellation_check,
@@ -118,6 +172,8 @@ class PlannerResearchOrchestrator:
 
             # Phase 4: Synthesize results
             self._notify_phase(phase_hook, "synthesis", "Synthesizing results")
+            if cancellation_check:
+                cancellation_check()
             synthesis = self._synthesize_results(plan, task_results)
 
             # Phase 5: Build session
@@ -135,10 +191,28 @@ class PlannerResearchOrchestrator:
 
             self._monitor.log(f"Research complete: {len(synthesis.all_sources)} sources, {len(synthesis.key_findings)} findings")
 
+            # Emit session complete event
+            self._monitor.finalize_session(
+                total_sources=len(synthesis.all_sources),
+                providers=list(self._provider_metadata.get("available", [])),
+                total_time_ms=int((datetime.utcnow() - start_time).total_seconds() * 1000),
+                status="completed",
+                stop_reason="success",
+            )
+
             return session
 
         except Exception as exc:
             self._monitor.log(f"Research failed: {exc}")
+            # Emit failed session event
+            if self._monitor.session_id:
+                self._monitor.finalize_session(
+                    total_sources=0,
+                    providers=list(self._provider_metadata.get("available", [])),
+                    total_time_ms=int((datetime.utcnow() - start_time).total_seconds() * 1000),
+                    status="failed",
+                    stop_reason="error",
+                )
             raise PlannerOrchestratorError(
                 f"Research execution failed: {exc}",
                 query=query,
@@ -459,21 +533,85 @@ class PlannerResearchOrchestrator:
             quality_score=synthesis.overall_quality_score,
         )
 
-        # Build metadata
-        metadata = {
-            "workflow": "planner",
-            "plan_id": plan.plan_id,
-            "plan_summary": plan.summary,
-            "total_subtasks": len(plan.subtasks),
-            "completed_subtasks": synthesis.completed_subtasks,
-            "failed_subtasks": synthesis.failed_subtasks,
-            "complexity": planner_result.complexity_assessment,
-            "estimated_time_minutes": planner_result.estimated_time_minutes,
-            "planner_confidence": planner_result.confidence,
-        }
+        # Build provider metadata
+        provider_status = "ready" if self._provider_metadata.get("available") else "unavailable"
+        if self._provider_metadata.get("warnings"):
+            provider_status = "degraded"
 
         # Calculate execution time
         execution_time = (datetime.utcnow() - started_at).total_seconds()
+
+        # Build the unified metadata contract matching staged workflow
+        strategy_dict = {
+            "query": query,
+            "complexity": planner_result.complexity_assessment,
+            "depth": depth.value if hasattr(depth, 'value') else str(depth),
+            "profile": planner_result.plan.subtasks[0].inputs if plan.subtasks else {},
+            "strategy": {"tasks": [t.task_type for t in plan.subtasks]},
+        }
+        analysis_dict = {
+            "key_findings": synthesis.key_findings,
+            "themes": synthesis.themes,
+            "gaps": synthesis.gaps,
+            "source_count": len(synthesis.all_sources),
+            "analysis_method": "planner_workflow",
+        }
+        validation_dict = {
+            "is_valid": synthesis.overall_quality_score >= 0.5,
+            "issues": synthesis.gaps,
+            "recommendations": synthesis.recommendations,
+            "quality_score": synthesis.overall_quality_score,
+        }
+
+        metadata: dict[str, Any] = {
+            "strategy": strategy_dict,
+            "analysis": analysis_dict,
+            "validation": validation_dict,
+            "iteration_history": [
+                {"iteration": 0, "source_count": len(synthesis.all_sources)}
+            ],
+            "providers": {
+                "configured": list(self._config.search.providers) if hasattr(self._config, 'search') else [],
+                "available": self._provider_metadata.get("available", []),
+                "warnings": self._provider_metadata.get("warnings", []),
+                "status": provider_status,
+            },
+            "execution": {
+                "parallel_requested": False,
+                "parallel_used": False,
+                "degraded": bool(self._execution_degradations),
+                "degraded_reasons": self._execution_degradations,
+            },
+            "deep_analysis": {
+                "requested": False,
+                "completed": False,
+                "status": "not_requested",
+                "reason": None,
+            },
+            "llm_routes": self._llm_routes,
+            "prompts": {
+                "overrides_applied": bool(self._prompt_registry and hasattr(self._prompt_registry, 'has_overrides') and self._prompt_registry.has_overrides()),
+                "effective_overrides": self._prompt_registry.get_effective_overrides() if self._prompt_registry and hasattr(self._prompt_registry, 'get_effective_overrides') else {},
+                "default_prompts_used": [],
+            },
+            # Planner-specific metadata nested under planner key
+            "planner": {
+                "workflow": "planner",
+                "plan_id": plan.plan_id,
+                "plan_summary": plan.summary,
+                "total_subtasks": len(plan.subtasks),
+                "completed_subtasks": synthesis.completed_subtasks,
+                "failed_subtasks": synthesis.failed_subtasks,
+                "complexity": planner_result.complexity_assessment,
+                "estimated_time_minutes": planner_result.estimated_time_minutes,
+                "planner_confidence": planner_result.confidence,
+                "iteration_policy": {
+                    "mode": "single_plan",
+                    "iterative_search_supported": False,
+                    "reason": "Planner beta executes one planned task graph and does not yet schedule validation-driven follow-up loops.",
+                },
+            },
+        }
 
         return ResearchSession(
             session_id=session_id,

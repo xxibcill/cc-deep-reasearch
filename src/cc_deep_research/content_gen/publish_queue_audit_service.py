@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from cc_deep_research.content_gen.models import PublishItem
+from cc_deep_research.content_gen.models.production import PublishItem
 from cc_deep_research.content_gen.storage import (
     AuditActor,
     AuditEventType,

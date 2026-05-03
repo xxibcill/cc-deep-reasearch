@@ -6,7 +6,7 @@ import { Bot, AlertCircle, Loader2, ListChecks, Check, MessageSquare, ChevronRig
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { cn } from '@/lib/utils'
-import useContentGen from '@/hooks/useContentGen'
+import type { BacklogItem } from '@/types/content-gen'
 import {
   formatProductionStatus,
   hasActiveProductionStatus,
@@ -15,6 +15,7 @@ import {
   statusBadgeVariant,
 } from '@/components/content-gen/backlog-shared'
 import { ChatThread } from '@/components/content-gen/chat-thread'
+import { useBacklog } from '@/hooks/useBacklog'
 
 interface BacklogInsight {
   id: string
@@ -24,7 +25,7 @@ interface BacklogInsight {
   severity: 'info' | 'warning' | 'critical'
 }
 
-function deriveInsights(backlog: ReturnType<typeof useContentGen.getState>['backlog']): BacklogInsight[] {
+function deriveInsights(backlog: BacklogItem[]): BacklogInsight[] {
   const insights: BacklogInsight[] = []
 
   // No selected item
@@ -111,10 +112,10 @@ interface ChatWorkspaceProps {
 }
 
 export function ChatWorkspace({ className }: ChatWorkspaceProps) {
-  const backlog = useContentGen((s) => s.backlog)
-  const backlogLoading = useContentGen((s) => s.backlogLoading)
-  const backlogError = useContentGen((s) => s.error)
-  const loadBacklog = useContentGen((s) => s.loadBacklog)
+  const backlog = useBacklog((s) => s.backlog)
+  const backlogLoading = useBacklog((s) => s.backlogLoading)
+  const loadBacklog = useBacklog((s) => s.loadBacklog)
+  const error = useBacklog((s) => s.error)
 
   const selectedItem = backlog.find((i) => i.status === 'selected')
   const selectedItemCount = backlog.filter((i) => i.status === 'selected').length
@@ -156,7 +157,7 @@ export function ChatWorkspace({ className }: ChatWorkspaceProps) {
                 <Loader2 className="h-3 w-3 animate-spin" />
                 Loading
               </Badge>
-            ) : backlogError ? (
+            ) : error ? (
               <Badge variant="destructive" className="gap-1">
                 <AlertCircle className="h-3 w-3" />
                 Error
@@ -179,15 +180,15 @@ export function ChatWorkspace({ className }: ChatWorkspaceProps) {
         </div>
 
         {/* Backlog error banner */}
-        {backlogError && (
+        {error && (
           <Alert variant="destructive" className="py-2">
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription className="text-xs">Failed to load backlog: {backlogError}</AlertDescription>
+            <AlertDescription className="text-xs">Failed to load backlog: {error}</AlertDescription>
           </Alert>
         )}
 
         {/* Backlog insights */}
-        {insights.length > 0 && !backlogLoading && !backlogError && (
+        {insights.length > 0 && !backlogLoading && !error && (
           <div className="flex flex-wrap gap-2">
             {insights.map((insight) => (
               <div
@@ -208,7 +209,7 @@ export function ChatWorkspace({ className }: ChatWorkspaceProps) {
         )}
 
         {/* Starter prompts */}
-        {!backlogLoading && !backlogError && backlog.length > 0 && (
+        {!backlogLoading && !error && backlog.length > 0 && (
           <div className="flex flex-wrap gap-2">
             <span className="text-[10px] font-mono uppercase tracking-[0.15em] text-muted-foreground/60 self-center">
               Quick actions:

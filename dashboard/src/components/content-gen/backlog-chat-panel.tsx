@@ -2,12 +2,12 @@
 
 import { useEffect } from 'react'
 
-import useContentGen from '@/hooks/useContentGen'
+import { useBacklog } from '@/hooks/useBacklog'
 import { ChatThread } from '@/components/content-gen/chat-thread'
 
 export function BacklogChatPanel() {
-  const backlog = useContentGen((s) => s.backlog)
-  const loadBacklog = useContentGen((s) => s.loadBacklog)
+  const backlog = useBacklog((s) => s.backlog)
+  const loadBacklog = useBacklog((s) => s.loadBacklog)
 
   const selectedIdeaId = backlog.find((i) => i.status === 'selected')?.idea_id ?? null
 

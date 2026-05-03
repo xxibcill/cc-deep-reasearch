@@ -211,9 +211,9 @@ class ReportRefinerAgent:
             sources_match = re.search(r'## Sources', markdown)
             if sources_match:
                 insert_pos = sources_match.start()
-                return f"{markdown[:insert_pos]}\n\n{section}\n\n<!-- TODO: Add content here -->\n\n{markdown[insert_pos:]}"
+                return f"{markdown[:insert_pos]}\n\n{section}\n\n[Section content was not available from session data.]\n\n{markdown[insert_pos:]}"
             else:
-                return f"{markdown}\n\n{section}\n\n<!-- TODO: Add content here -->\n"
+                return f"{markdown}\n\n{section}\n\n[Section content was not available from session data.]\n"
         return markdown
 
     def _expand_short_sections(self, markdown: str) -> str:
@@ -255,9 +255,9 @@ class ReportRefinerAgent:
         Returns:
             Markdown with citations added.
         """
-        # This is a placeholder - actual implementation would parse findings
-        # and add appropriate source references based on the finding
-        return markdown + "\n<!-- TODO: Review and add source citations to findings -->\n"
+        # Do not append placeholder comments - citations should be added
+        # based on actual analysis data or skipped with a warning
+        return markdown
 
     def _improve_sentence_structure(self, markdown: str) -> str:
         """Improve sentence structure by connecting short fragments.
@@ -351,9 +351,9 @@ class ReportRefinerAgent:
         Returns:
             Markdown with lists added.
         """
-        # This is a placeholder - would analyze content and convert
-        # appropriate text to bullet points
-        return markdown + "\n<!-- TODO: Consider converting key points to bulleted lists -->\n"
+        # Do not append placeholder comments - list conversion requires
+        # actual content analysis beyond simple pattern matching
+        return markdown
 
     def _add_domain_diversity_note(self, markdown: str) -> str:
         """Add note about domain diversity to sources section.

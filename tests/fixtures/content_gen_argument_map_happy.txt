@@ -1,0 +1,82 @@
+thesis: Pricing pages confuse buyers because teams optimize feature lists before they set the comparison anchor
+audience_belief_to_challenge: Buyers evaluate pricing tiers by counting features
+core_mechanism: Anchoring changes perceived value before feature details are compared
+
+proof_anchors:
+---
+proof_id: proof_01
+summary: Studies show the first price seen creates a reference point that distorts all subsequent evaluation
+source_ids: src_01, src_02
+usage_note: Use in the hook to establish the core mechanism
+---
+---
+proof_id: proof_02
+summary: The decoy effect is strongest when one tier makes the target tier feel more reasonable
+source_ids: src_01, src_03
+usage_note: Use in the reframe section
+---
+
+counterarguments:
+---
+counterargument_id: ca_01
+counterargument: Anchoring only works for luxury or enterprise pricing
+response: The effect has been replicated across consumer SaaS and SMB pricing pages
+response_proof_ids: src_04
+---
+
+safe_claims:
+---
+claim_id: claim_01
+claim: Anchoring changes perceived value when the higher-price option is presented first
+supporting_proof_ids: proof_01, proof_02
+---
+---
+claim_id: claim_02
+claim: The comparison set buyers use is often different from what designers assume
+supporting_proof_ids: src_02
+---
+
+unsafe_claims:
+---
+claim_id: unsafe_01
+claim: Changing the anchor will guarantee a conversion lift
+supporting_proof_ids:
+note: Too strong — the evidence only shows directional correlation, not causation
+---
+
+beat_claim_plan:
+---
+beat_id: beat_01
+beat_name: Hook
+goal: Make the pricing mistake feel obvious in retrospect
+claim_ids: claim_01
+proof_anchor_ids: proof_01
+counterargument_ids:
+transition_note: Lead with the familiar mistake to activate the belief
+---
+---
+beat_id: beat_02
+beat_name: Reframe
+goal: Show the comparison anchor buyers actually use
+claim_ids: claim_02
+proof_anchor_ids: proof_02
+counterargument_ids: ca_01
+transition_note: Shift from feature count to anchor comparison
+---
+---
+beat_id: beat_03
+beat_name: CTA
+goal: Prompt one concrete change to the pricing card
+claim_ids: claim_01
+proof_anchor_ids:
+counterargument_ids:
+transition_note: Keep it simple — one anchor, one change
+---
+
+genericity_flags:
+- pricing_psychology_general
+- smb_saas_specific
+
+what_this_contributes: A concrete, page-level pricing anchor example that makes the abstract mechanism visible
+
+differentiation_strategy: Focus on the BEFORE state — most content shows the fix, we show the mistake buyers make first

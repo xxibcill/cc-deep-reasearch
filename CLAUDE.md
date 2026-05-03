@@ -34,6 +34,79 @@ uv run mypy src/
 cc-deep-research benchmark run --depth standard --output-dir benchmark_runs/latest
 ```
 
+## GitHub CI Fix Prompt
+
+Use this prompt when asking Claude Code to repair the current GitHub Actions failures:
+
+```text
+Fix the failing GitHub CI on branch refactor-phase-2 for PR #24. Work from the
+actual latest Actions logs first, then make the smallest code changes needed.
+
+Start by checking the current failures:
+
+gh run list --limit 5 --json databaseId,headBranch,headSha,status,conclusion,workflowName,displayTitle,createdAt,updatedAt,url
+gh run view <latest-preflight-run-id> --log-failed
+gh run view <latest-dashboard-run-id> --log-failed
+
+As of May 2, 2026, the latest observed failures were:
+
+- Preflight CI run 25255931107 on commit 0a100600eedc1df6457e6045a87371e07bd5f232.
+  It failed at `uv run ruff check src/ tests/` with 10 fixable lint errors:
+  `src/cc_deep_research/knowledge/ingest.py` imports `Callable` from `typing`
+  instead of `collections.abc`; `tests/test_content_gen_contracts.py` has an
+  unsorted import block, an unused `ContentGenStageContract` import, and no
+  trailing newline; `tests/test_content_gen_lane_state.py` has unused
+  `AsyncMock`/`patch` imports, two B009 `getattr(..., "constant")` cases, and
+  unsorted local import blocks in fixtures.
+
+- Dashboard CI run 25255931098 on the same commit.
+  It passed install and lint, then failed during `npm run build` with a
+  TypeScript error in `dashboard/src/components/knowledge/knowledge-graph.tsx`
+  at `d3.forceLink(edgeData)`: the API edge objects have `source_id` and
+  `target_id`, but D3 `SimulationLinkDatum` expects `source` and `target`.
+
+Fix strategy:
+
+1. Reproduce the Python failure locally:
+   `uv sync`
+   `uv run ruff check src/ tests/`
+2. Apply the ruff-safe fixes. Prefer:
+   `uv run ruff check src/ tests/ --fix`
+   Then inspect the diff and make any remaining manual edits.
+3. Fix the dashboard graph type mismatch by mapping API edges into a D3 link
+   shape before passing them to `forceLink`, for example with local types that
+   extend `d3.SimulationNodeDatum` and `d3.SimulationLinkDatum<GraphNode>`.
+   Preserve the existing rendered behavior: edges still connect
+   `source_id -> target_id`, node labels still render, selection still works,
+   and the graph still has zoom.
+4. Remove the loose `@ts-expect-error` in `getNodePositions` if the new local
+   simulation node type makes it unnecessary.
+5. Do not silence TypeScript or ruff, do not bypass CI steps, and do not treat
+   the Node.js 20 action deprecation warning as the root cause. That warning is
+   separate from the current failures.
+
+Verify before finishing:
+
+uv run ruff check src/ tests/
+uv run mypy src/
+uv run pytest tests/test_llm_analysis_client.py tests/test_models.py tests/test_reporter.py -v
+uv run pytest tests/test_tavily_provider.py tests/test_providers.py -v
+uv run pytest tests/test_orchestrator.py tests/test_orchestration.py -v
+uv run pytest tests/test_research_run_service.py -v
+
+cd dashboard
+npm ci
+npm run lint
+npm run build
+npx playwright install --with-deps chromium
+npm run test:e2e:smoke
+npm run test:a11y
+
+If a later CI run shows a different first failure, update the diagnosis from
+the latest logs and keep the same approach: reproduce locally, fix the root
+cause, and rerun the workflow-equivalent commands.
+```
+
 ## Architecture
 
 ### Core Workflow

@@ -76,6 +76,9 @@ path = "src/cc_deep_research/__about__.py"
 [tool.hatch.build.targets.wheel]
 packages = ["src/cc_deep_research"]
 
+[project.scripts]
+cc-deep-research = "cc_deep_research.cli.main:main"
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
@@ -128,10 +131,59 @@ warn_return_any = true
 warn_unused_ignores = true
 disallow_untyped_defs = true
 plugins = ["pydantic.mypy"]
-# Disable strict generic checks that cause many pre-existing errors
 disallow_any_generics = false
-# Temporarily ignore pre-existing type errors to get CI passing
-ignore_errors = true
+ignore_errors = true  # global default for legacy code
+
+# Enable strict mypy for core refactored service/orchestration modules (Phase 01-06).
+# Excludes content_gen pipeline/stages/agents/ (model contract mismatches, separate task).
+# Excludes models/ and prompts/ (deep model contracts, will be addressed separately).
+[[tool.mypy.overrides]]
+module = "cc_deep_research.orchestration.*"
+ignore_errors = false
+
+[[tool.mypy.overrides]]
+module = "cc_deep_research.web_server"
+ignore_errors = false
+
+[[tool.mypy.overrides]]
+module = "cc_deep_research.web_server_routes.*"
+ignore_errors = false
+
+[[tool.mypy.overrides]]
+module = "cc_deep_research.research_runs.*"
+ignore_errors = false
+
+[[tool.mypy.overrides]]
+module = "cc_deep_research.telemetry.*"
+ignore_errors = false
+
+[[tool.mypy.overrides]]
+module = "cc_deep_research.monitoring"
+ignore_errors = false
+
+[[tool.mypy.overrides]]
+module = "cc_deep_research.aggregation"
+ignore_errors = false
+
+[[tool.mypy.overrides]]
+module = "cc_deep_research.text_normalization"
+ignore_errors = false
+
+[[tool.mypy.overrides]]
+module = "cc_deep_research.session_store"
+ignore_errors = false
+
+[[tool.mypy.overrides]]
+module = "cc_deep_research.post_validator"
+ignore_errors = false
+
+[[tool.mypy.overrides]]
+module = "cc_deep_research.knowledge.*"
+ignore_errors = false
+
+[[tool.mypy.overrides]]
+module = "cc_deep_research.cli.*"
+ignore_errors = false
 
 [[tool.mypy.overrides]]
 module = "tests.*"

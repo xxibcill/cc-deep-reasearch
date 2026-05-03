@@ -73,7 +73,7 @@ class PostReportValidator:
         }
 
     def _check_truncation(self, markdown: str) -> dict[str, list[str]]:
-        """Check for AI truncation patterns.
+        """Check for AI truncation patterns and placeholder comments.
 
         Args:
             markdown: Report content to check.
@@ -82,6 +82,7 @@ class PostReportValidator:
             Dictionary with issues list and warnings list.
         """
         warnings: list[str] = []
+        issues: list[str] = []
 
         # Pattern: Word ending with "..." (e.g., "vast m...", "ut f...")
         truncation_patterns = [
@@ -94,7 +95,17 @@ class PostReportValidator:
                 for match in matches:
                     warnings.append(f"{description}: '{match.strip()}'")
 
-        return {"issues": [], "warnings": warnings}
+        # Check for TODO placeholder comments
+        todo_patterns = [
+            (r'<!--\s*[Tt][Oo][Dd][Oo]', "Report contains HTML TODO comment"),
+            (r'\bTODO\b', "Report contains TODO placeholder"),
+        ]
+
+        for pattern, description in todo_patterns:
+            if re.search(pattern, markdown):
+                issues.append(description)
+
+        return {"issues": issues, "warnings": warnings}
 
     def _check_section_completeness(self, markdown: str) -> dict[str, list[str]]:
         """Check that all major sections have content.

@@ -44,28 +44,28 @@ evidence_note: Clear whitespace in current creator content
 
 claims:
 ---
-claim_type: key_fact
+claim_type: safe
 claim: Anchoring changes perceived value when the higher-price option is framed first
 source_ids: src_01
 confidence: high
 mechanism: Buyers compare relative value before they inspect every feature
 ---
 ---
-claim_type: key_fact
+claim_type: safe
 claim: Buyers compare relative differences more than absolute feature counts
 source_ids: src_01, src_02
 confidence: medium
 mechanism: Relative contrast simplifies fast evaluation
 ---
 ---
-claim_type: proof_point
+claim_type: safe
 claim: The decoy effect is strongest when one tier makes the target tier feel more reasonable
 source_ids: src_01
 confidence: high
 mechanism: The comparison set changes what feels expensive
 ---
 ---
-claim_type: proof_point
+claim_type: qualified
 claim: Order and framing influence willingness to pay before detailed evaluation
 source_ids: src_02, src_03
 confidence: high
