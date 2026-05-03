@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from cc_deep_research.cli.main import knowledge
+from cc_deep_research.cli.main import knowledge, main
 
 
 @pytest.fixture
@@ -19,6 +19,20 @@ def cli_runner():
 
 class TestKnowledgeInit:
     """Tests for 'cc-deep-research knowledge init'."""
+
+    def test_root_command_exposes_knowledge_group(self, cli_runner) -> None:
+        """Installed CLI should expose the documented knowledge subcommand."""
+        result = cli_runner.invoke(main, ["knowledge", "--help"])
+
+        assert result.exit_code == 0
+        assert "init" in result.output
+
+    def test_root_command_exposes_benchmark_group(self, cli_runner) -> None:
+        """Installed CLI should expose benchmark as a top-level group."""
+        result = cli_runner.invoke(main, ["benchmark", "--help"])
+
+        assert result.exit_code == 0
+        assert "run" in result.output
 
     def test_init_creates_directories(self, cli_runner, tmp_path: Path) -> None:
         """Init should create all vault directories."""

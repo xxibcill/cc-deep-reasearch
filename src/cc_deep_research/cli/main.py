@@ -643,14 +643,14 @@ def benchmark_compare(dir1: Path, dir2: Path) -> None:
             click.echo(f"  {cd['case_id']}: sources {cd.get('delta_source_count', 0):+d}")
 
 
-# ---------------------------------------------------------------------------
-# Main entry point
-# ---------------------------------------------------------------------------
-
-
+@click.group()
 def main() -> None:
-    """Main CLI entry point."""
-    benchmark.main(standalone_mode=False)
+    """Command line tools for cc-deep-research."""
+    pass
+
+
+main.add_command(knowledge)
+main.add_command(benchmark)
 
 
 if __name__ == "__main__":
