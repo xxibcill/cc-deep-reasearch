@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MetricCard } from '@/components/ui/metric-card';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select } from '@/components/ui/select';
 import {
   getBenchmarkCorpus,
   listBenchmarkRuns,
@@ -186,31 +186,22 @@ export default function BenchmarkPage() {
           </CardHeader>
           <CardContent className="pt-4">
             <div className="flex flex-wrap items-end gap-4">
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Workflow</label>
-                <Select value={workflowMode} onValueChange={setWorkflowMode}>
-                  <SelectTrigger className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="staged">Staged</SelectItem>
-                    <SelectItem value="planner">Planner</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Depth</label>
-                <Select value={depth} onValueChange={setDepth}>
-                  <SelectTrigger className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="quick">Quick</SelectItem>
-                    <SelectItem value="standard">Standard</SelectItem>
-                    <SelectItem value="deep">Deep</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              <Select
+                  label="Workflow"
+                  value={workflowMode}
+                  onChange={setWorkflowMode}
+                  options={['staged', 'planner']}
+                  emptyLabel="Select"
+                  className="w-32"
+                />
+              <Select
+                  label="Depth"
+                  value={depth}
+                  onChange={setDepth}
+                  options={['quick', 'standard', 'deep']}
+                  emptyLabel="Select"
+                  className="w-32"
+                />
               <Button
                 onClick={async () => {
                   setRunningBenchmark(true);
@@ -255,36 +246,22 @@ export default function BenchmarkPage() {
             </CardHeader>
             <CardContent className="pt-4">
               <div className="flex flex-wrap items-end gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Run 1</label>
-                  <Select value={compareRun1} onValueChange={setCompareRun1}>
-                    <SelectTrigger className="w-48">
-                      <SelectValue placeholder="Select run 1" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {runs.map((run) => (
-                        <SelectItem key={run.run_id} value={run.path}>
-                          {run.run_id}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Run 2</label>
-                  <Select value={compareRun2} onValueChange={setCompareRun2}>
-                    <SelectTrigger className="w-48">
-                      <SelectValue placeholder="Select run 2" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {runs.map((run) => (
-                        <SelectItem key={run.run_id} value={run.path}>
-                          {run.run_id}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <Select
+                  label="Run 1"
+                  value={compareRun1}
+                  onChange={setCompareRun1}
+                  options={runs.map((run) => run.path)}
+                  emptyLabel="Select run 1"
+                  className="w-48"
+                />
+                <Select
+                  label="Run 2"
+                  value={compareRun2}
+                  onChange={setCompareRun2}
+                  options={runs.map((run) => run.path)}
+                  emptyLabel="Select run 2"
+                  className="w-48"
+                />
                 <Button
                   onClick={async () => {
                     if (!compareRun1 || !compareRun2) return;

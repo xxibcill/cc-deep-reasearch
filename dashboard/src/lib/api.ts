@@ -196,6 +196,68 @@ export async function getSession(sessionId: string): Promise<{ session: Session 
   return { session: normalizeSession(response.data.session) };
 }
 
+export async function getSessionSummary(
+  sessionId: string
+): Promise<{ session: Session }> {
+  const response = await apiClient.get<SessionResponse>(`/sessions/${sessionId}`, {
+    params: { include_derived: false, include_checkpoints: false },
+    timeout: SESSION_DETAIL_TIMEOUT_MS,
+  });
+  return { session: normalizeSession(response.data.session) };
+}
+
+export async function getSessionEventsPage(
+  sessionId: string,
+  limit = 500,
+  cursor: number | null = null,
+  beforeCursor: number | null = null
+): Promise<{ events: TelemetryEvent[]; count: number; hasMore: boolean; nextCursor: number | null; prevCursor: number | null }> {
+  const params: Record<string, unknown> = { limit };
+  if (cursor !== null) params.cursor = cursor;
+  if (beforeCursor !== null) params.before_cursor = beforeCursor;
+  const response = await apiClient.get<SessionEventsPageResponse>(`/sessions/${sessionId}/events`, {
+    params,
+    timeout: SESSION_DETAIL_TIMEOUT_MS,
+  });
+  return {
+    events: response.data.events.map(normalizeEvent),
+    count: response.data.count,
+    hasMore: response.data.has_more,
+    nextCursor: response.data.next_cursor,
+    prevCursor: response.data.prev_cursor,
+  };
+}
+
+export async function getSessionDerivedOutputs(
+  sessionId: string
+): Promise<SessionDetailResult['derivedOutputs']> {
+  const response = await apiClient.get<SessionDetailResponse>(
+    `/sessions/${sessionId}`,
+    {
+      params: { include_derived: true, include_checkpoints: false },
+      timeout: SESSION_DETAIL_TIMEOUT_MS,
+    }
+  );
+  return {
+    narrative: response.data.narrative,
+    criticalPath: response.data.critical_path,
+    stateChanges: response.data.state_changes,
+    decisions: response.data.decisions,
+    degradations: response.data.degradations,
+    failures: response.data.failures,
+    decisionGraph: response.data.decision_graph,
+  };
+}
+
+interface SessionEventsPageResponse {
+  events: ApiTelemetryEvent[];
+  count: number;
+  total: number;
+  has_more: boolean;
+  next_cursor: number | null;
+  prev_cursor: number | null;
+}
+
 export async function getSessionPromptMetadata(
   sessionId: string
 ): Promise<SessionPromptMetadata | undefined> {

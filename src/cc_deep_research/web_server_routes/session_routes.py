@@ -23,12 +23,12 @@ from cc_deep_research.telemetry import (
     get_default_telemetry_dir,
     query_checkpoint_detail,
     query_checkpoint_lineage,
-    query_dashboard_data,
     query_latest_resumable_checkpoint,
     query_live_session_detail,
     query_live_sessions,
     query_session_checkpoints,
     query_session_detail,
+    query_session_summaries,
 )
 from cc_deep_research.telemetry.tree import empty_decision_graph
 from cc_deep_research.web_server_routes._shared import parse_timestamp, serialize_timestamp
@@ -286,8 +286,6 @@ def register_session_routes(app: FastAPI) -> None:
         """List research sessions with query, filter, sort, and pagination support."""
         telemetry_dir = get_default_telemetry_dir()
         live_sessions = query_live_sessions(base_dir=telemetry_dir)
-        historical = query_dashboard_data(get_default_dashboard_db_path())
-
         session_store = SessionStore()
         saved_sessions = session_store.list_sessions()
         archived_session_ids = session_store.get_archived_session_ids() if archived_only else set()
@@ -314,31 +312,41 @@ def register_session_routes(app: FastAPI) -> None:
                 saved=saved_by_id.get(session_id),
             )
 
-        for session_data in historical["sessions"]:
+        # Use focused session summary query instead of query_dashboard_data()
+        # to avoid loading global events, agent timeline, and phase-duration datasets
+        db_summaries = query_session_summaries(
+            get_default_dashboard_db_path(),
+            limit=limit * 3,
+            cursor=cursor,
+            search=search if not search or len(search) < 2 else None,
+            status=status if status else None,
+            archived_only=archived_only,
+            sort_by=sort_by.value,
+            sort_order=sort_order.value,
+        )
+        for session_data in db_summaries.get("sessions", []):
             if active_only:
                 continue
-            session_id = session_data[0]
+            session_id = session_data["session_id"]
             if session_id in sessions_by_id:
                 existing = sessions_by_id[session_id]
                 if not existing.get("active"):
-                    existing["status"] = session_data[8]
+                    existing["status"] = session_data.get("status")
                 if existing.get("total_time_ms") is None:
-                    existing["total_time_ms"] = session_data[2]
+                    existing["total_time_ms"] = session_data.get("total_time_ms")
                 if existing.get("total_sources") in (None, 0):
-                    existing["total_sources"] = session_data[3]
+                    existing["total_sources"] = session_data.get("total_sources")
                 if existing.get("created_at") is None:
-                    existing["created_at"] = serialize_timestamp(session_data[1])
+                    existing["created_at"] = session_data.get("created_at")
                 if existing.get("last_event_at") is None:
-                    existing["last_event_at"] = existing.get("completed_at") or existing.get(
-                        "created_at"
-                    )
+                    existing["last_event_at"] = existing.get("completed_at") or existing.get("created_at")
                 continue
             sessions_by_id[session_id] = _build_session_list_row(
                 session_id=session_id,
-                created_at=session_data[1],
-                total_time_ms=session_data[2],
-                total_sources=session_data[3],
-                status=session_data[8],
+                created_at=session_data.get("created_at"),
+                total_time_ms=session_data.get("total_time_ms"),
+                total_sources=session_data.get("total_sources"),
+                status=session_data.get("status"),
                 active=False,
                 event_count=None,
                 last_event_at=None,
@@ -368,7 +376,7 @@ def register_session_routes(app: FastAPI) -> None:
 
         sessions = list(sessions_by_id.values())
 
-        if search:
+        if search and len(search) >= 2:
             search_lower = search.lower()
             sessions = [
                 s

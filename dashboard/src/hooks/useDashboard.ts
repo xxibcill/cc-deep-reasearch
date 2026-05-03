@@ -73,6 +73,7 @@ interface DashboardState {
   clearDeleteStatus: () => void;
 
   events: TelemetryEvent[];
+  eventIdSet: Set<string>;
   connected: boolean;
   liveStreamStatus: LiveStreamStatus;
   selectedEvent: TelemetryEvent | null;
@@ -157,6 +158,7 @@ const useDashboardStore = create<DashboardState>((set) => ({
         : {
             sessionId: id,
             events: [],
+            eventIdSet: new Set<string>(),
             connected: false,
             liveStreamStatus: DEFAULT_LIVE_STREAM_STATUS,
             selectedEvent: null,
@@ -248,29 +250,70 @@ const useDashboardStore = create<DashboardState>((set) => ({
   clearDeleteStatus: () => set({ deleteError: null, deleteSuccess: false }),
 
   events: [],
+  eventIdSet: new Set<string>(),
   connected: false,
   liveStreamStatus: DEFAULT_LIVE_STREAM_STATUS,
   selectedEvent: null,
-  replaceEvents: (events) => set({ events: sortEvents(events) }),
+  replaceEvents: (events) => {
+    const newEventIdSet = new Set<string>();
+    for (const event of events) {
+      newEventIdSet.add(event.eventId);
+    }
+    return { events: sortEvents(events), eventIdSet: newEventIdSet };
+  },
   appendEvent: (event) =>
     set((state) => {
-      if (state.events.some((existing) => existing.eventId === event.eventId)) {
+      if (state.eventIdSet.has(event.eventId)) {
         return {};
       }
-      return {
-        events: mergeEvents(state.events, [event], {
-          limit: MAX_BUFFERED_EVENTS,
-        }),
-      };
+      const newEventIdSet = new Set(state.eventIdSet);
+      newEventIdSet.add(event.eventId);
+      const newEvents = mergeEvents(state.events, [event], {
+        limit: MAX_BUFFERED_EVENTS,
+      });
+      // Rebuild eventIdSet from merged events (limit may have removed some)
+      const rebuiltEventIdSet = new Set<string>();
+      for (const e of newEvents) {
+        rebuiltEventIdSet.add(e.eventId);
+      }
+      return { events: newEvents, eventIdSet: rebuiltEventIdSet };
     }),
   appendEvents: (events) =>
-    set((state) => ({ events: mergeEvents(state.events, events) })),
+    set((state) => {
+      let changed = false;
+      const newEventIdSet = new Set(state.eventIdSet);
+      const newEventsList: TelemetryEvent[] = [...state.events];
+      for (const event of events) {
+        if (!newEventIdSet.has(event.eventId)) {
+          newEventIdSet.add(event.eventId);
+          newEventsList.push(event);
+          changed = true;
+        }
+      }
+      if (!changed) {
+        return {};
+      }
+      const sorted = sortEvents(newEventsList);
+      return { events: sorted, eventIdSet: newEventIdSet };
+    }),
   appendBufferedEvents: (events) =>
-    set((state) => ({
-      events: mergeEvents(state.events, events, {
-        limit: MAX_BUFFERED_EVENTS,
-      }),
-    })),
+    set((state) => {
+      const newEventIdSet = new Set(state.eventIdSet);
+      const newEventsList: TelemetryEvent[] = [...state.events];
+      for (const event of events) {
+        if (!newEventIdSet.has(event.eventId)) {
+          newEventIdSet.add(event.eventId);
+          newEventsList.push(event);
+        }
+      }
+      const sorted = sortEvents(newEventsList);
+      const trimmed = sorted.slice(-MAX_BUFFERED_EVENTS);
+      const trimmedEventIdSet = new Set<string>();
+      for (const e of trimmed) {
+        trimmedEventIdSet.add(e.eventId);
+      }
+      return { events: trimmed, eventIdSet: trimmedEventIdSet };
+    }),
   setConnected: (connected) => set({ connected }),
   setLiveStreamStatus: (status) =>
     set((state) => ({
@@ -285,6 +328,7 @@ const useDashboardStore = create<DashboardState>((set) => ({
     set({
       sessionId: null,
       events: [],
+      eventIdSet: new Set<string>(),
       connected: false,
       liveStreamStatus: DEFAULT_LIVE_STREAM_STATUS,
       selectedEvent: null,

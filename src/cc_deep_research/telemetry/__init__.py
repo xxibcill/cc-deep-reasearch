@@ -31,6 +31,7 @@ from .query import (
     query_llm_route_analytics,
     query_llm_route_summary,
     query_session_detail,
+    query_session_summaries,
 )
 
 __all__ = [
@@ -60,4 +61,5 @@ __all__ = [
     "query_llm_route_summary",
     "query_session_checkpoints",
     "query_session_detail",
+    "query_session_summaries",
 ]

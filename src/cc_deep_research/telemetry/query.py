@@ -114,6 +114,119 @@ def _normalize_event_row(row: tuple[Any, ...]) -> dict[str, Any]:
     }
 
 
+def query_session_summaries(
+    db_path: Path | None = None,
+    *,
+    limit: int = 500,
+    cursor: str | None = None,
+    search: str | None = None,
+    status: str | None = None,
+    archived_only: bool = False,
+    sort_by: str = "last_event_at",
+    sort_order: str = "desc",
+) -> dict[str, Any]:
+    """Return focused session summary rows for the dashboard session list.
+
+    Pushes filtering and sorting to DuckDB to avoid loading full dashboard datasets.
+    Only returns the fields needed for the session list view.
+
+    Args:
+        db_path: Optional DuckDB database path.
+        limit: Maximum sessions to return.
+        cursor: Session ID to start after (for pagination).
+        search: Text search on session_id or query.
+        status: Filter by session status.
+        archived_only: If True, filter to archived sessions only.
+        sort_by: Sort field (created_at, last_event_at, total_time_ms).
+        sort_order: asc or desc.
+
+    Returns:
+        Dict with sessions list, total count, and next_cursor.
+    """
+    database_path = db_path or get_default_dashboard_db_path()
+    if not database_path.exists():
+        return {"sessions": [], "total": 0, "next_cursor": None}
+
+    conn = _load_dashboard_connection(database_path)
+
+    # Build WHERE clause dynamically
+    conditions = []
+    params: list[Any] = []
+
+    if cursor:
+        # Find the created_at of the cursor session to paginate
+        cursor_row = conn.execute(
+            "SELECT created_at FROM telemetry_sessions WHERE session_id = ?",
+            [cursor],
+        ).fetchone()
+        if cursor_row:
+            cursor_ts = _serialize_timestamp(cursor_row[0])
+            if sort_order == "desc":
+                conditions.append("created_at < ?")
+            else:
+                conditions.append("created_at > ?")
+            params.append(cursor_ts)
+
+    if search:
+        conditions.append("(session_id LIKE ? OR query LIKE ?)")
+        search_pattern = f"%{search}%"
+        params.extend([search_pattern, search_pattern])
+
+    if status:
+        conditions.append("status = ?")
+        params.append(status)
+
+    where_clause = " AND ".join(conditions) if conditions else "1=1"
+
+    # Order clause
+    sort_column = {
+        "created_at": "created_at",
+        "last_event_at": "created_at",
+        "total_time_ms": "COALESCE(total_time_ms, 0)",
+    }.get(sort_by, "created_at")
+    order_dir = "DESC" if sort_order == "desc" else "ASC"
+
+    # Count total before pagination
+    count_sql = f"SELECT COUNT(*) FROM telemetry_sessions WHERE {where_clause}"
+    total_row = conn.execute(count_sql, params).fetchone()
+    total = int(total_row[0]) if total_row else 0
+
+    # Fetch paginated sessions (only needed fields)
+    sql = f"""
+    SELECT
+        ts.session_id,
+        ts.created_at,
+        ts.total_time_ms,
+        ts.total_sources,
+        ts.status
+    FROM telemetry_sessions ts
+    WHERE {where_clause}
+    ORDER BY ts.{sort_column} {order_dir} NULLS LAST
+    LIMIT ?
+    """
+    params.append(limit)
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+
+    sessions = []
+    for row in rows:
+        sessions.append({
+            "session_id": row[0],
+            "created_at": _serialize_timestamp(row[1]),
+            "total_time_ms": row[2],
+            "total_sources": row[3],
+            "status": row[4],
+        })
+
+    next_cursor = sessions[-1]["session_id"] if len(sessions) == limit and total > limit else None
+
+    return {
+        "sessions": sessions,
+        "total": total,
+        "next_cursor": next_cursor,
+    }
+
+
 def query_dashboard_data(db_path: Path | None = None) -> dict[str, Any]:
     """Return summary metrics and datasets used by dashboard views."""
     database_path = db_path or get_default_dashboard_db_path()

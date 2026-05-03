@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, Loader2, Radar, RefreshCcw, Waves } from 'lucide-react';
 
 import useDashboardStore from '@/hooks/useDashboard';
-import { getApiErrorMessage, getSessionDetail, type SessionDetailResult } from '@/lib/api';
+import { getApiErrorMessage, getSessionSummary, getSessionEventsPage, getSessionDerivedOutputs, getSessionPromptMetadata } from '@/lib/api';
 import { isTerminalStatus } from '@/lib/session-route';
 import { useWebSocket } from '@/lib/websocket';
 import { HelpCallout } from '@/components/ui/help-callout';
@@ -20,7 +20,24 @@ import type {
   ResearchRunStatus,
   Session,
   SessionPromptMetadata,
+  CriticalPath,
+  DecisionGraph,
+  StateChange,
+  Decision,
+  Degradation,
+  Failure,
+  ApiTelemetryEvent,
 } from '@/types/telemetry';
+
+interface DerivedOutputs {
+  narrative: ApiTelemetryEvent[];
+  criticalPath: CriticalPath;
+  stateChanges: StateChange[];
+  decisions: Decision[];
+  degradations: Degradation[];
+  failures: Failure[];
+  decisionGraph: DecisionGraph;
+}
 
 function formatTimestamp(value: string | null | undefined): string | null {
   if (!value) {
@@ -71,15 +88,16 @@ export function SessionTelemetryWorkspace({
     enabled: !liveStreamDisabled,
     historical: liveStreamDisabled,
   });
-  const [derivedOutputs, setDerivedOutputs] = useState<SessionDetailResult['derivedOutputs'] | null>(
-    null
-  );
+  const [derivedOutputs, setDerivedOutputs] = useState<DerivedOutputs | null>(null);
   const [promptMetadata, setPromptMetadata] = useState<SessionPromptMetadata | null>(null);
   const [loading, setLoading] = useState(true);
+  const [derivedLoading, setDerivedLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const previousPhaseRef = useRef(liveStreamStatus.phase);
+  const derivedFetchedRef = useRef(false);
+  const promptFetchedRef = useRef(false);
 
   useEffect(() => {
     if (liveStreamStatus.phase !== 'reconnecting' || !liveStreamStatus.nextRetryAt) {
@@ -95,39 +113,64 @@ export function SessionTelemetryWorkspace({
     };
   }, [liveStreamStatus.nextRetryAt, liveStreamStatus.phase]);
 
+  // Load events eagerly (doesn't wait for derived outputs)
   useEffect(() => {
     let mounted = true;
 
     setLoading(true);
     setError(null);
-    setDerivedOutputs(null);
-    setPromptMetadata(null);
 
-    getSessionDetail(sessionId)
-      .then((result) => {
-        if (!mounted) {
-          return;
-        }
-        appendEvents(result.events);
-        setDerivedOutputs(result.derivedOutputs);
-        setPromptMetadata(result.promptMetadata ?? null);
+    Promise.all([
+      getSessionSummary(sessionId),
+      getSessionEventsPage(sessionId, 500),
+    ])
+      .then(([summaryResult, eventsPageResult]) => {
+        if (!mounted) return;
+        // Events from the events page
+        appendEvents(eventsPageResult.events);
+        setLoading(false);
       })
       .catch((requestError) => {
-        if (!mounted) {
-          return;
-        }
+        if (!mounted) return;
         setError(getApiErrorMessage(requestError, 'Failed to load telemetry workspace.'));
-      })
-      .finally(() => {
-        if (mounted) {
-          setLoading(false);
-        }
+        setLoading(false);
       });
 
     return () => {
       mounted = false;
     };
   }, [appendEvents, reloadNonce, sessionId]);
+
+  // Lazily load derived outputs and prompt metadata after events are available
+  const loadDerivedOutputs = useCallback(() => {
+    if (derivedFetchedRef.current) return;
+    derivedFetchedRef.current = true;
+    setDerivedLoading(true);
+    Promise.all([
+      getSessionDerivedOutputs(sessionId),
+      getSessionPromptMetadata(sessionId),
+    ])
+      .then(([derived, prompts]) => {
+        setDerivedOutputs(derived);
+        setPromptMetadata(prompts ?? null);
+      })
+      .catch(() => {
+        // Derived outputs are non-critical; don't surface error for them
+      })
+      .finally(() => {
+        setDerivedLoading(false);
+      });
+  }, [sessionId]);
+
+  // Load derived outputs when events first become available
+  useEffect(() => {
+    if (events.length > 0 && !derivedFetchedRef.current) {
+      loadDerivedOutputs();
+    }
+    if (events.length > 0 && !promptFetchedRef.current) {
+      promptFetchedRef.current = true;
+    }
+  }, [events.length, loadDerivedOutputs]);
 
   useEffect(() => {
     const previousPhase = previousPhaseRef.current;
