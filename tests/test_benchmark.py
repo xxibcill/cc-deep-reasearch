@@ -14,6 +14,7 @@ from cc_deep_research.benchmark import (
     run_benchmark_corpus_sync,
 )
 from cc_deep_research.models import ResearchSession, SearchResultItem
+from cc_deep_research.models.search import SourceType
 
 
 def test_load_benchmark_corpus_uses_repo_default() -> None:
@@ -196,3 +197,40 @@ def test_build_benchmark_scorecard_aggregates_metrics_deterministically() -> Non
     assert scorecard.average_latency_ms == 1250.0
     assert scorecard.average_validation_score == 0.6
     assert scorecard.stop_reasons == {"success": 1}
+
+
+def test_benchmark_source_type_uses_model_field_before_domain_fallback() -> None:
+    """Benchmark diversity should honor provider-populated source quality metadata."""
+    corpus = BenchmarkCorpus(
+        version="1.0",
+        description="source type",
+        cases=[
+            {
+                "case_id": "case-a",
+                "query": "one",
+                "category": "simple_factual",
+                "rationale": "rationale",
+            }
+        ],
+    )
+
+    async def _run_case(_: object) -> ResearchSession:
+        return ResearchSession(
+            session_id="session-1",
+            query="one",
+            started_at=datetime(2026, 3, 7, tzinfo=UTC),
+            completed_at=datetime(2026, 3, 7, tzinfo=UTC) + timedelta(seconds=1),
+            sources=[
+                SearchResultItem(
+                    url="https://example.com/report",
+                    title="Official report",
+                    score=1.0,
+                    source_type=SourceType.GOVERNMENT,
+                )
+            ],
+            metadata={"stop_reason": "success"},
+        )
+
+    run_report = run_benchmark_corpus_sync(corpus, run_case=_run_case)
+
+    assert run_report.cases[0].source_types == ["government"]

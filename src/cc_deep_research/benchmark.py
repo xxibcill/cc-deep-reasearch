@@ -135,7 +135,11 @@ def _extract_domain(url: str) -> str:
 
 def _infer_source_type(source: SearchResultItem) -> BenchmarkSourceType:
     """Infer a stable source-type label for scorecard diversity metrics."""
-    explicit = str(source.source_metadata.get("source_type", "")).strip().lower()
+    explicit = (
+        source.source_type.value
+        if source.source_type is not None
+        else str(source.source_metadata.get("source_type", "")).strip().lower()
+    )
     if explicit in {"government", "academic", "news", "organization", "commercial", "other"}:
         return explicit  # type: ignore[return-value]
 
@@ -172,8 +176,6 @@ def build_benchmark_case_report(
     )
     metadata = session.metadata if isinstance(session.metadata, dict) else {}
     iteration_history = metadata.get("iteration_history", []) if isinstance(metadata, dict) else []
-    execution_metadata = metadata.get("execution", {}) if isinstance(metadata, dict) else {}
-    providers_metadata = metadata.get("providers", {}) if isinstance(metadata, dict) else {}
 
     return BenchmarkCaseReport(
         case_id=case.case_id,
