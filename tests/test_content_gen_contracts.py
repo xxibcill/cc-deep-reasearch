@@ -20,10 +20,10 @@ from pathlib import Path
 
 import pytest
 
-from cc_deep_research.content_gen.models.contracts import CONTENT_GEN_STAGE_CONTRACTS
-from cc_deep_research.content_gen.models.contracts import ContentGenStageContract
+from cc_deep_research.content_gen.models.contracts import (
+    CONTENT_GEN_STAGE_CONTRACTS,
+)
 from tests.helpers.fixture_loader import load_text_fixture
-
 
 # ---------------------------------------------------------------------------
 # Registry Iteration Tests

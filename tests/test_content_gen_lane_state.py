@@ -8,7 +8,6 @@ across stage orchestrators that delegate to BaseStageOrchestrator helpers.
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -114,7 +113,7 @@ class TestLaneStateHelpers:
 
         lane = base_stage._resolve_lane_context(ctx_with_lanes, "idea-001")
         assert lane is not None
-        assert getattr(lane, "scripting") is not None
+        assert lane.scripting is not None
         assert lane.last_completed_stage == 7
         # Primary lane sync should have populated ctx-level scripting
         assert ctx_with_lanes.scripting is not None
@@ -145,7 +144,7 @@ class TestLaneStateHelpers:
         assert len(ctx_with_lanes.lane_contexts) == initial_count + 1
         lane = base_stage._resolve_lane_context(ctx_with_lanes, "brand-new-idea")
         assert lane is not None
-        assert getattr(lane, "research_pack") is not None
+        assert lane.research_pack is not None
 
     def test_record_lane_completion_takes_max_of_stage_index(
         self,
@@ -267,6 +266,7 @@ def config_fixture() -> Any:
 def empty_pipeline_context() -> PipelineContext:
     """An empty pipeline context with no lanes."""
     from datetime import UTC, datetime
+
     from cc_deep_research.content_gen.models import PipelineContext
     return PipelineContext(theme="test theme", created_at=datetime.now(tz=UTC).isoformat())
 
@@ -279,6 +279,7 @@ def ctx_fixture() -> PipelineContext:
     idea-002: secondary, exploring (with angles via AngleOutput.options)
     """
     from datetime import UTC, datetime
+
     from cc_deep_research.content_gen.models import (
         AngleOption,
         AngleOutput,
