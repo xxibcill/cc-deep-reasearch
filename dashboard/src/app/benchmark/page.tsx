@@ -1,22 +1,27 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Trophy, Clock, FileText, AlertCircle, ChevronRight, Activity } from 'lucide-react';
+import { Trophy, Clock, FileText, AlertCircle, ChevronRight, Activity, Play } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MetricCard } from '@/components/ui/metric-card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   getBenchmarkCorpus,
   listBenchmarkRuns,
   getBenchmarkRun,
   getBenchmarkCaseReport,
+  runBenchmark,
+  compareBenchmark,
   type BenchmarkCorpus,
   type BenchmarkCase,
   type BenchmarkRun,
   type BenchmarkRunReport,
   type BenchmarkCaseReport,
+  type BenchmarkComparisonReport,
   getApiErrorMessage,
 } from '@/lib/api';
 
@@ -29,6 +34,15 @@ export default function BenchmarkPage() {
   const [loadingRuns, setLoadingRuns] = useState(false);
   const [loadingCaseDetails, setLoadingCaseDetails] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [workflowMode, setWorkflowMode] = useState<string>('staged');
+  const [depth, setDepth] = useState<string>('standard');
+  const [runningBenchmark, setRunningBenchmark] = useState(false);
+  const [benchmarkResult, setBenchmarkResult] = useState<string | null>(null);
+  const [showCompare, setShowCompare] = useState(false);
+  const [compareRun1, setCompareRun1] = useState<string>('');
+  const [compareRun2, setCompareRun2] = useState<string>('');
+  const [comparisonResult, setComparisonResult] = useState<BenchmarkComparisonReport | null>(null);
+  const [loadingComparison, setLoadingComparison] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -160,6 +174,159 @@ export default function BenchmarkPage() {
               value={runs.length}
             />
           </div>
+        )}
+
+        {/* Run Benchmark Controls */}
+        <Card className="rounded-[1.45rem]">
+          <CardHeader className="border-b border-border/70">
+            <CardTitle className="text-[1.6rem]">Run Benchmark</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Execute the benchmark corpus with specified workflow and depth.
+            </p>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Workflow</label>
+                <Select value={workflowMode} onValueChange={setWorkflowMode}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="staged">Staged</SelectItem>
+                    <SelectItem value="planner">Planner</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Depth</label>
+                <Select value={depth} onValueChange={setDepth}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="quick">Quick</SelectItem>
+                    <SelectItem value="standard">Standard</SelectItem>
+                    <SelectItem value="deep">Deep</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                onClick={async () => {
+                  setRunningBenchmark(true);
+                  setBenchmarkResult(null);
+                  try {
+                    const result = await runBenchmark(workflowMode, depth);
+                    setBenchmarkResult(
+                      `Run complete: ${result.total_cases} cases, avg score: ${result.average_validation_score?.toFixed(2) ?? 'N/A'}`
+                    );
+                    // Reload runs list
+                    const runsData = await listBenchmarkRuns();
+                    setRuns(runsData.runs);
+                  } catch {
+                    setBenchmarkResult('Benchmark run failed');
+                  } finally {
+                    setRunningBenchmark(false);
+                  }
+                }}
+                disabled={runningBenchmark}
+              >
+                <Play className="mr-1 h-4 w-4" />
+                {runningBenchmark ? 'Running...' : 'Run Benchmark'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setShowCompare(!showCompare)}
+              >
+                {showCompare ? 'Hide Compare' : 'Compare Runs'}
+              </Button>
+            </div>
+            {benchmarkResult && (
+              <p className="mt-3 text-sm text-muted-foreground">{benchmarkResult}</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Compare Runs */}
+        {showCompare && (
+          <Card className="rounded-[1.45rem]">
+            <CardHeader className="border-b border-border/70">
+              <CardTitle className="text-[1.6rem]">Compare Runs</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <div className="flex flex-wrap items-end gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Run 1</label>
+                  <Select value={compareRun1} onValueChange={setCompareRun1}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue placeholder="Select run 1" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {runs.map((run) => (
+                        <SelectItem key={run.run_id} value={run.path}>
+                          {run.run_id}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Run 2</label>
+                  <Select value={compareRun2} onValueChange={setCompareRun2}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue placeholder="Select run 2" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {runs.map((run) => (
+                        <SelectItem key={run.run_id} value={run.path}>
+                          {run.run_id}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  onClick={async () => {
+                    if (!compareRun1 || !compareRun2) return;
+                    setLoadingComparison(true);
+                    try {
+                      const result = await compareBenchmark(compareRun1, compareRun2);
+                      setComparisonResult(result);
+                    } catch {
+                      setComparisonResult(null);
+                    } finally {
+                      setLoadingComparison(false);
+                    }
+                  }}
+                  disabled={!compareRun1 || !compareRun2 || loadingComparison}
+                >
+                  {loadingComparison ? 'Comparing...' : 'Compare'}
+                </Button>
+              </div>
+              {comparisonResult && (
+                <div className="mt-4 space-y-2">
+                  <h4 className="text-sm font-medium">Metric Deltas (Run2 - Run1)</h4>
+                  <div className="grid gap-2 md:grid-cols-3">
+                    {[
+                      { label: 'Source Count', delta: comparisonResult.delta_source_count },
+                      { label: 'Unique Domains', delta: comparisonResult.delta_unique_domains },
+                      { label: 'Source Type Diversity', delta: comparisonResult.delta_source_type_diversity },
+                      { label: 'Iteration Count', delta: comparisonResult.delta_iteration_count },
+                      { label: 'Latency (ms)', delta: comparisonResult.delta_latency_ms },
+                      { label: 'Validation Score', delta: comparisonResult.delta_validation_score },
+                    ].map(({ label, delta }) => (
+                      <div key={label} className="rounded-lg bg-surface-raised/50 p-2">
+                        <p className="text-[10px] text-muted-foreground">{label}</p>
+                        <p className={`text-sm font-medium ${(delta ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {delta != null ? `${delta >= 0 ? '+' : ''}${delta}` : 'N/A'}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         )}
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(24rem,0.75fr)]">

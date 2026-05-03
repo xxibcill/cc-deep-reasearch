@@ -11,11 +11,19 @@ import {
   fetchGraphFull,
   fetchLintFindings,
   fetchNodeNeighbors,
+  initVault,
+  backfillVault,
+  rebuildIndex,
+  fetchVaultStatus,
 } from '@/lib/knowledge-client';
 import { KnowledgeGraph } from './knowledge-graph';
 import { NodeInspector } from './node-inspector';
 import { KnowledgeFilters } from './knowledge-filters';
 import { LintQueue } from './lint-queue';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { AlertTriangle, Database, RefreshCw, Upload } from 'lucide-react';
 
 interface KnowledgeShellProps {
   initialGraph?: GraphSnapshot;
@@ -32,6 +40,11 @@ export function KnowledgeShell({ initialGraph, initialFindings }: KnowledgeShell
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [showLint, setShowLint] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [vaultInitialized, setVaultInitialized] = useState(false);
+  const [actionStatus, setActionStatus] = useState<string | null>(null);
+  const [backfillLimit, setBackfillLimit] = useState<string>('');
+  const [dryRunMode, setDryRunMode] = useState(false);
 
   async function loadGraph() {
     setLoading(true);
@@ -128,6 +141,128 @@ export function KnowledgeShell({ initialGraph, initialFindings }: KnowledgeShell
         </div>
 
         {showLint && <LintQueue findings={findings} onRefresh={loadFindings} />}
+
+        <div className="mt-auto border-t pt-3">
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="flex w-full items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <Database className="h-3 w-3" />
+            Infrastructure
+          </button>
+
+          {showSettings && (
+            <div className="mt-3 space-y-3 rounded-lg border bg-surface-raised/50 p-3">
+              {!vaultInitialized && (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">Initialize the knowledge vault first.</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      setActionStatus('Initializing vault...');
+                      try {
+                        const result = await initVault(undefined, dryRunMode);
+                        if (dryRunMode) {
+                          setActionStatus(`Dry run: would create ${Object.keys(result.created).length} items`);
+                        } else {
+                          setVaultInitialized(true);
+                          setActionStatus('Vault initialized successfully');
+                          loadGraph();
+                        }
+                      } catch {
+                        setActionStatus('Failed to initialize vault');
+                      }
+                    }}
+                    className="w-full text-xs"
+                  >
+                    <Upload className="mr-1 h-3 w-3" />
+                    {dryRunMode ? 'Preview Init' : 'Initialize Vault'}
+                  </Button>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">Backfill Sessions</p>
+                <div className="flex gap-1">
+                  <Input
+                    placeholder="Limit (optional)"
+                    value={backfillLimit}
+                    onChange={(e) => setBackfillLimit(e.target.value)}
+                    className="h-7 w-20 text-xs"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      setActionStatus('Running backfill...');
+                      try {
+                        const limit = backfillLimit ? parseInt(backfillLimit, 10) : undefined;
+                        const result = await backfillVault(limit, dryRunMode);
+                        if (dryRunMode) {
+                          setActionStatus(`Dry run: would ingest ${result.total_sessions} sessions`);
+                        } else {
+                          setActionStatus(`Backfill: ${result.ingested} ingested, ${result.failed} failed`);
+                          loadGraph();
+                        }
+                      } catch {
+                        setActionStatus('Backfill failed');
+                      }
+                    }}
+                    className="flex-1 text-xs"
+                  >
+                    {dryRunMode ? 'Preview' : 'Run'}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">Rebuild Index</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={async () => {
+                    setActionStatus('Rebuilding index...');
+                    try {
+                      await rebuildIndex();
+                      setActionStatus('Index rebuilt successfully');
+                      loadGraph();
+                    } catch {
+                      setActionStatus('Rebuild failed');
+                    }
+                  }}
+                  className="w-full text-xs"
+                >
+                  <RefreshCw className="mr-1 h-3 w-3" />
+                  Rebuild Index
+                </Button>
+                <p className="text-[10px] text-muted-foreground">
+                  Clears all nodes and edges. Use backfill to repopulate.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="dry-run-mode"
+                  checked={dryRunMode}
+                  onChange={(e) => setDryRunMode(e.target.checked)}
+                  className="h-3 w-3"
+                />
+                <label htmlFor="dry-run-mode" className="text-[10px] text-muted-foreground">
+                  Dry-run mode
+                </label>
+              </div>
+
+              {actionStatus && (
+                <div className="flex items-center gap-1 rounded bg-muted/50 p-2">
+                  <AlertTriangle className="h-3 w-3 text-muted-foreground" />
+                  <p className="text-[10px] text-muted-foreground">{actionStatus}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Main graph area */}

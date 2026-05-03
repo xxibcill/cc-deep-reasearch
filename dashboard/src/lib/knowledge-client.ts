@@ -123,3 +123,55 @@ export async function fetchVaultStatus(): Promise<{
   const response = await knowledgeClient.get('/status');
   return response.data;
 }
+
+export interface InitVaultResponse {
+  initialized: boolean;
+  dry_run: boolean;
+  created: Record<string, string>;
+  error?: string;
+}
+
+export async function initVault(
+  configPath?: string,
+  dryRun = false,
+): Promise<InitVaultResponse> {
+  const params = new URLSearchParams();
+  if (configPath) params.set('config_path', configPath);
+  if (dryRun) params.set('dry_run', 'true');
+  const response = await knowledgeClient.post('/init', null, { params });
+  return response.data;
+}
+
+export interface BackfillResponse {
+  dry_run: boolean;
+  total_sessions: number;
+  session_ids?: string[];
+  ingested: number;
+  failed: number;
+  errors: Array<{ session_id: string; error: string }>;
+  error?: string;
+}
+
+export async function backfillVault(
+  limit?: number,
+  dryRun = false,
+): Promise<BackfillResponse> {
+  const params = new URLSearchParams();
+  if (limit != null) params.set('limit', String(limit));
+  if (dryRun) params.set('dry_run', 'true');
+  const response = await knowledgeClient.post('/backfill', null, { params });
+  return response.data;
+}
+
+export interface RebuildIndexResponse {
+  rebuilt: boolean;
+  db_path: string;
+  error?: string;
+}
+
+export async function rebuildIndex(configPath?: string): Promise<RebuildIndexResponse> {
+  const params = new URLSearchParams();
+  if (configPath) params.set('config_path', configPath);
+  const response = await knowledgeClient.post('/rebuild-index', null, { params });
+  return response.data;
+}

@@ -700,6 +700,59 @@ export async function getBenchmarkCaseReport(
   return response.data;
 }
 
+export interface BenchmarkRunResult {
+  run_id: string;
+  output_dir: string;
+  total_cases: number;
+  workflow_mode: string;
+  average_validation_score: number | null;
+}
+
+export async function runBenchmark(
+  workflowMode: string = 'staged',
+  depth: string = 'standard',
+  outputDir?: string
+): Promise<BenchmarkRunResult> {
+  const params: Record<string, unknown> = { workflow_mode: workflowMode, depth };
+  if (outputDir) params.output_dir = outputDir;
+  const response = await apiClient.post<BenchmarkRunResult>('/benchmarks/run', null, { params });
+  return response.data;
+}
+
+export interface BenchmarkComparisonReport {
+  run1_path: string;
+  run2_path: string;
+  generated_at: string;
+  delta_source_count: number;
+  delta_unique_domains: number;
+  delta_source_type_diversity: number;
+  delta_iteration_count: number;
+  delta_latency_ms: number;
+  delta_validation_score: number | null;
+  delta_report_quality_score: number | null;
+  delta_unsupported_claim_count: number;
+  delta_citation_error_count: number;
+  delta_hydration_success_rate: number | null;
+  run1_workflow_mode: string;
+  run2_workflow_mode: string;
+  case_deltas: Array<{
+    case_id: string;
+    delta_source_count: number;
+    delta_validation_score: number | null;
+    delta_stop_reason: string;
+  }>;
+}
+
+export async function compareBenchmark(
+  run1Path: string,
+  run2Path: string
+): Promise<BenchmarkComparisonReport> {
+  const response = await apiClient.post<BenchmarkComparisonReport>('/benchmarks/compare', null, {
+    params: { run1_path: run1Path, run2_path: run2Path },
+  });
+  return response.data;
+}
+
 export interface ResearchThemeInfo {
   theme: string;
   display_name: string;

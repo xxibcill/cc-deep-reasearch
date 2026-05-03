@@ -4,13 +4,19 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
 
-from cc_deep_research.benchmark import load_benchmark_corpus
+from cc_deep_research.benchmark import (
+    BenchmarkRunReport,
+    compare_benchmark_runs,
+    load_benchmark_corpus,
+    run_benchmark_corpus_sync,
+)
 from cc_deep_research.config import load_config
 from cc_deep_research.search_cache import SearchCacheStore
 from cc_deep_research.session_store import SessionStore
@@ -487,6 +493,101 @@ def register_misc_routes(app: FastAPI) -> None:
             )
 
         return JSONResponse(content=case_report)
+
+    @app.post("/api/benchmarks/run")
+    async def run_benchmark(
+        workflow_mode: str = Query(default="staged", description="Research workflow mode"),
+        depth: str = Query(default="standard", description="Research depth"),
+        output_dir: str | None = Query(default=None, description="Output directory for benchmark run"),
+    ) -> JSONResponse:
+        """Trigger a benchmark corpus run."""
+        import asyncio
+
+        from cc_deep_research.benchmark import BenchmarkCase
+        from cc_deep_research.models import ResearchDepth, ResearchSession
+        from cc_deep_research.research_runs.models import ResearchRunRequest, ResearchWorkflow
+        from cc_deep_research.research_runs.service import ResearchRunService
+
+        try:
+            corpus = load_benchmark_corpus()
+        except Exception as e:
+            return JSONResponse(
+                content={"error": f"Failed to load benchmark corpus: {str(e)}"},
+                status_code=500,
+            )
+
+        configuration = {"workflow_mode": workflow_mode, "depth": depth}
+        run_output_dir = Path(output_dir) if output_dir else _get_benchmark_runs_dir() / Path(
+            datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+        )
+
+        def run_case(case: BenchmarkCase) -> ResearchSession:
+            """Execute one benchmark case as a research run and return the session."""
+            loop = asyncio.get_event_loop()
+            service = ResearchRunService()
+            request = ResearchRunRequest(
+                query=case.query,
+                depth=ResearchDepth(depth),
+                workflow=ResearchWorkflow(workflow_mode),
+            )
+            return loop.run_in_executor(None, lambda: service.run(request)).result().session
+
+        try:
+            report = run_benchmark_corpus_sync(
+                corpus,
+                run_case=run_case,
+                output_dir=run_output_dir,
+                configuration=configuration,
+            )
+            return JSONResponse(content={
+                "run_id": run_output_dir.name,
+                "output_dir": str(run_output_dir),
+                "total_cases": report.scorecard.total_cases,
+                "workflow_mode": report.scorecard.workflow_mode,
+                "average_validation_score": report.scorecard.average_validation_score,
+            })
+        except Exception as e:
+            return JSONResponse(
+                content={"error": f"Benchmark run failed: {str(e)}"},
+                status_code=500,
+            )
+
+    @app.post("/api/benchmarks/compare")
+    async def compare_benchmark(
+        run1_path: str = Query(..., description="First benchmark run directory path"),
+        run2_path: str = Query(..., description="Second benchmark run directory path"),
+    ) -> JSONResponse:
+        """Compare two benchmark runs and return delta metrics."""
+        p1 = Path(run1_path)
+        p2 = Path(run2_path)
+        manifest1 = p1 / "manifest.json"
+        manifest2 = p2 / "manifest.json"
+
+        if not manifest1.exists():
+            return JSONResponse(
+                content={"error": f"Missing manifest.json in {run1_path}"},
+                status_code=404,
+            )
+        if not manifest2.exists():
+            return JSONResponse(
+                content={"error": f"Missing manifest.json in {run2_path}"},
+                status_code=404,
+            )
+
+        try:
+            with manifest1.open() as f:
+                run1 = BenchmarkRunReport.model_validate(json.load(f))
+            with manifest2.open() as f:
+                run2 = BenchmarkRunReport.model_validate(json.load(f))
+        except Exception as e:
+            return JSONResponse(
+                content={"error": f"Failed to load benchmark runs: {str(e)}"},
+                status_code=500,
+            )
+
+        comparison = compare_benchmark_runs(run1, run2, run1_path=run1_path, run2_path=run2_path)
+
+        return JSONResponse(content=comparison.model_dump(mode="json"))
 
     @app.get("/api/themes")
     async def list_research_themes() -> JSONResponse:

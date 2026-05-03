@@ -11,11 +11,14 @@ from cc_deep_research.knowledge import (
     NodeKind,
 )
 from cc_deep_research.knowledge.graph_index import GraphIndex
+from cc_deep_research.knowledge.ingest import ingest_session
 from cc_deep_research.knowledge.planning_integration import KnowledgePlanningService
 from cc_deep_research.knowledge.vault import (
+    init_vault,
     vault_root,
     wiki_index_path,
 )
+from cc_deep_research.session_store import SessionStore, get_default_session_dir
 
 
 def _open_graph_index(config_path: Path | None = None) -> GraphIndex | None:
@@ -438,6 +441,112 @@ def register_knowledge_routes(app: FastAPI) -> None:
             "node": node.model_dump(mode="json"),
             "neighbors": [n.model_dump(mode="json") for n in neighbor_nodes],
             "edges": [e.model_dump(mode="json") for e in neighbors_edges],
+        })
+
+    @app.post("/api/knowledge/init")
+    async def init_knowledge_vault(
+        config_path: Path | None = Query(default=None, description="Path to config file"),
+        dry_run: bool = Query(default=False, description="Show what would be created without creating"),
+    ) -> JSONResponse:
+        """Initialize the knowledge vault (creates directories and seed files)."""
+        try:
+            result = init_vault(config_path, dry_run=dry_run)
+            return JSONResponse(content={
+                "initialized": not dry_run,
+                "dry_run": dry_run,
+                "created": {name: str(path) for name, path in result.items()},
+            })
+        except Exception as e:
+            return JSONResponse(
+                content={"error": f"Failed to initialize vault: {str(e)}"},
+                status_code=500,
+            )
+
+    @app.post("/api/knowledge/backfill")
+    async def backfill_knowledge_vault(
+        limit: int | None = Query(default=None, ge=1, description="Limit number of sessions to ingest"),
+        dry_run: bool = Query(default=False, description="Show sessions to ingest without ingesting"),
+    ) -> JSONResponse:
+        """Ingest all saved sessions into the knowledge vault."""
+        store = SessionStore()
+        sessions_dir = get_default_session_dir()
+
+        if not sessions_dir.exists():
+            return JSONResponse(
+                content={"error": f"Sessions directory not found: {sessions_dir}"},
+                status_code=404,
+            )
+
+        session_files = sorted(sessions_dir.glob("*.json"))
+        if limit is not None:
+            session_files = session_files[:limit]
+
+        if dry_run:
+            return JSONResponse(content={
+                "dry_run": True,
+                "total_sessions": len(session_files),
+                "session_ids": [sf.stem for sf in session_files],
+                "ingested": 0,
+                "failed": 0,
+            })
+
+        ingested = 0
+        failed = 0
+        errors: list[dict[str, str]] = []
+        for sf in session_files:
+            session_id = sf.stem
+            session = store.load_session(session_id)
+            if session is None:
+                failed += 1
+                errors.append({"session_id": session_id, "error": "could not load"})
+                continue
+
+            try:
+                result = ingest_session(session, config_path=None)
+                ingested += 1
+            except Exception as exc:
+                failed += 1
+                errors.append({"session_id": session_id, "error": str(exc)})
+
+        return JSONResponse(content={
+            "dry_run": False,
+            "total_sessions": len(session_files),
+            "ingested": ingested,
+            "failed": failed,
+            "errors": errors,
+        })
+
+    @app.post("/api/knowledge/rebuild-index")
+    async def rebuild_knowledge_index(
+        config_path: Path | None = Query(default=None, description="Path to config file"),
+    ) -> JSONResponse:
+        """Clear and rebuild the SQLite graph index."""
+        from cc_deep_research.knowledge.vault import graph_sqlite_path
+
+        vault = vault_root(config_path)
+
+        if not vault.exists():
+            return JSONResponse(
+                content={"error": "Vault not initialized. Run init first."},
+                status_code=400,
+            )
+
+        db_path = graph_sqlite_path(config_path)
+
+        try:
+            index = GraphIndex(db_path)
+            index.clear()
+            index.commit()
+            index.close()
+        except Exception as exc:
+            return JSONResponse(
+                content={"error": f"Failed to rebuild index: {str(exc)}"},
+                status_code=500,
+            )
+
+        return JSONResponse(content={
+            "rebuilt": True,
+            "db_path": str(db_path),
         })
 
 
