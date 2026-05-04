@@ -663,6 +663,77 @@ function buildLLMReasoning(
     .sort((left, right) => right.startTime - left.startTime);
 }
 
+export function deriveCounts(events: TelemetryEvent[]) {
+  return events.reduce(
+    (counts, event) => {
+      counts.total += 1;
+      if (event.category === 'agent') {
+        counts.agent += 1;
+      } else if (event.category === 'tool') {
+        counts.tool += 1;
+      } else if (event.category === 'llm') {
+        counts.llm += 1;
+      }
+      return counts;
+    },
+    { total: 0, agent: 0, tool: 0, llm: 0 }
+  );
+}
+
+export function deriveCountsAndFilters(
+  events: TelemetryEvent[],
+  phaseLookup: Map<string, string | null>
+) {
+  const phases = new Set<string>();
+  const agents = new Set<string>();
+  const statuses = new Set<string>();
+  const eventTypes = new Set<string>();
+  const tools = new Set<string>();
+
+  for (const event of events) {
+    eventTypes.add(event.eventType);
+    statuses.add(event.status);
+    if (event.agentId) {
+      agents.add(event.agentId);
+    }
+  }
+
+  return {
+    phases,
+    agents,
+    statuses,
+    eventTypes,
+  };
+}
+
+export function deriveGraph(
+  events: TelemetryEvent[],
+  phaseLookup: Map<string, string | null>
+) {
+  return buildGraph(events, phaseLookup);
+}
+
+export function deriveTimeline(
+  events: TelemetryEvent[],
+  phaseLookup: Map<string, string | null>
+) {
+  return buildTimeline(events, phaseLookup);
+}
+
+export function deriveToolExecutions(
+  events: TelemetryEvent[],
+  phaseLookup: Map<string, string | null>
+) {
+  return buildToolExecutions(events, phaseLookup);
+}
+
+export function deriveLLMReasoning(
+  events: TelemetryEvent[],
+  phaseLookup: Map<string, string | null>
+) {
+  return buildLLMReasoning(events, phaseLookup);
+}
+
 export function filterEvents(
   events: TelemetryEvent[],
   filters: EventFilter,

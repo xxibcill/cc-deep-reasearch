@@ -38,6 +38,16 @@ export type LiveStreamPhase =
   | 'historical'
   | 'failed';
 
+export interface ReconnectHistoryEntry {
+  attempt: number;
+  timestamp: string;
+  closeCode: number | null;
+  closeReason: string | null;
+  wasClean: boolean | null;
+  tookMs: number;
+  error: string | null;
+}
+
 export interface LiveStreamStatus {
   phase: LiveStreamPhase;
   connected: boolean;
@@ -48,8 +58,10 @@ export interface LiveStreamStatus {
   lastEventAt: string | null;
   lastHistoryAt: string | null;
   lastDisconnectAt: string | null;
+  lastSuccessAt: string | null;
   failureReason: string | null;
   canReconnect: boolean;
+  reconnectHistory: ReconnectHistoryEntry[];
 }
 
 export type TelemetryStatus =

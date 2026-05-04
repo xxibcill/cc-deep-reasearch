@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Trophy, Clock, FileText, AlertCircle, ChevronRight, Activity, Play } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MetricCard } from '@/components/ui/metric-card';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ErrorState } from '@/components/async-state';
+import { Select } from '@/components/ui/select';
 import {
   getBenchmarkCorpus,
   listBenchmarkRuns,
@@ -44,41 +45,33 @@ export default function BenchmarkPage() {
   const [comparisonResult, setComparisonResult] = useState<BenchmarkComparisonReport | null>(null);
   const [loadingComparison, setLoadingComparison] = useState(false);
 
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const [corpusData, runsData] = await Promise.all([
+        getBenchmarkCorpus(),
+        listBenchmarkRuns(),
+      ]);
+
+      setCorpus(corpusData);
+      setRuns(runsData.runs);
+    } catch (err) {
+      console.error('Failed to load benchmark data:', err);
+      setError(getApiErrorMessage(err, 'Failed to load benchmark data.'));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     let mounted = true;
-
-    const loadData = async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const [corpusData, runsData] = await Promise.all([
-          getBenchmarkCorpus(),
-          listBenchmarkRuns(),
-        ]);
-
-        if (!mounted) return;
-
-        setCorpus(corpusData);
-        setRuns(runsData.runs);
-      } catch (err) {
-        console.error('Failed to load benchmark data:', err);
-        if (mounted) {
-          setError(getApiErrorMessage(err, 'Failed to load benchmark data.'));
-        }
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
-      }
-    };
-
     void loadData();
-
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [loadData]);
 
   const handleSelectRun = async (run: BenchmarkRun) => {
     setLoadingRuns(true);
@@ -128,9 +121,14 @@ export default function BenchmarkPage() {
   if (error && !corpus) {
     return (
       <div className="mx-auto max-w-content px-page-x py-page-y">
-        <EmptyState
-          description="There was a problem loading benchmark data."
-          icon={AlertCircle}
+        <ErrorState
+          error={error}
+          onRetry={() => {
+            setError(null);
+            setLoading(true);
+            void loadData();
+          }}
+          route="benchmark"
           title="Failed to load benchmarks"
         />
       </div>
@@ -186,31 +184,22 @@ export default function BenchmarkPage() {
           </CardHeader>
           <CardContent className="pt-4">
             <div className="flex flex-wrap items-end gap-4">
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Workflow</label>
-                <Select value={workflowMode} onValueChange={setWorkflowMode}>
-                  <SelectTrigger className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="staged">Staged</SelectItem>
-                    <SelectItem value="planner">Planner</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Depth</label>
-                <Select value={depth} onValueChange={setDepth}>
-                  <SelectTrigger className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="quick">Quick</SelectItem>
-                    <SelectItem value="standard">Standard</SelectItem>
-                    <SelectItem value="deep">Deep</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              <Select
+                  label="Workflow"
+                  value={workflowMode}
+                  onChange={setWorkflowMode}
+                  options={['staged', 'planner']}
+                  emptyLabel="Select"
+                  className="w-32"
+                />
+              <Select
+                  label="Depth"
+                  value={depth}
+                  onChange={setDepth}
+                  options={['quick', 'standard', 'deep']}
+                  emptyLabel="Select"
+                  className="w-32"
+                />
               <Button
                 onClick={async () => {
                   setRunningBenchmark(true);
@@ -255,36 +244,22 @@ export default function BenchmarkPage() {
             </CardHeader>
             <CardContent className="pt-4">
               <div className="flex flex-wrap items-end gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Run 1</label>
-                  <Select value={compareRun1} onValueChange={setCompareRun1}>
-                    <SelectTrigger className="w-48">
-                      <SelectValue placeholder="Select run 1" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {runs.map((run) => (
-                        <SelectItem key={run.run_id} value={run.path}>
-                          {run.run_id}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Run 2</label>
-                  <Select value={compareRun2} onValueChange={setCompareRun2}>
-                    <SelectTrigger className="w-48">
-                      <SelectValue placeholder="Select run 2" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {runs.map((run) => (
-                        <SelectItem key={run.run_id} value={run.path}>
-                          {run.run_id}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <Select
+                  label="Run 1"
+                  value={compareRun1}
+                  onChange={setCompareRun1}
+                  options={runs.map((run) => run.path)}
+                  emptyLabel="Select run 1"
+                  className="w-48"
+                />
+                <Select
+                  label="Run 2"
+                  value={compareRun2}
+                  onChange={setCompareRun2}
+                  options={runs.map((run) => run.path)}
+                  emptyLabel="Select run 2"
+                  className="w-48"
+                />
                 <Button
                   onClick={async () => {
                     if (!compareRun1 || !compareRun2) return;

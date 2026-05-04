@@ -80,6 +80,7 @@ packages = ["src/cc_deep_research"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+markers = ["slow: storage performance tests that need a clean environment"]
 pythonpath = ["src"]
 
 [tool.ruff]

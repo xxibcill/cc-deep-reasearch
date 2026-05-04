@@ -23,12 +23,12 @@ from cc_deep_research.telemetry import (
     get_default_telemetry_dir,
     query_checkpoint_detail,
     query_checkpoint_lineage,
-    query_dashboard_data,
     query_latest_resumable_checkpoint,
     query_live_session_detail,
     query_live_sessions,
     query_session_checkpoints,
     query_session_detail,
+    query_session_summaries,
 )
 from cc_deep_research.telemetry.tree import empty_decision_graph
 from cc_deep_research.web_server_routes._shared import parse_timestamp, serialize_timestamp
@@ -286,8 +286,6 @@ def register_session_routes(app: FastAPI) -> None:
         """List research sessions with query, filter, sort, and pagination support."""
         telemetry_dir = get_default_telemetry_dir()
         live_sessions = query_live_sessions(base_dir=telemetry_dir)
-        historical = query_dashboard_data(get_default_dashboard_db_path())
-
         session_store = SessionStore()
         saved_sessions = session_store.list_sessions()
         archived_session_ids = session_store.get_archived_session_ids() if archived_only else set()
@@ -314,31 +312,41 @@ def register_session_routes(app: FastAPI) -> None:
                 saved=saved_by_id.get(session_id),
             )
 
-        for session_data in historical["sessions"]:
+        # Use focused session summary query instead of query_dashboard_data()
+        # to avoid loading global events, agent timeline, and phase-duration datasets
+        db_summaries = query_session_summaries(
+            get_default_dashboard_db_path(),
+            limit=limit * 3,
+            cursor=cursor,
+            search=search if not search or len(search) < 2 else None,
+            status=status if status else None,
+            archived_only=archived_only,
+            sort_by=sort_by.value,
+            sort_order=sort_order.value,
+        )
+        for session_data in db_summaries.get("sessions", []):
             if active_only:
                 continue
-            session_id = session_data[0]
+            session_id = session_data["session_id"]
             if session_id in sessions_by_id:
                 existing = sessions_by_id[session_id]
                 if not existing.get("active"):
-                    existing["status"] = session_data[8]
+                    existing["status"] = session_data.get("status")
                 if existing.get("total_time_ms") is None:
-                    existing["total_time_ms"] = session_data[2]
+                    existing["total_time_ms"] = session_data.get("total_time_ms")
                 if existing.get("total_sources") in (None, 0):
-                    existing["total_sources"] = session_data[3]
+                    existing["total_sources"] = session_data.get("total_sources")
                 if existing.get("created_at") is None:
-                    existing["created_at"] = serialize_timestamp(session_data[1])
+                    existing["created_at"] = session_data.get("created_at")
                 if existing.get("last_event_at") is None:
-                    existing["last_event_at"] = existing.get("completed_at") or existing.get(
-                        "created_at"
-                    )
+                    existing["last_event_at"] = existing.get("completed_at") or existing.get("created_at")
                 continue
             sessions_by_id[session_id] = _build_session_list_row(
                 session_id=session_id,
-                created_at=session_data[1],
-                total_time_ms=session_data[2],
-                total_sources=session_data[3],
-                status=session_data[8],
+                created_at=session_data.get("created_at"),
+                total_time_ms=session_data.get("total_time_ms"),
+                total_sources=session_data.get("total_sources"),
+                status=session_data.get("status"),
                 active=False,
                 event_count=None,
                 last_event_at=None,
@@ -368,7 +376,7 @@ def register_session_routes(app: FastAPI) -> None:
 
         sessions = list(sessions_by_id.values())
 
-        if search:
+        if search and len(search) >= 2:
             search_lower = search.lower()
             sessions = [
                 s
@@ -1017,6 +1025,151 @@ def register_session_routes(app: FastAPI) -> None:
         )
 
         return JSONResponse(content=result.model_dump(mode="json"), status_code=501)
+
+    @app.get("/api/sessions/{session_id}/debug-export")
+    async def get_session_debug_export(session_id: str) -> JSONResponse:
+        """Get a sanitized operator-facing debug export for incident review.
+
+        Returns route/session/request/websocket/UI-state context without secrets.
+        This is a bounded debug bundle separate from the full trace bundle export.
+        """
+        store = SessionStore()
+        session = store.load_session(session_id)
+
+        debug_export: dict[str, Any] = {
+            "schema_version": "1.0",
+            "exported_at": datetime.now(UTC).isoformat(),
+            "session_id": session_id,
+        }
+
+        if session is None:
+            debug_export["session_found"] = False
+            debug_export["error"] = f"Session not found: {session_id}"
+        else:
+            session_dict = session.model_dump(mode="json")
+            debug_export["session_found"] = True
+            debug_export["session"] = {
+                "session_id": session_dict.get("session_id"),
+                "status": session_dict.get("status"),
+                "active": session_dict.get("active"),
+                "created_at": session_dict.get("created_at"),
+                "completed_at": session_dict.get("completed_at"),
+                "total_time_ms": session_dict.get("total_time_ms"),
+                "total_sources": session_dict.get("total_sources"),
+                "depth": session_dict.get("depth"),
+                "event_count": session_dict.get("event_count"),
+                "has_session_payload": store.session_exists(session_id),
+                "has_report": bool(session_dict.get("analysis")),
+            }
+
+        return JSONResponse(content=debug_export)
+
+    @app.get("/api/telemetry/retention")
+    async def get_telemetry_retention_summary(
+        max_age_days: int | None = Query(default=None, description="Override max age in days"),
+        min_active_sessions: int = Query(default=5, description="Minimum active sessions to preserve"),
+    ) -> JSONResponse:
+        """Get retention candidate summary for telemetry sessions."""
+        from cc_deep_research.telemetry.retention import (
+            CompactionLevel,
+            RetentionPolicy,
+            get_retention_summary,
+        )
+
+        policy = RetentionPolicy(
+            max_age_days=max_age_days,
+            min_active_sessions=min_active_sessions,
+            preserve_summaries=True,
+            preserve_checkpoints=True,
+            compaction_level=CompactionLevel.EVENTS_ONLY,
+        )
+
+        summary = get_retention_summary(policy)
+        return JSONResponse(content={
+            "policy": {
+                "max_age_days": policy.max_age_days,
+                "min_active_sessions": policy.min_active_sessions,
+                "preserve_summaries": policy.preserve_summaries,
+                "preserve_checkpoints": policy.preserve_checkpoints,
+                "compaction_level": policy.compaction_level.value,
+            },
+            **summary,
+        })
+
+    @app.post("/api/telemetry/retention/compact")
+    async def compact_session_telemetry(
+        session_id: str,
+        dry_run: bool = Query(default=True, description="Preview without applying changes"),
+        compaction_level: str = Query(default="events_only", description="Compaction level: none, events_only, full"),
+    ) -> JSONResponse:
+        """Compact a session's telemetry files to free space."""
+        from cc_deep_research.telemetry.retention import (
+            CompactionLevel,
+            compact_session_telemetry as _compact,
+        )
+
+        level_map = {
+            "none": CompactionLevel.NONE,
+            "events_only": CompactionLevel.EVENTS_ONLY,
+            "full": CompactionLevel.FULL,
+        }
+        level = level_map.get(compaction_level, CompactionLevel.EVENTS_ONLY)
+
+        result = _compact(session_id, compaction_level=level, dry_run=dry_run)
+        return JSONResponse(content=result)
+
+    @app.post("/api/telemetry/retention/apply")
+    async def apply_telemetry_retention(
+        max_age_days: int | None = Query(default=None),
+        min_active_sessions: int = Query(default=5),
+        mode: str = Query(default="dry_run", description="dry_run or enforce"),
+    ) -> JSONResponse:
+        """Apply retention policy to telemetry sessions."""
+        from cc_deep_research.telemetry.retention import (
+            CompactionLevel,
+            RetentionMode,
+            RetentionPolicy,
+            apply_retention,
+        )
+
+        policy = RetentionPolicy(
+            max_age_days=max_age_days,
+            min_active_sessions=min_active_sessions,
+            preserve_summaries=True,
+            preserve_checkpoints=True,
+            compaction_level=CompactionLevel.EVENTS_ONLY,
+        )
+
+        retention_mode = RetentionMode.ENFORCE if mode == "enforce" else RetentionMode.DRY_RUN
+        result = apply_retention(policy, mode=retention_mode)
+
+        return JSONResponse(content={
+            "mode": retention_mode.value,
+            "evaluated": result.evaluated,
+            "candidates": [
+                {
+                    "session_id": c.session_id,
+                    "reason": c.reason,
+                    "compactable": c.compactable,
+                    "deletable": c.deletable,
+                }
+                for c in result.candidates
+            ],
+            "active_protected": result.active_protected,
+            "checkpoint_protected": result.checkpoint_protected,
+            "archived_protected": result.archived_protected,
+            "errors": result.errors,
+        })
+
+    @app.post("/api/telemetry/retention/restore/{session_id}")
+    async def restore_compacted_session(session_id: str) -> JSONResponse:
+        """Restore a compacted session's telemetry files."""
+        from cc_deep_research.telemetry.retention import restore_compacted_session as _restore
+
+        result = _restore(session_id)
+        if result.get("success"):
+            return JSONResponse(content=result)
+        return JSONResponse(content=result, status_code=400)
 
 
 def _media_type_for_report(output_format: ResearchOutputFormat) -> str:

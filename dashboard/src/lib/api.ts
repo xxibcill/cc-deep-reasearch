@@ -51,11 +51,67 @@ import type {
   OpportunityListResult,
   SourceListResult,
 } from '@/types/radar';
+import {
+  generateRequestId,
+  classifyError,
+  recordRequestTelemetry,
+  getRecentRequestTelemetry,
+  sanitizeForExport,
+  type RequestTelemetryEntry,
+} from '@/lib/request-telemetry';
 
 const apiClient = axios.create({
   baseURL: dashboardRuntimeConfig.apiBaseUrl,
   timeout: 10000,
 });
+
+interface TelemetryWrappedResult<T> {
+  data: T;
+  requestId: string;
+  durationMs: number;
+}
+
+async function telemetryWrap<T>(
+  promise: Promise<import('axios').AxiosResponse<T>>,
+  method: string,
+  path: string
+): Promise<TelemetryWrappedResult<T>> {
+  const requestId = generateRequestId();
+  const start = Date.now();
+  let retryCount = 0;
+
+  try {
+    const response = await promise;
+    const durationMs = Date.now() - start;
+    recordRequestTelemetry({
+      requestId,
+      method,
+      path,
+      statusCode: response.status,
+      durationMs,
+      retryCount,
+      errorCategory: null,
+      errorMessage: null,
+      timestamp: new Date().toISOString(),
+    });
+    return { data: response.data, requestId, durationMs };
+  } catch (error) {
+    const durationMs = Date.now() - start;
+    const { category, message } = classifyError(error);
+    recordRequestTelemetry({
+      requestId,
+      method,
+      path,
+      statusCode: null,
+      durationMs,
+      retryCount,
+      errorCategory: category,
+      errorMessage: message,
+      timestamp: new Date().toISOString(),
+    });
+    throw error;
+  }
+}
 
 const SESSION_DETAIL_TIMEOUT_MS = 30000;
 const SESSION_REPORT_TIMEOUT_MS = 120000;
@@ -112,6 +168,8 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
   }
   return fallback;
 }
+
+export { getRecentRequestTelemetry, sanitizeForExport } from '@/lib/request-telemetry';
 
 export interface ConfigUpdateErrorDetails {
   message: string;
@@ -194,6 +252,68 @@ export function getConfigUpdateErrorDetails(error: unknown): ConfigUpdateErrorDe
 export async function getSession(sessionId: string): Promise<{ session: Session }> {
   const response = await apiClient.get<SessionResponse>(`/sessions/${sessionId}`);
   return { session: normalizeSession(response.data.session) };
+}
+
+export async function getSessionSummary(
+  sessionId: string
+): Promise<{ session: Session }> {
+  const response = await apiClient.get<SessionResponse>(`/sessions/${sessionId}`, {
+    params: { include_derived: false, include_checkpoints: false },
+    timeout: SESSION_DETAIL_TIMEOUT_MS,
+  });
+  return { session: normalizeSession(response.data.session) };
+}
+
+export async function getSessionEventsPage(
+  sessionId: string,
+  limit = 500,
+  cursor: number | null = null,
+  beforeCursor: number | null = null
+): Promise<{ events: TelemetryEvent[]; count: number; hasMore: boolean; nextCursor: number | null; prevCursor: number | null }> {
+  const params: Record<string, unknown> = { limit };
+  if (cursor !== null) params.cursor = cursor;
+  if (beforeCursor !== null) params.before_cursor = beforeCursor;
+  const response = await apiClient.get<SessionEventsPageResponse>(`/sessions/${sessionId}/events`, {
+    params,
+    timeout: SESSION_DETAIL_TIMEOUT_MS,
+  });
+  return {
+    events: response.data.events.map(normalizeEvent),
+    count: response.data.count,
+    hasMore: response.data.has_more,
+    nextCursor: response.data.next_cursor,
+    prevCursor: response.data.prev_cursor,
+  };
+}
+
+export async function getSessionDerivedOutputs(
+  sessionId: string
+): Promise<SessionDetailResult['derivedOutputs']> {
+  const response = await apiClient.get<SessionDetailResponse>(
+    `/sessions/${sessionId}`,
+    {
+      params: { include_derived: true, include_checkpoints: false },
+      timeout: SESSION_DETAIL_TIMEOUT_MS,
+    }
+  );
+  return {
+    narrative: response.data.narrative,
+    criticalPath: response.data.critical_path,
+    stateChanges: response.data.state_changes,
+    decisions: response.data.decisions,
+    degradations: response.data.degradations,
+    failures: response.data.failures,
+    decisionGraph: response.data.decision_graph,
+  };
+}
+
+interface SessionEventsPageResponse {
+  events: ApiTelemetryEvent[];
+  count: number;
+  total: number;
+  has_more: boolean;
+  next_cursor: number | null;
+  prev_cursor: number | null;
 }
 
 export async function getSessionPromptMetadata(

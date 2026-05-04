@@ -104,6 +104,14 @@ def ingest_telemetry_to_duckdb(
         )
         """
     )
+    for index_sql in [
+        "CREATE INDEX IF NOT EXISTS idx_events_session_id ON telemetry_events(session_id)",
+        "CREATE INDEX IF NOT EXISTS idx_events_timestamp ON telemetry_events(timestamp)",
+        "CREATE INDEX IF NOT EXISTS idx_events_event_type ON telemetry_events(event_type)",
+        "CREATE INDEX IF NOT EXISTS idx_events_category ON telemetry_events(category)",
+        "CREATE INDEX IF NOT EXISTS idx_events_session_seq ON telemetry_events(session_id, sequence_number)",
+    ]:
+        conn.execute(index_sql)
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS telemetry_sessions (
@@ -123,6 +131,12 @@ def ingest_telemetry_to_duckdb(
         )
         """
     )
+    for index_sql in [
+        "CREATE INDEX IF NOT EXISTS idx_sessions_created_at ON telemetry_sessions(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_sessions_status ON telemetry_sessions(status)",
+        "CREATE INDEX IF NOT EXISTS idx_sessions_total_time ON telemetry_sessions(total_time_ms)",
+    ]:
+        conn.execute(index_sql)
 
     ingested_sessions = 0
     ingested_events = 0
