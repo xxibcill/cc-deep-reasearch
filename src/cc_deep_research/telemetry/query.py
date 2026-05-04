@@ -398,26 +398,72 @@ def query_session_detail(
         """,
         [session_id],
     ).fetchone()
-    events = conn.execute(
-        """
-        SELECT
-            event_id,
-            parent_event_id,
-            sequence_number,
-            timestamp,
-            event_type,
-            category,
-            name,
-            status,
-            duration_ms,
-            agent_id,
-            metadata_json
-        FROM telemetry_events
-        WHERE session_id = ?
-        ORDER BY sequence_number ASC, timestamp ASC NULLS LAST
-        """,
-        [session_id],
-    ).fetchall()
+    # Load only the events needed for the requested page using the session_seq index.
+    # When cursor/before_cursor is provided, we can push filtering to DuckDB rather than
+    # loading all events and slicing in Python.
+    events: list[tuple[Any, ...]] = []
+    total_events = 0
+
+    if cursor is not None or before_cursor is not None or limit < 1000 or not include_derived:
+        count_row = conn.execute(
+            "SELECT COUNT(*) FROM telemetry_events WHERE session_id = ?",
+            [session_id],
+        ).fetchone()
+        total_events = int(count_row[0]) if count_row else 0
+
+    if cursor is not None:
+        events = conn.execute(
+            """
+            SELECT
+                event_id, parent_event_id, sequence_number, timestamp,
+                event_type, category, name, status, duration_ms, agent_id, metadata_json
+            FROM telemetry_events
+            WHERE session_id = ? AND sequence_number > ?
+            ORDER BY sequence_number ASC, timestamp ASC NULLS LAST
+            LIMIT ?
+            """,
+            [session_id, cursor, limit],
+        ).fetchall()
+    elif before_cursor is not None:
+        events = conn.execute(
+            """
+            SELECT
+                event_id, parent_event_id, sequence_number, timestamp,
+                event_type, category, name, status, duration_ms, agent_id, metadata_json
+            FROM telemetry_events
+            WHERE session_id = ? AND sequence_number < ?
+            ORDER BY sequence_number DESC, timestamp DESC NULLS LAST
+            LIMIT ?
+            """,
+            [session_id, before_cursor, limit],
+        ).fetchall()
+        events = list(reversed(events))
+    elif limit < 1000 or not include_derived:
+        events = conn.execute(
+            """
+            SELECT
+                event_id, parent_event_id, sequence_number, timestamp,
+                event_type, category, name, status, duration_ms, agent_id, metadata_json
+            FROM telemetry_events
+            WHERE session_id = ?
+            ORDER BY sequence_number ASC, timestamp ASC NULLS LAST
+            LIMIT ?
+            """,
+            [session_id, limit],
+        ).fetchall()
+    else:
+        events = conn.execute(
+            """
+            SELECT
+                event_id, parent_event_id, sequence_number, timestamp,
+                event_type, category, name, status, duration_ms, agent_id, metadata_json
+            FROM telemetry_events
+            WHERE session_id = ?
+            ORDER BY sequence_number ASC, timestamp ASC NULLS LAST
+            """,
+            [session_id],
+        ).fetchall()
+    events = list(events)
     phase_durations = conn.execute(
         """
         SELECT
@@ -517,6 +563,7 @@ def query_session_detail(
         cursor=cursor,
         before_cursor=before_cursor,
         limit=limit,
+        total=total_events,
     )
 
     # Build derived outputs using same builders as live
@@ -577,6 +624,7 @@ def _build_events_page(
     cursor: int | None = None,
     before_cursor: int | None = None,
     limit: int = 1000,
+    total: int | None = None,
 ) -> dict[str, Any]:
     """Build a cursor-paginated slice of events.
 
@@ -585,11 +633,12 @@ def _build_events_page(
         cursor: Sequence number to start after (forward pagination).
         before_cursor: Sequence number to end before (backward pagination).
         limit: Maximum events to return.
+        total: Optional pre-computed total event count (for paginated DB queries).
 
     Returns:
         Dict with events slice and pagination metadata.
     """
-    total = len(events)
+    total_count = total if total is not None else len(events)
 
     if not events:
         return {
@@ -600,9 +649,15 @@ def _build_events_page(
             "prev_cursor": None,
         }
 
-    # Get sequence numbers for cursor calculations
+    # Get sequence numbers for cursor calculations.
+    # When total is provided (DB-backed paginated query), last_seq is the actual
+    # last sequence in the DB, not the last of the returned slice. This ensures
+    # has_more is computed against the full dataset.
     first_seq = events[0].get("sequence_number", 0)
-    last_seq = events[-1].get("sequence_number", total - 1)
+    if total is not None:
+        last_seq = total - 1
+    else:
+        last_seq = events[-1].get("sequence_number", len(events) - 1)
 
     # Forward pagination: events after cursor
     if cursor is not None:
@@ -644,14 +699,14 @@ def _build_events_page(
 
     # Calculate cursors for next/prev pages
     first_returned_seq = sliced[0].get("sequence_number", events.index(sliced[0]) if sliced[0] in events else 0)
-    last_returned_seq = sliced[-1].get("sequence_number", events.index(sliced[-1]) if sliced[-1] in events else total - 1)
+    last_returned_seq = sliced[-1].get("sequence_number", events.index(sliced[-1]) if sliced[-1] in events else total_count - 1)
 
     has_more = last_returned_seq < last_seq
     has_prev = first_returned_seq > first_seq
 
     return {
         "events": sliced,
-        "total": total,
+        "total": total_count,
         "has_more": has_more,
         "next_cursor": last_returned_seq if has_more else None,
         "prev_cursor": first_returned_seq - 1 if has_prev else None,

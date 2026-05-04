@@ -11,8 +11,8 @@ from typing import Any, cast
 
 from cc_deep_research.config import get_default_config_path
 
+from .summary_cache import get_or_compute_summary
 from .tree import (
-    build_derived_summary,
     build_event_tree,
     build_llm_route_streams,
     build_subprocess_streams,
@@ -545,10 +545,19 @@ def query_live_session_detail(
         limit=limit or tail_limit,
     )
 
-    # Build derived outputs
+    # Build derived outputs (use cached summary if available)
     derived = {}
     if include_derived:
-        derived = build_derived_summary(events)
+        cached_summary = get_or_compute_summary(events, session_id, session_dir)
+        derived = {
+            "narrative": cached_summary.narrative,
+            "critical_path": cached_summary.critical_path,
+            "state_changes": cached_summary.state_changes,
+            "decisions": cached_summary.decisions,
+            "degradations": cached_summary.degradations,
+            "failures": cached_summary.failures,
+            "decision_graph": cached_summary.decision_graph,
+        }
 
     return {
         "session": session,

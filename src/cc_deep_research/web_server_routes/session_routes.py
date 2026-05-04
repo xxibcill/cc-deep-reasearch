@@ -1064,6 +1064,113 @@ def register_session_routes(app: FastAPI) -> None:
 
         return JSONResponse(content=debug_export)
 
+    @app.get("/api/telemetry/retention")
+    async def get_telemetry_retention_summary(
+        max_age_days: int | None = Query(default=None, description="Override max age in days"),
+        min_active_sessions: int = Query(default=5, description="Minimum active sessions to preserve"),
+    ) -> JSONResponse:
+        """Get retention candidate summary for telemetry sessions."""
+        from cc_deep_research.telemetry.retention import (
+            CompactionLevel,
+            RetentionPolicy,
+            get_retention_summary,
+        )
+
+        policy = RetentionPolicy(
+            max_age_days=max_age_days,
+            min_active_sessions=min_active_sessions,
+            preserve_summaries=True,
+            preserve_checkpoints=True,
+            compaction_level=CompactionLevel.EVENTS_ONLY,
+        )
+
+        summary = get_retention_summary(policy)
+        return JSONResponse(content={
+            "policy": {
+                "max_age_days": policy.max_age_days,
+                "min_active_sessions": policy.min_active_sessions,
+                "preserve_summaries": policy.preserve_summaries,
+                "preserve_checkpoints": policy.preserve_checkpoints,
+                "compaction_level": policy.compaction_level.value,
+            },
+            **summary,
+        })
+
+    @app.post("/api/telemetry/retention/compact")
+    async def compact_session_telemetry(
+        session_id: str,
+        dry_run: bool = Query(default=True, description="Preview without applying changes"),
+        compaction_level: str = Query(default="events_only", description="Compaction level: none, events_only, full"),
+    ) -> JSONResponse:
+        """Compact a session's telemetry files to free space."""
+        from cc_deep_research.telemetry.retention import (
+            CompactionLevel,
+            compact_session_telemetry as _compact,
+        )
+
+        level_map = {
+            "none": CompactionLevel.NONE,
+            "events_only": CompactionLevel.EVENTS_ONLY,
+            "full": CompactionLevel.FULL,
+        }
+        level = level_map.get(compaction_level, CompactionLevel.EVENTS_ONLY)
+
+        result = _compact(session_id, compaction_level=level, dry_run=dry_run)
+        return JSONResponse(content=result)
+
+    @app.post("/api/telemetry/retention/apply")
+    async def apply_telemetry_retention(
+        max_age_days: int | None = Query(default=None),
+        min_active_sessions: int = Query(default=5),
+        mode: str = Query(default="dry_run", description="dry_run or enforce"),
+    ) -> JSONResponse:
+        """Apply retention policy to telemetry sessions."""
+        from cc_deep_research.telemetry.retention import (
+            CompactionLevel,
+            RetentionMode,
+            RetentionPolicy,
+            apply_retention,
+        )
+
+        policy = RetentionPolicy(
+            max_age_days=max_age_days,
+            min_active_sessions=min_active_sessions,
+            preserve_summaries=True,
+            preserve_checkpoints=True,
+            compaction_level=CompactionLevel.EVENTS_ONLY,
+        )
+
+        retention_mode = RetentionMode.ENFORCE if mode == "enforce" else RetentionMode.DRY_RUN
+        result = apply_retention(policy, mode=retention_mode)
+
+        return JSONResponse(content={
+            "mode": retention_mode.value,
+            "evaluated": result.evaluated,
+            "candidates": [
+                {
+                    "session_id": c.session_id,
+                    "reason": c.reason,
+                    "compactable": c.compactable,
+                    "deletable": c.deletable,
+                }
+                for c in result.candidates
+            ],
+            "active_protected": result.active_protected,
+            "checkpoint_protected": result.checkpoint_protected,
+            "archived_protected": result.archived_protected,
+            "errors": result.errors,
+        })
+
+    @app.post("/api/telemetry/retention/restore/{session_id}")
+    async def restore_compacted_session(session_id: str) -> JSONResponse:
+        """Restore a compacted session's telemetry files."""
+        from cc_deep_research.telemetry.retention import restore_compacted_session as _restore
+
+        result = _restore(session_id)
+        if result.get("success"):
+            return JSONResponse(content=result)
+        return JSONResponse(content=result, status_code=400)
+
 
 def _media_type_for_report(output_format: ResearchOutputFormat) -> str:
     """Return the response media type for one report format."""
