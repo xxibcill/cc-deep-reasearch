@@ -114,6 +114,50 @@ def _normalize_event_row(row: tuple[Any, ...]) -> dict[str, Any]:
     }
 
 
+def _table_columns(conn: duckdb.DuckDBPyConnection, table_name: str) -> set[str]:
+    """Return the current column names for a DuckDB table."""
+    rows = conn.execute(f"PRAGMA table_info('{table_name}')").fetchall()
+    return {str(row[1]) for row in rows}
+
+
+def _session_summary_expression(columns: set[str], field_name: str) -> str | None:
+    """Return a JSON extraction expression when summary_json is available."""
+    if "summary_json" not in columns:
+        return None
+    return f"summary_json->>'$.{field_name}'"
+
+
+def _query_expression(columns: set[str]) -> str:
+    """Return a text expression for searching the original research query."""
+    expressions: list[str] = []
+    if "query" in columns:
+        expressions.append("query")
+    summary_query = _session_summary_expression(columns, "query")
+    if summary_query is not None:
+        expressions.append(summary_query)
+    if not expressions:
+        return "''"
+    return f"COALESCE({', '.join(expressions)}, '')"
+
+
+def _archived_expression(columns: set[str]) -> str:
+    """Return a boolean expression for archived state across schema versions."""
+    expressions: list[str] = []
+    if "archived" in columns:
+        expressions.append("archived")
+    summary_archived = _session_summary_expression(columns, "archived")
+    if summary_archived is not None:
+        expressions.append(f"TRY_CAST({summary_archived} AS BOOLEAN)")
+    if not expressions:
+        return "FALSE"
+    return f"COALESCE({', '.join(expressions)}, FALSE)"
+
+
+def _escape_like_pattern(value: str) -> str:
+    """Escape SQL LIKE wildcards while preserving normal substring search."""
+    return value.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+
+
 def query_session_summaries(
     db_path: Path | None = None,
     *,
@@ -148,75 +192,77 @@ def query_session_summaries(
         return {"sessions": [], "total": 0, "next_cursor": None}
 
     conn = _load_dashboard_connection(database_path)
+    try:
+        columns = _table_columns(conn, "telemetry_sessions")
+        query_expr = _query_expression(columns)
+        archived_expr = _archived_expression(columns)
 
-    # Build WHERE clause dynamically
-    conditions = []
-    params: list[Any] = []
+        # Build WHERE clause dynamically
+        conditions = []
+        params: list[Any] = []
 
-    if cursor:
-        # Find the created_at of the cursor session to paginate
-        cursor_row = conn.execute(
-            "SELECT created_at FROM telemetry_sessions WHERE session_id = ?",
-            [cursor],
-        ).fetchone()
-        if cursor_row:
-            # Pass the datetime object directly to avoid string-parsing issues
-            if sort_order == "desc":
-                conditions.append("created_at < ?")
-            else:
-                conditions.append("created_at > ?")
-            params.append(cursor_row[0])
+        if cursor:
+            # Find the created_at of the cursor session to paginate
+            cursor_row = conn.execute(
+                "SELECT created_at FROM telemetry_sessions WHERE session_id = ?",
+                [cursor],
+            ).fetchone()
+            if cursor_row:
+                # Pass the datetime object directly to avoid string-parsing issues
+                if sort_order == "desc":
+                    conditions.append("created_at < ?")
+                else:
+                    conditions.append("created_at > ?")
+                params.append(cursor_row[0])
 
-    if search:
-        conditions.append("(session_id LIKE ? OR query LIKE ?)")
-        # Escape SQL wildcards for DuckDB's LIKE (%% escapes a literal % or _)
-        escaped = search.replace("%", "%%").replace("_", "%%")
-        search_pattern = f"%{escaped}%"
-        params.extend([search_pattern, search_pattern])
+        if search:
+            conditions.append(
+                f"(session_id LIKE ? ESCAPE '!' OR {query_expr} LIKE ? ESCAPE '!')"
+            )
+            search_pattern = f"%{_escape_like_pattern(search)}%"
+            params.extend([search_pattern, search_pattern])
 
-    if status:
-        conditions.append("status = ?")
-        params.append(status)
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
 
-    if archived_only:
-        conditions.append("archived = ?")
-        params.append(True)
-    elif archived_only is False:
-        # Explicitly filter out archived when not requesting archived-only
-        # Use int comparison since DuckDB stores BOOL as TINYINT
-        conditions.append("COALESCE(archived, FALSE) = FALSE")
+        if archived_only:
+            conditions.append(f"{archived_expr} = TRUE")
+        else:
+            conditions.append(f"{archived_expr} = FALSE")
 
-    where_clause = " AND ".join(conditions) if conditions else "1=1"
+        where_clause = " AND ".join(conditions) if conditions else "1=1"
 
-    # Order clause
-    sort_column = {
-        "created_at": "created_at",
-        "last_event_at": "created_at",
-        "total_time_ms": "COALESCE(total_time_ms, 0)",
-    }.get(sort_by, "created_at")
-    order_dir = "DESC" if sort_order == "desc" else "ASC"
+        # Order clause
+        sort_expression = {
+            "created_at": "ts.created_at",
+            "last_event_at": "ts.last_event_at" if "last_event_at" in columns else "ts.created_at",
+            "total_time_ms": "COALESCE(ts.total_time_ms, 0)",
+        }.get(sort_by, "ts.created_at")
+        order_dir = "DESC" if sort_order == "desc" else "ASC"
 
-    # Count total before pagination
-    count_sql = f"SELECT COUNT(*) FROM telemetry_sessions WHERE {where_clause}"
-    total_row = conn.execute(count_sql, params).fetchone()
-    total = int(total_row[0]) if total_row else 0
+        # Count total before pagination
+        count_sql = f"SELECT COUNT(*) FROM telemetry_sessions WHERE {where_clause}"
+        total_row = conn.execute(count_sql, params).fetchone()
+        total = int(total_row[0]) if total_row else 0
 
-    # Fetch paginated sessions (only needed fields)
-    sql = f"""
-    SELECT
-        ts.session_id,
-        ts.created_at,
-        ts.total_time_ms,
-        ts.total_sources,
-        ts.status
-    FROM telemetry_sessions ts
-    WHERE {where_clause}
-    ORDER BY ts.{sort_column} {order_dir} NULLS LAST
-    LIMIT ?
-    """
-    params.append(limit)
-    rows = conn.execute(sql, params).fetchall()
-    conn.close()
+        # Fetch paginated sessions (only needed fields)
+        sql = f"""
+        SELECT
+            ts.session_id,
+            ts.created_at,
+            ts.total_time_ms,
+            ts.total_sources,
+            ts.status
+        FROM telemetry_sessions ts
+        WHERE {where_clause}
+        ORDER BY {sort_expression} {order_dir} NULLS LAST
+        LIMIT ?
+        """
+        params.append(limit)
+        rows = conn.execute(sql, params).fetchall()
+    finally:
+        conn.close()
 
     sessions = []
     for row in rows:

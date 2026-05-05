@@ -1,10 +1,12 @@
 """Tests for telemetry/query.py — query_session_summaries."""
 
+import json
 import tempfile
 from pathlib import Path
 
 import pytest
 
+from cc_deep_research.telemetry.ingest import ingest_telemetry_to_duckdb
 from cc_deep_research.telemetry.query import query_session_summaries
 
 
@@ -201,3 +203,39 @@ class TestQuerySessionSummaries:
         result = query_session_summaries(temp_db, search="coverage", limit=10)
         session_ids = {s["session_id"] for s in result["sessions"]}
         assert "wildcard-pct" in session_ids
+
+    def test_ingested_schema_without_query_or_archived_columns(self, tmp_path):
+        """Real ingest schema derives query/archive state from summary_json without crashing."""
+        telemetry_dir = tmp_path / "telemetry"
+        telemetry_dir.mkdir()
+
+        for session_id, query, archived in [
+            ("session-active", "alpha coverage", False),
+            ("session-archived", "archived alpha", True),
+        ]:
+            session_dir = telemetry_dir / session_id
+            session_dir.mkdir()
+            (session_dir / "summary.json").write_text(
+                json.dumps({
+                    "session_id": session_id,
+                    "status": "completed",
+                    "total_sources": 1,
+                    "total_time_ms": 100,
+                    "created_at": "2026-05-01T12:00:00Z",
+                    "query": query,
+                    "archived": archived,
+                }),
+                encoding="utf-8",
+            )
+
+        db_path = tmp_path / "telemetry.duckdb"
+        ingest_telemetry_to_duckdb(base_dir=telemetry_dir, db_path=db_path)
+
+        default_result = query_session_summaries(db_path, limit=10)
+        assert {s["session_id"] for s in default_result["sessions"]} == {"session-active"}
+
+        search_result = query_session_summaries(db_path, search="coverage", limit=10)
+        assert [s["session_id"] for s in search_result["sessions"]] == ["session-active"]
+
+        archived_result = query_session_summaries(db_path, archived_only=True, limit=10)
+        assert {s["session_id"] for s in archived_result["sessions"]} == {"session-archived"}

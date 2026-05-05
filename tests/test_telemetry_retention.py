@@ -279,6 +279,25 @@ class TestCompactSessionTelemetry:
         assert result["success"] is False
         assert "error" in result
 
+    def test_rejects_path_traversal_session_id(self, tmp_path):
+        """Compaction must not resolve session IDs outside the telemetry root."""
+        telemetry_dir = tmp_path / "telemetry"
+        telemetry_dir.mkdir()
+        outside_dir = tmp_path / "outside-session"
+        outside_dir.mkdir()
+        _write_events(outside_dir, "outside-session", 2)
+
+        result = compact_session_telemetry(
+            "../outside-session",
+            telemetry_dir=telemetry_dir,
+            dry_run=False,
+        )
+
+        assert result["success"] is False
+        assert "Invalid session_id" in result["error"]
+        assert (outside_dir / "events.jsonl").exists() is True
+        assert (outside_dir / "events.jsonl.gz").exists() is False
+
 
 class TestRestoreCompactedSession:
     """Tests for restoring compacted sessions."""
@@ -309,6 +328,26 @@ class TestRestoreCompactedSession:
         """Restoring a non-existent session returns an error."""
         result = restore_compacted_session("does-not-exist", telemetry_dir=tmp_path)
         assert result["success"] is False
+
+    def test_restore_rejects_path_traversal_session_id(self, tmp_path):
+        """Restore must not resolve session IDs outside the telemetry root."""
+        telemetry_dir = tmp_path / "telemetry"
+        telemetry_dir.mkdir()
+        outside_dir = tmp_path / "outside-session"
+        outside_dir.mkdir()
+        _write_events(outside_dir, "outside-session", 2)
+        compact_result = compact_session_telemetry(
+            "outside-session",
+            telemetry_dir=tmp_path,
+            dry_run=False,
+        )
+        assert compact_result["success"] is True
+
+        result = restore_compacted_session("../outside-session", telemetry_dir=telemetry_dir)
+
+        assert result["success"] is False
+        assert "Invalid session_id" in result["error"]
+        assert (outside_dir / "events.jsonl.gz").exists() is True
 
 
 class TestGetRetentionSummary:
