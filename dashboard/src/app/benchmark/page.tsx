@@ -17,12 +17,15 @@ import {
   getBenchmarkCaseReport,
   runBenchmark,
   compareBenchmark,
+  getBenchmarkTrends,
   type BenchmarkCorpus,
   type BenchmarkCase,
   type BenchmarkRun,
   type BenchmarkRunReport,
   type BenchmarkCaseReport,
   type BenchmarkComparisonReport,
+  type BenchmarkTrendsResponse,
+  type BenchmarkTrendRun,
   getApiErrorMessage,
 } from '@/lib/api';
 
@@ -44,6 +47,9 @@ export default function BenchmarkPage() {
   const [compareRun2, setCompareRun2] = useState<string>('');
   const [comparisonResult, setComparisonResult] = useState<BenchmarkComparisonReport | null>(null);
   const [loadingComparison, setLoadingComparison] = useState(false);
+  const [showTrends, setShowTrends] = useState(false);
+  const [trendData, setTrendData] = useState<BenchmarkTrendsResponse | null>(null);
+  const [loadingTrends, setLoadingTrends] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -229,6 +235,25 @@ export default function BenchmarkPage() {
               >
                 {showCompare ? 'Hide Compare' : 'Compare Runs'}
               </Button>
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  setShowTrends(!showTrends);
+                  if (!showTrends && !trendData) {
+                    setLoadingTrends(true);
+                    try {
+                      const trends = await getBenchmarkTrends(10);
+                      setTrendData(trends);
+                    } catch {
+                      setTrendData(null);
+                    } finally {
+                      setLoadingTrends(false);
+                    }
+                  }
+                }}
+              >
+                {showTrends ? 'Hide Trends' : 'Show Trends'}
+              </Button>
             </div>
             {benchmarkResult && (
               <p className="mt-3 text-sm text-muted-foreground">{benchmarkResult}</p>
@@ -304,6 +329,75 @@ export default function BenchmarkPage() {
           </Card>
         )}
 
+        {showTrends && (
+          <Card className="rounded-[1.45rem]">
+            <CardHeader className="border-b border-border/70">
+              <CardTitle className="text-[1.6rem]">Evaluation Trends</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Recent benchmark run performance and quality trends.
+              </p>
+            </CardHeader>
+            <CardContent className="pt-4">
+              {loadingTrends ? (
+                <p className="text-sm text-muted-foreground">Loading trends...</p>
+              ) : trendData && trendData.runs.length > 0 ? (
+                <div className="space-y-3">
+                  {trendData.runs.map((run: BenchmarkTrendRun) => (
+                    <div key={run.run_id} className="rounded-lg border border-border/50 p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{run.run_id}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {run.generated_at ? new Date(run.generated_at).toLocaleString() : 'Unknown'}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-medium">
+                            {run.average_validation_score != null
+                              ? run.average_validation_score.toFixed(2)
+                              : 'N/A'}
+                          </p>
+                          <p className="text-xs text-muted-foreground">avg score</p>
+                        </div>
+                      </div>
+                      <div className="mt-2 grid grid-cols-4 gap-2">
+                        <div className="rounded bg-surface-raised/50 p-2 text-center">
+                          <p className="text-xs text-muted-foreground">Pass Rate</p>
+                          <p className="text-sm font-medium">
+                            {run.pass_rate != null ? `${(run.pass_rate * 100).toFixed(0)}%` : 'N/A'}
+                          </p>
+                        </div>
+                        <div className="rounded bg-surface-raised/50 p-2 text-center">
+                          <p className="text-xs text-muted-foreground">Latency</p>
+                          <p className="text-sm font-medium">
+                            {run.average_latency_ms != null ? `${Math.round(run.average_latency_ms)}ms` : 'N/A'}
+                          </p>
+                        </div>
+                        <div className="rounded bg-surface-raised/50 p-2 text-center">
+                          <p className="text-xs text-muted-foreground">Cases</p>
+                          <p className="text-sm font-medium">{run.total_cases}</p>
+                        </div>
+                        <div className="rounded bg-surface-raised/50 p-2 text-center">
+                          <p className="text-xs text-muted-foreground">Sources</p>
+                          <p className="text-sm font-medium">
+                            {run.average_source_count != null ? run.average_source_count.toFixed(1) : 'N/A'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState
+                  description="Run benchmarks to see trends over time."
+                  icon={Activity}
+                  title="No trend data"
+                />
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(24rem,0.75fr)]">
           <div className="space-y-6">
             <Card className="rounded-[1.45rem]">
@@ -327,9 +421,27 @@ export default function BenchmarkPage() {
                             <Badge variant="outline" className="text-[0.64rem]">
                               {caseItem.category}
                             </Badge>
+                            {caseItem.status && caseItem.status !== 'ready' && (
+                              <Badge
+                                variant={caseItem.status === 'deprecated' ? 'destructive' : 'warning'}
+                                className="text-[0.64rem]"
+                              >
+                                {caseItem.status}
+                              </Badge>
+                            )}
                             {caseItem.date_sensitive && (
                               <Badge variant="warning" className="text-[0.64rem]">
                                 Time-sensitive
+                              </Badge>
+                            )}
+                            {caseItem.difficulty && (
+                              <Badge variant="secondary" className="text-[0.64rem]">
+                                {caseItem.difficulty}
+                              </Badge>
+                            )}
+                            {caseItem.domain && (
+                              <Badge variant="secondary" className="text-[0.64rem]">
+                                {caseItem.domain}
                               </Badge>
                             )}
                             {caseItem.tags.map((tag: string) => (

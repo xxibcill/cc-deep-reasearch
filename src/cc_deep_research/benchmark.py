@@ -21,6 +21,7 @@ BenchmarkCategory = Literal[
     "market_policy",
 ]
 BenchmarkSourceType = Literal["government", "academic", "news", "organization", "commercial", "other"]
+BenchmarkCaseStatus = Literal["ready", "deprecated", "flaky", "blocked", "under_review"]
 
 
 class BenchmarkCase(BaseModel):
@@ -32,12 +33,40 @@ class BenchmarkCase(BaseModel):
     rationale: str = Field(..., min_length=1)
     date_sensitive: bool = Field(default=False)
     tags: list[str] = Field(default_factory=list)
+    status: BenchmarkCaseStatus = Field(default="ready")
+    owner: str | None = Field(default=None, max_length=100)
+    domain: str | None = Field(default=None, max_length=100)
+    difficulty: str | None = Field(default=None, max_length=50)
+    review_notes: str | None = Field(default=None, max_length=1000)
+    expected_capabilities: list[str] = Field(default_factory=list)
 
     @field_validator("tags")
     @classmethod
     def _dedupe_tags(cls, values: list[str]) -> list[str]:
         """Keep tags stable and compact."""
         return list(dict.fromkeys(value for value in values if value))
+
+    @field_validator("difficulty")
+    @classmethod
+    def _validate_difficulty(cls, value: str | None) -> str | None:
+        """Validate difficulty is a known level."""
+        if value is None:
+            return value
+        valid = {"beginner", "intermediate", "advanced"}
+        if value not in valid:
+            raise ValueError(f"difficulty must be one of {valid}, got {value!r}")
+        return value
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _validate_status(cls, value: str | None) -> str | None:
+        """Validate status is a known value."""
+        if value is None:
+            return "ready"
+        valid = {"ready", "deprecated", "flaky", "blocked", "under_review"}
+        if value not in valid:
+            raise ValueError(f"status must be one of {valid}, got {value!r}")
+        return value
 
 
 class BenchmarkCorpus(BaseModel):
@@ -83,6 +112,12 @@ class BenchmarkCaseReport(BaseModel):
     rationale: str = Field(..., min_length=1)
     date_sensitive: bool = Field(default=False)
     tags: list[str] = Field(default_factory=list)
+    status: BenchmarkCaseStatus = Field(default="ready")
+    owner: str | None = Field(default=None)
+    domain: str | None = Field(default=None)
+    difficulty: str | None = Field(default=None)
+    review_notes: str | None = Field(default=None)
+    expected_capabilities: list[str] = Field(default_factory=list)
     metrics: BenchmarkCaseMetrics = Field(default_factory=BenchmarkCaseMetrics)
     session_id: str | None = None
     configured_depth: str = Field(default="standard")
@@ -184,6 +219,12 @@ def build_benchmark_case_report(
         rationale=case.rationale,
         date_sensitive=case.date_sensitive,
         tags=list(case.tags),
+        status=case.status,
+        owner=case.owner,
+        domain=case.domain,
+        difficulty=case.difficulty,
+        review_notes=case.review_notes,
+        expected_capabilities=list(case.expected_capabilities),
         metrics=BenchmarkCaseMetrics(
             source_count=len(session.sources),
             unique_domains=len(domains),
@@ -308,10 +349,15 @@ async def run_benchmark_corpus(
     output_dir: Path | None = None,
     configuration: dict[str, Any] | None = None,
     generated_at: str | None = None,
+    include_case_fn: Any = None,
 ) -> BenchmarkRunReport:
     """Run the full benchmark corpus with an injected case runner.
 
     P7-T7: configuration accepts workflow_mode and provider_mode which propagate into scorecard.
+
+    Args:
+        include_case_fn: Optional predicate(BenchmarkCase) -> bool. Cases where this returns
+            False are excluded from the run. Defaults to including all cases.
     """
     case_reports: list[BenchmarkCaseReport] = []
     run_configuration = dict(configuration or {})
@@ -320,6 +366,8 @@ async def run_benchmark_corpus(
     provider_mode = str(run_configuration.get("provider_mode", "default"))
 
     for case in corpus.cases:
+        if include_case_fn is not None and not include_case_fn(case):
+            continue
         session = await run_case(case)
         case_reports.append(
             build_benchmark_case_report(
@@ -373,6 +421,7 @@ def run_benchmark_corpus_sync(
     output_dir: Path | None = None,
     configuration: dict[str, Any] | None = None,
     generated_at: str | None = None,
+    include_case_fn: Any = None,
 ) -> BenchmarkRunReport:
     """Synchronous wrapper around the async harness for CLI and tests."""
     return asyncio.run(
@@ -382,6 +431,7 @@ def run_benchmark_corpus_sync(
             output_dir=output_dir,
             configuration=configuration,
             generated_at=generated_at,
+            include_case_fn=include_case_fn,
         )
     )
 
@@ -493,4 +543,192 @@ def compare_benchmark_runs(
         run1_workflow_mode=s1.workflow_mode,
         run2_workflow_mode=s2.workflow_mode,
         case_deltas=case_deltas,
+    )
+
+
+def get_ready_cases(corpus: BenchmarkCorpus) -> list[BenchmarkCase]:
+    """Return only cases with status 'ready', skipping deprecated/flaky/blocked cases."""
+    return [case for case in corpus.cases if case.status == "ready"]
+
+
+def is_release_eligible(case: BenchmarkCase) -> bool:
+    """Return True for cases that should be included in release gates.
+
+    Deprecated, flaky, and blocked cases are excluded from release gates
+    so that silent regressions in problematic cases do not block releases.
+    """
+    return case.status in {"ready", "under_review"}
+
+
+def validate_benchmark_corpus(corpus: BenchmarkCorpus) -> dict[str, list[str]]:
+    """Validate benchmark corpus and return errors grouped by case_id.
+
+    Returns a dict mapping case_id -> list of error messages.
+    An empty dict means validation passed.
+    """
+    errors: dict[str, list[str]] = {}
+
+    for case in corpus.cases:
+        case_errors: list[str] = []
+
+        if not case.query or not case.query.strip():
+            case_errors.append("query is empty")
+
+        if not case.rationale or not case.rationale.strip():
+            case_errors.append("rationale is empty")
+
+        if case.status == "deprecated":
+            if not case.review_notes:
+                case_errors.append("deprecated case missing review_notes")
+
+        if case.difficulty not in {None, "beginner", "intermediate", "advanced"}:
+            case_errors.append(f"unknown difficulty: {case.difficulty!r}")
+
+        if case_errors:
+            errors[case.case_id] = case_errors
+
+    return errors
+
+
+class BenchmarkGateResult(BaseModel):
+    """Result of evaluating a benchmark run against a baseline."""
+
+    outcome: Literal["pass", "warning", "fail"] = Field(..., description="Gate outcome")
+    baseline_run_id: str
+    candidate_run_id: str
+    generated_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    # Aggregate comparisons
+    baseline_score: float | None = None
+    candidate_score: float | None = None
+    delta_score: float | None = None
+    baseline_pass_rate: float = 0.0
+    candidate_pass_rate: float = 0.0
+    delta_pass_rate: float = 0.0
+    baseline_avg_latency_ms: float = 0.0
+    candidate_avg_latency_ms: float = 0.0
+    delta_latency_ms: float = 0.0
+    baseline_cost: float | None = None
+    candidate_cost: float | None = None
+    delta_cost: float | None = None
+    # Failure details
+    failing_cases: list[dict[str, Any]] = Field(default_factory=list)
+    regressions: list[dict[str, Any]] = Field(default_factory=list)
+    override_notes: str | None = None
+    overridden: bool = Field(default=False, description="True if regression was explicitly accepted")
+
+
+class BenchmarkGateThresholds(BaseModel):
+    """Configurable thresholds for benchmark release gates."""
+
+    min_pass_rate: float = Field(default=0.8, ge=0.0, le=1.0)
+    max_latency_increase_ratio: float = Field(default=0.2, ge=0.0, description="Max fractional latency increase")
+    max_cost_increase_ratio: float | None = Field(default=None, ge=0.0, description="Max fractional cost increase")
+    min_validation_score: float = Field(default=0.6, ge=0.0, le=1.0)
+    critical_failure_categories: list[str] = Field(
+        default_factory=lambda: ["validation_failed", "source_exhausted"],
+        description="Failure categories treated as critical",
+    )
+
+
+def evaluate_benchmark_gate(
+    baseline: BenchmarkRunReport,
+    candidate: BenchmarkRunReport,
+    thresholds: BenchmarkGateThresholds | None = None,
+    *,
+    baseline_run_id: str = "baseline",
+    candidate_run_id: str = "candidate",
+    override_notes: str | None = None,
+) -> BenchmarkGateResult:
+    """Evaluate a candidate run against a baseline and emit pass/warning/fail.
+
+    Args:
+        baseline: The golden baseline benchmark run.
+        candidate: The candidate run to evaluate.
+        thresholds: Configurable gate thresholds. Uses defaults if None.
+        baseline_run_id: Label for the baseline run.
+        candidate_run_id: Label for the candidate run.
+        override_notes: If provided, marks the result as overridden (regression accepted).
+    """
+    if thresholds is None:
+        thresholds = BenchmarkGateThresholds()
+
+    bs = baseline.scorecard
+    cs = candidate.scorecard
+
+    baseline_score = bs.average_validation_score
+    candidate_score = cs.average_validation_score
+
+    baseline_pass_count = sum(
+        1 for c in baseline.cases if c.stop_reason == "success"
+    )
+    candidate_pass_count = sum(
+        1 for c in candidate.cases if c.stop_reason == "success"
+    )
+    baseline_pass_rate = baseline_pass_count / bs.total_cases if bs.total_cases > 0 else 0.0
+    candidate_pass_rate = candidate_pass_count / cs.total_cases if cs.total_cases > 0 else 0.0
+
+    baseline_latency = bs.average_latency_ms
+    candidate_latency = cs.average_latency_ms
+    latency_ratio = (candidate_latency - baseline_latency) / baseline_latency if baseline_latency > 0 else 0.0
+
+    delta_score = _delta(baseline_score, candidate_score)
+    delta_pass_rate = round(candidate_pass_rate - baseline_pass_rate, 3)
+    delta_latency = round(candidate_latency - baseline_latency, 3)
+
+    failing_cases: list[dict[str, Any]] = []
+    regressions: list[dict[str, Any]] = []
+
+    by_id = {c.case_id: c for c in candidate.cases}
+    for bcase in baseline.cases:
+        ccase = by_id.get(bcase.case_id)
+        if ccase is None:
+            continue
+        if ccase.stop_reason != "success" and bcase.stop_reason == "success":
+            failing_cases.append({
+                "case_id": bcase.case_id,
+                "baseline_stop_reason": bcase.stop_reason,
+                "candidate_stop_reason": ccase.stop_reason,
+                "candidate_validation_score": ccase.metrics.validation_score,
+            })
+        elif (
+            ccase.metrics.validation_score is not None
+            and bcase.metrics.validation_score is not None
+            and ccase.metrics.validation_score < bcase.metrics.validation_score - 0.1
+        ):
+            regressions.append({
+                "case_id": bcase.case_id,
+                "baseline_score": bcase.metrics.validation_score,
+                "candidate_score": ccase.metrics.validation_score,
+                "delta": round(ccase.metrics.validation_score - bcase.metrics.validation_score, 3),
+            })
+
+    outcome: Literal["pass", "warning", "fail"] = "pass"
+    if (
+        candidate_pass_rate < thresholds.min_pass_rate
+        or candidate_score is not None
+        and candidate_score < thresholds.min_validation_score
+        or latency_ratio > thresholds.max_latency_increase_ratio
+        or failing_cases
+    ):
+        outcome = "fail"
+    elif delta_score is not None and delta_score < -0.05 or regressions:
+        outcome = "warning"
+
+    return BenchmarkGateResult(
+        outcome=outcome,
+        baseline_run_id=baseline_run_id,
+        candidate_run_id=candidate_run_id,
+        baseline_score=baseline_score,
+        candidate_score=candidate_score,
+        delta_score=delta_score,
+        baseline_pass_rate=baseline_pass_rate,
+        candidate_pass_rate=candidate_pass_rate,
+        delta_pass_rate=delta_pass_rate,
+        baseline_avg_latency_ms=baseline_latency,
+        candidate_avg_latency_ms=candidate_latency,
+        delta_latency_ms=delta_latency,
+        failing_cases=failing_cases,
+        regressions=regressions,
+        overridden=override_notes is not None,
+        override_notes=override_notes,
     )

@@ -820,6 +820,12 @@ export interface BenchmarkCase {
   rationale: string;
   date_sensitive: boolean;
   tags: string[];
+  status: string;
+  owner: string | null;
+  domain: string | null;
+  difficulty: string | null;
+  review_notes: string | null;
+  expected_capabilities: string[];
 }
 
 export interface BenchmarkRun {
@@ -862,6 +868,12 @@ export interface BenchmarkCaseReport {
   rationale: string;
   date_sensitive: boolean;
   tags: string[];
+  status: string;
+  owner: string | null;
+  domain: string | null;
+  difficulty: string | null;
+  review_notes: string | null;
+  expected_capabilities: string[];
   metrics: {
     source_count: number;
     unique_domains: number;
@@ -962,6 +974,115 @@ export async function compareBenchmark(
   return response.data;
 }
 
+export interface BenchmarkValidateResponse {
+  valid: boolean;
+  errors: Record<string, string[]>;
+  total_cases: number;
+}
+
+export async function validateBenchmarkCorpus(): Promise<BenchmarkValidateResponse> {
+  const response = await apiClient.get<BenchmarkValidateResponse>('/benchmarks/validate');
+  return response.data;
+}
+
+export interface BenchmarkGateResult {
+  outcome: 'pass' | 'warning' | 'fail';
+  baseline_run_id: string;
+  candidate_run_id: string;
+  generated_at: string;
+  baseline_score: number | null;
+  candidate_score: number | null;
+  delta_score: number | null;
+  baseline_pass_rate: number;
+  candidate_pass_rate: number;
+  delta_pass_rate: number;
+  baseline_avg_latency_ms: number;
+  candidate_avg_latency_ms: number;
+  delta_latency_ms: number;
+  failing_cases: Array<{
+    case_id: string;
+    baseline_stop_reason: string;
+    candidate_stop_reason: string;
+    candidate_validation_score: number | null;
+  }>;
+  regressions: Array<{
+    case_id: string;
+    baseline_score: number;
+    candidate_score: number;
+    delta: number;
+  }>;
+  overridden: boolean;
+  override_notes: string | null;
+}
+
+export interface BenchmarkGateParams {
+  baselinePath: string;
+  candidatePath: string;
+  minPassRate?: number;
+  minValidationScore?: number;
+  maxLatencyIncreaseRatio?: number;
+  overrideNotes?: string | null;
+}
+
+export async function evaluateBenchmarkGate(params: BenchmarkGateParams): Promise<BenchmarkGateResult> {
+  const queryParams: Record<string, unknown> = {
+    baseline_path: params.baselinePath,
+    candidate_path: params.candidatePath,
+  };
+  if (params.minPassRate !== undefined) queryParams.min_pass_rate = params.minPassRate;
+  if (params.minValidationScore !== undefined) queryParams.min_validation_score = params.minValidationScore;
+  if (params.maxLatencyIncreaseRatio !== undefined) queryParams.max_latency_increase_ratio = params.maxLatencyIncreaseRatio;
+  if (params.overrideNotes !== undefined) queryParams.override_notes = params.overrideNotes;
+  const response = await apiClient.post<BenchmarkGateResult>('/benchmarks/gate', null, { params: queryParams });
+  return response.data;
+}
+
+export interface BaselineMetadata {
+  run_id: string;
+  run_path: string;
+  owner: string | null;
+  approved_at: string;
+  approval_note: string | null;
+  is_promoted: boolean;
+}
+
+export interface ListBaselinesResponse {
+  baselines: BaselineMetadata[];
+  total: number;
+}
+
+export async function listBenchmarkBaselines(): Promise<ListBaselinesResponse> {
+  const response = await apiClient.get<ListBaselinesResponse>('/benchmarks/baselines');
+  return response.data;
+}
+
+export async function getBenchmarkBaseline(runId: string): Promise<BaselineMetadata> {
+  const response = await apiClient.get<BaselineMetadata>(`/benchmarks/baselines/${runId}`);
+  return response.data;
+}
+
+export async function promoteBenchmarkBaseline(
+  runId: string,
+  owner?: string,
+  approvalNote?: string
+): Promise<BaselineMetadata> {
+  const params: Record<string, unknown> = {};
+  if (owner) params.owner = owner;
+  if (approvalNote) params.approval_note = approvalNote;
+  const response = await apiClient.post<BaselineMetadata>(`/benchmarks/baselines/${runId}/promote`, null, { params });
+  return response.data;
+}
+
+export async function deleteBenchmarkBaseline(runId: string): Promise<{ deleted: boolean; run_id: string }> {
+  const response = await apiClient.delete<{ deleted: boolean; run_id: string }>(`/benchmarks/baselines/${runId}`);
+  return response.data;
+}
+
+export async function getPromotedBenchmarkBaseline(): Promise<{ baseline: BaselineMetadata | null }> {
+  const response = await apiClient.get<{ baseline: BaselineMetadata | null }>('/benchmarks/baselines/promoted');
+  return response.data;
+}
+
 export interface ResearchThemeInfo {
   theme: string;
   display_name: string;
@@ -972,6 +1093,35 @@ export interface ResearchThemeInfo {
 export interface ThemesListResponse {
   themes: ResearchThemeInfo[];
   total: number;
+}
+
+export interface BenchmarkTrendRun {
+  run_id: string;
+  generated_at: string | null;
+  corpus_version: string | null;
+  workflow_mode: string | null;
+  total_cases: number;
+  pass_count: number;
+  pass_rate: number | null;
+  average_validation_score: number | null;
+  average_latency_ms: number | null;
+  average_report_quality_score: number | null;
+  average_source_count: number | null;
+  date_sensitive_cases: number;
+  stop_reasons: Record<string, number>;
+  categories: Record<string, number>;
+}
+
+export interface BenchmarkTrendsResponse {
+  runs: BenchmarkTrendRun[];
+  total: number;
+}
+
+export async function getBenchmarkTrends(limit = 10): Promise<BenchmarkTrendsResponse> {
+  const response = await apiClient.get<BenchmarkTrendsResponse>('/benchmarks/trends', {
+    params: { limit },
+  });
+  return response.data;
 }
 
 export async function listResearchThemes(): Promise<ThemesListResponse> {
