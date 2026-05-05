@@ -623,8 +623,13 @@ function buildLLMReasoning(
       if (!interaction) {
         continue;
       }
-      interaction.fallbackEventId = event.eventId;
-      interaction.metadata = { ...interaction.metadata, fallback: event.metadata };
+      // Clone to avoid mutating stored objects; build new metadata object
+      const updated: LLMReasoning = {
+        ...interaction,
+        fallbackEventId: event.eventId,
+        metadata: { ...interaction.metadata, fallback: event.metadata },
+      };
+      interactions.set(active, updated);
       continue;
     }
 
@@ -640,21 +645,26 @@ function buildLLMReasoning(
         continue;
       }
       const metadata = event.metadata;
-      interaction.status = toStatus(event.status);
-      interaction.endTime = asTimestamp(event.timestamp);
-      interaction.latency = event.durationMs ?? 0;
-      interaction.promptTokens = Number(metadata.prompt_tokens ?? 0);
-      interaction.completionTokens = Number(metadata.completion_tokens ?? 0);
-      interaction.totalTokens = Number(metadata.total_tokens ?? 0);
-      interaction.response =
-        typeof metadata.response_preview === 'string'
-          ? metadata.response_preview
-          : typeof metadata.finish_reason === 'string'
-            ? `Finish reason: ${metadata.finish_reason}`
-            : '';
-      interaction.completionEventId = event.eventId;
-      interaction.finishReason = typeof metadata.finish_reason === 'string' ? metadata.finish_reason : null;
-      interaction.metadata = { ...interaction.metadata, ...metadata };
+      // Clone to avoid mutating stored objects
+      const updated: LLMReasoning = {
+        ...interaction,
+        status: toStatus(event.status),
+        endTime: asTimestamp(event.timestamp),
+        latency: event.durationMs ?? 0,
+        promptTokens: Number(metadata.prompt_tokens ?? 0),
+        completionTokens: Number(metadata.completion_tokens ?? 0),
+        totalTokens: Number(metadata.total_tokens ?? 0),
+        response:
+          typeof metadata.response_preview === 'string'
+            ? metadata.response_preview
+            : typeof metadata.finish_reason === 'string'
+              ? `Finish reason: ${metadata.finish_reason}`
+              : '',
+        completionEventId: event.eventId,
+        finishReason: typeof metadata.finish_reason === 'string' ? metadata.finish_reason : null,
+        metadata: { ...interaction.metadata, ...metadata },
+      };
+      interactions.set(key, updated);
     }
   }
 
@@ -699,10 +709,11 @@ export function deriveCountsAndFilters(
   }
 
   return {
-    phases,
-    agents,
-    statuses,
-    eventTypes,
+    phases: Array.from(phases),
+    agents: Array.from(agents),
+    statuses: Array.from(statuses),
+    eventTypes: Array.from(eventTypes),
+    tools: Array.from(tools),
   };
 }
 

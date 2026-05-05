@@ -112,22 +112,16 @@ def compute_graph_metrics(index: GraphIndex) -> GraphHealthMetrics:
         AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.target_id = n.id)
     """).fetchone()[0]
 
-    # Stale claim count: claims where freshness = 'dated'
-    stale_claim_count = index._c.execute("""
-        SELECT COUNT(*) FROM nodes
-        WHERE kind = ? AND properties LIKE '%"freshness"%'
-    """, (NodeKind.CLAIM.value,)).fetchone()[0]
-
-    # Filter for stale claims by parsing properties
+    # Stale claim count: claims where freshness = 'dated' (parsed from JSON properties)
     stale_claim_count = 0
     claim_rows = index._c.execute(
         "SELECT id, properties FROM nodes WHERE kind = ?",
         (NodeKind.CLAIM.value,)
     ).fetchall()
     for row in claim_rows:
-        import json as _json
+        import json
         try:
-            props = _json.loads(row["properties"])
+            props = json.loads(row["properties"])
             if props.get("freshness") == "dated":
                 stale_claim_count += 1
         except Exception:

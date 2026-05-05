@@ -160,21 +160,31 @@ def query_session_summaries(
             [cursor],
         ).fetchone()
         if cursor_row:
-            cursor_ts = _serialize_timestamp(cursor_row[0])
+            # Pass the datetime object directly to avoid string-parsing issues
             if sort_order == "desc":
                 conditions.append("created_at < ?")
             else:
                 conditions.append("created_at > ?")
-            params.append(cursor_ts)
+            params.append(cursor_row[0])
 
     if search:
         conditions.append("(session_id LIKE ? OR query LIKE ?)")
-        search_pattern = f"%{search}%"
+        # Escape SQL wildcards for DuckDB's LIKE (%% escapes a literal % or _)
+        escaped = search.replace("%", "%%").replace("_", "%%")
+        search_pattern = f"%{escaped}%"
         params.extend([search_pattern, search_pattern])
 
     if status:
         conditions.append("status = ?")
         params.append(status)
+
+    if archived_only:
+        conditions.append("archived = ?")
+        params.append(True)
+    elif archived_only is False:
+        # Explicitly filter out archived when not requesting archived-only
+        # Use int comparison since DuckDB stores BOOL as TINYINT
+        conditions.append("COALESCE(archived, FALSE) = FALSE")
 
     where_clause = " AND ".join(conditions) if conditions else "1=1"
 

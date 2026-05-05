@@ -297,7 +297,12 @@ const useDashboardStore = create<DashboardState>((set) => ({
         return {};
       }
       const sorted = sortEvents(newEventsList);
-      return { events: sorted, eventIdSet: newEventIdSet };
+      const trimmed = sorted.slice(-MAX_BUFFERED_EVENTS);
+      const rebuiltEventIdSet = new Set<string>();
+      for (const e of trimmed) {
+        rebuiltEventIdSet.add(e.eventId);
+      }
+      return { events: trimmed, eventIdSet: rebuiltEventIdSet };
     }),
   appendBufferedEvents: (events) =>
     set((state) => {
