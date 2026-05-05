@@ -201,14 +201,14 @@ class RSSScanner(BaseScanner):
         return source_type in RSS_HANDLED_TYPES
 
     def scan(self, source: RadarSource, store: RadarStore) -> list[RawSignal]:
-        """Fetch an RSS/Atom feed and normalize entries into RawSignals.
+        """Fetch and normalize items from a source.
 
         Args:
             source: The RadarSource with a feed URL.
             store: The RadarStore (used to update last_scanned_at).
 
         Returns:
-            List of RawSignal records from the feed.
+            List of normalized RawSignal records.
 
         Raises:
             ScanError: If the feed cannot be fetched or parsed.
@@ -222,7 +222,9 @@ class RSSScanner(BaseScanner):
                 timeout=self.FETCH_TIMEOUT,
             )
         except Exception as exc:
-            raise ScanError(f"Failed to fetch feed at {url}: {exc}") from exc
+            error_msg = f"Failed to fetch feed at {url}: {exc}"
+            self._update_last_scanned(source, store, success=False, error=error_msg)
+            raise ScanError(error_msg) from exc
 
         if feed.bozo and feed.bozo_exception:
             # Log but don't fail - some feeds have minor XML issues
@@ -235,8 +237,12 @@ class RSSScanner(BaseScanner):
             if signal is not None:
                 signals.append(signal)
 
-        # Update last_scanned_at on the source
-        self._update_last_scanned(source, store)
+        # Check for empty results (stale feed)
+        if len(signals) == 0 and feed.entries:
+            # Entries exist but couldn't be parsed
+            self._update_last_scanned(source, store, success=False, error="empty_results_after_parse")
+        else:
+            self._update_last_scanned(source, store, success=True)
 
         return signals
 
@@ -313,9 +319,22 @@ class RSSScanner(BaseScanner):
             normalized_type=normalized_type,
         )
 
-    def _update_last_scanned(self, source: RadarSource, store: RadarStore) -> None:
-        """Update the last_scanned_at timestamp on the source."""
-        store.update_source(source.id, {"last_scanned_at": datetime.now(tz=UTC).isoformat()})
+    def _update_last_scanned(self, source: RadarSource, store: RadarStore, success: bool = True, error: str | None = None) -> None:
+        """Update the last_scanned_at timestamp and scan result on the source."""
+        patch: dict[str, Any] = {
+            "last_scanned_at": datetime.now(tz=UTC).isoformat(),
+            "last_scan_success": success,
+        }
+        if success:
+            patch["consecutive_failures"] = 0
+        else:
+            # Increment failures
+            current = store.get_source(source.id)
+            if current:
+                patch["consecutive_failures"] = current.consecutive_failures + 1
+            if error:
+                patch["last_failure_reason"] = error[:200]  # Truncate long errors
+        store.update_source(source.id, patch)
 
 
 # ---------------------------------------------------------------------------
@@ -375,9 +394,18 @@ class SourceScanner:
         scanner = _scanner_for(source.source_type)
         try:
             return scanner.scan(source, self._store)
-        except ScanError:
-            # Mark source as errored
-            self._store.update_source(source.id, {"status": SourceStatus.ERROR})
+        except ScanError as exc:
+            # Mark source as errored and record failure
+            logger.warning("Scan failed for source %s: %s", source.id, exc)
+            self._store.update_source(
+                source.id,
+                {
+                    "status": SourceStatus.ERROR,
+                    "last_scan_success": False,
+                    "last_failure_reason": str(exc)[:200],
+                    "consecutive_failures": source.consecutive_failures + 1,
+                },
+            )
             return []
 
     def scan_due_sources(self) -> list[RawSignal]:

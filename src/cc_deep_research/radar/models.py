@@ -44,6 +44,23 @@ class SourceStatus(StrEnum):
     ERROR = "error"
 
 
+class SourceHealth(StrEnum):
+    """Health assessment for a Radar source."""
+
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    UNHEALTHY = "unhealthy"
+
+
+class SourcePriority(StrEnum):
+    """Priority level for a Radar source."""
+
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
 class OpportunityType(StrEnum):
     """Types of opportunities detected by Radar."""
 
@@ -60,11 +77,25 @@ class OpportunityStatus(StrEnum):
     """Lifecycle status of an opportunity."""
 
     NEW = "new"
+    REVIEWING = "reviewing"
+    ACCEPTED = "accepted"
+    DEFERRED = "deferred"
+    REJECTED = "rejected"
+    CONVERTED = "converted"
     SAVED = "saved"
     ACTED_ON = "acted_on"
     MONITORING = "monitoring"
     DISMISSED = "dismissed"
     ARCHIVED = "archived"
+
+
+class OpportunityOwnerPriority(StrEnum):
+    """Owner priority for opportunities."""
+
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
 
 
 class FreshnessState(StrEnum):
@@ -94,6 +125,12 @@ class FeedbackType(StrEnum):
     IGNORED = "ignored"
     CONVERTED_TO_RESEARCH = "converted_to_research"
     CONVERTED_TO_CONTENT = "converted_to_content"
+    USEFUL = "useful"
+    NOT_USEFUL = "not_useful"
+    DUPLICATE = "duplicate"
+    STALE = "stale"
+    TOO_BROAD = "too_broad"
+    WRONG_AUDIENCE = "wrong_audience"
 
 
 class WorkflowType(StrEnum):
@@ -137,8 +174,15 @@ class RadarSource(BaseModel):
         label: Human-readable label for display in the UI.
         url_or_identifier: URL, RSS feed, or other identifier for the source.
         status: Whether the source is actively monitored.
+        owner: Owner identifier (e.g., operator name or team).
+        priority: Source priority level.
         scan_cadence: How often to scan this source (e.g., "1h", "6h", "1d").
         last_scanned_at: ISO timestamp of the last scan attempt.
+        last_scan_success: Whether the last scan succeeded.
+        last_failure_reason: Reason for the last scan failure.
+        consecutive_failures: Number of consecutive scan failures.
+        health: Computed health state.
+        notes: Operator notes about this source.
         created_at: When this source was added.
         updated_at: When this source was last modified.
         metadata: Additional source-specific configuration.
@@ -149,12 +193,29 @@ class RadarSource(BaseModel):
     label: str
     url_or_identifier: str
     status: SourceStatus = SourceStatus.ACTIVE
+    owner: str | None = None
+    priority: SourcePriority = SourcePriority.MEDIUM
     scan_cadence: str = "6h"
     last_scanned_at: str | None = None
-    created_at: str = Field(default_factory=_now_iso)
+    last_scan_success: bool | None = None
+    last_failure_reason: str | None = None
+    consecutive_failures: int = 0
+    health: SourceHealth = SourceHealth.HEALTHY
+    notes: str | None = None
     created_at: str = Field(default_factory=_now_iso)
     updated_at: str = Field(default_factory=_now_iso)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _derive_health(self) -> RadarSource:
+        """Derive health state from consecutive failures and last_scan_success."""
+        if self.consecutive_failures >= 3:
+            self.health = SourceHealth.UNHEALTHY
+        elif self.consecutive_failures >= 1 or self.last_scan_success is False:
+            self.health = SourceHealth.DEGRADED
+        else:
+            self.health = SourceHealth.HEALTHY
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -390,6 +451,11 @@ class Opportunity(BaseModel):
         summary: Concise description of what this opportunity is.
         opportunity_type: Category of the opportunity.
         status: Current lifecycle status.
+        owner: Owner identifier (operator name or team).
+        priority: Owner-assigned priority.
+        reason: Reason for the current status or action.
+        next_action: Suggested next step or follow-up action.
+        reviewed_at: When the opportunity was last reviewed.
         priority_label: User-facing priority level.
         why_it_matters: Plain-language explanation of strategic significance.
         recommended_action: Suggested next step for the user.
@@ -407,6 +473,11 @@ class Opportunity(BaseModel):
     summary: str
     opportunity_type: OpportunityType
     status: OpportunityStatus = OpportunityStatus.NEW
+    owner: str | None = None
+    priority: OpportunityOwnerPriority = OpportunityOwnerPriority.MEDIUM
+    reason: str | None = None
+    next_action: str | None = None
+    reviewed_at: str | None = None
     priority_label: PriorityLabel = PriorityLabel.MONITOR
     why_it_matters: str | None = None
     recommended_action: str | None = None
@@ -422,6 +493,7 @@ class Opportunity(BaseModel):
         """Return True if this opportunity is in an active state."""
         return self.status in (
             OpportunityStatus.NEW,
+            OpportunityStatus.REVIEWING,
             OpportunityStatus.SAVED,
             OpportunityStatus.MONITORING,
         )
@@ -429,9 +501,11 @@ class Opportunity(BaseModel):
     def should_surface(self) -> bool:
         """Return True if this opportunity should appear in the ranked inbox."""
         if self.status in (
+            OpportunityStatus.REJECTED,
             OpportunityStatus.DISMISSED,
             OpportunityStatus.ARCHIVED,
             OpportunityStatus.ACTED_ON,
+            OpportunityStatus.CONVERTED,
         ):
             return False
         if self.freshness_state == FreshnessState.EXPIRED:
@@ -497,6 +571,221 @@ class StatusHistoryList(BaseModel):
     """Container for storing all status history entries."""
 
     entries: list[StatusHistoryEntry] = Field(default_factory=list)
+    last_updated: str = Field(default_factory=_now_iso)
+
+
+# ---------------------------------------------------------------------------
+# Scan Job models (for scheduled scans)
+# ---------------------------------------------------------------------------
+
+
+class ScanJobStatus(StrEnum):
+    """Status of a scan job."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+    CANCELLED = "cancelled"
+
+
+class ScanJob(BaseModel):
+    """Records a scan job execution.
+
+    Scan jobs track the execution of scheduled or manual scans
+    for audit and diagnostics purposes.
+
+    Attributes:
+        id: Unique identifier for this scan job.
+        source_id: The source that was scanned (or None for multi-source).
+        triggered_by: What triggered this scan (schedule, manual, dry_run).
+        status: Current status of the job.
+        signals_found: Number of signals found in this scan.
+        errors: Error messages encountered during scan.
+        started_at: When the scan started.
+        completed_at: When the scan completed (or None if not done).
+        scan_type: Type of scan (full, incremental, dry_run).
+    """
+
+    id: str = Field(default_factory=lambda: _generate_id("sj"))
+    source_id: str | None = None
+    triggered_by: str = "schedule"
+    status: ScanJobStatus = ScanJobStatus.PENDING
+    signals_found: int = 0
+    errors: list[str] = Field(default_factory=list)
+    started_at: str = Field(default_factory=_now_iso)
+    completed_at: str | None = None
+    scan_type: str = "full"
+
+
+class ScanJobList(BaseModel):
+    """Container for storing scan job records."""
+
+    jobs: list[ScanJob] = Field(default_factory=list)
+    last_updated: str = Field(default_factory=_now_iso)
+
+
+# ---------------------------------------------------------------------------
+# Alert and digest models
+# ---------------------------------------------------------------------------
+
+
+class AlertSeverity(StrEnum):
+    """Severity level for Radar alerts."""
+
+    INFO = "info"
+    WARNING = "warning"
+    CRITICAL = "critical"
+
+
+class AlertTrigger(StrEnum):
+    """What conditions trigger a Radar alert."""
+
+    HIGH_PRIORITY_OPPORTUNITY = "high_priority_opportunity"
+    SOURCE_FAILURE = "source_failure"
+    STALE_SCAN = "stale_scan"
+    VOLUME_SPIKE = "volume_spike"
+    CONSECUTIVE_FAILURES = "consecutive_failures"
+
+
+class RadarAlert(BaseModel):
+    """An alert generated by the Radar system.
+
+    Alerts notify operators of important events that require attention.
+
+    Attributes:
+        id: Unique identifier for this alert.
+        trigger: What triggered this alert.
+        severity: How severe the alert is.
+        title: Short alert title.
+        message: Detailed alert message.
+        source_id: Related source ID (if applicable).
+        opportunity_id: Related opportunity ID (if applicable).
+        acknowledged: Whether the alert has been acknowledged.
+        acknowledged_by: Who acknowledged the alert.
+        acknowledged_at: When the alert was acknowledged.
+        created_at: When the alert was created.
+        metadata: Additional alert data.
+    """
+
+    id: str = Field(default_factory=lambda: _generate_id("alrt"))
+    trigger: AlertTrigger
+    severity: AlertSeverity = AlertSeverity.INFO
+    title: str
+    message: str
+    source_id: str | None = None
+    opportunity_id: str | None = None
+    acknowledged: bool = False
+    acknowledged_by: str | None = None
+    acknowledged_at: str | None = None
+    created_at: str = Field(default_factory=_now_iso)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RadarAlertList(BaseModel):
+    """Container for storing RadarAlert records."""
+
+    alerts: list[RadarAlert] = Field(default_factory=list)
+    last_updated: str = Field(default_factory=_now_iso)
+
+
+class RadarDigest(BaseModel):
+    """A digest summarizing Radar activity over a period.
+
+    Digests provide a structured summary of opportunities and issues
+    for periodic review.
+
+    Attributes:
+        id: Unique identifier for this digest.
+        period_start: Start of the digest period.
+        period_end: End of the digest period.
+        new_opportunities_count: Number of new opportunities in the period.
+        top_opportunities: Top opportunities from the period.
+        source_health_issues: Sources with health issues.
+        alert_count: Total alerts in the period.
+        created_at: When the digest was created.
+    """
+
+    id: str = Field(default_factory=lambda: _generate_id("dgst"))
+    period_start: str
+    period_end: str
+    new_opportunities_count: int = 0
+    top_opportunities: list[dict[str, Any]] = Field(default_factory=list)
+    source_health_issues: list[dict[str, Any]] = Field(default_factory=list)
+    alert_count: int = 0
+    created_at: str = Field(default_factory=_now_iso)
+
+
+class RadarDigestList(BaseModel):
+    """Container for storing RadarDigest records."""
+
+    digests: list[RadarDigest] = Field(default_factory=list)
+    last_updated: str = Field(default_factory=_now_iso)
+
+
+class AlertMute(BaseModel):
+    """Mutes an alert trigger for a specific source or globally.
+
+    Attributes:
+        id: Unique identifier.
+        trigger: The alert trigger to mute.
+        source_id: Source to mute (None for global).
+        muted_by: Who muted this trigger.
+        muted_at: When the mute was created.
+        expires_at: When the mute expires (None for permanent).
+    """
+
+    id: str = Field(default_factory=lambda: _generate_id("mute"))
+    trigger: AlertTrigger
+    source_id: str | None = None
+    muted_by: str | None = None
+    muted_at: str = Field(default_factory=_now_iso)
+    expires_at: str | None = None
+
+
+class AlertMuteList(BaseModel):
+    """Container for storing AlertMute records."""
+
+    mutes: list[AlertMute] = Field(default_factory=list)
+    last_updated: str = Field(default_factory=_now_iso)
+
+
+# ---------------------------------------------------------------------------
+# Scoring feedback models
+# ---------------------------------------------------------------------------
+
+
+class ScoringFeedback(BaseModel):
+    """Feedback on opportunity scoring for tuning purposes.
+
+    Stores the outcome of scoring to enable tuning of future rankings.
+
+    Attributes:
+        id: Unique identifier.
+        opportunity_id: The opportunity that was scored.
+        signal_id: The signal that contributed to the score (optional).
+        feedback_type: Type of relevance feedback.
+        scoring_features: The feature scores at time of ranking.
+        rank_position: Position in ranking when shown.
+        outcome: Whether the operator acted on this opportunity.
+        created_at: When feedback was recorded.
+    """
+
+    id: str = Field(default_factory=lambda: _generate_id("sf"))
+    opportunity_id: str
+    signal_id: str | None = None
+    feedback_type: FeedbackType
+    scoring_features: dict[str, float] = Field(default_factory=dict)
+    rank_position: int | None = None
+    outcome: str | None = None
+    created_at: str = Field(default_factory=_now_iso)
+
+
+class ScoringFeedbackList(BaseModel):
+    """Container for storing ScoringFeedback records."""
+
+    feedback_entries: list[ScoringFeedback] = Field(default_factory=list)
     last_updated: str = Field(default_factory=_now_iso)
 
 
