@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 from pathlib import Path
+from signal import SIGTERM
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from cc_deep_research.operations import (
     PathStatus,
     get_recommended_directory_layout,
     validate_all_data_paths,
     validate_data_path,
+)
+from cc_deep_research.operations import (
+    service as service_module,
 )
 from cc_deep_research.operations.backup import (
     BackupManifest,
@@ -43,6 +50,7 @@ from cc_deep_research.operations.upgrade import (
     get_rollback_instructions,
     run_pre_upgrade_validation,
 )
+from cc_deep_research.web_server_routes import operations_routes
 
 
 class TestDataPathPermissions:
@@ -165,6 +173,89 @@ class TestBackupRestore:
         assert restored.backup_id == "test123"
         assert restored.total_size_bytes == 1024
         assert len(restored.entries) == 1
+
+
+class TestServiceStopSafety:
+    """Tests for service stop guardrails."""
+
+    def test_refuses_non_dashboard_port(self, monkeypatch) -> None:
+        """Caller-provided ports outside dashboard ownership are rejected."""
+        monkeypatch.setattr(service_module, "_get_dashboard_backend_port", lambda: 8000)
+        monkeypatch.setattr(service_module, "_get_dashboard_frontend_port", lambda: 3000)
+
+        result = service_module.stop_service(port=5432)
+
+        assert result["success"] is False
+        assert "non-dashboard port" in result["message"]
+
+    def test_refuses_non_dashboard_process_on_allowed_port(self, monkeypatch) -> None:
+        """Allowed ports still require a dashboard-owned process identity."""
+        monkeypatch.setattr(service_module, "_get_dashboard_backend_port", lambda: 8000)
+        monkeypatch.setattr(service_module, "_get_dashboard_frontend_port", lambda: 3000)
+        monkeypatch.setattr(service_module, "_find_process_by_port", lambda port: 12345)
+        monkeypatch.setattr(service_module, "_is_dashboard_process", lambda pid: False)
+
+        result = service_module.stop_service(port=8000)
+
+        assert result["success"] is False
+        assert "non-dashboard process" in result["message"]
+        assert result["pid"] == 12345
+
+    def test_kills_dashboard_process_on_allowed_port(self, monkeypatch) -> None:
+        """Only a recognized dashboard process on an owned port is signalled."""
+        killed: list[tuple[int, int]] = []
+        monkeypatch.setattr(service_module, "_get_dashboard_backend_port", lambda: 8000)
+        monkeypatch.setattr(service_module, "_get_dashboard_frontend_port", lambda: 3000)
+        monkeypatch.setattr(service_module, "_find_process_by_port", lambda port: 12345)
+        monkeypatch.setattr(service_module, "_is_dashboard_process", lambda pid: True)
+        monkeypatch.setattr(service_module.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+
+        result = service_module.stop_service(port=8000)
+
+        assert result["success"] is True
+        assert killed == [(12345, SIGTERM)]
+
+    def test_route_rejects_cross_origin_local_post(self, monkeypatch) -> None:
+        """Browser cross-site POSTs to localhost cannot trigger service stops."""
+        app = FastAPI()
+        calls: list[tuple[str, int | None]] = []
+        monkeypatch.setattr(
+            operations_routes,
+            "stop_service",
+            lambda service_name, port=None: calls.append((service_name, port))
+            or {"success": True, "message": "stopped"},
+        )
+        operations_routes.register_operations_routes(app)
+        client = TestClient(app, client=("127.0.0.1", 50000))
+
+        response = client.post(
+            "/api/operations/service/stop",
+            headers={"Origin": "https://example.com"},
+        )
+
+        assert response.status_code == 403
+        assert calls == []
+
+    def test_route_allows_local_origin_post(self, monkeypatch) -> None:
+        """The dashboard frontend on localhost can still stop guarded services."""
+        app = FastAPI()
+        calls: list[tuple[str, int | None]] = []
+        monkeypatch.setattr(
+            operations_routes,
+            "stop_service",
+            lambda service_name, port=None: calls.append((service_name, port))
+            or {"success": True, "message": "stopped"},
+        )
+        operations_routes.register_operations_routes(app)
+        client = TestClient(app, client=("127.0.0.1", 50000))
+
+        response = client.post(
+            "/api/operations/service/stop",
+            headers={"Origin": "http://localhost:3000"},
+        )
+
+        assert response.status_code == 200
+        assert calls == [("dashboard", None)]
 
 
 class TestProductionHardening:

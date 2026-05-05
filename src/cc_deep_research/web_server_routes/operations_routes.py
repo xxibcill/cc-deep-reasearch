@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from ipaddress import ip_address
+from urllib.parse import urlparse
+
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from cc_deep_research.operations import (
@@ -52,6 +55,46 @@ from cc_deep_research.operations.upgrade import (
     run_post_upgrade_validation,
     run_pre_upgrade_validation,
 )
+
+
+def _is_local_request(request: Request) -> bool:
+    """Return True when the request originates from the local host."""
+    host = request.client.host if request.client is not None else ""
+    return _is_loopback_host(host)
+
+
+def _is_loopback_host(host: str | None) -> bool:
+    """Return True for localhost or loopback IP literals."""
+    if host is None:
+        return False
+    normalized = host.strip("[]").lower()
+    if normalized == "localhost":
+        return True
+    try:
+        return ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_local_url(value: str) -> bool:
+    """Return True when a URL has a loopback host."""
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    return _is_loopback_host(parsed.hostname)
+
+
+def _has_local_origin(request: Request) -> bool:
+    """Allow same-machine callers while rejecting browser cross-site POSTs."""
+    origin = request.headers.get("origin")
+    if origin:
+        return _is_local_url(origin)
+
+    referer = request.headers.get("referer")
+    if referer:
+        return _is_local_url(referer)
+
+    return True
 
 
 def register_operations_routes(app: FastAPI) -> None:
@@ -223,12 +266,22 @@ def register_operations_routes(app: FastAPI) -> None:
 
     @app.post("/api/operations/service/stop")
     async def stop_service_route(
+        request: Request,
         service_name: str = "dashboard",
         port: int | None = None,
     ) -> JSONResponse:
         """Stop a running service."""
+        if not _is_local_request(request) or not _has_local_origin(request):
+            return JSONResponse(
+                content={
+                    "success": False,
+                    "message": "Refusing non-local or cross-origin service stop request",
+                },
+                status_code=403,
+            )
         result = stop_service(service_name, port=port)
-        return JSONResponse(content=result)
+        status_code = 403 if str(result.get("message", "")).startswith("Refusing") else 200
+        return JSONResponse(content=result, status_code=status_code)
 
     # --- Secrets Inventory ---
     @app.get("/api/operations/secrets/inventory")

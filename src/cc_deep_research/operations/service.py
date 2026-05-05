@@ -15,6 +15,21 @@ from typing import Any
 
 from cc_deep_research.config import load_config
 
+_DASHBOARD_SERVICE_NAMES = {
+    "dashboard",
+    "backend",
+    "dashboard_backend",
+    "frontend",
+    "dashboard_frontend",
+}
+_DASHBOARD_PROCESS_MARKERS = (
+    "cc_deep_research",
+    "cc-deep-research",
+    "dashboard-start",
+    "dashboard-dev",
+    "/dashboard/",
+)
+
 
 class ServiceStatus(StrEnum):
     """Service status constants."""
@@ -62,7 +77,9 @@ def _get_dashboard_frontend_port() -> int:
     """Get the configured dashboard frontend port."""
     try:
         config = load_config()
-        return getattr(config, "dashboard", type("C", (), {"port": 3000}))  # type: ignore[arg-type]
+        dashboard_config = getattr(config, "dashboard", None)
+        port = getattr(dashboard_config, "port", None)
+        return int(port) if port is not None else 3000
     except Exception:
         return 3000
 
@@ -93,6 +110,48 @@ def _find_process_by_port(port: int) -> int | None:
     except (OSError, subprocess.TimeoutExpired, ValueError):
         pass
     return None
+
+
+def _get_process_command(pid: int) -> str | None:
+    """Return the command line for a process id."""
+    try:
+        result = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "command="],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    command = result.stdout.strip()
+    return command or None
+
+
+def _is_dashboard_process(pid: int) -> bool:
+    """Return True only for processes that look owned by this dashboard app."""
+    command = _get_process_command(pid)
+    if command is None:
+        return False
+    normalized = command.lower()
+    return any(marker in normalized for marker in _DASHBOARD_PROCESS_MARKERS)
+
+
+def _normalize_service_name(service_name: str) -> str:
+    """Normalize user-facing service names for validation."""
+    return service_name.strip().lower().replace("-", "_")
+
+
+def _allowed_ports_for_service(service_name: str) -> set[int]:
+    """Return dashboard-owned ports allowed for a service stop request."""
+    backend_port = _get_dashboard_backend_port()
+    frontend_port = _get_dashboard_frontend_port()
+    if service_name in {"frontend", "dashboard_frontend"}:
+        return {frontend_port}
+    if service_name in {"backend", "dashboard_backend"}:
+        return {backend_port}
+    return {backend_port, frontend_port}
 
 
 def _get_log_locations() -> dict[str, Path]:
@@ -332,8 +391,25 @@ def stop_service(service_name: str = "dashboard", port: int | None = None) -> di
     Returns:
         Dict with stop result and message.
     """
+    normalized_service_name = _normalize_service_name(service_name)
+    if normalized_service_name not in _DASHBOARD_SERVICE_NAMES:
+        return {
+            "success": False,
+            "message": f"Refusing to stop unknown service {service_name!r}",
+        }
+
+    allowed_ports = _allowed_ports_for_service(normalized_service_name)
     if port is None:
-        port = _get_dashboard_backend_port()
+        port = (
+            _get_dashboard_frontend_port()
+            if normalized_service_name in {"frontend", "dashboard_frontend"}
+            else _get_dashboard_backend_port()
+        )
+    elif port not in allowed_ports:
+        return {
+            "success": False,
+            "message": f"Refusing to stop non-dashboard port {port}",
+        }
 
     pid = _find_process_by_port(port)
     if pid is None:
@@ -342,11 +418,18 @@ def stop_service(service_name: str = "dashboard", port: int | None = None) -> di
             "message": f"No process found on port {port}",
         }
 
+    if not _is_dashboard_process(pid):
+        return {
+            "success": False,
+            "message": f"Refusing to stop non-dashboard process on port {port} (PID {pid})",
+            "pid": pid,
+        }
+
     try:
         os.kill(pid, signal.SIGTERM)
         return {
             "success": True,
-            "message": f"Stopped service {service_name} (PID {pid})",
+            "message": f"Stopped service {normalized_service_name} (PID {pid})",
             "pid": pid,
         }
     except OSError as e:
