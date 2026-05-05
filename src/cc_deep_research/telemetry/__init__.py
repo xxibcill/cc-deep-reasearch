@@ -1,6 +1,8 @@
 """Telemetry compatibility exports for live and analytics helpers."""
 
 from .ingest import (
+    _apply_schema_migration,
+    _ensure_metadata_table,
     delete_session_from_duckdb,
     get_default_dashboard_db_path,
     ingest_telemetry_to_duckdb,
@@ -20,6 +22,18 @@ from .live import (
     query_live_sessions,
     query_live_subprocess_streams,
     query_session_checkpoints,
+)
+from .migrations import (
+    CURRENT_BUNDLE_SCHEMA_VERSION,
+    CURRENT_DUCKDB_SCHEMA_VERSION,
+    CURRENT_EVENT_SCHEMA_VERSION,
+    MigrationReport,
+    MigrationScope,
+    migrate_bundle,
+    migrate_duckdb_schema,
+    migrate_event_record,
+    migrate_events_file,
+    migrate_session,
 )
 from .query import (
     _load_dashboard_connection,
@@ -57,6 +71,13 @@ from .summary_cache import (
 )
 
 __all__ = [
+    "CURRENT_BUNDLE_SCHEMA_VERSION",
+    "CURRENT_DUCKDB_SCHEMA_VERSION",
+    "CURRENT_EVENT_SCHEMA_VERSION",
+    "MigrationReport",
+    "MigrationScope",
+    "_apply_schema_migration",
+    "_ensure_metadata_table",
     "_load_dashboard_connection",
     "apply_retention",
     "compact_session_telemetry",
@@ -74,6 +95,11 @@ __all__ = [
     "ingest_telemetry_to_duckdb",
     "invalidate_cached_summary",
     "load_cached_summary",
+    "migrate_bundle",
+    "migrate_duckdb_schema",
+    "migrate_event_record",
+    "migrate_events_file",
+    "migrate_session",
     "query_checkpoint_detail",
     "query_checkpoint_lineage",
     "query_checkpoints_by_phase",
