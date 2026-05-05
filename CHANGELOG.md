@@ -8,6 +8,102 @@ History before `0.1.0` is summarized from the repository state captured on 2026-
 
 <!-- Add Added/Changed/Fixed entries here before cutting a release. -->
 
+#### Phase 16 - CLI Migration: All Features to Dashboard (7 tasks)
+
+- Added `/api/knowledge/init` endpoint for vault initialization with dry-run support
+- Added `/api/knowledge/backfill` endpoint for session ingestion into knowledge vault
+- Added `/api/knowledge/rebuild-index` endpoint for graph index rebuild
+- Added `/api/benchmarks/run` endpoint to trigger benchmark corpus runs from dashboard
+- Added `/api/benchmarks/compare` endpoint for run comparison
+- Removed `cc-deep-research` CLI entry point from `pyproject.toml` and deleted `src/cc_deep_research/cli/`
+- All CLI commands now available via dashboard or deprecated with documented rationale
+
+#### Phase 17 - Legacy Content-Gen Orchestrator Slimdown (5 tasks)
+
+- Extracted targeted revision helpers to `content_gen/targeted_revision.py` (91 lines)
+- Extracted brief run reference service to `content_gen/brief_run_reference_service.py` (349 lines)
+- Delegated `ContentGenOrchestrator.run_full_pipeline()` to `ContentGenPipeline`
+- Delegated `ContentGenOrchestrator.run_scripting*()` to `ScriptingRunService`
+- Removed `_PIPELINE_HANDLERS` and `_stage_*` pipeline handler functions from `legacy_orchestrator.py`
+
+#### Phase 18 - Dashboard Performance Optimization (7 tasks)
+
+- Added `query_session_summaries()` for fast paginated session list without loading all events
+- Split session detail loading into lazy API functions (`getSessionSummary`, `getSessionEventsPage`, `getSessionDerivedOutputs`, `getSessionPromptMetadata`)
+- Added `eventIdSet` for O(1) duplicate event detection in dashboard event store
+- Split `deriveTelemetryState` into focused helpers (`deriveCounts`, `deriveGraph`, `deriveTimeline`, etc.)
+- Established graph rendering guardrails (`LARGE_SESSION_EVENT_THRESHOLD=1200`, `MAX_BUFFERED_EVENTS=4000`) with dynamic imports
+- Added performance regression gates with `npm run build/lint/test` and Playwright smoke suite
+
+#### Phase 19 - Dashboard Reliability (5 tasks)
+
+- Added `request-telemetry.ts` and `useRequestTelemetry.ts` hook for API call timing and error classification
+- Standardized async state patterns with `LoadingState`, `ErrorState`, `PartialErrorState` components
+- Extended `LiveStreamStatus` with `ReconnectHistoryEntry[]` for websocket reconnect diagnostics
+- Rewrote `error-messages.ts` with comprehensive route-specific guidance map for all major dashboard flows
+- Added `useDebugExport.ts` hook and `GET /api/sessions/{session_id}/debug-export` for operator incident review
+
+#### Phase 20 - Large-Scale Telemetry Storage (5 tasks)
+
+- Optimized DuckDB query strategy with 5 indexes on `telemetry_events` and 3 on `telemetry_sessions`
+- Added `telemetry/retention.py` with `RetentionPolicy`, compaction modes, and dry-run by default
+- Added `telemetry/summary_cache.py` for incremental derived summaries with cache invalidation
+- Added `test_telemetry_storage_performance.py` with performance regression gates for large datasets
+- Added backward compatibility tests for missing fields and legacy event shape normalization
+
+#### Phase 21 - Dashboard Workflow Completeness (5 tasks)
+
+- Rechecked CLI and manual workflow gaps against dashboard/API coverage (all gaps addressed)
+- Added saved operator workspaces with `SavedView<T>` interface in `saved-views.ts` and `saved-view-controls.tsx`
+- Added `SessionAnnotation` model and `SessionTriageStatus` enum with full CRUD API routes
+- Improved compare flow with `suggestBaselineSessions()` and baseline/target role labeling
+- Added `smoke-journey.spec.ts` covering 12 smoke-tagged operator workflow journeys
+
+#### Phase 22 - Content Studio Quality System (5 tasks)
+
+- Added `QCIssueCategory` (12 categories), `QCIssueSeverity`, `QCIssueStatus` enums with full lifecycle tracking
+- Added `PerformanceLearning` and `PerformanceAnalysis` models with feedback loop to future content decisions
+- Added `PublishReadinessState` enum and `PublishBlocker` model for publish queue operations
+- Added `ReusableAsset` model with provenance, performance tracking, and extraction from successful runs
+- Added `quality_gates.py` with automated checks for scripting context, packaging output, and human QC approval
+
+#### Phase 23 - Knowledge Graph Intelligence (5 tasks)
+
+- Added `GraphHealthMetrics` and `compute_graph_metrics()` with `GET /api/knowledge/health` endpoint
+- Added `knowledge/dedup.py` with `DuplicateCandidateStore` for entity and source deduplication
+- Added `RetrievalExplanation` dataclass for knowledge retrieval explainability
+- Added 6 gap detectors in `knowledge/gap_detection.py` (low source count, stale, contradictory, etc.)
+- Added `knowledge/ingestion_gates.py` with `IngestCheck` enum and batch validation for graph data quality
+
+#### Phase 24 - Radar Opportunity Operations (5 tasks)
+
+- Added `SourceHealth` enum and `RadarSource` with owner/health/priority for source governance
+- Added `SourceScanner` with cadence scheduling, `ScanJob` lifecycle, and pause/resume support
+- Added `OpportunityStatus` enum (11 states) with `StatusHistoryEntry` for audit trail
+- Added `ScoringFeedback` model and `_compute_feedback_adjustment()` for relevance scoring tuning
+- Added `RadarAlert`, `RadarDigest`, and `AlertMute` models with full alert and digest generation
+
+#### Phase 25 - Evaluation and Benchmark Governance (5 tasks)
+
+- Added `BenchmarkCase` with metadata (owner, domain, difficulty, tags, status) and `validate_benchmark_corpus()`
+- Added `benchmark_baselines.py` with promote/demote logic and `get_promoted_baseline()`
+- Added `/api/benchmarks/trends` and evaluation dashboard with quality, cost, latency trends
+- Added `evaluate_benchmark_gate()` with configurable thresholds and override capability
+- Added `benchmark_ci.py` with CI-friendly 3-case subset and `benchmark ci-run` command
+
+#### Phase 26 - Deployment Operations and Upgrade Readiness (10 tasks)
+
+- Added `operations/setup.py` with `ProfileType` enum and config profile application
+- Added `operations/health.py` with checks for config, providers, data paths, telemetry, DuckDB, websocket
+- Added `operations/backup.py` with backup planning, creation, validation for sessions/telemetry/knowledge/content-gen/config/radar
+- Added `docs/tasks/phase-26/RELEASE.md` with release and migration playbook
+- Added `operations/hardening.py` with production hardening checks (CORS, logging, websocket, timeout, retention)
+- Added `operations/service.py` with service status, startup diagnostics, and start/stop operations
+- Added `operations/secrets.py` with secrets inventory and per-provider rotation guidance
+- Added data path validation with `PathStatus`, `_is_safe_path()`, and 9 critical path validations
+- Added `operations/upgrade.py` with pre/post-upgrade validation and rollback instructions
+- Added 12 operator runbooks in `operations/runbooks.py` covering dashboard, backend, websocket, credentials, storage, and upgrade scenarios
+
 #### Phase 00 - Baseline And Refactor Safety (3 tasks)
 
 - Captured working tree baseline: documented `refactor` branch state, dirty files (`content_gen/progress.py`, `content_gen/router.py`, `tests/test_web_server.py`), and generated artifacts to preserve during refactor

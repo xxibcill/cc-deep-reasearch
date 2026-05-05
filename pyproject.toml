@@ -180,10 +180,6 @@ module = "cc_deep_research.knowledge.*"
 ignore_errors = false
 
 [[tool.mypy.overrides]]
-module = "cc_deep_research.cli.*"
-ignore_errors = false
-
-[[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
 
