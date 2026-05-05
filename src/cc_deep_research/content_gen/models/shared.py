@@ -314,3 +314,50 @@ class OperatingPhase(StrEnum):
     PHASE_05_VISUAL = "phase_05_visual"
     PHASE_06_QC = "phase_06_qc"
     PHASE_07_PUBLISH = "phase_07_publish"
+
+
+class QCIssueCategory(StrEnum):
+    """Structured QC issue categories for content-gen quality tracking."""
+
+    FACTUAL_RISK = "factual_risk"  # Factual claims that are questionable or unverified
+    WEAK_HOOK = "weak_hook"  # Hook fails to establish promise or grab attention
+    UNCLEAR_THESIS = "unclear_thesis"  # Central claim or angle is ambiguous
+    OFF_BRAND_TONE = "off_brand_tone"  # Voice, style, or register doesn't match brand
+    MISSING_EVIDENCE = "missing_evidence"  # Claims lack supporting sources
+    PACING_PROBLEM = "pacing_problem"  # Structural flow or beat pacing is off
+    COMPLIANCE_RISK = "compliance_risk"  # Potential legal, safety, or policy issues
+    PACKAGING_MISMATCH = "packaging_mismatch"  # Title/thumbnail doesn't match content
+    CLARITY_ISSUE = "clarity_issue"  # Hard to follow or confusing structure
+    VISUAL_ISSUE = "visual_issue"  # Visual plan or B-roll problems
+    AUDIO_ISSUE = "audio_issue"  # Audio quality or clarity issues
+    CAPTION_ISSUE = "caption_issue"  # Caption accuracy or formatting problems
+
+
+class QCIssueSeverity(StrEnum):
+    """Severity level for QC issues."""
+
+    LOW = "low"  # Minor polish issue, no blocking
+    MEDIUM = "medium"  # Notable quality gap, consider addressing
+    HIGH = "high"  # Significant issue that likely impacts performance
+    CRITICAL = "critical"  # Must fix before publishing
+
+
+class QCIssueStatus(StrEnum):
+    """Lifecycle status for a QC issue."""
+
+    OPEN = "open"  # Identified, not yet addressed
+    IN_REVIEW = "in_review"  # Being worked on
+    RESOLVED = "resolved"  # Fixed or accepted with rationale
+    DISMISSED = "dismissed"  # Determined to not be a real issue
+
+
+class PublishReadinessState(StrEnum):
+    """Readiness state for publish queue items."""
+
+    DRAFT = "draft"  # Initial state, not yet submitted for review
+    NEEDS_REVIEW = "needs_review"  # Submitted for operator review
+    BLOCKED = "blocked"  # Blocked by QC issues or missing assets
+    READY = "ready"  # Cleared for publication
+    SCHEDULED = "scheduled"  # Time-slot reserved for publishing
+    PUBLISHED = "published"  # Successfully published
+    ARCHIVED = "archived"  # Removed from active queue

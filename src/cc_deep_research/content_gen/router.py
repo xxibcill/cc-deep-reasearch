@@ -108,6 +108,116 @@ class UpdateBacklogItemRequest(BaseModel):
     patch: dict[str, Any] = Field(default_factory=dict)
 
 
+# ---------------------------------------------------------------------------
+# QC Issue request/response models
+# ---------------------------------------------------------------------------
+
+
+class CreateQCIssueRequest(BaseModel):
+    """Request body for creating a QC issue."""
+
+    category: str = Field(..., description="QCIssueCategory value")
+    severity: str = Field(default="medium", description="QCIssueSeverity value")
+    description: str = Field(..., min_length=1)
+    affected_beat_ids: list[str] = Field(default_factory=list)
+    claim_ids: list[str] = Field(default_factory=list)
+    idea_id: str = ""
+    brief_id: str = ""
+    stage_trace_id: str = ""
+    publish_item_id: str = ""
+    owner: str = ""
+
+
+class UpdateQCIssueRequest(BaseModel):
+    """Request body for updating a QC issue."""
+
+    patch: dict[str, Any] = Field(default_factory=dict)
+
+
+class ResolveQCIssueRequest(BaseModel):
+    """Request body for resolving a QC issue."""
+
+    resolution_note: str = Field(..., min_length=1)
+    resolved_by: str = Field(default="operator")
+
+
+# ---------------------------------------------------------------------------
+# Publish queue operations request/response models
+# ---------------------------------------------------------------------------
+
+
+class UpdatePublishReadinessRequest(BaseModel):
+    """Request body for updating publish queue item readiness."""
+
+    readiness: str = Field(..., description="PublishReadinessState value")
+    note: str = Field(default="")
+    actor: str = Field(default="operator")
+
+
+class AddPublishBlockerRequest(BaseModel):
+    """Request body for adding a blocker to a publish queue item."""
+
+    blocker_type: str = Field(..., description="Blocker type: qc_issue, missing_asset, missing_approval, strategy_conflict")
+    description: str = Field(..., min_length=1)
+    severity: str = Field(default="high")
+    related_issue_ids: list[str] = Field(default_factory=list)
+    related_asset_ids: list[str] = Field(default_factory=list)
+
+
+class AddPublishNoteRequest(BaseModel):
+    """Request body for adding an operator note to a publish queue item."""
+
+    content: str = Field(..., min_length=1)
+    author: str = Field(default="operator")
+
+
+class AddPublishReviewEntryRequest(BaseModel):
+    """Request body for adding a review entry to a publish queue item."""
+
+    action: str = Field(..., min_length=1)
+    actor: str = Field(default="operator")
+    note: str = Field(default="")
+
+
+# ---------------------------------------------------------------------------
+# Reusable asset request/response models
+# ---------------------------------------------------------------------------
+
+
+class CreateReusableAssetRequest(BaseModel):
+    """Request body for creating a reusable asset."""
+
+    asset_type: str = Field(..., description="ReusableAssetType value")
+    name: str = Field(..., min_length=1)
+    description: str = Field(default="")
+    content: str = Field(default="")
+    content_yaml: str = Field(default="")
+    source_idea_id: str = ""
+    source_run_id: str = ""
+    source_brief_id: str = ""
+    source_stage: str = ""
+    extraction_reason: str = ""
+    pillar: str = Field(default="")
+    audience: str = Field(default="")
+    platform: str = Field(default="")
+    format: str = Field(default="")
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SearchReusableAssetsRequest(BaseModel):
+    """Request body for searching reusable assets."""
+
+    query: str | None = None
+    asset_type: str | None = None
+    pillar: str | None = None
+    audience: str | None = None
+    platform: str | None = None
+    format: str | None = None
+    min_performance_score: float | None = None
+    sort_by: str = Field(default="updated_at")
+    sort_desc: bool = Field(default=True)
+
+
 class CreateBacklogItemRequest(BaseModel):
     """Request body for creating a new backlog item."""
 
@@ -1493,20 +1603,317 @@ def register_content_gen_routes(
         return JSONResponse(content=result)
 
     # ------------------------------------------------------------------
-    # Publish queue
+    # QC Issues (P22-T1)
+    # ------------------------------------------------------------------
+
+    from cc_deep_research.content_gen.storage import QCIssueStore
+    from cc_deep_research.content_gen.models import (
+        QCIssue,
+        QCIssueCategory,
+        QCIssueSeverity,
+        QCIssueStatus,
+    )
+    from datetime import UTC as _dt_utc
+
+    qc_issue_store = QCIssueStore()
+
+    def _now() -> str:
+        from datetime import datetime
+        return datetime.now(tz=_dt_utc).isoformat()
+
+    @app.get("/api/content-gen/qc-issues")
+    async def list_qc_issues(
+        category: str | None = None,
+        severity: str | None = None,
+        status: str | None = None,
+        owner: str | None = None,
+        idea_id: str | None = None,
+    ) -> JSONResponse:
+        cat = QCIssueCategory(category) if category else None
+        sev = QCIssueSeverity(severity) if severity else None
+        sta = QCIssueStatus(status) if status else None
+        issues = qc_issue_store.filter(
+            category=cat,
+            severity=sev,
+            status=sta,
+            owner=owner,
+            idea_id=idea_id,
+        )
+        return JSONResponse(content={"items": [i.model_dump(mode="json") for i in issues]})
+
+    @app.post("/api/content-gen/qc-issues")
+    async def create_qc_issue(request: CreateQCIssueRequest) -> JSONResponse:
+        issue = QCIssue(
+            category=QCIssueCategory(request.category),
+            severity=QCIssueSeverity(request.severity),
+            description=request.description,
+            affected_beat_ids=request.affected_beat_ids,
+            claim_ids=request.claim_ids,
+            idea_id=request.idea_id,
+            brief_id=request.brief_id,
+            stage_trace_id=request.stage_trace_id,
+            publish_item_id=request.publish_item_id,
+            owner=request.owner,
+            created_at=_now(),
+            updated_at=_now(),
+        )
+        qc_issue_store.add(issue)
+        return JSONResponse(content=issue.model_dump(mode="json"), status_code=201)
+
+    @app.get("/api/content-gen/qc-issues/{issue_id}")
+    async def get_qc_issue(issue_id: str) -> JSONResponse:
+        issue = qc_issue_store.get(issue_id)
+        if issue is None:
+            return JSONResponse(status_code=404, content={"error": "Issue not found"})
+        return JSONResponse(content=issue.model_dump(mode="json"))
+
+    @app.patch("/api/content-gen/qc-issues/{issue_id}")
+    async def update_qc_issue(issue_id: str, request: UpdateQCIssueRequest) -> JSONResponse:
+        updated = qc_issue_store.update(issue_id, request.patch)
+        if updated is None:
+            return JSONResponse(status_code=404, content={"error": "Issue not found"})
+        return JSONResponse(content=updated.model_dump(mode="json"))
+
+    @app.post("/api/content-gen/qc-issues/{issue_id}/resolve")
+    async def resolve_qc_issue(issue_id: str, request: ResolveQCIssueRequest) -> JSONResponse:
+        resolved = qc_issue_store.resolve(
+            issue_id,
+            resolution_note=request.resolution_note,
+            resolved_by=request.resolved_by,
+        )
+        if resolved is None:
+            return JSONResponse(status_code=404, content={"error": "Issue not found"})
+        return JSONResponse(content=resolved.model_dump(mode="json"))
+
+    @app.post("/api/content-gen/qc-issues/{issue_id}/dismiss")
+    async def dismiss_qc_issue(issue_id: str, request: ResolveQCIssueRequest) -> JSONResponse:
+        dismissed = qc_issue_store.dismiss(
+            issue_id,
+            resolution_note=request.resolution_note,
+            dismissed_by=request.resolved_by,
+        )
+        if dismissed is None:
+            return JSONResponse(status_code=404, content={"error": "Issue not found"})
+        return JSONResponse(content=dismissed.model_dump(mode="json"))
+
+    # ------------------------------------------------------------------
+    # Publish queue (P22-T3)
     # ------------------------------------------------------------------
 
     @app.get("/api/content-gen/publish")
-    async def list_publish_queue() -> JSONResponse:
+    async def list_publish_queue(
+        readiness: str | None = None,
+        status: str | None = None,
+        platform: str | None = None,
+    ) -> JSONResponse:
         items = publish_audit_service.list_publish_queue()
+        if readiness:
+            from cc_deep_research.content_gen.models import PublishReadinessState
+            rs = PublishReadinessState(readiness)
+            items = [i for i in items if i.readiness == rs]
+        if status:
+            items = [i for i in items if i.status == status]
+        if platform:
+            items = [i for i in items if i.platform == platform]
         return JSONResponse(
             content={"items": [publish_audit_service.serialize_publish_item(i) for i in items]}
         )
+
+    @app.post("/api/content-gen/publish/{idea_id}/{platform}/readiness")
+    async def update_publish_readiness(
+        idea_id: str,
+        platform: str,
+        request: UpdatePublishReadinessRequest,
+    ) -> JSONResponse:
+        from cc_deep_research.content_gen.models import PublishReadinessState
+        store = services.publish_queue_store
+        items = store.load()
+        found = False
+        for i, item in enumerate(items):
+            if item.idea_id == idea_id and item.platform == platform:
+                old_readiness = item.readiness
+                items[i] = item.model_copy(
+                    update={
+                        "readiness": PublishReadinessState(request.readiness),
+                    }
+                )
+                # Add review history entry
+                review_entry = {
+                    "action": f"readiness_changed: {old_readiness.value} -> {request.readiness}",
+                    "actor": request.actor,
+                    "note": request.note,
+                    "created_at": _now(),
+                }
+                existing_history = list(items[i].review_history or [])
+                existing_history.append(review_entry)
+                items[i] = items[i].model_copy(update={"review_history": existing_history})
+                store.save(items)
+                found = True
+                return JSONResponse(
+                    content=publish_audit_service.serialize_publish_item(items[i])
+                )
+        if not found:
+            return JSONResponse(status_code=404, content={"error": "Publish item not found"})
+
+    @app.post("/api/content-gen/publish/{idea_id}/{platform}/blocker")
+    async def add_publish_blocker(
+        idea_id: str,
+        platform: str,
+        request: AddPublishBlockerRequest,
+    ) -> JSONResponse:
+        store = services.publish_queue_store
+        from cc_deep_research.content_gen.models import PublishBlocker
+        blocker = PublishBlocker(
+            blocker_type=request.blocker_type,
+            severity=request.severity,
+            idea_id=idea_id,
+            platform=platform,
+            description=request.description,
+            related_issue_ids=request.related_issue_ids,
+            related_asset_ids=request.related_asset_ids,
+            created_at=_now(),
+            updated_at=_now(),
+        )
+        items = store.load()
+        for i, item in enumerate(items):
+            if item.idea_id == idea_id and item.platform == platform:
+                blocker_ids = list(item.blocker_ids or [])
+                blocker_ids.append(blocker.blocker_id)
+                items[i] = item.model_copy(update={"blocker_ids": blocker_ids})
+                store.save(items)
+                # Return the updated item
+                return JSONResponse(
+                    content={
+                        "blocker": blocker.model_dump(mode="json"),
+                        "publish_item": publish_audit_service.serialize_publish_item(items[i]),
+                    },
+                    status_code=201,
+                )
+        return JSONResponse(status_code=404, content={"error": "Publish item not found"})
+
+    @app.post("/api/content-gen/publish/{idea_id}/{platform}/note")
+    async def add_publish_note(
+        idea_id: str,
+        platform: str,
+        request: AddPublishNoteRequest,
+    ) -> JSONResponse:
+        store = services.publish_queue_store
+        items = store.load()
+        for i, item in enumerate(items):
+            if item.idea_id == idea_id and item.platform == platform:
+                notes = list(item.operator_notes or [])
+                notes.append(request.content)
+                items[i] = item.model_copy(update={"operator_notes": notes})
+                store.save(items)
+                return JSONResponse(
+                    content=publish_audit_service.serialize_publish_item(items[i])
+                )
+        return JSONResponse(status_code=404, content={"error": "Publish item not found"})
 
     @app.delete("/api/content-gen/publish/{idea_id}/{platform}")
     async def remove_from_queue(idea_id: str, platform: str) -> JSONResponse:
         removed = publish_audit_service.remove_from_queue(idea_id, platform)
         return JSONResponse(content={"removed": removed})
+
+    @app.get("/api/content-gen/publish/{idea_id}/{platform}/history")
+    async def get_publish_history(idea_id: str, platform: str) -> JSONResponse:
+        """Get review history for a publish queue item."""
+        items = publish_audit_service.list_publish_queue()
+        for item in items:
+            if item.idea_id == idea_id and item.platform == platform:
+                return JSONResponse(content={"history": item.review_history or []})
+        return JSONResponse(status_code=404, content={"error": "Publish item not found"})
+
+    # ------------------------------------------------------------------
+    # Reusable assets (P22-T4)
+    # ------------------------------------------------------------------
+
+    from cc_deep_research.content_gen.storage import ReusableAssetStore
+    from cc_deep_research.content_gen.models import ReusableAssetType
+
+    asset_store = ReusableAssetStore()
+
+    @app.get("/api/content-gen/assets")
+    async def list_reusable_assets(
+        query: str | None = None,
+        asset_type: str | None = None,
+        pillar: str | None = None,
+        audience: str | None = None,
+        platform: str | None = None,
+        format: str | None = None,
+        min_performance_score: float | None = None,
+    ) -> JSONResponse:
+        at = ReusableAssetType(asset_type) if asset_type else None
+        assets = asset_store.search(
+            query=query,
+            asset_type=at,
+            pillar=pillar,
+            audience=audience,
+            platform=platform,
+            format=format,
+            min_performance_score=min_performance_score,
+        )
+        return JSONResponse(content={"items": [a.model_dump(mode="json") for a in assets]})
+
+    @app.post("/api/content-gen/assets")
+    async def create_reusable_asset(request: CreateReusableAssetRequest) -> JSONResponse:
+        asset = ReusableAsset(
+            asset_type=ReusableAssetType(request.asset_type),
+            name=request.name,
+            description=request.description,
+            content=request.content,
+            content_yaml=request.content_yaml,
+            source_idea_id=request.source_idea_id,
+            source_run_id=request.source_run_id,
+            source_brief_id=request.source_brief_id,
+            source_stage=request.source_stage,
+            extraction_reason=request.extraction_reason,
+            pillar=request.pillar,
+            audience=request.audience,
+            platform=request.platform,
+            format=request.format,
+            metadata=request.metadata,
+            created_at=_now(),
+            updated_at=_now(),
+        )
+        asset_store.add(asset)
+        return JSONResponse(content=asset.model_dump(mode="json"), status_code=201)
+
+    @app.get("/api/content-gen/assets/{asset_id}")
+    async def get_reusable_asset(asset_id: str) -> JSONResponse:
+        asset = asset_store.get(asset_id)
+        if asset is None:
+            return JSONResponse(status_code=404, content={"error": "Asset not found"})
+        return JSONResponse(content=asset.model_dump(mode="json"))
+
+    @app.get("/api/content-gen/assets/{asset_id}/provenance")
+    async def get_asset_provenance(asset_id: str) -> JSONResponse:
+        asset = asset_store.get(asset_id)
+        if asset is None:
+            return JSONResponse(status_code=404, content={"error": "Asset not found"})
+        from cc_deep_research.content_gen.models import AssetProvenanceLink
+        link = AssetProvenanceLink(
+            asset_id=asset.asset_id,
+            source_idea_id=asset.source_idea_id,
+            source_run_id=asset.source_run_id,
+            source_brief_id=asset.source_brief_id,
+            source_stage=asset.source_stage,
+            extraction_context=asset.extraction_reason,
+            created_at=asset.created_at,
+        )
+        return JSONResponse(content=link.model_dump(mode="json"))
+
+    @app.post("/api/content-gen/assets/{asset_id}/use")
+    async def record_asset_usage(asset_id: str, idea_id: str) -> JSONResponse:
+        updated = asset_store.record_usage(asset_id, idea_id)
+        if updated is None:
+            return JSONResponse(status_code=404, content={"error": "Asset not found"})
+        return JSONResponse(content=updated.model_dump(mode="json"))
+
+    @app.delete("/api/content-gen/assets/{asset_id}")
+    async def delete_reusable_asset(asset_id: str) -> JSONResponse:
+        deleted = asset_store.delete(asset_id)
+        return JSONResponse(content={"deleted": deleted})
 
     # ------------------------------------------------------------------
     # Audit history
