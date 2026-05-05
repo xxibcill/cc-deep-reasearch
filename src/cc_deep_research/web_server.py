@@ -38,6 +38,7 @@ from cc_deep_research.web_server_routes import (
     register_session_routes,
     register_websocket_routes,
 )
+from cc_deep_research.web_server_routes.operations_routes import register_operations_routes
 
 logger = logging.getLogger(__name__)
 
@@ -231,6 +232,7 @@ def register_routes(app: FastAPI) -> None:
     register_session_routes(app)
     register_misc_routes(app)
     register_websocket_routes(app)
+    register_operations_routes(app)
 
 
 def start_server(
