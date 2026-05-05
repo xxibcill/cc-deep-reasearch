@@ -157,6 +157,24 @@ def _has_resume_safe_checkpoint(session_dir: Path) -> bool:
         return False
 
 
+def _resolve_session_dir(telemetry_dir: Path, session_id: str) -> tuple[Path | None, str | None]:
+    """Resolve a session directory while preventing path traversal."""
+    if not session_id or "/" in session_id or "\\" in session_id:
+        return None, "Invalid session_id"
+
+    session_path = Path(session_id)
+    if session_path.is_absolute() or any(part in {"", ".", ".."} for part in session_path.parts):
+        return None, "Invalid session_id"
+
+    telemetry_root = telemetry_dir.resolve()
+    session_dir = (telemetry_root / session_id).resolve()
+    try:
+        session_dir.relative_to(telemetry_root)
+    except ValueError:
+        return None, "Invalid session_id"
+    return session_dir, None
+
+
 def evaluate_retention_candidates(
     policy: RetentionPolicy,
     telemetry_dir: Path | None = None,
@@ -274,7 +292,9 @@ def compact_session_telemetry(
         Dict with dry_run status, space_recovered bytes estimate, and any errors.
     """
     telemetry_dir = telemetry_dir or get_default_telemetry_dir()
-    session_dir = telemetry_dir / session_id
+    session_dir, error = _resolve_session_dir(telemetry_dir, session_id)
+    if error is not None or session_dir is None:
+        return {"success": False, "error": error or "Invalid session_id", "dry_run": dry_run}
 
     if not session_dir.exists():
         return {"success": False, "error": f"Session {session_id} not found", "dry_run": dry_run}
@@ -361,7 +381,9 @@ def restore_compacted_session(
         Dict with success status and any errors.
     """
     telemetry_dir = telemetry_dir or get_default_telemetry_dir()
-    session_dir = telemetry_dir / session_id
+    session_dir, error = _resolve_session_dir(telemetry_dir, session_id)
+    if error is not None or session_dir is None:
+        return {"success": False, "error": error or "Invalid session_id"}
 
     if not session_dir.exists():
         return {"success": False, "error": f"Session {session_id} not found"}
