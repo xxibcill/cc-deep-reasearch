@@ -639,6 +639,95 @@ export async function purgeArchivedSessions(
   return response.data;
 }
 
+export interface SessionAnnotation {
+  note: string;
+  author: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface SessionTriage {
+  session_id: string;
+  triage_status: string | null;
+  triage_owner: string | null;
+  triage_handoff_target: string | null;
+  last_reviewed_at: string | null;
+}
+
+export interface AddAnnotationResult {
+  annotation: SessionAnnotation;
+}
+
+export interface GetAnnotationsResult {
+  annotations: SessionAnnotation[];
+  count: number;
+}
+
+export async function addSessionAnnotation(
+  sessionId: string,
+  note: string,
+  author?: string
+): Promise<AddAnnotationResult> {
+  const response = await apiClient.post<AddAnnotationResult>(
+    `/sessions/${sessionId}/annotations`,
+    { note, author }
+  );
+  return response.data;
+}
+
+export async function updateSessionAnnotation(
+  sessionId: string,
+  annotationIndex: number,
+  note?: string,
+  author?: string | null
+): Promise<{ annotation: SessionAnnotation }> {
+  const response = await apiClient.patch<{ annotation: SessionAnnotation }>(
+    `/sessions/${sessionId}/annotations/${annotationIndex}`,
+    { note, author }
+  );
+  return response.data;
+}
+
+export async function deleteSessionAnnotation(
+  sessionId: string,
+  annotationIndex: number
+): Promise<{ deleted: boolean; remaining: number }> {
+  const response = await apiClient.delete<{ deleted: boolean; remaining: number }>(
+    `/sessions/${sessionId}/annotations/${annotationIndex}`
+  );
+  return response.data;
+}
+
+export async function getSessionAnnotations(sessionId: string): Promise<GetAnnotationsResult> {
+  const response = await apiClient.get<GetAnnotationsResult>(
+    `/sessions/${sessionId}/annotations`
+  );
+  return response.data;
+}
+
+export async function updateSessionTriage(
+  sessionId: string,
+  updates: {
+    triage_status?: string;
+    triage_owner?: string | null;
+    triage_handoff_target?: string | null;
+    last_reviewed_at?: string;
+  }
+): Promise<SessionTriage> {
+  const response = await apiClient.patch<SessionTriage>(
+    `/sessions/${sessionId}/triage`,
+    updates
+  );
+  return response.data;
+}
+
+export async function getSessionTriage(sessionId: string): Promise<SessionTriage> {
+  const response = await apiClient.get<SessionTriage>(
+    `/sessions/${sessionId}/triage`
+  );
+  return response.data;
+}
+
 export interface TraceBundleOptions {
   includePayload?: boolean;
   includeReport?: boolean;

@@ -11,6 +11,10 @@ from typing import Any
 from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
 
+from cc_deep_research.models.session import (
+    SessionAnnotation,
+    SessionTriageStatus,
+)
 from cc_deep_research.research_runs.models import (
     BulkSessionDeleteRequest,
     ResearchOutputFormat,
@@ -106,6 +110,7 @@ def _normalize_saved_session_summary(saved: dict[str, Any] | None) -> dict[str, 
         "has_report": bool(saved.get("has_report")),
         "label": _normalize_optional_string(saved.get("label")),
         "archived": bool(saved.get("archived")),
+        "triage_status": saved.get("triage_status"),
     }
 
 
@@ -149,6 +154,7 @@ def _build_session_list_row(
         "has_session_payload": saved_summary["has_session_payload"],
         "has_report": saved_summary["has_report"],
         "archived": saved_summary["archived"],
+        "triage_status": saved_summary.get("triage_status"),
     }
 
 
@@ -653,6 +659,247 @@ def register_session_routes(app: FastAPI) -> None:
             status_code=500,
         )
 
+    @app.post("/api/sessions/{session_id}/annotations")
+    async def add_session_annotation(
+        session_id: str,
+        request: dict,
+    ) -> JSONResponse:
+        """Add an annotation to a session."""
+        store = SessionStore()
+        if not store.session_exists(session_id):
+            return JSONResponse(
+                content={"error": f"Session not found: {session_id}"},
+                status_code=404,
+            )
+
+        note = request.get("note")
+        if not note or not isinstance(note, str) or not note.strip():
+            return JSONResponse(
+                content={"error": "note field is required and must be non-empty"},
+                status_code=400,
+            )
+
+        author = request.get("author")
+        if author is not None and not isinstance(author, str):
+            author = None
+
+        session = store.load_session(session_id)
+        if session is None:
+            return JSONResponse(
+                content={"error": f"Session not found: {session_id}"},
+                status_code=404,
+            )
+
+        annotations = session.metadata.get("annotations", [])
+        if not isinstance(annotations, list):
+            annotations = []
+
+        annotation = SessionAnnotation(
+            note=note.strip(),
+            author=author,
+            created_at=datetime.now(UTC),
+        )
+        annotation_data = annotation.model_dump(mode="json")
+        annotations.append(annotation_data)
+
+        metadata = dict(session.metadata)
+        metadata["annotations"] = annotations
+        session.metadata = metadata
+        store.save_session(session)
+
+        return JSONResponse(content={"annotation": annotation_data}, status_code=201)
+
+    @app.patch("/api/sessions/{session_id}/annotations/{annotation_index}")
+    async def update_session_annotation(
+        session_id: str,
+        annotation_index: int,
+        request: dict,
+    ) -> JSONResponse:
+        """Update a session annotation."""
+        store = SessionStore()
+        session = store.load_session(session_id)
+        if session is None:
+            return JSONResponse(
+                content={"error": f"Session not found: {session_id}"},
+                status_code=404,
+            )
+
+        annotations = session.metadata.get("annotations", [])
+        if not isinstance(annotations, list) or annotation_index < 0 or annotation_index >= len(annotations):
+            return JSONResponse(
+                content={"error": f"Annotation not found at index {annotation_index}"},
+                status_code=404,
+            )
+
+        note = request.get("note")
+        if note is not None:
+            if not isinstance(note, str) or not note.strip():
+                return JSONResponse(
+                    content={"error": "note must be a non-empty string"},
+                    status_code=400,
+                )
+            annotations[annotation_index]["note"] = note.strip()
+            annotations[annotation_index]["updated_at"] = datetime.now(UTC).isoformat()
+
+        author = request.get("author")
+        if author is not None:
+            annotations[annotation_index]["author"] = author if isinstance(author, str) else None
+
+        metadata = dict(session.metadata)
+        metadata["annotations"] = annotations
+        session.metadata = metadata
+        store.save_session(session)
+
+        ann = annotations[annotation_index]
+        if isinstance(ann.get("created_at"), datetime):
+            ann = dict(ann)
+            ann["created_at"] = ann["created_at"].isoformat()
+        if isinstance(ann.get("updated_at"), datetime):
+            ann["updated_at"] = ann["updated_at"].isoformat()
+        return JSONResponse(content={"annotation": ann})
+
+    @app.delete("/api/sessions/{session_id}/annotations/{annotation_index}")
+    async def delete_session_annotation(
+        session_id: str,
+        annotation_index: int,
+    ) -> JSONResponse:
+        """Delete a session annotation."""
+        store = SessionStore()
+        session = store.load_session(session_id)
+        if session is None:
+            return JSONResponse(
+                content={"error": f"Session not found: {session_id}"},
+                status_code=404,
+            )
+
+        annotations = session.metadata.get("annotations", [])
+        if not isinstance(annotations, list) or annotation_index < 0 or annotation_index >= len(annotations):
+            return JSONResponse(
+                content={"error": f"Annotation not found at index {annotation_index}"},
+                status_code=404,
+            )
+
+        annotations.pop(annotation_index)
+
+        metadata = dict(session.metadata)
+        metadata["annotations"] = annotations
+        session.metadata = metadata
+        store.save_session(session)
+
+        return JSONResponse(content={"deleted": True, "remaining": len(annotations)})
+
+    @app.get("/api/sessions/{session_id}/annotations")
+    async def get_session_annotations(session_id: str) -> JSONResponse:
+        """Get all annotations for a session."""
+        store = SessionStore()
+        session = store.load_session(session_id)
+        if session is None:
+            return JSONResponse(
+                content={"error": f"Session not found: {session_id}"},
+                status_code=404,
+            )
+
+        annotations = session.metadata.get("annotations", [])
+        if not isinstance(annotations, list):
+            annotations = []
+
+        serialized = []
+        for ann in annotations:
+            a = dict(ann) if isinstance(ann, dict) else ann
+            if isinstance(a.get("created_at"), datetime):
+                a["created_at"] = a["created_at"].isoformat()
+            if isinstance(a.get("updated_at"), datetime):
+                a["updated_at"] = a["updated_at"].isoformat()
+            serialized.append(a)
+
+        return JSONResponse(content={"annotations": serialized, "count": len(serialized)})
+
+    @app.patch("/api/sessions/{session_id}/triage")
+    async def update_session_triage(
+        session_id: str,
+        request: dict,
+    ) -> JSONResponse:
+        """Update triage status, owner, handoff target, and last_reviewed_at for a session."""
+        store = SessionStore()
+        session = store.load_session(session_id)
+        if session is None:
+            return JSONResponse(
+                content={"error": f"Session not found: {session_id}"},
+                status_code=404,
+            )
+
+        triage_status = request.get("triage_status")
+        if triage_status is not None:
+            try:
+                triage_status = SessionTriageStatus(triage_status)
+            except ValueError:
+                valid = [s.value for s in SessionTriageStatus]
+                return JSONResponse(
+                    content={"error": f"Invalid triage_status. Valid values: {valid}"},
+                    status_code=400,
+                )
+
+        triage_owner = request.get("triage_owner")
+        if triage_owner is not None and not isinstance(triage_owner, str):
+            triage_owner = None
+
+        triage_handoff_target = request.get("triage_handoff_target")
+        if triage_handoff_target is not None and not isinstance(triage_handoff_target, str):
+            triage_handoff_target = None
+
+        last_reviewed_at = request.get("last_reviewed_at")
+        if last_reviewed_at is not None and isinstance(last_reviewed_at, str):
+            try:
+                last_reviewed_at_dt = datetime.fromisoformat(last_reviewed_at)
+            except ValueError:
+                last_reviewed_at_dt = datetime.now(UTC)
+        else:
+            last_reviewed_at_dt = None
+
+        metadata = dict(session.metadata)
+        if triage_status is not None:
+            metadata["triage_status"] = triage_status.value
+        if triage_owner is not None:
+            metadata["triage_owner"] = triage_owner
+        if triage_handoff_target is not None:
+            metadata["triage_handoff_target"] = triage_handoff_target
+        if last_reviewed_at_dt is not None:
+            metadata["last_reviewed_at"] = last_reviewed_at_dt.isoformat()
+
+        session.metadata = metadata
+        store.save_session(session)
+
+        return JSONResponse(content={
+            "session_id": session_id,
+            "triage_status": metadata.get("triage_status"),
+            "triage_owner": metadata.get("triage_owner"),
+            "triage_handoff_target": metadata.get("triage_handoff_target"),
+            "last_reviewed_at": metadata.get("last_reviewed_at"),
+        })
+
+    @app.get("/api/sessions/{session_id}/triage")
+    async def get_session_triage(session_id: str) -> JSONResponse:
+        """Get triage metadata for a session."""
+        store = SessionStore()
+        session = store.load_session(session_id)
+        if session is None:
+            return JSONResponse(
+                content={"error": f"Session not found: {session_id}"},
+                status_code=404,
+            )
+
+        metadata = session.metadata or {}
+        last_reviewed = metadata.get("last_reviewed_at")
+        if isinstance(last_reviewed, datetime):
+            last_reviewed = last_reviewed.isoformat()
+        return JSONResponse(content={
+            "session_id": session_id,
+            "triage_status": metadata.get("triage_status"),
+            "triage_owner": metadata.get("triage_owner"),
+            "triage_handoff_target": metadata.get("triage_handoff_target"),
+            "last_reviewed_at": last_reviewed,
+        })
+
     @app.get("/api/sessions/{session_id}/events")
     async def get_session_events(
         session_id: str,
@@ -1105,6 +1352,8 @@ def register_session_routes(app: FastAPI) -> None:
         """Compact a session's telemetry files to free space."""
         from cc_deep_research.telemetry.retention import (
             CompactionLevel,
+        )
+        from cc_deep_research.telemetry.retention import (
             compact_session_telemetry as _compact,
         )
 

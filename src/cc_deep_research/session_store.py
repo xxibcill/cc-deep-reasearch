@@ -664,6 +664,7 @@ def _build_saved_session_summary(
         "has_report": isinstance(metadata, dict) and bool(metadata.get("analysis")),
         "archived": False,
         "archived_at": None,
+        "triage_status": metadata.get("triage_status") if isinstance(metadata, dict) else None,
     }
 
 
@@ -690,6 +691,7 @@ def _normalize_saved_session_summary(
         "has_report": bool(data.get("has_report")),
         "archived": bool(data.get("archived")),
         "archived_at": _normalize_optional_text(data.get("archived_at")),
+        "triage_status": data.get("triage_status"),
     }
 
 

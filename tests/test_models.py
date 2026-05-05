@@ -367,6 +367,11 @@ class TestResearchRunResult:
             "deep_analysis",
             "llm_routes",
             "prompts",
+            "annotations",
+            "triage_status",
+            "triage_owner",
+            "triage_handoff_target",
+            "last_reviewed_at",
         }
         assert session.metadata["providers"]["status"] == "unavailable"
         assert session.metadata["deep_analysis"]["status"] == "not_requested"
@@ -449,6 +454,11 @@ class TestResearchRunResult:
             "deep_analysis",
             "llm_routes",
             "prompts",
+            "annotations",
+            "triage_status",
+            "triage_owner",
+            "triage_handoff_target",
+            "last_reviewed_at",
         }
 
 

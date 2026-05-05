@@ -140,6 +140,23 @@ export interface Session {
   hasSessionPayload: boolean;
   hasReport: boolean;
   archived?: boolean;
+  triageStatus?: string | null;
+}
+
+export type TriageStatus = 'needs_review' | 'investigated' | 'blocked' | 'ready' | 'archived';
+
+export interface SessionAnnotation {
+  note: string;
+  author: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface SessionTriage {
+  triage_status: TriageStatus | null;
+  triage_owner: string | null;
+  triage_handoff_target: string | null;
+  last_reviewed_at: string | null;
 }
 
 export interface ApiServerMessage {

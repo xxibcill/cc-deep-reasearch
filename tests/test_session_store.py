@@ -225,6 +225,7 @@ class TestSessionStore:
                 "has_report": True,
                 "archived": False,
                 "archived_at": None,
+                "triage_status": None,
             }
         ]
 

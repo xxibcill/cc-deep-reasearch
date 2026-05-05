@@ -216,6 +216,26 @@ interface SessionTriageMeta {
 }
 
 function getSessionTriageMeta(session: Session): SessionTriageMeta {
+  if (session.triage_status && session.triage_status !== 'needs_review') {
+    const statusLabel: Record<string, string> = {
+      investigated: 'Investigated',
+      blocked: 'Blocked',
+      ready: 'Ready',
+      archived: 'Archived',
+    }
+    const statusVariant: Record<string, SessionTriageMeta['badgeVariant']> = {
+      investigated: 'success',
+      blocked: 'warning',
+      ready: 'success',
+      archived: 'outline',
+    }
+    return {
+      label: statusLabel[session.triage_status] ?? session.triage_status,
+      summary: `Triage status: ${session.triage_status}`,
+      badgeVariant: statusVariant[session.triage_status] ?? 'outline',
+    }
+  }
+
   if (session.active) {
     return {
       label: 'Active',
