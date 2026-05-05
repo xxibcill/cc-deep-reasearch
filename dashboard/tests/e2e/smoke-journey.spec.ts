@@ -8,20 +8,55 @@
  *   npx playwright test tests/e2e/smoke-journey.spec.ts
  */
 
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import {
   mockDashboardApis,
+  mockResearchRunApi,
   mockSessions,
 } from "./dashboard-mocks";
 import { SCENARIOS } from "./scenarios";
 import { setupTestPage } from "./test-fixtures";
 
-const SMOKE_TAG = "@smoke";
+async function mockSessionAnnotations(page: Page, sessionId: string) {
+  await page.route(`**/api/sessions/${sessionId}/annotations`, async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ annotations: [], count: 0 }),
+      });
+      return;
+    }
+
+    if (route.request().method() === "POST") {
+      const payload = route.request().postDataJSON() as {
+        note?: string;
+        author?: string;
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          annotation: {
+            note: payload.note ?? "",
+            author: payload.author ?? null,
+            created_at: "2026-05-05T12:00:00Z",
+            updated_at: null,
+          },
+        }),
+      });
+      return;
+    }
+
+    await route.fallback();
+  });
+}
 
 test.describe("Operator smoke suite", () => {
   test.beforeEach(async ({ page }) => {
     await mockDashboardApis(page);
+    await mockResearchRunApi(page);
   });
 
   // ── Journey 1: Launch or load a research session ────────────────────────────
@@ -88,16 +123,20 @@ test.describe("Operator smoke suite", () => {
     "operator can add an annotation to a session @smoke",
     async ({ page }) => {
       const healthyScenario = SCENARIOS.healthyCompletedRun;
+      const sessionId = healthyScenario.sessions[0].session_id;
       await setupTestPage(page, { customSessions: healthyScenario.sessions });
-      await page.goto(`/session/${healthyScenario.sessions[0].session_id}`);
+      await mockSessionAnnotations(page, sessionId);
+      await page.goto(`/session/${sessionId}`);
 
       // Find the annotation panel
       const annotationPanel = page.getByText(/annotation|notes?|sticky note/i).first();
       if (await annotationPanel.isVisible()) {
-        const noteInput = page.getByPlaceholder(/note|annotation/i);
+        const noteInput = page.getByPlaceholder("Add a note about this session...");
         if (await noteInput.isVisible()) {
-          await noteInput.pressSequentially("Reviewed the analysis. Findings look solid.");
-          await page.getByRole("button", { name: /^add$/i }).first().click();
+          await noteInput.fill("Reviewed the analysis. Findings look solid.");
+          const addNoteButton = page.getByRole("button", { name: /^add$/i }).first();
+          await expect(addNoteButton).toBeEnabled();
+          await addNoteButton.click();
           await expect(page.getByText(/Reviewed the analysis/i)).toBeVisible();
         }
       }
@@ -125,12 +164,12 @@ test.describe("Operator smoke suite", () => {
   // ── Journey 4: Compare against a known-good run ──────────────────────────────
 
   test(
-    "operator can open the compare page and select two sessions @smoke",
+    "operator can open a populated compare page @smoke",
     async ({ page }) => {
       await setupTestPage(page, { customSessions: mockSessions });
-      await page.goto("/compare");
+      await page.goto("/compare?a=research-report-003&b=research-deep-004");
 
-      await expect(page.getByRole('heading', { name: /compare/i })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Session Comparison" })).toBeVisible();
     }
   );
 
