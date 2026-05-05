@@ -24,6 +24,32 @@ class KnowledgePlanningResult:
     influence_summary: dict[str, Any]
 
 
+# Module-level singleton service for caching across callers
+_cached_service: KnowledgePlanningService | None = None
+_cached_config_path: Any | None = None
+_cached_service_class: type | None = None
+
+
+def _get_planning_service(config_path: Any | None = None) -> KnowledgePlanningService:
+    """Return a cached planning service instance."""
+    global _cached_service, _cached_config_path, _cached_service_class
+    import cc_deep_research.knowledge.planning_integration as _mod
+
+    current_class = _mod.KnowledgePlanningService
+    if (
+        _cached_service is None
+        or _cached_config_path != config_path
+        or _cached_service_class is not current_class
+    ):
+        try:
+            _cached_service = current_class(config_path)
+        except TypeError:
+            _cached_service = current_class()
+        _cached_config_path = config_path
+        _cached_service_class = current_class
+    return _cached_service
+
+
 class KnowledgePlanningService:
     """Service for integrating knowledge into research planning."""
 

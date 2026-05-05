@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import time
 
+import httpx
+
 from cc_deep_research.aggregation import ResultAggregator
 from cc_deep_research.config import Config
 from cc_deep_research.models.search import (
@@ -59,8 +61,7 @@ class SourceAggregationService:
 
         sorted_sources = sorted(
             sources,
-            key=lambda source: getattr(source, "relevance_score", 0)
-            or getattr(source, "score", 0),
+            key=lambda source: getattr(source, "relevance_score", 0) or getattr(source, "score", 0),
             reverse=True,
         )
         limited_sources = sorted_sources[:limit]
@@ -96,6 +97,9 @@ class SourceAggregationService:
         return aggregator.get_aggregated()
 
 
+_MAX_CONTENT_FETCH_CONCURRENCY = 10
+
+
 class SourceContentHydrator:
     """Populate top-ranked sources with fetched page content when available."""
 
@@ -109,6 +113,25 @@ class SourceContentHydrator:
         self._monitor = monitor
         self._content_cache: dict[str, str] = {}
         self._timeouts = build_parallel_collection_policy(config).timeouts
+        self._http_client: httpx.AsyncClient | None = None
+        self._semaphore = asyncio.Semaphore(_MAX_CONTENT_FETCH_CONCURRENCY)
+
+    async def _get_http_client(self) -> httpx.AsyncClient:
+        """Lazily create and return a shared HTTP client with connection pooling."""
+        if self._http_client is None:
+            self._http_client = httpx.AsyncClient(
+                timeout=httpx.Timeout(10.0, connect=5.0),
+                limits=httpx.Limits(
+                    max_connections=_MAX_CONTENT_FETCH_CONCURRENCY, max_keepalive_connections=5
+                ),
+            )
+        return self._http_client
+
+    async def close(self) -> None:
+        """Close the shared HTTP client."""
+        if self._http_client is not None:
+            await self._http_client.aclose()
+            self._http_client = None
 
     async def fetch_content_for_top_sources(
         self,
@@ -279,24 +302,10 @@ class SourceContentHydrator:
 
         P7-T4: Adds HTTP fallback with timeout and size limits.
         """
-        try:
-            import httpx
-        except ImportError:
-            self._monitor.log("httpx not available, cannot fetch content")
-            self._monitor.emit_event(
-                event_type="tool.failed",
-                category="tool",
-                name="http_fetch_fallback",
-                status="unavailable",
-                parent_event_id=tool_event_id,
-                metadata={"url": url, "error": "httpx not installed"},
-            )
-            return None
-
-        try:
-            start_time = time.time()
-            timeout = httpx.Timeout(10.0, connect=5.0)
-            async with httpx.AsyncClient(timeout=timeout) as client:
+        async with self._semaphore:
+            try:
+                client = await self._get_http_client()
+                start_time = time.time()
                 response = await client.get(
                     url,
                     headers={
@@ -315,6 +324,7 @@ class SourceContentHydrator:
                 content = content_bytes.decode("utf-8", errors="replace")
                 # Basic HTML-to-text cleanup
                 import re
+
                 content = re.sub(r"<script[^>]*>.*?</script>", "", content, flags=re.DOTALL)
                 content = re.sub(r"<style[^>]*>.*?</style>", "", content, flags=re.DOTALL)
                 content = re.sub(r"<[^>]+>", " ", content)
@@ -345,42 +355,42 @@ class SourceContentHydrator:
                 )
                 return content
 
-        except httpx.TimeoutException:
-            self._monitor.log(f"HTTP fetch timeout for {url}")
-            self._monitor.emit_event(
-                event_type="tool.failed",
-                category="tool",
-                name="http_fetch_fallback",
-                status="timeout",
-                parent_event_id=tool_event_id,
-                metadata={"url": url, "error": "timeout"},
-            )
-            self._monitor.record_tool_call(
-                tool_name="http_fetch_fallback",
-                status="timeout",
-                duration_ms=0,
-                url=url,
-                error="timeout",
-            )
-            return None
-        except Exception as exc:
-            self._monitor.log(f"HTTP fetch failed for {url}: {exc}")
-            self._monitor.emit_event(
-                event_type="tool.failed",
-                category="tool",
-                name="http_fetch_fallback",
-                status="failed",
-                parent_event_id=tool_event_id,
-                metadata={"url": url, "error": str(exc)},
-            )
-            self._monitor.record_tool_call(
-                tool_name="http_fetch_fallback",
-                status="error",
-                duration_ms=0,
-                url=url,
-                error=str(exc),
-            )
-            return None
+            except httpx.TimeoutException:
+                self._monitor.log(f"HTTP fetch timeout for {url}")
+                self._monitor.emit_event(
+                    event_type="tool.failed",
+                    category="tool",
+                    name="http_fetch_fallback",
+                    status="timeout",
+                    parent_event_id=tool_event_id,
+                    metadata={"url": url, "error": "timeout"},
+                )
+                self._monitor.record_tool_call(
+                    tool_name="http_fetch_fallback",
+                    status="timeout",
+                    duration_ms=0,
+                    url=url,
+                    error="timeout",
+                )
+                return None
+            except Exception as exc:
+                self._monitor.log(f"HTTP fetch failed for {url}: {exc}")
+                self._monitor.emit_event(
+                    event_type="tool.failed",
+                    category="tool",
+                    name="http_fetch_fallback",
+                    status="failed",
+                    parent_event_id=tool_event_id,
+                    metadata={"url": url, "error": str(exc)},
+                )
+                self._monitor.record_tool_call(
+                    tool_name="http_fetch_fallback",
+                    status="error",
+                    duration_ms=0,
+                    url=url,
+                    error=str(exc),
+                )
+                return None
 
 
 class SourceCollectionService:

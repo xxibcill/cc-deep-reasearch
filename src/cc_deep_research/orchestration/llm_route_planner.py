@@ -30,21 +30,25 @@ class LLMRoutePlanner:
     """
 
     # Known agent IDs that need LLM routes
-    KNOWN_AGENT_IDS = frozenset([
-        "analyzer",
-        "deep_analyzer",
-        "report_quality_evaluator",
-        "reporter",
-        "validator",
-        "default",
-    ])
+    KNOWN_AGENT_IDS = frozenset(
+        [
+            "analyzer",
+            "deep_analyzer",
+            "report_quality_evaluator",
+            "reporter",
+            "validator",
+            "default",
+        ]
+    )
 
     # Agents that benefit from fast API transports (low latency)
-    FAST_API_PREFERRED_AGENTS = frozenset([
-        "analyzer",
-        "deep_analyzer",
-        "validator",
-    ])
+    FAST_API_PREFERRED_AGENTS = frozenset(
+        [
+            "analyzer",
+            "deep_analyzer",
+            "validator",
+        ]
+    )
 
     def __init__(self, config: Config) -> None:
         """Initialize the route planner.
@@ -54,6 +58,7 @@ class LLMRoutePlanner:
         """
         self._config = config
         self._llm_config = config.llm
+        self._availability_cache: dict[LLMTransportType, bool] | None = None
 
     def plan_routes(self, _strategy: StrategyResult) -> LLMPlanModel:
         """Create a per-agent LLM route plan based on availability.
@@ -64,7 +69,7 @@ class LLMRoutePlanner:
         Returns:
             LLMPlanModel with per-agent route assignments.
         """
-        availability = self._inspect_availability()
+        availability = self._get_availability()
 
         # Build the fallback order based on availability
         fallback_order = self._build_fallback_order(availability)
@@ -98,6 +103,13 @@ class LLMRoutePlanner:
             fallback_order=fallback_order,
             default_route=default_route,
         )
+
+    def _get_availability(self) -> dict[LLMTransportType, bool]:
+        """Return cached availability map, computing it once per planner instance."""
+        if self._availability_cache is not None:
+            return self._availability_cache
+        self._availability_cache = self._inspect_availability()
+        return self._availability_cache
 
     def _inspect_availability(self) -> dict[LLMTransportType, bool]:
         """Inspect availability of each transport.

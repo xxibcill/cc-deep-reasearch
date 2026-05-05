@@ -34,7 +34,6 @@ CREDIBILITY_DOMAINS: dict[str, tuple[float, str]] = {
     "medrxiv.org": (0.90, "Preprint"),
     "jstor.org": (0.92, "Academic"),
     "scholar.google.com": (0.90, "Academic"),
-
     # Tier 2: Educational / Research Institutions (0.8-0.9)
     "harvard.edu": (0.88, "Academic"),
     "stanford.edu": (0.88, "Academic"),
@@ -47,7 +46,6 @@ CREDIBILITY_DOMAINS: dict[str, tuple[float, str]] = {
     "webmd.com": (0.75, "Medical Reference"),
     "healthline.com": (0.72, "Medical Reference"),
     "medicalnewstoday.com": (0.70, "Medical News"),
-
     # Tier 3: Reputable News & Media (0.6-0.8)
     "reuters.com": (0.78, "News Agency"),
     "apnews.com": (0.78, "News Agency"),
@@ -61,12 +59,10 @@ CREDIBILITY_DOMAINS: dict[str, tuple[float, str]] = {
     "npr.org": (0.75, "News"),
     "forbes.com": (0.65, "Business News"),
     "bloomberg.com": (0.68, "Business News"),
-
     # Tier 4: Reference & General (0.5-0.7)
     "wikipedia.org": (0.65, "Encyclopedia"),
     "britannica.com": (0.70, "Encyclopedia"),
     "investopedia.com": (0.65, "Reference"),
-
     # Tier 5: Blogs & Commercial (0.3-0.5)
     "medium.com": (0.45, "Blog Platform"),
     "substack.com": (0.45, "Blog Platform"),
@@ -88,6 +84,22 @@ DEFAULT_TLD_SCORES: dict[str, tuple[float, str]] = {
     ".info": (0.35, "Information"),
     ".blog": (0.35, "Blog"),
 }
+
+# TLD suffix lookup — O(1) instead of O(m) iteration per call
+_TLD_SUFFIX_MAP: dict[str, tuple[float, str]] = {
+    _tld.lstrip("."): _score_type for _tld, _score_type in DEFAULT_TLD_SCORES.items()
+}
+
+# Module-level cached scorer (stateless — _seen_domains is per-session only)
+_cached_scorer: "SourceCredibilityScorer | None" = None
+
+
+def _get_cached_scorer() -> "SourceCredibilityScorer":
+    """Return the cached scorer instance."""
+    global _cached_scorer
+    if _cached_scorer is None:
+        _cached_scorer = SourceCredibilityScorer()
+    return _cached_scorer
 
 
 class SourceCredibilityScorer:
@@ -134,21 +146,20 @@ class SourceCredibilityScorer:
         Returns:
             Tuple of (credibility_score, source_type).
         """
-        # Check exact match
-        if domain in CREDIBILITY_DOMAINS:
-            return CREDIBILITY_DOMAINS[domain]
+        # Check exact match first
+        if score_type := CREDIBILITY_DOMAINS.get(domain):
+            return score_type
 
-        # Check for subdomain matches (e.g., news.harvard.edu -> harvard.edu)
+        # Check subdomain matches — O(n) where n ≤ 5 (max domain depth)
         parts = domain.split(".")
         for i in range(len(parts) - 1):
-            partial = ".".join(parts[i:])
-            if partial in CREDIBILITY_DOMAINS:
-                return CREDIBILITY_DOMAINS[partial]
+            suffix = ".".join(parts[i:])
+            if score_type := CREDIBILITY_DOMAINS.get(suffix):
+                return score_type
 
-        # Check TLD defaults
-        for tld, (score, source_type) in DEFAULT_TLD_SCORES.items():
-            if domain.endswith(tld):
-                return (score, source_type)
+        # TLD fallback — O(1) dict lookup instead of O(m) iteration
+        if score_type := _TLD_SUFFIX_MAP.get(parts[-1]):
+            return score_type
 
         # Unknown domain - low default
         return (0.40, "Web Source")
@@ -305,12 +316,7 @@ class SourceCredibilityScorer:
 
         # Calculate overall score with weights
         # Credibility is most important, then relevance
-        overall = (
-            credibility * 0.40 +
-            relevance * 0.30 +
-            freshness * 0.15 +
-            diversity * 0.15
-        )
+        overall = credibility * 0.40 + relevance * 0.30 + freshness * 0.15 + diversity * 0.15
 
         return QualityScore(
             credibility=credibility,
