@@ -33,7 +33,7 @@ test.describe("Operator smoke suite", () => {
 
       await page.getByLabel("Research Query").fill("What is the current state of fusion energy research?");
 
-      await page.getByRole("button", { name: /start/i }).click();
+      await page.getByRole("button", { name: /start standard research pass/i }).click();
 
       // Should navigate to the session monitor page
       await expect(page).toHaveURL(/\/session\/.*\/monitor/);
@@ -65,7 +65,7 @@ test.describe("Operator smoke suite", () => {
       await setupTestPage(page, { customSessions: liveScenario.sessions });
       await page.goto(`/session/${liveScenario.sessions[0].session_id}/monitor`);
 
-      await expect(page.getByText(/Live/i)).toBeVisible();
+      await expect(page.getByText(/Live telemetry/i)).toBeVisible();
       await expect(page.getByText(/Radar/i)).toBeVisible();
     }
   );
@@ -96,8 +96,8 @@ test.describe("Operator smoke suite", () => {
       if (await annotationPanel.isVisible()) {
         const noteInput = page.getByPlaceholder(/note|annotation/i);
         if (await noteInput.isVisible()) {
-          await noteInput.fill("Reviewed the analysis. Findings look solid.");
-          await page.getByRole("button", { name: /add|save/i }).first().click();
+          await noteInput.pressSequentially("Reviewed the analysis. Findings look solid.");
+          await page.getByRole("button", { name: /^add$/i }).first().click();
           await expect(page.getByText(/Reviewed the analysis/i)).toBeVisible();
         }
       }
@@ -111,12 +111,12 @@ test.describe("Operator smoke suite", () => {
       await setupTestPage(page, { customSessions: healthyScenario.sessions });
       await page.goto(`/session/${healthyScenario.sessions[0].session_id}`);
 
-      const triageSection = page.getByText(/triage|status/i).first();
+      const triageSection = page.getByText(/triage status/i).first();
       if (await triageSection.isVisible()) {
         const statusButton = page.getByRole("button", { name: /needs review|investigated|blocked|ready/i }).first();
         if (await statusButton.isVisible()) {
           await statusButton.click();
-          await expect(page.getByText(/triage/i)).toBeVisible();
+          await expect(page.getByRole('heading', { name: 'Triage' })).toBeVisible();
         }
       }
     }
@@ -130,7 +130,7 @@ test.describe("Operator smoke suite", () => {
       await setupTestPage(page, { customSessions: mockSessions });
       await page.goto("/compare");
 
-      await expect(page.getByText(/compare/i)).toBeVisible();
+      await expect(page.getByRole('heading', { name: /compare/i })).toBeVisible();
     }
   );
 
@@ -157,7 +157,7 @@ test.describe("Operator smoke suite", () => {
       await setupTestPage(page, { customSessions: healthyScenario.sessions });
       await page.goto(`/session/${healthyScenario.sessions[0].session_id}/report`);
 
-      await expect(page.getByText(/report/i)).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Session Report' })).toBeVisible();
     }
   );
 
