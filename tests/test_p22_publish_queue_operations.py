@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
-
 from cc_deep_research.content_gen.models import (
     PublishItem,
     PublishReadinessState,
-    DraftLaneDecision,
 )
 from cc_deep_research.content_gen.models.publish_queue import (
     PublishBlocker,

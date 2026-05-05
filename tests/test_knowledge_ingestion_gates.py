@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from unittest.mock import MagicMock
-
-import pytest
 
 from cc_deep_research.knowledge import KnowledgeNode, NodeKind
 from cc_deep_research.knowledge.ingestion_gates import (
     BatchValidationResult,
-    CheckResult,
     IngestCheck,
     IngestGate,
-    IngestValidationResult,
     validate_batch,
     validate_record,
 )

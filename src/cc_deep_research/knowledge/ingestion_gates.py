@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from cc_deep_research.knowledge import KnowledgeNode, NodeKind
+from cc_deep_research.models.session import ResearchSession
 
 
 class IngestCheck(StrEnum):
@@ -123,7 +124,7 @@ def validate_record(node: KnowledgeNode) -> IngestValidationResult:
         label = node.label or ""
         words = label.split()
         word_count = len([w for w in words if w.strip()])
-        unique_word_ratio = len(set(w.lower() for w in words)) / max(len(words), 1)
+        unique_word_ratio = len({w.lower() for w in words}) / max(len(words), 1)
 
         if len(label) < 10:
             check_results.append(CheckResult(
@@ -260,7 +261,7 @@ class IngestGate:
         """Validate a list of nodes before ingestion."""
         return validate_batch(nodes)
 
-    def validate_session_for_ingest(self, session) -> BatchValidationResult:
+    def validate_session_for_ingest(self, session: ResearchSession) -> BatchValidationResult:
         """Validate what would be ingested from a research session.
 
         Simulates the node creation from ingest_session without writing to graph.
@@ -331,7 +332,7 @@ class IngestGate:
 
         return validate_batch(nodes_to_validate)
 
-    def dry_run_ingest(self, session) -> BatchValidationResult:
+    def dry_run_ingest(self, session: ResearchSession) -> BatchValidationResult:
         """Alias for validate_session_for_ingest for API compatibility."""
         return self.validate_session_for_ingest(session)
 

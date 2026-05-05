@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from cc_deep_research.knowledge import KnowledgeNode, NodeKind
 from cc_deep_research.knowledge.graph_index import GraphIndex
 from cc_deep_research.knowledge.retrieval import (
@@ -66,7 +64,7 @@ class TestRetrievalExplanation:
 
     def test_sanitization_truncates_long_values(self, tmp_path: Path) -> None:
         """Selection reasons are truncated to max 200 chars."""
-        from cc_deep_research.knowledge.vault import init_vault, graph_sqlite_path
+        from cc_deep_research.knowledge.vault import graph_sqlite_path, init_vault
         init_vault(tmp_path)
 
         db = graph_sqlite_path(tmp_path)
@@ -89,7 +87,7 @@ class TestRetrievalExplanation:
 
     def test_bounded_payload_excludes_excessive_nodes_excluded(self, tmp_path: Path) -> None:
         """When total_candidates > 10, nodes_excluded is excluded."""
-        from cc_deep_research.knowledge.vault import init_vault, graph_sqlite_path
+        from cc_deep_research.knowledge.vault import graph_sqlite_path, init_vault
         init_vault(tmp_path)
 
         db = graph_sqlite_path(tmp_path)
@@ -117,7 +115,7 @@ class TestRetrievalExplanation:
 
     def test_backward_compatibility_existing_callers(self, tmp_path: Path) -> None:
         """Existing code using context attributes still works."""
-        from cc_deep_research.knowledge.vault import init_vault, graph_sqlite_path
+        from cc_deep_research.knowledge.vault import graph_sqlite_path, init_vault
         init_vault(tmp_path)
 
         db = graph_sqlite_path(tmp_path)
@@ -140,7 +138,7 @@ class TestRetrievalExplanation:
 
     def test_selection_reasons_contain_matched_terms(self, tmp_path: Path) -> None:
         """Selection reasons show which terms matched."""
-        from cc_deep_research.knowledge.vault import init_vault, graph_sqlite_path
+        from cc_deep_research.knowledge.vault import graph_sqlite_path, init_vault
         init_vault(tmp_path)
 
         db = graph_sqlite_path(tmp_path)
@@ -162,7 +160,7 @@ class TestRetrievalExplanation:
 
     def test_score_factors_reflect_term_overlap(self, tmp_path: Path) -> None:
         """Score factors are higher when more terms match."""
-        from cc_deep_research.knowledge.vault import init_vault, graph_sqlite_path
+        from cc_deep_research.knowledge.vault import graph_sqlite_path, init_vault
         init_vault(tmp_path)
 
         db = graph_sqlite_path(tmp_path)
@@ -194,7 +192,7 @@ class TestRetrievalExplanation:
 
     def test_nodes_excluded_limited_when_candidates_small(self, tmp_path: Path) -> None:
         """When candidates <= 10, nodes_excluded has up to 5 entries."""
-        from cc_deep_research.knowledge.vault import init_vault, graph_sqlite_path
+        from cc_deep_research.knowledge.vault import graph_sqlite_path, init_vault
         init_vault(tmp_path)
 
         db = graph_sqlite_path(tmp_path)
@@ -226,10 +224,9 @@ class TestRetrievalExplanation:
         """Test the /api/knowledge/retrieval/explain endpoint."""
         from fastapi.testclient import TestClient
 
-        from cc_deep_research.web_server import create_app
-
         # Create vault and graph data
         from cc_deep_research.knowledge.vault import init_vault
+        from cc_deep_research.web_server import create_app
         init_vault(tmp_path)
 
         from cc_deep_research.knowledge.vault import graph_sqlite_path

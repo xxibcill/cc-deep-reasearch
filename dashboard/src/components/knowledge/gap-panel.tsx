@@ -19,7 +19,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@/components/ui/select-dropdown';
 import { AlertTriangle, CheckCircle, Clock, RefreshCw, Search, XCircle, Target } from 'lucide-react';
 
 const GAP_REASON_LABELS: Record<string, { label: string; color: string }> = {

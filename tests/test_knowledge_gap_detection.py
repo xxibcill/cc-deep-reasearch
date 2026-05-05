@@ -5,8 +5,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-import pytest
-
 from cc_deep_research.knowledge import (
     EdgeKind,
     KnowledgeEdge,
@@ -29,7 +27,6 @@ from cc_deep_research.knowledge.gap_detection import (
     detect_gaps,
 )
 from cc_deep_research.knowledge.graph_index import GraphIndex
-
 
 # ---------------------------------------------------------------------------
 # Helper data classes

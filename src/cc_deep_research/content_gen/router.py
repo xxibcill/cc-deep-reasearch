@@ -1606,14 +1606,15 @@ def register_content_gen_routes(
     # QC Issues (P22-T1)
     # ------------------------------------------------------------------
 
-    from cc_deep_research.content_gen.storage import QCIssueStore
+    from datetime import UTC as _dt_utc
+
     from cc_deep_research.content_gen.models import (
         QCIssue,
         QCIssueCategory,
         QCIssueSeverity,
         QCIssueStatus,
     )
-    from datetime import UTC as _dt_utc
+    from cc_deep_research.content_gen.storage import QCIssueStore
 
     qc_issue_store = QCIssueStore()
 
@@ -1828,8 +1829,8 @@ def register_content_gen_routes(
     # Reusable assets (P22-T4)
     # ------------------------------------------------------------------
 
+    from cc_deep_research.content_gen.models import ReusableAsset, ReusableAssetType
     from cc_deep_research.content_gen.storage import ReusableAssetStore
-    from cc_deep_research.content_gen.models import ReusableAssetType
 
     asset_store = ReusableAssetStore()
 

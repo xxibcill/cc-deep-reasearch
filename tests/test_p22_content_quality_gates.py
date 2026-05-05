@@ -2,23 +2,19 @@
 
 from __future__ import annotations
 
-import pytest
-
 from cc_deep_research.content_gen.models import (
-    PublishItem,
     HumanQCGate,
-    ScriptingContext,
-    PackagingOutput,
-    ReleaseState,
-    PublishReadinessState,
-    QualityEvaluation,
     IterationState,
+    PackagingOutput,
+    PublishItem,
+    PublishReadinessState,
+    ReleaseState,
+    RewriteActionType,
+    ScriptingContext,
     TargetedRevisionPlan,
     TargetedRewriteAction,
-    RewriteActionType,
 )
-from cc_deep_research.content_gen.models.brief import ManagedOpportunityBrief, BriefRevision
-from cc_deep_research.content_gen.models.shared import ReleaseState as RS
+from cc_deep_research.content_gen.models.brief import ManagedOpportunityBrief
 
 
 class TestQualityGateCheckContracts:
@@ -54,9 +50,8 @@ class TestQualityGateCheckContracts:
 
     def test_packaging_output_required_fields(self) -> None:
         """Packaging output must have platform packages with captions."""
-        from cc_deep_research.content_gen.quality_gates import check_packaging_output_complete
-
         from cc_deep_research.content_gen.models import PlatformPackage
+        from cc_deep_research.content_gen.quality_gates import check_packaging_output_complete
 
         valid = PackagingOutput(
             idea_id="idea-001",
@@ -145,8 +140,8 @@ class TestQualityGateCheckContracts:
 
     def test_brief_approval_gate(self) -> None:
         """Brief must be in APPROVED lifecycle state for production."""
-        from cc_deep_research.content_gen.quality_gates import check_brief_approved_for_production
         from cc_deep_research.content_gen.models.shared import BriefLifecycleState
+        from cc_deep_research.content_gen.quality_gates import check_brief_approved_for_production
 
         # Approved brief passes
         brief_approved = ManagedOpportunityBrief(

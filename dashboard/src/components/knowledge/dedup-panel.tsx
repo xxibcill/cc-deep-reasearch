@@ -29,7 +29,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@/components/ui/select-dropdown';
 import { AlertCircle, CheckCircle, Clock, Merge, XCircle, MoreHorizontal, RefreshCw } from 'lucide-react';
 
 interface DedupPanelProps {

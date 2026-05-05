@@ -4,18 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from cc_deep_research.knowledge import (
     EdgeKind,
-    GraphSnapshot,
     KnowledgeEdge,
     KnowledgeNode,
     NodeKind,
 )
 from cc_deep_research.knowledge.graph_index import GraphIndex
 from cc_deep_research.knowledge.health import (
-    GraphHealthMetrics,
     compute_graph_metrics,
     duplicate_node_candidates,
     orphaned_nodes,

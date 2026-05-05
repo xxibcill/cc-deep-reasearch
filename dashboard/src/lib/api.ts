@@ -1218,7 +1218,7 @@ function normalizeRadarSource(raw: ApiRadarSource): RadarSource {
 }
 
 function normalizeOpportunity(raw: ApiOpportunity): Opportunity {
-  const rawAny = raw as Record<string, unknown>;
+  const rawAny = raw as unknown as Record<string, unknown>;
   return {
     id: raw.id,
     title: raw.title,

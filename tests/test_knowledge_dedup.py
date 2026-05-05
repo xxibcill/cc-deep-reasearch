@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import json
-import tempfile
 from pathlib import Path
 
 import pytest
 
 from cc_deep_research.knowledge import (
     EdgeKind,
-    KnowledgeEdge,
     KnowledgeNode,
     NodeKind,
 )
@@ -21,17 +18,15 @@ from cc_deep_research.knowledge.dedup import (
     _build_label_normalized_index,
     _build_url_index,
     _combined_text_similarity,
-    _levenshtein_distance,
     _levenshtein_similarity,
+    _ngram_similarity,
     _normalize_claim_text,
     _normalize_title,
-    _ngram_similarity,
     _url_stem,
     find_duplicate_candidates,
     merge_nodes,
 )
 from cc_deep_research.knowledge.graph_index import GraphIndex
-
 
 # ---------------------------------------------------------------------------
 # Text normalization tests

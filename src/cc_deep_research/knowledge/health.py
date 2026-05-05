@@ -146,21 +146,21 @@ def compute_graph_metrics(index: GraphIndex) -> GraphHealthMetrics:
 
     # Source-backed claim ratio
     # Count claims that are targets of CITED edges
-    cited_claim_ids = set(
+    cited_claim_ids = {
         row["target_id"]
         for row in index._c.execute(
             "SELECT DISTINCT target_id FROM edges WHERE kind = ?",
             (EdgeKind.CITED.value,)
         ).fetchall()
-    )
+    }
 
-    claim_ids = set(
+    claim_ids = {
         row["id"]
         for row in index._c.execute(
             "SELECT id FROM nodes WHERE kind = ?",
             (NodeKind.CLAIM.value,)
         ).fetchall()
-    )
+    }
 
     claims_with_sources = len(cited_claim_ids & claim_ids)
     total_claims = len(claim_ids)

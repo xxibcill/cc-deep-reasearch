@@ -310,7 +310,7 @@ def _detect_contradictory_claims_gaps(
     # Build node_id -> label map
     node_labels: dict[str, str] = {n.id: n.label or "unknown" for n in nodes}
 
-    seen_pairs: set[tuple[str, str]] = set()
+    seen_pairs: set[tuple[str, ...]] = set()
     for source_id, target_ids in contradicts_map.items():
         for target_id in target_ids:
             pair = tuple(sorted([source_id, target_id]))

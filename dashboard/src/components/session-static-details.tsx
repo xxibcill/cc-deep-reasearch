@@ -304,7 +304,7 @@ function NextActions({
 }) {
   const isActive = runStatus === 'running';
   const isTerminal = runStatus === 'completed' || runStatus === 'failed' || runStatus === 'cancelled';
-  const isFailedOrInterrupted = runStatus === 'failed' || runStatus === 'cancelled' || runStatus === 'interrupted';
+  const isFailedOrInterrupted = runStatus === 'failed' || runStatus === 'cancelled';
 
   return (
     <div className="space-y-3">

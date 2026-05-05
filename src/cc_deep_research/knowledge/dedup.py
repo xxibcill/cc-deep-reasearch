@@ -382,7 +382,7 @@ def find_duplicate_candidates(index: GraphIndex) -> list[DuplicateCandidate]:
     if not all_nodes:
         return candidates
 
-    seen_pairs: set[tuple[str, str]] = set()
+    seen_pairs: set[tuple[str, ...]] = set()
 
     def add_candidate(
         node_a: KnowledgeNode,
@@ -610,7 +610,7 @@ def merge_nodes(
         kept_id, removed_id = node_b_id, node_a_id
     else:
         kept_node = node_a
-        removed_node = node_a_id
+        removed_node = node_b
         kept_id, removed_id = node_a_id, node_b_id
 
     # Get the actual removed node object

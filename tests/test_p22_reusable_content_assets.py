@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import pytest
-
 from cc_deep_research.content_gen.models import (
+    AssetProvenanceLink,
     ReusableAsset,
     ReusableAssetType,
-    AssetProvenanceLink,
 )
 
 

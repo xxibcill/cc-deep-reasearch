@@ -7,9 +7,8 @@ from pathlib import Path
 from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
 
-from cc_deep_research.knowledge import (
-    NodeKind,
-)
+from cc_deep_research.knowledge import NodeKind
+from cc_deep_research.knowledge.dedup import merge_nodes
 from cc_deep_research.knowledge.graph_index import GraphIndex
 from cc_deep_research.knowledge.ingest import ingest_session
 from cc_deep_research.knowledge.planning_integration import KnowledgePlanningService
@@ -652,9 +651,8 @@ def register_knowledge_routes(app: FastAPI) -> None:
         P23-T2: Returns all duplicate candidates for review, optionally filtered by status.
         """
         from cc_deep_research.knowledge.dedup import (
-            DuplicateCandidateStore,
-            DuplicateMatchReason,
             CandidateStatus,
+            DuplicateCandidateStore,
             find_duplicate_candidates,
         )
 
@@ -875,13 +873,13 @@ def register_knowledge_routes(app: FastAPI) -> None:
         status: str | None = Query(default=None, description="Filter by gap status"),
     ) -> JSONResponse:
         """List all gap candidates with optional status filter.
-    
+
         P23-T4: Returns all gaps, optionally filtered by status.
         """
-        from cc_deep_research.knowledge.gap_detection import GapCandidate, GapStore, GapStatus
-    
+        from cc_deep_research.knowledge.gap_detection import GapStatus, GapStore
+
         store = GapStore()
-    
+
         if status:
             try:
                 status_enum = GapStatus(status.lower())
@@ -893,46 +891,46 @@ def register_knowledge_routes(app: FastAPI) -> None:
                 )
         else:
             gaps = store.get_gaps()
-    
+
         return JSONResponse(content={
             "gaps": [g.to_dict() for g in gaps],
             "total": len(gaps),
         })
-    
+
     @app.get("/api/knowledge/gaps/{gap_id}")
     async def get_gap(gap_id: str) -> JSONResponse:
         """Get details of a specific gap candidate."""
         from cc_deep_research.knowledge.gap_detection import GapStore
-    
+
         store = GapStore()
         gap = store.gap(gap_id)
-    
+
         if gap is None:
             return JSONResponse(
                 content={"error": f"Gap not found: {gap_id}"},
                 status_code=404,
             )
-    
+
         return JSONResponse(content=gap.to_dict())
-    
+
     @app.post("/api/knowledge/gaps/{gap_id}/status")
     async def update_gap_status(
         gap_id: str,
         body: dict,
     ) -> JSONResponse:
         """Update gap status (accept/dismiss/defer/resolve).
-    
+
         Body: {"status": "accepted"|"dismissed"|"deferred"|"resolved"}
         """
-        from cc_deep_research.knowledge.gap_detection import GapStore, GapStatus
-    
+        from cc_deep_research.knowledge.gap_detection import GapStatus, GapStore
+
         new_status_str = body.get("status")
         if not new_status_str:
             return JSONResponse(
                 content={"error": "status field is required"},
                 status_code=400,
             )
-    
+
         try:
             new_status = GapStatus(new_status_str.lower())
         except ValueError:
@@ -941,75 +939,78 @@ def register_knowledge_routes(app: FastAPI) -> None:
                 content={"error": f"Invalid status. Must be one of: {valid}"},
                 status_code=400,
             )
-    
+
         store = GapStore()
         gap = store.gap(gap_id)
-    
+
         if gap is None:
             return JSONResponse(
                 content={"error": f"Gap not found: {gap_id}"},
                 status_code=404,
             )
-    
+
         success = store.update_status(gap_id, new_status)
-    
+
         return JSONResponse(content={
             "gap_id": gap_id,
             "status": new_status.value,
             "updated": success,
         })
-    
+
     @app.post("/api/knowledge/gaps/detect")
     async def run_gap_detection() -> JSONResponse:
         """Run gap detection over the current graph.
-    
+
         P23-T4: Scans the graph for gap signals and returns newly detected gaps.
         Previously detected gaps are preserved; only truly new gaps are added.
         """
-        from cc_deep_research.knowledge.gap_detection import GapCandidate, GapStore, GapStatus, detect_gaps
-    
+        from cc_deep_research.knowledge.gap_detection import (
+            GapStatus,
+            GapStore,
+            detect_gaps,
+        )
+
         index = _open_graph_index()
         if index is None:
             return JSONResponse(
                 content={"error": "Vault not initialized or graph index not found"},
                 status_code=404,
             )
-    
+
         # Run detection
         new_gaps = detect_gaps(index)
-    
+
         # Load store and add only genuinely new gaps
         store = GapStore()
         existing_detected_ids = {g.id for g in store.get_gaps(GapStatus.DETECTED)}
         existing_accepted_ids = {g.id for g in store.get_accepted_gaps()}
-    
+
         added = 0
         for gap in new_gaps:
             if gap.id in existing_detected_ids or gap.id in existing_accepted_ids:
                 continue
             store.add_gap(gap)
             added += 1
-    
+
         return JSONResponse(content={
             "detected": len(new_gaps),
             "added": added,
             "total_gaps": len(store.get_gaps()),
         })
-    
+
     @app.get("/api/knowledge/gaps/accepted")
     async def list_accepted_gaps() -> JSONResponse:
         """Get accepted gaps ready for research follow-up."""
         from cc_deep_research.knowledge.gap_detection import GapStore
-    
+
         store = GapStore()
         gaps = store.get_accepted_gaps()
-    
+
         return JSONResponse(content={
             "gaps": [g.to_dict() for g in gaps],
             "total": len(gaps),
         })
-    
-    
-    
+
+
+
     __all__ = ["register_knowledge_routes"]
-    
