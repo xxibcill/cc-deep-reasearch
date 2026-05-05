@@ -257,20 +257,19 @@ const useDashboardStore = create<DashboardState>((set) => ({
   connected: false,
   liveStreamStatus: DEFAULT_LIVE_STREAM_STATUS,
   selectedEvent: null,
-  replaceEvents: (events) => {
-    const newEventIdSet = new Set<string>();
-    for (const event of events) {
-      newEventIdSet.add(event.eventId);
-    }
-    return { events: sortEvents(events), eventIdSet: newEventIdSet };
-  },
+  replaceEvents: (events) =>
+    set(() => {
+      const newEventIdSet = new Set<string>();
+      for (const event of events) {
+        newEventIdSet.add(event.eventId);
+      }
+      return { events: sortEvents(events), eventIdSet: newEventIdSet };
+    }),
   appendEvent: (event) =>
     set((state) => {
       if (state.eventIdSet.has(event.eventId)) {
         return {};
       }
-      const newEventIdSet = new Set(state.eventIdSet);
-      newEventIdSet.add(event.eventId);
       const newEvents = mergeEvents(state.events, [event], {
         limit: MAX_BUFFERED_EVENTS,
       });

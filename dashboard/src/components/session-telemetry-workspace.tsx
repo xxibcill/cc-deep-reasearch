@@ -97,11 +97,13 @@ export function SessionTelemetryWorkspace({
   const [loading, setLoading] = useState(true);
   const [derivedLoading, setDerivedLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [derivedError, setDerivedError] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const previousPhaseRef = useRef(liveStreamStatus.phase);
   const derivedFetchedRef = useRef(false);
   const promptFetchedRef = useRef(false);
+  const summaryLoadedRef = useRef(false);
 
   useEffect(() => {
     if (liveStreamStatus.phase !== 'reconnecting' || !liveStreamStatus.nextRetryAt) {
@@ -120,6 +122,9 @@ export function SessionTelemetryWorkspace({
   // Load events eagerly (doesn't wait for derived outputs)
   useEffect(() => {
     let mounted = true;
+    summaryLoadedRef.current = false;
+    derivedFetchedRef.current = false;
+    promptFetchedRef.current = false;
 
     setLoading(true);
     setError(null);
@@ -132,6 +137,8 @@ export function SessionTelemetryWorkspace({
         if (!mounted) return;
         // Events from the events page
         appendEvents(eventsPageResult.events);
+        // Signal that summary loaded so derived outputs can load regardless of event count
+        summaryLoadedRef.current = true;
         setLoading(false);
       })
       .catch((requestError) => {
@@ -145,11 +152,12 @@ export function SessionTelemetryWorkspace({
     };
   }, [appendEvents, reloadNonce, sessionId]);
 
-  // Lazily load derived outputs and prompt metadata after events are available
+  // Lazily load derived outputs and prompt metadata after session summary loads
   const loadDerivedOutputs = useCallback(() => {
     if (derivedFetchedRef.current) return;
     derivedFetchedRef.current = true;
     setDerivedLoading(true);
+    setDerivedError(null);
     Promise.all([
       getSessionDerivedOutputs(sessionId),
       getSessionPromptMetadata(sessionId),
@@ -158,23 +166,20 @@ export function SessionTelemetryWorkspace({
         setDerivedOutputs(derived);
         setPromptMetadata(prompts ?? null);
       })
-      .catch(() => {
-        // Derived outputs are non-critical; don't surface error for them
+      .catch((err) => {
+        setDerivedError(getApiErrorMessage(err, 'Failed to load derived outputs.'));
       })
       .finally(() => {
         setDerivedLoading(false);
       });
   }, [sessionId]);
 
-  // Load derived outputs when events first become available
+  // Load derived outputs when summary loads (handles 0-event edge case)
   useEffect(() => {
-    if (events.length > 0 && !derivedFetchedRef.current) {
+    if (summaryLoadedRef.current && !derivedFetchedRef.current) {
       loadDerivedOutputs();
     }
-    if (events.length > 0 && !promptFetchedRef.current) {
-      promptFetchedRef.current = true;
-    }
-  }, [events.length, loadDerivedOutputs]);
+  }, [loadDerivedOutputs]);
 
   useEffect(() => {
     const previousPhase = previousPhaseRef.current;
@@ -422,6 +427,20 @@ export function SessionTelemetryWorkspace({
               <p className="text-sm text-muted-foreground">
                 Historical event data loaded, but one or more supplemental monitor datasets failed
                 to refresh. {error}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {derivedError && !error ? (
+        <Card className="border-warning/25 bg-warning-muted/22">
+          <CardContent className="flex items-start gap-3 p-4">
+            <AlertCircle className="mt-0.5 h-5 w-5 text-warning" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-foreground">Derived outputs unavailable</p>
+              <p className="text-sm text-muted-foreground">
+                Event data is loading, but derived outputs (graph, timeline, counts) could not be computed. {derivedError}
               </p>
             </div>
           </CardContent>
