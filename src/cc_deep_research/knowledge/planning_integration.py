@@ -60,7 +60,7 @@ class KnowledgePlanningService:
                 influence_summary={"enabled": False},
             )
 
-        ctx = self._retrieval.retrieve_context(query, depth=depth)
+        ctx = self._retrieval.retrieve_context(query, depth=depth).context
 
         suggested = ctx.suggested_queries()
 
