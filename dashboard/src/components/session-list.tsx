@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { SkeletonSessionCard } from '@/components/ui/skeleton'
+import { ErrorState } from '@/components/async-state'
 import { getErrorGuidance } from '@/lib/error-messages'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -215,6 +216,26 @@ interface SessionTriageMeta {
 }
 
 function getSessionTriageMeta(session: Session): SessionTriageMeta {
+  if (session.triageStatus && session.triageStatus !== 'needs_review') {
+    const statusLabel: Record<string, string> = {
+      investigated: 'Investigated',
+      blocked: 'Blocked',
+      ready: 'Ready',
+      archived: 'Archived',
+    }
+    const statusVariant: Record<string, SessionTriageMeta['badgeVariant']> = {
+      investigated: 'success',
+      blocked: 'warning',
+      ready: 'success',
+      archived: 'outline',
+    }
+    return {
+      label: statusLabel[session.triageStatus] ?? session.triageStatus,
+      summary: `Triage status: ${session.triageStatus}`,
+      badgeVariant: statusVariant[session.triageStatus] ?? 'outline',
+    }
+  }
+
   if (session.active) {
     return {
       label: 'Active',
@@ -701,24 +722,9 @@ function LoadingState() {
   )
 }
 
-function ErrorState({ error, onRetry }: { error: string; onRetry?: () => void }) {
-  const { guidance } = getErrorGuidance(error)
+function SessionListErrorState({ error, onRetry }: { error: string; onRetry?: () => void }) {
   return (
-    <Alert variant="destructive" className="rounded-[1.2rem]">
-      <div className="flex items-start gap-3">
-        <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
-        <div className="space-y-2">
-          <AlertTitle>Failed to load sessions</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-          {guidance && <p className="text-xs text-muted-foreground">{guidance}</p>}
-          {onRetry ? (
-            <Button onClick={onRetry} type="button" variant="outline" size="sm">
-              Retry
-            </Button>
-          ) : null}
-        </div>
-      </div>
-    </Alert>
+    <ErrorState error={error} onRetry={onRetry} route="session_list" title="Failed to load sessions" />
   )
 }
 
@@ -1346,7 +1352,7 @@ export function SessionList({
         {loading ? (
           <LoadingState />
         ) : error ? (
-          <ErrorState error={error} onRetry={onRetry} />
+          <SessionListErrorState error={error} onRetry={onRetry} />
         ) : visibleSessions.length === 0 ? (
           <EmptyState
             icon={Network}

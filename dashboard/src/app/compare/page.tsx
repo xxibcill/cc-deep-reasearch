@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { AlertCircle, ArrowLeft } from 'lucide-react'
 
@@ -9,23 +9,21 @@ import { CompareView } from '@/components/compare-view'
 import { buttonVariants } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
+function getCompareRouteError(sessionA: string | null, sessionB: string | null) {
+  if (!sessionA || !sessionB) {
+    return 'Missing session IDs. Both ?a= and ?b= parameters are required.'
+  }
+  if (sessionA === sessionB) {
+    return 'Pick two different sessions so the compare summary has something to measure.'
+  }
+  return null
+}
+
 function ComparePageContent() {
   const searchParams = useSearchParams()
   const sessionA = searchParams.get('a')
   const sessionB = searchParams.get('b')
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!sessionA || !sessionB) {
-      setError('Missing session IDs. Both ?a= and ?b= parameters are required.')
-      return
-    }
-    if (sessionA === sessionB) {
-      setError('Pick two different sessions so the compare summary has something to measure.')
-      return
-    }
-    setError(null)
-  }, [sessionA, sessionB])
+  const error = getCompareRouteError(sessionA, sessionB)
 
   if (error) {
     return (

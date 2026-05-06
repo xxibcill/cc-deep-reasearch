@@ -13,7 +13,7 @@ from cc_deep_research.knowledge import (
     NodeKind,
 )
 from cc_deep_research.knowledge.graph_index import GraphIndex
-from cc_deep_research.knowledge.vault import init_vault, vault_root
+from cc_deep_research.knowledge.vault import vault_root
 
 # ---------------------------------------------------------------------------
 # Graph integrity metrics helpers
@@ -280,8 +280,9 @@ class TestLintThresholds:
 
     def test_clean_vault_passes_lint(self, tmp_path: Path) -> None:
         """A freshly initialized vault should have no critical lint findings."""
-        from cc_deep_research.knowledge.vault import init_vault
         from fastapi.testclient import TestClient
+
+        from cc_deep_research.knowledge.vault import init_vault
         from cc_deep_research.web_server import create_app
 
         config = tmp_path / "config.yaml"
@@ -297,8 +298,9 @@ class TestLintThresholds:
 
     def test_vault_without_index_has_error(self, tmp_path: Path) -> None:
         """Missing index.md should produce an error finding."""
-        from cc_deep_research.knowledge.vault import init_vault, vault_root
         from fastapi.testclient import TestClient
+
+        from cc_deep_research.knowledge.vault import init_vault, vault_root
         from cc_deep_research.web_server import create_app
 
         config = tmp_path / "config.yaml"

@@ -1595,6 +1595,11 @@ class TestOrchestratorFixtureEndToEnd:
             "deep_analysis",
             "llm_routes",
             "prompts",
+            "annotations",
+            "triage_status",
+            "triage_owner",
+            "triage_handoff_target",
+            "last_reviewed_at",
         }
         assert metadata_keys == expected_keys, (
             f"Metadata keys mismatch. Expected: {expected_keys}, Got: {metadata_keys}"
@@ -2105,6 +2110,11 @@ class TestSessionMetadataContract:
             "deep_analysis",
             "llm_routes",
             "prompts",
+            "annotations",
+            "triage_status",
+            "triage_owner",
+            "triage_handoff_target",
+            "last_reviewed_at",
         }
         assert metadata_keys == expected_keys, (
             f"Top-level metadata keys mismatch. Expected: {expected_keys}, Got: {metadata_keys}"

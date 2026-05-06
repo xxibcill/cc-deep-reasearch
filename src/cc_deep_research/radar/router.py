@@ -14,22 +14,43 @@ from fastapi.responses import JSONResponse
 
 from cc_deep_research.event_router import EventRouter
 from cc_deep_research.radar.api_models import (
+    AcknowledgeAlertRequest,
+    AlertListResponse,
+    AlertMuteResponse,
+    BulkUpdateStatusRequest,
+    BulkUpdateStatusResponse,
     ConversionFunnelResponse,
     CreateSourceRequest,
+    DigestListResponse,
+    DryRunResponse,
     FeedbackTrendsResponse,
+    GenerateDigestRequest,
     LaunchBacklogResponse,
     LaunchBriefResponse,
     LaunchContentPipelineResponse,
     LaunchResearchResponse,
+    MuteAlertRequest,
+    MuteListResponse,
     OpportunityDetailResponse,
     OpportunityListResponse,
     RadarAnalyticsResponse,
+    RadarDigestResponse,
     RecordFeedbackRequest,
+    RecordScoringFeedbackRequest,
+    ScanHistoryResponse,
+    ScanJobResponse,
     ScoreDistributionResponse,
+    ScoringFeedbackListResponse,
+    ScoringFeedbackResponse,
+    ScoringOutcomesResponse,
+    SourceHealthResponse,
     SourceListResponse,
     SourceResponse,
     StatusHistoryResponse,
+    TriggerScanRequest,
+    UpdateOpportunityRequest,
     UpdateOpportunityStatusRequest,
+    UpdateSourceRequest,
 )
 from cc_deep_research.radar.models import (
     FreshnessState,
@@ -840,6 +861,342 @@ def register_radar_routes(
         dist = telemetry.get_score_distribution()
 
         return JSONResponse(content=dist)
+
+    # -- Source governance endpoints -----------------------------------------
+
+    @app.patch("/api/radar/sources/{source_id}")
+    async def update_source(
+        request: Request,
+        source_id: str,
+        body: UpdateSourceRequest,
+    ) -> JSONResponse:
+        """Update source governance fields."""
+        svc = _get_service(request)
+        patch = body.model_dump(exclude_none=True)
+        if not patch:
+            return JSONResponse(status_code=400, content={"error": "No fields to update"})
+
+        updated = svc.update_source(source_id, patch)
+        if updated is None:
+            return JSONResponse(status_code=404, content={"error": "Source not found"})
+
+        _emit_radar_event(
+            event_type="radar.source_updated",
+            category="radar",
+            name="source_updated",
+            status="updated",
+            metadata={"source_id": source_id, "fields": list(patch.keys())},
+        )
+
+        return JSONResponse(content=json.loads(updated.model_dump_json()))
+
+    @app.get("/api/radar/sources/health/{source_id}", response_model=SourceHealthResponse)
+    async def get_source_health(
+        request: Request,
+        source_id: str,
+    ) -> JSONResponse:
+        """Get computed health details for a source."""
+        svc = _get_service(request)
+        health = svc.get_source_health(source_id)
+        if health is None:
+            return JSONResponse(status_code=404, content={"error": "Source not found"})
+        return JSONResponse(content=health)
+
+    @app.get("/api/radar/sources/governance", response_model=SourceListResponse)
+    async def list_sources_governance(
+        request: Request,
+        status: SourceStatus | None = None,
+        health: str | None = None,
+        priority: str | None = None,
+        owner: str | None = None,
+    ) -> JSONResponse:
+        """List sources with governance filters (health, priority, owner)."""
+        svc = _get_service(request)
+        sources = svc.list_sources_by_health(health=health, priority=priority, owner=owner)
+        if status is not None:
+            sources = [s for s in sources if s.status == status]
+        return JSONResponse(content={
+            "items": [json.loads(s.model_dump_json()) for s in sources],
+            "count": len(sources),
+        })
+
+    # -- Scan job endpoints ---------------------------------------------------
+
+    @app.get("/api/radar/scan/history", response_model=ScanHistoryResponse)
+    async def get_scan_history(
+        request: Request,
+        source_id: str | None = None,
+        limit: int = 50,
+    ) -> JSONResponse:
+        """Get scan job history, optionally filtered by source."""
+        svc = _get_service(request)
+        jobs = svc.get_scan_history(source_id=source_id, limit=limit)
+        return JSONResponse(content={
+            "jobs": [json.loads(j.model_dump_json()) for j in jobs],
+            "count": len(jobs),
+        })
+
+    @app.post("/api/radar/scan/trigger", response_model=ScanJobResponse)
+    async def trigger_scan(
+        request: Request,
+        body: TriggerScanRequest,
+    ) -> JSONResponse:
+        """Trigger an immediate scan for a source."""
+        svc = _get_service(request)
+
+        source = svc._store.get_source(body.source_id)
+        if source is None:
+            return JSONResponse(status_code=404, content={"error": "Source not found"})
+
+        job = svc.run_scan_now(body.source_id)
+        svc.start_scan_job(job.id)
+
+        # Execute scan synchronously for now
+        from cc_deep_research.radar.scanner import SourceScanner
+        scanner = SourceScanner(store=svc._store)
+        try:
+            signals = scanner.scan_source(source)
+            svc.complete_scan_job(job.id, signals_found=len(signals))
+        except Exception as exc:
+            svc.fail_scan_job(job.id, str(exc))
+
+        updated_job = svc._store.load_scan_jobs().jobs
+        for j in updated_job:
+            if j.id == job.id:
+                return JSONResponse(content=json.loads(j.model_dump_json()), status_code=201)
+
+        return JSONResponse(status_code=201, content=json.loads(job.model_dump_json()))
+
+    @app.post("/api/radar/scan/dry-run", response_model=DryRunResponse)
+    async def dry_run_scan(
+        request: Request,
+        source_id: str | None = None,
+    ) -> JSONResponse:
+        """Preview which sources would be scanned without executing."""
+        svc = _get_service(request)
+        result = svc.dry_run_scan(source_id=source_id)
+        return JSONResponse(content=result)
+
+    @app.post("/api/radar/sources/{source_id}/pause")
+    async def pause_source(
+        request: Request,
+        source_id: str,
+    ) -> JSONResponse:
+        """Pause scheduled scanning for a source."""
+        svc = _get_service(request)
+        updated = svc.pause_source_schedule(source_id)
+        if updated is None:
+            return JSONResponse(status_code=404, content={"error": "Source not found"})
+        return JSONResponse(content=json.loads(updated.model_dump_json()))
+
+    @app.post("/api/radar/sources/{source_id}/resume")
+    async def resume_source(
+        request: Request,
+        source_id: str,
+    ) -> JSONResponse:
+        """Resume scheduled scanning for a source."""
+        svc = _get_service(request)
+        updated = svc.resume_source_schedule(source_id)
+        if updated is None:
+            return JSONResponse(status_code=404, content={"error": "Source not found"})
+        return JSONResponse(content=json.loads(updated.model_dump_json()))
+
+    # -- Alert endpoints ------------------------------------------------------
+
+    @app.get("/api/radar/alerts", response_model=AlertListResponse)
+    async def list_alerts(
+        request: Request,
+        acknowledged: bool | None = None,
+    ) -> JSONResponse:
+        """List all alerts, optionally filtered by acknowledged state."""
+        svc = _get_service(request)
+        alerts = svc.get_unacknowledged_alerts() if acknowledged is False else svc._store.load_alerts().alerts
+        if acknowledged is True:
+            alerts = [a for a in alerts if a.acknowledged]
+        return JSONResponse(content={
+            "alerts": [json.loads(a.model_dump_json()) for a in alerts],
+            "count": len(alerts),
+            "unacknowledged_count": len([a for a in alerts if not a.acknowledged]),
+        })
+
+    @app.post("/api/radar/alerts/{alert_id}/acknowledge")
+    async def acknowledge_alert(
+        request: Request,
+        alert_id: str,
+        body: AcknowledgeAlertRequest,
+    ) -> JSONResponse:
+        """Acknowledge an alert."""
+        svc = _get_service(request)
+        updated = svc.acknowledge_alert(alert_id, body.acknowledged_by)
+        if updated is None:
+            return JSONResponse(status_code=404, content={"error": "Alert not found"})
+        return JSONResponse(content=json.loads(updated.model_dump_json()))
+
+    @app.post("/api/radar/alerts/mute", response_model=AlertMuteResponse)
+    async def mute_alert(
+        request: Request,
+        body: MuteAlertRequest,
+    ) -> JSONResponse:
+        """Mute an alert trigger."""
+        svc = _get_service(request)
+        mute = svc.mute_alert(
+            trigger=body.trigger,
+            source_id=body.source_id,
+            expires_at=body.expires_at,
+        )
+        return JSONResponse(content=json.loads(mute.model_dump_json()), status_code=201)
+
+    @app.delete("/api/radar/alerts/mute/{mute_id}")
+    async def unmute_alert(
+        request: Request,
+        mute_id: str,
+    ) -> JSONResponse:
+        """Remove an alert mute."""
+        svc = _get_service(request)
+        removed = svc.unmute_alert(mute_id)
+        if not removed:
+            return JSONResponse(status_code=404, content={"error": "Mute not found"})
+        return JSONResponse(content={"deleted": True})
+
+    @app.get("/api/radar/alerts/mutes", response_model=MuteListResponse)
+    async def list_mutes(request: Request) -> JSONResponse:
+        """List all active alert mutes."""
+        svc = _get_service(request)
+        mutes = svc.get_alert_mutes()
+        return JSONResponse(content={
+            "mutes": [json.loads(m.model_dump_json()) for m in mutes],
+            "count": len(mutes),
+        })
+
+    # -- Digest endpoints -----------------------------------------------------
+
+    @app.post("/api/radar/digests", response_model=RadarDigestResponse)
+    async def generate_digest(
+        request: Request,
+        body: GenerateDigestRequest,
+    ) -> JSONResponse:
+        """Generate a digest summarizing Radar activity."""
+        svc = _get_service(request)
+        digest = svc.generate_digest(body.period_start, body.period_end)
+        return JSONResponse(content=json.loads(digest.model_dump_json()), status_code=201)
+
+    @app.get("/api/radar/digests", response_model=DigestListResponse)
+    async def list_digests(
+        request: Request,
+        limit: int = 12,
+    ) -> JSONResponse:
+        """List recent digests."""
+        svc = _get_service(request)
+        digests = svc.get_recent_digests(limit=limit)
+        return JSONResponse(content={
+            "digests": [json.loads(d.model_dump_json()) for d in digests],
+            "count": len(digests),
+        })
+
+    # -- Scoring feedback endpoints ------------------------------------------
+
+    @app.post("/api/radar/opportunities/{opportunity_id}/scoring-feedback", response_model=ScoringFeedbackResponse)
+    async def record_scoring_feedback(
+        request: Request,
+        opportunity_id: str,
+        body: RecordScoringFeedbackRequest,
+    ) -> JSONResponse:
+        """Record feedback on opportunity scoring for tuning."""
+        svc = _get_service(request)
+
+        # Verify opportunity exists
+        detail = svc.get_opportunity_detail(opportunity_id)
+        if detail is None:
+            return JSONResponse(status_code=404, content={"error": "Opportunity not found"})
+
+        entry = svc.record_scoring_feedback(
+            opportunity_id=opportunity_id,
+            feedback_type=body.feedback_type,
+            signal_id=body.signal_id,
+            scoring_features=body.scoring_features,
+            rank_position=body.rank_position,
+            outcome=body.outcome,
+        )
+        return JSONResponse(content=json.loads(entry.model_dump_json()), status_code=201)
+
+    @app.get("/api/radar/opportunities/{opportunity_id}/scoring-feedback", response_model=ScoringFeedbackListResponse)
+    async def get_scoring_feedback(
+        request: Request,
+        opportunity_id: str,
+    ) -> JSONResponse:
+        """Get all scoring feedback for an opportunity."""
+        svc = _get_service(request)
+        entries = svc.get_scoring_feedback(opportunity_id)
+        return JSONResponse(content={
+            "feedback_entries": [json.loads(e.model_dump_json()) for e in entries],
+            "count": len(entries),
+        })
+
+    @app.get("/api/radar/scoring/outcomes", response_model=ScoringOutcomesResponse)
+    async def get_scoring_outcomes(request: Request) -> JSONResponse:
+        """Get feedback outcome counts for scoring tuning analysis."""
+        svc = _get_service(request)
+        outcomes = svc.get_scoring_outcomes()
+        return JSONResponse(content={
+            "outcomes": outcomes,
+            "total_feedback": sum(outcomes.values()),
+        })
+
+    # -- Bulk opportunity operations ------------------------------------------
+
+    @app.post("/api/radar/opportunities/bulk-status", response_model=BulkUpdateStatusResponse)
+    async def bulk_update_opportunities(
+        request: Request,
+        body: BulkUpdateStatusRequest,
+    ) -> JSONResponse:
+        """Bulk update opportunity statuses."""
+        svc = _get_service(request)
+        updated = svc.bulk_update_status(
+            body.opportunity_ids,
+            body.status,
+            reason=body.reason,
+        )
+        return JSONResponse(content={
+            "updated": [json.loads(o.model_dump_json()) for o in updated],
+            "count": len(updated),
+        })
+
+    @app.patch("/api/radar/opportunities/{opportunity_id}", response_model=OpportunityDetailResponse)
+    async def update_opportunity(
+        request: Request,
+        opportunity_id: str,
+        body: UpdateOpportunityRequest,
+    ) -> JSONResponse:
+        """Update opportunity with lifecycle fields (owner, priority, reason, next_action, reviewed_at)."""
+        svc = _get_service(request)
+
+        detail = svc.get_opportunity_detail(opportunity_id)
+        if detail is None:
+            return JSONResponse(status_code=404, content={"error": "Opportunity not found"})
+
+        patch = body.model_dump(exclude_none=True)
+        if not patch:
+            return JSONResponse(status_code=400, content={"error": "No fields to update"})
+
+        # Handle status separately for history recording
+        new_status = patch.pop("status", None)
+        reason = patch.pop("reason", None)
+
+        if new_status:
+            updated = svc.update_opportunity_status(opportunity_id, new_status, reason=reason)
+        else:
+            updated = svc._store.update_opportunity(opportunity_id, patch)
+
+        if updated is None:
+            return JSONResponse(status_code=404, content={"error": "Opportunity not found"})
+
+        return JSONResponse(content={
+            "opportunity": json.loads(updated.model_dump_json()),
+            "score": json.loads(detail["score"].model_dump_json()) if detail["score"] else None,
+            "signals": [json.loads(s.model_dump_json()) for s in detail["signals"]],
+            "feedback": [json.loads(f.model_dump_json()) for f in detail["feedback"]],
+            "workflow_links": [json.loads(w.model_dump_json()) for w in detail["workflow_links"]],
+        })
 
 
 __all__ = ["register_radar_routes"]

@@ -57,9 +57,7 @@ class ResearchPlanningService:
             if self._registry is not None:
                 planner = LLMRoutePlanner(self._config)
                 planner.update_registry_from_plan(llm_plan, self._registry)
-                self._monitor.log(
-                    f"LLM routes: default={llm_plan.default_route.transport.value}"
-                )
+                self._monitor.log(f"LLM routes: default={llm_plan.default_route.transport.value}")
             self._record_planned_routes(llm_plan)
 
         self._monitor.record_reasoning_summary(
@@ -112,7 +110,9 @@ class ResearchPlanningService:
             reason_code="planner_default_route",
             chosen_option=default_route.transport.value,
             rejected_options=[
-                transport for transport in fallback_order if transport != default_route.transport.value
+                transport
+                for transport in fallback_order
+                if transport != default_route.transport.value
             ],
             inputs={
                 "agent_id": "default",
@@ -246,9 +246,9 @@ class ResearchPlanningService:
         if self._config is None or not self._config.research.knowledge_assisted_planning:
             return [], {}
 
-        from cc_deep_research.knowledge.planning_integration import KnowledgePlanningService
+        from cc_deep_research.knowledge.planning_integration import _get_planning_service
 
-        result = KnowledgePlanningService().retrieve_for_planning(
+        result = _get_planning_service().retrieve_for_planning(
             query,
             depth=depth.value,
             enabled=True,

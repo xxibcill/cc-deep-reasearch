@@ -12,6 +12,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from cc_deep_research.radar.models import (
+    AlertMute,
     FeedbackType,
     FreshnessState,
     Opportunity,
@@ -19,8 +20,12 @@ from cc_deep_research.radar.models import (
     OpportunityScore,
     OpportunityStatus,
     OpportunityType,
+    RadarAlert,
+    RadarDigest,
     RadarSource,
     RawSignal,
+    ScanJob,
+    ScoringFeedback,
     SourceStatus,
     StatusHistoryEntry,
     WorkflowLink,
@@ -531,3 +536,415 @@ class RadarService:
             "why_now": opp.recommended_action or "",
             "opportunity_id": opportunity_id,
         }
+
+    # -- Source governance ----------------------------------------------------
+
+    def update_source(
+        self,
+        source_id: str,
+        patch: dict[str, Any],
+    ) -> RadarSource | None:
+        """Update source fields including governance metadata.
+
+        Args:
+            source_id: The source to update.
+            patch: Fields to update.
+
+        Returns:
+            Updated RadarSource or None if not found.
+        """
+        return self._store.update_source(source_id, patch)
+
+    def get_source_health(self, source_id: str) -> dict[str, Any] | None:
+        """Get computed health details for a source.
+
+        Returns health state, failure count, last failure reason, and scan history.
+        """
+        source = self._store.get_source(source_id)
+        if source is None:
+            return None
+
+        recent_jobs = self._store.get_scan_jobs_for_source(source_id, limit=5)
+        return {
+            "source_id": source_id,
+            "health": source.health.value,
+            "consecutive_failures": source.consecutive_failures,
+            "last_failure_reason": source.last_failure_reason,
+            "last_scan_success": source.last_scan_success,
+            "last_scanned_at": source.last_scanned_at,
+            "recent_jobs": [
+                {
+                    "id": j.id,
+                    "status": j.status.value,
+                    "signals_found": j.signals_found,
+                    "started_at": j.started_at,
+                    "completed_at": j.completed_at,
+                }
+                for j in recent_jobs
+            ],
+        }
+
+    def list_sources_by_health(
+        self,
+        health: str | None = None,
+        priority: str | None = None,
+        owner: str | None = None,
+    ) -> list[RadarSource]:
+        """List sources filtered by governance attributes.
+
+        Args:
+            health: Filter by health state (healthy, degraded, unhealthy).
+            priority: Filter by priority (critical, high, medium, low).
+            owner: Filter by owner.
+
+        Returns:
+            Filtered list of sources.
+        """
+        from cc_deep_research.radar.models import SourceHealth, SourcePriority
+
+        sources = self._store.load_sources().sources
+
+        if health is not None:
+            sources = [s for s in sources if s.health == SourceHealth(health)]
+        if priority is not None:
+            sources = [s for s in sources if s.priority == SourcePriority(priority)]
+        if owner is not None:
+            sources = [s for s in sources if s.owner == owner]
+
+        return sources
+
+    # -- Scan job operations --------------------------------------------------
+
+    def create_scan_job(
+        self,
+        source_id: str | None = None,
+        triggered_by: str = "schedule",
+        scan_type: str = "full",
+    ) -> ScanJob:
+        """Create and start a scan job.
+
+        Returns None if a scan is already pending/running for this source.
+        """
+        if source_id is not None:
+            existing = self._store.get_pending_scan_job(source_id)
+            if existing is not None:
+                return existing  # Prevent overlapping scans
+
+        job = ScanJob(
+            source_id=source_id,
+            triggered_by=triggered_by,
+            scan_type=scan_type,
+            status="pending",
+        )
+        self._store.add_scan_job(job)
+        return job
+
+    def start_scan_job(self, job_id: str) -> ScanJob | None:
+        """Mark a scan job as running."""
+        return self._store.update_scan_job(job_id, {"status": "running"})
+
+    def complete_scan_job(
+        self,
+        job_id: str,
+        signals_found: int = 0,
+        errors: list[str] | None = None,
+    ) -> ScanJob | None:
+        """Mark a scan job as completed."""
+        return self._store.update_scan_job(
+            job_id,
+            {
+                "status": "completed",
+                "signals_found": signals_found,
+                "errors": errors or [],
+            },
+        )
+
+    def fail_scan_job(self, job_id: str, error: str) -> ScanJob | None:
+        """Mark a scan job as failed."""
+        return self._store.update_scan_job(
+            job_id,
+            {
+                "status": "failed",
+                "errors": [error],
+            },
+        )
+
+    def skip_scan_job(self, job_id: str, reason: str) -> ScanJob | None:
+        """Mark a scan job as skipped."""
+        return self._store.update_scan_job(
+            job_id,
+            {
+                "status": "skipped",
+                "errors": [reason],
+            },
+        )
+
+    def run_scan_now(self, source_id: str) -> ScanJob:
+        """Run a scan immediately for a source, bypassing cadence."""
+        job = self.create_scan_job(source_id, triggered_by="manual", scan_type="full")
+        return job
+
+    def dry_run_scan(self, source_id: str | None = None) -> dict[str, Any]:
+        """Preview which sources would be scanned without executing.
+
+        Args:
+            source_id: Specific source to preview (None for all due).
+
+        Returns:
+            Dict with sources that would be scanned and job count.
+        """
+        if source_id is not None:
+            source = self._store.get_source(source_id)
+            if source is None:
+                return {"sources": [], "job_count": 0, "dry_run": True}
+            sources = [source] if source.status.value == "active" else []
+        else:
+            sources = [s for s in self._store.load_sources().sources if s.status.value == "active"]
+
+        from cc_deep_research.radar.scanner import is_due_for_scan
+
+        due_sources = [s for s in sources if is_due_for_scan(s)]
+        return {
+            "sources": [{"id": s.id, "label": s.label, "scan_cadence": s.scan_cadence} for s in due_sources],
+            "job_count": len(due_sources),
+            "dry_run": True,
+        }
+
+    def get_scan_history(self, source_id: str | None = None, limit: int = 50) -> list[ScanJob]:
+        """Get scan job history.
+
+        Args:
+            source_id: Filter to a specific source (None for all).
+            limit: Maximum number of jobs to return.
+
+        Returns:
+            List of scan jobs, most recent first.
+        """
+        if source_id is not None:
+            return self._store.get_scan_jobs_for_source(source_id, limit=limit)
+        return self._store.get_recent_scan_jobs(limit=limit)
+
+    def pause_source_schedule(self, source_id: str) -> RadarSource | None:
+        """Pause scheduled scanning for a source."""
+        return self._store.update_source(source_id, {"status": "inactive"})
+
+    def resume_source_schedule(self, source_id: str) -> RadarSource | None:
+        """Resume scheduled scanning for a source."""
+        return self._store.update_source(source_id, {"status": "active"})
+
+    # -- Alert operations -----------------------------------------------------
+
+    def create_alert(
+        self,
+        trigger: str,
+        title: str,
+        message: str,
+        severity: str = "info",
+        source_id: str | None = None,
+        opportunity_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> RadarAlert:
+        """Create an alert if not muted."""
+        from cc_deep_research.radar.models import AlertSeverity, AlertTrigger
+
+        trigger_enum = AlertTrigger(trigger)
+        if self._store.is_alert_muted(trigger, source_id):
+            return None  # Silently skip muted alerts
+
+        alert = RadarAlert(
+            trigger=trigger_enum,
+            severity=AlertSeverity(severity),
+            title=title,
+            message=message,
+            source_id=source_id,
+            opportunity_id=opportunity_id,
+            metadata=metadata or {},
+        )
+        self._store.add_alert(alert)
+        return alert
+
+    def acknowledge_alert(self, alert_id: str, acknowledged_by: str) -> RadarAlert | None:
+        """Acknowledge an alert."""
+        return self._store.acknowledge_alert(alert_id, acknowledged_by)
+
+    def get_unacknowledged_alerts(self) -> list[RadarAlert]:
+        """Get all unacknowledged alerts."""
+        return self._store.get_unacknowledged_alerts()
+
+    def mute_alert(
+        self,
+        trigger: str,
+        source_id: str | None = None,
+        muted_by: str | None = None,
+        expires_at: str | None = None,
+    ) -> AlertMute:
+        """Mute an alert trigger."""
+        from cc_deep_research.radar.models import AlertTrigger
+
+        mute = AlertMute(
+            trigger=AlertTrigger(trigger),
+            source_id=source_id,
+            muted_by=muted_by,
+            expires_at=expires_at,
+        )
+        self._store.add_alert_mute(mute)
+        return mute
+
+    def unmute_alert(self, mute_id: str) -> bool:
+        """Remove an alert mute."""
+        return self._store.remove_alert_mute(mute_id)
+
+    def get_alert_mutes(self) -> list[AlertMute]:
+        """Get all active alert mutes."""
+        return self._store.load_alert_mutes().mutes
+
+    # -- Digest operations ---------------------------------------------------
+
+    def generate_digest(
+        self,
+        period_start: str,
+        period_end: str,
+    ) -> RadarDigest:
+        """Generate a digest summarizing radar activity in the period."""
+        # Get new opportunities in period
+        all_opps = self._store.load_opportunities().opportunities
+        period_opps = [
+            o for o in all_opps
+            if period_start <= o.created_at <= period_end
+        ]
+        period_opps.sort(key=lambda o: -o.total_score)
+        top_opps = [
+            {
+                "id": o.id,
+                "title": o.title,
+                "score": o.total_score,
+                "type": o.opportunity_type.value,
+            }
+            for o in period_opps[:10]
+        ]
+
+        # Get source health issues
+        sources = self._store.load_sources().sources
+        health_issues = [
+            {
+                "id": s.id,
+                "label": s.label,
+                "health": s.health.value,
+                "consecutive_failures": s.consecutive_failures,
+                "last_failure_reason": s.last_failure_reason,
+            }
+            for s in sources
+            if s.health.value in ("degraded", "unhealthy")
+        ]
+
+        # Get alert count in period
+        alerts = self._store.load_alerts().alerts
+        alert_count = sum(1 for a in alerts if period_start <= a.created_at <= period_end)
+
+        digest = RadarDigest(
+            period_start=period_start,
+            period_end=period_end,
+            new_opportunities_count=len(period_opps),
+            top_opportunities=top_opps,
+            source_health_issues=health_issues,
+            alert_count=alert_count,
+        )
+        self._store.add_digest(digest)
+        return digest
+
+    def get_recent_digests(self, limit: int = 12) -> list[RadarDigest]:
+        """Get recent digests."""
+        return self._store.get_recent_digests(limit=limit)
+
+    # -- Scoring feedback operations ----------------------------------------
+
+    def record_scoring_feedback(
+        self,
+        opportunity_id: str,
+        feedback_type: str,
+        signal_id: str | None = None,
+        scoring_features: dict[str, float] | None = None,
+        rank_position: int | None = None,
+        outcome: str | None = None,
+    ) -> ScoringFeedback:
+        """Record feedback on opportunity scoring for tuning.
+
+        Args:
+            opportunity_id: The opportunity that was scored.
+            feedback_type: Type of feedback (useful, not_useful, etc.).
+            signal_id: Signal that contributed to score (optional).
+            scoring_features: Feature scores at ranking time.
+            rank_position: Position in ranking when shown.
+            outcome: Whether the operator acted on this.
+
+        Returns:
+            Created ScoringFeedback entry.
+        """
+        entry = ScoringFeedback(
+            opportunity_id=opportunity_id,
+            signal_id=signal_id,
+            feedback_type=FeedbackType(feedback_type),
+            scoring_features=scoring_features or {},
+            rank_position=rank_position,
+            outcome=outcome,
+        )
+        self._store.add_scoring_feedback(entry)
+        return entry
+
+    def get_scoring_feedback(self, opportunity_id: str) -> list[ScoringFeedback]:
+        """Get all scoring feedback for an opportunity."""
+        return self._store.get_scoring_feedback_for_opportunity(opportunity_id)
+
+    def get_scoring_outcomes(self) -> dict[str, int]:
+        """Get feedback outcome counts for tuning analysis."""
+        return self._store.get_scoring_outcomes()
+
+    # -- Bulk opportunity operations -----------------------------------------
+
+    def bulk_update_status(
+        self,
+        opportunity_ids: list[str],
+        status: str,
+        reason: str | None = None,
+    ) -> list[Opportunity]:
+        """Update status for multiple opportunities.
+
+        Args:
+            opportunity_ids: List of opportunity IDs to update.
+            status: New status.
+            reason: Optional reason for the change.
+
+        Returns:
+            List of updated opportunities.
+        """
+        updated = []
+        for opp_id in opportunity_ids:
+            result = self.update_opportunity_status(opp_id, status, reason=reason)
+            if result is not None:
+                updated.append(result)
+        return updated
+
+    def get_opportunities_by_state(
+        self,
+        status: str,
+        owner: str | None = None,
+        priority: str | None = None,
+    ) -> list[Opportunity]:
+        """Get opportunities filtered by state and governance fields.
+
+        Args:
+            status: Opportunity status to filter by.
+            owner: Optional owner filter.
+            priority: Optional priority filter.
+
+        Returns:
+            List of matching opportunities.
+        """
+        from cc_deep_research.radar.models import OpportunityOwnerPriority
+
+        opportunities = self.list_opportunities(status=status)
+        if owner is not None:
+            opportunities = [o for o in opportunities if o.owner == owner]
+        if priority is not None:
+            opportunities = [o for o in opportunities if o.priority == OpportunityOwnerPriority(priority)]
+        return opportunities

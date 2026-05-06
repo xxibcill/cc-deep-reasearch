@@ -26,6 +26,8 @@ import yaml
 from cc_deep_research.config import get_default_config_path
 from cc_deep_research.radar._path_utils import is_safe_path
 from cc_deep_research.radar.models import (
+    AlertMute,
+    AlertMuteList,
     FeedbackType,
     FreshnessState,
     Opportunity,
@@ -38,10 +40,18 @@ from cc_deep_research.radar.models import (
     OpportunitySignalLinkList,
     OpportunityStatus,
     OpportunityType,
+    RadarAlert,
+    RadarAlertList,
+    RadarDigest,
+    RadarDigestList,
     RadarSource,
     RadarSourceList,
     RawSignal,
     RawSignalList,
+    ScanJob,
+    ScanJobList,
+    ScoringFeedback,
+    ScoringFeedbackList,
     StatusHistoryEntry,
     StatusHistoryList,
     WorkflowLink,
@@ -66,6 +76,11 @@ FILE_NAMES = {
     "feedback": "radar_feedback.yaml",
     "workflow_links": "radar_workflow_links.yaml",
     "status_history": "radar_status_history.yaml",
+    "scan_jobs": "radar_scan_jobs.yaml",
+    "alerts": "radar_alerts.yaml",
+    "digests": "radar_digests.yaml",
+    "alert_mutes": "radar_alert_mutes.yaml",
+    "scoring_feedback": "radar_scoring_feedback.yaml",
 }
 
 
@@ -594,4 +609,275 @@ class RadarStore:
         """Get all status history entries for an opportunity."""
         history = self.load_status_history()
         return [e for e in history.entries if e.opportunity_id == opportunity_id]
+
+    # -- Scan job operations ---------------------------------------------------
+
+    def _scan_jobs_path(self) -> Path:
+        return self._radar_dir / FILE_NAMES["scan_jobs"]
+
+    def load_scan_jobs(self) -> ScanJobList:
+        """Load all scan job records from disk."""
+        path = self._scan_jobs_path()
+        if not path.exists():
+            return ScanJobList()
+        data = yaml.safe_load(path.read_text()) or {}
+        return ScanJobList.model_validate(data)
+
+    def save_scan_jobs(self, jobs: list[ScanJob]) -> None:
+        """Persist all scan job records to disk."""
+        path = self._scan_jobs_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        container = ScanJobList(jobs=jobs, last_updated=_now_iso())
+        data = _serialize_model_to_dict(container)
+        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+
+    def add_scan_job(self, job: ScanJob) -> None:
+        """Add a scan job record and persist."""
+        jobs = self.load_scan_jobs()
+        jobs.jobs.append(job)
+        self.save_scan_jobs(jobs.jobs)
+
+    def update_scan_job(self, job_id: str, patch: dict[str, Any]) -> ScanJob | None:
+        """Update a scan job record by id. Returns updated job or None."""
+        jobs = self.load_scan_jobs()
+        for i, job in enumerate(jobs.jobs):
+            if job.id == job_id:
+                updated_data = job.model_dump(mode="python")
+                updated_data.update(patch)
+                if "status" in patch and isinstance(patch["status"], str):
+                    from cc_deep_research.radar.models import ScanJobStatus
+                    updated_data["status"] = ScanJobStatus(patch["status"])
+                if "completed_at" not in updated_data and patch.get("status") in ("completed", "failed", "cancelled", "skipped"):
+                    updated_data["completed_at"] = _now_iso()
+                updated = ScanJob.model_validate(updated_data)
+                jobs.jobs[i] = updated
+                self.save_scan_jobs(jobs.jobs)
+                return updated
+        return None
+
+    def get_scan_jobs_for_source(self, source_id: str, limit: int | None = None) -> list[ScanJob]:
+        """Get scan jobs for a specific source, most recent first."""
+        jobs = self.load_scan_jobs().jobs
+        filtered = [j for j in jobs if j.source_id == source_id]
+        filtered.sort(key=lambda j: j.started_at, reverse=True)
+        if limit is not None:
+            filtered = filtered[:limit]
+        return filtered
+
+    def get_recent_scan_jobs(self, limit: int = 50) -> list[ScanJob]:
+        """Get the most recent scan jobs across all sources."""
+        jobs = self.load_scan_jobs().jobs
+        jobs.sort(key=lambda j: j.started_at, reverse=True)
+        return jobs[:limit]
+
+    def get_pending_scan_job(self, source_id: str) -> ScanJob | None:
+        """Check if there's a pending/running scan for this source."""
+        jobs = self.load_scan_jobs().jobs
+        for job in jobs:
+            if job.source_id == source_id and job.status in ("pending", "running"):
+                return job
+        return None
+
+    # -- Alert operations ------------------------------------------------------
+
+    def _alerts_path(self) -> Path:
+        return self._radar_dir / FILE_NAMES["alerts"]
+
+    def load_alerts(self) -> RadarAlertList:
+        """Load all radar alerts from disk."""
+        path = self._alerts_path()
+        if not path.exists():
+            return RadarAlertList()
+        data = yaml.safe_load(path.read_text()) or {}
+        return RadarAlertList.model_validate(data)
+
+    def save_alerts(self, alerts: list[RadarAlert]) -> None:
+        """Persist all radar alerts to disk."""
+        path = self._alerts_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        container = RadarAlertList(alerts=alerts, last_updated=_now_iso())
+        data = _serialize_model_to_dict(container)
+        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+
+    def add_alert(self, alert: RadarAlert) -> None:
+        """Add an alert and persist."""
+        alerts = self.load_alerts()
+        alerts.alerts.append(alert)
+        self.save_alerts(alerts.alerts)
+
+    def acknowledge_alert(self, alert_id: str, acknowledged_by: str) -> RadarAlert | None:
+        """Acknowledge an alert."""
+        alerts = self.load_alerts()
+        for i, alert in enumerate(alerts.alerts):
+            if alert.id == alert_id:
+                alerts.alerts[i].acknowledged = True
+                alerts.alerts[i].acknowledged_by = acknowledged_by
+                alerts.alerts[i].acknowledged_at = _now_iso()
+                self.save_alerts(alerts.alerts)
+                return alerts.alerts[i]
+        return None
+
+    def get_unacknowledged_alerts(self) -> list[RadarAlert]:
+        """Get all unacknowledged alerts."""
+        alerts = self.load_alerts()
+        return [a for a in alerts.alerts if not a.acknowledged]
+
+    def get_alerts_by_trigger(self, trigger: str) -> list[RadarAlert]:
+        """Get all alerts for a specific trigger."""
+        alerts = self.load_alerts()
+        return [a for a in alerts.alerts if a.trigger.value == trigger]
+
+    def clear_resolved_alerts(self, older_than_days: int = 30) -> int:
+        """Clear acknowledged alerts older than specified days. Returns count cleared."""
+        cutoff = (datetime.now(tz=UTC) - timedelta(days=older_than_days)).isoformat()
+        alerts = self.load_alerts()
+        original = len(alerts.alerts)
+        alerts.alerts = [
+            a for a in alerts.alerts
+            if not a.acknowledged or a.created_at >= cutoff
+        ]
+        self.save_alerts(alerts.alerts)
+        return original - len(alerts.alerts)
+
+    # -- Digest operations ----------------------------------------------------
+
+    def _digests_path(self) -> Path:
+        return self._radar_dir / FILE_NAMES["digests"]
+
+    def load_digests(self) -> RadarDigestList:
+        """Load all radar digests from disk."""
+        path = self._digests_path()
+        if not path.exists():
+            return RadarDigestList()
+        data = yaml.safe_load(path.read_text()) or {}
+        return RadarDigestList.model_validate(data)
+
+    def save_digests(self, digests: list[RadarDigest]) -> None:
+        """Persist all radar digests to disk."""
+        path = self._digests_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        container = RadarDigestList(digests=digests, last_updated=_now_iso())
+        data = _serialize_model_to_dict(container)
+        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+
+    def add_digest(self, digest: RadarDigest) -> None:
+        """Add a digest and persist."""
+        digests = self.load_digests()
+        digests.digests.append(digest)
+        self.save_digests(digests.digests)
+
+    def get_recent_digests(self, limit: int = 12) -> list[RadarDigest]:
+        """Get the most recent digests."""
+        digests = self.load_digests().digests
+        digests.sort(key=lambda d: d.created_at, reverse=True)
+        return digests[:limit]
+
+    # -- Alert mute operations -------------------------------------------------
+
+    def _alert_mutes_path(self) -> Path:
+        return self._radar_dir / FILE_NAMES["alert_mutes"]
+
+    def load_alert_mutes(self) -> AlertMuteList:
+        """Load all alert mutes from disk."""
+        path = self._alert_mutes_path()
+        if not path.exists():
+            return AlertMuteList()
+        data = yaml.safe_load(path.read_text()) or {}
+        return AlertMuteList.model_validate(data)
+
+    def save_alert_mutes(self, mutes: list[AlertMute]) -> None:
+        """Persist all alert mutes to disk."""
+        path = self._alert_mutes_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        container = AlertMuteList(mutes=mutes, last_updated=_now_iso())
+        data = _serialize_model_to_dict(container)
+        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+
+    def add_alert_mute(self, mute: AlertMute) -> None:
+        """Add an alert mute and persist."""
+        mutes = self.load_alert_mutes()
+        mutes.mutes.append(mute)
+        self.save_alert_mutes(mutes.mutes)
+
+    def remove_alert_mute(self, mute_id: str) -> bool:
+        """Remove an alert mute. Returns True if removed."""
+        mutes = self.load_alert_mutes()
+        original = len(mutes.mutes)
+        mutes.mutes = [m for m in mutes.mutes if m.id != mute_id]
+        if len(mutes.mutes) < original:
+            self.save_alert_mutes(mutes.mutes)
+            return True
+        return False
+
+    def is_alert_muted(self, trigger: str, source_id: str | None = None) -> bool:
+        """Check if an alert trigger is muted for a source or globally."""
+        mutes = self.load_alert_mutes()
+        now = datetime.now(tz=UTC).isoformat()
+        for mute in mutes.mutes:
+            if mute.trigger.value != trigger:
+                continue
+            # Check expiration
+            if mute.expires_at is not None and mute.expires_at < now:
+                continue
+            # Check source match or global
+            if mute.source_id is None or mute.source_id == source_id:
+                return True
+        return False
+
+    # -- Scoring feedback operations ------------------------------------------
+
+    def _scoring_feedback_path(self) -> Path:
+        return self._radar_dir / FILE_NAMES["scoring_feedback"]
+
+    def load_scoring_feedback(self) -> ScoringFeedbackList:
+        """Load all scoring feedback from disk."""
+        path = self._scoring_feedback_path()
+        if not path.exists():
+            return ScoringFeedbackList()
+        data = yaml.safe_load(path.read_text()) or {}
+        return ScoringFeedbackList.model_validate(data)
+
+    def save_scoring_feedback(self, entries: list[ScoringFeedback]) -> None:
+        """Persist all scoring feedback to disk."""
+        path = self._scoring_feedback_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        container = ScoringFeedbackList(feedback_entries=entries, last_updated=_now_iso())
+        data = _serialize_model_to_dict(container)
+        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+
+    def add_scoring_feedback(self, entry: ScoringFeedback) -> None:
+        """Add a scoring feedback entry and persist."""
+        feedback = self.load_scoring_feedback()
+        feedback.feedback_entries.append(entry)
+        self.save_scoring_feedback(feedback.feedback_entries)
+
+    def get_scoring_feedback_for_opportunity(self, opportunity_id: str) -> list[ScoringFeedback]:
+        """Get all scoring feedback for an opportunity."""
+        feedback = self.load_scoring_feedback()
+        return [f for f in feedback.feedback_entries if f.opportunity_id == opportunity_id]
+
+    def get_recent_scoring_feedback(self, limit: int = 100) -> list[ScoringFeedback]:
+        """Get recent scoring feedback for analysis."""
+        feedback = self.load_scoring_feedback().feedback_entries
+        feedback.sort(key=lambda f: f.created_at, reverse=True)
+        return feedback[:limit]
+
+    def get_scoring_outcomes(self, feedback_types: list[str] | None = None) -> dict[str, int]:
+        """Get counts of feedback outcomes for tuning.
+
+        Args:
+            feedback_types: Only count these feedback types (default: useful/not_useful).
+
+        Returns:
+            Dict mapping feedback type to count.
+        """
+        if feedback_types is None:
+            feedback_types = ["useful", "not_useful", "duplicate", "stale", "too_broad", "wrong_audience"]
+        feedback = self.load_scoring_feedback().feedback_entries
+        counts: dict[str, int] = {}
+        for entry in feedback:
+            ft = entry.feedback_type.value
+            if ft in feedback_types:
+                counts[ft] = counts.get(ft, 0) + 1
+        return counts
 

@@ -159,7 +159,10 @@ function filterSessionsForRequest(url: URL, sessions: MockSession[]): MockSessio
   return filtered.slice(0, Number.isFinite(limit) && limit > 0 ? limit : filtered.length);
 }
 
-function getSession(sessionId: string, sessions: MockSession[]): MockSession {
+function getSession(sessionId: string | null | undefined, sessions: MockSession[]): MockSession {
+  if (!sessionId) {
+    throw new Error(`Invalid session ID: ${sessionId}`);
+  }
   const session = sessions.find((item) => item.session_id === sessionId);
   if (!session) {
     throw new Error(`Unknown mock session: ${sessionId}`);
@@ -482,7 +485,7 @@ export async function mockDashboardApis(page: Page, options: MockOptions = {}) {
     }
 
     const artifactsMatch = pathName.match(/\/api\/sessions\/([^/]+)\/artifacts$/);
-    if (artifactsMatch) {
+    if (artifactsMatch && artifactsMatch[1]) {
       const session = getSession(artifactsMatch[1], sessions);
       await route.fulfill({
         status: 200,
@@ -493,7 +496,7 @@ export async function mockDashboardApis(page: Page, options: MockOptions = {}) {
     }
 
     const bundleMatch = pathName.match(/\/api\/sessions\/([^/]+)\/bundle$/);
-    if (bundleMatch) {
+    if (bundleMatch && bundleMatch[1]) {
       const session = getSession(bundleMatch[1], sessions);
       await route.fulfill({
         status: 200,
@@ -555,7 +558,7 @@ export async function mockDashboardApis(page: Page, options: MockOptions = {}) {
     }
 
     const reportMatch = pathName.match(/\/api\/sessions\/([^/]+)\/report$/);
-    if (reportMatch) {
+    if (reportMatch && reportMatch[1]) {
       const session = getSession(reportMatch[1], sessions);
       await route.fulfill({
         status: 200,
@@ -566,7 +569,7 @@ export async function mockDashboardApis(page: Page, options: MockOptions = {}) {
     }
 
     const sessionMatch = pathName.match(/\/api\/sessions\/([^/]+)$/);
-    if (sessionMatch) {
+    if (sessionMatch && sessionMatch[1]) {
       const session = getSession(sessionMatch[1], sessions);
       await route.fulfill({
         status: 200,

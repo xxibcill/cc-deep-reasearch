@@ -38,6 +38,16 @@ export type LiveStreamPhase =
   | 'historical'
   | 'failed';
 
+export interface ReconnectHistoryEntry {
+  attempt: number;
+  timestamp: string;
+  closeCode: number | null;
+  closeReason: string | null;
+  wasClean: boolean | null;
+  tookMs: number;
+  error: string | null;
+}
+
 export interface LiveStreamStatus {
   phase: LiveStreamPhase;
   connected: boolean;
@@ -48,8 +58,10 @@ export interface LiveStreamStatus {
   lastEventAt: string | null;
   lastHistoryAt: string | null;
   lastDisconnectAt: string | null;
+  lastSuccessAt: string | null;
   failureReason: string | null;
   canReconnect: boolean;
+  reconnectHistory: ReconnectHistoryEntry[];
 }
 
 export type TelemetryStatus =
@@ -128,6 +140,23 @@ export interface Session {
   hasSessionPayload: boolean;
   hasReport: boolean;
   archived?: boolean;
+  triageStatus?: string | null;
+}
+
+export type TriageStatus = 'needs_review' | 'investigated' | 'blocked' | 'ready' | 'archived';
+
+export interface SessionAnnotation {
+  note: string;
+  author: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface SessionTriage {
+  triage_status: TriageStatus | null;
+  triage_owner: string | null;
+  triage_handoff_target: string | null;
+  last_reviewed_at: string | null;
 }
 
 export interface ApiServerMessage {

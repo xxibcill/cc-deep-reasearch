@@ -11,6 +11,7 @@ from .shared import (
     DraftLaneDecision,
     EffortTier,
     MissingAssetDecision,
+    PublishReadinessState,
     ReleaseState,
     RevisionMode,
     RewriteActionType,
@@ -291,6 +292,11 @@ class PublishItem(BaseModel):
     override_actor: str = ""
     override_reason: str = ""
     override_timestamp: str = ""
+    # P22-T3: Readiness and blocker state
+    readiness: PublishReadinessState = Field(default=PublishReadinessState.DRAFT)
+    blocker_ids: list[str] = Field(default_factory=list)
+    review_history: list[dict[str, str]] = Field(default_factory=list)
+    operator_notes: list[str] = Field(default_factory=list)
 
 
 class ContentTypeProfile(BaseModel):

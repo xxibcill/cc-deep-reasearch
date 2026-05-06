@@ -7,9 +7,8 @@ from pathlib import Path
 from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
 
-from cc_deep_research.knowledge import (
-    NodeKind,
-)
+from cc_deep_research.knowledge import NodeKind
+from cc_deep_research.knowledge.dedup import merge_nodes
 from cc_deep_research.knowledge.graph_index import GraphIndex
 from cc_deep_research.knowledge.ingest import ingest_session
 from cc_deep_research.knowledge.planning_integration import KnowledgePlanningService
@@ -550,4 +549,468 @@ def register_knowledge_routes(app: FastAPI) -> None:
         })
 
 
-__all__ = ["register_knowledge_routes"]
+    @app.get("/api/knowledge/health")
+    async def get_graph_health_metrics() -> JSONResponse:
+        """Get health metrics for the knowledge graph.
+
+        P23-T1: Returns orphan count, stale claim count, duplicate candidates,
+        source-backed claim ratio, and node/edge counts by kind.
+        """
+        from cc_deep_research.knowledge.health import compute_graph_metrics
+
+        index = _open_graph_index()
+        if index is None:
+            return JSONResponse(content={
+                "total_nodes": 0,
+                "total_edges": 0,
+                "orphan_count": 0,
+                "stale_claim_count": 0,
+                "duplicate_candidate_count": 0,
+                "source_backed_claim_ratio": 1.0,
+                "claims_without_sources": 0,
+                "nodes_by_kind": {},
+                "edges_by_kind": {},
+                "vault_initialized": False,
+            })
+
+        metrics = compute_graph_metrics(index)
+
+        return JSONResponse(content={
+            "total_nodes": metrics.total_nodes,
+            "total_edges": metrics.total_edges,
+            "orphan_count": metrics.orphan_count,
+            "stale_claim_count": metrics.stale_claim_count,
+            "duplicate_candidate_count": metrics.duplicate_candidate_count,
+            "source_backed_claim_ratio": metrics.source_backed_claim_ratio,
+            "claims_without_sources": metrics.claims_without_sources,
+            "nodes_by_kind": metrics.nodes_by_kind,
+            "edges_by_kind": metrics.edges_by_kind,
+            "vault_initialized": True,
+        })
+
+    # -------------------------------------------------------------------------
+    # Retrieval explain endpoint (P23-T3)
+    # -------------------------------------------------------------------------
+
+    @app.get("/api/knowledge/retrieval/explain")
+    async def explain_retrieval(
+        query: str = Query(..., description="Research query to explain"),
+        depth: str | None = Query(default=None, description="Optional depth filter"),
+        max_nodes: int = Query(default=20, ge=1, le=100, description="Max nodes to retrieve"),
+    ) -> JSONResponse:
+        """Explain retrieval decisions for a query.
+
+        P23-T3: Returns RetrievalResult with explanation metadata showing:
+        - Which nodes were selected and why
+        - Query terms that matched
+        - Selection scores and factors
+        - Whether fallback mode was used
+        """
+        from cc_deep_research.knowledge.retrieval import KnowledgeRetrievalService
+
+        service = KnowledgeRetrievalService()
+        result = service.retrieve_context(query, depth=depth, max_nodes=max_nodes)
+
+        return JSONResponse(content={
+            "context": {
+                "relevant_nodes": [n.model_dump(mode="json") for n in result.context.relevant_nodes],
+                "prior_sessions": [n.model_dump(mode="json") for n in result.context.prior_sessions],
+                "prior_claims": [n.model_dump(mode="json") for n in result.context.prior_claims],
+                "prior_gaps": [n.model_dump(mode="json") for n in result.context.prior_gaps],
+                "prior_sources": [n.model_dump(mode="json") for n in result.context.prior_sources],
+                "fresh_claims": [n.model_dump(mode="json") for n in result.context.fresh_claims],
+                "stale_claims": [n.model_dump(mode="json") for n in result.context.stale_claims],
+                "unsupported_claims": [n.model_dump(mode="json") for n in result.context.unsupported_claims],
+                "knowledge_used": result.context.knowledge_used,
+            },
+            "explanation": {
+                "query": result.explanation.query,
+                "query_terms": sorted(result.explanation.query_terms),
+                "nodes_selected": result.explanation.nodes_selected,
+                "nodes_excluded": result.explanation.nodes_excluded,
+                "selection_reasons": result.explanation.selection_reasons,
+                "score_factors": result.explanation.score_factors,
+                "filters_applied": result.explanation.filters_applied,
+                "fallback_active": result.explanation.fallback_active,
+                "total_candidates": result.explanation.total_candidates,
+                "max_nodes": result.explanation.max_nodes,
+                "timestamp": result.explanation.timestamp.isoformat(),
+            },
+        })
+
+    # -------------------------------------------------------------------------
+    # Dedup endpoints (P23-T2)
+    # -------------------------------------------------------------------------
+
+    @app.get("/api/knowledge/dedup/candidates")
+    async def list_dedup_candidates(
+        status: str | None = Query(default=None, description="Filter by status: pending, merged, dismissed, deferred"),
+    ) -> JSONResponse:
+        """List pending duplicate candidates with reason and confidence.
+
+        P23-T2: Returns all duplicate candidates for review, optionally filtered by status.
+        """
+        from cc_deep_research.knowledge.dedup import (
+            CandidateStatus,
+            DuplicateCandidateStore,
+            find_duplicate_candidates,
+        )
+
+        index = _open_graph_index()
+        if index is None:
+            return JSONResponse(content={"candidates": [], "total": 0})
+
+        # First, compute fresh candidates from the graph
+        fresh_candidates = find_duplicate_candidates(index)
+
+        # Load persisted store
+        store = DuplicateCandidateStore()
+
+        # Add any new candidates that aren't already in the store
+        pending_pairs = {(c.node_a_id, c.node_b_id) for c in store.get_pending_candidates()}
+        for candidate in fresh_candidates:
+            pair = tuple(sorted([candidate.node_a_id, candidate.node_b_id]))
+            if pair not in pending_pairs:
+                store.add_candidate(candidate)
+
+        # Get candidates, optionally filtered
+        if status:
+            try:
+                status_enum = CandidateStatus(status.lower())
+                candidates = store.get_candidates(status_enum)
+            except ValueError:
+                return JSONResponse(
+                    content={"error": f"Unknown status: {status}"},
+                    status_code=400,
+                )
+        else:
+            candidates = store.get_pending_candidates()
+
+        return JSONResponse(content={
+            "candidates": [c.to_dict() for c in candidates],
+            "total": len(candidates),
+        })
+
+    @app.get("/api/knowledge/dedup/candidates/{candidate_id}")
+    async def get_dedup_candidate(candidate_id: str) -> JSONResponse:
+        """Get details of a specific duplicate candidate."""
+        from cc_deep_research.knowledge.dedup import DuplicateCandidateStore
+
+        store = DuplicateCandidateStore()
+        candidate = store.candidate(candidate_id)
+
+        if candidate is None:
+            return JSONResponse(
+                content={"error": f"Candidate not found: {candidate_id}"},
+                status_code=404,
+            )
+
+        data = candidate.to_dict()
+        return JSONResponse(content=data)
+
+    @app.post("/api/knowledge/dedup/candidates/{candidate_id}/resolve")
+    async def resolve_dedup_candidate(
+        candidate_id: str,
+        action: str = Query(..., description="Action: merge, dismiss, or defer"),
+    ) -> JSONResponse:
+        """Accept/reject/defer a duplicate candidate.
+
+        Body: {"action": "merge"|"dismiss"|"defer"}
+        """
+        from cc_deep_research.knowledge.dedup import DuplicateCandidateStore
+
+        valid_actions = {"merge", "dismiss", "defer"}
+        if action.lower() not in valid_actions:
+            return JSONResponse(
+                content={"error": f"Invalid action. Must be one of: {valid_actions}"},
+                status_code=400,
+            )
+
+        store = DuplicateCandidateStore()
+        candidate = store.candidate(candidate_id)
+
+        if candidate is None:
+            return JSONResponse(
+                content={"error": f"Candidate not found: {candidate_id}"},
+                status_code=404,
+            )
+
+        # If action is "merge", execute the merge
+        if action.lower() == "merge":
+            index = _open_graph_index()
+            if index is None:
+                return JSONResponse(
+                    content={"error": "Vault not initialized"},
+                    status_code=400,
+                )
+
+            result = merge_nodes(index, candidate.node_a_id, candidate.node_b_id, store=store)
+            store.resolve_candidate(candidate_id, "merged")
+
+            return JSONResponse(content={
+                "candidate_id": candidate_id,
+                "action": "merged",
+                "merge_result": result,
+            })
+
+        # For dismiss/defer, just update the status
+        store.resolve_candidate(candidate_id, action.lower())
+        return JSONResponse(content={
+            "candidate_id": candidate_id,
+            "action": action.lower(),
+            "resolved": True,
+        })
+
+    @app.post("/api/knowledge/dedup/merge")
+    async def execute_dedup_merge(
+        node_a_id: str = Query(..., description="First node ID"),
+        node_b_id: str = Query(..., description="Second node ID"),
+    ) -> JSONResponse:
+        """Execute a merge of two nodes.
+
+        P23-T2: Preserves provenance (both session_ids, source_ids combined).
+        Creates SUPERSEDES edge from kept to removed node.
+        """
+        from cc_deep_research.knowledge.dedup import DuplicateCandidateStore, merge_nodes
+
+        index = _open_graph_index()
+        if index is None:
+            return JSONResponse(
+                content={"error": "Vault not initialized"},
+                status_code=400,
+            )
+
+        store = DuplicateCandidateStore()
+        result = merge_nodes(index, node_a_id, node_b_id, store=store)
+
+        if not result.get("success"):
+            return JSONResponse(
+                content={"error": result.get("error", "Merge failed")},
+                status_code=400,
+            )
+
+        return JSONResponse(content=result)
+
+    @app.get("/api/knowledge/dedup/merged-pairs")
+    async def list_merged_pairs() -> JSONResponse:
+        """List historically merged pairs for provenance tracking."""
+        from cc_deep_research.knowledge.dedup import DuplicateCandidateStore
+
+        store = DuplicateCandidateStore()
+        pairs = store.get_merged_pairs()
+
+        return JSONResponse(content={
+            "merged_pairs": pairs,
+            "total": len(pairs),
+        })
+
+    # -------------------------------------------------------------------------
+    # Ingestion quality gates endpoint (P23-T5)
+    # -------------------------------------------------------------------------
+
+    @app.post("/api/knowledge/ingest/validate-batch")
+    async def validate_ingest_batch(
+        nodes: list[dict],
+    ) -> JSONResponse:
+        """Validate a batch of nodes before ingestion.
+
+        P23-T5: Returns accepted, warned, and rejected counts with per-record details.
+        """
+        from cc_deep_research.knowledge import KnowledgeNode, NodeKind
+        from cc_deep_research.knowledge.ingestion_gates import validate_batch
+
+        # Convert raw dicts to KnowledgeNode objects
+        knowledge_nodes: list[KnowledgeNode] = []
+        for node_dict in nodes:
+            try:
+                kind_str = node_dict.get("kind", "")
+                # Map empty/unknown kinds to SESSION as default, will fail REQUIRED_FIELDS if truly invalid
+                kind = NodeKind.SESSION
+                if kind_str:
+                    try:
+                        kind = NodeKind(kind_str)
+                    except ValueError:
+                        pass
+                node = KnowledgeNode(
+                    id=node_dict.get("id", ""),
+                    kind=kind,
+                    label=node_dict.get("label", ""),
+                    properties=node_dict.get("properties", {}),
+                )
+                knowledge_nodes.append(node)
+            except Exception:
+                continue
+
+        result = validate_batch(knowledge_nodes)
+
+        return JSONResponse(content={
+            "total": result.total,
+            "accepted": result.accepted,
+            "warned": result.warned,
+            "rejected": result.rejected,
+            "results": [
+                {
+                    "valid": r.valid,
+                    "record_id": r.record_id,
+                    "check_results": [
+                        {"check": c.check.value, "passed": c.passed, "message": c.message}
+                        for c in r.check_results
+                    ],
+                    "warnings": r.warnings,
+                    "rejection_reason": r.rejection_reason,
+                }
+                for r in result.results
+            ],
+        })
+
+
+# -------------------------------------------------------------------------
+# Gap detection endpoints (P23-T4)
+# -------------------------------------------------------------------------
+
+    @app.get("/api/knowledge/gaps")
+    async def list_gaps(
+        status: str | None = Query(default=None, description="Filter by gap status"),
+    ) -> JSONResponse:
+        """List all gap candidates with optional status filter.
+
+        P23-T4: Returns all gaps, optionally filtered by status.
+        """
+        from cc_deep_research.knowledge.gap_detection import GapStatus, GapStore
+
+        store = GapStore()
+
+        if status:
+            try:
+                status_enum = GapStatus(status.lower())
+                gaps = store.get_gaps(status_enum)
+            except ValueError:
+                return JSONResponse(
+                    content={"error": f"Unknown status: {status}"},
+                    status_code=400,
+                )
+        else:
+            gaps = store.get_gaps()
+
+        return JSONResponse(content={
+            "gaps": [g.to_dict() for g in gaps],
+            "total": len(gaps),
+        })
+
+    @app.get("/api/knowledge/gaps/{gap_id}")
+    async def get_gap(gap_id: str) -> JSONResponse:
+        """Get details of a specific gap candidate."""
+        from cc_deep_research.knowledge.gap_detection import GapStore
+
+        store = GapStore()
+        gap = store.gap(gap_id)
+
+        if gap is None:
+            return JSONResponse(
+                content={"error": f"Gap not found: {gap_id}"},
+                status_code=404,
+            )
+
+        return JSONResponse(content=gap.to_dict())
+
+    @app.post("/api/knowledge/gaps/{gap_id}/status")
+    async def update_gap_status(
+        gap_id: str,
+        body: dict,
+    ) -> JSONResponse:
+        """Update gap status (accept/dismiss/defer/resolve).
+
+        Body: {"status": "accepted"|"dismissed"|"deferred"|"resolved"}
+        """
+        from cc_deep_research.knowledge.gap_detection import GapStatus, GapStore
+
+        new_status_str = body.get("status")
+        if not new_status_str:
+            return JSONResponse(
+                content={"error": "status field is required"},
+                status_code=400,
+            )
+
+        try:
+            new_status = GapStatus(new_status_str.lower())
+        except ValueError:
+            valid = [s.value for s in GapStatus]
+            return JSONResponse(
+                content={"error": f"Invalid status. Must be one of: {valid}"},
+                status_code=400,
+            )
+
+        store = GapStore()
+        gap = store.gap(gap_id)
+
+        if gap is None:
+            return JSONResponse(
+                content={"error": f"Gap not found: {gap_id}"},
+                status_code=404,
+            )
+
+        success = store.update_status(gap_id, new_status)
+
+        return JSONResponse(content={
+            "gap_id": gap_id,
+            "status": new_status.value,
+            "updated": success,
+        })
+
+    @app.post("/api/knowledge/gaps/detect")
+    async def run_gap_detection() -> JSONResponse:
+        """Run gap detection over the current graph.
+
+        P23-T4: Scans the graph for gap signals and returns newly detected gaps.
+        Previously detected gaps are preserved; only truly new gaps are added.
+        """
+        from cc_deep_research.knowledge.gap_detection import (
+            GapStatus,
+            GapStore,
+            detect_gaps,
+        )
+
+        index = _open_graph_index()
+        if index is None:
+            return JSONResponse(
+                content={"error": "Vault not initialized or graph index not found"},
+                status_code=404,
+            )
+
+        # Run detection
+        new_gaps = detect_gaps(index)
+
+        # Load store and add only genuinely new gaps
+        store = GapStore()
+        existing_detected_ids = {g.id for g in store.get_gaps(GapStatus.DETECTED)}
+        existing_accepted_ids = {g.id for g in store.get_accepted_gaps()}
+
+        added = 0
+        for gap in new_gaps:
+            if gap.id in existing_detected_ids or gap.id in existing_accepted_ids:
+                continue
+            store.add_gap(gap)
+            added += 1
+
+        return JSONResponse(content={
+            "detected": len(new_gaps),
+            "added": added,
+            "total_gaps": len(store.get_gaps()),
+        })
+
+    @app.get("/api/knowledge/gaps/accepted")
+    async def list_accepted_gaps() -> JSONResponse:
+        """Get accepted gaps ready for research follow-up."""
+        from cc_deep_research.knowledge.gap_detection import GapStore
+
+        store = GapStore()
+        gaps = store.get_accepted_gaps()
+
+        return JSONResponse(content={
+            "gaps": [g.to_dict() for g in gaps],
+            "total": len(gaps),
+        })
+
+
+
+    __all__ = ["register_knowledge_routes"]

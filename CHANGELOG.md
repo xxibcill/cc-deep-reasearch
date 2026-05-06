@@ -8,6 +8,16 @@ History before `0.1.0` is summarized from the repository state captured on 2026-
 
 <!-- Add Added/Changed/Fixed entries here before cutting a release. -->
 
+#### Phase 16 - CLI Migration: All Features to Dashboard (7 tasks)
+
+- Added `/api/knowledge/init` endpoint for vault initialization with dry-run support
+- Added `/api/knowledge/backfill` endpoint for session ingestion into knowledge vault
+- Added `/api/knowledge/rebuild-index` endpoint for graph index rebuild
+- Added `/api/benchmarks/run` endpoint to trigger benchmark corpus runs from dashboard
+- Added `/api/benchmarks/compare` endpoint for run comparison
+- Removed `cc-deep-research` CLI entry point from `pyproject.toml` and deleted `src/cc_deep_research/cli/`
+- All CLI commands now available via dashboard or deprecated with documented rationale
+
 #### Phase 00 - Baseline And Refactor Safety (3 tasks)
 
 - Captured working tree baseline: documented `refactor` branch state, dirty files (`content_gen/progress.py`, `content_gen/router.py`, `tests/test_web_server.py`), and generated artifacts to preserve during refactor

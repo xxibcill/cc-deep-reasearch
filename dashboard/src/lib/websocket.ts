@@ -10,6 +10,7 @@ import {
   WSHistoryPageMessage,
   WSClientGetHistoryMessage,
   WebSocketServerMessage,
+  ReconnectHistoryEntry,
 } from '@/types/telemetry';
 
 interface UseWebSocketOptions {
@@ -52,6 +53,8 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
   const latestFailureReasonRef = useRef<string | null>(null);
 
   const setLiveStreamStatus = useDashboardStore((state) => state.setLiveStreamStatus);
+  const appendReconnectHistory = useDashboardStore((state) => state.appendReconnectHistory);
+  const connectStartTimeRef = useRef<number | null>(null);
 
   const probeBackend = useCallback(async () => {
     if (!sessionId || connectProbeInFlightRef.current) {
@@ -143,6 +146,7 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
 
     const wsUrl = `${dashboardRuntimeConfig.websocketBaseUrl}/session/${sessionId}`;
     const attempt = reconnectAttemptsRef.current;
+    connectStartTimeRef.current = Date.now();
     console.info(
       `[dashboard] opening websocket sessionId=${sessionId} wsUrl=${wsUrl} reconnectAttempt=${attempt} pageOrigin=${window.location.origin} apiBaseUrl=${dashboardRuntimeConfig.apiBaseUrl}`
     );
@@ -164,6 +168,7 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
       console.info(`[dashboard] websocket connected sessionId=${sessionId} wsUrl=${wsUrl}`);
       reconnectAttemptsRef.current = 0;
       latestFailureReasonRef.current = null;
+      const successAt = toIsoTimestamp();
       updateLiveStreamStatus({
         phase: 'live',
         connected: true,
@@ -171,7 +176,9 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
         nextRetryAt: null,
         failureReason: null,
         canReconnect: true,
+        lastSuccessAt: successAt,
       });
+      connectStartTimeRef.current = null;
 
       const subscribeMessage: ClientMessage = {
         type: 'subscribe',
@@ -262,6 +269,17 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
       }
 
       const closedAt = toIsoTimestamp();
+      const tookMs = connectStartTimeRef.current != null ? Date.now() - connectStartTimeRef.current : 0;
+      const historyEntry: ReconnectHistoryEntry = {
+        attempt: reconnectAttemptsRef.current,
+        timestamp: closedAt,
+        closeCode: event.code,
+        closeReason: event.reason || null,
+        wasClean: event.wasClean,
+        tookMs,
+        error: null,
+      };
+      appendReconnectHistory(historyEntry);
       latestFailureReasonRef.current = latestFailureReasonRef.current ?? getCloseReason(event);
       updateLiveStreamStatus({
         connected: false,
@@ -307,6 +325,7 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
       });
     };
   }, [
+    appendReconnectHistory,
     enabled,
     appendBufferedEvents,
     flushBufferedEvents,

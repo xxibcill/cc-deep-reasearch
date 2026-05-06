@@ -175,3 +175,174 @@ export async function rebuildIndex(configPath?: string): Promise<RebuildIndexRes
   const response = await knowledgeClient.post('/rebuild-index', null, { params });
   return response.data;
 }
+
+// ---------------------------------------------------------------------------
+// Dedup client (P23-T2)
+// ---------------------------------------------------------------------------
+
+export type DuplicateMatchReason =
+  | 'same_url'
+  | 'similar_title'
+  | 'same_entity_label'
+  | 'similar_text'
+  | 'shared_session';
+
+export interface DuplicateCandidate {
+  id: string;
+  node_a_id: string;
+  node_b_id: string;
+  match_reason: DuplicateMatchReason;
+  confidence: number;
+  match_evidence: Record<string, unknown>;
+  suggested_action: 'merge' | 'keep_separate' | 'review';
+  created_at: string;
+  status: 'Pending' | 'Merged' | 'Dismissed' | 'Deferred';
+}
+
+export interface DuplicateCandidatesResponse {
+  candidates: DuplicateCandidate[];
+  total: number;
+}
+
+export async function fetchDuplicateCandidates(
+  status?: string,
+): Promise<DuplicateCandidatesResponse> {
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  const response = await knowledgeClient.get('/dedup/candidates', { params });
+  return response.data;
+}
+
+export async function fetchDuplicateCandidate(
+  candidateId: string,
+): Promise<DuplicateCandidate> {
+  const response = await knowledgeClient.get(`/dedup/candidates/${candidateId}`);
+  return response.data;
+}
+
+export async function resolveDuplicateCandidate(
+  candidateId: string,
+  action: 'merge' | 'dismiss' | 'defer',
+): Promise<{ candidate_id: string; action: string; resolved?: boolean; merge_result?: Record<string, unknown> }> {
+  const response = await knowledgeClient.post(
+    `/dedup/candidates/${candidateId}/resolve?action=${action}`,
+    null,
+  );
+  return response.data;
+}
+
+export interface MergeResult {
+  success: boolean;
+  kept_node_id: string;
+  removed_node_id: string;
+  session_ids: string[];
+  source_ids: string[];
+  supersedes_edge_id: string;
+  error?: string;
+}
+
+export async function mergeNodes(
+  nodeAId: string,
+  nodeBId: string,
+): Promise<MergeResult> {
+  const params = new URLSearchParams();
+  params.set('node_a_id', nodeAId);
+  params.set('node_b_id', nodeBId);
+  const response = await knowledgeClient.post('/dedup/merge', null, { params });
+  return response.data;
+}
+
+export interface MergedPair {
+  node_a_id: string;
+  node_b_id: string;
+  kept_node_id: string;
+  removed_node_id: string;
+  session_ids: string[];
+  source_ids: string[];
+  merged_at: string;
+}
+
+export async function fetchMergedPairs(): Promise<{
+  merged_pairs: MergedPair[];
+  total: number;
+}> {
+  const response = await knowledgeClient.get('/dedup/merged-pairs');
+  return response.data;
+}
+
+// ---------------------------------------------------------------------------
+// Gap detection client (P23-T4)
+// ---------------------------------------------------------------------------
+
+export type GapReason =
+  | 'low_source_count'
+  | 'stale_coverage'
+  | 'contradictory_claims'
+  | 'missing_provenance'
+  | 'failed_retrieval'
+  | 'sparse_entity'
+  | 'orphan_node';
+
+export type GapStatus = 'detected' | 'accepted' | 'dismissed' | 'deferred' | 'resolved';
+
+export interface GapCandidate {
+  id: string;
+  node_id: string | null;
+  gap_type: GapReason;
+  description: string;
+  evidence: Record<string, unknown>;
+  suggested_queries: string[];
+  status: GapStatus;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export interface GapsResponse {
+  gaps: GapCandidate[];
+  total: number;
+}
+
+export async function fetchGaps(status?: string): Promise<GapsResponse> {
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  const response = await knowledgeClient.get('/gaps', { params });
+  return response.data;
+}
+
+export async function fetchGap(gapId: string): Promise<GapCandidate> {
+  const response = await knowledgeClient.get(`/gaps/${gapId}`);
+  return response.data;
+}
+
+export interface GapStatusUpdateResponse {
+  gap_id: string;
+  status: string;
+  updated: boolean;
+}
+
+export async function updateGapStatus(
+  gapId: string,
+  newStatus: 'accepted' | 'dismissed' | 'deferred' | 'resolved',
+): Promise<GapStatusUpdateResponse> {
+  const response = await knowledgeClient.post(
+    `/gaps/${gapId}/status`,
+    { status: newStatus },
+  );
+  return response.data;
+}
+
+export interface RunDetectionResponse {
+  detected: number;
+  added: number;
+  total_gaps: number;
+}
+
+export async function runGapDetection(): Promise<RunDetectionResponse> {
+  const response = await knowledgeClient.post('/gaps/detect');
+  return response.data;
+}
+
+export async function fetchAcceptedGaps(): Promise<GapsResponse> {
+  const response = await knowledgeClient.get('/gaps/accepted');
+  return response.data;
+}

@@ -1,17 +1,45 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
-import { ArrowRight, Archive, CheckCircle2, Clock3, Database, FileText, Home, Radar, Search, XCircle } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import {
+  AlertCircle,
+  Archive,
+  ArrowRight,
+  CheckCircle2,
+  Clock3,
+  Database,
+  FileText,
+  GitCompare,
+  Home,
+  Pencil,
+  Plus,
+  Radar,
+  Search,
+  StickyNote,
+  Trash2,
+  XCircle,
+} from 'lucide-react';
 
+import {
+  addSessionAnnotation,
+  deleteSessionAnnotation,
+  getSessionAnnotations,
+  getSessionTriage,
+  type SessionAnnotation as SessionAnnotationType,
+  updateSessionTriage,
+} from '@/lib/api';
 import { ArtifactExplorer } from '@/components/artifact-explorer';
 import { ResearchContentActions } from '@/components/research-content-actions';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { MetricCard } from '@/components/ui/metric-card';
+import { Textarea } from '@/components/ui/textarea';
 import { buildResearchContentBridgePayloadFromSession } from '@/lib/research-content-bridge';
-import type { ResearchRunStatus, Session } from '@/types/telemetry';
+import { useNotifications } from '@/components/ui/notification-center';
+import type { ResearchRunStatus, Session, TriageStatus } from '@/types/telemetry';
 
 interface SessionOverviewProps {
   sessionId: string;
@@ -276,6 +304,7 @@ function NextActions({
 }) {
   const isActive = runStatus === 'running';
   const isTerminal = runStatus === 'completed' || runStatus === 'failed' || runStatus === 'cancelled';
+  const isFailedOrInterrupted = runStatus === 'failed' || runStatus === 'cancelled';
 
   return (
     <div className="space-y-3">
@@ -288,6 +317,17 @@ function NextActions({
           >
             <Radar className="mr-2 h-4 w-4" />
             Inspect live telemetry
+            <ArrowRight className="ml-auto h-3 w-3" />
+          </Link>
+        )}
+
+        {isFailedOrInterrupted && (
+          <Link
+            href={`/compare?b=${sessionId}`}
+            className={buttonVariants({ variant: 'outline', size: 'sm', className: 'w-full justify-start' })}
+          >
+            <GitCompare className="mr-2 h-4 w-4" />
+            Compare as target against baseline
             <ArrowRight className="ml-auto h-3 w-3" />
           </Link>
         )}
@@ -369,6 +409,236 @@ function ContentStudioHandoff({
   );
 }
 
+const TRIAGE_OPTIONS: { value: TriageStatus; label: string; variant: 'default' | 'outline' | 'destructive' | 'ghost' }[] = [
+  { value: 'needs_review', label: 'Needs Review', variant: 'destructive' },
+  { value: 'investigated', label: 'Investigated', variant: 'outline' },
+  { value: 'blocked', label: 'Blocked', variant: 'destructive' },
+  { value: 'ready', label: 'Ready', variant: 'default' },
+  { value: 'archived', label: 'Archived', variant: 'ghost' },
+];
+
+function NextActionsPanel({
+  sessionId,
+  runStatus,
+  hasReport,
+  isArchived,
+}: {
+  sessionId: string;
+  runStatus: ResearchRunStatus | null;
+  hasReport: boolean;
+  isArchived: boolean;
+}) {
+  const isActive = runStatus === 'running';
+  const isTerminal = runStatus === 'completed' || runStatus === 'failed' || runStatus === 'cancelled';
+
+  return (
+    <Card className="xl:rounded-2xl">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Next Actions</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <NextActions
+          sessionId={sessionId}
+          runStatus={runStatus}
+          hasReport={hasReport}
+          isArchived={isArchived}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+function TriagePanel({ sessionId }: { sessionId: string }) {
+  const [triageStatus, setTriageStatus] = useState<string | null>(null);
+  const [triageOwner, setTriageOwner] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [editingOwner, setEditingOwner] = useState(false);
+  const { notify } = useNotifications();
+
+  useEffect(() => {
+    getSessionTriage(sessionId).then((result) => {
+      setTriageStatus(result.triage_status);
+      setTriageOwner(result.triage_owner ?? '');
+    }).catch(() => {});
+  }, [sessionId]);
+
+  const handleTriageStatusChange = async (status: TriageStatus) => {
+    setLoading(true);
+    try {
+      await updateSessionTriage(sessionId, { triage_status: status });
+      setTriageStatus(status);
+      notify({ variant: 'success', title: 'Triage status updated' });
+    } catch {
+      notify({ variant: 'destructive', title: 'Failed to update triage status' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOwnerSave = async () => {
+    if (!triageOwner.trim()) return;
+    setLoading(true);
+    try {
+      await updateSessionTriage(sessionId, { triage_owner: triageOwner.trim() });
+      setEditingOwner(false);
+      notify({ variant: 'success', title: 'Owner updated' });
+    } catch {
+      notify({ variant: 'destructive', title: 'Failed to update owner' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Card className="xl:rounded-2xl">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <StickyNote className="h-4 w-4 text-primary" />
+          Triage
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Status</p>
+          <div className="flex flex-wrap gap-2">
+            {TRIAGE_OPTIONS.map((option) => (
+              <Button
+                key={option.value}
+                type="button"
+                size="sm"
+                variant={triageStatus === option.value ? option.variant : 'outline'}
+                onClick={() => handleTriageStatusChange(option.value)}
+                disabled={loading}
+              >
+                {option.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Owner</p>
+          {editingOwner ? (
+            <div className="flex gap-2">
+              <Input
+                value={triageOwner}
+                onChange={(e) => setTriageOwner(e.target.value)}
+                placeholder="Operator name"
+                className="h-9"
+              />
+              <Button size="sm" onClick={handleOwnerSave} disabled={loading}>Save</Button>
+              <Button size="sm" variant="ghost" onClick={() => setEditingOwner(false)}>Cancel</Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-foreground">{triageOwner || 'Unassigned'}</span>
+              <Button size="sm" variant="ghost" onClick={() => setEditingOwner(true)}>
+                <Pencil className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AnnotationPanel({ sessionId }: { sessionId: string }) {
+  const [annotations, setAnnotations] = useState<SessionAnnotationType[]>([]);
+  const [newNote, setNewNote] = useState('');
+  const [author, setAuthor] = useState('');
+  const [loading, setLoading] = useState(false);
+  const { notify } = useNotifications();
+
+  useEffect(() => {
+    getSessionAnnotations(sessionId).then((result) => {
+      setAnnotations(result.annotations);
+    }).catch(() => {});
+  }, [sessionId]);
+
+  const handleAddNote = async () => {
+    if (!newNote.trim()) return;
+    setLoading(true);
+    try {
+      const result = await addSessionAnnotation(sessionId, newNote.trim(), author.trim() || undefined);
+      setAnnotations((prev) => [...prev, result.annotation]);
+      setNewNote('');
+      notify({ variant: 'success', title: 'Note added' });
+    } catch {
+      notify({ variant: 'destructive', title: 'Failed to add note' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteNote = async (index: number) => {
+    try {
+      await deleteSessionAnnotation(sessionId, index);
+      setAnnotations((prev) => prev.filter((_, i) => i !== index));
+      notify({ variant: 'success', title: 'Note deleted' });
+    } catch {
+      notify({ variant: 'destructive', title: 'Failed to delete note' });
+    }
+  };
+
+  return (
+    <Card className="xl:rounded-2xl">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <StickyNote className="h-4 w-4 text-primary" />
+          Notes
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Textarea
+            value={newNote}
+            onChange={(e) => setNewNote(e.target.value)}
+            placeholder="Add a note about this session..."
+            className="min-h-[80px] resize-none"
+          />
+          <div className="flex gap-2">
+            <Input
+              value={author}
+              onChange={(e) => setAuthor(e.target.value)}
+              placeholder="Your name (optional)"
+              className="h-9 flex-1"
+            />
+            <Button size="sm" onClick={handleAddNote} disabled={loading || !newNote.trim()}>
+              <Plus className="h-3 w-3" />
+              Add
+            </Button>
+          </div>
+        </div>
+        {annotations.length > 0 ? (
+          <div className="space-y-3">
+            {annotations.map((annotation, index) => (
+              <div key={index} className="rounded-[0.8rem] border border-border/70 bg-surface-raised p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm text-foreground whitespace-pre-wrap">{annotation.note}</p>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteNote(index)}
+                    className="text-muted-foreground hover:text-destructive transition-colors"
+                    title="Delete note"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {annotation.author ? `${annotation.author} · ` : ''}
+                  {new Date(annotation.created_at).toLocaleString()}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">No notes yet.</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function SessionOverview({ sessionId, runStatus, sessionSummary }: SessionOverviewProps) {
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
 
@@ -400,24 +670,19 @@ export function SessionOverview({ sessionId, runStatus, sessionSummary }: Sessio
       </div>
 
       <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">
-        <Card className="xl:rounded-2xl">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Next Actions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <NextActions
-              sessionId={sessionId}
-              runStatus={runStatus}
-              hasReport={sessionSummary?.hasReport ?? false}
-              isArchived={sessionSummary?.archived ?? false}
-            />
-          </CardContent>
-        </Card>
+        <NextActionsPanel
+          sessionId={sessionId}
+          runStatus={runStatus}
+          hasReport={sessionSummary?.hasReport ?? false}
+          isArchived={sessionSummary?.archived ?? false}
+        />
         <ContentStudioHandoff
           session={sessionSummary}
           sessionId={sessionId}
           runStatus={runStatus}
         />
+        <TriagePanel sessionId={sessionId} />
+        <AnnotationPanel sessionId={sessionId} />
       </aside>
     </div>
   );

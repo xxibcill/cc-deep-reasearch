@@ -11,6 +11,10 @@ export type SourceType =
 
 export type SourceStatus = 'active' | 'inactive' | 'error';
 
+export type SourceHealth = 'healthy' | 'degraded' | 'unhealthy';
+
+export type SourcePriority = 'critical' | 'high' | 'medium' | 'low';
+
 export type OpportunityType =
   | 'competitor_move'
   | 'audience_question'
@@ -22,11 +26,18 @@ export type OpportunityType =
 
 export type OpportunityStatus =
   | 'new'
+  | 'reviewing'
+  | 'accepted'
+  | 'deferred'
+  | 'rejected'
+  | 'converted'
   | 'saved'
   | 'acted_on'
   | 'monitoring'
   | 'dismissed'
   | 'archived';
+
+export type OpportunityOwnerPriority = 'critical' | 'high' | 'medium' | 'low';
 
 export type FreshnessState = 'new' | 'fresh' | 'stale' | 'expired';
 
@@ -38,13 +49,26 @@ export type FeedbackType =
   | 'dismissed'
   | 'ignored'
   | 'converted_to_research'
-  | 'converted_to_content';
+  | 'converted_to_content'
+  | 'useful'
+  | 'not_useful'
+  | 'duplicate'
+  | 'stale'
+  | 'too_broad'
+  | 'wrong_audience';
 
 export type WorkflowType =
   | 'research_run'
   | 'brief'
   | 'backlog_item'
   | 'content_pipeline';
+
+// Scan job types
+export type ScanJobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | 'cancelled';
+
+// Alert types
+export type AlertSeverity = 'info' | 'warning' | 'critical';
+export type AlertTrigger = 'high_priority_opportunity' | 'source_failure' | 'stale_scan' | 'volume_spike' | 'consecutive_failures';
 
 // API response shapes (raw from backend)
 
@@ -54,10 +78,18 @@ export interface ApiRadarSource {
   label: string;
   url_or_identifier: string;
   status: string;
+  owner: string | null;
+  priority: string;
   scan_cadence: string;
   last_scanned_at: string | null;
+  last_scan_success: boolean | null;
+  last_failure_reason: string | null;
+  consecutive_failures: number;
+  health: string;
+  notes: string | null;
   created_at: string;
   updated_at: string;
+  metadata: Record<string, unknown>;
 }
 
 export interface ApiOpportunity {
@@ -66,6 +98,11 @@ export interface ApiOpportunity {
   summary: string;
   opportunity_type: string;
   status: string;
+  owner: string | null;
+  priority: string;
+  reason: string | null;
+  next_action: string | null;
+  reviewed_at: string | null;
   priority_label: string;
   why_it_matters: string | null;
   recommended_action: string | null;
@@ -73,6 +110,7 @@ export interface ApiOpportunity {
   freshness_state: string;
   created_at: string;
   updated_at: string;
+  metadata: Record<string, unknown>;
 }
 
 export interface ApiOpportunityScore {
@@ -139,34 +177,8 @@ export interface OpportunityDetailResponse {
   workflow_links: ApiWorkflowLink[];
 }
 
-// Normalized client-side types
-
-export interface RadarSource {
-  id: string;
-  sourceType: SourceType;
-  label: string;
-  urlOrIdentifier: string;
-  status: SourceStatus;
-  scanCadence: string;
-  lastScannedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface Opportunity {
-  id: string;
-  title: string;
-  summary: string;
-  opportunityType: OpportunityType;
-  status: OpportunityStatus;
-  priorityLabel: PriorityLabel;
-  whyItMatters: string | null;
-  recommendedAction: string | null;
-  totalScore: number;
-  freshnessState: FreshnessState;
-  createdAt: string;
-  updatedAt: string;
-}
+// Normalized client-side types (with full lifecycle/governance fields)
+// See expanded interfaces above for opportunities/governance details
 
 export interface OpportunityScore {
   opportunityId: string;
@@ -218,6 +230,128 @@ export interface OpportunityDetail {
   signals: OpportunitySignal[];
   feedback: OpportunityFeedback[];
   workflowLinks: WorkflowLink[];
+}
+
+// Normalized RadarSource with governance fields
+export interface RadarSource {
+  id: string;
+  sourceType: SourceType;
+  label: string;
+  urlOrIdentifier: string;
+  status: SourceStatus;
+  owner: string | null;
+  priority: SourcePriority;
+  scanCadence: string;
+  lastScannedAt: string | null;
+  lastScanSuccess: boolean | null;
+  lastFailureReason: string | null;
+  consecutiveFailures: number;
+  health: SourceHealth;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  metadata: Record<string, unknown>;
+}
+
+// Normalized Opportunity with lifecycle fields
+export interface Opportunity {
+  id: string;
+  title: string;
+  summary: string;
+  opportunityType: OpportunityType;
+  status: OpportunityStatus;
+  owner: string | null;
+  priority: OpportunityOwnerPriority;
+  reason: string | null;
+  nextAction: string | null;
+  reviewedAt: string | null;
+  priorityLabel: PriorityLabel;
+  whyItMatters: string | null;
+  recommendedAction: string | null;
+  totalScore: number;
+  freshnessState: FreshnessState;
+  createdAt: string;
+  updatedAt: string;
+  metadata: Record<string, unknown>;
+}
+
+// Scan job types
+export interface ScanJob {
+  id: string;
+  sourceId: string | null;
+  triggeredBy: string;
+  status: ScanJobStatus;
+  signalsFound: number;
+  errors: string[];
+  startedAt: string;
+  completedAt: string | null;
+  scanType: string;
+}
+
+// Alert types
+export interface RadarAlert {
+  id: string;
+  trigger: AlertTrigger;
+  severity: AlertSeverity;
+  title: string;
+  message: string;
+  sourceId: string | null;
+  opportunityId: string | null;
+  acknowledged: boolean;
+  acknowledgedBy: string | null;
+  acknowledgedAt: string | null;
+  createdAt: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface AlertMute {
+  id: string;
+  trigger: AlertTrigger;
+  sourceId: string | null;
+  mutedBy: string | null;
+  mutedAt: string;
+  expiresAt: string | null;
+}
+
+// Digest types
+export interface RadarDigest {
+  id: string;
+  periodStart: string;
+  periodEnd: string;
+  newOpportunitiesCount: number;
+  topOpportunities: Record<string, unknown>[];
+  sourceHealthIssues: Record<string, unknown>[];
+  alertCount: number;
+  createdAt: string;
+}
+
+// Scoring feedback types
+export interface ScoringFeedback {
+  id: string;
+  opportunityId: string;
+  signalId: string | null;
+  feedbackType: FeedbackType;
+  scoringFeatures: Record<string, number>;
+  rankPosition: number | null;
+  outcome: string | null;
+  createdAt: string;
+}
+
+// Source health response
+export interface SourceHealthDetails {
+  sourceId: string;
+  health: SourceHealth;
+  consecutiveFailures: number;
+  lastFailureReason: string | null;
+  lastScanSuccess: boolean | null;
+  lastScannedAt: string | null;
+  recentJobs: {
+    id: string;
+    status: string;
+    signalsFound: number;
+    startedAt: string;
+    completedAt: string | null;
+  }[];
 }
 
 // List result shapes

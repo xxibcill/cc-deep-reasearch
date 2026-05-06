@@ -17,7 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { MetricCard } from '@/components/ui/metric-card';
 import { getApiErrorMessage, getRadarOpportunities } from '@/lib/api';
-import type { Opportunity, OpportunityListResult } from '@/types/radar';
+import type { Opportunity, OpportunityListResult, OpportunityStatus } from '@/types/radar';
 
 const PRIORITY_CONFIG = {
   act_now: { label: 'Act Now', variant: 'destructive' as const },
@@ -33,8 +33,13 @@ const FRESHNESS_CONFIG = {
   expired: { label: 'Expired', variant: 'secondary' as const },
 };
 
-const STATUS_CONFIG = {
+const STATUS_CONFIG: Record<OpportunityStatus, { label: string; variant: 'info' | 'default' | 'success' | 'secondary' | 'outline' | 'destructive' }> = {
   new: { label: 'New', variant: 'info' as const },
+  reviewing: { label: 'Reviewing', variant: 'info' as const },
+  accepted: { label: 'Accepted', variant: 'success' as const },
+  deferred: { label: 'Deferred', variant: 'secondary' as const },
+  rejected: { label: 'Rejected', variant: 'outline' as const },
+  converted: { label: 'Converted', variant: 'success' as const },
   saved: { label: 'Saved', variant: 'default' as const },
   acted_on: { label: 'Acted On', variant: 'success' as const },
   monitoring: { label: 'Monitoring', variant: 'secondary' as const },

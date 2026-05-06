@@ -100,6 +100,15 @@ from .production import (
     VisualProductionExecutionBrief,
     get_content_type_profile,
 )
+from .publish_queue import (
+    PublishBlocker,
+    PublishQueueOperatorNote,
+    PublishQueueReviewEntry,
+)
+from .qc_issue import (
+    QCIssue,
+    QCIssueReviewHistoryEntry,
+)
 from .research import (
     ClaimTraceEntry,
     ClaimTraceLedger,
@@ -119,6 +128,11 @@ from .research import (
     RetrievalDecision,
     RetrievalPlan,
     ScriptClaimStatement,
+)
+from .reusable_asset import (
+    AssetProvenanceLink,
+    ReusableAsset,
+    ReusableAssetType,
 )
 from .script import (
     ArgumentBeatClaim,
@@ -165,6 +179,10 @@ from .shared import (
     OperatingPhase,
     PlanningLearningCategory,
     ProductionComplexity,
+    PublishReadinessState,
+    QCIssueCategory,
+    QCIssueSeverity,
+    QCIssueStatus,
     ReleaseState,
     ResearchClaimType,
     ResearchConfidence,
@@ -252,6 +270,10 @@ __all__ = [
     "BriefExecutionPolicyMode",
     "BriefLifecycleState",
     "BriefProvenance",
+    "PublishReadinessState",
+    "QCIssueCategory",
+    "QCIssueSeverity",
+    "QCIssueStatus",
     # Contracts
     "CONTRACT_VERSION",
     "CONTENT_GEN_STAGE_CONTRACTS",
@@ -387,6 +409,17 @@ __all__ = [
     "ScriptingRunResult",
     "ScriptingStepTrace",
     "VisualNote",
+    # QC Issues
+    "QCIssue",
+    "QCIssueReviewHistoryEntry",
+    # Publish Queue
+    "PublishBlocker",
+    "PublishQueueOperatorNote",
+    "PublishQueueReviewEntry",
+    # Reusable Assets
+    "AssetProvenanceLink",
+    "ReusableAsset",
+    "ReusableAssetType",
     # Backward compat
     "get_content_type_profile",
     "SCRIPTING_STEPS",

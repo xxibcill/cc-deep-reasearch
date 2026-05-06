@@ -28,6 +28,25 @@ class DeepAnalysisStatus(StrEnum):
     DEGRADED = "degraded"
 
 
+class SessionAnnotation(BaseModel):
+    """Operator annotation on a session."""
+
+    note: str = Field(..., min_length=1)
+    author: str | None = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime | None = Field(default=None)
+
+
+class SessionTriageStatus(StrEnum):
+    """Triage state for a research session."""
+
+    NEEDS_REVIEW = "needs_review"
+    INVESTIGATED = "investigated"
+    BLOCKED = "blocked"
+    READY = "ready"
+    ARCHIVED = "archived"
+
+
 class SessionProvidersMetadata(BaseModel):
     """Stable provider-resolution metadata for a research session."""
 
@@ -91,6 +110,11 @@ class SessionMetadataContract(BaseModel):
     )
     llm_routes: dict[str, Any] = Field(default_factory=dict)
     prompts: SessionPromptMetadata = Field(default_factory=SessionPromptMetadata)
+    annotations: list[SessionAnnotation] = Field(default_factory=list)
+    triage_status: SessionTriageStatus | None = Field(default=None)
+    triage_owner: str | None = Field(default=None)
+    triage_handoff_target: str | None = Field(default=None)
+    last_reviewed_at: datetime | None = Field(default=None)
 
     model_config = {"extra": "allow"}
 
@@ -257,6 +281,13 @@ def normalize_session_metadata(
         deep_analysis=deep_analysis,
         llm_routes=_mapping_dict(raw_metadata.get("llm_routes", {})),
         prompts=prompt_metadata,
+        annotations=raw_metadata.get("annotations", []),
+        triage_status=SessionTriageStatus(raw_metadata["triage_status"])
+        if isinstance(raw_metadata.get("triage_status"), str)
+        else raw_metadata.get("triage_status"),
+        triage_owner=raw_metadata.get("triage_owner"),
+        triage_handoff_target=raw_metadata.get("triage_handoff_target"),
+        last_reviewed_at=raw_metadata.get("last_reviewed_at"),
     )
     return contract.model_dump(mode="python")
 
@@ -301,10 +332,12 @@ __all__ = [
     "DeepAnalysisStatus",
     "ProviderStatus",
     "ResearchSession",
+    "SessionAnnotation",
     "SessionDeepAnalysisMetadata",
     "SessionExecutionMetadata",
     "SessionMetadataContract",
     "SessionPromptMetadata",
     "SessionProvidersMetadata",
+    "SessionTriageStatus",
     "normalize_session_metadata",
 ]

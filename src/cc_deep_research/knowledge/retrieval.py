@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -15,6 +17,36 @@ from cc_deep_research.knowledge.vault import (
 
 if TYPE_CHECKING:
     pass
+
+
+# ---------------------------------------------------------------------------
+# Retrieval explanation
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class RetrievalExplanation:
+    """Metadata explaining how retrieval was performed and why nodes were selected."""
+
+    query: str
+    query_terms: frozenset[str]
+    nodes_selected: list[str]
+    nodes_excluded: list[str]
+    selection_reasons: dict[str, str]
+    score_factors: dict[str, float]
+    filters_applied: list[str]
+    fallback_active: bool
+    total_candidates: int
+    max_nodes: int
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+
+@dataclass
+class RetrievalResult:
+    """Result of knowledge retrieval with explanation metadata."""
+
+    context: KnowledgeContext
+    explanation: RetrievalExplanation
 
 
 class KnowledgeContext:
@@ -88,7 +120,7 @@ class KnowledgeRetrievalService:
         *,
         depth: str | None = None,
         max_nodes: int = 20,
-    ) -> KnowledgeContext:
+    ) -> RetrievalResult:
         """Retrieve knowledge relevant to a research query.
 
         Args:
@@ -97,17 +129,32 @@ class KnowledgeRetrievalService:
             max_nodes: Maximum number of nodes to return.
 
         Returns:
-            KnowledgeContext with relevant prior knowledge.
+            RetrievalResult containing KnowledgeContext and explanation.
         """
         index = self._open_index()
-        if index is None:
-            return _empty_context()
 
         query_terms = set(re.findall(r"[a-z0-9]+", query.lower()))
         stop_words = {"what", "is", "the", "a", "an", "of", "and", "to", "for", "in", "on"}
         query_terms -= stop_words
 
+        if index is None:
+            explanation = RetrievalExplanation(
+                query=query,
+                query_terms=frozenset(query_terms),
+                nodes_selected=[],
+                nodes_excluded=[],
+                selection_reasons={},
+                score_factors={},
+                filters_applied=["vault_not_found"],
+                fallback_active=True,
+                total_candidates=0,
+                max_nodes=max_nodes,
+            )
+            return RetrievalResult(context=_empty_context(), explanation=explanation)
+
         all_nodes = index.all_nodes()
+        total_candidates = len(all_nodes)
+
         relevant: list[KnowledgeNode] = []
         prior_sessions: list[KnowledgeNode] = []
         prior_claims: list[KnowledgeNode] = []
@@ -117,9 +164,18 @@ class KnowledgeRetrievalService:
         stale_claims: list[KnowledgeNode] = []
         unsupported_claims: list[KnowledgeNode] = []
 
+        # Track selection details for explanation
+        selection_reasons: dict[str, str] = {}
+        score_factors: dict[str, float] = {}
+        nodes_excluded: list[str] = []
+
         for node in all_nodes:
-            if self._node_relevant(node, query_terms):
+            is_relevant, reason, score = self._compute_node_relevance_details(node, query_terms)
+            if is_relevant:
                 relevant.append(node)
+                selection_reasons[node.id] = _truncate(reason, 200)
+                score_factors[node.id] = score
+
                 if node.kind == NodeKind.SESSION:
                     prior_sessions.append(node)
                 elif node.kind == NodeKind.CLAIM:
@@ -136,10 +192,35 @@ class KnowledgeRetrievalService:
                     prior_gaps.append(node)
                 elif node.kind == NodeKind.SOURCE:
                     prior_sources.append(node)
+            elif len(nodes_excluded) < 5 and len(query_terms) > 0:
+                # Track some excluded nodes for debugging (only when candidates > 10)
+                if total_candidates > 10:
+                    nodes_excluded.append(node.id)
 
         relevant = relevant[:max_nodes]
 
-        return KnowledgeContext(
+        # Sanitize: omit nodes_excluded when candidate count is large to bound payload
+        if total_candidates > 10:
+            nodes_excluded = []
+
+        filters_applied: list[str] = []
+        if depth:
+            filters_applied.append(f"depth_filter:{depth}")
+
+        explanation = RetrievalExplanation(
+            query=query,
+            query_terms=frozenset(query_terms),
+            nodes_selected=[n.id for n in relevant],
+            nodes_excluded=nodes_excluded,
+            selection_reasons={k: _truncate(v, 200) for k, v in selection_reasons.items()},
+            score_factors=score_factors,
+            filters_applied=filters_applied,
+            fallback_active=False,
+            total_candidates=total_candidates,
+            max_nodes=max_nodes,
+        )
+
+        context = KnowledgeContext(
             relevant_nodes=relevant,
             prior_sessions=prior_sessions[:5],
             prior_claims=prior_claims[:10],
@@ -150,18 +231,50 @@ class KnowledgeRetrievalService:
             unsupported_claims=unsupported_claims,
             knowledge_used=True,
         )
+        return RetrievalResult(context=context, explanation=explanation)
 
     @staticmethod
-    def _node_relevant(node: KnowledgeNode, query_terms: set[str]) -> bool:
-        """Check if a node is relevant to the query."""
+    def _compute_node_relevance_details(
+        node: KnowledgeNode, query_terms: set[str]
+    ) -> tuple[bool, str, float]:
+        """Check if a node is relevant and return match details.
+
+        Returns:
+            (is_relevant, reason, score)
+            reason: human-readable explanation of why node was/wasn't selected
+            score: numeric relevance score based on term overlap
+        """
         label_terms = set(re.findall(r"[a-z0-9]+", node.label.lower()))
         prop_values = " ".join(str(v) for v in node.properties.values())
         prop_terms = set(re.findall(r"[a-z0-9]+", prop_values.lower()))
         all_terms = label_terms | prop_terms
 
-        if query_terms & all_terms:
-            return True
-        return False
+        if not query_terms:
+            return False, "no query terms after stopword removal", 0.0
+
+        matched_label = query_terms & label_terms
+        matched_props = query_terms & prop_terms
+
+        if not matched_label and not matched_props:
+            matched = sorted(query_terms)
+            return False, f"no terms matched (query had: {matched})", 0.0
+
+        reasons = []
+        if matched_label:
+            reasons.append(f"label matched: {sorted(matched_label)}")
+        if matched_props:
+            reasons.append(f"properties matched: {sorted(matched_props)}")
+
+        score = len(matched_label) * 2.0 + len(matched_props) * 1.0
+        return True, "; ".join(reasons), score
+
+    @staticmethod
+    def _node_relevant(node: KnowledgeNode, query_terms: set[str]) -> bool:
+        """Check if a node is relevant to the query."""
+        is_relevant, _, _ = KnowledgeRetrievalService._compute_node_relevance_details(
+            node, query_terms
+        )
+        return is_relevant
 
     def get_session_influence(self, session_id: str) -> dict:
         """Return which prior knowledge influenced a given session.
@@ -201,6 +314,13 @@ class KnowledgeRetrievalService:
         return content[:500]
 
 
+def _truncate(text: str, max_len: int) -> str:
+    """Truncate text to max_len characters."""
+    if len(text) <= max_len:
+        return text
+    return text[:max_len] + "..."
+
+
 def _empty_context() -> KnowledgeContext:
     return KnowledgeContext(
         relevant_nodes=[],
@@ -215,4 +335,9 @@ def _empty_context() -> KnowledgeContext:
     )
 
 
-__all__ = ["KnowledgeContext", "KnowledgeRetrievalService"]
+__all__ = [
+    "KnowledgeContext",
+    "KnowledgeRetrievalService",
+    "RetrievalExplanation",
+    "RetrievalResult",
+]

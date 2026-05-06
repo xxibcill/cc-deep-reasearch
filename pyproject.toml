@@ -80,6 +80,7 @@ packages = ["src/cc_deep_research"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+markers = ["slow: storage performance tests that need a clean environment"]
 pythonpath = ["src"]
 
 [tool.ruff]
@@ -176,10 +177,6 @@ ignore_errors = false
 
 [[tool.mypy.overrides]]
 module = "cc_deep_research.knowledge.*"
-ignore_errors = false
-
-[[tool.mypy.overrides]]
-module = "cc_deep_research.cli.*"
 ignore_errors = false
 
 [[tool.mypy.overrides]]

@@ -702,6 +702,11 @@ class TestSessionBuilder:
             "deep_analysis",
             "llm_routes",
             "prompts",
+            "annotations",
+            "triage_status",
+            "triage_owner",
+            "triage_handoff_target",
+            "last_reviewed_at",
         }
         assert session.metadata["execution"]["parallel_requested"] is False
         assert session.started_at == started_at

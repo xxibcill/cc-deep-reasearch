@@ -169,28 +169,20 @@ class SearchCacheStore:
                 return entry if include_expired else None
 
             last_accessed_at = _serialize_timestamp(current_time)
-            connection.execute(
+            row = connection.execute(
                 f"""
                 UPDATE {_CACHE_TABLE_NAME}
                 SET last_accessed_at = ?, hit_count = hit_count + 1
                 WHERE cache_key = ?
+                RETURNING cache_key, provider, normalized_query, request_signature, serialized_result,
+                          created_at, expires_at, last_accessed_at, hit_count
                 """,
                 (last_accessed_at, cache_key),
-            )
-            connection.commit()
-
-            refreshed_row = connection.execute(
-                f"""
-                SELECT cache_key, provider, normalized_query, request_signature, serialized_result,
-                       created_at, expires_at, last_accessed_at, hit_count
-                FROM {_CACHE_TABLE_NAME}
-                WHERE cache_key = ?
-                """,
-                (cache_key,),
             ).fetchone()
-            if refreshed_row is None:
+            connection.commit()
+            if row is None:
                 return None
-            return _entry_from_row(refreshed_row)
+            return _entry_from_row(row)
 
     def put(
         self,
@@ -206,7 +198,7 @@ class SearchCacheStore:
         cache_key = identity.to_cache_key()
 
         with self._connect() as connection:
-            connection.execute(
+            row = connection.execute(
                 f"""
                 INSERT INTO {_CACHE_TABLE_NAME} (
                     cache_key,
@@ -229,6 +221,8 @@ class SearchCacheStore:
                     expires_at = excluded.expires_at,
                     last_accessed_at = excluded.last_accessed_at,
                     hit_count = hit_count
+                RETURNING cache_key, provider, normalized_query, request_signature, serialized_result,
+                          created_at, expires_at, last_accessed_at, hit_count
                 """,
                 (
                     cache_key,
@@ -240,21 +234,11 @@ class SearchCacheStore:
                     _serialize_timestamp(expires_at),
                     _serialize_timestamp(current_time),
                 ),
-            )
+            ).fetchone()
             self._enforce_max_entries(connection=connection, now=current_time)
             connection.commit()
-
-            row = connection.execute(
-                f"""
-                SELECT cache_key, provider, normalized_query, request_signature, serialized_result,
-                       created_at, expires_at, last_accessed_at, hit_count
-                FROM {_CACHE_TABLE_NAME}
-                WHERE cache_key = ?
-                """,
-                (cache_key,),
-            ).fetchone()
             if row is None:
-                raise RuntimeError("Failed to reload inserted search cache entry")
+                raise RuntimeError("Failed to insert search cache entry")
             return _entry_from_row(row)
 
     def delete(self, cache_key: str) -> bool:
@@ -347,7 +331,9 @@ class SearchCacheStore:
     def clear(self) -> int:
         """Delete all cache entries and return the count removed."""
         with self._connect() as connection:
-            row = connection.execute(f"SELECT COUNT(*) AS count FROM {_CACHE_TABLE_NAME}").fetchone()
+            row = connection.execute(
+                f"SELECT COUNT(*) AS count FROM {_CACHE_TABLE_NAME}"
+            ).fetchone()
             count = int(row["count"]) if row else 0
             connection.execute(f"DELETE FROM {_CACHE_TABLE_NAME}")
             connection.commit()
@@ -446,7 +432,9 @@ class InFlightSearchRegistry:
             if task is None:
                 task = asyncio.create_task(operation())  # type: ignore[arg-type]
                 self._tasks[cache_key] = task
-                task.add_done_callback(lambda completed_task: self._discard(cache_key, completed_task))
+                task.add_done_callback(
+                    lambda completed_task: self._discard(cache_key, completed_task)
+                )
 
         return await asyncio.shield(task)
 

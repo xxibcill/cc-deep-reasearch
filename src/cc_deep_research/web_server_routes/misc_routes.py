@@ -12,10 +12,19 @@ from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
 
 from cc_deep_research.benchmark import (
+    BenchmarkGateThresholds,
     BenchmarkRunReport,
     compare_benchmark_runs,
     load_benchmark_corpus,
     run_benchmark_corpus_sync,
+)
+from cc_deep_research.benchmark_baselines import (
+    demote_baseline,
+    get_baseline,
+    get_promoted_baseline,
+    list_baselines,
+    load_baseline_run,
+    promote_to_baseline,
 )
 from cc_deep_research.config import load_config
 from cc_deep_research.search_cache import SearchCacheStore
@@ -434,6 +443,26 @@ def register_misc_routes(app: FastAPI) -> None:
 
         return JSONResponse(content=corpus.model_dump(mode="json"))
 
+    @app.get("/api/benchmarks/validate")
+    async def validate_benchmark_corpus() -> JSONResponse:
+        """Validate the benchmark corpus and return errors grouped by case."""
+        try:
+            corpus = load_benchmark_corpus()
+        except Exception as e:
+            return JSONResponse(
+                content={"error": f"Failed to load benchmark corpus: {str(e)}"},
+                status_code=500,
+            )
+
+        from cc_deep_research.benchmark import validate_benchmark_corpus as _validate
+
+        errors = _validate(corpus)
+        return JSONResponse(content={
+            "valid": len(errors) == 0,
+            "errors": errors,
+            "total_cases": len(corpus.cases),
+        })
+
     @app.get("/api/benchmarks/runs")
     async def list_benchmark_runs() -> JSONResponse:
         """List available benchmark runs."""
@@ -589,6 +618,123 @@ def register_misc_routes(app: FastAPI) -> None:
 
         return JSONResponse(content=comparison.model_dump(mode="json"))
 
+    @app.get("/api/benchmarks/baselines")
+    async def list_benchmarks_baselines() -> JSONResponse:
+        """List all golden baselines."""
+        baselines = list_baselines()
+        return JSONResponse(content={
+            "baselines": [b.to_dict() for b in baselines],
+            "total": len(baselines),
+        })
+
+    @app.get("/api/benchmarks/baselines/{run_id}")
+    async def get_benchmark_baseline(run_id: str) -> JSONResponse:
+        """Get a specific golden baseline."""
+        baseline = get_baseline(run_id)
+        if baseline is None:
+            return JSONResponse(
+                content={"error": f"Baseline not found: {run_id}"},
+                status_code=404,
+            )
+        return JSONResponse(content=baseline.to_dict())
+
+    @app.post("/api/benchmarks/baselines/{run_id}/promote")
+    async def promote_benchmark_baseline(
+        run_id: str,
+        owner: str | None = Query(default=None, description="Baseline owner"),
+        approval_note: str | None = Query(default=None, description="Approval note"),
+    ) -> JSONResponse:
+        """Promote a benchmark run to golden baseline status."""
+        runs_dir = _get_benchmark_runs_dir()
+        run_path = runs_dir / run_id
+        manifest = run_path / "manifest.json"
+        if not run_path.exists() or not manifest.exists():
+            return JSONResponse(
+                content={"error": f"Benchmark run not found: {run_id}"},
+                status_code=404,
+            )
+
+        metadata = promote_to_baseline(
+            run_id=run_id,
+            run_path=str(run_path),
+            owner=owner,
+            approval_note=approval_note,
+        )
+        return JSONResponse(content=metadata.to_dict())
+
+    @app.delete("/api/benchmarks/baselines/{run_id}")
+    async def delete_benchmark_baseline(run_id: str) -> JSONResponse:
+        """Remove golden baseline status from a run."""
+        success = demote_baseline(run_id)
+        if not success:
+            return JSONResponse(
+                content={"error": f"Baseline not found: {run_id}"},
+                status_code=404,
+            )
+        return JSONResponse(content={"deleted": True, "run_id": run_id})
+
+    @app.get("/api/benchmarks/baselines/promoted")
+    async def get_promoted_benchmark_baseline() -> JSONResponse:
+        """Get the currently promoted (active) golden baseline."""
+        baseline = get_promoted_baseline()
+        if baseline is None:
+            return JSONResponse(content={"baseline": None})
+        return JSONResponse(content={"baseline": baseline.to_dict()})
+
+    @app.post("/api/benchmarks/gate")
+    async def evaluate_benchmark_gate(
+        baseline_run_id: str = Query(..., description="Baseline run ID"),
+        candidate_run_id: str = Query(..., description="Candidate run ID"),
+        min_pass_rate: float = Query(default=0.8, ge=0.0, le=1.0, description="Minimum pass rate threshold"),
+        min_validation_score: float = Query(default=0.6, ge=0.0, le=1.0, description="Minimum validation score threshold"),
+        max_latency_increase_ratio: float = Query(default=0.2, ge=0.0, description="Max fractional latency increase"),
+        override_notes: str | None = Query(default=None, description="Override notes if regression is accepted"),
+    ) -> JSONResponse:
+        """Evaluate a candidate benchmark run against a named baseline."""
+        baseline = load_baseline_run(baseline_run_id)
+        if baseline is None:
+            return JSONResponse(
+                content={"error": f"Baseline not found: {baseline_run_id}"},
+                status_code=404,
+            )
+
+        runs_dir = _get_benchmark_runs_dir()
+        candidate_path = runs_dir / candidate_run_id
+        manifest = candidate_path / "manifest.json"
+        if not candidate_path.exists() or not manifest.exists():
+            return JSONResponse(
+                content={"error": f"Candidate run not found: {candidate_run_id}"},
+                status_code=404,
+            )
+
+        try:
+            with manifest.open() as f:
+                candidate = BenchmarkRunReport.model_validate(json.load(f))
+        except Exception as e:
+            return JSONResponse(
+                content={"error": f"Failed to load candidate run: {str(e)}"},
+                status_code=500,
+            )
+
+        thresholds = BenchmarkGateThresholds(
+            min_pass_rate=min_pass_rate,
+            min_validation_score=min_validation_score,
+            max_latency_increase_ratio=max_latency_increase_ratio,
+        )
+
+        from cc_deep_research.benchmark import evaluate_benchmark_gate as _evaluate_gate
+
+        result = _evaluate_gate(
+            baseline,
+            candidate,
+            thresholds,
+            baseline_run_id=baseline_run_id,
+            candidate_run_id=candidate_run_id,
+            override_notes=override_notes,
+        )
+
+        return JSONResponse(content=result.model_dump(mode="json"))
+
     @app.get("/api/themes")
     async def list_research_themes() -> JSONResponse:
         """List available research themes for the dashboard."""
@@ -602,6 +748,59 @@ def register_misc_routes(app: FastAPI) -> None:
         """Get aggregate analytics data for operational insights."""
         analytics = _query_analytics_data(days_back=days_back)
         return JSONResponse(content=analytics)
+
+    @app.get("/api/benchmarks/trends")
+    async def get_benchmark_trends(
+        limit: int = Query(default=10, ge=1, le=50, description="Number of recent runs to include"),
+    ) -> JSONResponse:
+        """Get evaluation trends across recent benchmark runs.
+
+        Returns per-run summaries including quality score, pass rate, latency, and cost.
+        """
+        runs_dir = _get_benchmark_runs_dir()
+        runs: list[dict[str, Any]] = []
+
+        if runs_dir.exists():
+            for run_path in sorted(runs_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+                if not run_path.is_dir():
+                    continue
+                manifest_path = run_path / "manifest.json"
+                scorecard_path = run_path / "scorecard.json"
+                if not manifest_path.exists() or not scorecard_path.exists():
+                    continue
+
+                try:
+                    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    scorecard = json.loads(scorecard_path.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+
+                pass_count = sum(
+                    1 for c in manifest.get("cases", [])
+                    if c.get("stop_reason") == "success"
+                )
+                total = scorecard.get("total_cases", 0)
+                runs.append({
+                    "run_id": run_path.name,
+                    "generated_at": manifest.get("generated_at"),
+                    "corpus_version": manifest.get("corpus_version"),
+                    "workflow_mode": scorecard.get("workflow_mode"),
+                    "total_cases": total,
+                    "pass_count": pass_count,
+                    "pass_rate": round(pass_count / total, 3) if total > 0 else None,
+                    "average_validation_score": scorecard.get("average_validation_score"),
+                    "average_latency_ms": scorecard.get("average_latency_ms"),
+                    "average_report_quality_score": scorecard.get("average_report_quality_score"),
+                    "average_source_count": scorecard.get("average_source_count"),
+                    "date_sensitive_cases": scorecard.get("date_sensitive_cases"),
+                    "stop_reasons": scorecard.get("stop_reasons", {}),
+                    "categories": scorecard.get("categories", {}),
+                })
+
+                if len(runs) >= limit:
+                    break
+
+        return JSONResponse(content={"runs": runs, "total": len(runs)})
 
 
 def _get_benchmark_runs_dir() -> Path:

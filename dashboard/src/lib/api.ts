@@ -51,11 +51,67 @@ import type {
   OpportunityListResult,
   SourceListResult,
 } from '@/types/radar';
+import {
+  generateRequestId,
+  classifyError,
+  recordRequestTelemetry,
+  getRecentRequestTelemetry,
+  sanitizeForExport,
+  type RequestTelemetryEntry,
+} from '@/lib/request-telemetry';
 
 const apiClient = axios.create({
   baseURL: dashboardRuntimeConfig.apiBaseUrl,
   timeout: 10000,
 });
+
+interface TelemetryWrappedResult<T> {
+  data: T;
+  requestId: string;
+  durationMs: number;
+}
+
+async function telemetryWrap<T>(
+  promise: Promise<import('axios').AxiosResponse<T>>,
+  method: string,
+  path: string
+): Promise<TelemetryWrappedResult<T>> {
+  const requestId = generateRequestId();
+  const start = Date.now();
+  let retryCount = 0;
+
+  try {
+    const response = await promise;
+    const durationMs = Date.now() - start;
+    recordRequestTelemetry({
+      requestId,
+      method,
+      path,
+      statusCode: response.status,
+      durationMs,
+      retryCount,
+      errorCategory: null,
+      errorMessage: null,
+      timestamp: new Date().toISOString(),
+    });
+    return { data: response.data, requestId, durationMs };
+  } catch (error) {
+    const durationMs = Date.now() - start;
+    const { category, message } = classifyError(error);
+    recordRequestTelemetry({
+      requestId,
+      method,
+      path,
+      statusCode: null,
+      durationMs,
+      retryCount,
+      errorCategory: category,
+      errorMessage: message,
+      timestamp: new Date().toISOString(),
+    });
+    throw error;
+  }
+}
 
 const SESSION_DETAIL_TIMEOUT_MS = 30000;
 const SESSION_REPORT_TIMEOUT_MS = 120000;
@@ -112,6 +168,8 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
   }
   return fallback;
 }
+
+export { getRecentRequestTelemetry, sanitizeForExport } from '@/lib/request-telemetry';
 
 export interface ConfigUpdateErrorDetails {
   message: string;
@@ -194,6 +252,68 @@ export function getConfigUpdateErrorDetails(error: unknown): ConfigUpdateErrorDe
 export async function getSession(sessionId: string): Promise<{ session: Session }> {
   const response = await apiClient.get<SessionResponse>(`/sessions/${sessionId}`);
   return { session: normalizeSession(response.data.session) };
+}
+
+export async function getSessionSummary(
+  sessionId: string
+): Promise<{ session: Session }> {
+  const response = await apiClient.get<SessionResponse>(`/sessions/${sessionId}`, {
+    params: { include_derived: false, include_checkpoints: false },
+    timeout: SESSION_DETAIL_TIMEOUT_MS,
+  });
+  return { session: normalizeSession(response.data.session) };
+}
+
+export async function getSessionEventsPage(
+  sessionId: string,
+  limit = 500,
+  cursor: number | null = null,
+  beforeCursor: number | null = null
+): Promise<{ events: TelemetryEvent[]; count: number; hasMore: boolean; nextCursor: number | null; prevCursor: number | null }> {
+  const params: Record<string, unknown> = { limit };
+  if (cursor !== null) params.cursor = cursor;
+  if (beforeCursor !== null) params.before_cursor = beforeCursor;
+  const response = await apiClient.get<SessionEventsPageResponse>(`/sessions/${sessionId}/events`, {
+    params,
+    timeout: SESSION_DETAIL_TIMEOUT_MS,
+  });
+  return {
+    events: response.data.events.map(normalizeEvent),
+    count: response.data.count,
+    hasMore: response.data.has_more,
+    nextCursor: response.data.next_cursor,
+    prevCursor: response.data.prev_cursor,
+  };
+}
+
+export async function getSessionDerivedOutputs(
+  sessionId: string
+): Promise<SessionDetailResult['derivedOutputs']> {
+  const response = await apiClient.get<SessionDetailResponse>(
+    `/sessions/${sessionId}`,
+    {
+      params: { include_derived: true, include_checkpoints: false },
+      timeout: SESSION_DETAIL_TIMEOUT_MS,
+    }
+  );
+  return {
+    narrative: response.data.narrative,
+    criticalPath: response.data.critical_path,
+    stateChanges: response.data.state_changes,
+    decisions: response.data.decisions,
+    degradations: response.data.degradations,
+    failures: response.data.failures,
+    decisionGraph: response.data.decision_graph,
+  };
+}
+
+interface SessionEventsPageResponse {
+  events: ApiTelemetryEvent[];
+  count: number;
+  total: number;
+  has_more: boolean;
+  next_cursor: number | null;
+  prev_cursor: number | null;
 }
 
 export async function getSessionPromptMetadata(
@@ -519,6 +639,95 @@ export async function purgeArchivedSessions(
   return response.data;
 }
 
+export interface SessionAnnotation {
+  note: string;
+  author: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface SessionTriage {
+  session_id: string;
+  triage_status: string | null;
+  triage_owner: string | null;
+  triage_handoff_target: string | null;
+  last_reviewed_at: string | null;
+}
+
+export interface AddAnnotationResult {
+  annotation: SessionAnnotation;
+}
+
+export interface GetAnnotationsResult {
+  annotations: SessionAnnotation[];
+  count: number;
+}
+
+export async function addSessionAnnotation(
+  sessionId: string,
+  note: string,
+  author?: string
+): Promise<AddAnnotationResult> {
+  const response = await apiClient.post<AddAnnotationResult>(
+    `/sessions/${sessionId}/annotations`,
+    { note, author }
+  );
+  return response.data;
+}
+
+export async function updateSessionAnnotation(
+  sessionId: string,
+  annotationIndex: number,
+  note?: string,
+  author?: string | null
+): Promise<{ annotation: SessionAnnotation }> {
+  const response = await apiClient.patch<{ annotation: SessionAnnotation }>(
+    `/sessions/${sessionId}/annotations/${annotationIndex}`,
+    { note, author }
+  );
+  return response.data;
+}
+
+export async function deleteSessionAnnotation(
+  sessionId: string,
+  annotationIndex: number
+): Promise<{ deleted: boolean; remaining: number }> {
+  const response = await apiClient.delete<{ deleted: boolean; remaining: number }>(
+    `/sessions/${sessionId}/annotations/${annotationIndex}`
+  );
+  return response.data;
+}
+
+export async function getSessionAnnotations(sessionId: string): Promise<GetAnnotationsResult> {
+  const response = await apiClient.get<GetAnnotationsResult>(
+    `/sessions/${sessionId}/annotations`
+  );
+  return response.data;
+}
+
+export async function updateSessionTriage(
+  sessionId: string,
+  updates: {
+    triage_status?: string;
+    triage_owner?: string | null;
+    triage_handoff_target?: string | null;
+    last_reviewed_at?: string;
+  }
+): Promise<SessionTriage> {
+  const response = await apiClient.patch<SessionTriage>(
+    `/sessions/${sessionId}/triage`,
+    updates
+  );
+  return response.data;
+}
+
+export async function getSessionTriage(sessionId: string): Promise<SessionTriage> {
+  const response = await apiClient.get<SessionTriage>(
+    `/sessions/${sessionId}/triage`
+  );
+  return response.data;
+}
+
 export interface TraceBundleOptions {
   includePayload?: boolean;
   includeReport?: boolean;
@@ -611,6 +820,12 @@ export interface BenchmarkCase {
   rationale: string;
   date_sensitive: boolean;
   tags: string[];
+  status: string;
+  owner: string | null;
+  domain: string | null;
+  difficulty: string | null;
+  review_notes: string | null;
+  expected_capabilities: string[];
 }
 
 export interface BenchmarkRun {
@@ -653,6 +868,12 @@ export interface BenchmarkCaseReport {
   rationale: string;
   date_sensitive: boolean;
   tags: string[];
+  status: string;
+  owner: string | null;
+  domain: string | null;
+  difficulty: string | null;
+  review_notes: string | null;
+  expected_capabilities: string[];
   metrics: {
     source_count: number;
     unique_domains: number;
@@ -753,6 +974,115 @@ export async function compareBenchmark(
   return response.data;
 }
 
+export interface BenchmarkValidateResponse {
+  valid: boolean;
+  errors: Record<string, string[]>;
+  total_cases: number;
+}
+
+export async function validateBenchmarkCorpus(): Promise<BenchmarkValidateResponse> {
+  const response = await apiClient.get<BenchmarkValidateResponse>('/benchmarks/validate');
+  return response.data;
+}
+
+export interface BenchmarkGateResult {
+  outcome: 'pass' | 'warning' | 'fail';
+  baseline_run_id: string;
+  candidate_run_id: string;
+  generated_at: string;
+  baseline_score: number | null;
+  candidate_score: number | null;
+  delta_score: number | null;
+  baseline_pass_rate: number;
+  candidate_pass_rate: number;
+  delta_pass_rate: number;
+  baseline_avg_latency_ms: number;
+  candidate_avg_latency_ms: number;
+  delta_latency_ms: number;
+  failing_cases: Array<{
+    case_id: string;
+    baseline_stop_reason: string;
+    candidate_stop_reason: string;
+    candidate_validation_score: number | null;
+  }>;
+  regressions: Array<{
+    case_id: string;
+    baseline_score: number;
+    candidate_score: number;
+    delta: number;
+  }>;
+  overridden: boolean;
+  override_notes: string | null;
+}
+
+export interface BenchmarkGateParams {
+  baselinePath: string;
+  candidatePath: string;
+  minPassRate?: number;
+  minValidationScore?: number;
+  maxLatencyIncreaseRatio?: number;
+  overrideNotes?: string | null;
+}
+
+export async function evaluateBenchmarkGate(params: BenchmarkGateParams): Promise<BenchmarkGateResult> {
+  const queryParams: Record<string, unknown> = {
+    baseline_path: params.baselinePath,
+    candidate_path: params.candidatePath,
+  };
+  if (params.minPassRate !== undefined) queryParams.min_pass_rate = params.minPassRate;
+  if (params.minValidationScore !== undefined) queryParams.min_validation_score = params.minValidationScore;
+  if (params.maxLatencyIncreaseRatio !== undefined) queryParams.max_latency_increase_ratio = params.maxLatencyIncreaseRatio;
+  if (params.overrideNotes !== undefined) queryParams.override_notes = params.overrideNotes;
+  const response = await apiClient.post<BenchmarkGateResult>('/benchmarks/gate', null, { params: queryParams });
+  return response.data;
+}
+
+export interface BaselineMetadata {
+  run_id: string;
+  run_path: string;
+  owner: string | null;
+  approved_at: string;
+  approval_note: string | null;
+  is_promoted: boolean;
+}
+
+export interface ListBaselinesResponse {
+  baselines: BaselineMetadata[];
+  total: number;
+}
+
+export async function listBenchmarkBaselines(): Promise<ListBaselinesResponse> {
+  const response = await apiClient.get<ListBaselinesResponse>('/benchmarks/baselines');
+  return response.data;
+}
+
+export async function getBenchmarkBaseline(runId: string): Promise<BaselineMetadata> {
+  const response = await apiClient.get<BaselineMetadata>(`/benchmarks/baselines/${runId}`);
+  return response.data;
+}
+
+export async function promoteBenchmarkBaseline(
+  runId: string,
+  owner?: string,
+  approvalNote?: string
+): Promise<BaselineMetadata> {
+  const params: Record<string, unknown> = {};
+  if (owner) params.owner = owner;
+  if (approvalNote) params.approval_note = approvalNote;
+  const response = await apiClient.post<BaselineMetadata>(`/benchmarks/baselines/${runId}/promote`, null, { params });
+  return response.data;
+}
+
+export async function deleteBenchmarkBaseline(runId: string): Promise<{ deleted: boolean; run_id: string }> {
+  const response = await apiClient.delete<{ deleted: boolean; run_id: string }>(`/benchmarks/baselines/${runId}`);
+  return response.data;
+}
+
+export async function getPromotedBenchmarkBaseline(): Promise<{ baseline: BaselineMetadata | null }> {
+  const response = await apiClient.get<{ baseline: BaselineMetadata | null }>('/benchmarks/baselines/promoted');
+  return response.data;
+}
+
 export interface ResearchThemeInfo {
   theme: string;
   display_name: string;
@@ -763,6 +1093,35 @@ export interface ResearchThemeInfo {
 export interface ThemesListResponse {
   themes: ResearchThemeInfo[];
   total: number;
+}
+
+export interface BenchmarkTrendRun {
+  run_id: string;
+  generated_at: string | null;
+  corpus_version: string | null;
+  workflow_mode: string | null;
+  total_cases: number;
+  pass_count: number;
+  pass_rate: number | null;
+  average_validation_score: number | null;
+  average_latency_ms: number | null;
+  average_report_quality_score: number | null;
+  average_source_count: number | null;
+  date_sensitive_cases: number;
+  stop_reasons: Record<string, number>;
+  categories: Record<string, number>;
+}
+
+export interface BenchmarkTrendsResponse {
+  runs: BenchmarkTrendRun[];
+  total: number;
+}
+
+export async function getBenchmarkTrends(limit = 10): Promise<BenchmarkTrendsResponse> {
+  const response = await apiClient.get<BenchmarkTrendsResponse>('/benchmarks/trends', {
+    params: { limit },
+  });
+  return response.data;
 }
 
 export async function listResearchThemes(): Promise<ThemesListResponse> {
@@ -843,20 +1202,34 @@ function normalizeRadarSource(raw: ApiRadarSource): RadarSource {
     label: raw.label,
     urlOrIdentifier: raw.url_or_identifier,
     status: raw.status as RadarSource['status'],
+    owner: raw.owner,
+    priority: (raw.priority || 'medium') as RadarSource['priority'],
     scanCadence: raw.scan_cadence,
     lastScannedAt: raw.last_scanned_at,
+    lastScanSuccess: raw.last_scan_success,
+    lastFailureReason: raw.last_failure_reason,
+    consecutiveFailures: raw.consecutive_failures || 0,
+    health: (raw.health || 'healthy') as RadarSource['health'],
+    notes: raw.notes,
     createdAt: raw.created_at,
     updatedAt: raw.updated_at,
+    metadata: raw.metadata || {},
   };
 }
 
 function normalizeOpportunity(raw: ApiOpportunity): Opportunity {
+  const rawAny = raw as unknown as Record<string, unknown>;
   return {
     id: raw.id,
     title: raw.title,
     summary: raw.summary,
     opportunityType: raw.opportunity_type as Opportunity['opportunityType'],
     status: raw.status as Opportunity['status'],
+    owner: raw.owner || null,
+    priority: (raw.priority || 'medium') as Opportunity['priority'],
+    reason: raw.reason || null,
+    nextAction: (rawAny['next_action'] as string | null) || null,
+    reviewedAt: (rawAny['reviewed_at'] as string | null) || null,
     priorityLabel: raw.priority_label as Opportunity['priorityLabel'],
     whyItMatters: raw.why_it_matters,
     recommendedAction: raw.recommended_action,
@@ -864,6 +1237,7 @@ function normalizeOpportunity(raw: ApiOpportunity): Opportunity {
     freshnessState: raw.freshness_state as Opportunity['freshnessState'],
     createdAt: raw.created_at,
     updatedAt: raw.updated_at,
+    metadata: raw.metadata || {},
   };
 }
 
@@ -965,11 +1339,93 @@ export async function getRadarOpportunityDetail(
 
 export type OpportunityStatusUpdate =
   | 'new'
+  | 'reviewing'
+  | 'accepted'
+  | 'deferred'
+  | 'rejected'
+  | 'converted'
   | 'saved'
   | 'acted_on'
   | 'monitoring'
   | 'dismissed'
   | 'archived';
+
+export async function updateRadarOpportunity(
+  opportunityId: string,
+  updates: {
+    status?: string;
+    owner?: string | null;
+    priority?: string;
+    reason?: string | null;
+    next_action?: string | null;
+    reviewed_at?: string | null;
+  }
+): Promise<OpportunityDetail> {
+  const response = await apiClient.patch<OpportunityDetailResponse>(
+    `/radar/opportunities/${opportunityId}`,
+    updates
+  );
+  return {
+    opportunity: normalizeOpportunity(response.data.opportunity),
+    score: response.data.score
+      ? {
+          opportunityId: response.data.score.opportunity_id,
+          strategicRelevanceScore: response.data.score.strategic_relevance_score,
+          noveltyScore: response.data.score.novelty_score,
+          urgencyScore: response.data.score.urgency_score,
+          evidenceScore: response.data.score.evidence_score,
+          businessValueScore: response.data.score.business_value_score,
+          workflowFitScore: response.data.score.workflow_fit_score,
+          totalScore: response.data.score.total_score,
+          priorityLabel: response.data.score.priority_label as Opportunity['priorityLabel'],
+          explanation: response.data.score.explanation,
+          scoredAt: response.data.score.scored_at,
+        }
+      : null,
+    signals: response.data.signals.map((s) => ({
+      id: s.id,
+      sourceId: s.source_id,
+      externalId: s.external_id,
+      title: s.title,
+      summary: s.summary,
+      url: s.url,
+      publishedAt: s.published_at,
+      discoveredAt: s.discovered_at,
+      contentHash: s.content_hash,
+      metadata: s.metadata,
+      normalizedType: s.normalized_type,
+    })),
+    feedback: response.data.feedback.map((f) => ({
+      id: f.id,
+      opportunityId: f.opportunity_id,
+      feedbackType: f.feedback_type as OpportunityDetail['feedback'][number]['feedbackType'],
+      createdAt: f.created_at,
+      metadata: f.metadata,
+    })),
+    workflowLinks: response.data.workflow_links.map((w) => ({
+      id: w.id,
+      opportunityId: w.opportunity_id,
+      workflowType: w.workflow_type as OpportunityDetail['workflowLinks'][number]['workflowType'],
+      workflowId: w.workflow_id,
+      createdAt: w.created_at,
+    })),
+  };
+}
+
+export async function bulkUpdateRadarOpportunities(
+  opportunityIds: string[],
+  status: string,
+  reason?: string
+): Promise<{ updated: Opportunity[]; count: number }> {
+  const response = await apiClient.post<{ updated: ApiOpportunity[]; count: number }>(
+    '/radar/opportunities/bulk-status',
+    { opportunity_ids: opportunityIds, status, reason }
+  );
+  return {
+    updated: response.data.updated.map(normalizeOpportunity),
+    count: response.data.count,
+  };
+}
 
 export async function updateRadarOpportunityStatus(
   opportunityId: string,
@@ -988,7 +1444,13 @@ export type FeedbackTypeInput =
   | 'dismissed'
   | 'ignored'
   | 'converted_to_research'
-  | 'converted_to_content';
+  | 'converted_to_content'
+  | 'useful'
+  | 'not_useful'
+  | 'duplicate'
+  | 'stale'
+  | 'too_broad'
+  | 'wrong_audience';
 
 export async function recordRadarOpportunityFeedback(
   opportunityId: string,
@@ -999,6 +1461,39 @@ export async function recordRadarOpportunityFeedback(
     feedback_type: feedbackType,
     metadata: metadata ?? {},
   });
+}
+
+export async function recordRadarScoringFeedback(
+  opportunityId: string,
+  request: {
+    feedback_type: string;
+    signal_id?: string;
+    scoring_features?: Record<string, number>;
+    rank_position?: number;
+    outcome?: string;
+  }
+): Promise<void> {
+  await apiClient.post(`/radar/opportunities/${opportunityId}/scoring-feedback`, request);
+}
+
+export async function getRadarScoringFeedback(opportunityId: string): Promise<{
+  feedback_entries: import('@/types/radar').ScoringFeedback[];
+  count: number;
+}> {
+  const response = await apiClient.get<{ feedback_entries: import('@/types/radar').ScoringFeedback[]; count: number }>(
+    `/radar/opportunities/${opportunityId}/scoring-feedback`
+  );
+  return response.data;
+}
+
+export async function getRadarScoringOutcomes(): Promise<{
+  outcomes: Record<string, number>;
+  total_feedback: number;
+}> {
+  const response = await apiClient.get<{ outcomes: Record<string, number>; total_feedback: number }>(
+    '/radar/scoring/outcomes'
+  );
+  return response.data;
 }
 
 export interface LaunchResearchResponse {
@@ -1132,6 +1627,175 @@ export async function getRadarFeedbackTrends(daysBack: number = 30): Promise<Fee
   const response = await apiClient.get<FeedbackTrends>('/radar/analytics/feedback-trends', {
     params: { days_back: daysBack },
   });
+  return response.data;
+}
+
+// Source governance API helpers
+
+export async function updateRadarSource(
+  sourceId: string,
+  patch: {
+    owner?: string | null;
+    priority?: string;
+    scan_cadence?: string;
+    status?: string;
+    notes?: string | null;
+    metadata?: Record<string, unknown>;
+  }
+): Promise<RadarSource> {
+  const response = await apiClient.patch<ApiRadarSource>(`/radar/sources/${sourceId}`, patch);
+  return normalizeRadarSource(response.data);
+}
+
+export async function getRadarSourceHealth(
+  sourceId: string
+): Promise<import('@/types/radar').SourceHealthDetails> {
+  const response = await apiClient.get<import('@/types/radar').SourceHealthDetails>(
+    `/radar/sources/health/${sourceId}`
+  );
+  return response.data;
+}
+
+export async function getRadarSourcesGovernance(filters?: {
+  status?: string;
+  health?: string;
+  priority?: string;
+  owner?: string;
+}): Promise<SourceListResult> {
+  const params: Record<string, unknown> = {};
+  if (filters?.status) params.status = filters.status;
+  if (filters?.health) params.health = filters.health;
+  if (filters?.priority) params.priority = filters.priority;
+  if (filters?.owner) params.owner = filters.owner;
+  const response = await apiClient.get<SourceListResponse>('/radar/sources/governance', { params });
+  return {
+    sources: response.data.items.map(normalizeRadarSource),
+    total: response.data.count,
+  };
+}
+
+export async function pauseRadarSource(sourceId: string): Promise<RadarSource> {
+  const response = await apiClient.post<ApiRadarSource>(`/radar/sources/${sourceId}/pause`);
+  return normalizeRadarSource(response.data);
+}
+
+export async function resumeRadarSource(sourceId: string): Promise<RadarSource> {
+  const response = await apiClient.post<ApiRadarSource>(`/radar/sources/${sourceId}/resume`);
+  return normalizeRadarSource(response.data);
+}
+
+// Scan job API helpers
+
+export interface ScanJobResult {
+  jobs: import('@/types/radar').ScanJob[];
+  count: number;
+}
+
+export async function getRadarScanHistory(
+  sourceId?: string,
+  limit: number = 50
+): Promise<ScanJobResult> {
+  const params: Record<string, unknown> = { limit };
+  if (sourceId) params.source_id = sourceId;
+  const response = await apiClient.get<{ jobs: import('@/types/radar').ScanJob[]; count: number }>(
+    '/radar/scan/history',
+    { params }
+  );
+  return response.data;
+}
+
+export async function triggerRadarScan(sourceId: string): Promise<import('@/types/radar').ScanJob> {
+  const response = await apiClient.post<import('@/types/radar').ScanJob>('/radar/scan/trigger', {
+    source_id: sourceId,
+  });
+  return response.data;
+}
+
+export async function dryRunRadarScan(sourceId?: string): Promise<{
+  sources: { id: string; label: string; scan_cadence: string }[];
+  job_count: number;
+  dry_run: boolean;
+}> {
+  const params: Record<string, unknown> = {};
+  if (sourceId) params.source_id = sourceId;
+  const response = await apiClient.get<{
+    sources: { id: string; label: string; scan_cadence: string }[];
+    job_count: number;
+    dry_run: boolean;
+  }>('/radar/scan/dry-run', { params });
+  return response.data;
+}
+
+// Alert API helpers
+
+export interface AlertListResult {
+  alerts: import('@/types/radar').RadarAlert[];
+  count: number;
+  unacknowledged_count: number;
+}
+
+export async function getRadarAlerts(
+  acknowledged?: boolean
+): Promise<AlertListResult> {
+  const params: Record<string, unknown> = {};
+  if (acknowledged !== undefined) params.acknowledged = acknowledged;
+  const response = await apiClient.get<AlertListResult>('/radar/alerts', { params });
+  return response.data;
+}
+
+export async function acknowledgeRadarAlert(
+  alertId: string,
+  acknowledgedBy: string
+): Promise<import('@/types/radar').RadarAlert> {
+  const response = await apiClient.post<import('@/types/radar').RadarAlert>(
+    `/radar/alerts/${alertId}/acknowledge`,
+    { acknowledged_by: acknowledgedBy }
+  );
+  return response.data;
+}
+
+export async function muteRadarAlert(request: {
+  trigger: string;
+  source_id?: string;
+  expires_at?: string;
+}): Promise<import('@/types/radar').AlertMute> {
+  const response = await apiClient.post<import('@/types/radar').AlertMute>('/radar/alerts/mute', request);
+  return response.data;
+}
+
+export async function unmuteRadarAlert(muteId: string): Promise<void> {
+  await apiClient.delete(`/radar/alerts/mute/${muteId}`);
+}
+
+export async function getRadarAlertMutes(): Promise<{
+  mutes: import('@/types/radar').AlertMute[];
+  count: number;
+}> {
+  const response = await apiClient.get<{ mutes: import('@/types/radar').AlertMute[]; count: number }>(
+    '/radar/alerts/mutes'
+  );
+  return response.data;
+}
+
+// Digest API helpers
+
+export async function generateRadarDigest(periodStart: string, periodEnd: string): Promise<
+  import('@/types/radar').RadarDigest
+> {
+  const response = await apiClient.post<import('@/types/radar').RadarDigest>('/radar/digests', {
+    period_start: periodStart,
+    period_end: periodEnd,
+  });
+  return response.data;
+}
+
+export async function getRadarDigests(
+  limit: number = 12
+): Promise<{ digests: import('@/types/radar').RadarDigest[]; count: number }> {
+  const response = await apiClient.get<{ digests: import('@/types/radar').RadarDigest[]; count: number }>(
+    '/radar/digests',
+    { params: { limit } }
+  );
   return response.data;
 }
 

@@ -291,9 +291,9 @@ class TavilySearchProvider(SearchProvider):
         Returns:
             List of SearchResultItem objects.
         """
-        from cc_deep_research.credibility import SourceCredibilityScorer
+        from cc_deep_research.credibility import _get_cached_scorer
 
-        scorer = SourceCredibilityScorer()
+        scorer = _get_cached_scorer()
         results = []
         for item in data.get("results", []):
             score = item.get("score")
@@ -301,7 +301,9 @@ class TavilySearchProvider(SearchProvider):
                 score = 0.0
 
             url = item.get("url", "")
-            authority_score, source_type_str = scorer._get_domain_credibility(scorer._extract_domain(url))
+            authority_score, source_type_str = scorer._get_domain_credibility(
+                scorer._extract_domain(url)
+            )
             source_type = _map_source_type(source_type_str)
 
             result = SearchResultItem(

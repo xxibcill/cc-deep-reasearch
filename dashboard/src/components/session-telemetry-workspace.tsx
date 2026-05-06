@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { AlertCircle, Loader2, Radar, RefreshCcw, Waves } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AlertCircle, Download, Loader2, Radar, RefreshCcw, Waves } from 'lucide-react';
 
 import useDashboardStore from '@/hooks/useDashboard';
-import { getApiErrorMessage, getSessionDetail, type SessionDetailResult } from '@/lib/api';
+import { getApiErrorMessage, getSessionSummary, getSessionEventsPage, getSessionDerivedOutputs, getSessionPromptMetadata } from '@/lib/api';
 import { isTerminalStatus } from '@/lib/session-route';
 import { useWebSocket } from '@/lib/websocket';
 import { HelpCallout } from '@/components/ui/help-callout';
@@ -16,11 +16,30 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useNotifications } from '@/components/ui/notification-center';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { getErrorGuidance } from '@/lib/error-messages';
+import { CollapsiblePanel } from '@/components/ui/collapsible-panel';
+import { useDebugExport } from '@/hooks/useDebugExport';
 import type {
   ResearchRunStatus,
   Session,
   SessionPromptMetadata,
+  CriticalPath,
+  DecisionGraph,
+  StateChange,
+  Decision,
+  Degradation,
+  Failure,
+  ApiTelemetryEvent,
 } from '@/types/telemetry';
+
+interface DerivedOutputs {
+  narrative: ApiTelemetryEvent[];
+  criticalPath: CriticalPath;
+  stateChanges: StateChange[];
+  decisions: Decision[];
+  degradations: Degradation[];
+  failures: Failure[];
+  decisionGraph: DecisionGraph;
+}
 
 function formatTimestamp(value: string | null | undefined): string | null {
   if (!value) {
@@ -63,6 +82,7 @@ export function SessionTelemetryWorkspace({
   const { notify } = useNotifications();
   const selectedEvent = useDashboardStore((state) => state.selectedEvent);
   const viewMode = useDashboardStore((state) => state.viewMode);
+  const filters = useDashboardStore((state) => state.filters);
   const setSelectedEvent = useDashboardStore((state) => state.setSelectedEvent);
   const setViewMode = useDashboardStore((state) => state.setViewMode);
   const appendEvents = useDashboardStore((state) => state.appendEvents);
@@ -71,15 +91,19 @@ export function SessionTelemetryWorkspace({
     enabled: !liveStreamDisabled,
     historical: liveStreamDisabled,
   });
-  const [derivedOutputs, setDerivedOutputs] = useState<SessionDetailResult['derivedOutputs'] | null>(
-    null
-  );
+  const { exportDebugBundle, isExporting: isExportingDebug } = useDebugExport(sessionId);
+  const [derivedOutputs, setDerivedOutputs] = useState<DerivedOutputs | null>(null);
   const [promptMetadata, setPromptMetadata] = useState<SessionPromptMetadata | null>(null);
   const [loading, setLoading] = useState(true);
+  const [derivedLoading, setDerivedLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [derivedError, setDerivedError] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const previousPhaseRef = useRef(liveStreamStatus.phase);
+  const derivedFetchedRef = useRef(false);
+  const promptFetchedRef = useRef(false);
+  const summaryLoadedRef = useRef(false);
 
   useEffect(() => {
     if (liveStreamStatus.phase !== 'reconnecting' || !liveStreamStatus.nextRetryAt) {
@@ -95,39 +119,67 @@ export function SessionTelemetryWorkspace({
     };
   }, [liveStreamStatus.nextRetryAt, liveStreamStatus.phase]);
 
+  // Load events eagerly (doesn't wait for derived outputs)
   useEffect(() => {
     let mounted = true;
+    summaryLoadedRef.current = false;
+    derivedFetchedRef.current = false;
+    promptFetchedRef.current = false;
 
     setLoading(true);
     setError(null);
-    setDerivedOutputs(null);
-    setPromptMetadata(null);
 
-    getSessionDetail(sessionId)
-      .then((result) => {
-        if (!mounted) {
-          return;
-        }
-        appendEvents(result.events);
-        setDerivedOutputs(result.derivedOutputs);
-        setPromptMetadata(result.promptMetadata ?? null);
+    Promise.all([
+      getSessionSummary(sessionId),
+      getSessionEventsPage(sessionId, 500),
+    ])
+      .then(([summaryResult, eventsPageResult]) => {
+        if (!mounted) return;
+        // Events from the events page
+        appendEvents(eventsPageResult.events);
+        // Signal that summary loaded so derived outputs can load regardless of event count
+        summaryLoadedRef.current = true;
+        setLoading(false);
       })
       .catch((requestError) => {
-        if (!mounted) {
-          return;
-        }
+        if (!mounted) return;
         setError(getApiErrorMessage(requestError, 'Failed to load telemetry workspace.'));
-      })
-      .finally(() => {
-        if (mounted) {
-          setLoading(false);
-        }
+        setLoading(false);
       });
 
     return () => {
       mounted = false;
     };
   }, [appendEvents, reloadNonce, sessionId]);
+
+  // Lazily load derived outputs and prompt metadata after session summary loads
+  const loadDerivedOutputs = useCallback(() => {
+    if (derivedFetchedRef.current) return;
+    derivedFetchedRef.current = true;
+    setDerivedLoading(true);
+    setDerivedError(null);
+    Promise.all([
+      getSessionDerivedOutputs(sessionId),
+      getSessionPromptMetadata(sessionId),
+    ])
+      .then(([derived, prompts]) => {
+        setDerivedOutputs(derived);
+        setPromptMetadata(prompts ?? null);
+      })
+      .catch((err) => {
+        setDerivedError(getApiErrorMessage(err, 'Failed to load derived outputs.'));
+      })
+      .finally(() => {
+        setDerivedLoading(false);
+      });
+  }, [sessionId]);
+
+  // Load derived outputs when summary loads (handles 0-event edge case)
+  useEffect(() => {
+    if (summaryLoadedRef.current && !derivedFetchedRef.current) {
+      loadDerivedOutputs();
+    }
+  }, [loadDerivedOutputs]);
 
   useEffect(() => {
     const previousPhase = previousPhaseRef.current;
@@ -348,6 +400,19 @@ export function SessionTelemetryWorkspace({
                   Retry live stream
                 </Button>
               ) : null}
+              <Button
+                onClick={() => exportDebugBundle(liveStreamStatus, { viewMode, filters })}
+                type="button"
+                variant="outline"
+                disabled={isExportingDebug}
+              >
+                {isExportingDebug ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                Export debug
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -366,6 +431,72 @@ export function SessionTelemetryWorkspace({
             </div>
           </CardContent>
         </Card>
+      ) : null}
+
+      {derivedError && !error ? (
+        <Card className="border-warning/25 bg-warning-muted/22">
+          <CardContent className="flex items-start gap-3 p-4">
+            <AlertCircle className="mt-0.5 h-5 w-5 text-warning" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-foreground">Derived outputs unavailable</p>
+              <p className="text-sm text-muted-foreground">
+                Event data is loading, but derived outputs (graph, timeline, counts) could not be computed. {derivedError}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {liveStreamStatus.reconnectHistory.length > 0 &&
+      (liveStreamStatus.phase === 'reconnecting' ||
+        liveStreamStatus.phase === 'failed' ||
+        liveStreamStatus.phase === 'historical') ? (
+        <CollapsiblePanel
+          summary={
+            <div className="text-sm font-medium text-foreground">
+              Stream diagnostics — {liveStreamStatus.reconnectHistory.length} reconnect{' '}
+              {liveStreamStatus.reconnectHistory.length === 1 ? 'attempt' : 'attempts'}
+            </div>
+          }
+          meta={
+            liveStreamStatus.phase === 'failed' ? (
+              <Badge variant="destructive">{liveStreamStatus.reconnectAttempt} failed</Badge>
+            ) : liveStreamStatus.phase === 'reconnecting' ? (
+              <Badge variant="warning">Reconnecting</Badge>
+            ) : null
+          }
+          actions={
+            canRetryLiveStream ? (
+              <Button onClick={reconnect} type="button" size="sm" variant="outline">
+                Retry stream
+              </Button>
+            ) : null
+          }
+          defaultOpen={liveStreamStatus.phase === 'failed'}
+        >
+          <div className="space-y-2">
+            <div className="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground lg:grid-cols-2 xl:grid-cols-3">
+              <div className="contents">
+                <span className="font-medium text-foreground">Attempt</span>
+                <span className="font-medium text-foreground">Time</span>
+                <span className="font-medium text-foreground">Duration</span>
+                <span className="font-medium text-foreground">Close code</span>
+                <span className="font-medium text-foreground">Close reason</span>
+                <span className="font-medium text-foreground">Clean</span>
+              </div>
+              {liveStreamStatus.reconnectHistory.map((entry) => (
+                <div key={entry.attempt} className="contents">
+                  <span className="font-mono">{entry.attempt}</span>
+                  <span>{new Date(entry.timestamp).toLocaleTimeString()}</span>
+                  <span>{entry.tookMs}ms</span>
+                  <span className="font-mono">{entry.closeCode ?? '—'}</span>
+                  <span className="truncate">{entry.closeReason ?? '—'}</span>
+                  <span>{entry.wasClean == null ? '?' : entry.wasClean ? 'yes' : 'no'}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </CollapsiblePanel>
       ) : null}
 
       <SessionDetails

@@ -45,8 +45,13 @@ const PRIORITY_CONFIG = {
   low_priority: { label: 'Low Priority', variant: 'outline' as const },
 };
 
-const STATUS_CONFIG = {
+const STATUS_CONFIG: Record<OpportunityStatus, { label: string; variant: 'info' | 'default' | 'success' | 'secondary' | 'outline' | 'destructive' }> = {
   new: { label: 'New', variant: 'info' as const },
+  reviewing: { label: 'Reviewing', variant: 'info' as const },
+  accepted: { label: 'Accepted', variant: 'success' as const },
+  deferred: { label: 'Deferred', variant: 'secondary' as const },
+  rejected: { label: 'Rejected', variant: 'outline' as const },
+  converted: { label: 'Converted', variant: 'success' as const },
   saved: { label: 'Saved', variant: 'default' as const },
   acted_on: { label: 'Acted On', variant: 'success' as const },
   monitoring: { label: 'Monitoring', variant: 'secondary' as const },
@@ -56,22 +61,45 @@ const STATUS_CONFIG = {
 
 const STATUS_TRANSITIONS: Record<OpportunityStatus, { label: string; icon: typeof CheckCircle2; status: OpportunityStatusUpdate }[]> = {
   new: [
+    { label: 'Review', icon: Clock, status: 'reviewing' },
+    { label: 'Accept', icon: CheckCircle2, status: 'accepted' },
     { label: 'Save', icon: Bookmark, status: 'saved' },
-    { label: 'Start monitoring', icon: Clock, status: 'monitoring' },
     { label: 'Dismiss', icon: Archive, status: 'dismissed' },
+  ],
+  reviewing: [
+    { label: 'Accept', icon: CheckCircle2, status: 'accepted' },
+    { label: 'Defer', icon: Clock, status: 'deferred' },
+    { label: 'Reject', icon: Archive, status: 'rejected' },
+    { label: 'Save', icon: Bookmark, status: 'saved' },
+  ],
+  accepted: [
+    { label: 'Act on it', icon: CheckCircle2, status: 'acted_on' },
+    { label: 'Convert', icon: PlayCircle, status: 'converted' },
+    { label: 'Defer', icon: Clock, status: 'deferred' },
+  ],
+  deferred: [
+    { label: 'Accept', icon: CheckCircle2, status: 'accepted' },
+    { label: 'Act on it', icon: CheckCircle2, status: 'acted_on' },
+    { label: 'Reject', icon: Archive, status: 'rejected' },
+  ],
+  rejected: [
+    { label: 'Return to new', icon: ArrowLeft, status: 'new' },
+  ],
+  converted: [
+    { label: 'Return to new', icon: ArrowLeft, status: 'new' },
   ],
   saved: [
     { label: 'Act on it', icon: CheckCircle2, status: 'acted_on' },
     { label: 'Start monitoring', icon: Clock, status: 'monitoring' },
     { label: 'Archive', icon: Archive, status: 'archived' },
   ],
+  acted_on: [
+    { label: 'Return to new', icon: ArrowLeft, status: 'new' },
+  ],
   monitoring: [
     { label: 'Act on it', icon: CheckCircle2, status: 'acted_on' },
     { label: 'Save', icon: Bookmark, status: 'saved' },
     { label: 'Dismiss', icon: Archive, status: 'dismissed' },
-  ],
-  acted_on: [
-    { label: 'Return to new', icon: ArrowLeft, status: 'new' },
   ],
   dismissed: [
     { label: 'Return to new', icon: ArrowLeft, status: 'new' },

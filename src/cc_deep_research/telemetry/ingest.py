@@ -4,12 +4,55 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.config import get_default_config_path
 
 from .live import get_default_telemetry_dir
+from .migrations import (
+    CURRENT_DUCKDB_SCHEMA_VERSION,
+    DUCKDB_SCHEMA_VERSION_KEY,
+    migrate_event_record,
+)
+
+if TYPE_CHECKING:
+    pass
 
 _DASHBOARD_INSTALL_COMMAND = 'pip install "cc-deep-research[dashboard]"'
+
+
+def _ensure_metadata_table(conn: Any) -> None:
+    """Create the metadata table if it does not exist."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS telemetry_metadata (
+            key VARCHAR PRIMARY KEY,
+            value VARCHAR
+        )
+        """
+    )
+
+
+def _apply_schema_migration(conn: Any) -> None:
+    """Apply DuckDB schema migrations if needed.
+
+    Checks the installed schema version and writes the current version marker
+    after ensuring the metadata table exists.
+    """
+    try:
+        result = conn.execute(
+            "SELECT value FROM telemetry_metadata WHERE key = ?",
+            [DUCKDB_SCHEMA_VERSION_KEY],
+        ).fetchone()
+        current_version = int(result[0]) if result else 0
+    except Exception:
+        current_version = 0
+
+    if current_version < CURRENT_DUCKDB_SCHEMA_VERSION:
+        conn.execute(
+            "INSERT OR REPLACE INTO telemetry_metadata (key, value) VALUES (?, ?)",
+            [DUCKDB_SCHEMA_VERSION_KEY, str(CURRENT_DUCKDB_SCHEMA_VERSION)],
+        )
 
 
 def get_default_dashboard_db_path() -> Path:
@@ -86,6 +129,11 @@ def ingest_telemetry_to_duckdb(
 
     database_path.parent.mkdir(parents=True, exist_ok=True)
     conn = duckdb.connect(str(database_path))
+
+    # Ensure metadata table and apply any needed schema migrations
+    _ensure_metadata_table(conn)
+    _apply_schema_migration(conn)
+
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS telemetry_events (
@@ -104,6 +152,14 @@ def ingest_telemetry_to_duckdb(
         )
         """
     )
+    for index_sql in [
+        "CREATE INDEX IF NOT EXISTS idx_events_session_id ON telemetry_events(session_id)",
+        "CREATE INDEX IF NOT EXISTS idx_events_timestamp ON telemetry_events(timestamp)",
+        "CREATE INDEX IF NOT EXISTS idx_events_event_type ON telemetry_events(event_type)",
+        "CREATE INDEX IF NOT EXISTS idx_events_category ON telemetry_events(category)",
+        "CREATE INDEX IF NOT EXISTS idx_events_session_seq ON telemetry_events(session_id, sequence_number)",
+    ]:
+        conn.execute(index_sql)
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS telemetry_sessions (
@@ -123,6 +179,12 @@ def ingest_telemetry_to_duckdb(
         )
         """
     )
+    for index_sql in [
+        "CREATE INDEX IF NOT EXISTS idx_sessions_created_at ON telemetry_sessions(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_sessions_status ON telemetry_sessions(status)",
+        "CREATE INDEX IF NOT EXISTS idx_sessions_total_time ON telemetry_sessions(total_time_ms)",
+    ]:
+        conn.execute(index_sql)
 
     ingested_sessions = 0
     ingested_events = 0
@@ -139,7 +201,8 @@ def ingest_telemetry_to_duckdb(
                     stripped = line.strip()
                     if not stripped:
                         continue
-                    event = json.loads(stripped)
+                    raw_event = json.loads(stripped)
+                    event = migrate_event_record(raw_event)
                     conn.execute(
                         """
                         INSERT INTO telemetry_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

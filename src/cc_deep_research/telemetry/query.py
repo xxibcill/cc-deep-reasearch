@@ -114,6 +114,175 @@ def _normalize_event_row(row: tuple[Any, ...]) -> dict[str, Any]:
     }
 
 
+def _table_columns(conn: duckdb.DuckDBPyConnection, table_name: str) -> set[str]:
+    """Return the current column names for a DuckDB table."""
+    rows = conn.execute(f"PRAGMA table_info('{table_name}')").fetchall()
+    return {str(row[1]) for row in rows}
+
+
+def _session_summary_expression(columns: set[str], field_name: str) -> str | None:
+    """Return a JSON extraction expression when summary_json is available."""
+    if "summary_json" not in columns:
+        return None
+    return f"summary_json->>'$.{field_name}'"
+
+
+def _query_expression(columns: set[str]) -> str:
+    """Return a text expression for searching the original research query."""
+    expressions: list[str] = []
+    if "query" in columns:
+        expressions.append("query")
+    summary_query = _session_summary_expression(columns, "query")
+    if summary_query is not None:
+        expressions.append(summary_query)
+    if not expressions:
+        return "''"
+    return f"COALESCE({', '.join(expressions)}, '')"
+
+
+def _archived_expression(columns: set[str]) -> str:
+    """Return a boolean expression for archived state across schema versions."""
+    expressions: list[str] = []
+    if "archived" in columns:
+        expressions.append("archived")
+    summary_archived = _session_summary_expression(columns, "archived")
+    if summary_archived is not None:
+        expressions.append(f"TRY_CAST({summary_archived} AS BOOLEAN)")
+    if not expressions:
+        return "FALSE"
+    return f"COALESCE({', '.join(expressions)}, FALSE)"
+
+
+def _escape_like_pattern(value: str) -> str:
+    """Escape SQL LIKE wildcards while preserving normal substring search."""
+    return value.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+
+
+def query_session_summaries(
+    db_path: Path | None = None,
+    *,
+    limit: int = 500,
+    cursor: str | None = None,
+    search: str | None = None,
+    status: str | None = None,
+    archived_only: bool = False,
+    sort_by: str = "last_event_at",
+    sort_order: str = "desc",
+) -> dict[str, Any]:
+    """Return focused session summary rows for the dashboard session list.
+
+    Pushes filtering and sorting to DuckDB to avoid loading full dashboard datasets.
+    Only returns the fields needed for the session list view.
+
+    Args:
+        db_path: Optional DuckDB database path.
+        limit: Maximum sessions to return.
+        cursor: Session ID to start after (for pagination).
+        search: Text search on session_id or query.
+        status: Filter by session status.
+        archived_only: If True, filter to archived sessions only.
+        sort_by: Sort field (created_at, last_event_at, total_time_ms).
+        sort_order: asc or desc.
+
+    Returns:
+        Dict with sessions list, total count, and next_cursor.
+    """
+    database_path = db_path or get_default_dashboard_db_path()
+    if not database_path.exists():
+        return {"sessions": [], "total": 0, "next_cursor": None}
+
+    conn = _load_dashboard_connection(database_path)
+    try:
+        columns = _table_columns(conn, "telemetry_sessions")
+        query_expr = _query_expression(columns)
+        archived_expr = _archived_expression(columns)
+
+        # Build WHERE clause dynamically
+        conditions = []
+        params: list[Any] = []
+
+        if cursor:
+            # Find the created_at of the cursor session to paginate
+            cursor_row = conn.execute(
+                "SELECT created_at FROM telemetry_sessions WHERE session_id = ?",
+                [cursor],
+            ).fetchone()
+            if cursor_row:
+                # Pass the datetime object directly to avoid string-parsing issues
+                if sort_order == "desc":
+                    conditions.append("created_at < ?")
+                else:
+                    conditions.append("created_at > ?")
+                params.append(cursor_row[0])
+
+        if search:
+            conditions.append(
+                f"(session_id LIKE ? ESCAPE '!' OR {query_expr} LIKE ? ESCAPE '!')"
+            )
+            search_pattern = f"%{_escape_like_pattern(search)}%"
+            params.extend([search_pattern, search_pattern])
+
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+
+        if archived_only:
+            conditions.append(f"{archived_expr} = TRUE")
+        else:
+            conditions.append(f"{archived_expr} = FALSE")
+
+        where_clause = " AND ".join(conditions) if conditions else "1=1"
+
+        # Order clause
+        sort_expression = {
+            "created_at": "ts.created_at",
+            "last_event_at": "ts.last_event_at" if "last_event_at" in columns else "ts.created_at",
+            "total_time_ms": "COALESCE(ts.total_time_ms, 0)",
+        }.get(sort_by, "ts.created_at")
+        order_dir = "DESC" if sort_order == "desc" else "ASC"
+
+        # Count total before pagination
+        count_sql = f"SELECT COUNT(*) FROM telemetry_sessions WHERE {where_clause}"
+        total_row = conn.execute(count_sql, params).fetchone()
+        total = int(total_row[0]) if total_row else 0
+
+        # Fetch paginated sessions (only needed fields)
+        sql = f"""
+        SELECT
+            ts.session_id,
+            ts.created_at,
+            ts.total_time_ms,
+            ts.total_sources,
+            ts.status
+        FROM telemetry_sessions ts
+        WHERE {where_clause}
+        ORDER BY {sort_expression} {order_dir} NULLS LAST
+        LIMIT ?
+        """
+        params.append(limit)
+        rows = conn.execute(sql, params).fetchall()
+    finally:
+        conn.close()
+
+    sessions = []
+    for row in rows:
+        sessions.append({
+            "session_id": row[0],
+            "created_at": _serialize_timestamp(row[1]),
+            "total_time_ms": row[2],
+            "total_sources": row[3],
+            "status": row[4],
+        })
+
+    next_cursor = sessions[-1]["session_id"] if len(sessions) == limit and total > limit else None
+
+    return {
+        "sessions": sessions,
+        "total": total,
+        "next_cursor": next_cursor,
+    }
+
+
 def query_dashboard_data(db_path: Path | None = None) -> dict[str, Any]:
     """Return summary metrics and datasets used by dashboard views."""
     database_path = db_path or get_default_dashboard_db_path()
@@ -285,26 +454,72 @@ def query_session_detail(
         """,
         [session_id],
     ).fetchone()
-    events = conn.execute(
-        """
-        SELECT
-            event_id,
-            parent_event_id,
-            sequence_number,
-            timestamp,
-            event_type,
-            category,
-            name,
-            status,
-            duration_ms,
-            agent_id,
-            metadata_json
-        FROM telemetry_events
-        WHERE session_id = ?
-        ORDER BY sequence_number ASC, timestamp ASC NULLS LAST
-        """,
-        [session_id],
-    ).fetchall()
+    # Load only the events needed for the requested page using the session_seq index.
+    # When cursor/before_cursor is provided, we can push filtering to DuckDB rather than
+    # loading all events and slicing in Python.
+    events: list[tuple[Any, ...]] = []
+    total_events = 0
+
+    if cursor is not None or before_cursor is not None or limit < 1000 or not include_derived:
+        count_row = conn.execute(
+            "SELECT COUNT(*) FROM telemetry_events WHERE session_id = ?",
+            [session_id],
+        ).fetchone()
+        total_events = int(count_row[0]) if count_row else 0
+
+    if cursor is not None:
+        events = conn.execute(
+            """
+            SELECT
+                event_id, parent_event_id, sequence_number, timestamp,
+                event_type, category, name, status, duration_ms, agent_id, metadata_json
+            FROM telemetry_events
+            WHERE session_id = ? AND sequence_number > ?
+            ORDER BY sequence_number ASC, timestamp ASC NULLS LAST
+            LIMIT ?
+            """,
+            [session_id, cursor, limit],
+        ).fetchall()
+    elif before_cursor is not None:
+        events = conn.execute(
+            """
+            SELECT
+                event_id, parent_event_id, sequence_number, timestamp,
+                event_type, category, name, status, duration_ms, agent_id, metadata_json
+            FROM telemetry_events
+            WHERE session_id = ? AND sequence_number < ?
+            ORDER BY sequence_number DESC, timestamp DESC NULLS LAST
+            LIMIT ?
+            """,
+            [session_id, before_cursor, limit],
+        ).fetchall()
+        events = list(reversed(events))
+    elif limit < 1000 or not include_derived:
+        events = conn.execute(
+            """
+            SELECT
+                event_id, parent_event_id, sequence_number, timestamp,
+                event_type, category, name, status, duration_ms, agent_id, metadata_json
+            FROM telemetry_events
+            WHERE session_id = ?
+            ORDER BY sequence_number ASC, timestamp ASC NULLS LAST
+            LIMIT ?
+            """,
+            [session_id, limit],
+        ).fetchall()
+    else:
+        events = conn.execute(
+            """
+            SELECT
+                event_id, parent_event_id, sequence_number, timestamp,
+                event_type, category, name, status, duration_ms, agent_id, metadata_json
+            FROM telemetry_events
+            WHERE session_id = ?
+            ORDER BY sequence_number ASC, timestamp ASC NULLS LAST
+            """,
+            [session_id],
+        ).fetchall()
+    events = list(events)
     phase_durations = conn.execute(
         """
         SELECT
@@ -404,6 +619,7 @@ def query_session_detail(
         cursor=cursor,
         before_cursor=before_cursor,
         limit=limit,
+        total=total_events,
     )
 
     # Build derived outputs using same builders as live
@@ -464,6 +680,7 @@ def _build_events_page(
     cursor: int | None = None,
     before_cursor: int | None = None,
     limit: int = 1000,
+    total: int | None = None,
 ) -> dict[str, Any]:
     """Build a cursor-paginated slice of events.
 
@@ -472,11 +689,12 @@ def _build_events_page(
         cursor: Sequence number to start after (forward pagination).
         before_cursor: Sequence number to end before (backward pagination).
         limit: Maximum events to return.
+        total: Optional pre-computed total event count (for paginated DB queries).
 
     Returns:
         Dict with events slice and pagination metadata.
     """
-    total = len(events)
+    total_count = total if total is not None else len(events)
 
     if not events:
         return {
@@ -487,9 +705,15 @@ def _build_events_page(
             "prev_cursor": None,
         }
 
-    # Get sequence numbers for cursor calculations
+    # Get sequence numbers for cursor calculations.
+    # When total is provided (DB-backed paginated query), last_seq is the actual
+    # last sequence in the DB, not the last of the returned slice. This ensures
+    # has_more is computed against the full dataset.
     first_seq = events[0].get("sequence_number", 0)
-    last_seq = events[-1].get("sequence_number", total - 1)
+    if total is not None:
+        last_seq = total - 1
+    else:
+        last_seq = events[-1].get("sequence_number", len(events) - 1)
 
     # Forward pagination: events after cursor
     if cursor is not None:
@@ -531,14 +755,14 @@ def _build_events_page(
 
     # Calculate cursors for next/prev pages
     first_returned_seq = sliced[0].get("sequence_number", events.index(sliced[0]) if sliced[0] in events else 0)
-    last_returned_seq = sliced[-1].get("sequence_number", events.index(sliced[-1]) if sliced[-1] in events else total - 1)
+    last_returned_seq = sliced[-1].get("sequence_number", events.index(sliced[-1]) if sliced[-1] in events else total_count - 1)
 
     has_more = last_returned_seq < last_seq
     has_prev = first_returned_seq > first_seq
 
     return {
         "events": sliced,
-        "total": total,
+        "total": total_count,
         "has_more": has_more,
         "next_cursor": last_returned_seq if has_more else None,
         "prev_cursor": first_returned_seq - 1 if has_prev else None,

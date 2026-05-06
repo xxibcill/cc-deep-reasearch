@@ -18,7 +18,7 @@ from cc_deep_research.content_gen.pipeline_run_service import PipelineRunService
 from cc_deep_research.content_gen.progress import PipelineRunJobRegistry
 from cc_deep_research.content_gen.publish_queue_audit_service import PublishQueueAuditService
 from cc_deep_research.content_gen.scripting_api_service import ScriptingApiService
-from cc_deep_research.content_gen.storage import AuditStore
+from cc_deep_research.content_gen.storage import AuditStore, PublishQueueStore
 from cc_deep_research.event_router import EventRouter
 
 if TYPE_CHECKING:
@@ -45,6 +45,7 @@ class ContentGenServices:
         scripting_api_service: ScriptingApiService | None = None,
         strategy_api_service: StrategyApiService | None = None,
         publish_queue_audit_service: PublishQueueAuditService | None = None,
+        publish_queue_store: PublishQueueStore | None = None,
     ) -> None:
         self._config = config
         self._event_router = event_router
@@ -86,10 +87,11 @@ class ContentGenServices:
 
             self._strategy_api_service = StrategyApiService()
 
-        # Publish queue audit service
+        # Publish queue audit service + store
         self._publish_queue_audit_service = (
             publish_queue_audit_service or PublishQueueAuditService()
         )
+        self._publish_queue_store = publish_queue_store or PublishQueueStore(config=config)
 
         # Maintenance API service
         from cc_deep_research.content_gen.maintenance_api_service import MaintenanceApiService
@@ -137,6 +139,10 @@ class ContentGenServices:
         return self._publish_queue_audit_service
 
     @property
+    def publish_queue_store(self) -> PublishQueueStore:
+        return self._publish_queue_store
+
+    @property
     def maintenance_api_service(self) -> MaintenanceApiService:
         return self._maintenance_api_service
 
@@ -153,6 +159,7 @@ def build_content_gen_services(
     scripting_api_service: ScriptingApiService | None = None,
     strategy_api_service: StrategyApiService | None = None,
     publish_queue_audit_service: PublishQueueAuditService | None = None,
+    publish_queue_store: PublishQueueStore | None = None,
 ) -> ContentGenServices:
     """Build a ContentGenServices instance with composed dependencies.
 
@@ -170,4 +177,5 @@ def build_content_gen_services(
         scripting_api_service=scripting_api_service,
         strategy_api_service=strategy_api_service,
         publish_queue_audit_service=publish_queue_audit_service,
+        publish_queue_store=publish_queue_store,
     )

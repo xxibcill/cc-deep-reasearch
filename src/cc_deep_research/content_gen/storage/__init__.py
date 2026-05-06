@@ -17,6 +17,8 @@ from cc_deep_research.content_gen.storage.derivative_opportunity_store import (
 from cc_deep_research.content_gen.storage.performance_learning_store import PerformanceLearningStore
 from cc_deep_research.content_gen.storage.planning_learning_store import PlanningLearningStore
 from cc_deep_research.content_gen.storage.publish_queue_store import PublishQueueStore
+from cc_deep_research.content_gen.storage.qc_issue_store import QCIssueStore
+from cc_deep_research.content_gen.storage.reusable_asset_store import ReusableAssetStore
 from cc_deep_research.content_gen.storage.revision_store import BriefRevisionStore
 from cc_deep_research.content_gen.storage.scripting_store import ScriptingStore
 from cc_deep_research.content_gen.storage.sqlite_backlog_store import SqliteBacklogStore
@@ -36,6 +38,8 @@ __all__ = [
     "PerformanceLearningStore",
     "PlanningLearningStore",
     "PublishQueueStore",
+    "QCIssueStore",
+    "ReusableAssetStore",
     "ScriptingStore",
     "SqliteBacklogStore",
     "SqliteBriefStore",

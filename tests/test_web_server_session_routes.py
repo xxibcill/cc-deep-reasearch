@@ -426,6 +426,7 @@ def test_session_list_enriches_saved_and_telemetry_only_sessions(
         "has_session_payload": True,
         "has_report": True,
         "archived": False,
+        "triage_status": None,
     }
 
     telemetry_only = sessions["telemetry-only-session"]
@@ -713,6 +714,7 @@ def test_session_list_marks_old_no_summary_sessions_interrupted(
             "has_session_payload": False,
             "has_report": False,
             "archived": False,
+            "triage_status": None,
         }
     ]
 
@@ -1511,6 +1513,336 @@ def test_rerun_step_rejects_non_replayable_checkpoint(
 
     assert response.status_code == 409  # Conflict
     assert "not replayable" in response.json()["error"]
+
+
+# Session Annotations and Triage Tests
+
+def test_add_annotation_creates_annotation_on_session(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The annotations endpoint should create a note attached to the session."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    SessionStore().save_session(
+        ResearchSession(
+            session_id="annotate-session",
+            query="Test query",
+            depth=ResearchDepth.STANDARD,
+        )
+    )
+
+    client = TestClient(create_app())
+    response = client.post(
+        "/api/sessions/annotate-session/annotations",
+        json={"note": "Reviewed the analysis output", "author": "operator-1"},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["annotation"]["note"] == "Reviewed the analysis output"
+    assert payload["annotation"]["author"] == "operator-1"
+    assert "created_at" in payload["annotation"]
+
+
+def test_add_annotation_rejects_empty_note(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An empty or whitespace-only note should be rejected."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    SessionStore().save_session(
+        ResearchSession(
+            session_id="annotate-session",
+            query="Test query",
+            depth=ResearchDepth.STANDARD,
+        )
+    )
+
+    client = TestClient(create_app())
+
+    for bad_note in ["", "   ", "  \n  "]:
+        response = client.post(
+            "/api/sessions/annotate-session/annotations",
+            json={"note": bad_note},
+        )
+        assert response.status_code == 400, f"Expected 400 for note: {repr(bad_note)}"
+
+
+def test_add_annotation_returns_404_for_unknown_session(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Posting to a session that does not exist should return 404."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/sessions/nonexistent-session/annotations",
+        json={"note": "This should fail"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_update_annotation_modifies_existing_note(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PATCH should update the note text and set updated_at."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    session = ResearchSession(
+        session_id="update-annotate-session",
+        query="Test query",
+        depth=ResearchDepth.STANDARD,
+        metadata={"annotations": [{"note": "Original note", "author": "op", "created_at": "2026-03-01T00:00:00"}]},
+    )
+    SessionStore().save_session(session)
+
+    client = TestClient(create_app())
+    response = client.patch(
+        "/api/sessions/update-annotate-session/annotations/0",
+        json={"note": "Updated note text"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["annotation"]["note"] == "Updated note text"
+    assert payload["annotation"]["updated_at"] is not None
+
+
+def test_update_annotation_returns_404_for_bad_index(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Updating an annotation index that does not exist should return 404."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    SessionStore().save_session(
+        ResearchSession(
+            session_id="update-annotate-session",
+            query="Test query",
+            depth=ResearchDepth.STANDARD,
+        )
+    )
+
+    client = TestClient(create_app())
+    response = client.patch(
+        "/api/sessions/update-annotate-session/annotations/99",
+        json={"note": "Will not exist"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_delete_annotation_removes_annotation(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """DELETE should remove the annotation at the given index."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    session = ResearchSession(
+        session_id="delete-annotate-session",
+        query="Test query",
+        depth=ResearchDepth.STANDARD,
+        metadata={
+            "annotations": [
+                {"note": "First", "author": "op", "created_at": "2026-03-01T00:00:00"},
+                {"note": "Second", "author": "op", "created_at": "2026-03-01T00:01:00"},
+            ]
+        },
+    )
+    SessionStore().save_session(session)
+
+    client = TestClient(create_app())
+    response = client.delete(
+        "/api/sessions/delete-annotate-session/annotations/0",
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["deleted"] is True
+    assert payload["remaining"] == 1
+
+    # Verify GET now returns only the remaining annotation
+    get_response = client.get("/api/sessions/delete-annotate-session/annotations")
+    assert get_response.status_code == 200
+    annotations = get_response.json()["annotations"]
+    assert len(annotations) == 1
+    assert annotations[0]["note"] == "Second"
+
+
+def test_get_annotations_returns_empty_list_for_session_with_no_annotations(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A session with no annotations should return an empty annotations array."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    SessionStore().save_session(
+        ResearchSession(
+            session_id="no-annotation-session",
+            query="Test query",
+            depth=ResearchDepth.STANDARD,
+        )
+    )
+
+    client = TestClient(create_app())
+    response = client.get("/api/sessions/no-annotation-session/annotations")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["annotations"] == []
+    assert payload["count"] == 0
+
+
+def test_update_triage_sets_status_and_metadata(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PATCH /triage should update triage_status, owner, handoff target, and last_reviewed_at."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    SessionStore().save_session(
+        ResearchSession(
+            session_id="triage-session",
+            query="Test query",
+            depth=ResearchDepth.STANDARD,
+        )
+    )
+
+    client = TestClient(create_app())
+    response = client.patch(
+        "/api/sessions/triage-session/triage",
+        json={
+            "triage_status": "needs_review",
+            "triage_owner": "analyst-a",
+            "triage_handoff_target": "review-team",
+            "last_reviewed_at": "2026-04-01T10:00:00Z",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["triage_status"] == "needs_review"
+    assert payload["triage_owner"] == "analyst-a"
+    assert payload["triage_handoff_target"] == "review-team"
+    assert payload["last_reviewed_at"] is not None
+
+
+def test_update_triage_rejects_invalid_status(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An invalid triage_status value should return 400."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    SessionStore().save_session(
+        ResearchSession(
+            session_id="triage-session",
+            query="Test query",
+            depth=ResearchDepth.STANDARD,
+        )
+    )
+
+    client = TestClient(create_app())
+    response = client.patch(
+        "/api/sessions/triage-session/triage",
+        json={"triage_status": "not_a_valid_status"},
+    )
+
+    assert response.status_code == 400
+    assert "Invalid triage_status" in response.json()["error"]
+
+
+def test_update_triage_returns_404_for_unknown_session(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PATCH /triage for a nonexistent session should return 404."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    client = TestClient(create_app())
+
+    response = client.patch(
+        "/api/sessions/nonexistent-session/triage",
+        json={"triage_status": "ready"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_get_triage_returns_session_triage_metadata(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GET /triage should return the current triage metadata."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    SessionStore().save_session(
+        ResearchSession(
+            session_id="triage-session",
+            query="Test query",
+            depth=ResearchDepth.STANDARD,
+            metadata={
+                "triage_status": "investigated",
+                "triage_owner": "analyst-b",
+                "triage_handoff_target": None,
+                "last_reviewed_at": "2026-04-03T14:30:00Z",
+            },
+        )
+    )
+
+    client = TestClient(create_app())
+    response = client.get("/api/sessions/triage-session/triage")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["session_id"] == "triage-session"
+    assert payload["triage_status"] == "investigated"
+    assert payload["triage_owner"] == "analyst-b"
+
+
+def test_triage_status_surfaces_in_session_list(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sessions with triage_status should expose it in the session list rows."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    SessionStore().save_session(
+        ResearchSession(
+            session_id="triage-list-session",
+            query="Needs triage check",
+            depth=ResearchDepth.STANDARD,
+            metadata={"triage_status": "blocked"},
+        )
+    )
+
+    client = TestClient(create_app())
+    response = client.get("/api/sessions")
+
+    assert response.status_code == 200
+    sessions = {s["session_id"]: s for s in response.json()["sessions"]}
+    assert sessions["triage-list-session"]["triage_status"] == "blocked"
+
+
+def test_annotations_persist_across_sessions_load(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Adding an annotation and reloading the session should preserve it."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    store = SessionStore()
+
+    session = ResearchSession(
+        session_id="persist-annotate-session",
+        query="Test query",
+        depth=ResearchDepth.STANDARD,
+    )
+    store.save_session(session)
+
+    client = TestClient(create_app())
+    client.post(
+        "/api/sessions/persist-annotate-session/annotations",
+        json={"note": "Persisted note", "author": "operator-x"},
+    )
+
+    # Reload via store
+    reloaded = store.load_session("persist-annotate-session")
+    assert reloaded is not None
+    annotations = reloaded.metadata.get("annotations", [])
+    assert len(annotations) == 1
+    assert annotations[0]["note"] == "Persisted note"
 
 
 # Search Cache API Tests
