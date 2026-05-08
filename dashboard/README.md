@@ -1,6 +1,6 @@
-# CC Deep Research Monitoring Dashboard
+# Inqulume Studio Monitoring Dashboard
 
-Real-time interactive monitoring dashboard for CC Deep Research with workflow visualization, agent tracking, and detailed event inspection.
+Real-time interactive monitoring dashboard for Inqulume Studio with workflow visualization, agent tracking, and detailed event inspection.
 
 ## Features
 
@@ -117,7 +117,7 @@ src/
 
 ## API Integration
 
-The dashboard connects to the CC Deep Research backend:
+The dashboard connects to the Inqulume Studio backend:
 
 - **WebSocket**: \`${NEXT_PUBLIC_CC_WS_BASE_URL}/session/{sessionId}\` with \`ws://localhost:8000/ws\` as the local default
 - **REST API**: \`${NEXT_PUBLIC_CC_API_BASE_URL}/sessions\` with \`http://localhost:8000/api\` as the local default
@@ -128,12 +128,12 @@ The dashboard connects to the CC Deep Research backend:
 
 1. Start the backend server:
    \`\`\`bash
-   cc-deep-research dashboard --host localhost --port 8000
+   inqulume-studio dashboard --host localhost --port 8000
    \`\`\`
 
 2. Run a research query with real-time enabled:
    \`\`\`bash
-   cc-deep-research research "your query" --enable-realtime
+   inqulume-studio research "your query" --enable-realtime
    \`\`\`
 
 3. Open the dashboard in a browser and select the session to monitor

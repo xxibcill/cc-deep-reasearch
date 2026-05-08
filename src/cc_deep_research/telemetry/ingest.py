@@ -18,7 +18,7 @@ from .migrations import (
 if TYPE_CHECKING:
     pass
 
-_DASHBOARD_INSTALL_COMMAND = 'pip install "cc-deep-research[dashboard]"'
+_DASHBOARD_INSTALL_COMMAND = 'pip install "inqulume-studio[dashboard]"'
 
 
 def _ensure_metadata_table(conn: Any) -> None:

@@ -1,4 +1,4 @@
-# CC Deep Research
+# Inqulume Studio
 
 Deep research platform with real-time dashboard monitoring. Conduct multi-stage web research using Tavily search, session persistence, and telemetry analytics.
 
@@ -48,7 +48,7 @@ uv run uvicorn cc_deep_research.web_server:create_app --factory --ws websockets-
 
 ## Configuration
 
-Configuration file: `~/.config/cc-deep-research/config.yaml`
+Configuration file: `~/.config/inqulume-studio/config.yaml`
 
 Default settings:
 - `search.providers: ["tavily"]`
@@ -67,7 +67,7 @@ Environment variable overrides:
 
 ## LLM Routing
 
-CC Deep Research supports multiple LLM backends:
+Inqulume Studio supports multiple LLM backends:
 
 | Transport | Description |
 |-----------|-------------|
@@ -76,7 +76,7 @@ CC Deep Research supports multiple LLM backends:
 | `cerebras_api` | Fast inference via Cerebras |
 | `heuristic` | Rule-based fallback |
 
-Configure in `~/.config/cc-deep-research/config.yaml` under `llm` section.
+Configure in `~/.config/inqulume-studio/config.yaml` under `llm` section.
 
 ## Development
 

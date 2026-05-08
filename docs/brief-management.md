@@ -27,13 +27,13 @@ Only `APPROVED` briefs can be used to gate pipeline execution (when the brief ga
 ### List all briefs
 
 ```bash
-cc-deep-research content-gen briefs briefs_list
+inqulume-studio content-gen briefs briefs_list
 ```
 
 ### View a specific brief
 
 ```bash
-cc-deep-research content-gen briefs briefs_show --brief-id mbrief_abc123
+inqulume-studio content-gen briefs briefs_show --brief-id mbrief_abc123
 ```
 
 ### Migrate YAML briefs to SQLite
@@ -41,7 +41,7 @@ cc-deep-research content-gen briefs briefs_show --brief-id mbrief_abc123
 If you have existing briefs in YAML format, migrate them to the SQLite store:
 
 ```bash
-cc-deep-research content-gen briefs briefs_migrate
+inqulume-studio content-gen briefs briefs_migrate
 ```
 
 This performs a one-time import from the YAML store to SQLite. Existing SQLite records are preserved; only new briefs are added.
@@ -51,7 +51,7 @@ This performs a one-time import from the YAML store to SQLite. Existing SQLite r
 Verify consistency between YAML and SQLite stores:
 
 ```bash
-cc-deep-research content-gen briefs briefs_health
+inqulume-studio content-gen briefs briefs_health
 ```
 
 This reports any briefs that exist only in one store or the other.
@@ -63,7 +63,7 @@ This reports any briefs that exist only in one store or the other.
 Briefs are typically created during pipeline stage 1 (plan_opportunity). The pipeline automatically creates a managed brief when you run:
 
 ```bash
-cc-deep-research content-gen pipeline --theme "pricing psychology"
+inqulume-studio content-gen pipeline --theme "pricing psychology"
 ```
 
 This creates a managed brief in `DRAFT` state with the initial opportunity brief content.
@@ -90,7 +90,7 @@ Approval is required for the brief to gate pipeline execution.
 To start a new pipeline run from an existing brief:
 
 ```bash
-cc-deep-research content-gen pipeline --brief-id mbrief_abc123 --from-stage 2
+inqulume-studio content-gen pipeline --brief-id mbrief_abc123 --from-stage 2
 ```
 
 This resumes from stage 2 (ideation) using the approved brief as the planning anchor.
@@ -152,10 +152,10 @@ These constraints should be preserved by future feature work:
 
 | Data | Location |
 |------|----------|
-| Briefs (SQLite) | `~/.config/cc-deep-research/content-gen/briefs.db` |
-| Revisions (SQLite) | `~/.config/cc-deep-research/content-gen/briefs_revisions.db` |
-| Briefs (YAML, legacy) | `~/.config/cc-deep-research/content-gen/briefs.yaml` |
-| Audit log | `~/.config/cc-deep-research/content-gen/audit_log.yaml` |
+| Briefs (SQLite) | `~/.config/inqulume-studio/content-gen/briefs.db` |
+| Revisions (SQLite) | `~/.config/inqulume-studio/content-gen/briefs_revisions.db` |
+| Briefs (YAML, legacy) | `~/.config/inqulume-studio/content-gen/briefs.yaml` |
+| Audit log | `~/.config/inqulume-studio/content-gen/audit_log.yaml` |
 
 ## Key Files
 

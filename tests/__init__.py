@@ -1,1 +1,1 @@
-"""Tests package for CC Deep Research CLI."""
+"""Tests package for Inqulume Studio CLI."""

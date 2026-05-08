@@ -52,7 +52,7 @@ def test_search_cache_stats_returns_counts_when_enabled(
     from cc_deep_research.search_cache import SearchCacheStore, build_search_cache_identity
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     config_dir.mkdir(parents=True)
 
     # Add an entry to the cache
@@ -96,7 +96,7 @@ def test_search_cache_list_returns_entries_when_enabled(
     from cc_deep_research.search_cache import SearchCacheStore, build_search_cache_identity
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     config_dir.mkdir(parents=True)
 
     # Add an entry to the cache
@@ -141,7 +141,7 @@ def test_search_cache_purge_expired_removes_old_entries(
     from cc_deep_research.search_cache import SearchCacheStore, build_search_cache_identity
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     config_dir.mkdir(parents=True)
 
     # Add an expired entry to the cache
@@ -181,7 +181,7 @@ def test_search_cache_delete_entry_removes_specific_entry(
     from cc_deep_research.search_cache import SearchCacheStore, build_search_cache_identity
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     config_dir.mkdir(parents=True)
 
     # Add an entry to the cache
@@ -227,7 +227,7 @@ def test_search_cache_clear_removes_all_entries(
     from cc_deep_research.search_cache import SearchCacheStore, build_search_cache_identity
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     config_dir.mkdir(parents=True)
 
     # Add multiple entries to the cache

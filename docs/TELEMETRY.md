@@ -2,8 +2,8 @@
 
 This project uses a local, file-backed telemetry pipeline. Runtime telemetry is written into per-session JSONL files, optionally ingested into DuckDB for historical analytics, and consumed by two operator UIs:
 
-- the Streamlit telemetry dashboard launched by `cc-deep-research telemetry dashboard`
-- the FastAPI + Next.js real-time operator console launched with `cc-deep-research dashboard` plus the frontend in [`dashboard/`](../dashboard)
+- the Streamlit telemetry dashboard launched by `inqulume-studio telemetry dashboard`
+- the FastAPI + Next.js real-time operator console launched with `inqulume-studio dashboard` plus the frontend in [`dashboard/`](../dashboard)
 
 ## Core Boundaries
 
@@ -96,8 +96,8 @@ That means:
 
 Each research run gets a session directory under the telemetry base dir:
 
-- `~/.config/cc-deep-research/telemetry/<session_id>/events.jsonl`
-- `~/.config/cc-deep-research/telemetry/<session_id>/summary.json`
+- `~/.config/inqulume-studio/telemetry/<session_id>/events.jsonl`
+- `~/.config/inqulume-studio/telemetry/<session_id>/summary.json`
 
 The default telemetry path is computed by [`get_default_telemetry_dir()`](../src/cc_deep_research/telemetry/live.py) in [`src/cc_deep_research/telemetry/live.py`](../src/cc_deep_research/telemetry/live.py), which places telemetry next to the main config file.
 
@@ -179,8 +179,8 @@ This is what makes in-flight sessions appear immediately in both dashboards.
 
 Historical analytics are built by ingesting session files into DuckDB with:
 
-- `cc-deep-research telemetry ingest`
-- `cc-deep-research telemetry dashboard`
+- `inqulume-studio telemetry ingest`
+- `inqulume-studio telemetry dashboard`
 
 `ingest_telemetry_to_duckdb()` creates and refreshes:
 
@@ -205,7 +205,7 @@ Historical dashboard views use helpers in [`src/cc_deep_research/telemetry/query
 The command:
 
 ```bash
-cc-deep-research telemetry dashboard
+inqulume-studio telemetry dashboard
 ```
 
 does three things:
@@ -224,7 +224,7 @@ This dashboard combines:
 The command:
 
 ```bash
-cc-deep-research dashboard --port 8000
+inqulume-studio dashboard --port 8000
 ```
 
 starts the FastAPI backend that serves:
@@ -268,7 +268,7 @@ Live telemetry files work with the base install.
 The Streamlit dashboard requires the `dashboard` extra:
 
 ```bash
-pip install "cc-deep-research[dashboard]"
+pip install "inqulume-studio[dashboard]"
 ```
 
 That extra installs:
@@ -295,8 +295,8 @@ Content-generation runs emit specialized telemetry for measuring workflow speed 
 
 Content-gen telemetry is stored separately from research telemetry in:
 
-- `~/.config/cc-deep-research/content_gen_telemetry.yaml` (YAML store for run metrics, operating fitness, and rule versions)
-- `~/.config/cc-deep-research/performance_learnings.yaml` (YAML store for performance learnings and strategy guidance)
+- `~/.config/inqulume-studio/content_gen_telemetry.yaml` (YAML store for run metrics, operating fitness, and rule versions)
+- `~/.config/inqulume-studio/performance_learnings.yaml` (YAML store for performance learnings and strategy guidance)
 
 The [`ContentGenTelemetryStore`](src/cc_deep_research/content_gen/storage/content_gen_telemetry_store.py) provides:
 

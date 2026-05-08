@@ -15,7 +15,7 @@ History before `0.1.0` is summarized from the repository state captured on 2026-
 - Added `/api/knowledge/rebuild-index` endpoint for graph index rebuild
 - Added `/api/benchmarks/run` endpoint to trigger benchmark corpus runs from dashboard
 - Added `/api/benchmarks/compare` endpoint for run comparison
-- Removed `cc-deep-research` CLI entry point from `pyproject.toml` and deleted `src/cc_deep_research/cli/`
+- Removed `inqulume-studio` CLI entry point from `pyproject.toml` and deleted `src/cc_deep_research/cli/`
 - All CLI commands now available via dashboard or deprecated with documented rationale
 
 #### Phase 00 - Baseline And Refactor Safety (3 tasks)
@@ -521,7 +521,7 @@ Phase 6 - Harden, migrate, and roll out:
 
 ### Added
 
-- Initial tracked release for the CC Deep Research CLI.
+- Initial tracked release for the Inqulume Studio CLI.
 - Multi-stage research workflow with planning, source collection, analysis, validation, and reporting.
 - Session persistence, telemetry ingestion, dashboard support, and a versioned benchmark corpus.
 

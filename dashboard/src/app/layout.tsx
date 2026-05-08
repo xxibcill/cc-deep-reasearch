@@ -3,7 +3,7 @@ import './globals.css';
 import { AppShell } from '@/components/app-shell';
 
 export const metadata: Metadata = {
-  title: 'CC Deep Research — Content Studio',
+  title: 'Inqulume Studio — Content Studio',
   description: 'Content generation studio for short-form video production',
 };
 

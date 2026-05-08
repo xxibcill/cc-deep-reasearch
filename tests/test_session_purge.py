@@ -21,7 +21,7 @@ from cc_deep_research.web_server import create_app
 def temp_config_dir(tmp_path, monkeypatch: pytest.MonkeyPatch):
     """Set up temporary config directory with session store."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     config_dir.mkdir(parents=True)
     return config_dir
 

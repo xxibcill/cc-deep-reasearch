@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Development launcher for CC Deep Research Dashboard
+ * Development launcher for Inqulume Studio Dashboard
  *
  * Starts both the backend API (FastAPI on port 8000) and the frontend (Next.js on port 3000).
  * Handles graceful shutdown and logs both processes with clear prefixes.
@@ -188,7 +188,7 @@ async function main() {
     new Set([backendPort]),
   );
 
-  log(COLORS.green, 'Starting CC Deep Research Dashboard development environment...');
+  log(COLORS.green, 'Starting Inqulume Studio Dashboard development environment...');
   if (backendPort !== DEFAULT_BACKEND_PORT) {
     log(COLORS.green, `Preferred backend port ${DEFAULT_BACKEND_PORT} is busy, using ${backendPort}`);
   }

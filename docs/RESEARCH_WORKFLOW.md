@@ -1,6 +1,6 @@
 # Research Workflow Design
 
-This document explains how the research workflow in `cc-deep-research` is designed, how the runtime moves through each phase, and which modules own each responsibility.
+This document explains how the research workflow in `inqulume-studio` is designed, how the runtime moves through each phase, and which modules own each responsibility.
 
 ## Purpose
 

@@ -1,4 +1,4 @@
-"""Specialized research agents for CC Deep Research CLI.
+"""Specialized research agents for Inqulume Studio CLI.
 
 This module provides agent implementations for different aspects of research:
 - ResearchLead: Orchestrates overall research strategy

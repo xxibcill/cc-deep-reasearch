@@ -8,10 +8,10 @@ Migration from YAML
 The YAML store (BriefStore) remains fully functional. To migrate to SQLite:
 
 1. Ensure the content-gen DB directory exists (same directory as briefs.yaml):
-   ~/.config/cc-deep-research/content-gen/
+   ~/.config/inqulume-studio/content-gen/
 
 2. SQLite data is stored at:
-   ~/.config/cc-deep-research/content-gen/briefs.db
+   ~/.config/inqulume-studio/content-gen/briefs.db
 
 3. On first load, the SQLite store will attempt to import existing YAML data
    if the SQLite database is empty. This is a one-time migration.

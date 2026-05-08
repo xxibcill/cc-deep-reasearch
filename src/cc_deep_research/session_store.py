@@ -1,4 +1,4 @@
-"""Session storage and management for CC Deep Research.
+"""Session storage and management for Inqulume Studio.
 
 This module provides functionality to persist, retrieve, and manage
 research sessions on disk.

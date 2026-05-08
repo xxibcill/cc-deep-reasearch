@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Production launcher for CC Deep Research Dashboard.
+ * Production launcher for Inqulume Studio Dashboard.
  *
  * Builds the Next.js frontend, starts the FastAPI backend, and then starts the
  * production Next.js server. Handles graceful shutdown and labels logs clearly.
@@ -220,7 +220,7 @@ async function main() {
     new Set([backendPort]),
   );
 
-  log(COLORS.green, 'Preparing CC Deep Research Dashboard production environment...');
+  log(COLORS.green, 'Preparing Inqulume Studio Dashboard production environment...');
   if (backendPort !== DEFAULT_BACKEND_PORT) {
     log(COLORS.green, `Preferred backend port ${DEFAULT_BACKEND_PORT} is busy, using ${backendPort}`);
   }

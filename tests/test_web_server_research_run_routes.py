@@ -33,7 +33,7 @@ def test_stop_research_run_cancels_active_run_and_interrupts_session(
             **_kwargs,
         ) -> ResearchRunResult:
             session_id = "research-cancelled"
-            telemetry_dir = tmp_path / "xdg" / "cc-deep-research" / "telemetry" / session_id
+            telemetry_dir = tmp_path / "xdg" / "inqulume-studio" / "telemetry" / session_id
             telemetry_dir.mkdir(parents=True, exist_ok=True)
             (telemetry_dir / "events.jsonl").write_text(
                 json.dumps(

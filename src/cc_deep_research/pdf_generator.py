@@ -1,4 +1,4 @@
-"""PDF generation for CC Deep Research CLI."""
+"""PDF generation for Inqulume Studio CLI."""
 
 from __future__ import annotations
 

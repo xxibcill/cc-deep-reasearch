@@ -88,7 +88,7 @@ def test_session_detail_summary_preserves_prompt_metadata(
     duckdb = pytest.importorskip("duckdb")
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     config_dir.mkdir(parents=True)
 
     db_path = config_dir / "telemetry.duckdb"
@@ -207,7 +207,7 @@ def test_bulk_delete_route_returns_per_session_outcomes(
     from datetime import UTC, datetime
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     config_dir.mkdir(parents=True)
 
     SessionStore().save_session(
@@ -284,7 +284,7 @@ def test_session_list_uses_historical_duckdb_and_deduplicates_live_rows(
     duckdb = pytest.importorskip("duckdb")
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     telemetry_dir = config_dir / "telemetry"
     telemetry_dir.mkdir(parents=True)
 
@@ -369,7 +369,7 @@ def test_session_list_enriches_saved_and_telemetry_only_sessions(
 ) -> None:
     """The list API should expose explicit summary metadata for saved and telemetry-only rows."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     config_dir.mkdir(parents=True)
 
     SessionStore().save_session(
@@ -445,7 +445,7 @@ def test_session_detail_and_history_fall_back_to_historical_duckdb(
     duckdb = pytest.importorskip("duckdb")
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     config_dir.mkdir(parents=True)
 
     db_path = config_dir / "telemetry.duckdb"
@@ -561,7 +561,7 @@ def test_live_session_detail_returns_decision_graph(
 ) -> None:
     """Live session detail should expose the derived decision graph."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    telemetry_dir = tmp_path / "xdg" / "cc-deep-research" / "telemetry"
+    telemetry_dir = tmp_path / "xdg" / "inqulume-studio" / "telemetry"
     monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=telemetry_dir)
     monitor.set_session("live-graph-session", query="route choice", depth="standard")
     monitor.emit_event(
@@ -592,7 +592,7 @@ def test_session_detail_include_derived_false_returns_empty_decision_graph(
 ) -> None:
     """Disabling derived outputs should suppress graph derivation."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    telemetry_dir = tmp_path / "xdg" / "cc-deep-research" / "telemetry"
+    telemetry_dir = tmp_path / "xdg" / "inqulume-studio" / "telemetry"
     monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=telemetry_dir)
     monitor.set_session("no-derived-graph", query="route choice", depth="standard")
     monitor.emit_event(
@@ -631,8 +631,8 @@ def test_session_bundle_includes_decision_graph(
     pytest.importorskip("duckdb")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
 
-    telemetry_dir = tmp_path / "xdg" / "cc-deep-research" / "telemetry"
-    db_path = tmp_path / "xdg" / "cc-deep-research" / "telemetry.duckdb"
+    telemetry_dir = tmp_path / "xdg" / "inqulume-studio" / "telemetry"
+    db_path = tmp_path / "xdg" / "inqulume-studio" / "telemetry.duckdb"
     monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=telemetry_dir)
     monitor.set_session("bundle-graph-session", query="bundle route", depth="standard")
     monitor.emit_event(
@@ -673,7 +673,7 @@ def test_session_list_marks_old_no_summary_sessions_interrupted(
 ) -> None:
     """Abandoned telemetry directories should not remain running forever."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    session_dir = tmp_path / "xdg" / "cc-deep-research" / "telemetry" / "stale-session"
+    session_dir = tmp_path / "xdg" / "inqulume-studio" / "telemetry" / "stale-session"
     session_dir.mkdir(parents=True)
     (session_dir / "events.jsonl").write_text(
         json.dumps(
@@ -725,7 +725,7 @@ def test_session_list_returns_paginated_response_with_total_and_next_cursor(
     """The session list should return total count and next_cursor for pagination."""
     duckdb = pytest.importorskip("duckdb")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     config_dir.mkdir(parents=True)
 
     db_path = config_dir / "telemetry.duckdb"
@@ -789,7 +789,7 @@ def test_session_list_filter_by_status(tmp_path, monkeypatch: pytest.MonkeyPatch
     """The session list should filter by status when provided."""
     duckdb = pytest.importorskip("duckdb")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     config_dir.mkdir(parents=True)
 
     db_path = config_dir / "telemetry.duckdb"
@@ -840,7 +840,7 @@ def test_session_list_filter_by_search(tmp_path, monkeypatch: pytest.MonkeyPatch
     """The session list should filter by search query when provided."""
     duckdb = pytest.importorskip("duckdb")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     telemetry_dir = config_dir / "telemetry"
     telemetry_dir.mkdir(parents=True)
 
@@ -921,7 +921,7 @@ def test_session_list_sort_by_created_at(tmp_path, monkeypatch: pytest.MonkeyPat
     """The session list should sort by created_at when sort_by is specified."""
     duckdb = pytest.importorskip("duckdb")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     config_dir.mkdir(parents=True)
 
     db_path = config_dir / "telemetry.duckdb"
@@ -975,7 +975,7 @@ def test_session_list_cursor_pagination(tmp_path, monkeypatch: pytest.MonkeyPatc
     """The session list should use cursor for stable pagination."""
     duckdb = pytest.importorskip("duckdb")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     config_dir.mkdir(parents=True)
 
     db_path = config_dir / "telemetry.duckdb"
@@ -1034,7 +1034,7 @@ def test_session_includes_checkpoint_inventory(
 ) -> None:
     """Session detail should include checkpoint inventory when available."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     telemetry_dir = config_dir / "telemetry"
     session_dir = telemetry_dir / "checkpoint-session"
     session_dir.mkdir(parents=True)
@@ -1093,7 +1093,7 @@ def test_checkpoint_list_endpoint(
 ) -> None:
     """The checkpoints list endpoint should return checkpoint manifest."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     telemetry_dir = config_dir / "telemetry"
     session_dir = telemetry_dir / "checkpoint-list-session"
     session_dir.mkdir(parents=True)
@@ -1157,7 +1157,7 @@ def test_checkpoint_detail_endpoint(
 ) -> None:
     """The checkpoint detail endpoint should return checkpoint with lineage."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     telemetry_dir = config_dir / "telemetry"
     session_dir = telemetry_dir / "checkpoint-detail-session"
     session_dir.mkdir(parents=True)
@@ -1228,7 +1228,7 @@ def test_checkpoint_lineage_endpoint(
 ) -> None:
     """The checkpoint lineage endpoint should return ordered checkpoint chain."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     telemetry_dir = config_dir / "telemetry"
     session_dir = telemetry_dir / "checkpoint-lineage-session"
     session_dir.mkdir(parents=True)
@@ -1294,7 +1294,7 @@ def test_resume_endpoint_returns_resume_info(
 ) -> None:
     """The resume endpoint should return resume information for valid checkpoint."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     telemetry_dir = config_dir / "telemetry"
     session_dir = telemetry_dir / "resume-session"
     session_dir.mkdir(parents=True)
@@ -1352,7 +1352,7 @@ def test_resume_endpoint_rejects_non_resumable_checkpoint(
 ) -> None:
     """The resume endpoint should reject non-resume-safe checkpoints."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     telemetry_dir = config_dir / "telemetry"
     session_dir = telemetry_dir / "non-resumable-session"
     session_dir.mkdir(parents=True)
@@ -1406,7 +1406,7 @@ def test_rerun_step_endpoint_reports_not_implemented_for_replayable_checkpoint(
 ) -> None:
     """Replayable checkpoints should not be reported as rerun successfully before execution exists."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     telemetry_dir = config_dir / "telemetry"
     session_dir = telemetry_dir / "rerun-session"
     session_dir.mkdir(parents=True)
@@ -1465,7 +1465,7 @@ def test_rerun_step_rejects_non_replayable_checkpoint(
 ) -> None:
     """The rerun-step endpoint should reject non-replayable checkpoints."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     telemetry_dir = config_dir / "telemetry"
     session_dir = telemetry_dir / "non-replayable-session"
     session_dir.mkdir(parents=True)

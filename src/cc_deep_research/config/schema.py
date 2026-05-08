@@ -501,8 +501,8 @@ def get_default_config_path() -> Path:
     """Get the default configuration file path."""
     xdg_config = os.environ.get("XDG_CONFIG_HOME")
     if xdg_config:
-        return Path(xdg_config) / "cc-deep-research" / "config.yaml"
-    return Path.home() / ".config" / "cc-deep-research" / "config.yaml"
+        return Path(xdg_config) / "inqulume-studio" / "config.yaml"
+    return Path.home() / ".config" / "inqulume-studio" / "config.yaml"
 
 
 def load_config(config_path: Path | None = None) -> Config:

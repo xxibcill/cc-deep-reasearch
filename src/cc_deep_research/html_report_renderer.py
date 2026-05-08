@@ -162,7 +162,7 @@ class HTMLReportRenderer:
             size: A4;
             margin: 2.5cm;
             @top-center {
-                content: "CC Deep Research Report";
+                content: "Inqulume Studio Report";
                 font-size: 10pt;
                 color: #666;
             }

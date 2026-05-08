@@ -212,7 +212,7 @@ class MarkdownReportFormatter:
             return "\n\n".join(paragraphs[:2])
 
         return (
-            f"This report reformats `{source_path.name}` into the standard CC Deep Research "
+            f"This report reformats `{source_path.name}` into the standard Inqulume Studio "
             "PDF layout. The original markdown content is preserved in the Detailed Analysis section."
         )
 

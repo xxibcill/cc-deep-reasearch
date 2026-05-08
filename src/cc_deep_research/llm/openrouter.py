@@ -306,8 +306,8 @@ class OpenRouterTransport(BaseLLMTransport):
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/cc-deep-research",
-            "X-Title": "CC Deep Research",
+            "HTTP-Referer": "https://github.com/inqulume-studio",
+            "X-Title": "Inqulume Studio",
         }
         headers.update(self._extra_headers)
         return headers

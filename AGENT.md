@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-CC Deep Research is a CLI tool for multi-stage web research using Tavily search, local specialist agents, session persistence, and telemetry analytics. It supports depth modes (quick, standard, deep), parallel source collection, LLM routing across multiple providers, and real-time dashboard monitoring.
+Inqulume Studio is a CLI tool for multi-stage web research using Tavily search, local specialist agents, session persistence, and telemetry analytics. It supports depth modes (quick, standard, deep), parallel source collection, LLM routing across multiple providers, and real-time dashboard monitoring.
 
 ## Development Commands
 
@@ -31,7 +31,7 @@ uv run ruff format src/ tests/
 uv run mypy src/
 
 # Run the full benchmark corpus
-cc-deep-research benchmark run --depth standard --output-dir benchmark_runs/latest
+inqulume-studio benchmark run --depth standard --output-dir benchmark_runs/latest
 ```
 
 ## Architecture
@@ -69,17 +69,17 @@ Parallel mode (`--parallel-mode`) means **concurrent asyncio task execution in o
 
 ### LLM Routing
 
-Four transports: `anthropic_api`, `openrouter_api`, `cerebras_api`, `heuristic` (fallback). The route planner (`src/cc_deep_research/agents/llm_route_planner.py`) assigns routes per agent. Configuration lives in `~/.config/cc-deep-research/config.yaml` under `llm` section.
+Four transports: `anthropic_api`, `openrouter_api`, `cerebras_api`, `heuristic` (fallback). The route planner (`src/cc_deep_research/agents/llm_route_planner.py`) assigns routes per agent. Configuration lives in `~/.config/inqulume-studio/config.yaml` under `llm` section.
 
 ### Telemetry Architecture
 
 `ResearchMonitor` is the telemetry sink. Events flow to:
-- `~/.config/cc-deep-research/telemetry/<session_id>/events.jsonl` - Per-session JSONL
-- `~/.config/cc-deep-research/telemetry/<session_id>/summary.json` - Session summary
+- `~/.config/inqulume-studio/telemetry/<session_id>/events.jsonl` - Per-session JSONL
+- `~/.config/inqulume-studio/telemetry/<session_id>/summary.json` - Session summary
 
 Dashboards:
-- `cc-deep-research telemetry dashboard` - Streamlit dashboard (requires `dashboard` extra)
-- `cc-deep-research dashboard` + Next.js frontend - Real-time operator console
+- `inqulume-studio telemetry dashboard` - Streamlit dashboard (requires `dashboard` extra)
+- `inqulume-studio dashboard` + Next.js frontend - Real-time operator console
 
 ### Session Metadata Contract
 
@@ -87,7 +87,7 @@ Dashboards:
 
 ### Configuration
 
-Config file: `~/.config/cc-deep-research/config.yaml`. Also supports env var overrides (e.g., `TAVILY_API_KEYS`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `CEREBRAS_API_KEY`). A `.env` file at project root is loaded without overwriting existing env vars.
+Config file: `~/.config/inqulume-studio/config.yaml`. Also supports env var overrides (e.g., `TAVILY_API_KEYS`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `CEREBRAS_API_KEY`). A `.env` file at project root is loaded without overwriting existing env vars.
 
 ### Content Generation
 

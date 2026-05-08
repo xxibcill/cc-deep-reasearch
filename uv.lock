@@ -179,7 +179,7 @@ wheels = [
 ]
 
 [[package]]
-name = "cc-deep-research"
+name = "inqulume-studio"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },

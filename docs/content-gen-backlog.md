@@ -1,6 +1,6 @@
 # Content-Generation Backlog
 
-This document explains the content-generation backlog as it is currently implemented in `cc-deep-research`: what it is for, how it is structured, how operators manage it, and why the data model is shaped the way it is.
+This document explains the content-generation backlog as it is currently implemented in `inqulume-studio`: what it is for, how it is structured, how operators manage it, and why the data model is shaped the way it is.
 
 ## What The Backlog Is For
 
@@ -39,7 +39,7 @@ Path resolution is:
 
 1. explicit path passed to the store or service
 2. `content_gen.backlog_path` in config
-3. default path: `~/.config/cc-deep-research/backlog.yaml`
+3. default path: `~/.config/inqulume-studio/backlog.yaml`
 
 Relevant code:
 
@@ -191,7 +191,7 @@ Relevant code:
 
 ### 2. CLI backlog build
 
-`cc-deep-research content-gen backlog build --theme "..."`
+`inqulume-studio content-gen backlog build --theme "..."`
 
 This command now generates ideas and persists them into the managed backlog store. If `-o/--output` is provided, it also writes a JSON export of the stage result.
 
@@ -249,8 +249,8 @@ There are three operator surfaces: CLI, dashboard/API, and chat-assisted editing
 The CLI is generation- and scoring-oriented:
 
 ```bash
-cc-deep-research content-gen backlog build --theme "pricing psychology" --count 20
-cc-deep-research content-gen backlog score --from-file backlog.json --select-top 5
+inqulume-studio content-gen backlog build --theme "pricing psychology" --count 20
+inqulume-studio content-gen backlog score --from-file backlog.json --select-top 5
 ```
 
 Important CLI behavior:

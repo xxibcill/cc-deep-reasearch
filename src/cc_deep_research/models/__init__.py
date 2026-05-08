@@ -1,4 +1,4 @@
-"""Public model exports for CC Deep Research."""
+"""Public model exports for Inqulume Studio."""
 
 from .analysis import (
     AnalysisFinding,

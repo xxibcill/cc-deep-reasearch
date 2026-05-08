@@ -114,7 +114,7 @@ Before going live with Radar:
 
 ## Data Retention
 
-- Signals are stored in `~/.config/cc-deep-research/radar/radar_signals.yaml`
-- Opportunities are stored in `~/.config/cc-deep-research/radar/radar_opportunities.yaml`
+- Signals are stored in `~/.config/inqulume-studio/radar/radar_signals.yaml`
+- Opportunities are stored in `~/.config/inqulume-studio/radar/radar_opportunities.yaml`
 - Feedback history is persisted for ranking improvements
 - Analytics data is computed on-demand from raw records

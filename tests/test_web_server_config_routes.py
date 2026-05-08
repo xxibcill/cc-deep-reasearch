@@ -15,7 +15,7 @@ def test_get_config_returns_masked_persisted_and_effective_state(
 ) -> None:
     """The config read endpoint should expose masked values and override metadata."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     config_dir.mkdir(parents=True)
     (config_dir / "config.yaml").write_text(
         "output:\n  format: markdown\nllm:\n  openrouter:\n    api_key: sk-test\n",
@@ -64,7 +64,7 @@ def test_patch_config_clears_secret_fields(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEYS", raising=False)
-    config_dir = tmp_path / "xdg" / "cc-deep-research"
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
     config_dir.mkdir(parents=True)
     (config_dir / "config.yaml").write_text(
         "llm:\n  openrouter:\n    api_key: sk-test\n",

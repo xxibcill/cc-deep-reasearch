@@ -1,4 +1,4 @@
-"""Opportunity Radar - proactive intelligence layer for cc-deep-research.
+"""Opportunity Radar - proactive intelligence layer for inqulume-studio.
 
 This package provides the backend infrastructure for Radar, including:
 - Domain models for sources, signals, opportunities, scores, feedback, and workflow links

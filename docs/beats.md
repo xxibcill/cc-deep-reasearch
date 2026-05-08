@@ -751,17 +751,17 @@ Standalone scripting runs are autosaved, including context artifacts that preser
 Examples:
 
 ```bash
-cc-deep-research content-gen script --idea "..." -o script.txt --save-context
-cc-deep-research content-gen script --from-file script.context.json --from-step 6
-cc-deep-research content-gen scripts list
-cc-deep-research content-gen scripts show --latest
+inqulume-studio content-gen script --idea "..." -o script.txt --save-context
+inqulume-studio content-gen script --from-file script.context.json --from-step 6
+inqulume-studio content-gen scripts list
+inqulume-studio content-gen scripts show --latest
 ```
 
 Autosaved outputs include:
 
-- `~/.config/cc-deep-research/scripts/latest.txt`
-- `~/.config/cc-deep-research/scripts/latest.context.json`
-- `~/.config/cc-deep-research/scripts/latest.json`
+- `~/.config/inqulume-studio/scripts/latest.txt`
+- `~/.config/inqulume-studio/scripts/latest.context.json`
+- `~/.config/inqulume-studio/scripts/latest.json`
 
 ## Relationship to Claim Safety
 

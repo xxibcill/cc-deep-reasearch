@@ -1,10 +1,10 @@
 # Dashboard Guide
 
-This document is the comprehensive reference for the CC Deep Research dashboard: what it is, how to start it, how to use each screen, and how the full browser-first monitoring stack works under the hood.
+This document is the comprehensive reference for the Inqulume Studio dashboard: what it is, how to start it, how to use each screen, and how the full browser-first monitoring stack works under the hood.
 
 ## What The Dashboard Is
 
-The dashboard is a two-part monitoring interface for CC Deep Research:
+The dashboard is a two-part monitoring interface for Inqulume Studio:
 
 - a FastAPI backend in [`src/cc_deep_research/web_server.py`](../src/cc_deep_research/web_server.py)
 - a Next.js frontend in [`dashboard/`](../dashboard)
@@ -149,7 +149,7 @@ npm run dev:frontend
 If you want only the API/WebSocket server:
 
 ```bash
-uv run cc-deep-research dashboard --host localhost --port 8000
+uv run inqulume-studio dashboard --host localhost --port 8000
 ```
 
 That command is registered in [`src/cc_deep_research/cli/dashboard.py`](../src/cc_deep_research/cli/dashboard.py).
@@ -624,8 +624,8 @@ The monitor in [`src/cc_deep_research/monitoring.py`](../src/cc_deep_research/mo
 
 Telemetry is stored under:
 
-- `~/.config/cc-deep-research/telemetry/<session_id>/events.jsonl`
-- `~/.config/cc-deep-research/telemetry/<session_id>/summary.json`
+- `~/.config/inqulume-studio/telemetry/<session_id>/events.jsonl`
+- `~/.config/inqulume-studio/telemetry/<session_id>/summary.json`
 
 ### WebSocket Delivery
 
@@ -786,8 +786,8 @@ Returned when attempting to delete an active session without `force=true`. The r
 
 When a session is deleted, the following data is permanently removed:
 
-- Session file (`~/.config/cc-deep-research/sessions/{session_id}.json`)
-- Telemetry directory (`~/.config/cc-deep-research/telemetry/{session_id}/`)
+- Session file (`~/.config/inqulume-studio/sessions/{session_id}.json`)
+- Telemetry directory (`~/.config/inqulume-studio/telemetry/{session_id}/`)
 - Historical analytics records in DuckDB (`telemetry_events` and `telemetry_sessions` tables)
 
 **Limitations:**
