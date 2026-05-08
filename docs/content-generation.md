@@ -1,6 +1,6 @@
 # Content-Generation Workflow
 
-This document describes the full content-generation system as it is currently implemented in `cc-deep-research`. It covers the architecture, the stage-by-stage flow, the CLI entrypoints, the saved artifacts, and the places where the intended product workflow is ahead of the shipped code.
+This document describes the full content-generation system as it is currently implemented in `inqulume-studio`. It covers the architecture, the stage-by-stage flow, the CLI entrypoints, the saved artifacts, and the places where the intended product workflow is ahead of the shipped code.
 
 ## Contract Versioning
 
@@ -65,7 +65,7 @@ At the center is [`ContentGenPipeline`](../src/cc_deep_research/content_gen/pipe
 The system has three layers:
 
 1. CLI layer
-   Exposed through `cc-deep-research content-gen ...` in [`src/cc_deep_research/content_gen/cli.py`](../src/cc_deep_research/content_gen/cli.py).
+   Exposed through `inqulume-studio content-gen ...` in [`src/cc_deep_research/content_gen/cli.py`](../src/cc_deep_research/content_gen/cli.py).
 2. Orchestration layer
    [`ContentGenPipeline`](../src/cc_deep_research/content_gen/pipeline.py) coordinates per-stage orchestrators; `ContentGenOrchestrator` remains available as a backward-compatible facade.
 3. Agent layer
@@ -150,7 +150,7 @@ This is the most reliable operator workflow today because you control each artif
 Run the dedicated 10-step script pipeline:
 
 ```bash
-cc-deep-research content-gen script --idea "..."
+inqulume-studio content-gen script --idea "..."
 ```
 
 This path is more mature than the rest of the full pipeline. It autosaves outputs and supports step-based resume.
@@ -160,7 +160,7 @@ This path is more mature than the rest of the full pipeline. It autosaves output
 Run the 14-stage orchestrated flow:
 
 ```bash
-cc-deep-research content-gen pipeline --theme "..."
+inqulume-studio content-gen pipeline --theme "..."
 ```
 
 This path works for generation up through QC, with the remaining operational caveats documented below in [Current Gaps And Caveats](#current-gaps-and-caveats).
@@ -294,7 +294,7 @@ Stored in `RunConstraints` and set at the start of each content cycle:
 Run constraints can be set via CLI before opportunity scoring:
 
 ```bash
-cc-deep-research content-gen pipeline --theme "..." \
+inqulume-studio content-gen pipeline --theme "..." \
   --content-type "short-form video" \
   --effort-tier "deep" \
   --owner "content-team"
@@ -308,7 +308,7 @@ Implementation:
 
 - model: `StrategyMemory`
 - store: [`StrategyStore`](../src/cc_deep_research/content_gen/storage/strategy_store.py)
-- default path: `~/.config/cc-deep-research/strategy.yaml`
+- default path: `~/.config/inqulume-studio/strategy.yaml`
 - CLI group: `content-gen strategy`
 
 Purpose:
@@ -319,10 +319,10 @@ Purpose:
 CLI:
 
 ```bash
-cc-deep-research content-gen strategy init
-cc-deep-research content-gen strategy show
-cc-deep-research content-gen strategy set niche "B2B SaaS"
-cc-deep-research content-gen strategy set content_pillars "pricing,positioning,retention"
+inqulume-studio content-gen strategy init
+inqulume-studio content-gen strategy show
+inqulume-studio content-gen strategy set niche "B2B SaaS"
+inqulume-studio content-gen strategy set content_pillars "pricing,positioning,retention"
 ```
 
 Notes:
@@ -390,7 +390,7 @@ Selection logic:
 CLI:
 
 ```bash
-cc-deep-research content-gen backlog build --theme "pricing psychology" --count 20 -o backlog.json
+inqulume-studio content-gen backlog build --theme "pricing psychology" --count 20 -o backlog.json
 ```
 
 Persistence behavior:
@@ -434,7 +434,7 @@ P2-T3 Content-Type Branching: Scoring carries a `content_type_profile` derived f
 CLI:
 
 ```bash
-cc-deep-research content-gen backlog score --from-file backlog.json --select-top 5 -o scoring.json
+inqulume-studio content-gen backlog score --from-file backlog.json --select-top 5 -o scoring.json
 ```
 
 Pipeline behavior:
@@ -466,7 +466,7 @@ Selection logic:
 CLI:
 
 ```bash
-cc-deep-research content-gen angle generate \
+inqulume-studio content-gen angle generate \
   --idea "Why most SaaS onboarding fails after day 1" \
   --audience "seed-stage SaaS founders" \
   --problem "activation drops after signup" \
@@ -507,7 +507,7 @@ Configuration:
 CLI:
 
 ```bash
-cc-deep-research content-gen research \
+inqulume-studio content-gen research \
   --idea "Why most SaaS onboarding fails after day 1" \
   --angle "Fix activation by removing the false success moment" \
   -o research.json
@@ -570,18 +570,18 @@ This is the most detailed sub-workflow in the system. It has 10 explicit steps:
 CLI:
 
 ```bash
-cc-deep-research content-gen script --idea "..." -o script.txt --save-context
-cc-deep-research content-gen script --from-file script.context.json --from-step 6
-cc-deep-research content-gen scripts list
-cc-deep-research content-gen scripts show --latest
+inqulume-studio content-gen script --idea "..." -o script.txt --save-context
+inqulume-studio content-gen script --from-file script.context.json --from-step 6
+inqulume-studio content-gen scripts list
+inqulume-studio content-gen scripts show --latest
 ```
 
 Autosaved artifacts:
 
-- `~/.config/cc-deep-research/scripts/latest.txt`
-- `~/.config/cc-deep-research/scripts/latest.context.json`
-- `~/.config/cc-deep-research/scripts/latest.json`
-- per-run directories under `~/.config/cc-deep-research/scripts/<run_id>/`
+- `~/.config/inqulume-studio/scripts/latest.txt`
+- `~/.config/inqulume-studio/scripts/latest.context.json`
+- `~/.config/inqulume-studio/scripts/latest.json`
+- per-run directories under `~/.config/inqulume-studio/scripts/<run_id>/`
 
 How the full pipeline uses it:
 
@@ -621,7 +621,7 @@ Behavior:
 CLI:
 
 ```bash
-cc-deep-research content-gen visual --from-file script.context.json -o visual.json
+inqulume-studio content-gen visual --from-file script.context.json -o visual.json
 ```
 
 Guardrail:
@@ -647,7 +647,7 @@ Purpose:
 CLI:
 
 ```bash
-cc-deep-research content-gen production --from-file visual.json -o production.json
+inqulume-studio content-gen production --from-file visual.json -o production.json
 ```
 
 **P5-T2: Format-Aware Planning Depth:** *(planned, not yet implemented)*
@@ -691,8 +691,8 @@ Configuration:
 CLI:
 
 ```bash
-cc-deep-research content-gen package --from-file script.context.json -o packaging.json
-cc-deep-research content-gen package --from-file pipeline.context.json --platforms "tiktok,shorts"
+inqulume-studio content-gen package --from-file script.context.json -o packaging.json
+inqulume-studio content-gen package --from-file pipeline.context.json --platforms "tiktok,shorts"
 ```
 
 Input behavior:
@@ -745,8 +745,8 @@ Important rule:
 CLI:
 
 ```bash
-cc-deep-research content-gen qc review --from-file pipeline.context.json
-cc-deep-research content-gen qc approve --idea-id idea123 --from-file pipeline.context.json
+inqulume-studio content-gen qc review --from-file pipeline.context.json
+inqulume-studio content-gen qc approve --idea-id idea123 --from-file pipeline.context.json
 ```
 
 Current behavior:
@@ -774,13 +774,13 @@ Purpose:
 CLI:
 
 ```bash
-cc-deep-research content-gen publish schedule --from-file packaging.json --idea-id idea123
-cc-deep-research content-gen publish list
+inqulume-studio content-gen publish schedule --from-file packaging.json --idea-id idea123
+inqulume-studio content-gen publish list
 ```
 
 Persistence:
 
-- default queue path: `~/.config/cc-deep-research/publish_queue.yaml`
+- default queue path: `~/.config/inqulume-studio/publish_queue.yaml`
 
 Important detail:
 
@@ -804,7 +804,7 @@ Purpose:
 CLI:
 
 ```bash
-cc-deep-research content-gen performance \
+inqulume-studio content-gen performance \
   --video-id "tt_123" \
   --metrics-file metrics.json \
   --script "..." \
@@ -821,7 +821,7 @@ Pipeline behavior:
 The all-in-one command is:
 
 ```bash
-cc-deep-research content-gen pipeline --theme "founder-led growth"
+inqulume-studio content-gen pipeline --theme "founder-led growth"
 ```
 
 Options:
@@ -859,27 +859,27 @@ If you want the most reliable current workflow, use the modular commands with sa
 ### Option A: Full but controlled workflow
 
 ```bash
-cc-deep-research content-gen strategy init
-cc-deep-research content-gen strategy set niche "B2B SaaS"
-cc-deep-research content-gen backlog build --theme "activation" -o backlog.json
-cc-deep-research content-gen backlog score --from-file backlog.json -o scoring.json
-cc-deep-research content-gen angle generate --idea "..." --audience "..." --problem "..." -o angles.json
-cc-deep-research content-gen research --idea "..." --angle "..." -o research.json
-cc-deep-research content-gen script --idea "..." -o script.txt --save-context
-cc-deep-research content-gen visual --from-file script.txt.context.json -o visual.json
-cc-deep-research content-gen production --from-file visual.json -o production.json
-cc-deep-research content-gen package --from-file script.txt.context.json -o packaging.json
-cc-deep-research content-gen publish schedule --from-file packaging.json --idea-id idea123
+inqulume-studio content-gen strategy init
+inqulume-studio content-gen strategy set niche "B2B SaaS"
+inqulume-studio content-gen backlog build --theme "activation" -o backlog.json
+inqulume-studio content-gen backlog score --from-file backlog.json -o scoring.json
+inqulume-studio content-gen angle generate --idea "..." --audience "..." --problem "..." -o angles.json
+inqulume-studio content-gen research --idea "..." --angle "..." -o research.json
+inqulume-studio content-gen script --idea "..." -o script.txt --save-context
+inqulume-studio content-gen visual --from-file script.txt.context.json -o visual.json
+inqulume-studio content-gen production --from-file visual.json -o production.json
+inqulume-studio content-gen package --from-file script.txt.context.json -o packaging.json
+inqulume-studio content-gen publish schedule --from-file packaging.json --idea-id idea123
 ```
 
 ### Option B: Faster orchestration pass
 
 ```bash
-cc-deep-research content-gen pipeline --theme "activation" -o pipeline_script.txt --save-context
-cc-deep-research content-gen qc review --from-file pipeline_script.txt.context.json
-cc-deep-research content-gen qc approve --idea-id idea123 --from-file pipeline_script.txt.context.json
-cc-deep-research content-gen package --from-file pipeline_script.txt.context.json -o packaging.json
-cc-deep-research content-gen publish schedule --from-file packaging.json --idea-id idea123
+inqulume-studio content-gen pipeline --theme "activation" -o pipeline_script.txt --save-context
+inqulume-studio content-gen qc review --from-file pipeline_script.txt.context.json
+inqulume-studio content-gen qc approve --idea-id idea123 --from-file pipeline_script.txt.context.json
+inqulume-studio content-gen package --from-file pipeline_script.txt.context.json -o packaging.json
+inqulume-studio content-gen publish schedule --from-file packaging.json --idea-id idea123
 ```
 
 This second option is convenient, but it is not a true one-command publish flow yet.
@@ -888,13 +888,13 @@ This second option is convenient, but it is not a true one-command publish flow 
 
 Default persisted files:
 
-- strategy memory: `~/.config/cc-deep-research/strategy.yaml`
-- scripting runs: `~/.config/cc-deep-research/scripts/`
-- publish queue: `~/.config/cc-deep-research/publish_queue.yaml`
-- browser-started pipeline jobs: `~/.config/cc-deep-research/content-gen/pipelines/`
-- managed briefs (SQLite): `~/.config/cc-deep-research/content-gen/briefs.db`
-- brief revisions (SQLite): `~/.config/cc-deep-research/content-gen/briefs_revisions.db`
-- legacy briefs (YAML): `~/.config/cc-deep-research/content-gen/briefs.yaml`
+- strategy memory: `~/.config/inqulume-studio/strategy.yaml`
+- scripting runs: `~/.config/inqulume-studio/scripts/`
+- publish queue: `~/.config/inqulume-studio/publish_queue.yaml`
+- browser-started pipeline jobs: `~/.config/inqulume-studio/content-gen/pipelines/`
+- managed briefs (SQLite): `~/.config/inqulume-studio/content-gen/briefs.db`
+- brief revisions (SQLite): `~/.config/inqulume-studio/content-gen/briefs_revisions.db`
+- legacy briefs (YAML): `~/.config/inqulume-studio/content-gen/briefs.yaml`
 
 Optional operator-managed files:
 

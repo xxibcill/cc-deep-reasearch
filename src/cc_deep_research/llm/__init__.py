@@ -1,4 +1,4 @@
-"""LLM routing layer for CC Deep Research.
+"""LLM routing layer for Inqulume Studio.
 
 This package provides a unified interface for LLM operations across multiple
 transport providers (OpenRouter, Cerebras, Anthropic) with session-scoped

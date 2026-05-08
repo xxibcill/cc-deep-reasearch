@@ -70,7 +70,7 @@ def _check_backup_availability() -> UpgradeCheckResult:
             label="Backup available",
             status=UpgradeCheckStatus.WARNING,
             detail="No backup manifests found in config directory",
-            remediation="Create a backup before upgrading: cc-deep-research backup create",
+            remediation="Create a backup before upgrading: inqulume-studio backup create",
             blockers=[],
         )
 
@@ -405,7 +405,7 @@ def get_rollback_instructions(backup_id: str | None = None) -> dict[str, Any]:
             {
                 "step": 1,
                 "description": "Stop the dashboard and backend services",
-                "command": "cc-deep-research dashboard stop",
+                "command": "inqulume-studio dashboard stop",
             },
             {
                 "step": 2,
@@ -415,12 +415,12 @@ def get_rollback_instructions(backup_id: str | None = None) -> dict[str, Any]:
             {
                 "step": 3,
                 "description": "Restore from backup",
-                "command": "cc-deep-research backup restore <backup-path> --confirm",
+                "command": "inqulume-studio backup restore <backup-path> --confirm",
             },
             {
                 "step": 4,
                 "description": "Verify health after rollback",
-                "command": "cc-deep-research health check",
+                "command": "inqulume-studio health check",
             },
         ],
         "reference": {

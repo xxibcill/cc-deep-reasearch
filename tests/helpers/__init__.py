@@ -1,4 +1,4 @@
-"""Test helpers for CC Deep Research."""
+"""Test helpers for Inqulume Studio."""
 
 from .fixture_loader import (
     list_fixtures,

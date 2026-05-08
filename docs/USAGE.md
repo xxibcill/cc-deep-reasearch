@@ -1,4 +1,4 @@
-# CC Deep Research CLI - Complete Usage Guide
+# Inqulume Studio CLI - Complete Usage Guide
 
 ## Table of Contents
 
@@ -20,9 +20,9 @@
 
 ## Introduction
 
-### What is CC Deep Research?
+### What is Inqulume Studio?
 
-CC Deep Research is a command-line tool for staged web research. The current runtime is a local Python pipeline with optional parallel source collection. It leverages:
+Inqulume Studio is a command-line tool for staged web research. The current runtime is a local Python pipeline with optional parallel source collection. It leverages:
 
 - **Tavily Search API** - Professional web search with advanced filtering
 - **Routed LLM Analysis** - Optional provider-backed analysis for synthesis phases
@@ -49,7 +49,7 @@ CC Deep Research is a command-line tool for staged web research. The current run
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    CC Deep Research CLI                   │
+│                    Inqulume Studio CLI                   │
 └─────────────────────────────────────────────────────────┘
                             │
         ┌───────────────────┼───────────────────┐
@@ -118,15 +118,15 @@ Contributor-facing module boundaries now follow the split package layout:
 # Install uv if you haven't already
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install cc-deep-research
-uv pip install cc-deep-research
+# Install inqulume-studio
+uv pip install inqulume-studio
 ```
 
 ### Installation Using pip
 
 ```bash
-# Install cc-deep-research
-pip install cc-deep-research
+# Install inqulume-studio
+pip install inqulume-studio
 ```
 
 ### Installation from Source
@@ -134,7 +134,7 @@ pip install cc-deep-research
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd cc-deep-research
+cd inqulume-studio
 
 # Using uv
 uv sync
@@ -152,13 +152,13 @@ Verify your installation:
 
 ```bash
 # Check version
-cc-deep-research --version
+inqulume-studio --version
 
 # Display help
-cc-deep-research --help
+inqulume-studio --help
 
 # Display research command help
-cc-deep-research research --help
+inqulume-studio research --help
 ```
 
 If you are running the Next.js dashboard against a non-default backend host, set one of these before `npm run dev` or `npm run build` inside [`dashboard/`](../dashboard):
@@ -221,7 +221,7 @@ At CLI startup the project also loads a `.env` file from the repository root, if
 
 ### Configuration File Structure
 
-Create a configuration file at `~/.config/cc-deep-research/config.yaml`:
+Create a configuration file at `~/.config/inqulume-studio/config.yaml`:
 
 ```yaml
 # Search Provider Configuration
@@ -285,27 +285,27 @@ display:
 
 ```bash
 # Show current configuration
-cc-deep-research config show
+inqulume-studio config show
 
 # Initialize default config file
-cc-deep-research config init
+inqulume-studio config init
 
 # Initialize config file at specific path
-cc-deep-research config init --config-path /custom/path/config.yaml
+inqulume-studio config init --config-path /custom/path/config.yaml
 
 # Set configuration values (using dot notation)
-cc-deep-research config set tavily.api_keys key1,key2,key3
-cc-deep-research config set search.mode tavily_primary
-cc-deep-research config set search_team.team_size 6
-cc-deep-research config set research.min_sources.deep 25
-cc-deep-research config set output.format json
+inqulume-studio config set tavily.api_keys key1,key2,key3
+inqulume-studio config set search.mode tavily_primary
+inqulume-studio config set search_team.team_size 6
+inqulume-studio config set research.min_sources.deep 25
+inqulume-studio config set output.format json
 
 # Boolean values
-cc-deep-research config set search_team.enabled true
-cc-deep-research config set research.enable_iterative_search false
+inqulume-studio config set search_team.enabled true
+inqulume-studio config set research.enable_iterative_search false
 
 # Initialize with --force to overwrite existing config
-cc-deep-research config init --force
+inqulume-studio config init --force
 ```
 
 ### Default Configuration Values
@@ -387,7 +387,7 @@ Planner-selected routes are applied per session. In one run, `analyzer` can use 
 export TAVILY_API_KEYS=your_api_key_here
 
 # Run a simple research query
-uv run cc-deep-research research "What are the latest developments in quantum computing?"
+uv run inqulume-studio research "What are the latest developments in quantum computing?"
 ```
 
 ### Live Monitoring In The Browser
@@ -459,39 +459,39 @@ The tool generates a comprehensive report with the following structure:
 
 ```bash
 # Quick fact-check
-cc-deep-research research -d quick "What is the capital of Australia?"
+inqulume-studio research -d quick "What is the capital of Australia?"
 
 # Standard research
-cc-deep-research research -d standard "History of the Internet"
+inqulume-studio research -d standard "History of the Internet"
 
 # Deep research with saved report
-cc-deep-research research -o quantum_report.md "Quantum computing applications"
+inqulume-studio research -o quantum_report.md "Quantum computing applications"
 
 # JSON output for programmatic use
-cc-deep-research research --format json "AI safety research" > results.json
+inqulume-studio research --format json "AI safety research" > results.json
 
 # HTML output for browser review or downstream PDF conversion
-cc-deep-research research --format html -o ai-safety.html "AI safety research"
+inqulume-studio research --format html -o ai-safety.html "AI safety research"
 
 # Research with sequential source collection (useful for simple queries)
-cc-deep-research research --no-team "Simple question"
+inqulume-studio research --no-team "Simple question"
 
 # Use only Tavily
-cc-deep-research research --tavily-only "Web development trends 2024"
+inqulume-studio research --tavily-only "Web development trends 2024"
 ```
 
 ---
 
 ## Commands Reference
 
-### `cc-deep-research research`
+### `inqulume-studio research`
 
 Execute a research query and generate a report.
 
 **Usage:**
 
 ```bash
-cc-deep-research research [OPTIONS] QUERY
+inqulume-studio research [OPTIONS] QUERY
 ```
 
 **Required Argument:**
@@ -527,39 +527,39 @@ cc-deep-research research [OPTIONS] QUERY
 
 ```bash
 # Basic deep research
-cc-deep-research research "Climate change impacts on agriculture"
+inqulume-studio research "Climate change impacts on agriculture"
 
 # Quick research with specific output file
-cc-deep-research research -d quick -o weather.md "Weather patterns in 2024"
+inqulume-studio research -d quick -o weather.md "Weather patterns in 2024"
 
 # JSON output with custom sources
-cc-deep-research research -s 30 --format json "Machine learning algorithms" > ml.json
+inqulume-studio research -s 30 --format json "Machine learning algorithms" > ml.json
 
 # HTML output with custom sources
-cc-deep-research research -s 30 --format html -o ml.html "Machine learning algorithms"
+inqulume-studio research -s 30 --format html -o ml.html "Machine learning algorithms"
 
 # Monitor workflow execution in the terminal
-cc-deep-research research --monitor "Complex topic requiring deep analysis"
+inqulume-studio research --monitor "Complex topic requiring deep analysis"
 
 # Show a parallel execution timeline after the run completes
-cc-deep-research research --concurrent-source-collection --max-concurrent-sources 4 --show-timeline \
+inqulume-studio research --concurrent-source-collection --max-concurrent-sources 4 --show-timeline \
   "Complex topic requiring deep analysis"
 
 # Generate PDF output alongside the main report
-cc-deep-research research --pdf -o report.md "Complex topic requiring deep analysis"
+inqulume-studio research --pdf -o report.md "Complex topic requiring deep analysis"
 
 # Quiet mode for scripts
-cc-deep-research research --quiet -o report.md "Topic" > /dev/null
+inqulume-studio research --quiet -o report.md "Topic" > /dev/null
 ```
 
-### `cc-deep-research config set`
+### `inqulume-studio config set`
 
 Set a configuration value.
 
 **Usage:**
 
 ```bash
-cc-deep-research config set [OPTIONS] KEY VALUE
+inqulume-studio config set [OPTIONS] KEY VALUE
 ```
 
 **Required Arguments:**
@@ -577,29 +577,29 @@ cc-deep-research config set [OPTIONS] KEY VALUE
 
 ```bash
 # Set API keys
-cc-deep-research config set tavily.api_keys key1,key2,key3
+inqulume-studio config set tavily.api_keys key1,key2,key3
 
 # Change search mode
-cc-deep-research config set search.mode hybrid_parallel
+inqulume-studio config set search.mode hybrid_parallel
 
 # Adjust local roster metadata size
-cc-deep-research config set search_team.team_size 6
+inqulume-studio config set search_team.team_size 6
 
 # Disable cross-reference analysis
-cc-deep-research config set research.enable_cross_ref false
+inqulume-studio config set research.enable_cross_ref false
 
 # Set custom output directory
-cc-deep-research config set output.save_dir ~/research/reports
+inqulume-studio config set output.save_dir ~/research/reports
 ```
 
-### `cc-deep-research config show`
+### `inqulume-studio config show`
 
 Display current configuration.
 
 **Usage:**
 
 ```bash
-cc-deep-research config show [OPTIONS]
+inqulume-studio config show [OPTIONS]
 ```
 
 **Options:**
@@ -611,19 +611,19 @@ cc-deep-research config show [OPTIONS]
 **Example:**
 
 ```bash
-cc-deep-research config show
+inqulume-studio config show
 ```
 
 The command renders a table with the current effective values for keys such as `search.providers`, `search.mode`, `search.depth`, `tavily.api_keys`, `tavily.max_results`, `search_team.enabled`, `search_team.team_size`, `output.format`, `output.save_dir`, and whether the config file exists.
 
-### `cc-deep-research config init`
+### `inqulume-studio config init`
 
 Create a default configuration file.
 
 **Usage:**
 
 ```bash
-cc-deep-research config init [OPTIONS]
+inqulume-studio config init [OPTIONS]
 ```
 
 **Options:**
@@ -637,23 +637,23 @@ cc-deep-research config init [OPTIONS]
 
 ```bash
 # Initialize default config
-cc-deep-research config init
+inqulume-studio config init
 
 # Initialize at custom path
-cc-deep-research config init --config-path /custom/path/config.yaml
+inqulume-studio config init --config-path /custom/path/config.yaml
 
 # Overwrite existing config
-cc-deep-research config init --force
+inqulume-studio config init --force
 ```
 
-### `cc-deep-research telemetry ingest`
+### `inqulume-studio telemetry ingest`
 
 Ingest persisted telemetry JSONL into DuckDB tables for analytics.
 
 **Usage:**
 
 ```bash
-cc-deep-research telemetry ingest [OPTIONS]
+inqulume-studio telemetry ingest [OPTIONS]
 ```
 
 **Options:**
@@ -666,19 +666,19 @@ cc-deep-research telemetry ingest [OPTIONS]
 **Examples:**
 
 ```bash
-cc-deep-research telemetry ingest
-cc-deep-research telemetry ingest --base-dir ~/.config/cc-deep-research/telemetry
-cc-deep-research telemetry ingest --db-path ./tmp/dashboard.duckdb
+inqulume-studio telemetry ingest
+inqulume-studio telemetry ingest --base-dir ~/.config/inqulume-studio/telemetry
+inqulume-studio telemetry ingest --db-path ./tmp/dashboard.duckdb
 ```
 
-### `cc-deep-research telemetry dashboard`
+### `inqulume-studio telemetry dashboard`
 
 Launch the Streamlit telemetry dashboard for live tails and historical DuckDB analytics.
 
 **Usage:**
 
 ```bash
-cc-deep-research telemetry dashboard [OPTIONS]
+inqulume-studio telemetry dashboard [OPTIONS]
 ```
 
 **Options:**
@@ -694,19 +694,19 @@ cc-deep-research telemetry dashboard [OPTIONS]
 **Example:**
 
 ```bash
-cc-deep-research telemetry dashboard --port 8501 --refresh-seconds 5 --tail-limit 200
+inqulume-studio telemetry dashboard --port 8501 --refresh-seconds 5 --tail-limit 200
 ```
 
-This command launches the Streamlit analytics UI. It is separate from the browser-based operator console started with `cc-deep-research dashboard` plus the frontend in [`dashboard/`](../dashboard).
+This command launches the Streamlit analytics UI. It is separate from the browser-based operator console started with `inqulume-studio dashboard` plus the frontend in [`dashboard/`](../dashboard).
 
-### `cc-deep-research dashboard`
+### `inqulume-studio dashboard`
 
 Start the FastAPI backend used by the Next.js operator console in [`dashboard/`](../dashboard).
 
 **Usage:**
 
 ```bash
-cc-deep-research dashboard [OPTIONS]
+inqulume-studio dashboard [OPTIONS]
 ```
 
 **Options:**
@@ -720,43 +720,43 @@ cc-deep-research dashboard [OPTIONS]
 **Example:**
 
 ```bash
-cc-deep-research dashboard --host localhost --port 8000
+inqulume-studio dashboard --host localhost --port 8000
 ```
 
-### `cc-deep-research detect-theme`
+### `inqulume-studio detect-theme`
 
 Detect the research theme for a query to determine the appropriate workflow.
 
 **Usage:**
 
 ```bash
-cc-deep-research detect-theme [OPTIONS] QUERY
+inqulume-studio detect-theme [OPTIONS] QUERY
 ```
 
 **Example:**
 
 ```bash
-cc-deep-research detect-theme "Best restaurants in Tokyo"
+inqulume-studio detect-theme "Best restaurants in Tokyo"
 ```
 
-### `cc-deep-research list-themes`
+### `inqulume-studio list-themes`
 
 List all available research themes.
 
 **Usage:**
 
 ```bash
-cc-deep-research list-themes
+inqulume-studio list-themes
 ```
 
-### `cc-deep-research benchmark`
+### `inqulume-studio benchmark`
 
 Run the versioned benchmark corpus.
 
 **Usage:**
 
 ```bash
-cc-deep-research benchmark [OPTIONS] COMMAND [ARGS]...
+inqulume-studio benchmark [OPTIONS] COMMAND [ARGS]...
 ```
 
 **Subcommands:**
@@ -778,24 +778,24 @@ cc-deep-research benchmark [OPTIONS] COMMAND [ARGS]...
 **Example:**
 
 ```bash
-cc-deep-research benchmark run --depth deep --output-dir benchmark_runs/2024
+inqulume-studio benchmark run --depth deep --output-dir benchmark_runs/2024
 ```
 
-### `cc-deep-research anthropic`
+### `inqulume-studio anthropic`
 
 Commands for working with the Anthropic API.
 
 **Usage:**
 
 ```bash
-cc-deep-research anthropic [OPTIONS] COMMAND [ARGS]...
+inqulume-studio anthropic [OPTIONS] COMMAND [ARGS]...
 ```
 
 **Subcommands:**
 
-Use `cc-deep-research anthropic --help` to see available subcommands.
+Use `inqulume-studio anthropic --help` to see available subcommands.
 
-### `cc-deep-research session`
+### `inqulume-studio session`
 
 Manage saved research sessions produced by completed runs.
 
@@ -815,9 +815,9 @@ Manage saved research sessions produced by completed runs.
 **Examples:**
 
 ```bash
-cc-deep-research session list --limit 10
-cc-deep-research session show research-abc123
-cc-deep-research session export research-abc123 --format json --output ./session.json
+inqulume-studio session list --limit 10
+inqulume-studio session show research-abc123
+inqulume-studio session export research-abc123 --format json --output ./session.json
 ```
 
 #### Session Delete
@@ -825,25 +825,25 @@ cc-deep-research session export research-abc123 --format json --output ./session
 Delete a saved research session:
 
 ```bash
-cc-deep-research session delete SESSION_ID
+inqulume-studio session delete SESSION_ID
 ```
 
 **What gets deleted:**
 
 When you delete a session, the following data is permanently removed:
 
-- Session file (`~/.config/cc-deep-research/sessions/{session_id}.json`)
-- Session summary (`~/.config/cc-deep-research/sessions/{session_id}.summary.json`)
+- Session file (`~/.config/inqulume-studio/sessions/{session_id}.json`)
+- Session summary (`~/.config/inqulume-studio/sessions/{session_id}.summary.json`)
 - Saved report artifacts for that session (`.md`, `.html`, `.json`)
 
 The CLI command does not remove telemetry directories or DuckDB analytics records.
 
 **CLI `--force` behavior:**
 
-For `cc-deep-research session delete`, `--force` only skips the confirmation prompt:
+For `inqulume-studio session delete`, `--force` only skips the confirmation prompt:
 
 ```bash
-cc-deep-research session delete research-abc123 --force
+inqulume-studio session delete research-abc123 --force
 ```
 
 **Dashboard and API deletion:**
@@ -872,7 +872,7 @@ For bulk deletion through the backend, use `POST /api/sessions/bulk-delete`.
 **Example:**
 
 ```bash
-cc-deep-research research -d quick "What is the population of Tokyo?"
+inqulume-studio research -d quick "What is the population of Tokyo?"
 ```
 
 ### Standard Mode
@@ -887,7 +887,7 @@ cc-deep-research research -d quick "What is the population of Tokyo?"
 **Example:**
 
 ```bash
-cc-deep-research research -d standard "History of electric vehicles"
+inqulume-studio research -d standard "History of electric vehicles"
 ```
 
 ### Deep Mode (Default)
@@ -902,7 +902,7 @@ cc-deep-research research -d standard "History of electric vehicles"
 **Example:**
 
 ```bash
-cc-deep-research research -d deep "Impact of AI on healthcare industry"
+inqulume-studio research -d deep "Impact of AI on healthcare industry"
 ```
 
 ### Comparison Table
@@ -933,9 +933,9 @@ Set the research depth mode.
 **Examples:**
 
 ```bash
-cc-deep-research research -d quick "Simple query"
-cc-deep-research research -d standard "Moderate query"
-cc-deep-research research -d deep "Complex query"
+inqulume-studio research -d quick "Simple query"
+inqulume-studio research -d standard "Moderate query"
+inqulume-studio research -d deep "Complex query"
 ```
 
 #### `--sources`, `-s`
@@ -947,7 +947,7 @@ Override the minimum number of sources to gather.
 **Example:**
 
 ```bash
-cc-deep-research research -s 50 "Comprehensive topic"
+inqulume-studio research -s 50 "Comprehensive topic"
 ```
 
 #### `--output`, `-o`
@@ -959,7 +959,7 @@ Specify the output file path for the report.
 **Example:**
 
 ```bash
-cc-deep-research research -o ~/reports/quantum.md "Quantum computing"
+inqulume-studio research -o ~/reports/quantum.md "Quantum computing"
 ```
 
 #### `--format`
@@ -971,8 +971,8 @@ Set the output format.
 **Example:**
 
 ```bash
-cc-deep-research research --format json "Topic" > results.json
-cc-deep-research research --format html -o report.html "Topic"
+inqulume-studio research --format json "Topic" > results.json
+inqulume-studio research --format html -o report.html "Topic"
 ```
 
 ### Provider Options
@@ -984,7 +984,7 @@ Use only the Tavily search provider.
 **Example:**
 
 ```bash
-cc-deep-research research --tavily-only "Web search only"
+inqulume-studio research --tavily-only "Web search only"
 ```
 
 #### `--claude-only`
@@ -996,7 +996,7 @@ Current status: no Claude search provider is implemented, so this configuration 
 **Example:**
 
 ```bash
-cc-deep-research research --claude-only "Claude search only"
+inqulume-studio research --claude-only "Claude search only"
 ```
 
 ### Execution Mode Options
@@ -1016,7 +1016,7 @@ This only changes how source collection is scheduled. The rest of the run still 
 **Example:**
 
 ```bash
-cc-deep-research research --no-team "Simple question"
+inqulume-studio research --no-team "Simple question"
 ```
 
 #### `--team-size`
@@ -1028,7 +1028,7 @@ Override the configured local roster size metadata. This is a compatibility sett
 **Example:**
 
 ```bash
-cc-deep-research research --team-size 6 "Complex topic"
+inqulume-studio research --team-size 6 "Complex topic"
 ```
 
 #### `--concurrent-source-collection`
@@ -1038,7 +1038,7 @@ Force parallel local source collection for this run when you want to override th
 **Example:**
 
 ```bash
-cc-deep-research research --concurrent-source-collection "Complex topic"
+inqulume-studio research --concurrent-source-collection "Complex topic"
 ```
 
 #### `--max-concurrent-sources`
@@ -1050,7 +1050,7 @@ Override the number of parallel local collection tasks used during source collec
 **Example:**
 
 ```bash
-cc-deep-research research --concurrent-source-collection --max-concurrent-sources 4 "Complex topic"
+inqulume-studio research --concurrent-source-collection --max-concurrent-sources 4 "Complex topic"
 ```
 
 ### Display Options
@@ -1062,8 +1062,8 @@ Show progress indicators (default: enabled).
 **Example:**
 
 ```bash
-cc-deep-research research --progress "Topic"
-cc-deep-research research --no-progress "Topic"
+inqulume-studio research --progress "Topic"
+inqulume-studio research --no-progress "Topic"
 ```
 
 #### `--quiet`
@@ -1079,7 +1079,7 @@ Suppress all output (except errors and file save confirmation).
 **Example:**
 
 ```bash
-cc-deep-research research --quiet -o report.md "Topic"
+inqulume-studio research --quiet -o report.md "Topic"
 ```
 
 #### `--verbose`
@@ -1089,7 +1089,7 @@ Show detailed output including configuration and execution details.
 **Example:**
 
 ```bash
-cc-deep-research research --verbose "Topic"
+inqulume-studio research --verbose "Topic"
 ```
 
 **Sample verbose output:**
@@ -1119,7 +1119,7 @@ This does not launch the browser dashboard. It only adds terminal monitor output
 **Example:**
 
 ```bash
-cc-deep-research research --monitor "Complex topic"
+inqulume-studio research --monitor "Complex topic"
 ```
 
 #### `--show-timeline`
@@ -1131,7 +1131,7 @@ Use this with `--concurrent-source-collection` when you want a compact execution
 **Example:**
 
 ```bash
-cc-deep-research research --concurrent-source-collection --show-timeline "Complex topic"
+inqulume-studio research --concurrent-source-collection --show-timeline "Complex topic"
 ```
 
 #### `--enable-realtime`
@@ -1143,7 +1143,7 @@ In normal browser-first usage you do not pass this yourself; runs started from t
 **Example:**
 
 ```bash
-cc-deep-research research --enable-realtime "Topic"
+inqulume-studio research --enable-realtime "Topic"
 ```
 
 #### `--pdf`
@@ -1153,7 +1153,7 @@ Generate a PDF artifact in addition to the main report output.
 **Example:**
 
 ```bash
-cc-deep-research research --pdf -o report.md "Topic"
+inqulume-studio research --pdf -o report.md "Topic"
 ```
 
 ### Cross-Reference Options
@@ -1171,7 +1171,7 @@ Disable cross-reference analysis.
 **Example:**
 
 ```bash
-cc-deep-research research --no-cross-ref "Simple topic"
+inqulume-studio research --no-cross-ref "Simple topic"
 ```
 
 ---
@@ -1310,8 +1310,8 @@ pipeline and is useful for:
 **Example:**
 
 ```bash
-cc-deep-research research --format html -o report.html "Quantum Computing Applications"
-cc-deep-research markdown-to-html notes.md
+inqulume-studio research --format html -o report.html "Quantum Computing Applications"
+inqulume-studio markdown-to-html notes.md
 ```
 
 HTML output includes the same major sections and uses the shared export
@@ -1333,7 +1333,7 @@ All report formats include the same logical sections:
 
 ### How the Runtime Works
 
-CC Deep Research runs a staged local pipeline. The orchestrator invokes specialist Python components directly and optionally fans out source collection into local researcher tasks:
+Inqulume Studio runs a staged local pipeline. The orchestrator invokes specialist Python components directly and optionally fans out source collection into local researcher tasks:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -1390,10 +1390,10 @@ search_team:
 
 ```bash
 # Force sequential source collection
-cc-deep-research research --no-team "Simple query"
+inqulume-studio research --no-team "Simple query"
 
 # Custom roster metadata size
-cc-deep-research research --team-size 6 "Complex topic"
+inqulume-studio research --team-size 6 "Complex topic"
 ```
 
 ### Parallel vs. Sequential Execution
@@ -1431,14 +1431,14 @@ Create a custom configuration file for specific research needs:
 
 ```bash
 # Create config file at custom location
-cc-deep-research config init --config-path ~/research/custom-config.yaml
+inqulume-studio config init --config-path ~/research/custom-config.yaml
 
 # Edit the file with your preferences
 nano ~/research/custom-config.yaml
 
 # Use the custom config
 export CC_DEEP_RESEARCH_CONFIG=~/research/custom-config.yaml
-cc-deep-research research "Your query"
+inqulume-studio research "Your query"
 ```
 
 ### Dashboard Configuration Editing
@@ -1475,7 +1475,7 @@ Set up multiple API keys for rotation and load balancing:
 export TAVILY_API_KEYS=key1,key2,key3
 
 # Or use config file
-cc-deep-research config set tavily.api_keys key1,key2,key3
+inqulume-studio config set tavily.api_keys key1,key2,key3
 ```
 
 **Benefits:**
@@ -1508,7 +1508,7 @@ research:
 Use the config command to disable iterative search:
 
 ```bash
-cc-deep-research config set research.enable_iterative_search false
+inqulume-studio config set research.enable_iterative_search false
 ```
 
 ### Source Quality Scoring
@@ -1548,7 +1548,7 @@ research:
 **Disable for speed:**
 
 ```bash
-cc-deep-research research --no-cross-ref "Simple topic"
+inqulume-studio research --no-cross-ref "Simple topic"
 ```
 
 ### Search Provider Configuration
@@ -1590,19 +1590,19 @@ claude:
 **Simple fact-check:**
 
 ```bash
-cc-deep-research research -d quick "What is the capital of Australia?"
+inqulume-studio research -d quick "What is the capital of Australia?"
 ```
 
 **Topic overview:**
 
 ```bash
-cc-deep-research research -d standard "History of electric vehicles"
+inqulume-studio research -d standard "History of electric vehicles"
 ```
 
 **Comprehensive research:**
 
 ```bash
-cc-deep-research research "Impact of AI on healthcare industry"
+inqulume-studio research "Impact of AI on healthcare industry"
 ```
 
 ### Complex Research Scenarios
@@ -1610,21 +1610,21 @@ cc-deep-research research "Impact of AI on healthcare industry"
 **Multi-faceted topic:**
 
 ```bash
-cc-deep-research research --team-size 6 --sources 30 \
+inqulume-studio research --team-size 6 --sources 30 \
   "Economic, social, and environmental impacts of renewable energy transition"
 ```
 
 **Technical deep-dive:**
 
 ```bash
-cc-deep-research research --monitor --format json \
+inqulume-studio research --monitor --format json \
   "Latest breakthroughs in quantum error correction" > quantum_ec.json
 ```
 
 **Comparative analysis:**
 
 ```bash
-cc-deep-research research \
+inqulume-studio research \
   "Comparison of cloud computing providers: AWS vs Azure vs Google Cloud"
 ```
 
@@ -1633,19 +1633,19 @@ cc-deep-research research \
 **Save to specific location:**
 
 ```bash
-cc-deep-research research -o ~/reports/renewable-energy.md "Renewable energy trends"
+inqulume-studio research -o ~/reports/renewable-energy.md "Renewable energy trends"
 ```
 
 **Multiple reports with timestamp:**
 
 ```bash
-cc-deep-research research -o "reports/ai-$(date +%Y%m%d).md" "AI developments"
+inqulume-studio research -o "reports/ai-$(date +%Y%m%d).md" "AI developments"
 ```
 
 **JSON for automation:**
 
 ```bash
-cc-deep-research research --format json "Machine learning trends" | \
+inqulume-studio research --format json "Machine learning trends" | \
   jq '.sources | length'  # Count sources using jq
 ```
 
@@ -1654,13 +1654,13 @@ cc-deep-research research --format json "Machine learning trends" | \
 **Markdown for documentation:**
 
 ```bash
-cc-deep-research research --format markdown -o docs/api.md "REST API best practices"
+inqulume-studio research --format markdown -o docs/api.md "REST API best practices"
 ```
 
 **JSON for data analysis:**
 
 ```bash
-cc-deep-research research --format json "Climate data" | \
+inqulume-studio research --format json "Climate data" | \
   python analyze_data.py
 ```
 
@@ -1669,20 +1669,20 @@ cc-deep-research research --format json "Climate data" | \
 **Smaller local roster metadata for quick queries:**
 
 ```bash
-cc-deep-research research --team-size 2 --no-cross-ref "Quick lookup"
+inqulume-studio research --team-size 2 --no-cross-ref "Quick lookup"
 ```
 
 **Larger local roster metadata for comprehensive research:**
 
 ```bash
-cc-deep-research research --team-size 8 --sources 50 --depth deep \
+inqulume-studio research --team-size 8 --sources 50 --depth deep \
   "Comprehensive analysis of global supply chains"
 ```
 
 **Sequential source collection for debugging:**
 
 ```bash
-cc-deep-research research --no-team --verbose "Test query"
+inqulume-studio research --no-team --verbose "Test query"
 ```
 
 ### Monitoring and Debugging
@@ -1692,25 +1692,25 @@ For live operator visibility, prefer the browser dashboard. Use `--monitor` when
 **Terminal monitoring output:**
 
 ```bash
-cc-deep-research research --monitor "Complex topic"
+inqulume-studio research --monitor "Complex topic"
 ```
 
 **Parallel timeline in the terminal:**
 
 ```bash
-cc-deep-research research --concurrent-source-collection --show-timeline "Complex topic"
+inqulume-studio research --concurrent-source-collection --show-timeline "Complex topic"
 ```
 
 **Verbose output for troubleshooting:**
 
 ```bash
-cc-deep-research research --verbose --monitor "Problematic query"
+inqulume-studio research --verbose --monitor "Problematic query"
 ```
 
 **Quiet mode for automation:**
 
 ```bash
-cc-deep-research research --quiet -o report.md "Automated research" > /dev/null
+inqulume-studio research --quiet -o report.md "Automated research" > /dev/null
 ```
 
 ### Monitoring Dashboards
@@ -1736,7 +1736,7 @@ If you want to run backend and frontend separately for development:
 
 ```bash
 # Terminal 1: backend API only
-cc-deep-research dashboard --port 8000
+inqulume-studio dashboard --port 8000
 
 # Terminal 2: frontend only
 cd dashboard
@@ -1755,10 +1755,10 @@ The separate Streamlit telemetry dashboard is still available for live tails and
 
 ```bash
 # Start a research run from the CLI
-cc-deep-research research "Complex topic"
+inqulume-studio research "Complex topic"
 
 # Open the telemetry dashboard in another terminal
-cc-deep-research telemetry dashboard --port 8501 --refresh-seconds 5 --tail-limit 200
+inqulume-studio telemetry dashboard --port 8501 --refresh-seconds 5 --tail-limit 200
 ```
 
 The Streamlit telemetry dashboard combines two data paths:
@@ -1799,10 +1799,10 @@ For the implementation-level architecture and event model, see [`docs/TELEMETRY.
 export TAVILY_API_KEYS=your_api_key_here
 
 # Or set via config command
-cc-deep-research config set tavily.api_keys your_api_key_here
+inqulume-studio config set tavily.api_keys your_api_key_here
 
 # Verify configuration
-cc-deep-research config show
+inqulume-studio config show
 ```
 
 #### Issue: "API key rate limit exceeded"
@@ -1816,7 +1816,7 @@ cc-deep-research config show
 export TAVILY_API_KEYS=key1,key2,key3
 
 # Or use Claude-only mode
-cc-deep-research research --claude-only "Your query"
+inqulume-studio research --claude-only "Your query"
 ```
 
 #### Issue: "Research timeout"
@@ -1827,16 +1827,16 @@ cc-deep-research research --claude-only "Your query"
 
 ```bash
 # Reduce research depth
-cc-deep-research research -d quick "Your query"
+inqulume-studio research -d quick "Your query"
 
 # Reduce minimum sources
-cc-deep-research research -s 10 "Your query"
+inqulume-studio research -s 10 "Your query"
 
 # Use smaller team size
-cc-deep-research research --team-size 2 "Your query"
+inqulume-studio research --team-size 2 "Your query"
 
 # Disable iterative search
-cc-deep-research config set research.enable_iterative_search false
+inqulume-studio config set research.enable_iterative_search false
 ```
 
 #### Issue: "Dashboard dependencies are missing"
@@ -1846,7 +1846,7 @@ cc-deep-research config set research.enable_iterative_search false
 **Solutions:**
 
 ```bash
-pip install "cc-deep-research[dashboard]"
+pip install "inqulume-studio[dashboard]"
 ```
 
 #### Issue: "Dashboard shows no telemetry yet"
@@ -1863,7 +1863,7 @@ npm run dev
 # Then open http://localhost:3000 and launch a run from the home page
 
 # Or, for the Streamlit telemetry dashboard, point it at an existing telemetry directory
-cc-deep-research telemetry dashboard --base-dir /path/to/telemetry
+inqulume-studio telemetry dashboard --base-dir /path/to/telemetry
 ```
 
 Notes:
@@ -1880,7 +1880,7 @@ Notes:
 
 ```bash
 # Use heuristic mode explicitly to avoid the fallback warning
-cc-deep-research config set research.ai_integration_method heuristic
+inqulume-studio config set research.ai_integration_method heuristic
 ```
 
 The dashboard will still show the failure or fallback events in the live session view.
@@ -1893,13 +1893,13 @@ The dashboard will still show the failure or fallback events in the live session
 
 ```bash
 # Use sequential source collection
-cc-deep-research research --no-team "Your query"
+inqulume-studio research --no-team "Your query"
 
 # Use verbose output for debugging
-cc-deep-research research --verbose --monitor "Your query"
+inqulume-studio research --verbose --monitor "Your query"
 
 # Reduce local roster metadata size
-cc-deep-research research --team-size 2 "Your query"
+inqulume-studio research --team-size 2 "Your query"
 ```
 
 #### Issue: "Configuration file not found"
@@ -1910,13 +1910,13 @@ cc-deep-research research --team-size 2 "Your query"
 
 ```bash
 # Initialize default config
-cc-deep-research config init
+inqulume-studio config init
 
 # Or specify custom config path
 export CC_DEEP_RESEARCH_CONFIG=/path/to/config.yaml
 
 # Verify config file exists
-cat ~/.config/cc-deep-research/config.yaml
+cat ~/.config/inqulume-studio/config.yaml
 ```
 
 ### API Key Problems
@@ -1930,7 +1930,7 @@ curl -X POST https://api.tavily.com/search \
   -d '{"api_key": "your_key", "query": "test"}'
 
 # Update if needed
-cc-deep-research config set tavily.api_keys correct_key_here
+inqulume-studio config set tavily.api_keys correct_key_here
 ```
 
 #### Expired API Key
@@ -1940,7 +1940,7 @@ cc-deep-research config set tavily.api_keys correct_key_here
 export TAVILY_API_KEYS=new_api_key_here
 
 # Or add to existing keys
-cc-deep-research config set tavily.api_keys old_key,new_key
+inqulume-studio config set tavily.api_keys old_key,new_key
 ```
 
 ### Configuration Errors
@@ -1949,18 +1949,18 @@ cc-deep-research config set tavily.api_keys old_key,new_key
 
 ```bash
 # Reset to default config
-cc-deep-research config init --force
+inqulume-studio config init --force
 
 # Or manually edit config file
-nano ~/.config/cc-deep-research/config.yaml
+nano ~/.config/inqulume-studio/config.yaml
 ```
 
 #### Type Mismatch in Config
 
 ```bash
 # Ensure values match expected types
-cc-deep-research config set search_team.team_size 4          # Integer, not string
-cc-deep-research config set research.enable_cross_ref true   # Boolean, not string
+inqulume-studio config set search_team.team_size 4          # Integer, not string
+inqulume-studio config set research.enable_cross_ref true   # Boolean, not string
 ```
 
 ### Network Issues
@@ -1972,7 +1972,7 @@ cc-deep-research config set research.enable_cross_ref true   # Boolean, not stri
 ping tavily.com
 
 # Increase timeout (edit config)
-cc-deep-research config set search_team.timeout_seconds 600
+inqulume-studio config set search_team.timeout_seconds 600
 ```
 
 #### Proxy Configuration
@@ -1990,25 +1990,25 @@ export HTTPS_PROXY=http://proxy.example.com:8080
 
 ```bash
 # General help
-cc-deep-research --help
+inqulume-studio --help
 
 # Research command help
-cc-deep-research research --help
+inqulume-studio research --help
 
 # Config command help
-cc-deep-research config --help
+inqulume-studio config --help
 ```
 
 **Check version:**
 
 ```bash
-cc-deep-research --version
+inqulume-studio --version
 ```
 
 **Verbose debugging:**
 
 ```bash
-cc-deep-research research --verbose --monitor "Test query"
+inqulume-studio research --verbose --monitor "Test query"
 ```
 
 ---
@@ -2032,19 +2032,19 @@ cc-deep-research research --verbose --monitor "Test query"
 **For speed (fast results):**
 
 ```bash
-cc-deep-research research -d quick --no-team --no-cross-ref "Simple query"
+inqulume-studio research -d quick --no-team --no-cross-ref "Simple query"
 ```
 
 **For balanced performance:**
 
 ```bash
-cc-deep-research research -d standard --team-size 4 "Moderate query"
+inqulume-studio research -d standard --team-size 4 "Moderate query"
 ```
 
 **For depth (comprehensive results):**
 
 ```bash
-cc-deep-research research -d deep --team-size 6 --sources 30 "Complex query"
+inqulume-studio research -d deep --team-size 6 --sources 30 "Complex query"
 ```
 
 ### Managing Multiple Research Sessions
@@ -2053,14 +2053,14 @@ cc-deep-research research -d deep --team-size 6 --sources 30 "Complex query"
 
 ```bash
 mkdir -p ~/research/{ai,quantum,climate}
-cc-deep-research research -o ~/research/ai/report.md "AI topic"
-cc-deep-research research -o ~/research/quantum/report.md "Quantum topic"
+inqulume-studio research -o ~/research/ai/report.md "AI topic"
+inqulume-studio research -o ~/research/quantum/report.md "Quantum topic"
 ```
 
 **Use timestamped filenames:**
 
 ```bash
-cc-deep-research research -o "reports/$(date +%Y%m%d-%H%M%S).md" "Dynamic topic"
+inqulume-studio research -o "reports/$(date +%Y%m%d-%H%M%S).md" "Dynamic topic"
 ```
 
 **Automate with scripts:**
@@ -2071,7 +2071,7 @@ cc-deep-research research -o "reports/$(date +%Y%m%d-%H%M%S).md" "Dynamic topic"
 TOPIC="$1"
 DATE=$(date +%Y%m%d)
 OUTPUT="reports/$DATE-$TOPIC.md"
-cc-deep-research research -o "$OUTPUT" "$TOPIC"
+inqulume-studio research -o "$OUTPUT" "$TOPIC"
 ```
 
 ### Effective Query Formulation
@@ -2080,34 +2080,34 @@ cc-deep-research research -o "$OUTPUT" "$TOPIC"
 
 ```bash
 # Better
-cc-deep-research research "Impact of GPT-4 on software development productivity"
+inqulume-studio research "Impact of GPT-4 on software development productivity"
 
 # Avoid
-cc-deep-research research "AI and programming"
+inqulume-studio research "AI and programming"
 ```
 
 **Include context:**
 
 ```bash
-cc-deep-research research "Python 3.11 performance improvements over Python 3.10"
+inqulume-studio research "Python 3.11 performance improvements over Python 3.10"
 ```
 
 **Use natural language:**
 
 ```bash
-cc-deep-research research "What are the best practices for securing AWS S3 buckets?"
+inqulume-studio research "What are the best practices for securing AWS S3 buckets?"
 ```
 
 **Ask for comparisons:**
 
 ```bash
-cc-deep-research research "PostgreSQL vs MongoDB: performance comparison for analytical workloads"
+inqulume-studio research "PostgreSQL vs MongoDB: performance comparison for analytical workloads"
 ```
 
 **Request examples:**
 
 ```bash
-cc-deep-research research "Real-world applications of edge computing in manufacturing"
+inqulume-studio research "Real-world applications of edge computing in manufacturing"
 ```
 
 ### Resource Management
@@ -2142,14 +2142,14 @@ find reports/ -name "*.md" -mtime +30 -delete
 - name: Research
   run: |
     export TAVILY_API_KEYS=${{ secrets.TAVILY_API_KEY }}
-    cc-deep-research research --quiet -o research.md "${{ inputs.topic }}"
+    inqulume-studio research --quiet -o research.md "${{ inputs.topic }}"
 ```
 
 **Combine with other tools:**
 
 ```bash
 # Research then analyze
-cc-deep-research research --format json "Topic" | python analyze.py
+inqulume-studio research --format json "Topic" | python analyze.py
 ```
 
 **Automate periodic research:**
@@ -2174,15 +2174,15 @@ echo "api_keys.env" >> .gitignore
 ```bash
 # Store in secure location
 # Add to .bashrc or .zshrc with proper permissions
-chmod 600 ~/.env/cc-deep-research
-source ~/.env/cc-deep-research
+chmod 600 ~/.env/inqulume-studio
+source ~/.env/inqulume-studio
 ```
 
 **Rotate keys regularly:**
 
 ```bash
 # Update API keys periodically
-cc-deep-research config set tavily.api_keys new_key_1,new_key_2
+inqulume-studio config set tavily.api_keys new_key_1,new_key_2
 ```
 
 ---

@@ -158,7 +158,7 @@ Persistence is not one thing. There are several layers:
 
 - Store class: [`StrategyStore`](src/cc_deep_research/content_gen/storage/strategy_store.py)
 - Format: YAML
-- Default path: `~/.config/cc-deep-research/strategy.yaml`
+- Default path: `~/.config/inqulume-studio/strategy.yaml`
 
 ### Backlog
 
@@ -171,7 +171,7 @@ Persistence is not one thing. There are several layers:
 
 - Store class: [`ScriptingStore`](src/cc_deep_research/content_gen/storage/scripting_store.py)
 - Format: text plus JSON
-- Default directory: `~/.config/cc-deep-research/scripts/`
+- Default directory: `~/.config/inqulume-studio/scripts/`
 
 Saved scripting outputs include:
 
@@ -192,14 +192,14 @@ Each per-run directory stores:
 
 - Store class: [`PublishQueueStore`](src/cc_deep_research/content_gen/storage/publish_queue_store.py)
 - Format: YAML
-- Default path: `~/.config/cc-deep-research/publish_queue.yaml`
+- Default path: `~/.config/inqulume-studio/publish_queue.yaml`
 
 ### Browser-started pipeline jobs
 
 - Store class: `PipelineRunStore`
 - Runtime registry: `PipelineRunJobRegistry`
 - Format: JSON
-- Default directory: `~/.config/cc-deep-research/content-gen/pipelines/`
+- Default directory: `~/.config/inqulume-studio/content-gen/pipelines/`
 
 Each saved job includes:
 

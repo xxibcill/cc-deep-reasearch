@@ -1,8 +1,8 @@
 """CLI for running full benchmark corpus for release candidates.
 
 Usage:
-    cc-deep-research benchmark run [--depth DEPTH] [--output-dir DIR] [--full]
-    cc-deep-research benchmark ci-run [--output-dir DIR]
+    inqulume-studio benchmark run [--depth DEPTH] [--output-dir DIR] [--full]
+    inqulume-studio benchmark ci-run [--output-dir DIR]
 
 The full-run workflow runs all corpus cases including deprecated/flaky ones
 (explicitly excluded from release gates). The ci-run shortcut runs only the
@@ -10,13 +10,13 @@ CI subset for fast feedback.
 
 Examples:
     # Run full benchmark (all cases)
-    cc-deep-research benchmark run --depth deep --output-dir benchmark_runs/rc-v1
+    inqulume-studio benchmark run --depth deep --output-dir benchmark_runs/rc-v1
 
     # Run CI subset only
-    cc-deep-research benchmark ci-run --output-dir benchmark_runs/ci
+    inqulume-studio benchmark ci-run --output-dir benchmark_runs/ci
 
     # Run full benchmark with planner workflow
-    cc-deep-research benchmark run --workflow planner --depth standard
+    inqulume-studio benchmark run --workflow planner --depth standard
 """
 
 from __future__ import annotations

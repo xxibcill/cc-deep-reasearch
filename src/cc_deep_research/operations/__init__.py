@@ -34,7 +34,7 @@ class PathStatus:
     SKIPPED = "skipped"
 
 
-# Known safe project data directories under ~/.config/cc-deep-research/
+# Known safe project data directories under ~/.config/inqulume-studio/
 KNOWN_DATA_DIRS = {
     "config": "Configuration directory",
     "sessions": "Research session storage",

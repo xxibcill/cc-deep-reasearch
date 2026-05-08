@@ -9,7 +9,7 @@ test("home page exposes the control-room structure and launch presets @smoke", a
 
   await page.goto("/");
 
-  await expect(page).toHaveTitle(/CC Deep Research/);
+  await expect(page).toHaveTitle(/Inqulume Studio/);
   await expect(page.getByRole("heading", { name: "Operations overview" })).toBeVisible();
   await expect(page.getByText("Running now", { exact: true })).toBeVisible();
   await expect(page.getByText("Failed or interrupted", { exact: true })).toBeVisible();

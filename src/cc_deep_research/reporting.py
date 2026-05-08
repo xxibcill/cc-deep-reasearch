@@ -1,4 +1,4 @@
-"""Report generation for CC Deep Research CLI.
+"""Report generation for Inqulume Studio CLI.
 
 This module provides report generation functionality for research sessions,
 supporting multiple output formats (Markdown, JSON, HTML).

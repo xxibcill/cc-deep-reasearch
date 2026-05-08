@@ -1,4 +1,4 @@
-"""Source credibility scoring for CC Deep Research CLI.
+"""Source credibility scoring for Inqulume Studio CLI.
 
 This module provides credibility scoring for sources based on:
 - Domain reputation (peer-reviewed, government, educational, news, blog, etc.)

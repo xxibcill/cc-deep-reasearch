@@ -133,7 +133,7 @@ export function CommandTrigger({
 
 export function NavBarBrand({
   href = '/',
-  title = 'CC Deep Research',
+  title = 'Inqulume Studio',
   subtitle = 'Operations Console',
   icon: Icon = FlaskConical,
   className,

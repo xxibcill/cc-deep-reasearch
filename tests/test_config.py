@@ -483,7 +483,7 @@ class TestGetDefaultConfigPath:
             os.environ.pop("XDG_CONFIG_HOME", None)
             path = get_default_config_path()
             assert ".config" in str(path)
-            assert "cc-deep-research" in str(path)
+            assert "inqulume-studio" in str(path)
 
     def test_default_path_with_xdg(self) -> None:
         """Test default path with XDG_CONFIG_HOME."""

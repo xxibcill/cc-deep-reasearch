@@ -16,13 +16,13 @@ dev-dependencies = [
 ]
 
 [project]
-name = "cc-deep-research"
+name = "inqulume-studio"
 dynamic = ["version"]
 description = "Deep research platform with real-time dashboard monitoring"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
-authors = [{ name = "CC Deep Research Team" }]
+authors = [{ name = "Inqulume Studio Team" }]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -66,9 +66,9 @@ dashboard = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/example/cc-deep-research"
-Documentation = "https://github.com/example/cc-deep-research#readme"
-Repository = "https://github.com/example/cc-deep-research"
+Homepage = "https://github.com/example/inqulume-studio"
+Documentation = "https://github.com/example/inqulume-studio#readme"
+Repository = "https://github.com/example/inqulume-studio"
 
 [tool.hatch.version]
 path = "src/cc_deep_research/__about__.py"

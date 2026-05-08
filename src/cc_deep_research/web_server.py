@@ -90,8 +90,8 @@ def create_app(
         Configured FastAPI application.
     """
     app = FastAPI(
-        title="CC Deep Research Monitoring",
-        description="Real-time monitoring dashboard for CC Deep Research",
+        title="Inqulume Studio Monitoring",
+        description="Real-time monitoring dashboard for Inqulume Studio",
         version="1.0.0",
         lifespan=lifespan,
     )
@@ -188,7 +188,7 @@ def register_routes(app: FastAPI) -> None:
     async def root() -> dict[str, str]:
         """Root endpoint."""
         return {
-            "message": "CC Deep Research Monitoring API",
+            "message": "Inqulume Studio Monitoring API",
             "version": "1.0.0",
         }
 

@@ -1,6 +1,6 @@
 # Research Workflow and Agent Interactions
 
-This document explains how the current `cc-deep-research` codebase executes a research run, where each agent fits, and how "multi-agent" behavior actually works in practice.
+This document explains how the current `inqulume-studio` codebase executes a research run, where each agent fits, and how "multi-agent" behavior actually works in practice.
 
 It is based on the current repository code, not on aspirational comments alone.
 
@@ -18,7 +18,7 @@ The runtime is an orchestrator-led local pipeline:
 
 This section answers a simple question:
 
-When you run `cc-deep-research research "..."`, what is actually executing?
+When you run `inqulume-studio research "..."`, what is actually executing?
 
 ### Short answer
 
@@ -425,7 +425,7 @@ sequenceDiagram
     participant Store as SessionStore
     participant Report as ReportGenerator / ReporterAgent
 
-    User->>CLI: Run `cc-deep-research research "..."`
+    User->>CLI: Run `inqulume-studio research "..."`
     CLI->>Orch: execute_research(query, depth)
     Orch->>Lead: analyze_query(query, depth)
     Lead-->>Orch: StrategyResult

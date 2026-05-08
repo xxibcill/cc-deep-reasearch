@@ -84,10 +84,10 @@ Run the full benchmark or live test if:
 
 ```bash
 # Full research pipeline test
-cc-deep-research research "your query here" --depth quick --output-dir /tmp/test-run
+inqulume-studio research "your query here" --depth quick --output-dir /tmp/test-run
 
 # Full content-gen pipeline test
-cc-deep-research content-gen pipeline --theme "test theme" --output /tmp/test-script.txt --save-context
+inqulume-studio content-gen pipeline --theme "test theme" --output /tmp/test-script.txt --save-context
 ```
 
 ## Documenting blocked checks

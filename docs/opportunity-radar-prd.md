@@ -10,7 +10,7 @@
 
 ## Executive Summary
 
-`cc-deep-research` is strong at execution after the user already has a topic, question, or content idea. It is materially weaker at proactive discovery. Users still need to decide what matters before they can benefit from the research pipeline, content pipeline, dashboard monitoring, or strategy layer.
+`inqulume-studio` is strong at execution after the user already has a topic, question, or content idea. It is materially weaker at proactive discovery. Users still need to decide what matters before they can benefit from the research pipeline, content pipeline, dashboard monitoring, or strategy layer.
 
 `Opportunity Radar` is a new decision layer built on the app's existing infrastructure. It continuously monitors selected external and internal sources, normalizes them into structured signals, clusters those signals into opportunity candidates, scores them against the user's strategy, and presents a ranked inbox of high-value opportunities with direct action paths into research and content workflows.
 
@@ -70,7 +70,7 @@ Radar turns the product into:
 
 ## 2. Problem Statement
 
-Users of `cc-deep-research` can execute high-quality research and content workflows once they already have a topic or question. However, they still need to manually monitor fragmented sources, detect signals, interpret their significance, and decide which ones deserve action. This creates latency, inconsistency, and missed opportunities.
+Users of `inqulume-studio` can execute high-quality research and content workflows once they already have a topic or question. However, they still need to manually monitor fragmented sources, detect signals, interpret their significance, and decide which ones deserve action. This creates latency, inconsistency, and missed opportunities.
 
 As a result:
 
@@ -95,7 +95,7 @@ The app should continuously transform fragmented changes in the user's market in
 
 ## 3. Product Thesis
 
-`Opportunity Radar` should make `cc-deep-research` the system that surfaces the next best opportunity before the user asks for it.
+`Opportunity Radar` should make `inqulume-studio` the system that surfaces the next best opportunity before the user asks for it.
 
 This feature should not behave like:
 
@@ -112,7 +112,7 @@ It should behave like:
 
 ## 4. Product Summary
 
-`Opportunity Radar` is a proactive intelligence layer inside `cc-deep-research` that:
+`Opportunity Radar` is a proactive intelligence layer inside `inqulume-studio` that:
 
 1. monitors selected source inputs
 2. ingests and normalizes new source items as raw signals

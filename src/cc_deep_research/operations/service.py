@@ -24,7 +24,7 @@ _DASHBOARD_SERVICE_NAMES = {
 }
 _DASHBOARD_PROCESS_MARKERS = (
     "cc_deep_research",
-    "cc-deep-research",
+    "inqulume-studio",
     "dashboard-start",
     "dashboard-dev",
     "/dashboard/",
@@ -156,7 +156,7 @@ def _allowed_ports_for_service(service_name: str) -> set[int]:
 
 def _get_log_locations() -> dict[str, Path]:
     """Return known log file locations."""
-    config_dir = Path.home() / ".config" / "cc-deep-research"
+    config_dir = Path.home() / ".config" / "inqulume-studio"
     return {
         "config_dir": config_dir,
         "telemetry_dir": config_dir / "telemetry",

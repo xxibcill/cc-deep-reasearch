@@ -76,7 +76,7 @@ The HTTP endpoints combine live telemetry reads with dashboard analytics helpers
 Launch the backend with:
 
 ```bash
-cc-deep-research dashboard --host localhost --port 8000
+inqulume-studio dashboard --host localhost --port 8000
 ```
 
 Current CLI implementation lives in [`src/cc_deep_research/cli/dashboard.py`](../src/cc_deep_research/cli/dashboard.py).
@@ -144,13 +144,13 @@ If you prefer starting research from the terminal:
 
 ```bash
 # Terminal 1: Start the backend
-uv run cc-deep-research dashboard --port 8000
+uv run inqulume-studio dashboard --port 8000
 
 # Terminal 2: Start the frontend
 cd dashboard && npm run dev:frontend
 
 # Terminal 3: Run research
-uv run cc-deep-research research "your query" --enable-realtime
+uv run inqulume-studio research "your query" --enable-realtime
 ```
 
 ## Environment Variables
@@ -165,8 +165,8 @@ export NEXT_PUBLIC_CC_WS_BASE_URL=ws://localhost:8000/ws
 
 ## Notes
 
-- `cc-deep-research dashboard` starts the FastAPI backend only. The Next.js frontend is run separately from [`dashboard/`](../dashboard).
-- `cc-deep-research telemetry dashboard` is a different command that launches the Streamlit analytics UI.
+- `inqulume-studio dashboard` starts the FastAPI backend only. The Next.js frontend is run separately from [`dashboard/`](../dashboard).
+- `inqulume-studio telemetry dashboard` is a different command that launches the Streamlit analytics UI.
 - Dashboard-related environment variables currently live in [`src/cc_deep_research/config/schema.py`](../src/cc_deep_research/config/schema.py) as settings support, but the dashboard CLI currently takes host and port directly from command flags.
 - The dashboard UI now uses local `shadcn/ui`-style primitives declared in [`dashboard/components.json`](../dashboard/components.json) and implemented in [`dashboard/src/components/ui/`](../dashboard/src/components/ui).
 - Live-session performance depends on buffered WebSocket updates, lazy-loaded heavy panels, and a virtualized event table. If a session is especially noisy, those are the first guardrails to preserve before adding more visualization work.

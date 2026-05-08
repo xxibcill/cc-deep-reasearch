@@ -330,14 +330,14 @@ def run_dashboard(
     except ImportError as exc:  # pragma: no cover - import guard
         raise RuntimeError(
             "Dashboard UI requires optional dashboard dependencies. "
-            "Install with `pip install \"cc-deep-research[dashboard]\"`."
+            "Install with `pip install \"inqulume-studio[dashboard]\"`."
         ) from exc
 
     dashboard_db = db_path or get_default_dashboard_db_path()
     source_dir = telemetry_dir or get_default_telemetry_dir()
 
-    st.set_page_config(page_title="CC Deep Research Monitoring", layout="wide")
-    st.title("CC Deep Research Monitoring Dashboard")
+    st.set_page_config(page_title="Inqulume Studio Monitoring", layout="wide")
+    st.title("Inqulume Studio Monitoring Dashboard")
 
     with st.sidebar:
         st.header("Live Controls")

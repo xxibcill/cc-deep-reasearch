@@ -5,7 +5,7 @@ append-only log file. Each event records the actor, action, payload,
 and outcome so operators can later reconstruct why changes were made.
 
 Audit entries are stored in:
-~/.config/cc-deep-research/content-gen/audit_log.yaml
+~/.config/inqulume-studio/content-gen/audit_log.yaml
 
 The log is append-only: past entries are never modified or deleted,
 only new entries are added.

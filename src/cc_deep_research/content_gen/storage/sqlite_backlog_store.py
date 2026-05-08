@@ -10,10 +10,10 @@ Migration from YAML
 The YAML store (BacklogStore) remains fully functional. To migrate to SQLite:
 
 1. Ensure the content-gen DB directory exists (same directory as backlog.yaml):
-   ~/.config/cc-deep-research/content-gen/
+   ~/.config/inqulume-studio/content-gen/
 
 2. SQLite data is stored at:
-   ~/.config/cc-deep-research/content-gen/backlog.db
+   ~/.config/inqulume-studio/content-gen/backlog.db
 
 3. On first load, the SQLite store will attempt to import existing YAML data
    if the SQLite database is empty. This is a one-time migration.

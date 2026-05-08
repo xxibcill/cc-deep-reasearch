@@ -151,7 +151,7 @@ class RadarStore:
     separate YAML files per entity kind. This allows independent access
     patterns (e.g., updating scores without rewriting signals).
 
-    All files live under ``~/.config/cc-deep-research/radar/`` by default.
+    All files live under ``~/.config/inqulume-studio/radar/`` by default.
     """
 
     def __init__(
