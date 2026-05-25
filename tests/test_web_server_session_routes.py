@@ -41,6 +41,19 @@ def test_bulk_delete_request_rejects_oversized_batches() -> None:
         BulkSessionDeleteRequest(session_ids=oversized_ids)
 
 
+def test_purge_summary_route_is_not_shadowed(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The static purge-summary endpoint should not route as a session id."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    client = TestClient(create_app())
+    response = client.get("/api/sessions/purge-summary")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "archived_sessions_count" in payload
+    assert "recommendations" in payload
+
+
 def test_get_session_report_serves_cached_report_without_regeneration(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -624,9 +637,7 @@ def test_session_detail_include_derived_false_returns_empty_decision_graph(
     }
 
 
-def test_session_bundle_includes_decision_graph(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_session_bundle_includes_decision_graph(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Trace bundle export should preserve the derived decision graph."""
     pytest.importorskip("duckdb")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
@@ -1029,9 +1040,7 @@ def test_session_list_cursor_pagination(tmp_path, monkeypatch: pytest.MonkeyPatc
     assert data["next_cursor"] is None
 
 
-def test_session_includes_checkpoint_inventory(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_session_includes_checkpoint_inventory(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Session detail should include checkpoint inventory when available."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     config_dir = tmp_path / "xdg" / "inqulume-studio"
@@ -1041,17 +1050,19 @@ def test_session_includes_checkpoint_inventory(
 
     # Create events file
     (session_dir / "events.jsonl").write_text(
-        json.dumps({
-            "event_id": "event-1",
-            "sequence_number": 1,
-            "timestamp": "2026-03-18T10:00:00Z",
-            "session_id": "checkpoint-session",
-            "event_type": "session.started",
-            "category": "session",
-            "name": "session",
-            "status": "started",
-            "metadata": {},
-        })
+        json.dumps(
+            {
+                "event_id": "event-1",
+                "sequence_number": 1,
+                "timestamp": "2026-03-18T10:00:00Z",
+                "session_id": "checkpoint-session",
+                "event_type": "session.started",
+                "category": "session",
+                "name": "session",
+                "status": "started",
+                "metadata": {},
+            }
+        )
         + "\n",
         encoding="utf-8",
     )
@@ -1060,20 +1071,22 @@ def test_session_includes_checkpoint_inventory(
     checkpoints_dir = session_dir / "checkpoints"
     checkpoints_dir.mkdir()
     (checkpoints_dir / "manifest.json").write_text(
-        json.dumps({
-            "checkpoints": [
-                {
-                    "checkpoint_id": "cp-abc123",
-                    "phase": "strategy",
-                    "operation": "execute",
-                    "sequence_number": 1,
-                    "resume_safe": True,
-                    "replayable": True,
-                }
-            ],
-            "latest_checkpoint_id": "cp-abc123",
-            "latest_resume_safe_checkpoint_id": "cp-abc123",
-        }),
+        json.dumps(
+            {
+                "checkpoints": [
+                    {
+                        "checkpoint_id": "cp-abc123",
+                        "phase": "strategy",
+                        "operation": "execute",
+                        "sequence_number": 1,
+                        "resume_safe": True,
+                        "replayable": True,
+                    }
+                ],
+                "latest_checkpoint_id": "cp-abc123",
+                "latest_resume_safe_checkpoint_id": "cp-abc123",
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -1088,9 +1101,7 @@ def test_session_includes_checkpoint_inventory(
     assert data["checkpoints"]["resume_available"] is True
 
 
-def test_checkpoint_list_endpoint(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_checkpoint_list_endpoint(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The checkpoints list endpoint should return checkpoint manifest."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     config_dir = tmp_path / "xdg" / "inqulume-studio"
@@ -1100,17 +1111,19 @@ def test_checkpoint_list_endpoint(
 
     # Create events file to make session "exist"
     (session_dir / "events.jsonl").write_text(
-        json.dumps({
-            "event_id": "event-1",
-            "sequence_number": 1,
-            "timestamp": "2026-03-18T10:00:00Z",
-            "session_id": "checkpoint-list-session",
-            "event_type": "session.started",
-            "category": "session",
-            "name": "session",
-            "status": "started",
-            "metadata": {},
-        })
+        json.dumps(
+            {
+                "event_id": "event-1",
+                "sequence_number": 1,
+                "timestamp": "2026-03-18T10:00:00Z",
+                "session_id": "checkpoint-list-session",
+                "event_type": "session.started",
+                "category": "session",
+                "name": "session",
+                "status": "started",
+                "metadata": {},
+            }
+        )
         + "\n",
         encoding="utf-8",
     )
@@ -1119,26 +1132,28 @@ def test_checkpoint_list_endpoint(
     checkpoints_dir = session_dir / "checkpoints"
     checkpoints_dir.mkdir()
     (checkpoints_dir / "manifest.json").write_text(
-        json.dumps({
-            "checkpoints": [
-                {
-                    "checkpoint_id": "cp-start",
-                    "phase": "session_start",
-                    "operation": "initialize",
-                    "sequence_number": 1,
-                    "resume_safe": False,
-                },
-                {
-                    "checkpoint_id": "cp-strategy",
-                    "phase": "strategy",
-                    "operation": "execute",
-                    "sequence_number": 2,
-                    "resume_safe": True,
-                },
-            ],
-            "latest_checkpoint_id": "cp-strategy",
-            "latest_resume_safe_checkpoint_id": "cp-strategy",
-        }),
+        json.dumps(
+            {
+                "checkpoints": [
+                    {
+                        "checkpoint_id": "cp-start",
+                        "phase": "session_start",
+                        "operation": "initialize",
+                        "sequence_number": 1,
+                        "resume_safe": False,
+                    },
+                    {
+                        "checkpoint_id": "cp-strategy",
+                        "phase": "strategy",
+                        "operation": "execute",
+                        "sequence_number": 2,
+                        "resume_safe": True,
+                    },
+                ],
+                "latest_checkpoint_id": "cp-strategy",
+                "latest_resume_safe_checkpoint_id": "cp-strategy",
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -1152,9 +1167,7 @@ def test_checkpoint_list_endpoint(
     assert data["latest_resume_safe_checkpoint_id"] == "cp-strategy"
 
 
-def test_checkpoint_detail_endpoint(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_checkpoint_detail_endpoint(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The checkpoint detail endpoint should return checkpoint with lineage."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     config_dir = tmp_path / "xdg" / "inqulume-studio"
@@ -1164,17 +1177,19 @@ def test_checkpoint_detail_endpoint(
 
     # Create events file to make session "exist"
     (session_dir / "events.jsonl").write_text(
-        json.dumps({
-            "event_id": "event-1",
-            "sequence_number": 1,
-            "timestamp": "2026-03-18T10:00:00Z",
-            "session_id": "checkpoint-detail-session",
-            "event_type": "session.started",
-            "category": "session",
-            "name": "session",
-            "status": "started",
-            "metadata": {},
-        })
+        json.dumps(
+            {
+                "event_id": "event-1",
+                "sequence_number": 1,
+                "timestamp": "2026-03-18T10:00:00Z",
+                "session_id": "checkpoint-detail-session",
+                "event_type": "session.started",
+                "category": "session",
+                "name": "session",
+                "status": "started",
+                "metadata": {},
+            }
+        )
         + "\n",
         encoding="utf-8",
     )
@@ -1183,30 +1198,32 @@ def test_checkpoint_detail_endpoint(
     checkpoints_dir = session_dir / "checkpoints"
     checkpoints_dir.mkdir()
     (checkpoints_dir / "manifest.json").write_text(
-        json.dumps({
-            "checkpoints": [
-                {
-                    "checkpoint_id": "cp-parent",
-                    "phase": "session_start",
-                    "operation": "initialize",
-                    "sequence_number": 1,
-                    "parent_checkpoint_id": None,
-                    "resume_safe": True,
-                },
-                {
-                    "checkpoint_id": "cp-child",
-                    "phase": "strategy",
-                    "operation": "execute",
-                    "sequence_number": 2,
-                    "parent_checkpoint_id": "cp-parent",
-                    "resume_safe": True,
-                    "input_ref": {"query": "test"},
-                    "output_ref": {"strategy": "comprehensive"},
-                },
-            ],
-            "latest_checkpoint_id": "cp-child",
-            "latest_resume_safe_checkpoint_id": "cp-child",
-        }),
+        json.dumps(
+            {
+                "checkpoints": [
+                    {
+                        "checkpoint_id": "cp-parent",
+                        "phase": "session_start",
+                        "operation": "initialize",
+                        "sequence_number": 1,
+                        "parent_checkpoint_id": None,
+                        "resume_safe": True,
+                    },
+                    {
+                        "checkpoint_id": "cp-child",
+                        "phase": "strategy",
+                        "operation": "execute",
+                        "sequence_number": 2,
+                        "parent_checkpoint_id": "cp-parent",
+                        "resume_safe": True,
+                        "input_ref": {"query": "test"},
+                        "output_ref": {"strategy": "comprehensive"},
+                    },
+                ],
+                "latest_checkpoint_id": "cp-child",
+                "latest_resume_safe_checkpoint_id": "cp-child",
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -1223,9 +1240,7 @@ def test_checkpoint_detail_endpoint(
     assert "cp-parent" in data["lineage"]
 
 
-def test_checkpoint_lineage_endpoint(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_checkpoint_lineage_endpoint(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The checkpoint lineage endpoint should return ordered checkpoint chain."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     config_dir = tmp_path / "xdg" / "inqulume-studio"
@@ -1235,17 +1250,19 @@ def test_checkpoint_lineage_endpoint(
 
     # Create events file to make session "exist"
     (session_dir / "events.jsonl").write_text(
-        json.dumps({
-            "event_id": "event-1",
-            "sequence_number": 1,
-            "timestamp": "2026-03-18T10:00:00Z",
-            "session_id": "checkpoint-lineage-session",
-            "event_type": "session.started",
-            "category": "session",
-            "name": "session",
-            "status": "started",
-            "metadata": {},
-        })
+        json.dumps(
+            {
+                "event_id": "event-1",
+                "sequence_number": 1,
+                "timestamp": "2026-03-18T10:00:00Z",
+                "session_id": "checkpoint-lineage-session",
+                "event_type": "session.started",
+                "category": "session",
+                "name": "session",
+                "status": "started",
+                "metadata": {},
+            }
+        )
         + "\n",
         encoding="utf-8",
     )
@@ -1254,25 +1271,27 @@ def test_checkpoint_lineage_endpoint(
     checkpoints_dir = session_dir / "checkpoints"
     checkpoints_dir.mkdir()
     (checkpoints_dir / "manifest.json").write_text(
-        json.dumps({
-            "checkpoints": [
-                {
-                    "checkpoint_id": "cp-1",
-                    "phase": "session_start",
-                    "parent_checkpoint_id": None,
-                },
-                {
-                    "checkpoint_id": "cp-2",
-                    "phase": "strategy",
-                    "parent_checkpoint_id": "cp-1",
-                },
-                {
-                    "checkpoint_id": "cp-3",
-                    "phase": "source_collection",
-                    "parent_checkpoint_id": "cp-2",
-                },
-            ],
-        }),
+        json.dumps(
+            {
+                "checkpoints": [
+                    {
+                        "checkpoint_id": "cp-1",
+                        "phase": "session_start",
+                        "parent_checkpoint_id": None,
+                    },
+                    {
+                        "checkpoint_id": "cp-2",
+                        "phase": "strategy",
+                        "parent_checkpoint_id": "cp-1",
+                    },
+                    {
+                        "checkpoint_id": "cp-3",
+                        "phase": "source_collection",
+                        "parent_checkpoint_id": "cp-2",
+                    },
+                ],
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -1289,9 +1308,7 @@ def test_checkpoint_lineage_endpoint(
     assert data["lineage"][2]["checkpoint_id"] == "cp-3"
 
 
-def test_resume_endpoint_returns_resume_info(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_resume_endpoint_returns_resume_info(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The resume endpoint should return resume information for valid checkpoint."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     config_dir = tmp_path / "xdg" / "inqulume-studio"
@@ -1301,17 +1318,19 @@ def test_resume_endpoint_returns_resume_info(
 
     # Create events file to make session "exist"
     (session_dir / "events.jsonl").write_text(
-        json.dumps({
-            "event_id": "event-1",
-            "sequence_number": 1,
-            "timestamp": "2026-03-18T10:00:00Z",
-            "session_id": "resume-session",
-            "event_type": "session.started",
-            "category": "session",
-            "name": "session",
-            "status": "started",
-            "metadata": {},
-        })
+        json.dumps(
+            {
+                "event_id": "event-1",
+                "sequence_number": 1,
+                "timestamp": "2026-03-18T10:00:00Z",
+                "session_id": "resume-session",
+                "event_type": "session.started",
+                "category": "session",
+                "name": "session",
+                "status": "started",
+                "metadata": {},
+            }
+        )
         + "\n",
         encoding="utf-8",
     )
@@ -1320,19 +1339,21 @@ def test_resume_endpoint_returns_resume_info(
     checkpoints_dir = session_dir / "checkpoints"
     checkpoints_dir.mkdir()
     (checkpoints_dir / "manifest.json").write_text(
-        json.dumps({
-            "checkpoints": [
-                {
-                    "checkpoint_id": "cp-resumable",
-                    "phase": "source_collection",
-                    "operation": "execute",
-                    "resume_safe": True,
-                    "replayable": True,
-                    "input_ref": {"query": "test query"},
-                },
-            ],
-            "latest_resume_safe_checkpoint_id": "cp-resumable",
-        }),
+        json.dumps(
+            {
+                "checkpoints": [
+                    {
+                        "checkpoint_id": "cp-resumable",
+                        "phase": "source_collection",
+                        "operation": "execute",
+                        "resume_safe": True,
+                        "replayable": True,
+                        "input_ref": {"query": "test query"},
+                    },
+                ],
+                "latest_resume_safe_checkpoint_id": "cp-resumable",
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -1359,17 +1380,19 @@ def test_resume_endpoint_rejects_non_resumable_checkpoint(
 
     # Create events file to make session "exist"
     (session_dir / "events.jsonl").write_text(
-        json.dumps({
-            "event_id": "event-1",
-            "sequence_number": 1,
-            "timestamp": "2026-03-18T10:00:00Z",
-            "session_id": "non-resumable-session",
-            "event_type": "session.started",
-            "category": "session",
-            "name": "session",
-            "status": "started",
-            "metadata": {},
-        })
+        json.dumps(
+            {
+                "event_id": "event-1",
+                "sequence_number": 1,
+                "timestamp": "2026-03-18T10:00:00Z",
+                "session_id": "non-resumable-session",
+                "event_type": "session.started",
+                "category": "session",
+                "name": "session",
+                "status": "started",
+                "metadata": {},
+            }
+        )
         + "\n",
         encoding="utf-8",
     )
@@ -1378,19 +1401,21 @@ def test_resume_endpoint_rejects_non_resumable_checkpoint(
     checkpoints_dir = session_dir / "checkpoints"
     checkpoints_dir.mkdir()
     (checkpoints_dir / "manifest.json").write_text(
-        json.dumps({
-            "checkpoints": [
-                {
-                    "checkpoint_id": "cp-failed",
-                    "phase": "analysis",
-                    "operation": "execute",
-                    "resume_safe": False,
-                    "replayable": False,
-                    "replayable_reason": "Phase failed: ValueError",
-                },
-            ],
-            "latest_resume_safe_checkpoint_id": None,
-        }),
+        json.dumps(
+            {
+                "checkpoints": [
+                    {
+                        "checkpoint_id": "cp-failed",
+                        "phase": "analysis",
+                        "operation": "execute",
+                        "resume_safe": False,
+                        "replayable": False,
+                        "replayable_reason": "Phase failed: ValueError",
+                    },
+                ],
+                "latest_resume_safe_checkpoint_id": None,
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -1413,17 +1438,19 @@ def test_rerun_step_endpoint_reports_not_implemented_for_replayable_checkpoint(
 
     # Create events file to make session "exist"
     (session_dir / "events.jsonl").write_text(
-        json.dumps({
-            "event_id": "event-1",
-            "sequence_number": 1,
-            "timestamp": "2026-03-18T10:00:00Z",
-            "session_id": "rerun-session",
-            "event_type": "session.started",
-            "category": "session",
-            "name": "session",
-            "status": "started",
-            "metadata": {},
-        })
+        json.dumps(
+            {
+                "event_id": "event-1",
+                "sequence_number": 1,
+                "timestamp": "2026-03-18T10:00:00Z",
+                "session_id": "rerun-session",
+                "event_type": "session.started",
+                "category": "session",
+                "name": "session",
+                "status": "started",
+                "metadata": {},
+            }
+        )
         + "\n",
         encoding="utf-8",
     )
@@ -1432,18 +1459,20 @@ def test_rerun_step_endpoint_reports_not_implemented_for_replayable_checkpoint(
     checkpoints_dir = session_dir / "checkpoints"
     checkpoints_dir.mkdir()
     (checkpoints_dir / "manifest.json").write_text(
-        json.dumps({
-            "checkpoints": [
-                {
-                    "checkpoint_id": "cp-replayable",
-                    "phase": "strategy",
-                    "operation": "execute",
-                    "replayable": True,
-                    "input_ref": {"query": "test query"},
-                    "output_ref": {"strategy": "comprehensive"},
-                },
-            ],
-        }),
+        json.dumps(
+            {
+                "checkpoints": [
+                    {
+                        "checkpoint_id": "cp-replayable",
+                        "phase": "strategy",
+                        "operation": "execute",
+                        "replayable": True,
+                        "input_ref": {"query": "test query"},
+                        "output_ref": {"strategy": "comprehensive"},
+                    },
+                ],
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -1472,17 +1501,19 @@ def test_rerun_step_rejects_non_replayable_checkpoint(
 
     # Create events file to make session "exist"
     (session_dir / "events.jsonl").write_text(
-        json.dumps({
-            "event_id": "event-1",
-            "sequence_number": 1,
-            "timestamp": "2026-03-18T10:00:00Z",
-            "session_id": "non-replayable-session",
-            "event_type": "session.started",
-            "category": "session",
-            "name": "session",
-            "status": "started",
-            "metadata": {},
-        })
+        json.dumps(
+            {
+                "event_id": "event-1",
+                "sequence_number": 1,
+                "timestamp": "2026-03-18T10:00:00Z",
+                "session_id": "non-replayable-session",
+                "event_type": "session.started",
+                "category": "session",
+                "name": "session",
+                "status": "started",
+                "metadata": {},
+            }
+        )
         + "\n",
         encoding="utf-8",
     )
@@ -1491,17 +1522,19 @@ def test_rerun_step_rejects_non_replayable_checkpoint(
     checkpoints_dir = session_dir / "checkpoints"
     checkpoints_dir.mkdir()
     (checkpoints_dir / "manifest.json").write_text(
-        json.dumps({
-            "checkpoints": [
-                {
-                    "checkpoint_id": "cp-non-replayable",
-                    "phase": "source_collection",
-                    "operation": "execute",
-                    "replayable": False,
-                    "replayable_reason": "External API call with non-deterministic result",
-                },
-            ],
-        }),
+        json.dumps(
+            {
+                "checkpoints": [
+                    {
+                        "checkpoint_id": "cp-non-replayable",
+                        "phase": "source_collection",
+                        "operation": "execute",
+                        "replayable": False,
+                        "replayable_reason": "External API call with non-deterministic result",
+                    },
+                ],
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -1516,6 +1549,7 @@ def test_rerun_step_rejects_non_replayable_checkpoint(
 
 
 # Session Annotations and Triage Tests
+
 
 def test_add_annotation_creates_annotation_on_session(
     tmp_path, monkeypatch: pytest.MonkeyPatch
@@ -1544,9 +1578,7 @@ def test_add_annotation_creates_annotation_on_session(
     assert "created_at" in payload["annotation"]
 
 
-def test_add_annotation_rejects_empty_note(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_add_annotation_rejects_empty_note(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """An empty or whitespace-only note should be rejected."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
 
@@ -1593,7 +1625,11 @@ def test_update_annotation_modifies_existing_note(
         session_id="update-annotate-session",
         query="Test query",
         depth=ResearchDepth.STANDARD,
-        metadata={"annotations": [{"note": "Original note", "author": "op", "created_at": "2026-03-01T00:00:00"}]},
+        metadata={
+            "annotations": [
+                {"note": "Original note", "author": "op", "created_at": "2026-03-01T00:00:00"}
+            ]
+        },
     )
     SessionStore().save_session(session)
 
@@ -1632,9 +1668,7 @@ def test_update_annotation_returns_404_for_bad_index(
     assert response.status_code == 404
 
 
-def test_delete_annotation_removes_annotation(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_delete_annotation_removes_annotation(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """DELETE should remove the annotation at the given index."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
 
@@ -1692,9 +1726,7 @@ def test_get_annotations_returns_empty_list_for_session_with_no_annotations(
     assert payload["count"] == 0
 
 
-def test_update_triage_sets_status_and_metadata(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_update_triage_sets_status_and_metadata(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """PATCH /triage should update triage_status, owner, handoff target, and last_reviewed_at."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
 
@@ -1725,9 +1757,7 @@ def test_update_triage_sets_status_and_metadata(
     assert payload["last_reviewed_at"] is not None
 
 
-def test_update_triage_rejects_invalid_status(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_update_triage_rejects_invalid_status(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """An invalid triage_status value should return 400."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
 
@@ -1794,9 +1824,7 @@ def test_get_triage_returns_session_triage_metadata(
     assert payload["triage_owner"] == "analyst-b"
 
 
-def test_triage_status_surfaces_in_session_list(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_triage_status_surfaces_in_session_list(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Sessions with triage_status should expose it in the session list rows."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
 

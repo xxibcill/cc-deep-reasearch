@@ -327,11 +327,12 @@ class TestGraphHealthMetricsEndpoint:
         index.close()
 
         client = TestClient(create_app())
-        response = client.get("/api/knowledge/health")
+        response = client.get("/api/knowledge/health", params={"config_path": str(config)})
         assert response.status_code == 200
         data = response.json()
 
         assert data["total_nodes"] == 3
         assert data["total_edges"] == 1
         assert data["orphan_count"] == 1  # claim has no edges
+        assert data["nodes_by_kind"] == {"claim": 1, "session": 1, "source": 1}
         assert data["vault_initialized"] is True

@@ -12,6 +12,17 @@ from cc_deep_research.web_server import (
 )
 
 
+def test_promoted_baseline_route_is_not_shadowed(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The promoted-baseline endpoint should not route as a baseline id."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    client = TestClient(create_app())
+    response = client.get("/api/benchmarks/baselines/promoted")
+
+    assert response.status_code == 200
+    assert response.json() == {"baseline": None}
+
+
 def test_search_cache_stats_returns_disabled_when_cache_off(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -219,9 +230,7 @@ def test_search_cache_delete_entry_removes_specific_entry(
     assert stats_response.json()["total_entries"] == 0
 
 
-def test_search_cache_clear_removes_all_entries(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_search_cache_clear_removes_all_entries(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Clear should remove all cache entries."""
     from cc_deep_research.models import ResearchDepth, SearchOptions, SearchResult
     from cc_deep_research.search_cache import SearchCacheStore, build_search_cache_identity

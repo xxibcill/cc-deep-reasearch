@@ -131,12 +131,14 @@ def register_knowledge_routes(app: FastAPI) -> None:
         total = len(all_nodes)
         paginated = all_nodes[offset : offset + limit]
 
-        return JSONResponse(content={
-            "nodes": [n.model_dump(mode="json") for n in paginated],
-            "total": total,
-            "limit": limit,
-            "offset": offset,
-        })
+        return JSONResponse(
+            content={
+                "nodes": [n.model_dump(mode="json") for n in paginated],
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+            }
+        )
 
     @app.get("/api/knowledge/edges/{edge_id}")
     async def get_knowledge_edge(edge_id: str) -> JSONResponse:
@@ -214,12 +216,14 @@ def register_knowledge_routes(app: FastAPI) -> None:
                 content = f.read_text(encoding="utf-8")
                 # Extract title from first H1 or use filename
                 title = content.split("\n")[0].lstrip("# ").strip() if content else f.stem
-                pages.append({
-                    "path": str(f),
-                    "filename": f.name,
-                    "title": title,
-                    "size": f.stat().st_size,
-                })
+                pages.append(
+                    {
+                        "path": str(f),
+                        "filename": f.name,
+                        "title": title,
+                        "size": f.stat().st_size,
+                    }
+                )
             except Exception:
                 continue
 
@@ -239,23 +243,27 @@ def register_knowledge_routes(app: FastAPI) -> None:
         # Check for missing index
         index_path = wiki_index_path()
         if not index_path.exists():
-            findings.append({
-                "severity": "error",
-                "category": "missing_index",
-                "message": "Vault index.md is missing",
-                "page_path": str(index_path),
-            })
+            findings.append(
+                {
+                    "severity": "error",
+                    "category": "missing_index",
+                    "message": "Vault index.md is missing",
+                    "page_path": str(index_path),
+                }
+            )
 
         # Check empty directories
         for subdir in ["claims", "sessions", "sources", "concepts", "entities", "questions"]:
             dir_path = vault / "wiki" / subdir
             if dir_path.exists() and not any(dir_path.iterdir()):
-                findings.append({
-                    "severity": "info",
-                    "category": "empty_directory",
-                    "message": f"Empty directory: wiki/{subdir}",
-                    "page_path": str(dir_path),
-                })
+                findings.append(
+                    {
+                        "severity": "info",
+                        "category": "empty_directory",
+                        "message": f"Empty directory: wiki/{subdir}",
+                        "page_path": str(dir_path),
+                    }
+                )
 
         # Check for claims without source links
         claims_dir_path = vault / "wiki" / "claims"
@@ -267,22 +275,26 @@ def register_knowledge_routes(app: FastAPI) -> None:
                     content = cf.read_text(encoding="utf-8")
                     has_link = "http" in content
                     if not has_link:
-                        findings.append({
-                            "severity": "warning",
-                            "category": "unsupported_claim",
-                            "message": "Claim page may lack source backing",
-                            "page_path": str(cf),
-                        })
+                        findings.append(
+                            {
+                                "severity": "warning",
+                                "category": "unsupported_claim",
+                                "message": "Claim page may lack source backing",
+                                "page_path": str(cf),
+                            }
+                        )
                 except Exception:
                     continue
 
-        return JSONResponse(content={
-            "findings": findings,
-            "total": len(findings),
-            "error_count": sum(1 for f in findings if f["severity"] == "error"),
-            "warning_count": sum(1 for f in findings if f["severity"] == "warning"),
-            "info_count": sum(1 for f in findings if f["severity"] == "info"),
-        })
+        return JSONResponse(
+            content={
+                "findings": findings,
+                "total": len(findings),
+                "error_count": sum(1 for f in findings if f["severity"] == "error"),
+                "warning_count": sum(1 for f in findings if f["severity"] == "warning"),
+                "info_count": sum(1 for f in findings if f["severity"] == "info"),
+            }
+        )
 
     @app.get("/api/knowledge/session-contribution/{session_id}")
     async def get_session_contribution(session_id: str) -> JSONResponse:
@@ -351,11 +363,13 @@ def register_knowledge_routes(app: FastAPI) -> None:
         initialized = vault.exists()
 
         if not initialized:
-            return JSONResponse(content={
-                "initialized": False,
-                "vault_path": str(vault),
-                "can_initialize": True,
-            })
+            return JSONResponse(
+                content={
+                    "initialized": False,
+                    "vault_path": str(vault),
+                    "can_initialize": True,
+                }
+            )
 
         # Check what exists
         wiki_index = wiki_index_path()
@@ -373,14 +387,16 @@ def register_knowledge_routes(app: FastAPI) -> None:
                 if subdir.is_dir():
                     wiki_pages += len(list(subdir.glob("*.md")))
 
-        return JSONResponse(content={
-            "initialized": True,
-            "vault_path": str(vault),
-            "has_index": wiki_index.exists(),
-            "has_graph_index": graph_path.exists(),
-            "raw_session_count": raw_sessions,
-            "wiki_page_count": wiki_pages,
-        })
+        return JSONResponse(
+            content={
+                "initialized": True,
+                "vault_path": str(vault),
+                "has_index": wiki_index.exists(),
+                "has_graph_index": graph_path.exists(),
+                "raw_session_count": raw_sessions,
+                "wiki_page_count": wiki_pages,
+            }
+        )
 
     @app.get("/api/knowledge/graph")
     async def get_knowledge_graph_full() -> JSONResponse:
@@ -436,25 +452,31 @@ def register_knowledge_routes(app: FastAPI) -> None:
             if n is not None:
                 neighbor_nodes.append(n)
 
-        return JSONResponse(content={
-            "node": node.model_dump(mode="json"),
-            "neighbors": [n.model_dump(mode="json") for n in neighbor_nodes],
-            "edges": [e.model_dump(mode="json") for e in neighbors_edges],
-        })
+        return JSONResponse(
+            content={
+                "node": node.model_dump(mode="json"),
+                "neighbors": [n.model_dump(mode="json") for n in neighbor_nodes],
+                "edges": [e.model_dump(mode="json") for e in neighbors_edges],
+            }
+        )
 
     @app.post("/api/knowledge/init")
     async def init_knowledge_vault(
         config_path: Path | None = Query(default=None, description="Path to config file"),
-        dry_run: bool = Query(default=False, description="Show what would be created without creating"),
+        dry_run: bool = Query(
+            default=False, description="Show what would be created without creating"
+        ),
     ) -> JSONResponse:
         """Initialize the knowledge vault (creates directories and seed files)."""
         try:
             result = init_vault(config_path, dry_run=dry_run)
-            return JSONResponse(content={
-                "initialized": not dry_run,
-                "dry_run": dry_run,
-                "created": {name: str(path) for name, path in result.items()},
-            })
+            return JSONResponse(
+                content={
+                    "initialized": not dry_run,
+                    "dry_run": dry_run,
+                    "created": {name: str(path) for name, path in result.items()},
+                }
+            )
         except Exception as e:
             return JSONResponse(
                 content={"error": f"Failed to initialize vault: {str(e)}"},
@@ -463,8 +485,12 @@ def register_knowledge_routes(app: FastAPI) -> None:
 
     @app.post("/api/knowledge/backfill")
     async def backfill_knowledge_vault(
-        limit: int | None = Query(default=None, ge=1, description="Limit number of sessions to ingest"),
-        dry_run: bool = Query(default=False, description="Show sessions to ingest without ingesting"),
+        limit: int | None = Query(
+            default=None, ge=1, description="Limit number of sessions to ingest"
+        ),
+        dry_run: bool = Query(
+            default=False, description="Show sessions to ingest without ingesting"
+        ),
     ) -> JSONResponse:
         """Ingest all saved sessions into the knowledge vault."""
         store = SessionStore()
@@ -481,13 +507,15 @@ def register_knowledge_routes(app: FastAPI) -> None:
             session_files = session_files[:limit]
 
         if dry_run:
-            return JSONResponse(content={
-                "dry_run": True,
-                "total_sessions": len(session_files),
-                "session_ids": [sf.stem for sf in session_files],
-                "ingested": 0,
-                "failed": 0,
-            })
+            return JSONResponse(
+                content={
+                    "dry_run": True,
+                    "total_sessions": len(session_files),
+                    "session_ids": [sf.stem for sf in session_files],
+                    "ingested": 0,
+                    "failed": 0,
+                }
+            )
 
         ingested = 0
         failed = 0
@@ -507,13 +535,15 @@ def register_knowledge_routes(app: FastAPI) -> None:
                 failed += 1
                 errors.append({"session_id": session_id, "error": str(exc)})
 
-        return JSONResponse(content={
-            "dry_run": False,
-            "total_sessions": len(session_files),
-            "ingested": ingested,
-            "failed": failed,
-            "errors": errors,
-        })
+        return JSONResponse(
+            content={
+                "dry_run": False,
+                "total_sessions": len(session_files),
+                "ingested": ingested,
+                "failed": failed,
+                "errors": errors,
+            }
+        )
 
     @app.post("/api/knowledge/rebuild-index")
     async def rebuild_knowledge_index(
@@ -543,14 +573,17 @@ def register_knowledge_routes(app: FastAPI) -> None:
                 status_code=500,
             )
 
-        return JSONResponse(content={
-            "rebuilt": True,
-            "db_path": str(db_path),
-        })
-
+        return JSONResponse(
+            content={
+                "rebuilt": True,
+                "db_path": str(db_path),
+            }
+        )
 
     @app.get("/api/knowledge/health")
-    async def get_graph_health_metrics() -> JSONResponse:
+    async def get_graph_health_metrics(
+        config_path: Path | None = Query(default=None, description="Path to config file"),
+    ) -> JSONResponse:
         """Get health metrics for the knowledge graph.
 
         P23-T1: Returns orphan count, stale claim count, duplicate candidates,
@@ -558,35 +591,39 @@ def register_knowledge_routes(app: FastAPI) -> None:
         """
         from cc_deep_research.knowledge.health import compute_graph_metrics
 
-        index = _open_graph_index()
+        index = _open_graph_index(config_path)
         if index is None:
-            return JSONResponse(content={
-                "total_nodes": 0,
-                "total_edges": 0,
-                "orphan_count": 0,
-                "stale_claim_count": 0,
-                "duplicate_candidate_count": 0,
-                "source_backed_claim_ratio": 1.0,
-                "claims_without_sources": 0,
-                "nodes_by_kind": {},
-                "edges_by_kind": {},
-                "vault_initialized": False,
-            })
+            return JSONResponse(
+                content={
+                    "total_nodes": 0,
+                    "total_edges": 0,
+                    "orphan_count": 0,
+                    "stale_claim_count": 0,
+                    "duplicate_candidate_count": 0,
+                    "source_backed_claim_ratio": 1.0,
+                    "claims_without_sources": 0,
+                    "nodes_by_kind": {},
+                    "edges_by_kind": {},
+                    "vault_initialized": False,
+                }
+            )
 
         metrics = compute_graph_metrics(index)
 
-        return JSONResponse(content={
-            "total_nodes": metrics.total_nodes,
-            "total_edges": metrics.total_edges,
-            "orphan_count": metrics.orphan_count,
-            "stale_claim_count": metrics.stale_claim_count,
-            "duplicate_candidate_count": metrics.duplicate_candidate_count,
-            "source_backed_claim_ratio": metrics.source_backed_claim_ratio,
-            "claims_without_sources": metrics.claims_without_sources,
-            "nodes_by_kind": metrics.nodes_by_kind,
-            "edges_by_kind": metrics.edges_by_kind,
-            "vault_initialized": True,
-        })
+        return JSONResponse(
+            content={
+                "total_nodes": metrics.total_nodes,
+                "total_edges": metrics.total_edges,
+                "orphan_count": metrics.orphan_count,
+                "stale_claim_count": metrics.stale_claim_count,
+                "duplicate_candidate_count": metrics.duplicate_candidate_count,
+                "source_backed_claim_ratio": metrics.source_backed_claim_ratio,
+                "claims_without_sources": metrics.claims_without_sources,
+                "nodes_by_kind": metrics.nodes_by_kind,
+                "edges_by_kind": metrics.edges_by_kind,
+                "vault_initialized": True,
+            }
+        )
 
     # -------------------------------------------------------------------------
     # Retrieval explain endpoint (P23-T3)
@@ -611,32 +648,48 @@ def register_knowledge_routes(app: FastAPI) -> None:
         service = KnowledgeRetrievalService()
         result = service.retrieve_context(query, depth=depth, max_nodes=max_nodes)
 
-        return JSONResponse(content={
-            "context": {
-                "relevant_nodes": [n.model_dump(mode="json") for n in result.context.relevant_nodes],
-                "prior_sessions": [n.model_dump(mode="json") for n in result.context.prior_sessions],
-                "prior_claims": [n.model_dump(mode="json") for n in result.context.prior_claims],
-                "prior_gaps": [n.model_dump(mode="json") for n in result.context.prior_gaps],
-                "prior_sources": [n.model_dump(mode="json") for n in result.context.prior_sources],
-                "fresh_claims": [n.model_dump(mode="json") for n in result.context.fresh_claims],
-                "stale_claims": [n.model_dump(mode="json") for n in result.context.stale_claims],
-                "unsupported_claims": [n.model_dump(mode="json") for n in result.context.unsupported_claims],
-                "knowledge_used": result.context.knowledge_used,
-            },
-            "explanation": {
-                "query": result.explanation.query,
-                "query_terms": sorted(result.explanation.query_terms),
-                "nodes_selected": result.explanation.nodes_selected,
-                "nodes_excluded": result.explanation.nodes_excluded,
-                "selection_reasons": result.explanation.selection_reasons,
-                "score_factors": result.explanation.score_factors,
-                "filters_applied": result.explanation.filters_applied,
-                "fallback_active": result.explanation.fallback_active,
-                "total_candidates": result.explanation.total_candidates,
-                "max_nodes": result.explanation.max_nodes,
-                "timestamp": result.explanation.timestamp.isoformat(),
-            },
-        })
+        return JSONResponse(
+            content={
+                "context": {
+                    "relevant_nodes": [
+                        n.model_dump(mode="json") for n in result.context.relevant_nodes
+                    ],
+                    "prior_sessions": [
+                        n.model_dump(mode="json") for n in result.context.prior_sessions
+                    ],
+                    "prior_claims": [
+                        n.model_dump(mode="json") for n in result.context.prior_claims
+                    ],
+                    "prior_gaps": [n.model_dump(mode="json") for n in result.context.prior_gaps],
+                    "prior_sources": [
+                        n.model_dump(mode="json") for n in result.context.prior_sources
+                    ],
+                    "fresh_claims": [
+                        n.model_dump(mode="json") for n in result.context.fresh_claims
+                    ],
+                    "stale_claims": [
+                        n.model_dump(mode="json") for n in result.context.stale_claims
+                    ],
+                    "unsupported_claims": [
+                        n.model_dump(mode="json") for n in result.context.unsupported_claims
+                    ],
+                    "knowledge_used": result.context.knowledge_used,
+                },
+                "explanation": {
+                    "query": result.explanation.query,
+                    "query_terms": sorted(result.explanation.query_terms),
+                    "nodes_selected": result.explanation.nodes_selected,
+                    "nodes_excluded": result.explanation.nodes_excluded,
+                    "selection_reasons": result.explanation.selection_reasons,
+                    "score_factors": result.explanation.score_factors,
+                    "filters_applied": result.explanation.filters_applied,
+                    "fallback_active": result.explanation.fallback_active,
+                    "total_candidates": result.explanation.total_candidates,
+                    "max_nodes": result.explanation.max_nodes,
+                    "timestamp": result.explanation.timestamp.isoformat(),
+                },
+            }
+        )
 
     # -------------------------------------------------------------------------
     # Dedup endpoints (P23-T2)
@@ -644,7 +697,9 @@ def register_knowledge_routes(app: FastAPI) -> None:
 
     @app.get("/api/knowledge/dedup/candidates")
     async def list_dedup_candidates(
-        status: str | None = Query(default=None, description="Filter by status: pending, merged, dismissed, deferred"),
+        status: str | None = Query(
+            default=None, description="Filter by status: pending, merged, dismissed, deferred"
+        ),
     ) -> JSONResponse:
         """List pending duplicate candidates with reason and confidence.
 
@@ -686,10 +741,12 @@ def register_knowledge_routes(app: FastAPI) -> None:
         else:
             candidates = store.get_pending_candidates()
 
-        return JSONResponse(content={
-            "candidates": [c.to_dict() for c in candidates],
-            "total": len(candidates),
-        })
+        return JSONResponse(
+            content={
+                "candidates": [c.to_dict() for c in candidates],
+                "total": len(candidates),
+            }
+        )
 
     @app.get("/api/knowledge/dedup/candidates/{candidate_id}")
     async def get_dedup_candidate(candidate_id: str) -> JSONResponse:
@@ -747,19 +804,23 @@ def register_knowledge_routes(app: FastAPI) -> None:
             result = merge_nodes(index, candidate.node_a_id, candidate.node_b_id, store=store)
             store.resolve_candidate(candidate_id, "merged")
 
-            return JSONResponse(content={
-                "candidate_id": candidate_id,
-                "action": "merged",
-                "merge_result": result,
-            })
+            return JSONResponse(
+                content={
+                    "candidate_id": candidate_id,
+                    "action": "merged",
+                    "merge_result": result,
+                }
+            )
 
         # For dismiss/defer, just update the status
         store.resolve_candidate(candidate_id, action.lower())
-        return JSONResponse(content={
-            "candidate_id": candidate_id,
-            "action": action.lower(),
-            "resolved": True,
-        })
+        return JSONResponse(
+            content={
+                "candidate_id": candidate_id,
+                "action": action.lower(),
+                "resolved": True,
+            }
+        )
 
     @app.post("/api/knowledge/dedup/merge")
     async def execute_dedup_merge(
@@ -799,10 +860,12 @@ def register_knowledge_routes(app: FastAPI) -> None:
         store = DuplicateCandidateStore()
         pairs = store.get_merged_pairs()
 
-        return JSONResponse(content={
-            "merged_pairs": pairs,
-            "total": len(pairs),
-        })
+        return JSONResponse(
+            content={
+                "merged_pairs": pairs,
+                "total": len(pairs),
+            }
+        )
 
     # -------------------------------------------------------------------------
     # Ingestion quality gates endpoint (P23-T5)
@@ -843,30 +906,31 @@ def register_knowledge_routes(app: FastAPI) -> None:
 
         result = validate_batch(knowledge_nodes)
 
-        return JSONResponse(content={
-            "total": result.total,
-            "accepted": result.accepted,
-            "warned": result.warned,
-            "rejected": result.rejected,
-            "results": [
-                {
-                    "valid": r.valid,
-                    "record_id": r.record_id,
-                    "check_results": [
-                        {"check": c.check.value, "passed": c.passed, "message": c.message}
-                        for c in r.check_results
-                    ],
-                    "warnings": r.warnings,
-                    "rejection_reason": r.rejection_reason,
-                }
-                for r in result.results
-            ],
-        })
+        return JSONResponse(
+            content={
+                "total": result.total,
+                "accepted": result.accepted,
+                "warned": result.warned,
+                "rejected": result.rejected,
+                "results": [
+                    {
+                        "valid": r.valid,
+                        "record_id": r.record_id,
+                        "check_results": [
+                            {"check": c.check.value, "passed": c.passed, "message": c.message}
+                            for c in r.check_results
+                        ],
+                        "warnings": r.warnings,
+                        "rejection_reason": r.rejection_reason,
+                    }
+                    for r in result.results
+                ],
+            }
+        )
 
-
-# -------------------------------------------------------------------------
-# Gap detection endpoints (P23-T4)
-# -------------------------------------------------------------------------
+    # -------------------------------------------------------------------------
+    # Gap detection endpoints (P23-T4)
+    # -------------------------------------------------------------------------
 
     @app.get("/api/knowledge/gaps")
     async def list_gaps(
@@ -892,10 +956,27 @@ def register_knowledge_routes(app: FastAPI) -> None:
         else:
             gaps = store.get_gaps()
 
-        return JSONResponse(content={
-            "gaps": [g.to_dict() for g in gaps],
-            "total": len(gaps),
-        })
+        return JSONResponse(
+            content={
+                "gaps": [g.to_dict() for g in gaps],
+                "total": len(gaps),
+            }
+        )
+
+    @app.get("/api/knowledge/gaps/accepted")
+    async def list_accepted_gaps() -> JSONResponse:
+        """Get accepted gaps ready for research follow-up."""
+        from cc_deep_research.knowledge.gap_detection import GapStore
+
+        store = GapStore()
+        gaps = store.get_accepted_gaps()
+
+        return JSONResponse(
+            content={
+                "gaps": [g.to_dict() for g in gaps],
+                "total": len(gaps),
+            }
+        )
 
     @app.get("/api/knowledge/gaps/{gap_id}")
     async def get_gap(gap_id: str) -> JSONResponse:
@@ -951,11 +1032,13 @@ def register_knowledge_routes(app: FastAPI) -> None:
 
         success = store.update_status(gap_id, new_status)
 
-        return JSONResponse(content={
-            "gap_id": gap_id,
-            "status": new_status.value,
-            "updated": success,
-        })
+        return JSONResponse(
+            content={
+                "gap_id": gap_id,
+                "status": new_status.value,
+                "updated": success,
+            }
+        )
 
     @app.post("/api/knowledge/gaps/detect")
     async def run_gap_detection() -> JSONResponse:
@@ -992,25 +1075,12 @@ def register_knowledge_routes(app: FastAPI) -> None:
             store.add_gap(gap)
             added += 1
 
-        return JSONResponse(content={
-            "detected": len(new_gaps),
-            "added": added,
-            "total_gaps": len(store.get_gaps()),
-        })
-
-    @app.get("/api/knowledge/gaps/accepted")
-    async def list_accepted_gaps() -> JSONResponse:
-        """Get accepted gaps ready for research follow-up."""
-        from cc_deep_research.knowledge.gap_detection import GapStore
-
-        store = GapStore()
-        gaps = store.get_accepted_gaps()
-
-        return JSONResponse(content={
-            "gaps": [g.to_dict() for g in gaps],
-            "total": len(gaps),
-        })
-
-
+        return JSONResponse(
+            content={
+                "detected": len(new_gaps),
+                "added": added,
+                "total_gaps": len(store.get_gaps()),
+            }
+        )
 
     __all__ = ["register_knowledge_routes"]

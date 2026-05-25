@@ -214,7 +214,10 @@ def _query_session_api_detail(
         "summary": summary,
         "events": events,
         "event_tail": events[-tail_limit:],
-        "events_page": historical.get("events_page", {"events": [], "total": 0, "has_more": False, "next_cursor": None, "prev_cursor": None}),
+        "events_page": historical.get(
+            "events_page",
+            {"events": [], "total": 0, "has_more": False, "next_cursor": None, "prev_cursor": None},
+        ),
         "agent_timeline": [event for event in events if event.get("category") == "agent"],
         "event_tree": {"root_events": [], "total_events": len(events), "session_id": session_id},
         "subprocess_streams": [],
@@ -345,7 +348,9 @@ def register_session_routes(app: FastAPI) -> None:
                 if existing.get("created_at") is None:
                     existing["created_at"] = session_data.get("created_at")
                 if existing.get("last_event_at") is None:
-                    existing["last_event_at"] = existing.get("completed_at") or existing.get("created_at")
+                    existing["last_event_at"] = existing.get("completed_at") or existing.get(
+                        "created_at"
+                    )
                 continue
             sessions_by_id[session_id] = _build_session_list_row(
                 session_id=session_id,
@@ -395,7 +400,12 @@ def register_session_routes(app: FastAPI) -> None:
         if status:
             sessions = [s for s in sessions if s.get("status") == status]
 
-        sessions = [s for s in sessions if archived_only == (s.get("archived") or session_store.is_session_archived(s.get("session_id", "")))]
+        sessions = [
+            s
+            for s in sessions
+            if archived_only
+            == (s.get("archived") or session_store.is_session_archived(s.get("session_id", "")))
+        ]
 
         def sort_key(s: dict[str, Any]) -> Any:
             sort_field_value = s.get(sort_by.value)
@@ -433,86 +443,6 @@ def register_session_routes(app: FastAPI) -> None:
             }
         )
 
-    @app.get("/api/sessions/{session_id}")
-    async def get_session(
-        session_id: str,
-        cursor: int | None = Query(default=None, description="Sequence number to start after"),
-        before_cursor: int | None = Query(default=None, description="Sequence number to end before"),
-        limit: int = Query(default=1000, ge=1, le=5000, description="Maximum events to return"),
-        include_derived: bool = Query(default=True, description="Include derived outputs"),
-        include_checkpoints: bool = Query(default=True, description="Include checkpoint inventory"),
-    ) -> JSONResponse:
-        """Get details for a specific session."""
-        detail = _query_session_api_detail(
-            session_id,
-            tail_limit=1000,
-            subprocess_chunk_limit=100,
-            cursor=cursor,
-            before_cursor=before_cursor,
-            limit=limit,
-            include_derived=include_derived,
-        )
-
-        if not detail["session"]:
-            return JSONResponse(content={"error": "Session not found"}, status_code=404)
-
-        response_content = {
-            "session": detail["session"],
-            "summary": detail.get("summary"),
-            "events_page": detail.get("events_page", {
-                "events": detail.get("events", [])[:limit],
-                "total": len(detail.get("events", [])),
-                "has_more": False,
-                "next_cursor": None,
-                "prev_cursor": None,
-            }),
-            "event_tail": detail.get("event_tail", []),
-            "agent_timeline": detail.get("agent_timeline", []),
-            "active_phase": detail.get("active_phase"),
-            "narrative": detail.get("narrative", []),
-            "critical_path": detail.get("critical_path", {}),
-            "state_changes": detail.get("state_changes", []),
-            "decisions": detail.get("decisions", []),
-            "degradations": detail.get("degradations", []),
-            "failures": detail.get("failures", []),
-            "decision_graph": detail.get("decision_graph", empty_decision_graph()),
-        }
-
-        if include_checkpoints:
-            telemetry_dir = get_default_telemetry_dir()
-            checkpoint_manifest = query_session_checkpoints(session_id, base_dir=telemetry_dir)
-            response_content["checkpoints"] = {
-                "total": len(checkpoint_manifest.get("checkpoints", [])),
-                "latest_checkpoint_id": checkpoint_manifest.get("latest_checkpoint_id"),
-                "latest_resume_safe_checkpoint_id": checkpoint_manifest.get("latest_resume_safe_checkpoint_id"),
-                "resume_available": checkpoint_manifest.get("latest_resume_safe_checkpoint_id") is not None,
-            }
-
-        return JSONResponse(content=response_content)
-
-    @app.delete("/api/sessions/{session_id}")
-    async def delete_session(
-        session_id: str,
-        force: bool = False,
-    ) -> JSONResponse:
-        """Delete a research session from all storage layers."""
-        request = SessionDeleteRequest(session_id=session_id, force=force)
-        service = SessionPurgeService()
-        response = service.delete_session(request)
-
-        status_code = 409 if response.active_conflict else 200
-        return JSONResponse(
-            content=response.model_dump(mode="json"),
-            status_code=status_code,
-        )
-
-    @app.post("/api/sessions/bulk-delete")
-    async def bulk_delete_sessions(request: BulkSessionDeleteRequest) -> JSONResponse:
-        """Delete multiple research sessions with explicit per-session outcomes."""
-        service = SessionPurgeService()
-        response = service.delete_sessions(request)
-        return JSONResponse(content=response.model_dump(mode="json"))
-
     @app.get("/api/sessions/purge-summary")
     async def get_purge_summary() -> JSONResponse:
         """Return summary of sessions that could be purged."""
@@ -541,44 +471,144 @@ def register_session_routes(app: FastAPI) -> None:
                 continue
 
             if is_archived:
-                archived_sessions.append({
-                    "session_id": session_id,
-                    "has_payload": has_payload,
-                    "has_report": has_report,
-                    "completed_at": saved.get("completed_at"),
-                })
+                archived_sessions.append(
+                    {
+                        "session_id": session_id,
+                        "has_payload": has_payload,
+                        "has_report": has_report,
+                        "completed_at": saved.get("completed_at"),
+                    }
+                )
             elif not has_payload and not has_report:
-                no_artifacts_sessions.append({
-                    "session_id": session_id,
-                    "completed_at": saved.get("completed_at"),
-                })
+                no_artifacts_sessions.append(
+                    {
+                        "session_id": session_id,
+                        "completed_at": saved.get("completed_at"),
+                    }
+                )
 
         recommendations = []
         if archived_sessions:
-            recommendations.append({
-                "category": "archived",
-                "description": f"{len(archived_sessions)} archived session(s) are safe to purge",
-                "action": "bulk-purge-archived",
-                "count": len(archived_sessions),
-            })
+            recommendations.append(
+                {
+                    "category": "archived",
+                    "description": f"{len(archived_sessions)} archived session(s) are safe to purge",
+                    "action": "bulk-purge-archived",
+                    "count": len(archived_sessions),
+                }
+            )
         if no_artifacts_sessions:
-            recommendations.append({
-                "category": "no-artifacts",
-                "description": f"{len(no_artifacts_sessions)} session(s) have no payload or report",
-                "action": "review-no-artifacts",
-                "count": len(no_artifacts_sessions),
-            })
+            recommendations.append(
+                {
+                    "category": "no-artifacts",
+                    "description": f"{len(no_artifacts_sessions)} session(s) have no payload or report",
+                    "action": "review-no-artifacts",
+                    "count": len(no_artifacts_sessions),
+                }
+            )
 
-        return JSONResponse(content={
-            "archived_sessions_count": len(archived_sessions),
-            "no_artifacts_count": len(no_artifacts_sessions),
-            "active_count": len(active_session_ids),
-            "recommendations": recommendations,
-        })
+        return JSONResponse(
+            content={
+                "archived_sessions_count": len(archived_sessions),
+                "no_artifacts_count": len(no_artifacts_sessions),
+                "active_count": len(active_session_ids),
+                "recommendations": recommendations,
+            }
+        )
+
+    @app.get("/api/sessions/{session_id}")
+    async def get_session(
+        session_id: str,
+        cursor: int | None = Query(default=None, description="Sequence number to start after"),
+        before_cursor: int | None = Query(
+            default=None, description="Sequence number to end before"
+        ),
+        limit: int = Query(default=1000, ge=1, le=5000, description="Maximum events to return"),
+        include_derived: bool = Query(default=True, description="Include derived outputs"),
+        include_checkpoints: bool = Query(default=True, description="Include checkpoint inventory"),
+    ) -> JSONResponse:
+        """Get details for a specific session."""
+        detail = _query_session_api_detail(
+            session_id,
+            tail_limit=1000,
+            subprocess_chunk_limit=100,
+            cursor=cursor,
+            before_cursor=before_cursor,
+            limit=limit,
+            include_derived=include_derived,
+        )
+
+        if not detail["session"]:
+            return JSONResponse(content={"error": "Session not found"}, status_code=404)
+
+        response_content = {
+            "session": detail["session"],
+            "summary": detail.get("summary"),
+            "events_page": detail.get(
+                "events_page",
+                {
+                    "events": detail.get("events", [])[:limit],
+                    "total": len(detail.get("events", [])),
+                    "has_more": False,
+                    "next_cursor": None,
+                    "prev_cursor": None,
+                },
+            ),
+            "event_tail": detail.get("event_tail", []),
+            "agent_timeline": detail.get("agent_timeline", []),
+            "active_phase": detail.get("active_phase"),
+            "narrative": detail.get("narrative", []),
+            "critical_path": detail.get("critical_path", {}),
+            "state_changes": detail.get("state_changes", []),
+            "decisions": detail.get("decisions", []),
+            "degradations": detail.get("degradations", []),
+            "failures": detail.get("failures", []),
+            "decision_graph": detail.get("decision_graph", empty_decision_graph()),
+        }
+
+        if include_checkpoints:
+            telemetry_dir = get_default_telemetry_dir()
+            checkpoint_manifest = query_session_checkpoints(session_id, base_dir=telemetry_dir)
+            response_content["checkpoints"] = {
+                "total": len(checkpoint_manifest.get("checkpoints", [])),
+                "latest_checkpoint_id": checkpoint_manifest.get("latest_checkpoint_id"),
+                "latest_resume_safe_checkpoint_id": checkpoint_manifest.get(
+                    "latest_resume_safe_checkpoint_id"
+                ),
+                "resume_available": checkpoint_manifest.get("latest_resume_safe_checkpoint_id")
+                is not None,
+            }
+
+        return JSONResponse(content=response_content)
+
+    @app.delete("/api/sessions/{session_id}")
+    async def delete_session(
+        session_id: str,
+        force: bool = False,
+    ) -> JSONResponse:
+        """Delete a research session from all storage layers."""
+        request = SessionDeleteRequest(session_id=session_id, force=force)
+        service = SessionPurgeService()
+        response = service.delete_session(request)
+
+        status_code = 409 if response.active_conflict else 200
+        return JSONResponse(
+            content=response.model_dump(mode="json"),
+            status_code=status_code,
+        )
+
+    @app.post("/api/sessions/bulk-delete")
+    async def bulk_delete_sessions(request: BulkSessionDeleteRequest) -> JSONResponse:
+        """Delete multiple research sessions with explicit per-session outcomes."""
+        service = SessionPurgeService()
+        response = service.delete_sessions(request)
+        return JSONResponse(content=response.model_dump(mode="json"))
 
     @app.post("/api/sessions/purge-archived")
     async def purge_archived_sessions(
-        dry_run: bool = Query(default=True, description="If true, only return what would be deleted"),
+        dry_run: bool = Query(
+            default=True, description="If true, only return what would be deleted"
+        ),
         force: bool = Query(default=False, description="Delete even if sessions are active"),
     ) -> JSONResponse:
         """Purge all archived sessions."""
@@ -588,30 +618,36 @@ def register_session_routes(app: FastAPI) -> None:
         archived_ids = list(session_store.get_archived_session_ids())
 
         if dry_run:
-            return JSONResponse(content={
-                "dry_run": True,
-                "would_delete": len(archived_ids),
-                "session_ids": archived_ids,
-                "message": f"Would delete {len(archived_ids)} archived session(s)",
-            })
+            return JSONResponse(
+                content={
+                    "dry_run": True,
+                    "would_delete": len(archived_ids),
+                    "session_ids": archived_ids,
+                    "message": f"Would delete {len(archived_ids)} archived session(s)",
+                }
+            )
 
         if not archived_ids:
-            return JSONResponse(content={
-                "deleted": 0,
-                "session_ids": [],
-                "message": "No archived sessions to purge",
-            })
+            return JSONResponse(
+                content={
+                    "deleted": 0,
+                    "session_ids": [],
+                    "message": "No archived sessions to purge",
+                }
+            )
 
         request = BulkSessionDeleteRequest(session_ids=archived_ids, force=force)
         response = service.delete_sessions(request)
 
-        return JSONResponse(content={
-            "dry_run": False,
-            "deleted": response.summary.deleted_count,
-            "failed": response.summary.failed_count,
-            "session_ids": archived_ids,
-            "results": response.model_dump(mode="json"),
-        })
+        return JSONResponse(
+            content={
+                "dry_run": False,
+                "deleted": response.summary.deleted_count,
+                "failed": response.summary.failed_count,
+                "session_ids": archived_ids,
+                "results": response.model_dump(mode="json"),
+            }
+        )
 
     @app.post("/api/sessions/{session_id}/archive")
     async def archive_session(session_id: str) -> JSONResponse:
@@ -725,7 +761,11 @@ def register_session_routes(app: FastAPI) -> None:
             )
 
         annotations = session.metadata.get("annotations", [])
-        if not isinstance(annotations, list) or annotation_index < 0 or annotation_index >= len(annotations):
+        if (
+            not isinstance(annotations, list)
+            or annotation_index < 0
+            or annotation_index >= len(annotations)
+        ):
             return JSONResponse(
                 content={"error": f"Annotation not found at index {annotation_index}"},
                 status_code=404,
@@ -773,7 +813,11 @@ def register_session_routes(app: FastAPI) -> None:
             )
 
         annotations = session.metadata.get("annotations", [])
-        if not isinstance(annotations, list) or annotation_index < 0 or annotation_index >= len(annotations):
+        if (
+            not isinstance(annotations, list)
+            or annotation_index < 0
+            or annotation_index >= len(annotations)
+        ):
             return JSONResponse(
                 content={"error": f"Annotation not found at index {annotation_index}"},
                 status_code=404,
@@ -869,13 +913,15 @@ def register_session_routes(app: FastAPI) -> None:
         session.metadata = metadata
         store.save_session(session)
 
-        return JSONResponse(content={
-            "session_id": session_id,
-            "triage_status": metadata.get("triage_status"),
-            "triage_owner": metadata.get("triage_owner"),
-            "triage_handoff_target": metadata.get("triage_handoff_target"),
-            "last_reviewed_at": metadata.get("last_reviewed_at"),
-        })
+        return JSONResponse(
+            content={
+                "session_id": session_id,
+                "triage_status": metadata.get("triage_status"),
+                "triage_owner": metadata.get("triage_owner"),
+                "triage_handoff_target": metadata.get("triage_handoff_target"),
+                "last_reviewed_at": metadata.get("last_reviewed_at"),
+            }
+        )
 
     @app.get("/api/sessions/{session_id}/triage")
     async def get_session_triage(session_id: str) -> JSONResponse:
@@ -892,21 +938,27 @@ def register_session_routes(app: FastAPI) -> None:
         last_reviewed = metadata.get("last_reviewed_at")
         if isinstance(last_reviewed, datetime):
             last_reviewed = last_reviewed.isoformat()
-        return JSONResponse(content={
-            "session_id": session_id,
-            "triage_status": metadata.get("triage_status"),
-            "triage_owner": metadata.get("triage_owner"),
-            "triage_handoff_target": metadata.get("triage_handoff_target"),
-            "last_reviewed_at": last_reviewed,
-        })
+        return JSONResponse(
+            content={
+                "session_id": session_id,
+                "triage_status": metadata.get("triage_status"),
+                "triage_owner": metadata.get("triage_owner"),
+                "triage_handoff_target": metadata.get("triage_handoff_target"),
+                "last_reviewed_at": last_reviewed,
+            }
+        )
 
     @app.get("/api/sessions/{session_id}/events")
     async def get_session_events(
         session_id: str,
         limit: int = Query(default=1000, ge=1, le=5000, description="Maximum events to return"),
         cursor: int | None = Query(default=None, description="Sequence number to start after"),
-        before_cursor: int | None = Query(default=None, description="Sequence number to end before"),
-        offset: int = Query(default=0, ge=0, description="Number of events to skip (deprecated, use cursor)"),
+        before_cursor: int | None = Query(
+            default=None, description="Sequence number to end before"
+        ),
+        offset: int = Query(
+            default=0, ge=0, description="Number of events to skip (deprecated, use cursor)"
+        ),
     ) -> JSONResponse:
         """Get events for a specific session with cursor-based pagination."""
         detail = _query_session_api_detail(
@@ -928,23 +980,27 @@ def register_session_routes(app: FastAPI) -> None:
             else:
                 events = events[:limit]
 
-            return JSONResponse(content={
-                "events": events,
-                "count": len(events),
-                "total": len(detail.get("events", [])),
-                "has_more": False,
-                "next_cursor": None,
-                "prev_cursor": None,
-            })
+            return JSONResponse(
+                content={
+                    "events": events,
+                    "count": len(events),
+                    "total": len(detail.get("events", [])),
+                    "has_more": False,
+                    "next_cursor": None,
+                    "prev_cursor": None,
+                }
+            )
 
-        return JSONResponse(content={
-            "events": events_page["events"],
-            "count": len(events_page["events"]),
-            "total": events_page["total"],
-            "has_more": events_page["has_more"],
-            "next_cursor": events_page["next_cursor"],
-            "prev_cursor": events_page["prev_cursor"],
-        })
+        return JSONResponse(
+            content={
+                "events": events_page["events"],
+                "count": len(events_page["events"]),
+                "total": events_page["total"],
+                "has_more": events_page["has_more"],
+                "next_cursor": events_page["next_cursor"],
+                "prev_cursor": events_page["prev_cursor"],
+            }
+        )
 
     @app.get("/api/sessions/{session_id}/report")
     async def get_session_report(
@@ -1073,7 +1129,11 @@ def register_session_routes(app: FastAPI) -> None:
 
         if has_report:
             report_formats = []
-            for fmt in [ResearchOutputFormat.MARKDOWN, ResearchOutputFormat.JSON, ResearchOutputFormat.HTML]:
+            for fmt in [
+                ResearchOutputFormat.MARKDOWN,
+                ResearchOutputFormat.JSON,
+                ResearchOutputFormat.HTML,
+            ]:
                 if store.load_report(session_id, fmt) is not None:
                     report_formats.append(fmt.value)
                 else:
@@ -1112,7 +1172,8 @@ def register_session_routes(app: FastAPI) -> None:
                 "provenance": "derived",
                 "count": len(checkpoint_manifest.get("checkpoints", [])),
                 "latest_checkpoint_id": checkpoint_manifest.get("latest_checkpoint_id"),
-                "resume_available": checkpoint_manifest.get("latest_resume_safe_checkpoint_id") is not None,
+                "resume_available": checkpoint_manifest.get("latest_resume_safe_checkpoint_id")
+                is not None,
                 "description": "Session checkpoints for potential resume",
             }
         else:
@@ -1163,12 +1224,14 @@ def register_session_routes(app: FastAPI) -> None:
         telemetry_dir = get_default_telemetry_dir()
         lineage = query_checkpoint_lineage(session_id, checkpoint_id, base_dir=telemetry_dir)
 
-        return JSONResponse(content={
-            "session_id": session_id,
-            "checkpoint_id": checkpoint_id,
-            "lineage": lineage,
-            "depth": len(lineage),
-        })
+        return JSONResponse(
+            content={
+                "session_id": session_id,
+                "checkpoint_id": checkpoint_id,
+                "lineage": lineage,
+                "depth": len(lineage),
+            }
+        )
 
     @app.post("/api/sessions/{session_id}/resume")
     async def resume_session(
@@ -1314,7 +1377,9 @@ def register_session_routes(app: FastAPI) -> None:
     @app.get("/api/telemetry/retention")
     async def get_telemetry_retention_summary(
         max_age_days: int | None = Query(default=None, description="Override max age in days"),
-        min_active_sessions: int = Query(default=5, description="Minimum active sessions to preserve"),
+        min_active_sessions: int = Query(
+            default=5, description="Minimum active sessions to preserve"
+        ),
     ) -> JSONResponse:
         """Get retention candidate summary for telemetry sessions."""
         from cc_deep_research.telemetry.retention import (
@@ -1332,22 +1397,26 @@ def register_session_routes(app: FastAPI) -> None:
         )
 
         summary = get_retention_summary(policy)
-        return JSONResponse(content={
-            "policy": {
-                "max_age_days": policy.max_age_days,
-                "min_active_sessions": policy.min_active_sessions,
-                "preserve_summaries": policy.preserve_summaries,
-                "preserve_checkpoints": policy.preserve_checkpoints,
-                "compaction_level": policy.compaction_level.value,
-            },
-            **summary,
-        })
+        return JSONResponse(
+            content={
+                "policy": {
+                    "max_age_days": policy.max_age_days,
+                    "min_active_sessions": policy.min_active_sessions,
+                    "preserve_summaries": policy.preserve_summaries,
+                    "preserve_checkpoints": policy.preserve_checkpoints,
+                    "compaction_level": policy.compaction_level.value,
+                },
+                **summary,
+            }
+        )
 
     @app.post("/api/telemetry/retention/compact")
     async def compact_session_telemetry(
         session_id: str,
         dry_run: bool = Query(default=True, description="Preview without applying changes"),
-        compaction_level: str = Query(default="events_only", description="Compaction level: none, events_only, full"),
+        compaction_level: str = Query(
+            default="events_only", description="Compaction level: none, events_only, full"
+        ),
     ) -> JSONResponse:
         """Compact a session's telemetry files to free space."""
         from cc_deep_research.telemetry.retention import (
@@ -1392,23 +1461,25 @@ def register_session_routes(app: FastAPI) -> None:
         retention_mode = RetentionMode.ENFORCE if mode == "enforce" else RetentionMode.DRY_RUN
         result = apply_retention(policy, mode=retention_mode)
 
-        return JSONResponse(content={
-            "mode": retention_mode.value,
-            "evaluated": result.evaluated,
-            "candidates": [
-                {
-                    "session_id": c.session_id,
-                    "reason": c.reason,
-                    "compactable": c.compactable,
-                    "deletable": c.deletable,
-                }
-                for c in result.candidates
-            ],
-            "active_protected": result.active_protected,
-            "checkpoint_protected": result.checkpoint_protected,
-            "archived_protected": result.archived_protected,
-            "errors": result.errors,
-        })
+        return JSONResponse(
+            content={
+                "mode": retention_mode.value,
+                "evaluated": result.evaluated,
+                "candidates": [
+                    {
+                        "session_id": c.session_id,
+                        "reason": c.reason,
+                        "compactable": c.compactable,
+                        "deletable": c.deletable,
+                    }
+                    for c in result.candidates
+                ],
+                "active_protected": result.active_protected,
+                "checkpoint_protected": result.checkpoint_protected,
+                "archived_protected": result.archived_protected,
+                "errors": result.errors,
+            }
+        )
 
     @app.post("/api/telemetry/retention/restore/{session_id}")
     async def restore_compacted_session(session_id: str) -> JSONResponse:

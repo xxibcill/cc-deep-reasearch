@@ -116,33 +116,56 @@ def get_stages_for_phase(phase: OperatingPhase) -> list[str]:
 class PhaseExitCriteria(BaseModel):
     """Exit criteria for completing a phase."""
 
-    description: str = Field(default="", description="Human-readable description of what constitutes phase completion.")
-    required_artifacts: list[str] = Field(default_factory=list, description="List of artifact names that must be present to exit the phase.")
-    quality_threshold: float | None = Field(default=None, description="Optional quality score threshold to meet before exiting.")
+    description: str = Field(
+        default="", description="Human-readable description of what constitutes phase completion."
+    )
+    required_artifacts: list[str] = Field(
+        default_factory=list,
+        description="List of artifact names that must be present to exit the phase.",
+    )
+    quality_threshold: float | None = Field(
+        default=None, description="Optional quality score threshold to meet before exiting."
+    )
 
 
 class PhaseSkipCondition(BaseModel):
     """Condition under which a phase can be skipped."""
 
-    reason: str = Field(default="", description="Human-readable reason why the phase can be skipped.")
-    requires_manual_override: bool = Field(default=False, description="Whether operator confirmation is required to skip.")
-    preserves_quality: bool = Field(default=True, description="Whether skipping this phase preserves output quality.")
+    reason: str = Field(
+        default="", description="Human-readable reason why the phase can be skipped."
+    )
+    requires_manual_override: bool = Field(
+        default=False, description="Whether operator confirmation is required to skip."
+    )
+    preserves_quality: bool = Field(
+        default=True, description="Whether skipping this phase preserves output quality."
+    )
 
 
 class PhaseKillCondition(BaseModel):
     """Condition under which a phase should be terminated early."""
 
-    reason: str = Field(default="", description="Human-readable reason why the phase should be killed.")
-    abort_pipeline: bool = Field(default=False, description="Whether killing this phase should abort the entire pipeline.")
-    preserve_artifacts: bool = Field(default=True, description="Whether to preserve partial artifacts even when killed.")
+    reason: str = Field(
+        default="", description="Human-readable reason why the phase should be killed."
+    )
+    abort_pipeline: bool = Field(
+        default=False, description="Whether killing this phase should abort the entire pipeline."
+    )
+    preserve_artifacts: bool = Field(
+        default=True, description="Whether to preserve partial artifacts even when killed."
+    )
 
 
 class PhaseReuseOpportunity(BaseModel):
     """Opportunity to reuse phase outputs across runs."""
 
     description: str = Field(default="", description="What can be reused from this phase.")
-    reuse_pattern: str = Field(default="", description="How to reuse (e.g., 'cache', 'template', 'reference').")
-    ttl_hours: int | None = Field(default=None, description="How long reuse is valid (None = until next strategy update).")
+    reuse_pattern: str = Field(
+        default="", description="How to reuse (e.g., 'cache', 'template', 'reference')."
+    )
+    ttl_hours: int | None = Field(
+        default=None, description="How long reuse is valid (None = until next strategy update)."
+    )
 
 
 class OperatingPhasePolicy(BaseModel):
@@ -151,12 +174,26 @@ class OperatingPhasePolicy(BaseModel):
     phase: OperatingPhase = Field(description="Which operating phase this policy governs.")
     phase_label: str = Field(description="Human-readable phase name.")
     owner: str = Field(default="", description="Who is responsible for this phase (role or team).")
-    max_turnaround_minutes: int = Field(default=60, description="Expected maximum turnaround time for this phase in minutes.")
-    entry_criteria: list[str] = Field(default_factory=list, description="List of conditions that must be true before phase execution.")
-    exit_criteria: PhaseExitCriteria = Field(default_factory=PhaseExitCriteria, description="Criteria for successfully completing this phase.")
-    skip_conditions: list[PhaseSkipCondition] = Field(default_factory=list, description="Conditions under which this phase can be skipped.")
-    kill_conditions: list[PhaseKillCondition] = Field(default_factory=list, description="Conditions under which this phase should be killed.")
-    reuse_opportunities: list[PhaseReuseOpportunity] = Field(default_factory=list, description="Opportunities to reuse phase outputs in future runs.")
+    max_turnaround_minutes: int = Field(
+        default=60, description="Expected maximum turnaround time for this phase in minutes."
+    )
+    entry_criteria: list[str] = Field(
+        default_factory=list,
+        description="List of conditions that must be true before phase execution.",
+    )
+    exit_criteria: PhaseExitCriteria = Field(
+        default_factory=PhaseExitCriteria,
+        description="Criteria for successfully completing this phase.",
+    )
+    skip_conditions: list[PhaseSkipCondition] = Field(
+        default_factory=list, description="Conditions under which this phase can be skipped."
+    )
+    kill_conditions: list[PhaseKillCondition] = Field(
+        default_factory=list, description="Conditions under which this phase should be killed."
+    )
+    reuse_opportunities: list[PhaseReuseOpportunity] = Field(
+        default_factory=list, description="Opportunities to reuse phase outputs in future runs."
+    )
 
 
 DEFAULT_PHASE_POLICIES: dict[OperatingPhase, OperatingPhasePolicy] = {
@@ -166,13 +203,20 @@ DEFAULT_PHASE_POLICIES: dict[OperatingPhase, OperatingPhasePolicy] = {
         owner="content lead",
         max_turnaround_minutes=5,
         entry_criteria=["strategy memory exists"],
-        exit_criteria=PhaseExitCriteria(description="Strategy memory loaded and validated", required_artifacts=["strategy"]),
+        exit_criteria=PhaseExitCriteria(
+            description="Strategy memory loaded and validated", required_artifacts=["strategy"]
+        ),
         skip_conditions=[],
         kill_conditions=[
-            PhaseKillCondition(reason="Strategy memory is corrupted", abort_pipeline=False, preserve_artifacts=True),
+            PhaseKillCondition(
+                reason="Strategy memory is corrupted", abort_pipeline=False, preserve_artifacts=True
+            ),
         ],
         reuse_opportunities=[
-            PhaseReuseOpportunity(description="Strategy memory persists across all runs", reuse_pattern="persistent_store"),
+            PhaseReuseOpportunity(
+                description="Strategy memory persists across all runs",
+                reuse_pattern="persistent_store",
+            ),
         ],
     ),
     OperatingPhase.PHASE_02_OPPORTUNITY: OperatingPhasePolicy(
@@ -193,11 +237,23 @@ DEFAULT_PHASE_POLICIES: dict[OperatingPhase, OperatingPhasePolicy] = {
             ),
         ],
         kill_conditions=[
-            PhaseKillCondition(reason="No ideas score above production threshold", abort_pipeline=False, preserve_artifacts=True),
-            PhaseKillCondition(reason="All ideas killed during scoring", abort_pipeline=True, preserve_artifacts=True),
+            PhaseKillCondition(
+                reason="No ideas score above production threshold",
+                abort_pipeline=False,
+                preserve_artifacts=True,
+            ),
+            PhaseKillCondition(
+                reason="All ideas killed during scoring",
+                abort_pipeline=True,
+                preserve_artifacts=True,
+            ),
         ],
         reuse_opportunities=[
-            PhaseReuseOpportunity(description="Scored backlog can be cached for 24 hours", reuse_pattern="cache", ttl_hours=24),
+            PhaseReuseOpportunity(
+                description="Scored backlog can be cached for 24 hours",
+                reuse_pattern="cache",
+                ttl_hours=24,
+            ),
         ],
     ),
     OperatingPhase.PHASE_03_RESEARCH: OperatingPhasePolicy(
@@ -218,11 +274,23 @@ DEFAULT_PHASE_POLICIES: dict[OperatingPhase, OperatingPhasePolicy] = {
             ),
         ],
         kill_conditions=[
-            PhaseKillCondition(reason="Research pack has zero usable claims", abort_pipeline=False, preserve_artifacts=True),
-            PhaseKillCondition(reason="All claims flagged as unsafe with no safe alternative", abort_pipeline=True, preserve_artifacts=True),
+            PhaseKillCondition(
+                reason="Research pack has zero usable claims",
+                abort_pipeline=False,
+                preserve_artifacts=True,
+            ),
+            PhaseKillCondition(
+                reason="All claims flagged as unsafe with no safe alternative",
+                abort_pipeline=True,
+                preserve_artifacts=True,
+            ),
         ],
         reuse_opportunities=[
-            PhaseReuseOpportunity(description="Research pack can be reused within same opportunity", reuse_pattern="cache", ttl_hours=168),
+            PhaseReuseOpportunity(
+                description="Research pack can be reused within same opportunity",
+                reuse_pattern="cache",
+                ttl_hours=168,
+            ),
         ],
     ),
     OperatingPhase.PHASE_04_DRAFT: OperatingPhasePolicy(
@@ -238,11 +306,22 @@ DEFAULT_PHASE_POLICIES: dict[OperatingPhase, OperatingPhasePolicy] = {
         ),
         skip_conditions=[],
         kill_conditions=[
-            PhaseKillCondition(reason="Script failed QC after maximum iterations", abort_pipeline=False, preserve_artifacts=True),
-            PhaseKillCondition(reason="All beats marked as failed in targeted revision", abort_pipeline=True, preserve_artifacts=True),
+            PhaseKillCondition(
+                reason="Script failed QC after maximum iterations",
+                abort_pipeline=False,
+                preserve_artifacts=True,
+            ),
+            PhaseKillCondition(
+                reason="All beats marked as failed in targeted revision",
+                abort_pipeline=True,
+                preserve_artifacts=True,
+            ),
         ],
         reuse_opportunities=[
-            PhaseReuseOpportunity(description="Stable beats from iterative revision can be preserved", reuse_pattern="template"),
+            PhaseReuseOpportunity(
+                description="Stable beats from iterative revision can be preserved",
+                reuse_pattern="template",
+            ),
         ],
     ),
     OperatingPhase.PHASE_05_VISUAL: OperatingPhasePolicy(
@@ -263,10 +342,17 @@ DEFAULT_PHASE_POLICIES: dict[OperatingPhase, OperatingPhasePolicy] = {
             ),
         ],
         kill_conditions=[
-            PhaseKillCondition(reason="Visual plan references missing assets", abort_pipeline=False, preserve_artifacts=True),
+            PhaseKillCondition(
+                reason="Visual plan references missing assets",
+                abort_pipeline=False,
+                preserve_artifacts=True,
+            ),
         ],
         reuse_opportunities=[
-            PhaseReuseOpportunity(description="Production brief templates for recurring shoot setups", reuse_pattern="template"),
+            PhaseReuseOpportunity(
+                description="Production brief templates for recurring shoot setups",
+                reuse_pattern="template",
+            ),
         ],
     ),
     OperatingPhase.PHASE_06_QC: OperatingPhasePolicy(
@@ -281,10 +367,17 @@ DEFAULT_PHASE_POLICIES: dict[OperatingPhase, OperatingPhasePolicy] = {
         ),
         skip_conditions=[],
         kill_conditions=[
-            PhaseKillCondition(reason="Human QC blocked with must-fix items not resolved", abort_pipeline=False, preserve_artifacts=True),
+            PhaseKillCondition(
+                reason="Human QC blocked with must-fix items not resolved",
+                abort_pipeline=False,
+                preserve_artifacts=True,
+            ),
         ],
         reuse_opportunities=[
-            PhaseReuseOpportunity(description="QC checklist templates for recurring issue patterns", reuse_pattern="template"),
+            PhaseReuseOpportunity(
+                description="QC checklist templates for recurring issue patterns",
+                reuse_pattern="template",
+            ),
         ],
     ),
     OperatingPhase.PHASE_07_PUBLISH: OperatingPhasePolicy(
@@ -299,10 +392,17 @@ DEFAULT_PHASE_POLICIES: dict[OperatingPhase, OperatingPhasePolicy] = {
         ),
         skip_conditions=[],
         kill_conditions=[
-            PhaseKillCondition(reason="Platform constraints violated by latest changes", abort_pipeline=False, preserve_artifacts=True),
+            PhaseKillCondition(
+                reason="Platform constraints violated by latest changes",
+                abort_pipeline=False,
+                preserve_artifacts=True,
+            ),
         ],
         reuse_opportunities=[
-            PhaseReuseOpportunity(description="Publish scheduling patterns inform future timing", reuse_pattern="learning"),
+            PhaseReuseOpportunity(
+                description="Publish scheduling patterns inform future timing",
+                reuse_pattern="learning",
+            ),
         ],
     ),
 }
@@ -310,7 +410,9 @@ DEFAULT_PHASE_POLICIES: dict[OperatingPhase, OperatingPhasePolicy] = {
 
 def get_phase_policy(phase: OperatingPhase) -> OperatingPhasePolicy:
     """Get the operating policy for a phase."""
-    return DEFAULT_PHASE_POLICIES.get(phase, OperatingPhasePolicy(phase=phase, phase_label=phase.value))
+    return DEFAULT_PHASE_POLICIES.get(
+        phase, OperatingPhasePolicy(phase=phase, phase_label=phase.value)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -354,12 +456,25 @@ class PipelineStageTrace(BaseModel):
     stage_index: int
     stage_name: str
     stage_label: str
-    phase: OperatingPhase = Field(default="phase_02_opportunity", description="The operating phase this stage belongs to.")
-    phase_label: str = Field(default="Opportunity & Ideation", description="Human-readable phase name.")
-    policy: OperatingPhasePolicy | None = Field(default=None, description="The operating policy that governed this stage's execution.")
-    skip_reason: str = Field(default="", description="Reason for skipping this stage (if status is 'skipped').")
-    kill_reason: str = Field(default="", description="Reason for killing this stage early (if status is 'killed').")
-    policy_override: str = Field(default="", description="Description of any manual policy override applied to this stage.")
+    phase: OperatingPhase = Field(
+        default=OperatingPhase.PHASE_02_OPPORTUNITY,
+        description="The operating phase this stage belongs to.",
+    )
+    phase_label: str = Field(
+        default="Opportunity & Ideation", description="Human-readable phase name."
+    )
+    policy: OperatingPhasePolicy | None = Field(
+        default=None, description="The operating policy that governed this stage's execution."
+    )
+    skip_reason: str = Field(
+        default="", description="Reason for skipping this stage (if status is 'skipped')."
+    )
+    kill_reason: str = Field(
+        default="", description="Reason for killing this stage early (if status is 'killed')."
+    )
+    policy_override: str = Field(
+        default="", description="Description of any manual policy override applied to this stage."
+    )
     status: str = "completed"
     started_at: str = ""
     completed_at: str = ""
@@ -495,4 +610,3 @@ class PipelineContext(BaseModel):
 
 # Import uuid at runtime to avoid top-level import issues
 from uuid import uuid4  # noqa: E402
-

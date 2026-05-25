@@ -48,6 +48,10 @@ class RetrievalResult:
     context: KnowledgeContext
     explanation: RetrievalExplanation
 
+    def __getattr__(self, name: str) -> object:
+        """Delegate legacy KnowledgeContext attribute access to context."""
+        return getattr(self.context, name)
+
 
 class KnowledgeContext:
     """Retrieved context from the knowledge vault for research planning."""

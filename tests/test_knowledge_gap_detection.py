@@ -5,6 +5,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+from fastapi.testclient import TestClient
+
 from cc_deep_research.knowledge import (
     EdgeKind,
     KnowledgeEdge,
@@ -27,6 +30,7 @@ from cc_deep_research.knowledge.gap_detection import (
     detect_gaps,
 )
 from cc_deep_research.knowledge.graph_index import GraphIndex
+from cc_deep_research.web_server import create_app
 
 # ---------------------------------------------------------------------------
 # Helper data classes
@@ -66,6 +70,17 @@ def _make_edge(
 # ---------------------------------------------------------------------------
 # Edge map building tests
 # ---------------------------------------------------------------------------
+
+
+def test_accepted_gaps_route_is_not_shadowed(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The accepted-gaps endpoint should not route as a gap id."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    client = TestClient(create_app())
+    response = client.get("/api/knowledge/gaps/accepted")
+
+    assert response.status_code == 200
+    assert response.json() == {"gaps": [], "total": 0}
 
 
 class TestEdgeMapBuilding:
@@ -395,7 +410,10 @@ class TestGapStore:
         # Accept the gap
         result = store.update_status("gap:test:2", GapStatus.ACCEPTED)
         assert result is True
-        assert store.gap("gap:test:2") is not None and store.gap("gap:test:2").status == GapStatus.ACCEPTED
+        assert (
+            store.gap("gap:test:2") is not None
+            and store.gap("gap:test:2").status == GapStatus.ACCEPTED
+        )
 
         # Resolve the gap
         result = store.update_status("gap:test:2", GapStatus.RESOLVED)
@@ -465,11 +483,17 @@ class TestGapStore:
         store.add_gap(gap)
 
         store.update_status("gap:defer:1", GapStatus.DEFERRED)
-        assert store.gap("gap:defer:1") is not None and store.gap("gap:defer:1").status == GapStatus.DEFERRED
+        assert (
+            store.gap("gap:defer:1") is not None
+            and store.gap("gap:defer:1").status == GapStatus.DEFERRED
+        )
 
         # Re-accept
         store.update_status("gap:defer:1", GapStatus.ACCEPTED)
-        assert store.gap("gap:defer:1") is not None and store.gap("gap:defer:1").status == GapStatus.ACCEPTED
+        assert (
+            store.gap("gap:defer:1") is not None
+            and store.gap("gap:defer:1").status == GapStatus.ACCEPTED
+        )
 
         # Then resolve
         store.update_status("gap:defer:1", GapStatus.RESOLVED)
@@ -528,16 +552,16 @@ class TestDetectGaps:
         index.upsert_node(_make_node("orphan:1", NodeKind.CLAIM, "Orphan claim"))
 
         # Low-source claim (no cited edge, low confidence)
-        index.upsert_node(_make_node(
-            "unsourced:1", NodeKind.CLAIM, "Unsourced claim",
-            {"confidence": 0.3}
-        ))
+        index.upsert_node(
+            _make_node("unsourced:1", NodeKind.CLAIM, "Unsourced claim", {"confidence": 0.3})
+        )
 
         # Stale claim
-        index.upsert_node(_make_node(
-            "stale:1", NodeKind.CLAIM, "Dated claim",
-            {"freshness": "dated", "confidence": 0.6}
-        ))
+        index.upsert_node(
+            _make_node(
+                "stale:1", NodeKind.CLAIM, "Dated claim", {"freshness": "dated", "confidence": 0.6}
+            )
+        )
 
         # Sparse entity (only 1 edge)
         index.upsert_node(_make_node("sparse:1", NodeKind.ENTITY, "Sparse entity"))
@@ -569,10 +593,9 @@ class TestDetectGaps:
         db = tmp_path / "test.sqlite"
         index = GraphIndex(db)
 
-        index.upsert_node(_make_node(
-            "unsourced:1", NodeKind.CLAIM, "Unsourced claim",
-            {"confidence": 0.3}
-        ))
+        index.upsert_node(
+            _make_node("unsourced:1", NodeKind.CLAIM, "Unsourced claim", {"confidence": 0.3})
+        )
         index.commit()
 
         first = detect_gaps(index)

@@ -204,9 +204,7 @@ def _query_analytics_data(
             "archived_sessions": archived_count,
             "active_sessions": active_count,
         },
-        "status_counts": [
-            {"status": str(row[0]), "count": int(row[1])} for row in status_counts
-        ],
+        "status_counts": [{"status": str(row[0]), "count": int(row[1])} for row in status_counts],
         "duration_by_status": [
             {
                 "status": str(row[0]),
@@ -316,25 +314,29 @@ def register_misc_routes(app: FastAPI) -> None:
         }
 
         if not cache_enabled:
-            response.update({
-                "total_entries": 0,
-                "active_entries": 0,
-                "expired_entries": 0,
-                "total_hits": 0,
-                "approximate_size_bytes": 0,
-                "db_exists": False,
-            })
+            response.update(
+                {
+                    "total_entries": 0,
+                    "active_entries": 0,
+                    "expired_entries": 0,
+                    "total_hits": 0,
+                    "approximate_size_bytes": 0,
+                    "db_exists": False,
+                }
+            )
             return JSONResponse(content=response)
 
         if not db_path.exists():
-            response.update({
-                "total_entries": 0,
-                "active_entries": 0,
-                "expired_entries": 0,
-                "total_hits": 0,
-                "approximate_size_bytes": 0,
-                "db_exists": False,
-            })
+            response.update(
+                {
+                    "total_entries": 0,
+                    "active_entries": 0,
+                    "expired_entries": 0,
+                    "total_hits": 0,
+                    "approximate_size_bytes": 0,
+                    "db_exists": False,
+                }
+            )
             return JSONResponse(content=response)
 
         store = SearchCacheStore(db_path, max_entries=config.search_cache.max_entries)
@@ -457,20 +459,24 @@ def register_misc_routes(app: FastAPI) -> None:
         from cc_deep_research.benchmark import validate_benchmark_corpus as _validate
 
         errors = _validate(corpus)
-        return JSONResponse(content={
-            "valid": len(errors) == 0,
-            "errors": errors,
-            "total_cases": len(corpus.cases),
-        })
+        return JSONResponse(
+            content={
+                "valid": len(errors) == 0,
+                "errors": errors,
+                "total_cases": len(corpus.cases),
+            }
+        )
 
     @app.get("/api/benchmarks/runs")
     async def list_benchmark_runs() -> JSONResponse:
         """List available benchmark runs."""
         runs = _list_benchmark_runs()
-        return JSONResponse(content={
-            "runs": runs,
-            "total": len(runs),
-        })
+        return JSONResponse(
+            content={
+                "runs": runs,
+                "total": len(runs),
+            }
+        )
 
     @app.get("/api/benchmarks/runs/{run_id}")
     async def get_benchmark_run(run_id: str) -> JSONResponse:
@@ -527,7 +533,9 @@ def register_misc_routes(app: FastAPI) -> None:
     async def run_benchmark(
         workflow_mode: str = Query(default="staged", description="Research workflow mode"),
         depth: str = Query(default="standard", description="Research depth"),
-        output_dir: str | None = Query(default=None, description="Output directory for benchmark run"),
+        output_dir: str | None = Query(
+            default=None, description="Output directory for benchmark run"
+        ),
     ) -> JSONResponse:
         """Trigger a benchmark corpus run."""
         import asyncio
@@ -546,8 +554,10 @@ def register_misc_routes(app: FastAPI) -> None:
             )
 
         configuration = {"workflow_mode": workflow_mode, "depth": depth}
-        run_output_dir = Path(output_dir) if output_dir else _get_benchmark_runs_dir() / Path(
-            datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+        run_output_dir = (
+            Path(output_dir)
+            if output_dir
+            else _get_benchmark_runs_dir() / Path(datetime.now(UTC).strftime("%Y%m%d_%H%M%S"))
         )
 
         def run_case(case: BenchmarkCase) -> ResearchSession:
@@ -568,13 +578,15 @@ def register_misc_routes(app: FastAPI) -> None:
                 output_dir=run_output_dir,
                 configuration=configuration,
             )
-            return JSONResponse(content={
-                "run_id": run_output_dir.name,
-                "output_dir": str(run_output_dir),
-                "total_cases": report.scorecard.total_cases,
-                "workflow_mode": report.scorecard.workflow_mode,
-                "average_validation_score": report.scorecard.average_validation_score,
-            })
+            return JSONResponse(
+                content={
+                    "run_id": run_output_dir.name,
+                    "output_dir": str(run_output_dir),
+                    "total_cases": report.scorecard.total_cases,
+                    "workflow_mode": report.scorecard.workflow_mode,
+                    "average_validation_score": report.scorecard.average_validation_score,
+                }
+            )
         except Exception as e:
             return JSONResponse(
                 content={"error": f"Benchmark run failed: {str(e)}"},
@@ -622,10 +634,20 @@ def register_misc_routes(app: FastAPI) -> None:
     async def list_benchmarks_baselines() -> JSONResponse:
         """List all golden baselines."""
         baselines = list_baselines()
-        return JSONResponse(content={
-            "baselines": [b.to_dict() for b in baselines],
-            "total": len(baselines),
-        })
+        return JSONResponse(
+            content={
+                "baselines": [b.to_dict() for b in baselines],
+                "total": len(baselines),
+            }
+        )
+
+    @app.get("/api/benchmarks/baselines/promoted")
+    async def get_promoted_benchmark_baseline() -> JSONResponse:
+        """Get the currently promoted (active) golden baseline."""
+        baseline = get_promoted_baseline()
+        if baseline is None:
+            return JSONResponse(content={"baseline": None})
+        return JSONResponse(content={"baseline": baseline.to_dict()})
 
     @app.get("/api/benchmarks/baselines/{run_id}")
     async def get_benchmark_baseline(run_id: str) -> JSONResponse:
@@ -673,22 +695,22 @@ def register_misc_routes(app: FastAPI) -> None:
             )
         return JSONResponse(content={"deleted": True, "run_id": run_id})
 
-    @app.get("/api/benchmarks/baselines/promoted")
-    async def get_promoted_benchmark_baseline() -> JSONResponse:
-        """Get the currently promoted (active) golden baseline."""
-        baseline = get_promoted_baseline()
-        if baseline is None:
-            return JSONResponse(content={"baseline": None})
-        return JSONResponse(content={"baseline": baseline.to_dict()})
-
     @app.post("/api/benchmarks/gate")
     async def evaluate_benchmark_gate(
         baseline_run_id: str = Query(..., description="Baseline run ID"),
         candidate_run_id: str = Query(..., description="Candidate run ID"),
-        min_pass_rate: float = Query(default=0.8, ge=0.0, le=1.0, description="Minimum pass rate threshold"),
-        min_validation_score: float = Query(default=0.6, ge=0.0, le=1.0, description="Minimum validation score threshold"),
-        max_latency_increase_ratio: float = Query(default=0.2, ge=0.0, description="Max fractional latency increase"),
-        override_notes: str | None = Query(default=None, description="Override notes if regression is accepted"),
+        min_pass_rate: float = Query(
+            default=0.8, ge=0.0, le=1.0, description="Minimum pass rate threshold"
+        ),
+        min_validation_score: float = Query(
+            default=0.6, ge=0.0, le=1.0, description="Minimum validation score threshold"
+        ),
+        max_latency_increase_ratio: float = Query(
+            default=0.2, ge=0.0, description="Max fractional latency increase"
+        ),
+        override_notes: str | None = Query(
+            default=None, description="Override notes if regression is accepted"
+        ),
     ) -> JSONResponse:
         """Evaluate a candidate benchmark run against a named baseline."""
         baseline = load_baseline_run(baseline_run_id)
@@ -761,7 +783,9 @@ def register_misc_routes(app: FastAPI) -> None:
         runs: list[dict[str, Any]] = []
 
         if runs_dir.exists():
-            for run_path in sorted(runs_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+            for run_path in sorted(
+                runs_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True
+            ):
                 if not run_path.is_dir():
                     continue
                 manifest_path = run_path / "manifest.json"
@@ -776,26 +800,29 @@ def register_misc_routes(app: FastAPI) -> None:
                     continue
 
                 pass_count = sum(
-                    1 for c in manifest.get("cases", [])
-                    if c.get("stop_reason") == "success"
+                    1 for c in manifest.get("cases", []) if c.get("stop_reason") == "success"
                 )
                 total = scorecard.get("total_cases", 0)
-                runs.append({
-                    "run_id": run_path.name,
-                    "generated_at": manifest.get("generated_at"),
-                    "corpus_version": manifest.get("corpus_version"),
-                    "workflow_mode": scorecard.get("workflow_mode"),
-                    "total_cases": total,
-                    "pass_count": pass_count,
-                    "pass_rate": round(pass_count / total, 3) if total > 0 else None,
-                    "average_validation_score": scorecard.get("average_validation_score"),
-                    "average_latency_ms": scorecard.get("average_latency_ms"),
-                    "average_report_quality_score": scorecard.get("average_report_quality_score"),
-                    "average_source_count": scorecard.get("average_source_count"),
-                    "date_sensitive_cases": scorecard.get("date_sensitive_cases"),
-                    "stop_reasons": scorecard.get("stop_reasons", {}),
-                    "categories": scorecard.get("categories", {}),
-                })
+                runs.append(
+                    {
+                        "run_id": run_path.name,
+                        "generated_at": manifest.get("generated_at"),
+                        "corpus_version": manifest.get("corpus_version"),
+                        "workflow_mode": scorecard.get("workflow_mode"),
+                        "total_cases": total,
+                        "pass_count": pass_count,
+                        "pass_rate": round(pass_count / total, 3) if total > 0 else None,
+                        "average_validation_score": scorecard.get("average_validation_score"),
+                        "average_latency_ms": scorecard.get("average_latency_ms"),
+                        "average_report_quality_score": scorecard.get(
+                            "average_report_quality_score"
+                        ),
+                        "average_source_count": scorecard.get("average_source_count"),
+                        "date_sensitive_cases": scorecard.get("date_sensitive_cases"),
+                        "stop_reasons": scorecard.get("stop_reasons", {}),
+                        "categories": scorecard.get("categories", {}),
+                    }
+                )
 
                 if len(runs) >= limit:
                     break
