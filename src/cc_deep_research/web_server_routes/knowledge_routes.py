@@ -20,6 +20,53 @@ from cc_deep_research.knowledge.vault import (
 from cc_deep_research.session_store import SessionStore, get_default_session_dir
 
 
+def _run_knowledge_backfill(session_ids: list[str]) -> dict[str, object]:
+    """Ingest saved sessions into the knowledge vault in a background thread."""
+    store = SessionStore()
+    ingested = 0
+    failed = 0
+    errors: list[dict[str, str]] = []
+
+    for session_id in session_ids:
+        session = store.load_session(session_id)
+        if session is None:
+            failed += 1
+            errors.append({"session_id": session_id, "error": "could not load"})
+            continue
+
+        try:
+            ingest_session(session, config_path=None)
+            ingested += 1
+        except Exception as exc:
+            failed += 1
+            errors.append({"session_id": session_id, "error": str(exc)})
+
+    return {
+        "dry_run": False,
+        "total_sessions": len(session_ids),
+        "ingested": ingested,
+        "failed": failed,
+        "errors": errors,
+    }
+
+
+def _run_knowledge_index_rebuild(config_path: Path | None) -> dict[str, object]:
+    """Clear and rebuild the SQLite graph index in a background thread."""
+    from cc_deep_research.knowledge.vault import graph_sqlite_path
+
+    db_path = graph_sqlite_path(config_path)
+    index = GraphIndex(db_path)
+    try:
+        index.clear()
+        index.commit()
+    finally:
+        index.close()
+    return {
+        "rebuilt": True,
+        "db_path": str(db_path),
+    }
+
+
 def _open_graph_index(config_path: Path | None = None) -> GraphIndex | None:
     """Open the graph index if the vault exists."""
     from cc_deep_research.knowledge.vault import graph_sqlite_path
@@ -434,9 +481,8 @@ def register_knowledge_routes(app: FastAPI) -> None:
                 status_code=404,
             )
 
-        # Get edges connected to this node
-        all_edges = index.all_edges()
-        neighbors_edges = [e for e in all_edges if e.source_id == node_id or e.target_id == node_id]
+        # Get edges connected to this node through indexed source/target lookups.
+        neighbors_edges = index.edges_for_node(node_id)
 
         # Get neighbor nodes
         neighbor_ids: set[str] = set()
@@ -446,11 +492,7 @@ def register_knowledge_routes(app: FastAPI) -> None:
             else:
                 neighbor_ids.add(edge.source_id)
 
-        neighbor_nodes = []
-        for nid in neighbor_ids:
-            n = index.node(nid)
-            if n is not None:
-                neighbor_nodes.append(n)
+        neighbor_nodes = index.nodes_by_ids(sorted(neighbor_ids))
 
         return JSONResponse(
             content={
@@ -493,7 +535,10 @@ def register_knowledge_routes(app: FastAPI) -> None:
         ),
     ) -> JSONResponse:
         """Ingest all saved sessions into the knowledge vault."""
-        store = SessionStore()
+        import asyncio
+
+        from cc_deep_research.web_server import get_background_job_registry
+
         sessions_dir = get_default_session_dir()
 
         if not sessions_dir.exists():
@@ -517,32 +562,35 @@ def register_knowledge_routes(app: FastAPI) -> None:
                 }
             )
 
-        ingested = 0
-        failed = 0
-        errors: list[dict[str, str]] = []
-        for sf in session_files:
-            session_id = sf.stem
-            session = store.load_session(session_id)
-            if session is None:
-                failed += 1
-                errors.append({"session_id": session_id, "error": "could not load"})
-                continue
+        session_ids = [sf.stem for sf in session_files]
+        job_registry = get_background_job_registry(app)
+        job = job_registry.create_job(
+            "knowledge.backfill",
+            metadata={
+                "total_sessions": len(session_ids),
+                "limit": limit,
+            },
+        )
 
+        async def run_backfill_job() -> None:
+            job_registry.mark_running(job.job_id)
             try:
-                result = ingest_session(session, config_path=None)
-                ingested += 1
+                result = await asyncio.to_thread(_run_knowledge_backfill, session_ids)
+                job_registry.mark_completed(job.job_id, result=result)
             except Exception as exc:
-                failed += 1
-                errors.append({"session_id": session_id, "error": str(exc)})
+                job_registry.mark_failed(job.job_id, error=str(exc))
 
+        task = asyncio.create_task(run_backfill_job())
+        job_registry.attach_task(job.job_id, task)
         return JSONResponse(
             content={
-                "dry_run": False,
-                "total_sessions": len(session_files),
-                "ingested": ingested,
-                "failed": failed,
-                "errors": errors,
-            }
+                "job_id": job.job_id,
+                "kind": job.kind,
+                "status": job.status,
+                "total_sessions": len(session_ids),
+                "status_url": f"/api/jobs/{job.job_id}",
+            },
+            status_code=202,
         )
 
     @app.post("/api/knowledge/rebuild-index")
@@ -550,7 +598,9 @@ def register_knowledge_routes(app: FastAPI) -> None:
         config_path: Path | None = Query(default=None, description="Path to config file"),
     ) -> JSONResponse:
         """Clear and rebuild the SQLite graph index."""
-        from cc_deep_research.knowledge.vault import graph_sqlite_path
+        import asyncio
+
+        from cc_deep_research.web_server import get_background_job_registry
 
         vault = vault_root(config_path)
 
@@ -560,24 +610,30 @@ def register_knowledge_routes(app: FastAPI) -> None:
                 status_code=400,
             )
 
-        db_path = graph_sqlite_path(config_path)
+        job_registry = get_background_job_registry(app)
+        job = job_registry.create_job(
+            "knowledge.rebuild_index",
+            metadata={"config_path": str(config_path) if config_path is not None else None},
+        )
 
-        try:
-            index = GraphIndex(db_path)
-            index.clear()
-            index.commit()
-            index.close()
-        except Exception as exc:
-            return JSONResponse(
-                content={"error": f"Failed to rebuild index: {str(exc)}"},
-                status_code=500,
-            )
+        async def run_rebuild_job() -> None:
+            job_registry.mark_running(job.job_id)
+            try:
+                result = await asyncio.to_thread(_run_knowledge_index_rebuild, config_path)
+                job_registry.mark_completed(job.job_id, result=result)
+            except Exception as exc:
+                job_registry.mark_failed(job.job_id, error=str(exc))
 
+        task = asyncio.create_task(run_rebuild_job())
+        job_registry.attach_task(job.job_id, task)
         return JSONResponse(
             content={
-                "rebuilt": True,
-                "db_path": str(db_path),
-            }
+                "job_id": job.job_id,
+                "kind": job.kind,
+                "status": job.status,
+                "status_url": f"/api/jobs/{job.job_id}",
+            },
+            status_code=202,
         )
 
     @app.get("/api/knowledge/health")

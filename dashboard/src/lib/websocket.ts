@@ -19,6 +19,7 @@ interface UseWebSocketOptions {
 }
 
 const MAX_RECONNECT_ATTEMPTS = DEFAULT_LIVE_STREAM_STATUS.maxReconnectAttempts;
+const INITIAL_HISTORY_LIMIT = 500;
 
 function toIsoTimestamp(timeMs: number = Date.now()): string {
   return new Date(timeMs).toISOString();
@@ -189,7 +190,7 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
       // Request history
       const historyMessage: WSClientGetHistoryMessage = {
         type: 'get_history',
-        limit: 1000,
+        limit: INITIAL_HISTORY_LIMIT,
       };
       ws.send(JSON.stringify(historyMessage));
     };

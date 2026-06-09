@@ -53,6 +53,47 @@ def _get_research_theme_list() -> list[dict[str, str]]:
     ]
 
 
+def _run_benchmark_job(
+    *,
+    workflow_mode: str,
+    depth: str,
+    output_dir: str,
+) -> dict[str, Any]:
+    """Run the benchmark corpus inside a background worker thread."""
+    from cc_deep_research.benchmark import BenchmarkCase
+    from cc_deep_research.models import ResearchDepth, ResearchSession
+    from cc_deep_research.research_runs.models import ResearchRunRequest, ResearchWorkflow
+    from cc_deep_research.research_runs.service import ResearchRunService
+
+    corpus = load_benchmark_corpus()
+    configuration = {"workflow_mode": workflow_mode, "depth": depth}
+    run_output_dir = Path(output_dir)
+
+    def run_case(case: BenchmarkCase) -> ResearchSession:
+        """Execute one benchmark case as a research run and return the session."""
+        service = ResearchRunService()
+        request = ResearchRunRequest(
+            query=case.query,
+            depth=ResearchDepth(depth),
+            workflow=ResearchWorkflow(workflow_mode),
+        )
+        return service.run(request).session
+
+    report = run_benchmark_corpus_sync(
+        corpus,
+        run_case=run_case,
+        output_dir=run_output_dir,
+        configuration=configuration,
+    )
+    return {
+        "run_id": run_output_dir.name,
+        "output_dir": str(run_output_dir),
+        "total_cases": report.scorecard.total_cases,
+        "workflow_mode": report.scorecard.workflow_mode,
+        "average_validation_score": report.scorecard.average_validation_score,
+    }
+
+
 def _query_analytics_data(
     db_path: Path | None = None,
     days_back: int = 30,
@@ -189,7 +230,7 @@ def _query_analytics_data(
 
     session_store = SessionStore()
     saved_sessions = session_store.list_sessions()
-    archived_count = len(session_store.get_archived_session_ids())
+    archived_count = sum(1 for s in saved_sessions if s.get("archived", False))
     active_count = sum(1 for s in saved_sessions if not s.get("archived", False))
 
     return {
@@ -540,58 +581,50 @@ def register_misc_routes(app: FastAPI) -> None:
         """Trigger a benchmark corpus run."""
         import asyncio
 
-        from cc_deep_research.benchmark import BenchmarkCase
-        from cc_deep_research.models import ResearchDepth, ResearchSession
-        from cc_deep_research.research_runs.models import ResearchRunRequest, ResearchWorkflow
-        from cc_deep_research.research_runs.service import ResearchRunService
+        from cc_deep_research.web_server import get_background_job_registry
 
-        try:
-            corpus = load_benchmark_corpus()
-        except Exception as e:
-            return JSONResponse(
-                content={"error": f"Failed to load benchmark corpus: {str(e)}"},
-                status_code=500,
-            )
-
-        configuration = {"workflow_mode": workflow_mode, "depth": depth}
         run_output_dir = (
             Path(output_dir)
             if output_dir
             else _get_benchmark_runs_dir() / Path(datetime.now(UTC).strftime("%Y%m%d_%H%M%S"))
         )
+        job_registry = get_background_job_registry(app)
+        job = job_registry.create_job(
+            "benchmark.run",
+            metadata={
+                "workflow_mode": workflow_mode,
+                "depth": depth,
+                "output_dir": str(run_output_dir),
+                "run_id": run_output_dir.name,
+            },
+        )
 
-        def run_case(case: BenchmarkCase) -> ResearchSession:
-            """Execute one benchmark case as a research run and return the session."""
-            loop = asyncio.get_event_loop()
-            service = ResearchRunService()
-            request = ResearchRunRequest(
-                query=case.query,
-                depth=ResearchDepth(depth),
-                workflow=ResearchWorkflow(workflow_mode),
-            )
-            return loop.run_in_executor(None, lambda: service.run(request)).result().session
+        async def run_benchmark_background() -> None:
+            job_registry.mark_running(job.job_id)
+            try:
+                result = await asyncio.to_thread(
+                    _run_benchmark_job,
+                    workflow_mode=workflow_mode,
+                    depth=depth,
+                    output_dir=str(run_output_dir),
+                )
+                job_registry.mark_completed(job.job_id, result=result)
+            except Exception as exc:
+                job_registry.mark_failed(job.job_id, error=str(exc))
 
-        try:
-            report = run_benchmark_corpus_sync(
-                corpus,
-                run_case=run_case,
-                output_dir=run_output_dir,
-                configuration=configuration,
-            )
-            return JSONResponse(
-                content={
-                    "run_id": run_output_dir.name,
-                    "output_dir": str(run_output_dir),
-                    "total_cases": report.scorecard.total_cases,
-                    "workflow_mode": report.scorecard.workflow_mode,
-                    "average_validation_score": report.scorecard.average_validation_score,
-                }
-            )
-        except Exception as e:
-            return JSONResponse(
-                content={"error": f"Benchmark run failed: {str(e)}"},
-                status_code=500,
-            )
+        task = asyncio.create_task(run_benchmark_background())
+        job_registry.attach_task(job.job_id, task)
+        return JSONResponse(
+            content={
+                "job_id": job.job_id,
+                "kind": job.kind,
+                "status": job.status,
+                "run_id": run_output_dir.name,
+                "output_dir": str(run_output_dir),
+                "status_url": f"/api/jobs/{job.job_id}",
+            },
+            status_code=202,
+        )
 
     @app.post("/api/benchmarks/compare")
     async def compare_benchmark(

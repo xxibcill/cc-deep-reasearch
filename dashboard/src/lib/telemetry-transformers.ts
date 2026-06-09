@@ -801,13 +801,27 @@ export function filterEvents(
   });
 }
 
-export function deriveTelemetryState(events: TelemetryEvent[]): TelemetryDerivedState {
+interface DeriveTelemetryStateOptions {
+  includeGraph?: boolean;
+  includeTimeline?: boolean;
+  includeTools?: boolean;
+  includeLlm?: boolean;
+}
+
+export function deriveTelemetryState(
+  events: TelemetryEvent[],
+  options: DeriveTelemetryStateOptions = {}
+): TelemetryDerivedState {
+  const includeGraph = options.includeGraph ?? true;
+  const includeTimeline = options.includeTimeline ?? true;
+  const includeTools = options.includeTools ?? true;
+  const includeLlm = options.includeLlm ?? true;
   const sortedEvents = getSortedEvents(events);
   const phaseLookup = derivePhaseLookup(sortedEvents);
   const eventIndex = new Map(sortedEvents.map((event) => [event.eventId, event]));
-  const timeline = buildTimeline(sortedEvents, phaseLookup);
-  const toolExecutions = buildToolExecutions(sortedEvents, phaseLookup);
-  const llmReasoning = buildLLMReasoning(sortedEvents, phaseLookup);
+  const timeline = includeTimeline ? buildTimeline(sortedEvents, phaseLookup) : [];
+  const toolExecutions = includeTools ? buildToolExecutions(sortedEvents, phaseLookup) : [];
+  const llmReasoning = includeLlm ? buildLLMReasoning(sortedEvents, phaseLookup) : [];
   const categoryCounts = sortedEvents.reduce(
     (counts, event) => {
       counts.total += 1;
@@ -822,28 +836,42 @@ export function deriveTelemetryState(events: TelemetryEvent[]): TelemetryDerived
     },
     { total: 0, agent: 0, tool: 0, llm: 0 }
   );
+  const phases = Array.from(
+    new Set(
+      Array.from(phaseLookup.values()).filter((value): value is string => Boolean(value))
+    )
+  );
+  const tools = Array.from(
+    new Set(
+      sortedEvents
+        .filter((event) => event.category === 'tool')
+        .map((event) => event.name)
+    )
+  ).sort((left, right) => left.localeCompare(right));
+  const providers = Array.from(
+    new Set(
+      sortedEvents
+        .map((event) => {
+          const provider = event.metadata.provider;
+          return typeof provider === 'string' ? provider : null;
+        })
+        .filter((value): value is string => Boolean(value) && value !== 'unknown')
+    )
+  ).sort((left, right) => left.localeCompare(right));
 
   return {
-    graph: buildGraph(sortedEvents, phaseLookup),
+    graph: includeGraph ? buildGraph(sortedEvents, phaseLookup) : { nodes: [], edges: [] },
     timeline,
     toolExecutions,
     llmReasoning,
     phaseLookup,
     eventIndex,
-    phases: Array.from(new Set(timeline.map((item) => item.phase).filter((value): value is string => Boolean(value)))),
+    phases,
     agents: Array.from(
       new Set(sortedEvents.map((event) => event.agentId).filter((value): value is string => Boolean(value)))
     ),
-    tools: Array.from(
-      new Set(toolExecutions.map((execution) => execution.toolName))
-    ).sort((left, right) => left.localeCompare(right)),
-    providers: Array.from(
-      new Set(
-        llmReasoning
-          .map((interaction) => interaction.provider)
-          .filter((value) => value && value !== 'unknown')
-      )
-    ).sort((left, right) => left.localeCompare(right)),
+    tools,
+    providers,
     statuses: Array.from(new Set(sortedEvents.map((event) => event.status))).sort((left, right) =>
       left.localeCompare(right)
     ),

@@ -106,24 +106,62 @@ interface DashboardState {
 
 function sortEvents(events: TelemetryEvent[]): TelemetryEvent[] {
   return [...events].sort((left, right) => {
-    if (left.sequenceNumber !== right.sequenceNumber) {
-      return left.sequenceNumber - right.sequenceNumber;
-    }
-    return left.timestamp.localeCompare(right.timestamp);
+    return compareEvents(left, right);
   });
 }
 
-function mergeEvents(
+function compareEvents(left: TelemetryEvent, right: TelemetryEvent): number {
+  if (left.sequenceNumber !== right.sequenceNumber) {
+    return left.sequenceNumber - right.sequenceNumber;
+  }
+  return left.timestamp.localeCompare(right.timestamp);
+}
+
+function isMonotonicAppend(
   existing: TelemetryEvent[],
   incoming: TelemetryEvent[],
-  options?: { limit?: number }
-): TelemetryEvent[] {
-  const byId = new Map(existing.map((event) => [event.eventId, event]));
-  for (const event of incoming) {
-    byId.set(event.eventId, event);
+): boolean {
+  if (incoming.length === 0) {
+    return true;
   }
-  const merged = sortEvents(Array.from(byId.values()));
-  return typeof options?.limit === 'number' ? merged.slice(-options.limit) : merged;
+  for (let index = 1; index < incoming.length; index += 1) {
+    if (compareEvents(incoming[index - 1], incoming[index]) > 0) {
+      return false;
+    }
+  }
+  const lastExisting = existing.at(-1);
+  return !lastExisting || compareEvents(lastExisting, incoming[0]) <= 0;
+}
+
+function buildEventIdSet(events: TelemetryEvent[]): Set<string> {
+  const eventIdSet = new Set<string>();
+  for (const event of events) {
+    eventIdSet.add(event.eventId);
+  }
+  return eventIdSet;
+}
+
+function mergeNewEvents(
+  existing: TelemetryEvent[],
+  incoming: TelemetryEvent[],
+  existingIds: Set<string>,
+): TelemetryEvent[] | null {
+  const uniqueIncoming: TelemetryEvent[] = [];
+  const nextIds = new Set(existingIds);
+  for (const event of incoming) {
+    if (!nextIds.has(event.eventId)) {
+      nextIds.add(event.eventId);
+      uniqueIncoming.push(event);
+    }
+  }
+  if (uniqueIncoming.length === 0) {
+    return null;
+  }
+
+  const merged = isMonotonicAppend(existing, uniqueIncoming)
+    ? [...existing, ...uniqueIncoming]
+    : sortEvents([...existing, ...uniqueIncoming]);
+  return merged.slice(-MAX_BUFFERED_EVENTS);
 }
 
 function mergeSessions(existing: Session[], incoming: Session[]): Session[] {
@@ -263,63 +301,37 @@ const useDashboardStore = create<DashboardState>((set) => ({
       for (const event of events) {
         newEventIdSet.add(event.eventId);
       }
-      return { events: sortEvents(events), eventIdSet: newEventIdSet };
+      return {
+        events: isMonotonicAppend([], events) ? events : sortEvents(events),
+        eventIdSet: newEventIdSet,
+      };
     }),
   appendEvent: (event) =>
     set((state) => {
       if (state.eventIdSet.has(event.eventId)) {
         return {};
       }
-      const newEvents = mergeEvents(state.events, [event], {
-        limit: MAX_BUFFERED_EVENTS,
-      });
-      // Rebuild eventIdSet from merged events (limit may have removed some)
-      const rebuiltEventIdSet = new Set<string>();
-      for (const e of newEvents) {
-        rebuiltEventIdSet.add(e.eventId);
+      const newEvents = mergeNewEvents(state.events, [event], state.eventIdSet);
+      if (!newEvents) {
+        return {};
       }
-      return { events: newEvents, eventIdSet: rebuiltEventIdSet };
+      return { events: newEvents, eventIdSet: buildEventIdSet(newEvents) };
     }),
   appendEvents: (events) =>
     set((state) => {
-      let changed = false;
-      const newEventIdSet = new Set(state.eventIdSet);
-      const newEventsList: TelemetryEvent[] = [...state.events];
-      for (const event of events) {
-        if (!newEventIdSet.has(event.eventId)) {
-          newEventIdSet.add(event.eventId);
-          newEventsList.push(event);
-          changed = true;
-        }
-      }
-      if (!changed) {
+      const newEvents = mergeNewEvents(state.events, events, state.eventIdSet);
+      if (!newEvents) {
         return {};
       }
-      const sorted = sortEvents(newEventsList);
-      const trimmed = sorted.slice(-MAX_BUFFERED_EVENTS);
-      const rebuiltEventIdSet = new Set<string>();
-      for (const e of trimmed) {
-        rebuiltEventIdSet.add(e.eventId);
-      }
-      return { events: trimmed, eventIdSet: rebuiltEventIdSet };
+      return { events: newEvents, eventIdSet: buildEventIdSet(newEvents) };
     }),
   appendBufferedEvents: (events) =>
     set((state) => {
-      const newEventIdSet = new Set(state.eventIdSet);
-      const newEventsList: TelemetryEvent[] = [...state.events];
-      for (const event of events) {
-        if (!newEventIdSet.has(event.eventId)) {
-          newEventIdSet.add(event.eventId);
-          newEventsList.push(event);
-        }
+      const newEvents = mergeNewEvents(state.events, events, state.eventIdSet);
+      if (!newEvents) {
+        return {};
       }
-      const sorted = sortEvents(newEventsList);
-      const trimmed = sorted.slice(-MAX_BUFFERED_EVENTS);
-      const trimmedEventIdSet = new Set<string>();
-      for (const e of trimmed) {
-        trimmedEventIdSet.add(e.eventId);
-      }
-      return { events: trimmed, eventIdSet: trimmedEventIdSet };
+      return { events: newEvents, eventIdSet: buildEventIdSet(newEvents) };
     }),
   setConnected: (connected) => set({ connected }),
   setLiveStreamStatus: (status) =>

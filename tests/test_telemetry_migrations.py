@@ -541,3 +541,65 @@ def test_ingest_applies_event_migration(tmp_path):
 
     assert result["sessions"] == 0  # No summary file
     assert result["events"] == 2
+
+
+def test_ingest_batches_event_inserts(tmp_path, monkeypatch):
+    """Ingestion should bulk insert migrated event rows instead of executing row-by-row."""
+    duckdb = pytest.importorskip("duckdb")
+    telemetry_dir = tmp_path / "telemetry"
+    session_dir = telemetry_dir / "bulk-session"
+    session_dir.mkdir(parents=True)
+    events = [
+        {
+            "event_id": f"evt-{index}",
+            "session_id": "bulk-session",
+            "sequence_number": index,
+            "timestamp": "2026-01-01T00:00:00Z",
+            "event_type": "test.event",
+            "category": "test",
+            "name": f"event-{index}",
+            "status": "info",
+            "metadata": {"index": index},
+        }
+        for index in range(5)
+    ]
+    (session_dir / "events.jsonl").write_text(
+        "\n".join(json.dumps(event) for event in events) + "\n",
+        encoding="utf-8",
+    )
+
+    class FakeResult:
+        def fetchone(self):
+            return None
+
+    class FakeConnection:
+        def __init__(self):
+            self.execute_calls = []
+            self.executemany_calls = []
+            self.closed = False
+
+        def execute(self, sql, params=None):
+            self.execute_calls.append((sql, params))
+            return FakeResult()
+
+        def executemany(self, sql, rows):
+            self.executemany_calls.append((sql, list(rows)))
+
+        def close(self):
+            self.closed = True
+
+    fake_conn = FakeConnection()
+    monkeypatch.setattr(duckdb, "connect", lambda _path: fake_conn)
+
+    result = ingest_telemetry_to_duckdb(telemetry_dir, tmp_path / "telemetry.duckdb")
+
+    row_insert_execute_calls = [
+        sql
+        for sql, _params in fake_conn.execute_calls
+        if "INSERT INTO telemetry_events" in sql
+    ]
+    assert result["events"] == 5
+    assert row_insert_execute_calls == []
+    assert len(fake_conn.executemany_calls) == 1
+    assert len(fake_conn.executemany_calls[0][1]) == 5
+    assert fake_conn.closed is True
