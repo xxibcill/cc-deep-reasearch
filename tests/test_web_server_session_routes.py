@@ -377,6 +377,49 @@ def test_session_list_uses_historical_duckdb_and_deduplicates_live_rows(
     }
 
 
+def test_session_list_uses_lightweight_live_summaries(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The session list route should not load full live session snapshots."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    telemetry_dir = tmp_path / "xdg" / "inqulume-studio" / "telemetry"
+    session_dir = telemetry_dir / "lightweight-summary"
+    session_dir.mkdir(parents=True)
+    (session_dir / "events.jsonl").write_text(
+        json.dumps(
+            {
+                "event_id": "event-1",
+                "sequence_number": 1,
+                "timestamp": "2026-05-25T10:00:00Z",
+                "session_id": "lightweight-summary",
+                "event_type": "session.started",
+                "category": "session",
+                "name": "session",
+                "status": "started",
+                "metadata": {"payload": "x" * 10000},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    def fail_snapshot(*_args, **_kwargs):
+        raise AssertionError("session list should not load full live snapshots")
+
+    monkeypatch.setattr(
+        "cc_deep_research.telemetry.live._read_live_session_snapshot",
+        fail_snapshot,
+    )
+
+    client = TestClient(create_app())
+    response = client.get("/api/sessions")
+
+    assert response.status_code == 200
+    sessions = response.json()["sessions"]
+    assert [session["session_id"] for session in sessions] == ["lightweight-summary"]
+    assert sessions[0]["event_count"] == 1
+
+
 def test_session_list_enriches_saved_and_telemetry_only_sessions(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -567,6 +610,52 @@ def test_session_detail_and_history_fall_back_to_historical_duckdb(
     # Check pagination metadata is present
     assert "has_more" in events_data or " next_cursor" in events_data
     "prev_cursor" in events_data
+
+
+def test_live_session_events_route_skips_expensive_detail_builders(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The live events route should page JSONL events without full detail analytics."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    telemetry_dir = tmp_path / "xdg" / "inqulume-studio" / "telemetry"
+    session_dir = telemetry_dir / "lightweight-live-events"
+    session_dir.mkdir(parents=True)
+    rows = []
+    for sequence_number in range(1, 5):
+        rows.append(
+            json.dumps(
+                {
+                    "event_id": f"event-{sequence_number}",
+                    "sequence_number": sequence_number,
+                    "timestamp": f"2026-05-25T00:00:0{sequence_number}Z",
+                    "event_type": "test.event",
+                    "category": "test",
+                    "name": f"event-{sequence_number}",
+                    "status": "completed",
+                    "metadata": {"payload": "x" * 100},
+                }
+            )
+        )
+    (session_dir / "events.jsonl").write_text("\n".join(rows) + "\n")
+
+    def fail_builder(*_args, **_kwargs):
+        raise AssertionError("full detail analytics should not be built")
+
+    monkeypatch.setattr("cc_deep_research.telemetry.live.build_event_tree", fail_builder)
+    monkeypatch.setattr("cc_deep_research.telemetry.live.build_subprocess_streams", fail_builder)
+    monkeypatch.setattr("cc_deep_research.telemetry.live.build_llm_route_streams", fail_builder)
+
+    client = TestClient(create_app())
+    response = client.get("/api/sessions/lightweight-live-events/events?limit=2")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [event["sequence_number"] for event in payload["events"]] == [1, 2]
+    assert payload["count"] == 2
+    assert payload["total"] == 4
+    assert payload["has_more"] is True
+    assert payload["next_cursor"] == 2
+    assert payload["prev_cursor"] is None
 
 
 def test_live_session_detail_returns_decision_graph(

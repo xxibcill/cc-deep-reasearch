@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -31,7 +32,18 @@ class _LiveSessionSnapshot:
     summary: dict[str, Any] | None
 
 
+@dataclass
+class _LiveSessionSummarySnapshot:
+    """Cached lightweight session-list summary for a telemetry session directory."""
+
+    events_key: tuple[int, int] | None
+    summary_key: tuple[int, int] | None
+    file_summary: dict[str, Any] | None
+
+
 _LIVE_SESSION_CACHE: dict[Path, _LiveSessionSnapshot] = {}
+_LIVE_SESSION_SUMMARY_CACHE: dict[Path, _LiveSessionSummarySnapshot] = {}
+_LIVE_SESSION_CACHE_MAX_ENTRIES = 128
 
 # Sessions with no activity for this duration are considered stale/inactive
 _STALE_SESSION_THRESHOLD = timedelta(minutes=5)
@@ -71,6 +83,17 @@ def _file_cache_key(path: Path) -> tuple[int, int] | None:
         return None
     stat = path.stat()
     return (stat.st_mtime_ns, stat.st_size)
+
+
+def _store_bounded_cache(cache: dict[Path, Any], key: Path, value: Any) -> None:
+    """Store a cache value while keeping the live telemetry caches bounded."""
+    cache.pop(key, None)
+    cache[key] = value
+    while len(cache) > _LIVE_SESSION_CACHE_MAX_ENTRIES:
+        oldest_key = next(iter(cache))
+        if oldest_key == key and len(cache) == 1:
+            break
+        cache.pop(oldest_key, None)
 
 
 def _infer_phase_from_event(event: dict[str, Any]) -> str | None:
@@ -254,8 +277,133 @@ def _read_live_session_snapshot(session_dir: Path) -> _LiveSessionSnapshot:
         events=events,
         summary=summary,
     )
-    _LIVE_SESSION_CACHE[session_dir] = snapshot
+    _store_bounded_cache(_LIVE_SESSION_CACHE, session_dir, snapshot)
     return snapshot
+
+
+def _read_summary_file(summary_file: Path) -> dict[str, Any] | None:
+    """Read a live session summary file when it is present and valid."""
+    if not summary_file.exists():
+        return None
+    try:
+        with open(summary_file, encoding="utf-8") as handle:
+            loaded_summary = json.load(handle)
+    except (json.JSONDecodeError, OSError):
+        return None
+    return loaded_summary if isinstance(loaded_summary, dict) else None
+
+
+def _first_non_empty_jsonl_line(path: Path) -> str | None:
+    """Return the first non-empty JSONL line without loading the full file."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if stripped:
+                    return stripped
+    except OSError:
+        return None
+    return None
+
+
+def _last_non_empty_jsonl_line(path: Path) -> str | None:
+    """Return the last non-empty JSONL line by reading from the file tail."""
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(0, 2)
+            position = handle.tell()
+            buffer = b""
+            while position > 0:
+                read_size = min(8192, position)
+                position -= read_size
+                handle.seek(position)
+                buffer = handle.read(read_size) + buffer
+                lines = buffer.splitlines()
+                if position > 0:
+                    lines = lines[1:]
+                for line in reversed(lines):
+                    if line.strip():
+                        return line.decode("utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+    return None
+
+
+def _parse_jsonl_event(line: str | None) -> dict[str, Any] | None:
+    """Parse one JSONL event line for summary metadata."""
+    if line is None:
+        return None
+    try:
+        parsed = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _summary_event_count(
+    *,
+    summary: dict[str, Any] | None,
+    first_line: str | None,
+    last_line: str | None,
+) -> int | None:
+    """Return an event count without scanning large live event payloads."""
+    if summary is not None and isinstance(summary.get("event_count"), int):
+        return cast(int, summary["event_count"])
+    if first_line is not None and first_line == last_line:
+        return 1
+    return None
+
+
+def _saved_session_ids() -> set[str]:
+    """Return saved session ids in one directory scan."""
+    try:
+        from cc_deep_research.session_store import get_default_session_dir
+
+        sessions_dir = get_default_session_dir()
+        if not sessions_dir.exists():
+            return set()
+        return {
+            path.stem
+            for path in sessions_dir.glob("*.json")
+            if path.is_file()
+        }
+    except Exception:
+        return set()
+
+
+def _query_historical_session_ids(session_ids: set[str]) -> set[str]:
+    """Return session ids already persisted in DuckDB using one batched lookup."""
+    if not session_ids:
+        return set()
+
+    db_path = get_default_config_path().parent / "telemetry.duckdb"
+    if not db_path.exists():
+        return set()
+
+    try:
+        import duckdb
+
+        conn = duckdb.connect(str(db_path), read_only=True)
+        try:
+            found: set[str] = set()
+            sorted_ids = sorted(session_ids)
+            for offset in range(0, len(sorted_ids), 900):
+                batch = sorted_ids[offset:offset + 900]
+                placeholders = ", ".join("?" for _ in batch)
+                rows = conn.execute(
+                    f"""
+                    SELECT session_id
+                    FROM telemetry_sessions
+                    WHERE session_id IN ({placeholders})
+                    """,
+                    batch,
+                ).fetchall()
+                found.update(str(row[0]) for row in rows)
+            return found
+        finally:
+            conn.close()
+    except Exception:
+        return set()
 
 
 def _is_session_truly_active(
@@ -265,6 +413,8 @@ def _is_session_truly_active(
     session_finished: bool,
     last_event_at: str | None,
     telemetry_dir: Path,
+    saved_session_ids: set[str] | None = None,
+    historical_session_ids: set[str] | None = None,
 ) -> bool:
     """Determine if a session is truly active, considering multiple factors.
 
@@ -290,31 +440,16 @@ def _is_session_truly_active(
         return False
 
     # Check if session exists in saved sessions directory
-    from cc_deep_research.session_store import get_default_session_dir
-
-    sessions_dir = get_default_session_dir()
-    session_file = sessions_dir / f"{session_id}.json"
-    if session_file.exists():
+    if saved_session_ids is None:
+        saved_session_ids = _saved_session_ids()
+    if session_id in saved_session_ids:
         return False
 
     # Check if session exists in DuckDB (historical session)
-    db_path = get_default_config_path().parent / "telemetry.duckdb"
-    if db_path.exists():
-        try:
-            import duckdb
-
-            conn = duckdb.connect(str(db_path), read_only=True)
-            try:
-                row = conn.execute(
-                    "SELECT session_id FROM telemetry_sessions WHERE session_id = ?",
-                    [session_id],
-                ).fetchone()
-                if row is not None:
-                    return False
-            finally:
-                conn.close()
-        except Exception:
-            pass  # If DuckDB check fails, continue with other checks
+    if historical_session_ids is None:
+        historical_session_ids = _query_historical_session_ids({session_id})
+    if session_id in historical_session_ids:
+        return False
 
     # Check if session is stale (no recent activity)
     if last_event_at:
@@ -332,63 +467,124 @@ def _is_session_truly_active(
     return True
 
 
-def query_live_sessions(
+def _read_live_session_summary(
+    session_dir: Path,
+    *,
+    telemetry_dir: Path,
+    saved_session_ids: set[str],
+    historical_session_ids: set[str],
+) -> dict[str, Any] | None:
+    """Read the session-list fields for one live session without parsing every event."""
+    events_file = session_dir / "events.jsonl"
+    summary_file = session_dir / "summary.json"
+    events_key = _file_cache_key(events_file)
+    summary_key = _file_cache_key(summary_file)
+    cached = _LIVE_SESSION_SUMMARY_CACHE.get(session_dir)
+
+    if cached and cached.events_key == events_key and cached.summary_key == summary_key:
+        file_summary = cached.file_summary
+    else:
+        summary = _read_summary_file(summary_file)
+        first_line = _first_non_empty_jsonl_line(events_file) if events_file.exists() else None
+        last_line = _last_non_empty_jsonl_line(events_file) if events_file.exists() else None
+        first_event = _parse_jsonl_event(first_line)
+        last_event = _parse_jsonl_event(last_line)
+
+        if first_event is None and last_event is None and summary is None:
+            snapshot = _LiveSessionSummarySnapshot(events_key, summary_key, None)
+            _store_bounded_cache(_LIVE_SESSION_SUMMARY_CACHE, session_dir, snapshot)
+            return None
+
+        first_timestamp = first_event.get("timestamp") if first_event is not None else None
+        last_timestamp = last_event.get("timestamp") if last_event is not None else first_timestamp
+        session_finished = (
+            last_event is not None and last_event.get("event_type") == "session.finished"
+        )
+        summary_data = summary or {}
+        file_summary = {
+            "session_id": session_dir.name,
+            "created_at": summary_data.get("created_at") or first_timestamp,
+            "last_event_at": last_timestamp,
+            "session_finished": session_finished,
+            "event_count": _summary_event_count(
+                summary=summary,
+                first_line=first_line,
+                last_line=last_line,
+            ),
+            "total_sources": summary_data.get("total_sources", 0),
+            "total_time_ms": summary_data.get("total_time_ms"),
+            "summary": summary,
+        }
+        snapshot = _LiveSessionSummarySnapshot(events_key, summary_key, file_summary)
+        _store_bounded_cache(_LIVE_SESSION_SUMMARY_CACHE, session_dir, snapshot)
+
+    if file_summary is None:
+        return None
+
+    summary = cast(dict[str, Any] | None, file_summary.get("summary"))
+    is_active = _is_session_truly_active(
+        session_dir.name,
+        has_summary=summary is not None,
+        session_finished=bool(file_summary.get("session_finished")),
+        last_event_at=cast(str | None, file_summary.get("last_event_at")),
+        telemetry_dir=telemetry_dir,
+        saved_session_ids=saved_session_ids,
+        historical_session_ids=historical_session_ids,
+    )
+
+    # Determine status:
+    # - If summary exists: use summary status
+    # - If session finished: completed
+    # - If active: running
+    # - Otherwise (stale): interrupted
+    if summary is not None:
+        status = summary.get("status", "completed")
+    elif file_summary.get("session_finished"):
+        status = "completed"
+    elif is_active:
+        status = "running"
+    else:
+        status = "interrupted"
+
+    session = {
+        "session_id": file_summary["session_id"],
+        "created_at": file_summary.get("created_at"),
+        "last_event_at": file_summary.get("last_event_at"),
+        "status": status,
+        "active": is_active,
+        "event_count": file_summary.get("event_count"),
+        "total_sources": file_summary.get("total_sources", 0),
+        "total_time_ms": file_summary.get("total_time_ms"),
+        "summary": summary,
+    }
+    return session
+
+
+def query_live_session_summaries(
     base_dir: Path | None = None,
     *,
     limit: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Return session summaries directly from telemetry files, including active runs."""
+    """Return lightweight live session summaries without full event parsing."""
     telemetry_dir = base_dir or get_default_telemetry_dir()
     if not telemetry_dir.exists():
         return []
 
+    session_dirs = sorted(path for path in telemetry_dir.iterdir() if path.is_dir())
+    candidate_ids = {path.name for path in session_dirs}
+    saved_session_ids = _saved_session_ids()
+    historical_session_ids = _query_historical_session_ids(candidate_ids)
+
     sessions: list[dict[str, Any]] = []
-    for session_dir in sorted(path for path in telemetry_dir.iterdir() if path.is_dir()):
-        snapshot = _read_live_session_snapshot(session_dir)
-        if not snapshot.events and snapshot.summary is None:
-            continue
-
-        session_finished = any(
-            event.get("event_type") == "session.finished" for event in snapshot.events
-        )
-        first_timestamp = snapshot.events[0]["timestamp"] if snapshot.events else None
-        last_timestamp = snapshot.events[-1]["timestamp"] if snapshot.events else None
-        summary = snapshot.summary or {}
-        is_active = _is_session_truly_active(
-            session_dir.name,
-            has_summary=snapshot.summary is not None,
-            session_finished=session_finished,
-            last_event_at=last_timestamp,
+    for session_dir in session_dirs:
+        session = _read_live_session_summary(
+            session_dir,
             telemetry_dir=telemetry_dir,
+            saved_session_ids=saved_session_ids,
+            historical_session_ids=historical_session_ids,
         )
-
-        # Determine status:
-        # - If summary exists: use summary status
-        # - If session finished: completed
-        # - If active: running
-        # - Otherwise (stale): interrupted
-        if snapshot.summary is not None:
-            status = summary.get("status", "completed")
-        elif session_finished:
-            status = "completed"
-        elif is_active:
-            status = "running"
-        else:
-            status = "interrupted"
-
-        sessions.append(
-            {
-                "session_id": session_dir.name,
-                "created_at": summary.get("created_at") or first_timestamp,
-                "last_event_at": last_timestamp,
-                "status": status,
-                "active": is_active,
-                "event_count": len(snapshot.events),
-                "total_sources": summary.get("total_sources", 0),
-                "total_time_ms": summary.get("total_time_ms"),
-                "summary": summary or None,
-            }
-        )
+        if session is not None:
+            sessions.append(session)
 
     sessions.sort(
         key=lambda session: (
@@ -398,6 +594,15 @@ def query_live_sessions(
         reverse=True,
     )
     return sessions[:limit] if limit is not None else sessions
+
+
+def query_live_sessions(
+    base_dir: Path | None = None,
+    *,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    """Return session summaries directly from telemetry files, including active runs."""
+    return query_live_session_summaries(base_dir=base_dir, limit=limit)
 
 
 def query_live_event_tail(
@@ -671,6 +876,111 @@ def _build_events_page(
     }
 
 
+def query_live_events_page(
+    session_id: str,
+    *,
+    base_dir: Path | None = None,
+    cursor: int | None = None,
+    before_cursor: int | None = None,
+    limit: int = 1000,
+) -> dict[str, Any]:
+    """Return one live event page without building full session analytics."""
+    telemetry_dir = base_dir or get_default_telemetry_dir()
+    session_dir = telemetry_dir / session_id
+    if not session_dir.exists():
+        return {
+            "events": [],
+            "total": 0,
+            "has_more": False,
+            "next_cursor": None,
+            "prev_cursor": None,
+            "session_exists": False,
+        }
+
+    events_file = session_dir / "events.jsonl"
+    if not events_file.exists():
+        return {
+            "events": [],
+            "total": 0,
+            "has_more": False,
+            "next_cursor": None,
+            "prev_cursor": None,
+            "session_exists": True,
+        }
+
+    page_limit = max(1, int(limit))
+    selected: list[dict[str, Any]] = []
+    previous_window: deque[dict[str, Any]] = deque(maxlen=page_limit)
+    total = 0
+    first_seq: int | None = None
+    last_seq: int | None = None
+
+    with open(events_file, encoding="utf-8") as handle:
+        for index, line in enumerate(handle, start=1):
+            stripped = line.strip()
+            if not stripped:
+                continue
+
+            raw_event = json.loads(stripped)
+            event = _normalize_live_event(
+                raw_event,
+                session_id=session_id,
+                fallback_sequence=index,
+            )
+            sequence_number = int(event.get("sequence_number") or index)
+            total += 1
+            if first_seq is None or sequence_number < first_seq:
+                first_seq = sequence_number
+            if last_seq is None or sequence_number > last_seq:
+                last_seq = sequence_number
+
+            if before_cursor is not None:
+                if sequence_number < before_cursor:
+                    previous_window.append(event)
+            elif cursor is not None:
+                if sequence_number > cursor and len(selected) < page_limit:
+                    selected.append(event)
+            elif len(selected) < page_limit:
+                selected.append(event)
+
+    if before_cursor is not None:
+        selected = list(previous_window)
+
+    if total == 0 or first_seq is None or last_seq is None:
+        return {
+            "events": [],
+            "total": 0,
+            "has_more": False,
+            "next_cursor": None,
+            "prev_cursor": None,
+            "session_exists": True,
+        }
+
+    if not selected:
+        return {
+            "events": [],
+            "total": total,
+            "has_more": False,
+            "next_cursor": None,
+            "prev_cursor": None,
+            "session_exists": True,
+        }
+
+    first_returned_seq = int(selected[0].get("sequence_number") or first_seq)
+    last_returned_seq = int(selected[-1].get("sequence_number") or last_seq)
+    has_more = last_returned_seq < last_seq
+    has_prev = first_returned_seq > first_seq
+
+    return {
+        "events": selected,
+        "total": total,
+        "has_more": has_more,
+        "next_cursor": last_returned_seq if has_more else None,
+        "prev_cursor": first_returned_seq - 1 if has_prev else None,
+        "session_exists": True,
+    }
+
+
 def query_live_llm_route_analytics(
     session_id: str,
     *,
@@ -833,8 +1143,10 @@ __all__ = [
     "query_live_agent_timeline",
     "query_live_event_tail",
     "query_live_event_tree",
+    "query_live_events_page",
     "query_live_llm_route_analytics",
     "query_live_session_detail",
+    "query_live_session_summaries",
     "query_live_sessions",
     "query_live_subprocess_streams",
     "query_session_checkpoints",

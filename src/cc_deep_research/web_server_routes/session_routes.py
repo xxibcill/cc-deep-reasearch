@@ -28,7 +28,9 @@ from cc_deep_research.telemetry import (
     query_checkpoint_detail,
     query_checkpoint_lineage,
     query_latest_resumable_checkpoint,
+    query_live_events_page,
     query_live_session_detail,
+    query_live_session_summaries,
     query_live_sessions,
     query_session_checkpoints,
     query_session_detail,
@@ -294,7 +296,7 @@ def register_session_routes(app: FastAPI) -> None:
     ) -> JSONResponse:
         """List research sessions with query, filter, sort, and pagination support."""
         telemetry_dir = get_default_telemetry_dir()
-        live_sessions = query_live_sessions(base_dir=telemetry_dir)
+        live_sessions = query_live_session_summaries(base_dir=telemetry_dir)
         session_store = SessionStore()
         saved_sessions = session_store.list_sessions()
         archived_session_ids = session_store.get_archived_session_ids() if archived_only else set()
@@ -961,6 +963,26 @@ def register_session_routes(app: FastAPI) -> None:
         ),
     ) -> JSONResponse:
         """Get events for a specific session with cursor-based pagination."""
+        live_events_page = query_live_events_page(
+            session_id,
+            base_dir=get_default_telemetry_dir(),
+            cursor=cursor,
+            before_cursor=before_cursor,
+            limit=limit,
+        )
+        if live_events_page.get("session_exists"):
+            events = live_events_page["events"]
+            return JSONResponse(
+                content={
+                    "events": events,
+                    "count": len(events),
+                    "total": live_events_page["total"],
+                    "has_more": live_events_page["has_more"],
+                    "next_cursor": live_events_page["next_cursor"],
+                    "prev_cursor": live_events_page["prev_cursor"],
+                }
+            )
+
         detail = _query_session_api_detail(
             session_id,
             tail_limit=limit * 2,
