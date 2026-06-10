@@ -926,7 +926,13 @@ export function normalizeServerMessage(message: ApiServerMessage | unknown): Ser
   }
 
   const type = message.type;
-  if (type !== 'event' && type !== 'history' && type !== 'error' && type !== 'pong') {
+  if (
+    type !== 'event' &&
+    type !== 'history' &&
+    type !== 'history_page' &&
+    type !== 'error' &&
+    type !== 'pong'
+  ) {
     return null;
   }
 
@@ -947,5 +953,9 @@ export function normalizeServerMessage(message: ApiServerMessage | unknown): Ser
           .filter((event): event is TelemetryEvent => event !== null)
       : undefined,
     error: typeof message.error === 'string' ? message.error : undefined,
+    total: asNumberOrNull(message.total) ?? undefined,
+    has_more: typeof message.has_more === 'boolean' ? message.has_more : undefined,
+    next_cursor: 'next_cursor' in message ? asNumberOrNull(message.next_cursor) : undefined,
+    prev_cursor: 'prev_cursor' in message ? asNumberOrNull(message.prev_cursor) : undefined,
   };
 }

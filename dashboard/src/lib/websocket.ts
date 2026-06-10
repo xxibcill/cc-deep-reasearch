@@ -2,14 +2,12 @@ import { useCallback, useEffect, useRef } from 'react';
 
 import useDashboardStore, { DEFAULT_LIVE_STREAM_STATUS } from '@/hooks/useDashboard';
 import { dashboardRuntimeConfig } from '@/lib/runtime-config';
-import { normalizeEvent, normalizeServerMessage } from '@/lib/telemetry-transformers';
+import { normalizeServerMessage } from '@/lib/telemetry-transformers';
 import {
   ClientMessage,
   TelemetryEvent,
   LiveStreamStatus,
-  WSHistoryPageMessage,
   WSClientGetHistoryMessage,
-  WebSocketServerMessage,
   ReconnectHistoryEntry,
 } from '@/types/telemetry';
 
@@ -198,7 +196,7 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
     ws.onmessage = (event) => {
       try {
         const parsed = JSON.parse(event.data);
-        const message = normalizeServerMessage(parsed) as WebSocketServerMessage | null;
+        const message = normalizeServerMessage(parsed);
         if (!message) {
           return;
         }
@@ -210,7 +208,7 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
         });
 
         if (message.type === 'event' && message.event) {
-          eventBufferRef.current.push(normalizeEvent(message.event));
+          eventBufferRef.current.push(message.event);
           updateLiveStreamStatus({
             lastEventAt: receivedAt,
             phase: 'live',
@@ -219,22 +217,22 @@ export function useWebSocket(sessionId: string | null, options: UseWebSocketOpti
           scheduleFlush();
         } else if (message.type === 'history' && message.events) {
           flushBufferedEvents();
-          appendBufferedEvents(message.events.map(normalizeEvent));
+          appendBufferedEvents(message.events);
           updateLiveStreamStatus({
             lastHistoryAt: receivedAt,
           });
-        } else if (message.type === 'history_page') {
-          const pageMessage = message as WSHistoryPageMessage;
+        } else if (message.type === 'history_page' && message.events) {
           flushBufferedEvents();
-          appendBufferedEvents(pageMessage.events.map(normalizeEvent));
+          appendBufferedEvents(message.events);
           updateLiveStreamStatus({
             lastHistoryAt: receivedAt,
           });
         } else if (message.type === 'error') {
-          console.error('WebSocket error:', message.error);
-          latestFailureReasonRef.current = message.error;
+          const errorMessage = message.error ?? 'Unknown WebSocket error';
+          console.error('WebSocket error:', errorMessage);
+          latestFailureReasonRef.current = errorMessage;
           updateLiveStreamStatus({
-            failureReason: message.error,
+            failureReason: errorMessage,
           });
         }
       } catch (error) {

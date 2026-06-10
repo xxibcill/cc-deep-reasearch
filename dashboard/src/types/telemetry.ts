@@ -160,17 +160,25 @@ export interface SessionTriage {
 }
 
 export interface ApiServerMessage {
-  type: 'event' | 'history' | 'error' | 'pong';
+  type: 'event' | 'history' | 'history_page' | 'error' | 'pong';
   event?: ApiTelemetryEvent;
   events?: ApiTelemetryEvent[];
   error?: string;
+  total?: number;
+  has_more?: boolean;
+  next_cursor?: number | null;
+  prev_cursor?: number | null;
 }
 
 export interface ServerMessage {
-  type: 'event' | 'history' | 'error' | 'pong';
+  type: 'event' | 'history' | 'history_page' | 'error' | 'pong';
   event?: TelemetryEvent;
   events?: TelemetryEvent[];
   error?: string;
+  total?: number;
+  has_more?: boolean;
+  next_cursor?: number | null;
+  prev_cursor?: number | null;
 }
 
 export interface ClientMessage {
@@ -635,7 +643,7 @@ export interface PaginatedEventsResponse {
 
 export interface WSHistoryPageMessage {
   type: 'history_page';
-  events: ApiTelemetryEvent[];
+  events: TelemetryEvent[];
   total: number;
   has_more: boolean;
   next_cursor: number | null;
@@ -650,8 +658,8 @@ export interface WSClientGetHistoryMessage {
 }
 
 export type WebSocketServerMessage =
-  | { type: 'event'; event: ApiTelemetryEvent }
-  | { type: 'history'; events: ApiTelemetryEvent[] }
+  | { type: 'event'; event: TelemetryEvent }
+  | { type: 'history'; events: TelemetryEvent[] }
   | WSHistoryPageMessage
   | { type: 'error'; error: string }
   | { type: 'pong' };
