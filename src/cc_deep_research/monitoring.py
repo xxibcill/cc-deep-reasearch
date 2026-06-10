@@ -377,13 +377,14 @@ class ResearchMonitor:
         if not self._event_router or not self._session_id:
             return
 
-        router_type = type(self._event_router)
-        publish_nowait = getattr(router_type, "publish_nowait", None)
+        publish_nowait = getattr(self._event_router, "publish_nowait", None)
         if callable(publish_nowait):
             try:
-                publish_nowait(self._event_router, self._session_id, payload)
+                published = publish_nowait(self._session_id, payload)
             except RuntimeError:
-                pass
+                published = False
+            if not published:
+                self._dropped_publish_events += 1
             return
 
         import asyncio

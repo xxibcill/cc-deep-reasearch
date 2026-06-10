@@ -1626,3 +1626,40 @@ async def test_event_router_publish_nowait_uses_bounded_queue() -> None:
     assert router.get_dropped_publish_count() > 0
 
     await router.stop()
+
+
+@pytest.mark.asyncio
+async def test_event_router_publish_nowait_accepts_worker_thread_calls() -> None:
+    """Worker-thread telemetry should reach the router-owned websocket loop."""
+    sent_events: list[dict[str, object]] = []
+    delivered = asyncio.Event()
+
+    class RecordingSocket:
+        closed = False
+
+        async def send_json(self, data):
+            sent_events.append(data)
+            delivered.set()
+
+        async def close(self):
+            self.closed = True
+
+    router = EventRouter()
+    await router.start()
+    connection = WebSocketConnection(RecordingSocket(), "session-123")
+    await router.subscribe("session-123", connection)
+
+    try:
+        accepted = await asyncio.to_thread(
+            router.publish_nowait,
+            "session-123",
+            {"sequence_number": 1, "event_type": "phase.started"},
+        )
+
+        assert accepted is True
+        await asyncio.wait_for(delivered.wait(), timeout=1)
+        assert sent_events == [
+            {"sequence_number": 1, "event_type": "phase.started"}
+        ]
+    finally:
+        await router.stop()
