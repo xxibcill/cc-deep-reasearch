@@ -283,4 +283,3 @@ Suggested tests:
 
 - Build a fixture with many saved summaries and assert only one scan happens.
 - Verify archived and active counts match current behavior.
-

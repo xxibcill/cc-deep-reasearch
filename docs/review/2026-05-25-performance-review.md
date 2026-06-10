@@ -307,4 +307,3 @@ Verification ideas:
 4. Add knowledge graph indexed accessors and retrieval candidate narrowing.
 5. Move long-running API work to background jobs.
 6. Optimize dashboard derivation after backend paging semantics are lighter.
-
