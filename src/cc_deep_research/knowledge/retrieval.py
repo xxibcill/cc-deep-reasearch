@@ -48,6 +48,10 @@ class RetrievalResult:
     context: KnowledgeContext
     explanation: RetrievalExplanation
 
+    def __getattr__(self, name: str) -> object:
+        """Delegate legacy KnowledgeContext attribute access to context."""
+        return getattr(self.context, name)
+
 
 class KnowledgeContext:
     """Retrieved context from the knowledge vault for research planning."""
@@ -152,8 +156,11 @@ class KnowledgeRetrievalService:
             )
             return RetrievalResult(context=_empty_context(), explanation=explanation)
 
-        all_nodes = index.all_nodes()
-        total_candidates = len(all_nodes)
+        total_candidates = index.node_count()
+        candidate_nodes = index.nodes_matching_terms(
+            query_terms,
+            limit=max(100, max_nodes * 50),
+        )
 
         relevant: list[KnowledgeNode] = []
         prior_sessions: list[KnowledgeNode] = []
@@ -169,7 +176,7 @@ class KnowledgeRetrievalService:
         score_factors: dict[str, float] = {}
         nodes_excluded: list[str] = []
 
-        for node in all_nodes:
+        for node in candidate_nodes:
             is_relevant, reason, score = self._compute_node_relevance_details(node, query_terms)
             if is_relevant:
                 relevant.append(node)
@@ -197,7 +204,19 @@ class KnowledgeRetrievalService:
                 if total_candidates > 10:
                     nodes_excluded.append(node.id)
 
+        relevant.sort(key=lambda node: score_factors.get(node.id, 0.0), reverse=True)
         relevant = relevant[:max_nodes]
+        selected_node_ids = {node.id for node in relevant}
+        selection_reasons = {
+            node_id: reason
+            for node_id, reason in selection_reasons.items()
+            if node_id in selected_node_ids
+        }
+        score_factors = {
+            node_id: score
+            for node_id, score in score_factors.items()
+            if node_id in selected_node_ids
+        }
 
         # Sanitize: omit nodes_excluded when candidate count is large to bound payload
         if total_candidates > 10:
@@ -291,7 +310,7 @@ class KnowledgeRetrievalService:
             return {}
 
         # Get edges where session is source (session -> sources/claims)
-        edges = index.all_edges()
+        edges = index.edges_for_node(session_node.id)
         influenced_nodes: list[str] = []
         for edge in edges:
             if edge.source_id == session_node.id:

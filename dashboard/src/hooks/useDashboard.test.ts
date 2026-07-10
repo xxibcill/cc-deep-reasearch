@@ -120,4 +120,44 @@ describe('eventIdSet deduplication', () => {
     expect(events[0].eventId).toBe(`event-4`); // event-1, event-2, event-3 were trimmed
     expect(events.at(-1)?.eventId).toBe(`event-${MAX_BUFFERED_EVENTS + 3}`);
   });
+
+  it('appendBufferedEvents keeps monotonic live batches in order', () => {
+    const store = useDashboardStore.getState();
+    store.replaceEvents([buildEvent(1), buildEvent(2)]);
+
+    store.appendBufferedEvents([buildEvent(3), buildEvent(4), buildEvent(5)]);
+
+    expect(useDashboardStore.getState().events.map((event) => event.sequenceNumber)).toEqual([
+      1, 2, 3, 4, 5,
+    ]);
+  });
+
+  it('appendBufferedEvents still sorts out-of-order batches', () => {
+    const store = useDashboardStore.getState();
+    store.replaceEvents([buildEvent(1), buildEvent(4)]);
+
+    store.appendBufferedEvents([buildEvent(3), buildEvent(2)]);
+
+    expect(useDashboardStore.getState().events.map((event) => event.sequenceNumber)).toEqual([
+      1, 2, 3, 4,
+    ]);
+  });
+
+  it('appendBufferedEvents handles 4,000 monotonic events in batches quickly', () => {
+    const store = useDashboardStore.getState();
+    const batches = Array.from({ length: 40 }, (_, batchIndex) =>
+      Array.from({ length: 100 }, (_value, eventIndex) =>
+        buildEvent(batchIndex * 100 + eventIndex + 1)
+      )
+    );
+
+    const startedAt = performance.now();
+    for (const batch of batches) {
+      store.appendBufferedEvents(batch);
+    }
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(useDashboardStore.getState().events).toHaveLength(MAX_BUFFERED_EVENTS);
+    expect(elapsedMs).toBeLessThan(250);
+  });
 });

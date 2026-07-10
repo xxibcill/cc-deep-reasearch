@@ -29,7 +29,11 @@ from cc_deep_research.content_gen.router import register_content_gen_routes
 from cc_deep_research.event_router import EventRouter
 from cc_deep_research.radar.router import register_radar_routes
 from cc_deep_research.reporting import ReportGenerator
-from cc_deep_research.research_runs.jobs import ResearchRunJobRegistry
+from cc_deep_research.research_runs.jobs import (
+    BackgroundJob,
+    BackgroundJobRegistry,
+    ResearchRunJobRegistry,
+)
 from cc_deep_research.research_runs.service import ResearchRunService
 from cc_deep_research.web_server_routes import (
     register_knowledge_routes,
@@ -49,6 +53,7 @@ class DashboardBackendRuntime:
 
     event_router: EventRouter
     jobs: ResearchRunJobRegistry
+    background_jobs: BackgroundJobRegistry
     pipeline_jobs: PipelineRunJobRegistry
     maintenance_scheduler: MaintenanceScheduler | None = None
 
@@ -61,6 +66,7 @@ class DashboardBackendRuntime:
     async def stop(self) -> None:
         """Stop shared infrastructure and cancel in-flight jobs."""
         await self.jobs.cancel_all()
+        await self.background_jobs.cancel_all()
         await self.pipeline_jobs.cancel_all()
         if self.maintenance_scheduler is not None:
             self.maintenance_scheduler.stop()
@@ -99,6 +105,7 @@ def create_app(
     app.state.dashboard_runtime = DashboardBackendRuntime(
         event_router=event_router or EventRouter(),
         jobs=job_registry or ResearchRunJobRegistry(),
+        background_jobs=BackgroundJobRegistry(),
         pipeline_jobs=PipelineRunJobRegistry(),
     )
 
@@ -172,9 +179,32 @@ def get_job_registry(app: FastAPI) -> ResearchRunJobRegistry:
     return get_backend_runtime(app).jobs
 
 
+def get_background_job_registry(app: FastAPI) -> BackgroundJobRegistry:
+    """Return the shared generic background job registry from app runtime state."""
+    return get_backend_runtime(app).background_jobs
+
+
 def get_pipeline_job_registry(app: FastAPI) -> PipelineRunJobRegistry:
     """Return the shared pipeline job registry from app runtime state."""
     return get_backend_runtime(app).pipeline_jobs
+
+
+def _background_job_response(job: BackgroundJob) -> dict[str, object]:
+    """Serialize a generic background job for HTTP polling."""
+    response: dict[str, object] = {
+        "job_id": job.job_id,
+        "kind": job.kind,
+        "status": job.status,
+        "metadata": job.metadata,
+        "created_at": job.created_at.isoformat(),
+        "started_at": job.started_at.isoformat() if job.started_at else None,
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+    }
+    if job.result is not None:
+        response["result"] = job.result
+    if job.error is not None:
+        response["error"] = job.error
+    return response
 
 
 def register_routes(app: FastAPI) -> None:
@@ -191,6 +221,25 @@ def register_routes(app: FastAPI) -> None:
             "message": "Inqulume Studio Monitoring API",
             "version": "1.0.0",
         }
+
+    @app.get("/api/jobs")
+    async def list_background_jobs() -> JSONResponse:
+        """List generic background jobs started by dashboard routes."""
+        registry = get_background_job_registry(app)
+        jobs = [_background_job_response(job) for job in registry.list_jobs()]
+        return JSONResponse(content={"jobs": jobs, "total": len(jobs)})
+
+    @app.get("/api/jobs/{job_id}")
+    async def get_background_job(job_id: str) -> JSONResponse:
+        """Return status and result/error for a generic background job."""
+        registry = get_background_job_registry(app)
+        job = registry.get_job(job_id)
+        if job is None:
+            return JSONResponse(
+                content={"error": f"Background job not found: {job_id}"},
+                status_code=404,
+            )
+        return JSONResponse(content=_background_job_response(job))
 
     @app.get("/api/config")
     async def get_config() -> JSONResponse:
@@ -268,6 +317,7 @@ __all__ = [
     "get_backend_runtime",
     "get_app",
     "get_event_router",
+    "get_background_job_registry",
     "get_job_registry",
     "get_pipeline_job_registry",
     "register_routes",

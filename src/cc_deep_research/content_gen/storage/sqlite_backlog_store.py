@@ -137,9 +137,13 @@ class SqliteBacklogStore:
             self._ensure_initialized()
             conn = self._get_conn()
             # Replace all rows transactionally
-            existing_ids = {
-                r[0] for r in conn.execute("SELECT idea_id FROM backlog_items").fetchall()
+            existing_payloads = {
+                row[0]: row[1]
+                for row in conn.execute(
+                    "SELECT idea_id, data FROM backlog_items"
+                ).fetchall()
             }
+            existing_ids = set(existing_payloads)
             new_ids = {item.idea_id for item in backlog.items}
 
             to_delete = existing_ids - new_ids
@@ -153,6 +157,8 @@ class SqliteBacklogStore:
                 data = item.model_dump(exclude_none=True)
                 json_data = _json_encoded(data)
                 if item.idea_id in existing_ids:
+                    if existing_payloads[item.idea_id] == json_data:
+                        continue
                     conn.execute(
                         "UPDATE backlog_items SET data = ?, updated_at = ? WHERE idea_id = ?",
                         (json_data, _now_iso(), item.idea_id),

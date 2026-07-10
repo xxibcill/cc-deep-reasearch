@@ -10,6 +10,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from cc_deep_research.event_router import WebSocketConnection
 from cc_deep_research.telemetry import (
     get_default_telemetry_dir,
+    query_live_events_page,
 )
 from cc_deep_research.telemetry.tree import empty_decision_graph
 
@@ -209,16 +210,34 @@ def register_websocket_routes(app: FastAPI) -> None:
                     cursor = data.get("cursor")
                     before_cursor = data.get("before_cursor")
                     limit = data.get("limit", 1000)
-                    new_detail = _query_session_api_detail_for_websocket(
+                    live_before_cursor = before_cursor
+                    live_limit = limit
+                    if cursor is None and before_cursor is None:
+                        live_before_cursor = 2**63 - 1
+                        live_limit = limit * 2
+                    live_events_page = query_live_events_page(
                         session_id,
-                        tail_limit=limit * 2,
-                        subprocess_chunk_limit=0,
+                        base_dir=get_default_telemetry_dir(),
                         cursor=cursor,
-                        before_cursor=before_cursor,
-                        limit=limit,
+                        before_cursor=live_before_cursor,
+                        limit=live_limit,
                     )
+                    new_detail: dict[str, Any] | None = None
+                    if not live_events_page.get("session_exists"):
+                        new_detail = _query_session_api_detail_for_websocket(
+                            session_id,
+                            tail_limit=limit * 2,
+                            subprocess_chunk_limit=0,
+                            cursor=cursor,
+                            before_cursor=before_cursor,
+                            limit=limit,
+                        )
                     if cursor is not None or before_cursor is not None:
-                        events_page = new_detail.get("events_page", {})
+                        events_page = (
+                            live_events_page
+                            if live_events_page.get("session_exists")
+                            else (new_detail or {}).get("events_page", {})
+                        )
                         await connection.send_json(
                             {
                                 "type": "history_page",
@@ -238,17 +257,21 @@ def register_websocket_routes(app: FastAPI) -> None:
                             len(events_page.get("events", [])),
                         )
                     else:
+                        if live_events_page.get("session_exists"):
+                            events = live_events_page.get("events", [])
+                        else:
+                            events = (new_detail or {}).get("event_tail") or []
                         await connection.send_json(
                             {
                                 "type": "history",
-                                "events": new_detail["event_tail"] or [],
+                                "events": events,
                             }
                         )
                         logger.info(
                             "Served websocket history refresh session_id=%s limit=%s returned=%s",
                             session_id,
                             limit,
-                            len(new_detail["event_tail"] or []),
+                            len(events),
                         )
                 elif message_type == "subscribe":
                     await event_router.subscribe(session_id, connection)

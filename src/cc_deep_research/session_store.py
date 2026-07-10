@@ -18,6 +18,7 @@ from cc_deep_research.models.session import (
     ResearchSession,
     normalize_session_metadata,
 )
+from cc_deep_research.persistence import atomic_write_json, atomic_write_text
 from cc_deep_research.research_runs.models import ResearchOutputFormat
 from cc_deep_research.telemetry import (
     get_default_dashboard_db_path,
@@ -186,7 +187,7 @@ class SessionStore:
     ) -> Path:
         """Persist one rendered report variant for a session."""
         path = self._report_path(session_id, output_format)
-        path.write_text(content, encoding="utf-8")
+        atomic_write_text(path, content)
         return path
 
     def load_report(
@@ -217,11 +218,10 @@ class SessionStore:
         summary_path = self._session_summary_path(session.session_id)
         summary = _build_saved_session_summary(data, session_path=path)
 
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, default=_json_serializer)
-
-        with open(summary_path, "w", encoding="utf-8") as f:
-            json.dump(summary, f, indent=2, default=_json_serializer)
+        # Publish the full payload first. Session listing can regenerate a
+        # missing summary after an interrupted process, but not vice versa.
+        atomic_write_json(path, data, default=_json_serializer)
+        atomic_write_json(summary_path, summary, default=_json_serializer)
 
         return path
 
@@ -298,8 +298,7 @@ class SessionStore:
             return None
 
         summary = _build_saved_session_summary(data, session_path=session_path)
-        with open(summary_path, "w", encoding="utf-8") as f:
-            json.dump(summary, f, indent=2, default=_json_serializer)
+        atomic_write_json(summary_path, summary, default=_json_serializer)
         return summary
 
     def delete_session(self, session_id: str) -> SessionDeletionResult:
@@ -402,8 +401,7 @@ class SessionStore:
             archived_at = datetime.now(UTC)
             data["archived_at"] = archived_at.isoformat()
 
-            with open(summary_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, default=_json_serializer)
+            atomic_write_json(summary_path, data, default=_json_serializer)
 
             log_audit_event("archive", session_id, archived_at=archived_at.isoformat())
             return True
@@ -435,8 +433,7 @@ class SessionStore:
             restored_at = datetime.now(UTC)
             data["restored_at"] = restored_at.isoformat()
 
-            with open(summary_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, default=_json_serializer)
+            atomic_write_json(summary_path, data, default=_json_serializer)
 
             log_audit_event("restore", session_id, restored_at=restored_at.isoformat())
             return True

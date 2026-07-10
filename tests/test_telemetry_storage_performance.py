@@ -8,7 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from cc_deep_research.telemetry import ingest_telemetry_to_duckdb, query_session_detail
+from cc_deep_research.telemetry import (
+    ingest_telemetry_to_duckdb,
+    query_live_events_page,
+    query_session_detail,
+)
 
 
 def _write_events_for_size(session_dir: Path, session_id: str, count: int, extra_metadata: bool = False) -> None:
@@ -188,6 +192,27 @@ def test_query_large_session_paginated_detail(tmp_path):
     assert events_page.get("total", 0) >= 500, "Paginated query should know total count"
     assert events_page.get("has_more") is True, "Should have more events"
     assert len(events_page.get("events", [])) <= 10, "Should return at most limit events"
+
+
+@pytest.mark.slow
+def test_query_large_live_events_page_scans_once_without_full_detail(tmp_path):
+    """Live event page query should stay fast on large JSONL sessions."""
+    session_dir = tmp_path / "large-live-page"
+    session_dir.mkdir()
+    _write_events_for_size(session_dir, "large-live-page", count=20_000, extra_metadata=True)
+
+    result, elapsed = _time_it(
+        query_live_events_page,
+        "large-live-page",
+        base_dir=tmp_path,
+        limit=100,
+    )
+
+    assert elapsed < 2.0, f"Live events page query took {elapsed:.2f}s, expected <2s"
+    assert len(result["events"]) == 100
+    assert result["total"] == 20_000
+    assert result["has_more"] is True
+    assert result["next_cursor"] == 99
 
 
 @pytest.mark.slow

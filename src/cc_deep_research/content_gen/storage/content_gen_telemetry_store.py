@@ -20,6 +20,7 @@ from cc_deep_research.content_gen.models import (
     RuleVersionHistory,
 )
 from cc_deep_research.content_gen.storage._paths import resolve_content_gen_file_path
+from cc_deep_research.persistence import atomic_write_text
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
@@ -92,7 +93,10 @@ class ContentGenTelemetryStore:
             "rule_version_history": rule_version_history,
             "last_updated": _now_iso(),
         }
-        self._path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        atomic_write_text(
+            self._path,
+            yaml.dump(data, default_flow_style=False, sort_keys=False),
+        )
 
     def add_run_metrics(self, run: ContentGenRunMetrics) -> None:
         """Add a single run's metrics to the store."""
@@ -137,7 +141,10 @@ class ContentGenTelemetryStore:
             "rule_version_history": rule_version_history,
             "last_updated": _now_iso(),
         }
-        self._path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        atomic_write_text(
+            self._path,
+            yaml.dump(data, default_flow_style=False, sort_keys=False),
+        )
 
     def compute_operating_fitness(
         self,
@@ -335,7 +342,10 @@ class ContentGenTelemetryStore:
             "rule_version_history": _serialize_model_to_dict(history),
             "last_updated": _now_iso(),
         }
-        self._path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        atomic_write_text(
+            self._path,
+            yaml.dump(data, default_flow_style=False, sort_keys=False),
+        )
 
     def add_rule_version(self, version: RuleVersion) -> None:
         """Add a new rule version to the history."""

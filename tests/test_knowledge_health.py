@@ -327,11 +327,50 @@ class TestGraphHealthMetricsEndpoint:
         index.close()
 
         client = TestClient(create_app())
-        response = client.get("/api/knowledge/health")
+        response = client.get("/api/knowledge/health", params={"config_path": str(config)})
         assert response.status_code == 200
         data = response.json()
 
         assert data["total_nodes"] == 3
         assert data["total_edges"] == 1
         assert data["orphan_count"] == 1  # claim has no edges
+        assert data["nodes_by_kind"] == {"claim": 1, "session": 1, "source": 1}
         assert data["vault_initialized"] is True
+
+
+def test_neighbors_endpoint_uses_indexed_edge_lookup(tmp_path: Path, monkeypatch) -> None:
+    """Node-neighbor expansion should avoid scanning all graph edges."""
+    from fastapi.testclient import TestClient
+
+    from cc_deep_research.knowledge.vault import graph_sqlite_path, init_vault
+    from cc_deep_research.web_server import create_app
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    init_vault()
+
+    db_path = graph_sqlite_path()
+    index = GraphIndex(db_path)
+    index.upsert_node(KnowledgeNode(id="session:1", kind=NodeKind.SESSION, label="Session"))
+    index.upsert_node(KnowledgeNode(id="claim:1", kind=NodeKind.CLAIM, label="Claim"))
+    index.upsert_node(KnowledgeNode(id="claim:2", kind=NodeKind.CLAIM, label="Other claim"))
+    index.upsert_edge(
+        KnowledgeEdge(id="e1", source_id="session:1", target_id="claim:1", kind=EdgeKind.CITED)
+    )
+    index.upsert_edge(
+        KnowledgeEdge(id="e2", source_id="claim:2", target_id="claim:1", kind=EdgeKind.MENTIONS)
+    )
+    index.commit()
+    index.close()
+
+    def fail_all_edges(self):
+        raise AssertionError("neighbors endpoint should not call all_edges")
+
+    monkeypatch.setattr(GraphIndex, "all_edges", fail_all_edges)
+
+    client = TestClient(create_app())
+    response = client.get("/api/knowledge/nodes/claim:1/neighbors")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert {edge["id"] for edge in data["edges"]} == {"e1", "e2"}
+    assert {node["id"] for node in data["neighbors"]} == {"session:1", "claim:2"}

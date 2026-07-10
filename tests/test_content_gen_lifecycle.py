@@ -23,9 +23,11 @@ from cc_deep_research.content_gen.models import (
     BriefExecutionGate,
     BriefExecutionPolicyMode,
     BriefLifecycleState,
+    OperatingPhase,
     PipelineCandidate,
     PipelineContext,
     PipelineLaneContext,
+    PipelineStageTrace,
 )
 from cc_deep_research.content_gen.models.angle import AngleOutput
 from cc_deep_research.content_gen.models.production import RunConstraints
@@ -67,6 +69,14 @@ def minimal_ctx() -> PipelineContext:
 # ---------------------------------------------------------------------------
 # StagePrerequisitePolicy tests
 # ---------------------------------------------------------------------------
+
+
+def test_pipeline_stage_trace_default_phase_is_enum() -> None:
+    """Default traces should serialize without enum warnings."""
+    trace = PipelineStageTrace(stage_index=1, stage_name="stage", stage_label="Stage")
+
+    assert trace.phase is OperatingPhase.PHASE_02_OPPORTUNITY
+    assert trace.model_dump(mode="json")["phase"] == "phase_02_opportunity"
 
 
 class TestStagePrerequisitePolicy:
@@ -122,10 +132,16 @@ class TestStagePrerequisitePolicy:
         met, reason = prereq_policy.check(4, ctx)
         assert met is True
 
-    def test_build_research_pack_requires_angle(self, prereq_policy: StagePrerequisitePolicy) -> None:
+    def test_build_research_pack_requires_angle(
+        self, prereq_policy: StagePrerequisitePolicy
+    ) -> None:
         ctx = PipelineContext(theme="test", created_at=datetime.now(tz=UTC).isoformat())
         ctx.backlog = BacklogOutput(
-            items=[BacklogItem(idea_id="idea-1", idea="test", source="test", category="authority-building")],
+            items=[
+                BacklogItem(
+                    idea_id="idea-1", idea="test", source="test", category="authority-building"
+                )
+            ],
             is_degraded=False,
         )
         ctx.selected_idea_id = "idea-1"
@@ -181,9 +197,7 @@ class TestStagePrerequisitePolicy:
         assert isinstance(met, bool)
         assert isinstance(reason, str)
 
-    def test_packaging_requires_final_script(
-        self, prereq_policy: StagePrerequisitePolicy
-    ) -> None:
+    def test_packaging_requires_final_script(self, prereq_policy: StagePrerequisitePolicy) -> None:
         ctx = PipelineContext(theme="test", created_at=datetime.now(tz=UTC).isoformat())
         lane = PipelineLaneContext(idea_id="idea-1", role="primary", status="selected")
         lane.scripting = MagicMock(spec=ScriptingContext)
@@ -354,11 +368,15 @@ class TestStageTracePolicy:
         assert "release_state=approved" in result
 
     def test_build_decision_summary_skipped(self, trace_policy: StageTracePolicy) -> None:
-        result = trace_policy.build_decision_summary(3, PipelineContext(theme="test"), status="skipped", detail="backlog missing")
+        result = trace_policy.build_decision_summary(
+            3, PipelineContext(theme="test"), status="skipped", detail="backlog missing"
+        )
         assert result == "Skipped: backlog missing"
 
     def test_build_decision_summary_failed(self, trace_policy: StageTracePolicy) -> None:
-        result = trace_policy.build_decision_summary(3, PipelineContext(theme="test"), status="failed", detail="something went wrong")
+        result = trace_policy.build_decision_summary(
+            3, PipelineContext(theme="test"), status="failed", detail="something went wrong"
+        )
         assert result == "Stage failed: something went wrong"
 
     def test_collect_warnings_failed_stage(
@@ -448,17 +466,13 @@ class TestPolicyIndependence:
         met, reason = prereq_policy.check(3, ctx)
         assert met is False
 
-    def test_trace_policy_runs_without_pipeline(
-        self, trace_policy: StageTracePolicy
-    ) -> None:
+    def test_trace_policy_runs_without_pipeline(self, trace_policy: StageTracePolicy) -> None:
         ctx = PipelineContext(theme="test", created_at=datetime.now(tz=UTC).isoformat())
         # Should not raise, should not require any stage orchestrator
         summary = trace_policy.summarize_input(3, ctx)
         assert isinstance(summary, str)
 
-    def test_gate_policy_runs_without_pipeline(
-        self, gate_policy: StageGatePolicy
-    ) -> None:
+    def test_gate_policy_runs_without_pipeline(self, gate_policy: StageGatePolicy) -> None:
         ctx = PipelineContext(theme="test", created_at=datetime.now(tz=UTC).isoformat())
         ctx.brief_reference = None
         # Should not raise, should not require any stage orchestrator

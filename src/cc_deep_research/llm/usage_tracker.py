@@ -1,4 +1,4 @@
-"""Token usage tracking with JSONL persistence.
+"""Provider-neutral token usage ledger with JSONL compatibility.
 
 This module provides utilities for tracking Anthropic API token usage,
 persisting entries to JSONL files, and calculating TPM metrics.
@@ -6,15 +6,19 @@ persisting entries to JSONL files, and calculating TPM metrics.
 
 from __future__ import annotations
 
-import json
+import hashlib
+import sqlite3
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from cc_deep_research.config import get_default_config_path
+
 # Default path for token usage log
-DEFAULT_USAGE_LOG_PATH = Path("data/token_usage.jsonl")
+DEFAULT_USAGE_LOG_PATH = get_default_config_path().parent / "token_usage.jsonl"
+LEGACY_USAGE_LOG_PATH = Path("data/token_usage.jsonl")
 
 
 class TokenUsageEntry(BaseModel):
@@ -34,6 +38,11 @@ class TokenUsageEntry(BaseModel):
     cache_read_input_tokens: int = Field(default=0, ge=0, description="Cache read tokens")
     max_tokens: int = Field(default=0, ge=0, description="Max tokens configured")
     latency_ms: int = Field(default=0, ge=0, description="Request latency in ms")
+    provider: str = Field(default="anthropic", description="Provider identity")
+    transport: str = Field(default="anthropic_api", description="Transport identity")
+    operation: str = Field(default="unknown", description="Logical operation")
+    session_id: str | None = Field(default=None, description="Research session identity")
+    agent_id: str | None = Field(default=None, description="Agent identity")
 
 
 class LifetimeSummary(BaseModel):
@@ -52,6 +61,138 @@ class LifetimeSummary(BaseModel):
     average_latency_ms: float = Field(default=0.0, description="Average latency in ms")
 
 
+def _ledger_path(log_path: Path) -> Path:
+    return log_path.with_suffix(log_path.suffix + ".sqlite3")
+
+
+def _event_key(
+    entry: TokenUsageEntry,
+    *,
+    source_path: str = "",
+    byte_offset: int = 0,
+) -> str:
+    if entry.request_id:
+        return f"{entry.provider}:{entry.request_id}"
+    payload = f"{source_path}:{byte_offset}:{entry.model_dump_json()}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _ensure_schema(conn: sqlite3.Connection) -> None:
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS usage_entries (
+            event_key TEXT PRIMARY KEY,
+            source_path TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            input_tokens INTEGER NOT NULL,
+            output_tokens INTEGER NOT NULL,
+            total_tokens INTEGER NOT NULL,
+            cache_creation_tokens INTEGER NOT NULL,
+            cache_read_tokens INTEGER NOT NULL,
+            latency_ms INTEGER NOT NULL,
+            payload TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS usage_sources (
+            source_path TEXT PRIMARY KEY,
+            byte_offset INTEGER NOT NULL,
+            file_size INTEGER NOT NULL,
+            mtime_ns INTEGER NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_usage_timestamp ON usage_entries(timestamp)"
+    )
+
+
+def _sync_source(conn: sqlite3.Connection, source: Path) -> None:
+    """Incrementally index one compatibility JSONL source."""
+    source_key = str(source.resolve())
+    if not source.exists():
+        return
+    stat = source.stat()
+    state = conn.execute(
+        """
+        SELECT byte_offset, file_size, mtime_ns
+        FROM usage_sources WHERE source_path = ?
+        """,
+        (source_key,),
+    ).fetchone()
+    offset, previous_size, previous_mtime = state or (0, 0, 0)
+    if stat.st_size == previous_size and stat.st_mtime_ns == previous_mtime:
+        return
+
+    rewritten = (
+        state is None
+        or stat.st_size < offset
+        or (stat.st_size <= previous_size and stat.st_mtime_ns != previous_mtime)
+    )
+    if rewritten:
+        conn.execute("DELETE FROM usage_entries WHERE source_path = ?", (source_key,))
+        offset = 0
+
+    committed_offset = offset
+    with open(source, "rb") as handle:
+        handle.seek(offset)
+        while raw_line := handle.readline():
+            line_start = committed_offset
+            if not raw_line.endswith(b"\n"):
+                break
+            committed_offset = handle.tell()
+            try:
+                entry = TokenUsageEntry.model_validate_json(raw_line)
+            except Exception:
+                continue
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO usage_entries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    _event_key(
+                        entry,
+                        source_path=source_key,
+                        byte_offset=line_start,
+                    ),
+                    source_key,
+                    entry.timestamp,
+                    entry.input_tokens,
+                    entry.output_tokens,
+                    entry.total_tokens,
+                    entry.cache_creation_input_tokens,
+                    entry.cache_read_input_tokens,
+                    entry.latency_ms,
+                    entry.model_dump_json(),
+                ),
+            )
+
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO usage_sources VALUES (?, ?, ?, ?)
+        """,
+        (source_key, committed_offset, stat.st_size, stat.st_mtime_ns),
+    )
+
+
+def _connect_synced(log_path: Path | None) -> sqlite3.Connection:
+    """Open the ledger and synchronize new JSONL records."""
+    primary = log_path or DEFAULT_USAGE_LOG_PATH
+    primary.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(_ledger_path(primary))
+    _ensure_schema(conn)
+    if log_path is None and primary != LEGACY_USAGE_LOG_PATH:
+        _sync_source(conn, LEGACY_USAGE_LOG_PATH)
+    _sync_source(conn, primary)
+    conn.commit()
+    return conn
+
+
 def append_usage_entry(
     entry: TokenUsageEntry,
     log_path: Path | None = None,
@@ -65,8 +206,12 @@ def append_usage_entry(
     path = log_path or DEFAULT_USAGE_LOG_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(path, "a") as f:
+    with open(path, "a", encoding="utf-8") as f:
         f.write(entry.model_dump_json() + "\n")
+        f.flush()
+
+    with _connect_synced(log_path):
+        pass
 
 
 def read_usage_entries(log_path: Path | None = None) -> list[TokenUsageEntry]:
@@ -78,24 +223,11 @@ def read_usage_entries(log_path: Path | None = None) -> list[TokenUsageEntry]:
     Returns:
         List of token usage entries.
     """
-    path = log_path or DEFAULT_USAGE_LOG_PATH
-    if not path.exists():
-        return []
-
-    entries: list[TokenUsageEntry] = []
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                data = json.loads(line)
-                entries.append(TokenUsageEntry(**data))
-            except (json.JSONDecodeError, Exception):
-                # Skip malformed entries
-                continue
-
-    return entries
+    with _connect_synced(log_path) as conn:
+        rows = conn.execute(
+            "SELECT payload FROM usage_entries ORDER BY timestamp ASC, event_key ASC"
+        ).fetchall()
+    return [TokenUsageEntry.model_validate_json(row[0]) for row in rows]
 
 
 def get_lifetime_summary(log_path: Path | None = None) -> LifetimeSummary:
@@ -107,18 +239,19 @@ def get_lifetime_summary(log_path: Path | None = None) -> LifetimeSummary:
     Returns:
         Lifetime summary with totals and averages.
     """
-    entries = read_usage_entries(log_path)
-
-    if not entries:
+    with _connect_synced(log_path) as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*), COALESCE(SUM(input_tokens), 0),
+                   COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0),
+                   COALESCE(SUM(cache_creation_tokens), 0),
+                   COALESCE(SUM(cache_read_tokens), 0), COALESCE(SUM(latency_ms), 0)
+            FROM usage_entries
+            """
+        ).fetchone()
+    total_requests, total_input, total_output, total, total_cache_creation, total_cache_read, total_latency = row
+    if total_requests == 0:
         return LifetimeSummary()
-
-    total_requests = len(entries)
-    total_input = sum(e.input_tokens for e in entries)
-    total_output = sum(e.output_tokens for e in entries)
-    total = sum(e.total_tokens for e in entries)
-    total_cache_creation = sum(e.cache_creation_input_tokens for e in entries)
-    total_cache_read = sum(e.cache_read_input_tokens for e in entries)
-    total_latency = sum(e.latency_ms for e in entries)
 
     return LifetimeSummary(
         total_requests=total_requests,
@@ -146,22 +279,19 @@ def calculate_rolling_tpm(
     Returns:
         Tokens per minute over the window, or 0.0 if no recent entries.
     """
-    entries = read_usage_entries(log_path)
-
-    if not entries:
-        return 0.0
-
     now = time.time()
     cutoff = now - window_seconds
-
-    recent_tokens = 0
-    for entry in entries:
-        try:
-            entry_time = datetime.fromisoformat(entry.timestamp).timestamp()
-            if entry_time >= cutoff:
-                recent_tokens += entry.output_tokens
-        except (ValueError, TypeError):
-            continue
+    cutoff_iso = datetime.fromtimestamp(cutoff, tz=UTC).isoformat()
+    with _connect_synced(log_path) as conn:
+        recent_tokens = int(
+            conn.execute(
+                """
+                SELECT COALESCE(SUM(output_tokens), 0)
+                FROM usage_entries WHERE timestamp >= ?
+                """,
+                (cutoff_iso,),
+            ).fetchone()[0]
+        )
 
     # Convert to tokens per minute
     if window_seconds > 0:
@@ -180,21 +310,14 @@ def calculate_average_tpm(log_path: Path | None = None) -> float:
     Returns:
         Average output TPM per call, or 0.0 if no entries.
     """
-    entries = read_usage_entries(log_path)
-
-    if not entries:
-        return 0.0
-
-    total_tpm = 0.0
-    valid_count = 0
-
-    for entry in entries:
-        if entry.latency_ms > 0:
-            tpm = (entry.output_tokens / entry.latency_ms) * 60000
-            total_tpm += tpm
-            valid_count += 1
-
-    return total_tpm / valid_count if valid_count > 0 else 0.0
+    with _connect_synced(log_path) as conn:
+        row = conn.execute(
+            """
+            SELECT AVG((CAST(output_tokens AS REAL) / latency_ms) * 60000.0)
+            FROM usage_entries WHERE latency_ms > 0
+            """
+        ).fetchone()
+    return float(row[0]) if row and row[0] is not None else 0.0
 
 
 __all__ = [
@@ -206,4 +329,5 @@ __all__ = [
     "calculate_rolling_tpm",
     "calculate_average_tpm",
     "DEFAULT_USAGE_LOG_PATH",
+    "LEGACY_USAGE_LOG_PATH",
 ]

@@ -22,6 +22,7 @@ import yaml
 
 from cc_deep_research.content_gen.models import BacklogItem
 from cc_deep_research.content_gen.storage._paths import resolve_content_gen_file_path
+from cc_deep_research.persistence import atomic_write_text
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
@@ -296,7 +297,10 @@ class AuditStore:
                 keep = int(self._max_entries * 0.75)  # keep newest 75%
                 data = data[keep:]
 
-            self._path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+            atomic_write_text(
+                self._path,
+                yaml.dump(data, default_flow_style=False, sort_keys=False),
+            )
 
     def log_proposal(
         self,

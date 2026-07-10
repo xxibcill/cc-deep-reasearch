@@ -17,6 +17,7 @@ from cc_deep_research.content_gen.models import (
     StrategyPerformanceGuidance,
 )
 from cc_deep_research.content_gen.storage._paths import resolve_content_gen_file_path
+from cc_deep_research.persistence import atomic_write_text
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
@@ -113,7 +114,10 @@ class PerformanceLearningStore:
             "strategy_guidance": _serialize_model_to_dict(existing_guidance),
             "last_updated": _now_iso(),
         }
-        self._path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        atomic_write_text(
+            self._path,
+            yaml.dump(data, default_flow_style=False, sort_keys=False),
+        )
 
     def save_strategy_guidance(self, guidance: StrategyPerformanceGuidance) -> None:
         """Persist durable strategy guidance to disk."""
@@ -125,7 +129,10 @@ class PerformanceLearningStore:
             "strategy_guidance": _serialize_model_to_dict(guidance),
             "last_updated": _now_iso(),
         }
-        self._path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        atomic_write_text(
+            self._path,
+            yaml.dump(data, default_flow_style=False, sort_keys=False),
+        )
 
     # ---------------------------------------------------------------------------
     # Learning extraction from PerformanceAnalysis

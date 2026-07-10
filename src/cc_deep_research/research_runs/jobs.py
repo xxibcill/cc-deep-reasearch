@@ -7,6 +7,7 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 
 from cc_deep_research.research_runs.models import (
     ResearchRunRequest,
@@ -208,7 +209,130 @@ class ResearchRunJobRegistry:
 ResearchRunJobStatus = ResearchRunStatus
 
 
+@dataclass(slots=True)
+class BackgroundJob:
+    """Mutable state for a generic dashboard background job."""
+
+    job_id: str
+    kind: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+    status: str = "queued"
+    task: asyncio.Task[object] | None = None
+    result: dict[str, Any] | None = None
+    error: str | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+    @property
+    def is_active(self) -> bool:
+        """Return whether the job is still running in-process."""
+        return self.status in {"queued", "running"}
+
+
+class BackgroundJobRegistry:
+    """Process-local registry for generic dashboard background jobs."""
+
+    def __init__(self) -> None:
+        self._jobs: dict[str, BackgroundJob] = {}
+        self._lock = threading.Lock()
+
+    def create_job(
+        self,
+        kind: str,
+        *,
+        metadata: dict[str, Any] | None = None,
+        job_id: str | None = None,
+    ) -> BackgroundJob:
+        """Create and store a queued generic job."""
+        job = BackgroundJob(
+            job_id=job_id or self._generate_job_id(kind),
+            kind=kind,
+            metadata=metadata or {},
+        )
+        with self._lock:
+            self._jobs[job.job_id] = job
+        return job
+
+    def get_job(self, job_id: str) -> BackgroundJob | None:
+        """Return a stored generic job by id."""
+        with self._lock:
+            return self._jobs.get(job_id)
+
+    def list_jobs(self) -> list[BackgroundJob]:
+        """Return all generic jobs in creation order."""
+        with self._lock:
+            return list(self._jobs.values())
+
+    def active_jobs(self) -> list[BackgroundJob]:
+        """Return queued and running generic jobs."""
+        return [job for job in self.list_jobs() if job.is_active]
+
+    def attach_task(self, job_id: str, task: asyncio.Task[object]) -> BackgroundJob:
+        """Attach the asyncio task that owns execution for a generic job."""
+        job = self._require_job(job_id)
+        with self._lock:
+            job.task = task
+        return job
+
+    def mark_running(self, job_id: str) -> BackgroundJob:
+        """Transition a generic job into the running state."""
+        job = self._require_job(job_id)
+        with self._lock:
+            job.status = "running"
+            job.started_at = datetime.now(UTC)
+        return job
+
+    def mark_completed(self, job_id: str, *, result: dict[str, Any]) -> BackgroundJob:
+        """Store the final result for a completed generic job."""
+        job = self._require_job(job_id)
+        with self._lock:
+            job.status = "completed"
+            job.result = result
+            job.error = None
+            job.completed_at = datetime.now(UTC)
+        return job
+
+    def mark_failed(self, job_id: str, *, error: str) -> BackgroundJob:
+        """Record a failed generic job with a safe error message."""
+        job = self._require_job(job_id)
+        with self._lock:
+            job.status = "failed"
+            job.result = None
+            job.error = error
+            job.completed_at = datetime.now(UTC)
+        return job
+
+    async def cancel_all(self) -> None:
+        """Cancel every active generic task owned by the registry."""
+        tasks = [
+            job.task
+            for job in self.active_jobs()
+            if job.task is not None and not job.task.done()
+        ]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        for job in self.active_jobs():
+            self.mark_failed(job.job_id, error="Background job was cancelled during shutdown.")
+
+    def _require_job(self, job_id: str) -> BackgroundJob:
+        """Load a known generic job or raise a keyed error."""
+        job = self.get_job(job_id)
+        if job is None:
+            raise KeyError(f"Unknown background job: {job_id}")
+        return job
+
+    def _generate_job_id(self, kind: str) -> str:
+        """Create a stable local background job identifier."""
+        normalized_kind = kind.replace(".", "-").replace("_", "-")
+        return f"job-{normalized_kind}-{uuid.uuid4().hex[:12]}"
+
+
 __all__ = [
+    "BackgroundJob",
+    "BackgroundJobRegistry",
     "ResearchRunJob",
     "ResearchRunJobRegistry",
     "ResearchRunJobStatus",

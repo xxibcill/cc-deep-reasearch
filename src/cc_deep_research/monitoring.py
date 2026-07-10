@@ -6,10 +6,11 @@ import json
 import threading
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TextIO, cast
 
 import click
 
@@ -51,6 +52,28 @@ KNOWN_STOP_REASONS = {
 }
 
 
+class _TelemetryJsonlWriter:
+    """Open-once JSONL writer for one telemetry session."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._handle: TextIO | None = open(path, "a", encoding="utf-8", buffering=1)  # noqa: SIM115
+
+    def write(self, payload: dict[str, Any]) -> None:
+        """Append one JSONL payload."""
+        if self._handle is None:
+            return
+        self._handle.write(json.dumps(payload, ensure_ascii=True))
+        self._handle.write("\n")
+
+    def close(self) -> None:
+        """Flush and close the underlying file handle."""
+        handle = self._handle
+        self._handle = None
+        if handle is not None:
+            handle.close()
+
+
 @dataclass
 class MonitorEvent:
     """Represents a single monitored operation."""
@@ -82,6 +105,8 @@ class ResearchMonitor:
         persist: bool = True,
         telemetry_dir: Path | None = None,
         event_router: Any | None = None,
+        telemetry_event_retention_limit: int = 50_000,
+        max_publish_tasks: int = 128,
     ) -> None:
         """Initialize the monitor.
 
@@ -90,27 +115,83 @@ class ResearchMonitor:
             persist: Whether telemetry events should be persisted to disk.
             telemetry_dir: Base directory for telemetry session folders.
             event_router: Optional EventRouter for real-time event streaming.
+            telemetry_event_retention_limit: Max recent telemetry payloads to retain in memory.
+            max_publish_tasks: Fallback cap for realtime publish tasks when a router cannot queue.
         """
         self._enabled = enabled
         self._persist = persist
         self._events: list[MonitorEvent] = []
-        self._telemetry_events: list[dict[str, Any]] = []
+        # Keep a bounded recent event window for tests/debugging while summary
+        # counters below preserve full-session totals without retaining every payload.
+        self._telemetry_events: deque[dict[str, Any]] = deque(
+            maxlen=max(1, telemetry_event_retention_limit)
+        )
+        self._telemetry_event_count = 0
+        self._telemetry_instances_spawned = 0
+        self._telemetry_search_queries = 0
+        self._telemetry_tool_calls = 0
+        self._telemetry_llm_prompt_tokens = 0
+        self._telemetry_llm_completion_tokens = 0
+        self._telemetry_llm_total_tokens = 0
+        self._llm_route_transport_counts: dict[str, int] = {}
+        self._llm_route_transport_tokens: dict[str, int] = {}
+        self._llm_route_transport_errors: dict[str, int] = {}
+        self._llm_route_provider_counts: dict[str, int] = {}
+        self._llm_route_agent_routes: dict[str, dict[str, Any]] = {}
+        self._llm_route_planned_routes: dict[str, dict[str, str]] = {}
+        self._llm_route_fallback_count = 0
+        self._llm_route_total_requests = 0
         self._start_time = time.time()
 
         self._session_id: str | None = None
+        self._run_id: str | None = None
         default_telemetry_dir = get_default_config_path().parent / "telemetry"
         self._telemetry_dir = Path(telemetry_dir) if telemetry_dir else default_telemetry_dir
         self._session_dir: Path | None = None
         self._events_path: Path | None = None
         self._summary_path: Path | None = None
+        self._event_writer: _TelemetryJsonlWriter | None = None
+        self._telemetry_write_failed = False
 
         # Real-time event routing
         self._event_router = event_router
+        self._publish_tasks: set[Any] = set()
+        self._max_publish_tasks = max(1, max_publish_tasks)
+        self._dropped_publish_events = 0
 
         # Event correlation support
         self._sequence_counter: int = 0
         self._parent_stack: list[str] = []  # Stack of parent event IDs
         self._emit_lock = threading.Lock()
+
+    def _reset_telemetry_summary_state(self) -> None:
+        """Reset bounded event memory and incremental summary counters for a new session."""
+        self._telemetry_events.clear()
+        self._telemetry_event_count = 0
+        self._telemetry_instances_spawned = 0
+        self._telemetry_search_queries = 0
+        self._telemetry_tool_calls = 0
+        self._telemetry_llm_prompt_tokens = 0
+        self._telemetry_llm_completion_tokens = 0
+        self._telemetry_llm_total_tokens = 0
+        self._llm_route_transport_counts.clear()
+        self._llm_route_transport_tokens.clear()
+        self._llm_route_transport_errors.clear()
+        self._llm_route_provider_counts.clear()
+        self._llm_route_agent_routes.clear()
+        self._llm_route_planned_routes.clear()
+        self._llm_route_fallback_count = 0
+        self._llm_route_total_requests = 0
+
+    def _close_event_writer(self) -> None:
+        """Close the session event writer if one is open."""
+        writer = self._event_writer
+        self._event_writer = None
+        if writer is not None:
+            try:
+                writer.close()
+            except OSError:
+                self._telemetry_write_failed = True
 
     @staticmethod
     def normalize_stop_reason(stop_reason: str | None) -> str:
@@ -167,6 +248,9 @@ class ResearchMonitor:
         Returns:
             The session event ID for correlation purposes.
         """
+        self._close_event_writer()
+        self._reset_telemetry_summary_state()
+        self._telemetry_write_failed = False
         self._session_id = session_id
         self._run_id = run_id
         self._sequence_counter = 0  # Reset sequence for new session
@@ -177,6 +261,11 @@ class ResearchMonitor:
             self._session_dir.mkdir(parents=True, exist_ok=True)
             self._events_path = self._session_dir / "events.jsonl"
             self._summary_path = self._session_dir / "summary.json"
+            try:
+                self._event_writer = _TelemetryJsonlWriter(self._events_path)
+            except OSError:
+                self._telemetry_write_failed = True
+                self._event_writer = None
 
         session_event_id = self.emit_event(
             event_type="session.started",
@@ -190,6 +279,129 @@ class ResearchMonitor:
         self.push_parent(session_event_id)
 
         return session_event_id
+
+    def _remember_telemetry_event(self, payload: dict[str, Any]) -> None:
+        """Retain a bounded event window and update full-session summary counters."""
+        self._telemetry_events.append(payload)
+        self._telemetry_event_count += 1
+
+        event_type = payload.get("event_type")
+        if event_type == "agent.spawned":
+            self._telemetry_instances_spawned += 1
+        elif event_type == "search.query":
+            self._telemetry_search_queries += 1
+        elif event_type == "tool.call":
+            self._telemetry_tool_calls += 1
+        elif event_type == "llm.usage":
+            metadata = payload.get("metadata", {})
+            self._telemetry_llm_prompt_tokens += int(metadata.get("prompt_tokens", 0) or 0)
+            self._telemetry_llm_completion_tokens += int(
+                metadata.get("completion_tokens", 0) or 0
+            )
+            self._telemetry_llm_total_tokens += int(metadata.get("total_tokens", 0) or 0)
+
+        self._record_llm_route_summary_event(payload)
+
+    def _record_llm_route_summary_event(self, payload: dict[str, Any]) -> None:
+        """Update incremental LLM route summary state for one event."""
+        event_type = payload.get("event_type")
+        metadata = payload.get("metadata", {})
+        if event_type == "llm.route_selected":
+            agent_id = str(payload.get("agent_id") or "unknown")
+            self._llm_route_planned_routes[agent_id] = {
+                "transport": str(metadata.get("transport", "unknown")),
+                "provider": str(metadata.get("provider", "unknown")),
+                "model": str(metadata.get("model", "unknown")),
+                "source": str(metadata.get("source", "unknown")),
+            }
+            return
+
+        if event_type == "llm.route_fallback":
+            self._llm_route_fallback_count += 1
+            return
+
+        if event_type != "llm.route_completion":
+            return
+
+        transport = str(metadata.get("transport", "unknown"))
+        provider = str(metadata.get("provider", "unknown"))
+        agent_id = str(payload.get("agent_id") or "unknown")
+        success = bool(metadata.get("success", True))
+        tokens = int(metadata.get("total_tokens", 0) or 0)
+
+        self._llm_route_transport_counts[transport] = (
+            self._llm_route_transport_counts.get(transport, 0) + 1
+        )
+        self._llm_route_provider_counts[provider] = (
+            self._llm_route_provider_counts.get(provider, 0) + 1
+        )
+        self._llm_route_transport_tokens[transport] = (
+            self._llm_route_transport_tokens.get(transport, 0) + tokens
+        )
+        if not success:
+            self._llm_route_transport_errors[transport] = (
+                self._llm_route_transport_errors.get(transport, 0) + 1
+            )
+
+        if agent_id not in self._llm_route_agent_routes:
+            self._llm_route_agent_routes[agent_id] = {
+                "transport": transport,
+                "provider": provider,
+                "model": metadata.get("model", "unknown"),
+                "request_count": 0,
+                "total_tokens": 0,
+                "errors": 0,
+            }
+        self._llm_route_agent_routes[agent_id]["request_count"] += 1
+        self._llm_route_agent_routes[agent_id]["total_tokens"] += tokens
+        if not success:
+            self._llm_route_agent_routes[agent_id]["errors"] += 1
+        self._llm_route_total_requests += 1
+
+    def _persist_telemetry_event(self, payload: dict[str, Any]) -> None:
+        """Append one event to disk without allowing telemetry I/O to crash research."""
+        if not self._persist or self._event_writer is None:
+            return
+        try:
+            self._event_writer.write(payload)
+        except OSError:
+            self._telemetry_write_failed = True
+            self._close_event_writer()
+
+    def _prune_publish_tasks(self) -> None:
+        """Forget completed fallback realtime publish tasks."""
+        self._publish_tasks = {task for task in self._publish_tasks if not task.done()}
+
+    def _publish_realtime_event(self, payload: dict[str, Any]) -> None:
+        """Publish a realtime event without unbounded task creation."""
+        if not self._event_router or not self._session_id:
+            return
+
+        publish_nowait = getattr(self._event_router, "publish_nowait", None)
+        if callable(publish_nowait):
+            try:
+                published = publish_nowait(self._session_id, payload)
+            except RuntimeError:
+                published = False
+            if not published:
+                self._dropped_publish_events += 1
+            return
+
+        import asyncio
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        self._prune_publish_tasks()
+        if len(self._publish_tasks) >= self._max_publish_tasks:
+            self._dropped_publish_events += 1
+            return
+
+        task = loop.create_task(self._event_router.publish(self._session_id, payload))
+        self._publish_tasks.add(task)
+        task.add_done_callback(self._publish_tasks.discard)
 
     def _generate_event_id(self) -> str:
         """Generate a unique event ID."""
@@ -308,23 +520,11 @@ class ResearchMonitor:
                 # Payload
                 "metadata": metadata or {},
             }
-            self._telemetry_events.append(payload)
-            if self._persist and self._events_path is not None:
-                with open(self._events_path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps(payload, ensure_ascii=True))
-                    f.write("\n")
+            self._remember_telemetry_event(payload)
+            self._persist_telemetry_event(payload)
 
         # Publish to event router for real-time delivery
-        if self._event_router and self._session_id:
-            import asyncio
-
-            # Create async task to publish (non-blocking)
-            try:
-                asyncio.get_running_loop()
-                asyncio.create_task(self._event_router.publish(self._session_id, payload))
-            except RuntimeError:
-                # No event loop running, skip publishing
-                pass
+        self._publish_realtime_event(payload)
 
         return actual_event_id
 
@@ -1127,85 +1327,26 @@ class ResearchMonitor:
         Returns:
             Dictionary with route usage statistics by transport, provider, and agent.
         """
-        route_selections = [
-            e for e in self._telemetry_events if e["event_type"] == "llm.route_selected"
-        ]
-        route_fallbacks = [
-            e for e in self._telemetry_events if e["event_type"] == "llm.route_fallback"
-        ]
-        route_completions = [
-            e for e in self._telemetry_events if e["event_type"] == "llm.route_completion"
-        ]
-
-        # Count by transport
-        transport_counts: dict[str, int] = {}
-        transport_tokens: dict[str, int] = {}
-        transport_errors: dict[str, int] = {}
-
-        # Count by provider
-        provider_counts: dict[str, int] = {}
-
-        # Count by agent
-        agent_routes: dict[str, dict[str, Any]] = {}
-
-        for event in route_completions:
-            metadata = event.get("metadata", {})
-            transport = metadata.get("transport", "unknown")
-            provider = metadata.get("provider", "unknown")
-            agent_id = event.get("agent_id") or "unknown"
-            success = metadata.get("success", True)
-            tokens = metadata.get("total_tokens", 0)
-
-            transport_counts[transport] = transport_counts.get(transport, 0) + 1
-            provider_counts[provider] = provider_counts.get(provider, 0) + 1
-            transport_tokens[transport] = transport_tokens.get(transport, 0) + tokens
-
-            if not success:
-                transport_errors[transport] = transport_errors.get(transport, 0) + 1
-
-            if agent_id not in agent_routes:
-                agent_routes[agent_id] = {
-                    "transport": transport,
-                    "provider": provider,
-                    "model": metadata.get("model", "unknown"),
-                    "request_count": 0,
-                    "total_tokens": 0,
-                    "errors": 0,
-                }
-            agent_routes[agent_id]["request_count"] += 1
-            agent_routes[agent_id]["total_tokens"] += tokens
-            if not success:
-                agent_routes[agent_id]["errors"] += 1
-
-        # Track planned routes
-        planned_routes: dict[str, dict[str, str]] = {}
-        for event in route_selections:
-            metadata = event.get("metadata", {})
-            agent_id = event.get("agent_id") or "unknown"
-            planned_routes[agent_id] = {
-                "transport": metadata.get("transport", "unknown"),
-                "provider": metadata.get("provider", "unknown"),
-                "model": metadata.get("model", "unknown"),
-                "source": metadata.get("source", "unknown"),
-            }
-
+        route_transports = set(self._llm_route_transport_counts) | set(
+            self._llm_route_transport_tokens
+        )
         return {
             "transports": {
                 transport: {
-                    "requests": transport_counts.get(transport, 0),
-                    "tokens": transport_tokens.get(transport, 0),
-                    "errors": transport_errors.get(transport, 0),
+                    "requests": self._llm_route_transport_counts.get(transport, 0),
+                    "tokens": self._llm_route_transport_tokens.get(transport, 0),
+                    "errors": self._llm_route_transport_errors.get(transport, 0),
                 }
-                for transport in set(transport_counts) | set(transport_tokens)
+                for transport in route_transports
             },
             "providers": {
-                provider: {"requests": provider_counts.get(provider, 0)}
-                for provider in provider_counts
+                provider: {"requests": self._llm_route_provider_counts.get(provider, 0)}
+                for provider in self._llm_route_provider_counts
             },
-            "agents": agent_routes,
-            "planned_routes": planned_routes,
-            "fallback_count": len(route_fallbacks),
-            "total_requests": len(route_completions),
+            "agents": self._llm_route_agent_routes,
+            "planned_routes": self._llm_route_planned_routes,
+            "fallback_count": self._llm_route_fallback_count,
+            "total_requests": self._llm_route_total_requests,
         }
 
     def finalize_session(
@@ -1227,30 +1368,14 @@ class ResearchMonitor:
             "total_sources": total_sources,
             "providers": providers,
             "total_time_ms": total_time_ms,
-            "instances_spawned": sum(
-                1 for e in self._telemetry_events if e["event_type"] == "agent.spawned"
-            ),
-            "search_queries": sum(
-                1 for e in self._telemetry_events if e["event_type"] == "search.query"
-            ),
-            "tool_calls": sum(1 for e in self._telemetry_events if e["event_type"] == "tool.call"),
-            "llm_prompt_tokens": sum(
-                int(e["metadata"].get("prompt_tokens", 0))
-                for e in self._telemetry_events
-                if e["event_type"] == "llm.usage"
-            ),
-            "llm_completion_tokens": sum(
-                int(e["metadata"].get("completion_tokens", 0))
-                for e in self._telemetry_events
-                if e["event_type"] == "llm.usage"
-            ),
-            "llm_total_tokens": sum(
-                int(e["metadata"].get("total_tokens", 0))
-                for e in self._telemetry_events
-                if e["event_type"] == "llm.usage"
-            ),
+            "instances_spawned": self._telemetry_instances_spawned,
+            "search_queries": self._telemetry_search_queries,
+            "tool_calls": self._telemetry_tool_calls,
+            "llm_prompt_tokens": self._telemetry_llm_prompt_tokens,
+            "llm_completion_tokens": self._telemetry_llm_completion_tokens,
+            "llm_total_tokens": self._telemetry_llm_total_tokens,
             "llm_route": llm_route_summary,
-            "event_count": len(self._telemetry_events),
+            "event_count": self._telemetry_event_count,
             "created_at": self._get_utc_timestamp(),
         }
 
@@ -1268,8 +1393,12 @@ class ResearchMonitor:
         )
 
         if self._persist and self._summary_path is not None:
-            with open(self._summary_path, "w", encoding="utf-8") as f:
-                json.dump(summary, f, indent=2)
+            try:
+                with open(self._summary_path, "w", encoding="utf-8") as f:
+                    json.dump(summary, f, indent=2)
+            except OSError:
+                self._telemetry_write_failed = True
+        self._close_event_writer()
 
         return summary
 

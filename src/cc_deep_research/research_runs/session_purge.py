@@ -5,6 +5,10 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from cc_deep_research.knowledge.purge import (
+    delete_session_projection,
+    session_projection_exists,
+)
 from cc_deep_research.research_runs.models import (
     BulkSessionDeleteRequest,
     BulkSessionDeleteResponse,
@@ -28,6 +32,7 @@ class SessionPurgeService:
     - Saved session files (JSON)
     - Telemetry session directories
     - DuckDB analytics records
+    - Session-owned knowledge-vault projections
 
     The service is idempotent and reports partial cleanup results clearly.
     """
@@ -130,6 +135,12 @@ class SessionPurgeService:
                         deleted=False,
                         missing=not self._db_path.exists(),
                     ),
+                    DeletedLayer(
+                        layer="knowledge",
+                        deleted=False,
+                        missing=not session_projection_exists(session_id),
+                        error="Session is active and force=false",
+                    ),
                 ]
             )
 
@@ -153,6 +164,11 @@ class SessionPurgeService:
         layer_duckdb = self._delete_duckdb_records(session_id)
         deleted_layers.append(layer_duckdb)
         if layer_duckdb.deleted:
+            any_deleted = True
+
+        layer_knowledge = self._delete_knowledge_projection(session_id)
+        deleted_layers.append(layer_knowledge)
+        if layer_knowledge.deleted:
             any_deleted = True
 
         return SessionDeleteResponse(
@@ -264,6 +280,17 @@ class SessionPurgeService:
                 layer.error = str(e)
 
         return layer
+
+    @staticmethod
+    def _delete_knowledge_projection(session_id: str) -> DeletedLayer:
+        """Delete session-owned raw, wiki, and graph knowledge artifacts."""
+        result = delete_session_projection(session_id)
+        return DeletedLayer(
+            layer="knowledge",
+            deleted=bool(result["deleted"]),
+            missing=bool(result["missing"]),
+            error=result["error"],
+        )
 
 
 def purge_session(request: SessionDeleteRequest) -> SessionDeleteResponse:

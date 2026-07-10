@@ -238,7 +238,14 @@ export function SessionDetails({
   const storedFilters = useDashboardStore((state) => state.filters);
   const setFilters = useDashboardStore((state) => state.setFilters);
   const deferredEvents = useDeferredValue(events);
-  const derived = useMemo(() => deriveTelemetryState(deferredEvents), [deferredEvents]);
+  const derived = useMemo(
+    () =>
+      deriveTelemetryState(deferredEvents, {
+        includeGraph: false,
+        includeTimeline: false,
+      }),
+    [deferredEvents]
+  );
   const filters = useMemo(
     () => sanitizeTelemetryFilters(storedFilters, derived),
     [derived, storedFilters]
@@ -251,7 +258,20 @@ export function SessionDetails({
     () => filterEvents(deferredEvents, filters, derived.phaseLookup),
     [deferredEvents, derived.phaseLookup, filters]
   );
-  const filteredDerived = useMemo(() => deriveTelemetryState(filteredEvents), [filteredEvents]);
+  const needsFilteredTools =
+    detailTab === 'tools' || detailTab === 'inspect' || selectedToolId !== null;
+  const needsFilteredLlm =
+    detailTab === 'llm' || detailTab === 'inspect' || selectedReasoningId !== null;
+  const filteredDerived = useMemo(
+    () =>
+      deriveTelemetryState(filteredEvents, {
+        includeGraph: viewMode === 'graph',
+        includeTimeline: viewMode === 'timeline',
+        includeTools: needsFilteredTools,
+        includeLlm: needsFilteredLlm,
+      }),
+    [filteredEvents, needsFilteredLlm, needsFilteredTools, viewMode]
+  );
   const selectedTool = filteredDerived.toolExecutions.find((execution) => execution.id === selectedToolId) ?? null;
   const selectedReasoning =
     filteredDerived.llmReasoning.find((item) => item.id === selectedReasoningId) ?? null;
@@ -282,7 +302,7 @@ export function SessionDetails({
     liveStreamStatus.phase !== 'historical' && deferredEvents.length >= MAX_BUFFERED_EVENTS;
   const insights = useMemo(
     () => deriveOperatorInsights(deferredEvents, derived, Boolean(derivedOutputs?.narrative?.length)),
-    [deferredEvents, derived, derivedOutputs]
+    [deferredEvents, derived, derivedOutputs?.narrative?.length]
   );
 
   useEffect(() => {

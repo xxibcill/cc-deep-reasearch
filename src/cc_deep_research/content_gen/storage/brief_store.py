@@ -9,6 +9,7 @@ import yaml
 
 from cc_deep_research.content_gen.models import ManagedBriefOutput, ManagedOpportunityBrief
 from cc_deep_research.content_gen.storage._paths import resolve_content_gen_file_path
+from cc_deep_research.persistence import atomic_write_text
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
@@ -40,7 +41,10 @@ class BriefStore:
         """Persist managed briefs to disk."""
         self._path.parent.mkdir(parents=True, exist_ok=True)
         data = output.model_dump(mode="json", exclude_none=True)
-        self._path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        atomic_write_text(
+            self._path,
+            yaml.dump(data, default_flow_style=False, sort_keys=False),
+        )
 
     def update_brief(self, brief_id: str, patch: dict) -> ManagedOpportunityBrief | None:
         """Update a single brief and save. Returns the updated brief or None."""

@@ -8,6 +8,7 @@ from cc_deep_research.config import Config
 from cc_deep_research.models import ResearchSession
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.pdf_generator import PDFGenerationError, PDFGenerator
+from cc_deep_research.persistence import atomic_write_text
 from cc_deep_research.reporting import ReportGenerator
 from cc_deep_research.research_runs.models import (
     ResearchArtifactKind,
@@ -70,8 +71,7 @@ def materialize_research_run_output(
 
     report_path = request.output_path
     if report_path is not None:
-        report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(report_content, encoding="utf-8")
+        atomic_write_text(report_path, report_content)
         artifacts.append(
             ResearchRunArtifact(
                 kind=ResearchArtifactKind.REPORT,

@@ -16,6 +16,7 @@ from cc_deep_research.telemetry import (
     query_live_event_tree,
     query_live_llm_route_analytics,
     query_live_session_detail,
+    query_live_session_summaries,
     query_live_sessions,
     query_live_subprocess_streams,
     query_session_detail,
@@ -268,6 +269,52 @@ def test_ingest_and_query_dashboard_data(tmp_path):
     assert len(detail["tool_calls"]) >= 1
 
 
+def test_ingest_is_incremental_and_handles_partial_tail(tmp_path):
+    """Repeated refreshes should process only newly completed JSONL records."""
+    duckdb = pytest.importorskip("duckdb")
+    session_dir = tmp_path / "incremental-session"
+    session_dir.mkdir()
+    events_path = session_dir / "events.jsonl"
+
+    def event(sequence: int) -> dict[str, object]:
+        return {
+            "event_id": f"event-{sequence}",
+            "session_id": "incremental-session",
+            "sequence_number": sequence,
+            "timestamp": "2026-01-01T00:00:00Z",
+            "event_type": "test.event",
+            "category": "test",
+            "name": f"event-{sequence}",
+            "status": "completed",
+            "metadata": {},
+        }
+
+    events_path.write_text(json.dumps(event(1)) + "\n", encoding="utf-8")
+    db_path = tmp_path / "telemetry.duckdb"
+
+    first = ingest_telemetry_to_duckdb(base_dir=tmp_path, db_path=db_path)
+    unchanged = ingest_telemetry_to_duckdb(base_dir=tmp_path, db_path=db_path)
+    assert first["events"] == 1
+    assert unchanged == {"sessions": 0, "events": 0}
+
+    with open(events_path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(event(2)))
+    partial = ingest_telemetry_to_duckdb(base_dir=tmp_path, db_path=db_path)
+    assert partial["events"] == 0
+
+    with open(events_path, "a", encoding="utf-8") as handle:
+        handle.write("\n")
+    appended = ingest_telemetry_to_duckdb(base_dir=tmp_path, db_path=db_path)
+    assert appended["events"] == 1
+
+    with duckdb.connect(str(db_path), read_only=True) as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM telemetry_events WHERE session_id = ?",
+            ["incremental-session"],
+        ).fetchone()[0]
+    assert count == 2
+
+
 def test_event_correlation_fields_persisted(tmp_path):
     """Event correlation fields should be persisted to telemetry files."""
     monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
@@ -476,6 +523,131 @@ def test_query_live_sessions_reports_active_run(tmp_path):
     assert sessions[0]["session_id"] == "live-session"
     assert sessions[0]["active"] is True
     assert sessions[0]["status"] == "running"
+
+
+def test_query_live_session_summaries_reads_summary_and_event_edges(tmp_path):
+    """Live summary listing should avoid full event parsing for large JSONL payloads."""
+    session_dir = tmp_path / "summary-session"
+    session_dir.mkdir()
+    (session_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "session_id": "summary-session",
+                "status": "completed",
+                "total_sources": 4,
+                "total_time_ms": 1200,
+                "event_count": 20000,
+                "created_at": "2026-05-25T10:00:00Z",
+            }
+        ),
+        encoding="utf-8",
+    )
+    first_event = {
+        "event_id": "event-1",
+        "sequence_number": 1,
+        "timestamp": "2026-05-25T10:00:00Z",
+        "event_type": "session.started",
+        "category": "session",
+        "name": "session",
+        "status": "started",
+        "metadata": {"payload": "x" * 10000},
+    }
+    last_event = {
+        "event_id": "event-20000",
+        "sequence_number": 20000,
+        "timestamp": "2026-05-25T10:30:00Z",
+        "event_type": "session.finished",
+        "category": "session",
+        "name": "session",
+        "status": "completed",
+        "metadata": {"payload": "y" * 10000},
+    }
+    (session_dir / "events.jsonl").write_text(
+        json.dumps(first_event) + "\n" + json.dumps(last_event) + "\n",
+        encoding="utf-8",
+    )
+
+    sessions = query_live_session_summaries(base_dir=tmp_path)
+
+    assert sessions == [
+        {
+            "session_id": "summary-session",
+            "created_at": "2026-05-25T10:00:00Z",
+            "last_event_at": "2026-05-25T10:30:00Z",
+            "status": "completed",
+            "active": False,
+            "event_count": 20000,
+            "total_sources": 4,
+            "total_time_ms": 1200,
+            "summary": {
+                "session_id": "summary-session",
+                "status": "completed",
+                "total_sources": 4,
+                "total_time_ms": 1200,
+                "event_count": 20000,
+                "created_at": "2026-05-25T10:00:00Z",
+            },
+        }
+    ]
+
+
+def test_query_live_session_summaries_batches_duckdb_lookup(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    """Live summaries should not open DuckDB once per candidate session."""
+    duckdb = pytest.importorskip("duckdb")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    config_dir = tmp_path / "xdg" / "inqulume-studio"
+    telemetry_dir = config_dir / "telemetry"
+    telemetry_dir.mkdir(parents=True)
+    (config_dir / "telemetry.duckdb").touch()
+
+    for index in range(5):
+        session_dir = telemetry_dir / f"session-{index}"
+        session_dir.mkdir()
+        (session_dir / "events.jsonl").write_text(
+            json.dumps(
+                {
+                    "event_id": f"event-{index}",
+                    "sequence_number": 1,
+                    "timestamp": "2026-05-25T10:00:00Z",
+                    "event_type": "session.started",
+                    "category": "session",
+                    "name": "session",
+                    "status": "started",
+                    "metadata": {},
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    connect_calls = []
+    execute_params = []
+
+    class FakeConnection:
+        def execute(self, _sql, params):
+            execute_params.append(list(params))
+            return self
+
+        def fetchall(self):
+            return []
+
+        def close(self):
+            return None
+
+    def fake_connect(*args, **kwargs):
+        connect_calls.append((args, kwargs))
+        return FakeConnection()
+
+    monkeypatch.setattr(duckdb, "connect", fake_connect)
+
+    sessions = query_live_session_summaries(base_dir=telemetry_dir)
+
+    assert len(sessions) == 5
+    assert len(connect_calls) == 1
+    assert len(execute_params) == 1
+    assert set(execute_params[0]) == {f"session-{index}" for index in range(5)}
 
 
 def test_query_live_event_tail_normalizes_legacy_event_shape(tmp_path):
@@ -966,6 +1138,56 @@ def test_query_live_session_detail_cursor_pagination(tmp_path):
     first_page_ids = {e.get("event_id") for e in events_page["events"]}
     second_page_ids = {e.get("event_id") for e in events_page2["events"]}
     assert first_page_ids.isdisjoint(second_page_ids)
+
+
+def test_query_live_events_page_reads_only_requested_page(tmp_path):
+    """Live event page queries should preserve pagination metadata."""
+    from cc_deep_research.telemetry.live import query_live_events_page
+
+    session_dir = tmp_path / "live-events-page"
+    session_dir.mkdir()
+    events = []
+    for sequence_number in range(1, 8):
+        events.append(
+            json.dumps(
+                {
+                    "event_id": f"event-{sequence_number}",
+                    "sequence_number": sequence_number,
+                    "timestamp": f"2026-05-25T00:00:0{sequence_number}Z",
+                    "event_type": "test.event",
+                    "category": "test",
+                    "name": f"event-{sequence_number}",
+                    "status": "completed",
+                    "metadata": {"payload": "x" * 20},
+                }
+            )
+        )
+    (session_dir / "events.jsonl").write_text("\n".join(events) + "\n")
+
+    first_page = query_live_events_page("live-events-page", base_dir=tmp_path, limit=3)
+    assert [event["sequence_number"] for event in first_page["events"]] == [1, 2, 3]
+    assert first_page["total"] == 7
+    assert first_page["has_more"] is True
+    assert first_page["next_cursor"] == 3
+    assert first_page["prev_cursor"] is None
+
+    next_page = query_live_events_page(
+        "live-events-page",
+        base_dir=tmp_path,
+        cursor=first_page["next_cursor"],
+        limit=3,
+    )
+    assert [event["sequence_number"] for event in next_page["events"]] == [4, 5, 6]
+    assert next_page["prev_cursor"] == 3
+
+    previous_page = query_live_events_page(
+        "live-events-page",
+        base_dir=tmp_path,
+        before_cursor=7,
+        limit=3,
+    )
+    assert [event["sequence_number"] for event in previous_page["events"]] == [4, 5, 6]
+    assert previous_page["prev_cursor"] == 3
 
 
 def test_query_session_detail_historical_includes_derived(tmp_path):

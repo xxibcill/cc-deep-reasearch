@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from cc_deep_research.config import get_default_config_path
+from cc_deep_research.persistence import atomic_write_json
 
 if TYPE_CHECKING:
     from cc_deep_research.content_gen.models import PipelineContext
@@ -86,14 +87,8 @@ class PipelineRunStore:
 
     def save(self, job: PipelineRunJob) -> None:
         """Persist one job atomically."""
-        self._path.mkdir(parents=True, exist_ok=True)
         job_path = self._path / f"{job.pipeline_id}.json"
-        tmp_path = job_path.with_suffix(".json.tmp")
-        tmp_path.write_text(
-            json.dumps(self._serialize_job(job), indent=2),
-            encoding="utf-8",
-        )
-        tmp_path.replace(job_path)
+        atomic_write_json(job_path, self._serialize_job(job))
 
     @staticmethod
     def _serialize_job(job: PipelineRunJob) -> dict[str, object]:

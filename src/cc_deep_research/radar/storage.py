@@ -1,4 +1,4 @@
-"""YAML persistence for Radar entities.
+"""Transactional persistence for Radar entities.
 
 Radar stores all entities as YAML files in the radar subdirectory of the
 app config directory. Each entity type has its own file for independent
@@ -12,11 +12,15 @@ access patterns:
 - radar_feedback.yaml  - OpportunityFeedback records
 - radar_workflow_links.yaml - WorkflowLink records
 
-This follows the existing content-gen storage pattern of one file per entity type.
+Legacy YAML files are imported on first access. SQLite then becomes the
+authoritative store so writes are atomic and safe across concurrent processes.
 """
 
 from __future__ import annotations
 
+import json
+import sqlite3
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -145,7 +149,7 @@ def _now_iso() -> str:
 
 
 class RadarStore:
-    """Load and save Radar entities to YAML files.
+    """Load and save Radar entities through a transactional SQLite store.
 
     This store provides CRUD operations for all Radar entity types using
     separate YAML files per entity kind. This allows independent access
@@ -174,11 +178,82 @@ class RadarStore:
             self._radar_dir = _default_radar_dir()
 
         self._radar_dir.mkdir(parents=True, exist_ok=True)
+        self._db_path = self._radar_dir / "radar.db"
+        self._lock = threading.RLock()
+        self._conn: sqlite3.Connection | None = None
+        self._initialized = False
 
     @property
     def radar_dir(self) -> Path:
         """Return the radar directory path."""
         return self._radar_dir
+
+    @property
+    def db_path(self) -> Path:
+        """Return the canonical Radar SQLite database path."""
+        return self._db_path
+
+    def _get_conn(self) -> sqlite3.Connection:
+        """Return the shared WAL connection; callers must hold ``_lock``."""
+        if self._conn is None:
+            self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA synchronous=NORMAL")
+            self._conn.execute("PRAGMA busy_timeout=5000")
+        if not self._initialized:
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS radar_collections (
+                    kind TEXT PRIMARY KEY,
+                    payload TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            self._conn.commit()
+            self._initialized = True
+        return self._conn
+
+    def _load_payload(self, kind: str, legacy_path: Path) -> dict[str, Any]:
+        """Load one collection, importing its legacy YAML file once."""
+        with self._lock:
+            conn = self._get_conn()
+            row = conn.execute(
+                "SELECT payload FROM radar_collections WHERE kind = ?",
+                (kind,),
+            ).fetchone()
+            if row is not None:
+                return dict(json.loads(row[0]))
+
+            if not legacy_path.exists():
+                return {}
+            data = yaml.safe_load(legacy_path.read_text()) or {}
+            if not isinstance(data, dict):
+                raise ValueError(f"Invalid Radar {kind} payload: expected mapping")
+            conn.execute(
+                "INSERT INTO radar_collections (kind, payload, updated_at) VALUES (?, ?, ?)",
+                (kind, json.dumps(data, separators=(",", ":")), _now_iso()),
+            )
+            conn.commit()
+            return data
+
+    def _save_payload(self, kind: str, data: dict[str, Any]) -> None:
+        """Atomically replace one collection in the canonical database."""
+        payload = json.dumps(data, separators=(",", ":"), sort_keys=True)
+        with self._lock:
+            conn = self._get_conn()
+            conn.execute(
+                """
+                INSERT INTO radar_collections (kind, payload, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(kind) DO UPDATE SET
+                    payload = excluded.payload,
+                    updated_at = excluded.updated_at
+                WHERE radar_collections.payload <> excluded.payload
+                """,
+                (kind, payload, _now_iso()),
+            )
+            conn.commit()
 
     # -- Source operations ----------------------------------------------------
 
@@ -188,18 +263,14 @@ class RadarStore:
     def load_sources(self) -> RadarSourceList:
         """Load all radar sources from disk."""
         path = self._sources_path()
-        if not path.exists():
-            return RadarSourceList()
-        data = yaml.safe_load(path.read_text()) or {}
+        data = self._load_payload("sources", path)
         return RadarSourceList.model_validate(data)
 
     def save_sources(self, sources: list[RadarSource]) -> None:
         """Persist all radar sources to disk."""
-        path = self._sources_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
         container = RadarSourceList(sources=sources, last_updated=_now_iso())
         data = _serialize_model_to_dict(container)
-        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        self._save_payload("sources", data)
 
     def add_source(self, source: RadarSource) -> None:
         """Add a single source and persist."""
@@ -250,18 +321,14 @@ class RadarStore:
     def load_signals(self) -> RawSignalList:
         """Load all raw signals from disk."""
         path = self._signals_path()
-        if not path.exists():
-            return RawSignalList()
-        data = yaml.safe_load(path.read_text()) or {}
+        data = self._load_payload("signals", path)
         return RawSignalList.model_validate(data)
 
     def save_signals(self, signals: list[RawSignal]) -> None:
         """Persist all raw signals to disk."""
-        path = self._signals_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
         container = RawSignalList(signals=signals, last_updated=_now_iso())
         data = _serialize_model_to_dict(container)
-        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        self._save_payload("signals", data)
 
     def add_signal(self, signal: RawSignal) -> None:
         """Add a single raw signal and persist."""
@@ -291,18 +358,14 @@ class RadarStore:
     def load_opportunities(self) -> OpportunityList:
         """Load all opportunities from disk."""
         path = self._opportunities_path()
-        if not path.exists():
-            return OpportunityList()
-        data = yaml.safe_load(path.read_text()) or {}
+        data = self._load_payload("opportunities", path)
         return OpportunityList.model_validate(data)
 
     def save_opportunities(self, opportunities: list[Opportunity]) -> None:
         """Persist all opportunities to disk."""
-        path = self._opportunities_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
         container = OpportunityList(opportunities=opportunities, last_updated=_now_iso())
         data = _serialize_model_to_dict(container)
-        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        self._save_payload("opportunities", data)
 
     def add_opportunity(self, opportunity: Opportunity) -> None:
         """Add a single opportunity and persist."""
@@ -396,18 +459,14 @@ class RadarStore:
     def load_scores(self) -> OpportunityScoreList:
         """Load all opportunity scores from disk."""
         path = self._scores_path()
-        if not path.exists():
-            return OpportunityScoreList()
-        data = yaml.safe_load(path.read_text()) or {}
+        data = self._load_payload("scores", path)
         return OpportunityScoreList.model_validate(data)
 
     def save_scores(self, scores: list[OpportunityScore]) -> None:
         """Persist all opportunity scores to disk."""
-        path = self._scores_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
         container = OpportunityScoreList(scores=scores, last_updated=_now_iso())
         data = _serialize_model_to_dict(container)
-        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        self._save_payload("scores", data)
 
     def upsert_score(self, score: OpportunityScore) -> None:
         """Add or replace a score for an opportunity."""
@@ -436,18 +495,14 @@ class RadarStore:
     def load_signal_links(self) -> OpportunitySignalLinkList:
         """Load all opportunity-signal links from disk."""
         path = self._signal_links_path()
-        if not path.exists():
-            return OpportunitySignalLinkList()
-        data = yaml.safe_load(path.read_text()) or {}
+        data = self._load_payload("signal_links", path)
         return OpportunitySignalLinkList.model_validate(data)
 
     def save_signal_links(self, links: list[OpportunitySignalLink]) -> None:
         """Persist all signal links to disk."""
-        path = self._signal_links_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
         container = OpportunitySignalLinkList(links=links, last_updated=_now_iso())
         data = _serialize_model_to_dict(container)
-        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        self._save_payload("signal_links", data)
 
     def link_signal_to_opportunity(
         self,
@@ -490,18 +545,14 @@ class RadarStore:
     def load_feedback(self) -> OpportunityFeedbackList:
         """Load all feedback entries from disk."""
         path = self._feedback_path()
-        if not path.exists():
-            return OpportunityFeedbackList()
-        data = yaml.safe_load(path.read_text()) or {}
+        data = self._load_payload("feedback", path)
         return OpportunityFeedbackList.model_validate(data)
 
     def save_feedback(self, entries: list[OpportunityFeedback]) -> None:
         """Persist all feedback entries to disk."""
-        path = self._feedback_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
         container = OpportunityFeedbackList(feedback_entries=entries, last_updated=_now_iso())
         data = _serialize_model_to_dict(container)
-        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        self._save_payload("feedback", data)
 
     def add_feedback(self, feedback: OpportunityFeedback) -> None:
         """Append a feedback entry and persist."""
@@ -548,18 +599,14 @@ class RadarStore:
     def load_workflow_links(self) -> WorkflowLinkList:
         """Load all workflow links from disk."""
         path = self._workflow_links_path()
-        if not path.exists():
-            return WorkflowLinkList()
-        data = yaml.safe_load(path.read_text()) or {}
+        data = self._load_payload("workflow_links", path)
         return WorkflowLinkList.model_validate(data)
 
     def save_workflow_links(self, links: list[WorkflowLink]) -> None:
         """Persist all workflow links to disk."""
-        path = self._workflow_links_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
         container = WorkflowLinkList(links=links, last_updated=_now_iso())
         data = _serialize_model_to_dict(container)
-        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        self._save_payload("workflow_links", data)
 
     def add_workflow_link(self, link: WorkflowLink) -> None:
         """Add a workflow link and persist."""
@@ -583,18 +630,14 @@ class RadarStore:
     def load_status_history(self) -> StatusHistoryList:
         """Load all status history entries from disk."""
         path = self._status_history_path()
-        if not path.exists():
-            return StatusHistoryList()
-        data = yaml.safe_load(path.read_text()) or {}
+        data = self._load_payload("status_history", path)
         return StatusHistoryList.model_validate(data)
 
     def save_status_history(self, entries: list[StatusHistoryEntry]) -> None:
         """Persist all status history entries to disk."""
-        path = self._status_history_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
         container = StatusHistoryList(entries=entries, last_updated=_now_iso())
         data = _serialize_model_to_dict(container)
-        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        self._save_payload("status_history", data)
 
     def add_status_history_entry(self, entry: StatusHistoryEntry) -> None:
         """Append a status history entry and persist."""
@@ -618,18 +661,14 @@ class RadarStore:
     def load_scan_jobs(self) -> ScanJobList:
         """Load all scan job records from disk."""
         path = self._scan_jobs_path()
-        if not path.exists():
-            return ScanJobList()
-        data = yaml.safe_load(path.read_text()) or {}
+        data = self._load_payload("scan_jobs", path)
         return ScanJobList.model_validate(data)
 
     def save_scan_jobs(self, jobs: list[ScanJob]) -> None:
         """Persist all scan job records to disk."""
-        path = self._scan_jobs_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
         container = ScanJobList(jobs=jobs, last_updated=_now_iso())
         data = _serialize_model_to_dict(container)
-        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        self._save_payload("scan_jobs", data)
 
     def add_scan_job(self, job: ScanJob) -> None:
         """Add a scan job record and persist."""
@@ -686,18 +725,14 @@ class RadarStore:
     def load_alerts(self) -> RadarAlertList:
         """Load all radar alerts from disk."""
         path = self._alerts_path()
-        if not path.exists():
-            return RadarAlertList()
-        data = yaml.safe_load(path.read_text()) or {}
+        data = self._load_payload("alerts", path)
         return RadarAlertList.model_validate(data)
 
     def save_alerts(self, alerts: list[RadarAlert]) -> None:
         """Persist all radar alerts to disk."""
-        path = self._alerts_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
         container = RadarAlertList(alerts=alerts, last_updated=_now_iso())
         data = _serialize_model_to_dict(container)
-        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        self._save_payload("alerts", data)
 
     def add_alert(self, alert: RadarAlert) -> None:
         """Add an alert and persist."""
@@ -747,18 +782,14 @@ class RadarStore:
     def load_digests(self) -> RadarDigestList:
         """Load all radar digests from disk."""
         path = self._digests_path()
-        if not path.exists():
-            return RadarDigestList()
-        data = yaml.safe_load(path.read_text()) or {}
+        data = self._load_payload("digests", path)
         return RadarDigestList.model_validate(data)
 
     def save_digests(self, digests: list[RadarDigest]) -> None:
         """Persist all radar digests to disk."""
-        path = self._digests_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
         container = RadarDigestList(digests=digests, last_updated=_now_iso())
         data = _serialize_model_to_dict(container)
-        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        self._save_payload("digests", data)
 
     def add_digest(self, digest: RadarDigest) -> None:
         """Add a digest and persist."""
@@ -780,18 +811,14 @@ class RadarStore:
     def load_alert_mutes(self) -> AlertMuteList:
         """Load all alert mutes from disk."""
         path = self._alert_mutes_path()
-        if not path.exists():
-            return AlertMuteList()
-        data = yaml.safe_load(path.read_text()) or {}
+        data = self._load_payload("alert_mutes", path)
         return AlertMuteList.model_validate(data)
 
     def save_alert_mutes(self, mutes: list[AlertMute]) -> None:
         """Persist all alert mutes to disk."""
-        path = self._alert_mutes_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
         container = AlertMuteList(mutes=mutes, last_updated=_now_iso())
         data = _serialize_model_to_dict(container)
-        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        self._save_payload("alert_mutes", data)
 
     def add_alert_mute(self, mute: AlertMute) -> None:
         """Add an alert mute and persist."""
@@ -832,18 +859,14 @@ class RadarStore:
     def load_scoring_feedback(self) -> ScoringFeedbackList:
         """Load all scoring feedback from disk."""
         path = self._scoring_feedback_path()
-        if not path.exists():
-            return ScoringFeedbackList()
-        data = yaml.safe_load(path.read_text()) or {}
+        data = self._load_payload("scoring_feedback", path)
         return ScoringFeedbackList.model_validate(data)
 
     def save_scoring_feedback(self, entries: list[ScoringFeedback]) -> None:
         """Persist all scoring feedback to disk."""
-        path = self._scoring_feedback_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
         container = ScoringFeedbackList(feedback_entries=entries, last_updated=_now_iso())
         data = _serialize_model_to_dict(container)
-        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        self._save_payload("scoring_feedback", data)
 
     def add_scoring_feedback(self, entry: ScoringFeedback) -> None:
         """Add a scoring feedback entry and persist."""
@@ -880,4 +903,3 @@ class RadarStore:
             if ft in feedback_types:
                 counts[ft] = counts.get(ft, 0) + 1
         return counts
-

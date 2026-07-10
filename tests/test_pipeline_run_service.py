@@ -72,12 +72,14 @@ class MockPipelineFactory:
         run_constraints=None,
     ) -> PipelineContext:
         """Fake run_full_pipeline that returns a minimal context."""
-        self.run_full_pipeline_calls.append({
-            "theme": theme,
-            "from_stage": from_stage,
-            "to_stage": to_stage,
-            "initial_context": initial_context,
-        })
+        self.run_full_pipeline_calls.append(
+            {
+                "theme": theme,
+                "from_stage": from_stage,
+                "to_stage": to_stage,
+                "initial_context": initial_context,
+            }
+        )
 
         # Simulate progress callbacks
         if progress_callback:
@@ -148,6 +150,8 @@ class FakeTask:
 
     def __init__(self, coro: Any) -> None:
         self._coro = coro
+        if hasattr(coro, "close"):
+            coro.close()
         self.done_called = False
         self.cancelled_called = False
 

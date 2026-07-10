@@ -1,10 +1,14 @@
 """Tests for ResearchMonitor."""
 
+import asyncio
+import builtins
 import re
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
+from cc_deep_research.event_router import EventRouter, WebSocketConnection
 from cc_deep_research.models import QueryFamily, SearchResultItem
 from cc_deep_research.monitoring import (
     STOP_REASON_DEGRADED_EXECUTION,
@@ -236,6 +240,53 @@ class TestResearchMonitor:
         assert summary["llm_prompt_tokens"] == 10
         assert summary["llm_completion_tokens"] == 5
         assert summary["llm_total_tokens"] == 15
+
+    def test_persistent_telemetry_writer_opens_event_file_once(self, tmp_path):
+        """Persistent telemetry should not open and close the JSONL file per event."""
+        original_open = builtins.open
+        events_open_count = 0
+
+        def counting_open(file, *args, **kwargs):
+            nonlocal events_open_count
+            mode = args[0] if args else kwargs.get("mode", "r")
+            if Path(file).name == "events.jsonl" and "a" in mode:
+                events_open_count += 1
+            return original_open(file, *args, **kwargs)
+
+        with patch("builtins.open", counting_open):
+            monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)
+            monitor.set_session("session-123", "test query", "standard")
+            for index in range(10):
+                monitor.emit_event(
+                    event_type="test.event",
+                    category="test",
+                    name=f"event-{index}",
+                )
+            monitor.finalize_session(total_sources=0, providers=[], total_time_ms=100)
+
+        assert events_open_count == 1
+
+    def test_telemetry_retention_is_bounded_but_summary_counts_full_session(self):
+        """Recent event memory is bounded while summary counters retain full totals."""
+        monitor = ResearchMonitor(
+            enabled=False,
+            persist=False,
+            telemetry_event_retention_limit=5,
+        )
+        monitor.set_session("session-123", "test query", "standard")
+        for index in range(10):
+            monitor.emit_event(
+                event_type="search.query",
+                category="search",
+                name=f"query-{index}",
+                status="success",
+            )
+
+        summary = monitor.finalize_session(total_sources=0, providers=[], total_time_ms=100)
+
+        assert len(monitor._telemetry_events) == 5
+        assert summary["event_count"] == 11
+        assert summary["search_queries"] == 10
 
     def test_record_query_variations_and_source_provenance(self):
         """Query families and provenance summaries should be emitted in telemetry."""
@@ -1542,3 +1593,73 @@ class TestPhaseRunnerCheckpoints:
         assert len(checkpoints) == 1
         assert checkpoints[0]["replayable"] is False
         assert "ValueError" in checkpoints[0]["replayable_reason"]
+
+
+@pytest.mark.asyncio
+async def test_event_router_publish_nowait_uses_bounded_queue() -> None:
+    """Fire-and-forget websocket publishing should drop instead of growing unbounded."""
+    send_started = asyncio.Event()
+
+    class SlowSocket:
+        closed = False
+
+        async def send_json(self, _data):
+            send_started.set()
+            await asyncio.sleep(60)
+
+        async def close(self):
+            self.closed = True
+
+    router = EventRouter(max_publish_queue_size=2)
+    await router.start()
+    connection = WebSocketConnection(SlowSocket(), "session-123")
+    await router.subscribe("session-123", connection)
+
+    accepted = [
+        router.publish_nowait("session-123", {"sequence_number": index})
+        for index in range(10)
+    ]
+    await asyncio.wait_for(send_started.wait(), timeout=1)
+
+    assert any(accepted)
+    assert router.get_pending_publish_count() <= 2
+    assert router.get_dropped_publish_count() > 0
+
+    await router.stop()
+
+
+@pytest.mark.asyncio
+async def test_event_router_publish_nowait_accepts_worker_thread_calls() -> None:
+    """Worker-thread telemetry should reach the router-owned websocket loop."""
+    sent_events: list[dict[str, object]] = []
+    delivered = asyncio.Event()
+
+    class RecordingSocket:
+        closed = False
+
+        async def send_json(self, data):
+            sent_events.append(data)
+            delivered.set()
+
+        async def close(self):
+            self.closed = True
+
+    router = EventRouter()
+    await router.start()
+    connection = WebSocketConnection(RecordingSocket(), "session-123")
+    await router.subscribe("session-123", connection)
+
+    try:
+        accepted = await asyncio.to_thread(
+            router.publish_nowait,
+            "session-123",
+            {"sequence_number": 1, "event_type": "phase.started"},
+        )
+
+        assert accepted is True
+        await asyncio.wait_for(delivered.wait(), timeout=1)
+        assert sent_events == [
+            {"sequence_number": 1, "event_type": "phase.started"}
+        ]
+    finally:
+        await router.stop()

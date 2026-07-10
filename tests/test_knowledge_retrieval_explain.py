@@ -180,6 +180,38 @@ class TestRetrievalExplanation:
         assert "claim:1" in scores
         assert scores["claim:1"] > 0
 
+    def test_retrieval_uses_indexed_term_candidates(self, tmp_path: Path, monkeypatch) -> None:
+        """Retrieval should score indexed term candidates without loading every node."""
+        from cc_deep_research.knowledge.vault import graph_sqlite_path, init_vault
+        init_vault(tmp_path)
+
+        db = graph_sqlite_path(tmp_path)
+        index = GraphIndex(db)
+        index.upsert_node(KnowledgeNode(
+            id="claim:match", kind=NodeKind.CLAIM,
+            label="Quantum computing research",
+            properties={"freshness": "current"}
+        ))
+        for index_id in range(20):
+            index.upsert_node(KnowledgeNode(
+                id=f"concept:{index_id}", kind=NodeKind.CONCEPT,
+                label=f"Unrelated concept {index_id}",
+                properties={}
+            ))
+        index.commit()
+        index.close()
+
+        def fail_all_nodes(self):
+            raise AssertionError("retrieval should not load all graph nodes")
+
+        monkeypatch.setattr(GraphIndex, "all_nodes", fail_all_nodes)
+
+        service = KnowledgeRetrievalService(config_path=tmp_path)
+        result = service.retrieve_context("quantum")
+
+        assert result.explanation.total_candidates == 21
+        assert result.explanation.nodes_selected == ["claim:match"]
+
     def test_fallback_context_has_no_prior_knowledge(self, tmp_path: Path) -> None:
         """Fallback context has knowledge_used=False."""
         nonexistent = tmp_path / "nonexistent"
