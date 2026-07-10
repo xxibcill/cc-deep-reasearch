@@ -20,8 +20,14 @@ from cc_deep_research.knowledge import (
 class GraphIndex:
     """A graph index backed by SQLite, optionally persisted to disk."""
 
-    def __init__(self, db_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        db_path: Path | None = None,
+        *,
+        enforce_foreign_keys: bool = False,
+    ) -> None:
         self._db_path = db_path
+        self._enforce_foreign_keys = enforce_foreign_keys
         self._conn: sqlite3.Connection | None = None
         if db_path is not None:
             self._init_db()
@@ -31,6 +37,12 @@ class GraphIndex:
         assert self._db_path is not None
         self._conn = sqlite3.connect(str(self._db_path))
         self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA synchronous=NORMAL")
+        self._conn.execute("PRAGMA busy_timeout=5000")
+        self._conn.execute(
+            f"PRAGMA foreign_keys={'ON' if self._enforce_foreign_keys else 'OFF'}"
+        )
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS nodes (
                 id TEXT PRIMARY KEY,
@@ -65,6 +77,7 @@ class GraphIndex:
             )
         """)
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_node_terms_term ON node_terms(term)")
+        self._conn.commit()
 
     @property
     def _c(self) -> sqlite3.Connection:
@@ -255,6 +268,11 @@ class GraphIndex:
         """Persist any pending changes to disk."""
         if self._conn is not None:
             self._conn.commit()
+
+    def rollback(self) -> None:
+        """Discard pending graph mutations."""
+        if self._conn is not None:
+            self._conn.rollback()
 
     def close(self) -> None:
         """Close the database connection."""

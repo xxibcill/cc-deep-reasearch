@@ -10,6 +10,7 @@ import yaml
 
 from cc_deep_research.content_gen.models import DerivativeOpportunity
 from cc_deep_research.content_gen.storage._paths import resolve_content_gen_file_path
+from cc_deep_research.persistence import atomic_write_text
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
@@ -75,7 +76,10 @@ class DerivativeOpportunityStore:
             "opportunities": [_serialize_model_to_dict(opp) for opp in opportunities],
             "last_updated": _now_iso(),
         }
-        self._path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        atomic_write_text(
+            self._path,
+            yaml.dump(data, default_flow_style=False, sort_keys=False),
+        )
 
     def add_opportunity(self, opportunity: DerivativeOpportunity) -> None:
         """Add a single derivative opportunity and persist."""

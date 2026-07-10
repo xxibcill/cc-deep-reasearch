@@ -14,6 +14,7 @@ from cc_deep_research.content_gen.models import (
     ScriptingRunResult,
 )
 from cc_deep_research.content_gen.storage._paths import default_content_gen_dir
+from cc_deep_research.persistence import atomic_write_text
 
 
 def _serialize_saved_payload(payload: dict[str, object]) -> str:
@@ -50,8 +51,8 @@ class ScriptingStore:
         script_path = run_dir / "script.txt"
         context_path = run_dir / "context.json"
         result_path = run_dir / "result.json"
-        script_path.write_text(script)
-        context_path.write_text(ctx.model_dump_json(indent=2))
+        atomic_write_text(script_path, script)
+        atomic_write_text(context_path, ctx.model_dump_json(indent=2))
 
         result = ScriptingRunResult(
             run_id=run_id,
@@ -62,7 +63,10 @@ class ScriptingStore:
             execution_mode=execution_mode,
             iterations=iterations,
         )
-        result_path.write_text(_serialize_saved_payload(result.model_dump(mode="json")))
+        atomic_write_text(
+            result_path,
+            _serialize_saved_payload(result.model_dump(mode="json")),
+        )
 
         record = SavedScriptRun(
             run_id=run_id,
@@ -75,18 +79,24 @@ class ScriptingStore:
             execution_mode=execution_mode,
             iterations=iterations,
         )
-        (run_dir / "metadata.json").write_text(
-            _serialize_saved_payload(record.model_dump(mode="json"))
+        atomic_write_text(
+            run_dir / "metadata.json",
+            _serialize_saved_payload(record.model_dump(mode="json")),
         )
 
         self._path.mkdir(parents=True, exist_ok=True)
-        (self._path / "latest.txt").write_text(script)
-        (self._path / "latest.context.json").write_text(ctx.model_dump_json(indent=2))
-        (self._path / "latest.result.json").write_text(
-            _serialize_saved_payload(result.model_dump(mode="json"))
+        atomic_write_text(self._path / "latest.txt", script)
+        atomic_write_text(
+            self._path / "latest.context.json",
+            ctx.model_dump_json(indent=2),
         )
-        (self._path / "latest.json").write_text(
-            _serialize_saved_payload(record.model_dump(mode="json"))
+        atomic_write_text(
+            self._path / "latest.result.json",
+            _serialize_saved_payload(result.model_dump(mode="json")),
+        )
+        atomic_write_text(
+            self._path / "latest.json",
+            _serialize_saved_payload(record.model_dump(mode="json")),
         )
         return record
 

@@ -10,6 +10,7 @@ import yaml
 
 from cc_deep_research.content_gen.models import ReusableAsset, ReusableAssetType
 from cc_deep_research.content_gen.storage._paths import resolve_content_gen_file_path
+from cc_deep_research.persistence import atomic_write_text
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
@@ -72,7 +73,10 @@ class ReusableAssetStore:
             "assets": [_serialize_model_to_dict(asset) for asset in assets],
             "last_updated": _now_iso(),
         }
-        self._path.write_text(yaml.dump(payload, default_flow_style=False, sort_keys=False))
+        atomic_write_text(
+            self._path,
+            yaml.dump(payload, default_flow_style=False, sort_keys=False),
+        )
 
     def add(self, asset: ReusableAsset) -> list[ReusableAsset]:
         """Append an asset and save. Sets created_at and updated_at if empty."""

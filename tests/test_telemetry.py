@@ -269,6 +269,52 @@ def test_ingest_and_query_dashboard_data(tmp_path):
     assert len(detail["tool_calls"]) >= 1
 
 
+def test_ingest_is_incremental_and_handles_partial_tail(tmp_path):
+    """Repeated refreshes should process only newly completed JSONL records."""
+    duckdb = pytest.importorskip("duckdb")
+    session_dir = tmp_path / "incremental-session"
+    session_dir.mkdir()
+    events_path = session_dir / "events.jsonl"
+
+    def event(sequence: int) -> dict[str, object]:
+        return {
+            "event_id": f"event-{sequence}",
+            "session_id": "incremental-session",
+            "sequence_number": sequence,
+            "timestamp": "2026-01-01T00:00:00Z",
+            "event_type": "test.event",
+            "category": "test",
+            "name": f"event-{sequence}",
+            "status": "completed",
+            "metadata": {},
+        }
+
+    events_path.write_text(json.dumps(event(1)) + "\n", encoding="utf-8")
+    db_path = tmp_path / "telemetry.duckdb"
+
+    first = ingest_telemetry_to_duckdb(base_dir=tmp_path, db_path=db_path)
+    unchanged = ingest_telemetry_to_duckdb(base_dir=tmp_path, db_path=db_path)
+    assert first["events"] == 1
+    assert unchanged == {"sessions": 0, "events": 0}
+
+    with open(events_path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(event(2)))
+    partial = ingest_telemetry_to_duckdb(base_dir=tmp_path, db_path=db_path)
+    assert partial["events"] == 0
+
+    with open(events_path, "a", encoding="utf-8") as handle:
+        handle.write("\n")
+    appended = ingest_telemetry_to_duckdb(base_dir=tmp_path, db_path=db_path)
+    assert appended["events"] == 1
+
+    with duckdb.connect(str(db_path), read_only=True) as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM telemetry_events WHERE session_id = ?",
+            ["incremental-session"],
+        ).fetchone()[0]
+    assert count == 2
+
+
 def test_event_correlation_fields_persisted(tmp_path):
     """Event correlation fields should be persisted to telemetry files."""
     monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=tmp_path)

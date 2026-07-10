@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -30,6 +29,7 @@ from cc_deep_research.knowledge.vault import (
     vault_root,
     wiki_log_path,
 )
+from cc_deep_research.persistence import atomic_write_json, atomic_write_text
 
 if TYPE_CHECKING:
     from cc_deep_research.models import ResearchSession
@@ -90,8 +90,7 @@ def _ingest_manifest(
         },
     }
     path = raw_session_dir(session_id, config_path) / "manifest.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    atomic_write_json(path, manifest)
     return manifest
 
 
@@ -107,8 +106,7 @@ def _snapshot_session(
 ) -> None:
     """Write the session JSON to raw storage."""
     path = raw_source_file(session.session_id, session.session_id, "session", config_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(session.model_dump_json(indent=2), encoding="utf-8")
+    atomic_write_text(path, session.model_dump_json(indent=2))
 
 
 def _snapshot_report(
@@ -121,8 +119,7 @@ def _snapshot_report(
     if report_md is None:
         return
     path = raw_source_file(session_id, session_id, "report", config_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(report_md, encoding="utf-8")
+    atomic_write_text(path, report_md)
 
 
 def _snapshot_sources(
@@ -134,9 +131,8 @@ def _snapshot_sources(
     if not session.sources:
         return
     path = raw_source_file(session.session_id, session.session_id, "sources", config_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
     data = [s.model_dump(mode="json") for s in session.sources]
-    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    atomic_write_json(path, data)
 
 
 # ---------------------------------------------------------------------------
@@ -162,8 +158,7 @@ def _write_page(
 ) -> Path:
     """Write a wiki page, creating its directory if needed."""
     path = dir_fn(config_path) / filename
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    atomic_write_text(path, content)
     return path
 
 
@@ -491,7 +486,7 @@ def ingest_session(
     try:
         db_path = graph_sqlite_path(config_path)
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        index = GraphIndex(db_path)
+        index = GraphIndex(db_path, enforce_foreign_keys=True)
     except Exception as exc:
         warnings.append(f"Could not open graph index: {exc}")
         index = GraphIndex()
@@ -505,12 +500,14 @@ def ingest_session(
 
     nodes: list[KnowledgeNode] = []
     edges: list[KnowledgeEdge] = []
+    graph_failed = False
 
     try:
         session_node = _ingest_session_page(session, config_path=config_path)
         nodes.append(session_node)
         index.upsert_node(session_node)
     except Exception as exc:
+        graph_failed = True
         warnings.append(f"Could not ingest session page: {exc}")
 
     # Ingest sources
@@ -532,6 +529,7 @@ def ingest_session(
             index.upsert_edge(edge)
             sources_ingested += 1
         except Exception as exc:
+            graph_failed = True
             warnings.append(f"Could not ingest source {source.url}: {exc}")
 
     # Ingest claims from cross_reference_claims in analysis metadata
@@ -565,6 +563,7 @@ def ingest_session(
                 index.upsert_edge(edge)
             claims_ingested += 1
         except Exception as exc:
+            graph_failed = True
             warnings.append(f"Could not ingest claim: {exc}")
 
     # Ingest gaps
@@ -587,6 +586,7 @@ def ingest_session(
             index.upsert_node(gap_node)
             gaps_ingested += 1
         except Exception as exc:
+            graph_failed = True
             warnings.append(f"Could not ingest gap: {exc}")
 
     # Count findings from key_findings
@@ -618,7 +618,11 @@ def ingest_session(
         pass
 
     try:
-        index.commit()
+        if graph_failed:
+            index.rollback()
+            warnings.append("Graph projection rolled back because one or more mutations failed")
+        else:
+            index.commit()
         index.close()
     except Exception:
         pass

@@ -118,6 +118,46 @@ class BriefRevisionStore:
             )
             conn.commit()
 
+    def import_legacy_database(self, legacy_path: Path) -> int:
+        """Import revisions from the former standalone database once."""
+        if not legacy_path.exists() or legacy_path.resolve() == self._db_path.resolve():
+            return 0
+        try:
+            with sqlite3.connect(legacy_path) as legacy_conn:
+                table = legacy_conn.execute(
+                    """
+                    SELECT name FROM sqlite_master
+                    WHERE type = 'table' AND name = 'briefs_revisions'
+                    """
+                ).fetchone()
+                if table is None:
+                    return 0
+                rows = legacy_conn.execute(
+                    """
+                    SELECT revision_id, brief_id, data, created_at
+                    FROM briefs_revisions
+                    """
+                ).fetchall()
+        except sqlite3.Error:
+            return 0
+
+        if not rows:
+            return 0
+        with self._lock:
+            self._ensure_initialized()
+            conn = self._get_conn()
+            before = conn.total_changes
+            conn.executemany(
+                """
+                INSERT OR IGNORE INTO briefs_revisions
+                    (revision_id, brief_id, data, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                rows,
+            )
+            conn.commit()
+            return conn.total_changes - before
+
     def get_revision(self, revision_id: str) -> BriefRevision | None:
         """Load a single revision by ID."""
         with self._lock:

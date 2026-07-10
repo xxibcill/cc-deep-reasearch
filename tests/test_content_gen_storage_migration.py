@@ -9,6 +9,7 @@ These tests cover:
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -162,6 +163,37 @@ def test_sqlite_backlog_store_save_and_load(temp_dir: Path) -> None:
     assert len(loaded.items) == 1
     assert loaded.items[0].idea_id == "sqlite_idea_001"
     assert loaded.items[0].title == "SQLite Persisted Idea"
+
+
+def test_sqlite_backlog_store_does_not_rewrite_unchanged_rows(temp_dir: Path) -> None:
+    """Saving a collection should leave unchanged rows untouched."""
+    db_path = temp_dir / "stable.db"
+    store = SqliteBacklogStore(path=db_path)
+    item = BacklogItem(
+        idea_id="stable_idea",
+        category="authority-building",
+        title="Stable Idea",
+        audience="SaaS founders",
+        problem="write amplification",
+        hook="Only changed rows should move",
+        content_type="teardown",
+    )
+    output = BacklogOutput(items=[item])
+    store.save(output)
+    with sqlite3.connect(db_path) as conn:
+        before = conn.execute(
+            "SELECT updated_at FROM backlog_items WHERE idea_id = ?",
+            (item.idea_id,),
+        ).fetchone()[0]
+
+    store.save(output)
+
+    with sqlite3.connect(db_path) as conn:
+        after = conn.execute(
+            "SELECT updated_at FROM backlog_items WHERE idea_id = ?",
+            (item.idea_id,),
+        ).fetchone()[0]
+    assert after == before
 
 
 def test_sqlite_backlog_store_update_item(temp_dir: Path) -> None:

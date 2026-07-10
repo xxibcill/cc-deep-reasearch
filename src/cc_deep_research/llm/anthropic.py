@@ -195,6 +195,11 @@ class AnthropicAPITransport(BaseLLMTransport):
                 cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
                 max_tokens=max_tokens,
                 latency_ms=duration_ms,
+                provider=LLMProviderType.ANTHROPIC.value,
+                transport=LLMTransportType.ANTHROPIC_API.value,
+                operation=str(request.metadata.get("operation", "unknown")),
+                session_id=request.metadata.get("session_id"),
+                agent_id=request.metadata.get("agent_id"),
             )
 
             # Append usage entry to log

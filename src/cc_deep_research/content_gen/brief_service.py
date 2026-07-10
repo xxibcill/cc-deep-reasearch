@@ -104,6 +104,13 @@ class BriefService:
 
         if revision_store is not None:
             self._revision_store = revision_store
+        elif isinstance(self._store, SqliteBriefStore):
+            # Keep brief heads and immutable revisions in one database so
+            # lifecycle writes can commit as a single SQLite transaction.
+            self._revision_store = BriefRevisionStore(path=self._store.path)
+            self._revision_store.import_legacy_database(
+                self._store.path.with_name("briefs_revisions.db")
+            )
         else:
             self._revision_store = BriefRevisionStore(config=config)
 
@@ -188,13 +195,9 @@ class BriefService:
             operating_policies=_default_operating_policies(),
         )
 
-        # Persist revision first
-        self._revision_store.save_revision(revision)
-
-        # Persist managed brief
         output = self._store.load()
         output.briefs.append(managed)
-        self._store.save(output)
+        self._persist_revision_and_output(revision, output)
 
         self._audit_mutation(
             AuditEventType.BRIEF_CREATED,
@@ -268,16 +271,13 @@ class BriefService:
             created_at=now,
         )
 
-        # Persist revision to revision store
-        self._revision_store.save_revision(revision)
-
         # Update managed brief metadata (not the head)
         managed.revision_count = new_version
         managed.latest_revision_id = revision.revision_id
         managed.updated_at = now
         managed.revision_history = managed.revision_history + [f"v{new_version}: {revision.revision_notes}"]
 
-        self._store.save(output)
+        self._persist_revision_and_output(revision, output)
 
         self._audit_mutation(
             AuditEventType.BRIEF_REVISION_SAVED,
@@ -552,10 +552,8 @@ class BriefService:
             operating_policies=_default_operating_policies(),
         )
 
-        # Persist revision and brief
-        self._revision_store.save_revision(new_revision)
         output.briefs.append(managed)
-        self._store.save(output)
+        self._persist_revision_and_output(new_revision, output)
 
         self._audit_mutation(
             AuditEventType.BRIEF_CREATED,
@@ -639,10 +637,8 @@ class BriefService:
             operating_policies=_default_operating_policies(),
         )
 
-        # Persist revision and brief
-        self._revision_store.save_revision(new_revision)
         output.briefs.append(managed)
-        self._store.save(output)
+        self._persist_revision_and_output(new_revision, output)
 
         self._audit_mutation(
             AuditEventType.BRIEF_CREATED,
@@ -681,6 +677,21 @@ class BriefService:
     # -------------------------------------------------------------------------
     # Audit
     # -------------------------------------------------------------------------
+
+    def _persist_revision_and_output(
+        self,
+        revision: BriefRevision,
+        output: ManagedBriefOutput,
+    ) -> None:
+        """Persist revision/head state atomically when both share SQLite."""
+        if (
+            isinstance(self._store, SqliteBriefStore)
+            and self._revision_store.path == self._store.path
+        ):
+            self._store.save_with_revision(output, revision)
+            return
+        self._revision_store.save_revision(revision)
+        self._store.save(output)
 
     def _audit_mutation(
         self,

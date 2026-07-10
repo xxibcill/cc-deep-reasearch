@@ -38,7 +38,11 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from cc_deep_research.content_gen.models import ManagedBriefOutput, ManagedOpportunityBrief
+from cc_deep_research.content_gen.models import (
+    BriefRevision,
+    ManagedBriefOutput,
+    ManagedOpportunityBrief,
+)
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
@@ -138,33 +142,38 @@ class SqliteBriefStore:
         with self._lock:
             self._ensure_initialized()
             conn = self._get_conn()
-            # Replace all rows transactionally
-            existing_ids = {
-                r[0] for r in conn.execute("SELECT brief_id FROM briefs").fetchall()
-            }
-            new_ids = {brief.brief_id for brief in output.briefs}
-
-            to_delete = existing_ids - new_ids
-            if to_delete:
-                placeholders = ",".join("?" * len(to_delete))
-                conn.execute(
-                    f"DELETE FROM briefs WHERE brief_id IN ({placeholders})", tuple(to_delete)
-                )
-
-            for brief in output.briefs:
-                data = brief.model_dump(exclude_none=True)
-                json_data = _json_encoded(data)
-                if brief.brief_id in existing_ids:
-                    conn.execute(
-                        "UPDATE briefs SET data = ?, updated_at = ? WHERE brief_id = ?",
-                        (json_data, _now_iso(), brief.brief_id),
-                    )
-                else:
-                    conn.execute(
-                        "INSERT INTO briefs (brief_id, data, created_at, updated_at) VALUES (?, ?, ?, ?)",
-                        (brief.brief_id, json_data, brief.created_at or _now_iso(), _now_iso()),
-                    )
+            self._save_output(conn, output)
             conn.commit()
+
+    def save_with_revision(
+        self,
+        output: ManagedBriefOutput,
+        revision: BriefRevision,
+    ) -> None:
+        """Atomically persist a revision and its managed-brief metadata."""
+        with self._lock:
+            self._ensure_initialized()
+            conn = self._get_conn()
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO briefs_revisions
+                        (revision_id, brief_id, data, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        revision.revision_id,
+                        revision.brief_id,
+                        _json_encoded(revision.model_dump(exclude_none=True)),
+                        revision.created_at or _now_iso(),
+                    ),
+                )
+                self._save_output(conn, output)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
 
     def update_brief(self, brief_id: str, patch: dict) -> ManagedOpportunityBrief | None:
         """Update a single brief and return the updated brief or None."""
@@ -219,8 +228,62 @@ class SqliteBriefStore:
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_briefs_updated ON briefs(updated_at)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS briefs_revisions (
+                revision_id TEXT PRIMARY KEY,
+                brief_id TEXT NOT NULL,
+                data TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_revisions_brief_id ON briefs_revisions(brief_id)"
+        )
         conn.commit()
         self._initialized = True
+
+    @staticmethod
+    def _save_output(conn: sqlite3.Connection, output: ManagedBriefOutput) -> None:
+        """Apply only changed managed-brief rows using the active transaction."""
+        existing_payloads = {
+            row[0]: row[1]
+            for row in conn.execute("SELECT brief_id, data FROM briefs").fetchall()
+        }
+        existing_ids = set(existing_payloads)
+        new_ids = {brief.brief_id for brief in output.briefs}
+
+        to_delete = existing_ids - new_ids
+        if to_delete:
+            placeholders = ",".join("?" * len(to_delete))
+            conn.execute(
+                f"DELETE FROM briefs WHERE brief_id IN ({placeholders})",
+                tuple(to_delete),
+            )
+
+        for brief in output.briefs:
+            json_data = _json_encoded(brief.model_dump(exclude_none=True))
+            if brief.brief_id in existing_ids:
+                if existing_payloads[brief.brief_id] == json_data:
+                    continue
+                conn.execute(
+                    "UPDATE briefs SET data = ?, updated_at = ? WHERE brief_id = ?",
+                    (json_data, _now_iso(), brief.brief_id),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO briefs (brief_id, data, created_at, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        brief.brief_id,
+                        json_data,
+                        brief.created_at or _now_iso(),
+                        _now_iso(),
+                    ),
+                )
 
     def _import_from_yaml(self) -> ManagedBriefOutput | None:
         """One-time import from YAML if YAML file exists and SQLite is empty.

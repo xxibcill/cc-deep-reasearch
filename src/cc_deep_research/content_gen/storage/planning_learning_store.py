@@ -14,6 +14,7 @@ from cc_deep_research.content_gen.models import (
     PlanningMetrics,
 )
 from cc_deep_research.content_gen.storage._paths import resolve_content_gen_file_path
+from cc_deep_research.persistence import atomic_write_text
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
@@ -98,7 +99,10 @@ class PlanningLearningStore:
             "metrics": _serialize_model_to_dict(existing_metrics),
             "last_updated": _now_iso(),
         }
-        self._path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        atomic_write_text(
+            self._path,
+            yaml.dump(data, default_flow_style=False, sort_keys=False),
+        )
 
     def save_metrics(self, metrics: PlanningMetrics) -> None:
         """Persist planning metrics, preserving learnings."""
@@ -109,7 +113,10 @@ class PlanningLearningStore:
             "metrics": _serialize_model_to_dict(metrics),
             "last_updated": _now_iso(),
         }
-        self._path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        atomic_write_text(
+            self._path,
+            yaml.dump(data, default_flow_style=False, sort_keys=False),
+        )
 
     def increment_metric(
         self,

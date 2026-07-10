@@ -9,6 +9,7 @@ import yaml
 
 from cc_deep_research.content_gen.models import BacklogItem, BacklogOutput
 from cc_deep_research.content_gen.storage._paths import resolve_content_gen_file_path
+from cc_deep_research.persistence import atomic_write_text
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
@@ -40,7 +41,10 @@ class BacklogStore:
         """Persist backlog to disk."""
         self._path.parent.mkdir(parents=True, exist_ok=True)
         data = backlog.model_dump(exclude_none=True)
-        self._path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        atomic_write_text(
+            self._path,
+            yaml.dump(data, default_flow_style=False, sort_keys=False),
+        )
 
     def update_item(self, idea_id: str, patch: dict) -> BacklogItem | None:
         """Update a single item and save. Returns the updated item or None."""

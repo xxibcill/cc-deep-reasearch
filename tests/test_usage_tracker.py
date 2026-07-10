@@ -30,6 +30,8 @@ def temp_log_path() -> Path:
     # Cleanup
     if path.exists():
         path.unlink()
+    sidecar = path.with_suffix(path.suffix + ".sqlite3")
+    sidecar.unlink(missing_ok=True)
 
 
 @pytest.fixture
@@ -64,6 +66,21 @@ def test_append_and_read_entry(temp_log_path: Path, sample_entry: TokenUsageEntr
     assert entries[0].input_tokens == sample_entry.input_tokens
     assert entries[0].output_tokens == sample_entry.output_tokens
     assert entries[0].request_id == sample_entry.request_id
+
+
+def test_request_id_retries_are_deduplicated(
+    temp_log_path: Path,
+    sample_entry: TokenUsageEntry,
+) -> None:
+    """Provider retries must not double-count the same request."""
+    append_usage_entry(sample_entry, temp_log_path)
+    append_usage_entry(sample_entry, temp_log_path)
+
+    entries = read_usage_entries(temp_log_path)
+    summary = get_lifetime_summary(temp_log_path)
+
+    assert len(entries) == 1
+    assert summary.total_requests == 1
 
 
 def test_read_empty_file(temp_log_path: Path) -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 from cc_deep_research.radar.models import (
     Opportunity,
@@ -100,6 +101,28 @@ class TestRadarStoreSources:
         """Deleting a non-existent source returns False."""
         result = store.delete_source("src-does-not-exist")
         assert result is False
+
+    def test_legacy_yaml_is_imported_once(self, temp_radar_dir: Path) -> None:
+        """Existing Radar YAML should migrate into the canonical SQLite store."""
+        temp_radar_dir.mkdir(parents=True)
+        source = RadarSource(
+            source_type=SourceType.NEWS,
+            label="Legacy source",
+            url_or_identifier="https://example.com/legacy",
+        )
+        legacy_path = temp_radar_dir / "radar_sources.yaml"
+        legacy_path.write_text(
+            yaml.safe_dump({"sources": [source.model_dump(mode="json")]}),
+            encoding="utf-8",
+        )
+
+        migrated = RadarStore(radar_dir=temp_radar_dir)
+        assert migrated.load_sources().sources[0].label == "Legacy source"
+        assert migrated.db_path.exists()
+
+        legacy_path.write_text(yaml.safe_dump({"sources": []}), encoding="utf-8")
+        reopened = RadarStore(radar_dir=temp_radar_dir)
+        assert reopened.load_sources().sources[0].label == "Legacy source"
 
 
 class TestRadarStoreSignals:

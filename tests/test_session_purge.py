@@ -44,6 +44,12 @@ class TestSessionPurgeService:
             json.dumps({"session_id": session_id, "query": "test"}),
             encoding="utf-8",
         )
+        knowledge_raw = temp_config_dir / "knowledge" / "raw" / "sessions" / session_id
+        knowledge_raw.mkdir(parents=True)
+        (knowledge_raw / "session.json").write_text("{}", encoding="utf-8")
+        knowledge_page = temp_config_dir / "knowledge" / "wiki" / "sessions" / f"{session_id}.md"
+        knowledge_page.parent.mkdir(parents=True)
+        knowledge_page.write_text("# Session", encoding="utf-8")
 
         db_path = temp_config_dir / "telemetry.duckdb"
         import duckdb
@@ -78,6 +84,14 @@ class TestSessionPurgeService:
         assert response.active_conflict is False
         assert not session_file.exists()
         assert not session_dir.exists()
+        assert not knowledge_raw.exists()
+        assert not knowledge_page.exists()
+        assert {layer.layer for layer in response.deleted_layers} == {
+            "session",
+            "telemetry",
+            "duckdb",
+            "knowledge",
+        }
 
     def test_partial_delete_with_missing_layers(
         self, temp_config_dir

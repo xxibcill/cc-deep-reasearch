@@ -19,6 +19,7 @@ from cc_deep_research.content_gen.models import (
     StrategyReadinessResult,
 )
 from cc_deep_research.content_gen.storage._paths import resolve_content_gen_file_path
+from cc_deep_research.persistence import atomic_write_text
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
@@ -82,7 +83,10 @@ class StrategyStore:
         """Persist strategy memory to disk."""
         self._path.parent.mkdir(parents=True, exist_ok=True)
         data = _model_to_dict(memory)
-        self._path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+        atomic_write_text(
+            self._path,
+            yaml.dump(data, default_flow_style=False, sort_keys=False),
+        )
 
     def update(self, patch: dict[str, Any]) -> StrategyMemory:
         """Load, apply a deep-merged partial update, save, and return the result."""
