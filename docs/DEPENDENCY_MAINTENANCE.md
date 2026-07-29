@@ -13,12 +13,16 @@ Dependabot checks Python, npm, and GitHub Actions dependencies weekly.
 ```bash
 uv lock --check
 uv tree --outdated --depth 1
+uvx pip-audit
 cd dashboard
 npm outdated
 npm run audit
 ```
 
 Use `npm run audit:strict` when reviewing all high-severity findings.
+
+The Python lock was fully refreshed on 2026-07-29 and had no known
+vulnerabilities in `pip-audit`.
 
 ## Known Dashboard Audit Exceptions
 
