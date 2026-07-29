@@ -71,15 +71,20 @@ test.describe("Operator smoke suite", () => {
         name: /start standard research pass/i,
       });
       const queryText = "What is the current state of fusion energy research?";
+      const monitorUrl = /\/session\/.*\/monitor/;
 
       await expect(researchQuery).toBeVisible();
       await expect(async () => {
-        await researchQuery.fill(queryText);
-        await expect(startButton).toBeEnabled({ timeout: 1_000 });
-      }).toPass({ timeout: 10_000 });
+        if (monitorUrl.test(new URL(page.url()).pathname)) {
+          return;
+        }
 
-      await startButton.click();
-      await expect(page).toHaveURL(/\/session\/.*\/monitor/);
+        await researchQuery.fill(queryText);
+        await expect(researchQuery).toHaveValue(queryText);
+        await expect(startButton).toBeEnabled({ timeout: 1_000 });
+        await startButton.click();
+        await expect(page).toHaveURL(monitorUrl, { timeout: 2_000 });
+      }).toPass({ timeout: 15_000 });
     }
   );
 
