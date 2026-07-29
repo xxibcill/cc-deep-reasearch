@@ -157,7 +157,10 @@ def _check_data_retention() -> HardeningCheckResult:
             label="Data retention",
             status=HardeningStatus.WARNING,
             detail="No explicit retention policy configured. Telemetry data will accumulate indefinitely.",
-            remediation="Configure retention policy via inqulume-studio telemetry retention --policy <policy>",
+            remediation=(
+                "Review and apply retention through /api/telemetry/retention "
+                "and /api/telemetry/retention/apply"
+            ),
         )
     except Exception:
         return HardeningCheckResult(

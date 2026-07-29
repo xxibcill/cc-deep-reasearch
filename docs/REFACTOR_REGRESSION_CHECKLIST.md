@@ -83,11 +83,18 @@ Run the full benchmark or live test if:
 - You changed the telemetry event schema
 
 ```bash
-# Full research pipeline test
-inqulume-studio research "your query here" --depth quick --output-dir /tmp/test-run
+# Start the supported stack
+./scripts/dashboard-dev
 
-# Full content-gen pipeline test
-inqulume-studio content-gen pipeline --theme "test theme" --output /tmp/test-script.txt --save-context
+# In another terminal, start a quick research run
+curl -sS http://127.0.0.1:8000/api/research-runs \
+  -H 'content-type: application/json' \
+  -d '{"query":"your query here","depth":"quick","realtime_enabled":true}'
+
+# Start a content-generation pipeline
+curl -sS http://127.0.0.1:8000/api/content-gen/pipelines \
+  -H 'content-type: application/json' \
+  -d '{"theme":"test theme"}'
 ```
 
 ## Documenting blocked checks

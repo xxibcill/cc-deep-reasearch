@@ -1,109 +1,113 @@
 # Inqulume Studio
 
-Deep research platform with real-time dashboard monitoring. Conduct multi-stage web research using Tavily search, session persistence, and telemetry analytics.
+Inqulume Studio is a local deep-research platform with a Next.js operator
+console and FastAPI backend. It supports staged research, live telemetry,
+session review, benchmark runs, opportunity radar, and a content-generation
+pipeline.
 
 Current codebase version: `0.1.0`
 
-## Features
+## Supported Runtime
 
-- Multi-stage research workflow (strategy, query expansion, source collection, analysis, validation, reporting)
-- Depth modes: `quick`, `standard`, `deep`
-- Parallel local source-collection tasks with dashboard monitoring
-- Source quality scoring and cross-reference analysis
-- Session persistence with full audit trail
-- Real-time WebSocket event streaming
-- Next.js operator console dashboard
+The browser dashboard is the product entrypoint. The former Click CLI and
+Streamlit telemetry UI have been retired.
 
-## Installation
-
-```bash
-# Install dependencies
-uv sync
-
-# Install with dashboard dependencies
-uv sync --extra dashboard
-```
+- Python 3.11 or 3.12
+- Node.js 24 recommended (22 minimum)
+- `uv` for Python environments and locking
+- npm for the dashboard lockfile
 
 ## Quick Start
 
 ```bash
-# 1) Configure API keys
-export TAVILY_API_KEYS=your_api_key_here
-
-# 2) Start the dashboard
-cd dashboard && npm install && npm run dev
+uv sync --locked
+cd dashboard
+npm ci
+cd ..
+./scripts/dashboard-dev
 ```
 
-This starts both the FastAPI backend (port 8000) and Next.js frontend (port 3000).
+The launcher starts:
 
-## Running the Backend Only
+- FastAPI at `http://localhost:8000`
+- Next.js at `http://localhost:3000`
+
+Open the dashboard, configure provider credentials under **Settings**, then
+start a run from **Research**.
+
+For a production-style local build:
 
 ```bash
-# Using the module entry point
-python -m cc_deep_research
-
-# Or with uvicorn directly
-uv run uvicorn cc_deep_research.web_server:create_app --factory --ws websockets-sansio --port 8000
+./scripts/dashboard-start
 ```
+
+## Backend Only
+
+```bash
+uv run uvicorn cc_deep_research.web_server:create_app \
+  --factory \
+  --ws websockets-sansio \
+  --host 127.0.0.1 \
+  --port 8000
+```
+
+The API is available under `http://localhost:8000/api`.
 
 ## Configuration
 
-Configuration file: `~/.config/inqulume-studio/config.yaml`
+Persistent configuration lives at:
 
-Default settings:
-- `search.providers: ["tavily"]`
-- `research.default_depth: "deep"`
-- `research.min_sources.deep: 50`
-- `search_team.enabled: true`
-- `search_team.concurrent_source_collection: true`
-- `search_team.max_concurrent_sources: 3`
+```text
+~/.config/inqulume-studio/config.yaml
+```
 
-Environment variable overrides:
+The Settings dashboard reads and updates the supported configuration schema.
+Environment variables can override provider credentials and runtime settings,
+including:
+
 - `TAVILY_API_KEYS`
 - `ANTHROPIC_API_KEY`
 - `OPENROUTER_API_KEY`
 - `CEREBRAS_API_KEY`
 - `CC_DEEP_RESEARCH_CONFIG`
 
-## LLM Routing
-
-Inqulume Studio supports multiple LLM backends:
-
-| Transport | Description |
-|-----------|-------------|
-| `anthropic_api` | Direct Claude API access |
-| `openrouter_api` | Multi-model access via OpenRouter |
-| `cerebras_api` | Fast inference via Cerebras |
-| `heuristic` | Rule-based fallback |
-
-Configure in `~/.config/inqulume-studio/config.yaml` under `llm` section.
-
 ## Development
 
+Run the complete offline validation surface:
+
 ```bash
-# Install dev dependencies
-uv sync
+./scripts/preflight
+```
 
-# Run tests
-uv run pytest
+That command verifies the Python lock, lint, types, all Python tests, dashboard
+lint and unit tests, a production build, smoke journeys, and the accessibility
+baseline.
 
-# Lint + format + type check
-uv run ruff check src/ tests/
-uv run ruff format src/ tests/
-uv run mypy src/
+## Architecture
+
+```text
+dashboard/                         Next.js operator console
+src/cc_deep_research/web_server.py FastAPI application factory
+src/cc_deep_research/research_runs Research-run application service
+src/cc_deep_research/orchestration Staged research workflow
+src/cc_deep_research/content_gen   Content-generation API and pipeline
+src/cc_deep_research/radar         Opportunity-radar API and services
+src/cc_deep_research/telemetry     Live and historical telemetry
 ```
 
 ## Documentation
 
-- [Dashboard Guide](docs/DASHELOG_GUIDE.md)
-- [Content-Generation Workflow](docs/content-generation/content-generation.md)
-- [Telemetry Architecture](docs/TELEMETRY.md)
+- [Usage and operations](docs/USAGE.md)
+- [Dashboard guide](docs/DASHBOARD_GUIDE.md)
+- [Research workflow](docs/RESEARCH_WORKFLOW.md)
+- [Content generation](docs/content-generation.md)
+- [Telemetry architecture](docs/TELEMETRY.md)
+- [Dependency maintenance](docs/DEPENDENCY_MAINTENANCE.md)
+- [Preflight](docs/PREFLIGHT.md)
 
-## Requirements
+## Repository
 
-- Python 3.11+
-- Node.js 18+ (for dashboard)
-- Tavily API key
+[github.com/xxibcill/cc-deep-reasearch](https://github.com/xxibcill/cc-deep-reasearch)
 
 ## License
 

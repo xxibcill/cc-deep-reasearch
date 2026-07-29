@@ -1,35 +1,47 @@
 # Documentation Guide
 
-Use these docs as the current contributor entry points:
+These are the maintained entry points for operators and contributors.
 
-- [`USAGE.md`](USAGE.md): CLI commands, configuration, and operator workflows
-- [`opportunity-radar-prd.md`](opportunity-radar-prd.md): detailed product requirements doc for the proposed proactive opportunity-discovery workspace
-- [`roadmap/opportunity-radar-roadmap.md`](roadmap/opportunity-radar-roadmap.md): phased implementation roadmap and small-agent task breakdown for Opportunity Radar
-- [`PREFLIGHT.md`](PREFLIGHT.md): Low-cost preflight validation before running live research
-- [`DASHBOARD_GUIDE.md`](DASHBOARD_GUIDE.md): comprehensive dashboard guide covering architecture, usage, APIs, telemetry flow, and caveats
-- [`../dashboard/README.md`](../dashboard/README.md): frontend development commands, runtime env vars, and backend wiring for the Next.js dashboard
-- [`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md): pipeline phases, orchestrator ownership, and package boundaries
-- [`content-generation/content-generation.md`](content-generation/content-generation.md): full short-form content-generation workflow, stage contracts, CLI usage, persistence, and current caveats
-- [`content-generation/content-gen-backlog.md`](content-generation/content-gen-backlog.md): persistent content backlog model, lifecycle, and storage
-- [`content-generation/content-gen-artifact.md`](content-generation/content-gen-artifact.md): pipeline artifacts, persistence layers, dashboard control surface, and production boundary
-- [`beats.md`](beats.md): detailed guide to beat structure, beat lifecycle, beat constraints, targeted revision, and visual handoff in the content-generation pipeline
-- [`select-beat-structure-prompts.md`](select-beat-structure-prompts.md): self-contained prompt for choosing a beat structure from only a content pillar and angle statement
-- [`script-from-beat-structure-prompts.md`](script-from-beat-structure-prompts.md): self-contained prompt for drafting a script after a beat structure has already been selected
-- [`brief-management.md`](brief-management.md): persistent brief management, lifecycle states, revision history, approval workflows, and rollout guide
-- [`TELEMETRY.md`](TELEMETRY.md): persisted telemetry model and monitoring workflow
-- [`REALTIME_MONITORING.md`](REALTIME_MONITORING.md): FastAPI + Next.js operator console for live monitoring
-- [`RELEASING.md`](RELEASING.md): release checklist, version bump workflow, and changelog expectations
+## Start here
 
-Current code layout:
+- [`USAGE.md`](USAGE.md): install, configure, launch, and use the supported dashboard/API workflow
+- [`PREFLIGHT.md`](PREFLIGHT.md): local validation and live-provider readiness checks
+- [`DASHBOARD_GUIDE.md`](DASHBOARD_GUIDE.md): dashboard architecture, pages, and backend integration
+- [`../dashboard/README.md`](../dashboard/README.md): frontend development and validation commands
+- [`REALTIME_MONITORING.md`](REALTIME_MONITORING.md): live event flow, session APIs, and WebSockets
+- [`TELEMETRY.md`](TELEMETRY.md): persisted telemetry, retention, and analytics
 
-- CLI bootstrap and command registration: [`src/cc_deep_research/cli/main.py`](../src/cc_deep_research/cli/main.py)
-- CLI subcommands: [`src/cc_deep_research/cli/`](../src/cc_deep_research/cli)
-- config package: [`src/cc_deep_research/config/`](../src/cc_deep_research/config)
-- models package: [`src/cc_deep_research/models/`](../src/cc_deep_research/models)
-- orchestration internals: [`src/cc_deep_research/orchestration/`](../src/cc_deep_research/orchestration)
-- telemetry live readers: [`src/cc_deep_research/telemetry/live.py`](../src/cc_deep_research/telemetry/live.py)
-- telemetry DuckDB analytics: [`src/cc_deep_research/telemetry/ingest.py`](../src/cc_deep_research/telemetry/ingest.py) and [`src/cc_deep_research/telemetry/query.py`](../src/cc_deep_research/telemetry/query.py)
-- telemetry compatibility exports: [`src/cc_deep_research/telemetry/__init__.py`](../src/cc_deep_research/telemetry/__init__.py)
-- real-time monitoring backend: [`src/cc_deep_research/web_server.py`](../src/cc_deep_research/web_server.py) and [`src/cc_deep_research/event_router.py`](../src/cc_deep_research/event_router.py)
-- Next.js dashboard frontend: [`dashboard/src/`](../dashboard/src)
-- stable root API: [`src/cc_deep_research/__init__.py`](../src/cc_deep_research/__init__.py)
+## Research and content workflows
+
+- [`RESEARCH_WORKFLOW.md`](RESEARCH_WORKFLOW.md): research execution phases and package ownership
+- [`RESEARCH_WORKFLOW_AGENT_INTERACTIONS.md`](RESEARCH_WORKFLOW_AGENT_INTERACTIONS.md): request-to-report interaction trace
+- [`content-generation.md`](content-generation.md): supported content-generation lifecycle and APIs
+- [`content-gen-backlog.md`](content-gen-backlog.md): backlog model and lifecycle
+- [`content-gen-artifact.md`](content-gen-artifact.md): artifact and production boundaries
+- [`brief-management.md`](brief-management.md): brief lifecycle and revision model
+- [`beats.md`](beats.md): scripting beat structures and targeted revision
+- [`opportunity-radar-prd.md`](opportunity-radar-prd.md): Opportunity Radar product requirements
+- [`radar/operator-playbook.md`](radar/operator-playbook.md): Opportunity Radar operations
+
+## Maintenance
+
+- [`DEPENDENCY_MAINTENANCE.md`](DEPENDENCY_MAINTENANCE.md): dependency policy and audit exceptions
+- [`RELEASING.md`](RELEASING.md): release checklist
+- [`REFACTOR_REGRESSION_CHECKLIST.md`](REFACTOR_REGRESSION_CHECKLIST.md): focused regression checks
+
+Files under [`tasks/`](tasks/) and [`review/`](review/) are dated engineering records.
+They are historical evidence, not current operating instructions.
+
+## Current code layout
+
+- FastAPI composition: [`src/cc_deep_research/web_server.py`](../src/cc_deep_research/web_server.py)
+- HTTP and WebSocket routes: [`src/cc_deep_research/web_server_routes/`](../src/cc_deep_research/web_server_routes)
+- browser-started research runs: [`src/cc_deep_research/research_runs/`](../src/cc_deep_research/research_runs)
+- research orchestration: [`src/cc_deep_research/orchestration/`](../src/cc_deep_research/orchestration)
+- content generation: [`src/cc_deep_research/content_gen/`](../src/cc_deep_research/content_gen)
+- Opportunity Radar: [`src/cc_deep_research/radar/`](../src/cc_deep_research/radar)
+- telemetry and analytics: [`src/cc_deep_research/telemetry/`](../src/cc_deep_research/telemetry)
+- Next.js dashboard: [`dashboard/src/`](../dashboard/src)
+
+The former Click CLI and Streamlit dashboard are retired. Do not add new
+operator workflows that depend on those removed entry points.

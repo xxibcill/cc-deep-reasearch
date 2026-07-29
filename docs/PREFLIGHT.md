@@ -55,7 +55,7 @@ Install dependencies before relying on the preflight:
 
 ```bash
 uv sync
-cd dashboard && npm install
+cd dashboard && npm ci
 cd dashboard && npx playwright install --with-deps chromium
 ```
 
@@ -97,7 +97,7 @@ uv run pytest tests/test_orchestrator.py tests/test_orchestration.py -v
 
 Run `./scripts/preflight` before merging changes that touch:
 
-- orchestrator, provider, schema, or CLI behavior
+- orchestrator, provider, schema, service, or API behavior
 - dashboard routes, components, or shared frontend types
 - release, operator, or maintenance workflows that rely on these paths
 

@@ -70,7 +70,10 @@ def _check_backup_availability() -> UpgradeCheckResult:
             label="Backup available",
             status=UpgradeCheckStatus.WARNING,
             detail="No backup manifests found in config directory",
-            remediation="Create a backup before upgrading: inqulume-studio backup create",
+            remediation=(
+                "Create a backup through POST /api/operations/backup/create "
+                "before upgrading"
+            ),
             blockers=[],
         )
 
@@ -405,7 +408,11 @@ def get_rollback_instructions(backup_id: str | None = None) -> dict[str, Any]:
             {
                 "step": 1,
                 "description": "Stop the dashboard and backend services",
-                "command": "inqulume-studio dashboard stop",
+                "command": (
+                    "curl -fsS -X POST "
+                    "'http://localhost:8000/api/operations/service/stop"
+                    "?service_name=dashboard'"
+                ),
             },
             {
                 "step": 2,
@@ -415,12 +422,15 @@ def get_rollback_instructions(backup_id: str | None = None) -> dict[str, Any]:
             {
                 "step": 3,
                 "description": "Restore from backup",
-                "command": "inqulume-studio backup restore <backup-path> --confirm",
+                "command": (
+                    "Restore the validated archive using the backup procedure "
+                    "documented in docs/USAGE.md"
+                ),
             },
             {
                 "step": 4,
                 "description": "Verify health after rollback",
-                "command": "inqulume-studio health check",
+                "command": "curl -fsS http://localhost:8000/api/health",
             },
         ],
         "reference": {
