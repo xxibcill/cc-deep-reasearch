@@ -50,9 +50,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/xxibcill/cc-deep-reasearch"
-Documentation = "https://github.com/xxibcill/cc-deep-reasearch#readme"
-Repository = "https://github.com/xxibcill/cc-deep-reasearch"
+Homepage = "https://github.com/xxibcill/inqulume-studio"
+Documentation = "https://github.com/xxibcill/inqulume-studio#readme"
+Repository = "https://github.com/xxibcill/inqulume-studio"
 
 [tool.hatch.version]
 path = "src/cc_deep_research/__about__.py"

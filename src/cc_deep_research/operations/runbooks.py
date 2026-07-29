@@ -374,7 +374,7 @@ def get_support_checklist() -> dict[str, Any]:
             "Provider credentials leaked or compromised",
             "Security incident detected",
         ],
-        "contact": "File an issue at https://github.com/xxibcill/cc-deep-reasearch/issues with the debug export attached",
+        "contact": "File an issue at https://github.com/xxibcill/inqulume-studio/issues with the debug export attached",
     }
 
 

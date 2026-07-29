@@ -107,7 +107,7 @@ src/cc_deep_research/telemetry     Live and historical telemetry
 
 ## Repository
 
-[github.com/xxibcill/cc-deep-reasearch](https://github.com/xxibcill/cc-deep-reasearch)
+[github.com/xxibcill/inqulume-studio](https://github.com/xxibcill/inqulume-studio)
 
 ## License
 
