@@ -3,22 +3,26 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, Protocol
 
-from websockets.server import WebSocketServerProtocol
+
+class _WebSocketTransport(Protocol):
+    """Minimum transport contract required by the connection wrapper."""
+
+    async def close(self) -> None: ...
 
 
 class WebSocketConnection:
     """Wrapper for WebSocket connections with metadata."""
 
-    def __init__(self, websocket: WebSocketServerProtocol, session_id: str) -> None:
+    def __init__(self, websocket: _WebSocketTransport, session_id: str) -> None:
         """Initialize WebSocket connection wrapper.
 
         Args:
             websocket: The WebSocket server protocol instance.
             session_id: The session ID this connection is subscribed to.
         """
-        self._websocket = websocket
+        self._websocket: Any = websocket
         self.session_id = session_id
         self._closed = False
 
