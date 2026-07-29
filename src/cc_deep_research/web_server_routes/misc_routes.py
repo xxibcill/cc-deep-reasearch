@@ -32,6 +32,7 @@ from cc_deep_research.session_store import SessionStore
 from cc_deep_research.telemetry import (
     _load_dashboard_connection,
 )
+from cc_deep_research.web_runtime import get_background_job_registry
 from cc_deep_research.web_server_routes._shared import serialize_timestamp
 
 
@@ -580,8 +581,6 @@ def register_misc_routes(app: FastAPI) -> None:
     ) -> JSONResponse:
         """Trigger a benchmark corpus run."""
         import asyncio
-
-        from cc_deep_research.web_server import get_background_job_registry
 
         run_output_dir = (
             Path(output_dir)

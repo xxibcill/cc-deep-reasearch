@@ -62,7 +62,7 @@ def test_stop_research_run_cancels_active_run_and_interrupts_session(
                     cancellation_check()
 
     monkeypatch.setattr(
-        "cc_deep_research.web_server.ResearchRunService",
+        "cc_deep_research.web_server_routes.research_run_routes.ResearchRunService",
         BlockingResearchRunService,
     )
 

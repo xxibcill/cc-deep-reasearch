@@ -313,6 +313,19 @@ def get_startup_diagnostics() -> dict[str, Any]:
     }
 
 
+def _serve_dashboard_backend(host: str, port: int) -> None:
+    """Run the FastAPI app without importing its route graph into operations."""
+    import uvicorn
+
+    uvicorn.run(
+        "cc_deep_research.web_server:create_app",
+        factory=True,
+        host=host,
+        port=port,
+        ws="websockets-sansio",
+    )
+
+
 def start_dashboard_backend(
     host: str = "localhost",
     port: int | None = None,
@@ -340,13 +353,12 @@ def start_dashboard_backend(
         )
 
     try:
-        import cc_deep_research.web_server as ws
-
         if background:
             import multiprocessing
+
             proc = multiprocessing.Process(
-                target=ws.start_server,
-                kwargs={"host": host, "port": port},
+                target=_serve_dashboard_backend,
+                args=(host, port),
                 daemon=True,
             )
             proc.start()
@@ -364,7 +376,7 @@ def start_dashboard_backend(
                 ),
             )
 
-        ws.start_server(host=host, port=port)
+        _serve_dashboard_backend(host, port)
         return ServiceStartResult(
             success=True,
             service=ServiceInfo(

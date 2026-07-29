@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from .phase_policy import OperatingPhasePolicy
 from .shared import (
     BriefExecutionPolicyMode,
     BriefLifecycleState,
     BriefProvenance,
 )
-
-if TYPE_CHECKING:
-    from .pipeline import OperatingPhasePolicy
 
 
 class BriefRevision(BaseModel):

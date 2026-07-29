@@ -13,6 +13,7 @@ from cc_deep_research.telemetry import (
     query_live_events_page,
 )
 from cc_deep_research.telemetry.tree import empty_decision_graph
+from cc_deep_research.web_runtime import get_event_router
 
 logger = logging.getLogger(__name__)
 
@@ -145,8 +146,6 @@ def register_websocket_routes(app: FastAPI) -> None:
         app: The FastAPI application instance.
     """
     from contextlib import suppress
-
-    from cc_deep_research.web_server import get_event_router
 
     @app.websocket("/ws/session/{session_id}")
     async def websocket_endpoint(websocket: WebSocket, session_id: str) -> None:

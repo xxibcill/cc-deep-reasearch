@@ -20,11 +20,12 @@ from cc_deep_research.research_runs.models import (
     ResearchRunRequest,
     ResearchRunStatus,
 )
-from cc_deep_research.research_runs.service import ResearchRunService  # noqa: F401
+from cc_deep_research.research_runs.service import ResearchRunService
 from cc_deep_research.telemetry import (
     get_default_telemetry_dir,
     query_live_session_detail,
 )
+from cc_deep_research.web_runtime import get_event_router, get_job_registry
 from cc_deep_research.web_server_routes._shared import parse_timestamp
 
 STALE_LIVE_SESSION_AFTER = timedelta(minutes=15)
@@ -141,8 +142,6 @@ def register_research_run_routes(app: FastAPI) -> None:
         Returns:
             JSON response with run_id for status polling.
         """
-        from cc_deep_research.web_server import get_event_router, get_job_registry
-
         job_registry = get_job_registry(app)
         event_router = get_event_router(app)
 
@@ -152,8 +151,6 @@ def register_research_run_routes(app: FastAPI) -> None:
         # Define background execution coroutine
         async def execute_research_run(job: ResearchRunJob) -> None:
             """Execute the research run and update job status in a thread."""
-            # Import from web_server to support monkeypatching in tests
-            from cc_deep_research.web_server import ResearchRunService
             service = ResearchRunService()
             try:
                 if job.stop_requested:
@@ -208,8 +205,6 @@ def register_research_run_routes(app: FastAPI) -> None:
         Returns:
             JSON response with run status, session_id, and result metadata.
         """
-        from cc_deep_research.web_server import get_job_registry
-
         job_registry = get_job_registry(app)
         job = job_registry.get_job(run_id)
 
@@ -258,8 +253,6 @@ def register_research_run_routes(app: FastAPI) -> None:
     @app.post("/api/research-runs/{run_id}/stop")
     async def stop_research_run(run_id: str) -> JSONResponse:
         """Request cancellation of an in-process browser-started run."""
-        from cc_deep_research.web_server import get_job_registry
-
         job_registry = get_job_registry(app)
         job = job_registry.get_job(run_id)
 
