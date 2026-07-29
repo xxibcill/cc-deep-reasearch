@@ -61,6 +61,9 @@ jobs:
       - name: Install dashboard dependencies
         run: npm ci
 
+      - name: Block critical dependency advisories
+        run: npm run audit
+
       - name: Lint dashboard
         run: npm run lint
 

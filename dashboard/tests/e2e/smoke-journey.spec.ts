@@ -66,11 +66,19 @@ test.describe("Operator smoke suite", () => {
     async ({ page }) => {
       await page.goto("/");
 
-      await page.getByLabel("Research Query").fill("What is the current state of fusion energy research?");
+      const researchQuery = page.getByLabel("Research Query");
+      const startButton = page.getByRole("button", {
+        name: /start standard research pass/i,
+      });
+      const queryText = "What is the current state of fusion energy research?";
 
-      await page.getByRole("button", { name: /start standard research pass/i }).click();
+      await expect(researchQuery).toBeVisible();
+      await expect(async () => {
+        await researchQuery.fill(queryText);
+        await expect(startButton).toBeEnabled({ timeout: 1_000 });
+      }).toPass({ timeout: 10_000 });
 
-      // Should navigate to the session monitor page
+      await startButton.click();
       await expect(page).toHaveURL(/\/session\/.*\/monitor/);
     }
   );

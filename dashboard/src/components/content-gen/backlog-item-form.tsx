@@ -1,7 +1,6 @@
 'use client'
 
 import { cloneElement, isValidElement, useState } from 'react'
-import type { ComponentPropsWithRef } from 'react'
 import { Pencil, Plus } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -239,15 +238,16 @@ export function BacklogItemForm({
 
   const renderTrigger = () => {
     if (trigger && isValidElement(trigger) && typeof trigger.type !== 'string') {
-      type TriggerProps = ComponentPropsWithRef<typeof trigger.type>
-      const originalOnClick = (trigger.props as TriggerProps).onClick
+      type TriggerProps = {
+        onClick?: React.MouseEventHandler<HTMLElement>
+      }
+      const typedTrigger = trigger as React.ReactElement<TriggerProps>
+      const originalOnClick = typedTrigger.props.onClick
 
-      return cloneElement(trigger, {
+      return cloneElement(typedTrigger, {
         onClick: (event: React.MouseEvent<HTMLElement>) => {
           event.stopPropagation()
-          if (typeof originalOnClick === 'function') {
-            ;(originalOnClick as (e: React.MouseEvent<HTMLElement>) => void)(event)
-          }
+          originalOnClick?.(event)
           if (!event.defaultPrevented) {
             handleOpenChange(true)
           }

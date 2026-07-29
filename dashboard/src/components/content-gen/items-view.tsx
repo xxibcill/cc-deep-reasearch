@@ -21,7 +21,7 @@ export function ItemsViewToggle({ value, onChange, label = 'View' }: ItemsViewTo
       <div
         aria-hidden="true"
         className={cn(
-          'pointer-events-none absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-[0.72rem] bg-card shadow-[0_12px_30px_rgba(0,0,0,0.22)] transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
+          'pointer-events-none absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-[0.72rem] bg-card shadow-[0_12px_30px_rgba(0,0,0,0.22)] transition-transform duration-200 [transition-timing-function:cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
           value === 'grid' ? 'translate-x-0' : 'translate-x-full'
         )}
       />
