@@ -6,36 +6,43 @@ on:
   pull_request:
     branches: [main, master]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: preflight-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   preflight:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v8
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
 
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync
+      - name: Verify and install locked dependencies
+        run: |
+          uv lock --check
+          uv sync --locked
 
       - name: Lint
-        run: uv run ruff check src/ tests/
+        run: uv run --frozen ruff check src/ tests/
 
       - name: Type check
-        run: uv run mypy src/
+        run: uv run --frozen mypy src/
 
-      - name: Schema validation (LLM analysis contracts)
-        run: uv run pytest tests/test_llm_analysis_client.py tests/test_models.py tests/test_reporter.py -v
-
-      - name: Provider response parsing
-        run: uv run pytest tests/test_tavily_provider.py tests/test_providers.py -v
-
-      - name: Orchestrator smoke (full fixture-backed pipeline)
-        run: uv run pytest tests/test_orchestrator.py tests/test_orchestration.py -v
-
-      - name: Research run service smoke
-        run: uv run pytest tests/test_research_run_service.py -v
+      - name: Run complete Python test suite
+        run: uv run --frozen pytest

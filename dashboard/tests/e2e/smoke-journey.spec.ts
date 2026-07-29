@@ -128,18 +128,18 @@ test.describe("Operator smoke suite", () => {
       await mockSessionAnnotations(page, sessionId);
       await page.goto(`/session/${sessionId}`);
 
-      // Find the annotation panel
-      const annotationPanel = page.getByText(/annotation|notes?|sticky note/i).first();
-      if (await annotationPanel.isVisible()) {
-        const noteInput = page.getByPlaceholder("Add a note about this session...");
-        if (await noteInput.isVisible()) {
-          await noteInput.fill("Reviewed the analysis. Findings look solid.");
-          const addNoteButton = page.getByRole("button", { name: /^add$/i }).first();
-          await expect(addNoteButton).toBeEnabled();
-          await addNoteButton.click();
-          await expect(page.getByText(/Reviewed the analysis/i)).toBeVisible();
-        }
-      }
+      const noteText = "Reviewed the analysis. Findings look solid.";
+      const noteInput = page.getByPlaceholder("Add a note about this session...");
+      const addNoteButton = page.getByRole("button", { name: /^add$/i }).first();
+
+      await expect(noteInput).toBeVisible();
+      await expect(async () => {
+        await noteInput.fill(noteText);
+        await expect(addNoteButton).toBeEnabled({ timeout: 1_000 });
+      }).toPass({ timeout: 10_000 });
+
+      await addNoteButton.click();
+      await expect(page.getByText(noteText)).toBeVisible();
     }
   );
 

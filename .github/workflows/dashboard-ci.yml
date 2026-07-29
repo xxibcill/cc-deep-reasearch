@@ -5,12 +5,33 @@ on:
     branches: [main, master]
     paths:
       - "dashboard/**"
+      - "src/cc_deep_research/content_gen/**"
+      - "src/cc_deep_research/models/**"
+      - "src/cc_deep_research/radar/**"
+      - "src/cc_deep_research/web_server_routes/**"
+      - "src/cc_deep_research/event_router.py"
+      - "src/cc_deep_research/monitoring.py"
+      - "src/cc_deep_research/web_server.py"
+      - "pyproject.toml"
+      - "uv.lock"
       - ".github/workflows/dashboard-ci.yml"
   pull_request:
     branches: [main, master]
     paths:
       - "dashboard/**"
+      - "src/cc_deep_research/content_gen/**"
+      - "src/cc_deep_research/models/**"
+      - "src/cc_deep_research/radar/**"
+      - "src/cc_deep_research/web_server_routes/**"
+      - "src/cc_deep_research/event_router.py"
+      - "src/cc_deep_research/monitoring.py"
+      - "src/cc_deep_research/web_server.py"
+      - "pyproject.toml"
+      - "uv.lock"
       - ".github/workflows/dashboard-ci.yml"
+
+permissions:
+  contents: read
 
 concurrency:
   group: dashboard-ci-${{ github.workflow }}-${{ github.ref }}
@@ -28,12 +49,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: dashboard/package-lock.json
 
@@ -43,38 +64,14 @@ jobs:
       - name: Lint dashboard
         run: npm run lint
 
+      - name: Run dashboard unit tests
+        run: npm test
+
       - name: Build dashboard
         run: npm run build
 
-      - name: Prefer stable Ubuntu mirrors for Playwright dependencies
-        run: |
-          for source_file in \
-            /etc/apt/apt-mirrors.txt \
-            /etc/apt/sources.list \
-            /etc/apt/sources.list.d/*.list \
-            /etc/apt/sources.list.d/*.sources
-          do
-            if [ -f "$source_file" ]; then
-              sudo sed -i \
-                -e "s|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g" \
-                -e "s|http://security.ubuntu.com/ubuntu|https://security.ubuntu.com/ubuntu|g" \
-                "$source_file"
-            fi
-          done
-
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('dashboard/package-lock.json') }}
-          restore-keys: |
-            playwright-${{ runner.os }}-
-
-      - name: Install Playwright system dependencies
-        run: npx playwright install-deps chromium
-
-      - name: Install Playwright browser
-        run: npx playwright install chromium
+      - name: Install Playwright browser and system dependencies
+        run: npx playwright install chromium --with-deps
 
       - name: Run dashboard smoke tests
         run: npm run test:e2e:smoke
@@ -84,7 +81,7 @@ jobs:
 
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dashboard-playwright-report
           path: dashboard/playwright-report/
