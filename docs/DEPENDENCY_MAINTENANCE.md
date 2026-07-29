@@ -4,9 +4,9 @@ The project uses locked Python and dashboard dependency graphs:
 
 - `uv.lock` is the source of truth for Python installs.
 - `dashboard/package-lock.json` is the only npm lockfile.
-- Node.js 24 is the CI and recommended local runtime.
+- Node.js 24 is the recommended local runtime.
 
-Dependabot checks Python, npm, and GitHub Actions dependencies weekly.
+Dependabot checks Python and npm dependencies weekly.
 
 ## Routine Checks
 
@@ -38,4 +38,5 @@ roots:
   accepted by the Next.js lint plugins.
 
 Dependabot should replace these exceptions as soon as compatible upstream
-releases are available. CI still blocks critical advisories.
+releases are available. Run `npm run audit` locally to block critical
+advisories before merging dependency changes.

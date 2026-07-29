@@ -71,7 +71,8 @@ Use the script flags when you need a cheaper targeted pass during local iteratio
 ./scripts/preflight --python-only
 ```
 
-Runs only the fixture-backed Python test subset.
+Runs the locked-dependency check, Python lint and type checks, and the complete
+fixture-backed Python test suite.
 
 ### Dashboard Only
 
@@ -79,7 +80,8 @@ Runs only the fixture-backed Python test subset.
 ./scripts/preflight --dashboard-only
 ```
 
-Runs the dashboard build and mocked smoke tests only.
+Runs dashboard lint, unit tests, the production build, mocked smoke tests, and
+the accessibility baseline.
 
 ### Quick Core Check
 
