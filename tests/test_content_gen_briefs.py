@@ -668,20 +668,22 @@ def test_brief_migration_build_summary() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Orchestrator Integration (brief resolution) Tests
+# Brief run-reference service integration tests
 # ---------------------------------------------------------------------------
 
 
-def test_orchestrator_resolve_brief_inline_fallback(temp_dir: Path) -> None:
-    """Orchestrator falls back to inline snapshot when brief_id is not provided."""
+def test_brief_service_resolves_inline_fallback(temp_dir: Path) -> None:
+    """The run-reference service falls back to a supplied inline snapshot."""
     from cc_deep_research.config import Config
-    from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
+    from cc_deep_research.content_gen.brief_run_reference_service import (
+        BriefRunReferenceService,
+    )
 
     config = Config()
-    orch = ContentGenOrchestrator(config)
+    service = BriefRunReferenceService(config)
 
     opp = make_opportunity_brief(theme="Inline Fallback Theme")
-    ref, resolved = orch.get_brief_for_run(brief_id=None, snapshot=opp)
+    ref, resolved = service.get_brief_for_run(brief_id=None, snapshot=opp)
 
     assert ref is not None
     assert ref.reference_type == "inline_fallback"
@@ -689,18 +691,23 @@ def test_orchestrator_resolve_brief_inline_fallback(temp_dir: Path) -> None:
     assert resolved == opp
 
 
-def test_orchestrator_resolve_brief_not_found_uses_snapshot(
+def test_brief_service_uses_snapshot_when_managed_brief_is_missing(
     temp_dir: Path,
 ) -> None:
-    """Orchestrator uses inline snapshot when brief_id doesn't exist in store."""
+    """The run-reference service uses a snapshot when a managed brief is missing."""
     from cc_deep_research.config import Config
-    from cc_deep_research.content_gen.orchestrator import ContentGenOrchestrator
+    from cc_deep_research.content_gen.brief_run_reference_service import (
+        BriefRunReferenceService,
+    )
 
     config = Config()
-    orch = ContentGenOrchestrator(config)
+    service = BriefRunReferenceService(config)
 
     opp = make_opportunity_brief(theme="Missing Brief Theme")
-    ref, resolved = orch.get_brief_for_run(brief_id="nonexistent_brief", snapshot=opp)
+    ref, resolved = service.get_brief_for_run(
+        brief_id="nonexistent_brief",
+        snapshot=opp,
+    )
 
     assert ref is not None
     assert ref.reference_type == "inline_fallback"
