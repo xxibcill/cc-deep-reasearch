@@ -50,8 +50,12 @@ dashboard/tsconfig.tsbuildinfo
 
 # Test artifacts
 dashboard/playwright-report/
+dashboard/playwright-screenshots/
 dashboard/test-results/
 test-results/
+
+# Generated code intelligence visualizations
+codebase-map.html
 
 # Rust build (if using Rust projects)
 target/
