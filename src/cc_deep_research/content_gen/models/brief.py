@@ -158,8 +158,8 @@ class BriefExecutionGate(BaseModel):
         self.error_message = (
             f"Execution blocked: brief is in '{brief_state.value}' state. "
             f"Stage '{stage_name}' requires an approved brief. "
-            f"Please approve the brief before proceeding, or use --brief-policy allow_draft "
-            f"to run with draft briefs (not recommended for production)."
+            "Please approve the brief in the dashboard before proceeding; "
+            "draft briefs are not eligible for this production stage."
         )
         return False, self.error_message
 

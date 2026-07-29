@@ -240,6 +240,19 @@ class TestStagePrerequisitePolicy:
 # ---------------------------------------------------------------------------
 
 
+def test_brief_gate_error_points_to_dashboard_approval() -> None:
+    gate = BriefExecutionGate()
+
+    allowed, message = gate.check_gate(
+        BriefLifecycleState.DRAFT,
+        "production_brief",
+    )
+
+    assert allowed is False
+    assert "approve the brief in the dashboard" in message
+    assert "--brief-policy" not in message
+
+
 class TestStageGatePolicy:
     """Tests for StageGatePolicy.check()."""
 
