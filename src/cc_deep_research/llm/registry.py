@@ -12,6 +12,7 @@ from cc_deep_research.llm.base import (
     LLMRoute,
     LLMRoutePlan,
     LLMTransportType,
+    transport_from_route_name,
 )
 
 
@@ -64,17 +65,11 @@ class LLMRouteRegistry:
 
     def _build_fallback_order(self) -> list[LLMTransportType]:
         """Build the fallback order from config."""
-        transport_map = {
-            "openrouter": LLMTransportType.OPENROUTER_API,
-            "cerebras": LLMTransportType.CEREBRAS_API,
-            "anthropic": LLMTransportType.ANTHROPIC_API,
-            "codex": LLMTransportType.CODEX_APP_SERVER,
-            "heuristic": LLMTransportType.HEURISTIC,
-        }
         order = []
         for name in self._config.fallback_order:
-            if name in transport_map:
-                order.append(transport_map[name])
+            transport = transport_from_route_name(name)
+            if transport is not None:
+                order.append(transport)
         return order
 
     def _build_route_from_transport(self, transport: LLMTransportType) -> LLMRoute:
@@ -149,14 +144,7 @@ class LLMRouteRegistry:
     def _get_default_route_for_agent(self, agent_id: str) -> LLMRoute:
         """Get the default route for an agent from config."""
         transport_name = self._config.get_route_for_agent(agent_id)
-        transport_map = {
-            "openrouter": LLMTransportType.OPENROUTER_API,
-            "cerebras": LLMTransportType.CEREBRAS_API,
-            "anthropic": LLMTransportType.ANTHROPIC_API,
-            "codex": LLMTransportType.CODEX_APP_SERVER,
-            "heuristic": LLMTransportType.HEURISTIC,
-        }
-        transport = transport_map.get(transport_name, LLMTransportType.ANTHROPIC_API)
+        transport = transport_from_route_name(transport_name) or LLMTransportType.ANTHROPIC_API
         return self._build_route_from_transport(transport)
 
     def get_route(self, agent_id: str) -> LLMRoute:

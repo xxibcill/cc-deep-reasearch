@@ -23,7 +23,7 @@ from cc_deep_research.event_router import EventRouter
 
 if TYPE_CHECKING:
     from cc_deep_research.content_gen.strategy_api_service import StrategyApiService
-    from cc_deep_research.llm.codex_runtime import CodexRuntime
+    from cc_deep_research.llm.runtime_context import LLMRuntimeContext
 
 
 class ContentGenServices:
@@ -47,12 +47,12 @@ class ContentGenServices:
         strategy_api_service: StrategyApiService | None = None,
         publish_queue_audit_service: PublishQueueAuditService | None = None,
         publish_queue_store: PublishQueueStore | None = None,
-        codex_runtime: CodexRuntime | None = None,
+        llm_runtime: LLMRuntimeContext | None = None,
     ) -> None:
         self._config = config
         self._event_router = event_router
         self._job_registry = job_registry
-        self._codex_runtime = codex_runtime
+        self._llm_runtime = llm_runtime
 
         # Audit store shared across services
         self._audit_store = audit_store or AuditStore(config=config)
@@ -61,7 +61,7 @@ class ContentGenServices:
         self._pipeline_service = pipeline_service or PipelineRunService(
             job_registry=job_registry,
             event_router=event_router,
-            codex_runtime=codex_runtime,
+            llm_runtime=llm_runtime,
         )
 
         # Backlog service + API service
@@ -83,7 +83,7 @@ class ContentGenServices:
         # Scripting service
         self._scripting_api_service = scripting_api_service or ScriptingApiService(
             config=config,
-            codex_runtime=codex_runtime,
+            llm_runtime=llm_runtime,
         )
 
         # Strategy service
@@ -114,8 +114,8 @@ class ContentGenServices:
         self._config.llm = effective_config.llm
 
     @property
-    def codex_runtime(self) -> CodexRuntime | None:
-        return self._codex_runtime
+    def llm_runtime(self) -> LLMRuntimeContext | None:
+        return self._llm_runtime
 
     @property
     def pipeline_service(self) -> PipelineRunService:
@@ -175,7 +175,7 @@ def build_content_gen_services(
     strategy_api_service: StrategyApiService | None = None,
     publish_queue_audit_service: PublishQueueAuditService | None = None,
     publish_queue_store: PublishQueueStore | None = None,
-    codex_runtime: CodexRuntime | None = None,
+    llm_runtime: LLMRuntimeContext | None = None,
 ) -> ContentGenServices:
     """Build a ContentGenServices instance with composed dependencies.
 
@@ -194,5 +194,5 @@ def build_content_gen_services(
         strategy_api_service=strategy_api_service,
         publish_queue_audit_service=publish_queue_audit_service,
         publish_queue_store=publish_queue_store,
-        codex_runtime=codex_runtime,
+        llm_runtime=llm_runtime,
     )

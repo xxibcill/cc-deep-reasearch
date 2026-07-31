@@ -18,6 +18,7 @@ final text.
 """
 _PROVIDER_CONFIG_OVERRIDES = (
     "allow_login_shell=false",
+    'forced_login_method="chatgpt"',
     'history.persistence="none"',
     "memories.generate_memories=false",
     "memories.use_memories=false",
@@ -95,6 +96,7 @@ def provider_config() -> dict[str, Any]:
     """Return a fresh, tool-disabled configuration for one provider thread."""
     return {
         "allow_login_shell": False,
+        "forced_login_method": "chatgpt",
         "history": {"persistence": "none"},
         "memories": {
             "generate_memories": False,
@@ -179,7 +181,7 @@ def effective_security_config_is_safe(config: Mapping[str, Any]) -> bool:
         return False
     if config.get("sandbox_mode") not in (None, "read-only"):
         return False
-    if config.get("forced_login_method") not in (None, "chatgpt"):
+    if config.get("forced_login_method") != "chatgpt":
         return False
     if config.get("model_provider") not in (None, "openai"):
         return False

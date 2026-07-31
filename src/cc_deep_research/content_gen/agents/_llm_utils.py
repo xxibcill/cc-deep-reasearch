@@ -5,31 +5,18 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from cc_deep_research.llm import LLMRouter, LLMTransportType
+from cc_deep_research.llm import LLMRouter
+from cc_deep_research.llm.base import transport_from_route_name
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
-    from cc_deep_research.llm.codex_runtime import CodexRuntime
-
-
-def _transport_from_route_name(route_name: str) -> LLMTransportType:
-    route_map = {
-        "openrouter": LLMTransportType.OPENROUTER_API,
-        "cerebras": LLMTransportType.CEREBRAS_API,
-        "anthropic": LLMTransportType.ANTHROPIC_API,
-        "codex": LLMTransportType.CODEX_APP_SERVER,
-        "heuristic": LLMTransportType.HEURISTIC,
-    }
-    transport = route_map.get(route_name)
-    if transport is None:
-        raise ValueError(f"Unsupported content-generation LLM route: {route_name}")
-    return transport
+    from cc_deep_research.llm.runtime_context import LLMRuntimeContext
 
 
 def create_agent_llm_router(
     config: Config,
     *,
-    codex_runtime: CodexRuntime | None = None,
+    llm_runtime: LLMRuntimeContext | None = None,
     agent_id: str | None = None,
     llm_route: str | None = None,
 ) -> LLMRouter:
@@ -40,9 +27,14 @@ def create_agent_llm_router(
     if llm_route is not None:
         if agent_id is None:
             raise ValueError("agent_id is required when overriding an LLM route")
-        transport = _transport_from_route_name(llm_route)
+        transport = transport_from_route_name(llm_route)
+        if transport is None:
+            raise ValueError(f"Unsupported content-generation LLM route: {llm_route}")
         registry.set_route(agent_id, registry.get_route_for_transport(transport))
-    return LLMRouter(registry, codex_runtime=codex_runtime)
+    return LLMRouter(
+        registry,
+        codex_runtime=llm_runtime.codex_runtime if llm_runtime is not None else None,
+    )
 
 
 def _missing_route_message(*, workflow_name: str, cli_command: str) -> str:

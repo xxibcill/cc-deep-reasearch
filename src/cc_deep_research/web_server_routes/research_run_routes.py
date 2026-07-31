@@ -13,6 +13,7 @@ from uuid import uuid4
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+from cc_deep_research.llm.runtime_context import llm_request_scope
 from cc_deep_research.research_runs.jobs import ResearchRunJob
 from cc_deep_research.research_runs.models import (
     ResearchOutputFormat,
@@ -192,7 +193,8 @@ def register_research_run_routes(app: FastAPI) -> None:
                 job_registry.mark_failed(job.run_id, error=str(e))
 
         # Spawn background task
-        task = asyncio.create_task(execute_research_run(job))
+        with llm_request_scope(job.run_id):
+            task = asyncio.create_task(execute_research_run(job))
         job_registry.attach_task(job.run_id, task)
 
         # Return immediately with run identifier
@@ -264,7 +266,7 @@ def register_research_run_routes(app: FastAPI) -> None:
     @app.post("/api/research-runs/{run_id}/stop")
     async def stop_research_run(run_id: str) -> JSONResponse:
         """Request cancellation of an in-process browser-started run."""
-        from cc_deep_research.web_server import get_job_registry
+        from cc_deep_research.web_server import get_backend_runtime, get_job_registry
 
         job_registry = get_job_registry(app)
         job = job_registry.get_job(run_id)
@@ -282,6 +284,7 @@ def register_research_run_routes(app: FastAPI) -> None:
             )
 
         job_registry.request_cancel(run_id)
+        get_backend_runtime(app).codex_runtime.request_cancel_scope(run_id)
 
         if job.status == ResearchRunStatus.QUEUED:
             if job.task is not None and not job.task.done():

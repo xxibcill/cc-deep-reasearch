@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from cc_deep_research.config import Config
-from cc_deep_research.llm.base import LLMRoute, LLMRoutePlan
+from cc_deep_research.llm.base import LLMRoute, LLMRoutePlan, transport_from_route_name
 from cc_deep_research.models.analysis import StrategyResult
 from cc_deep_research.models.llm import (
     LLMPlanModel,
@@ -192,19 +192,10 @@ class LLMRoutePlanner:
         # Start with configured fallback order
         configured_order = self._llm_config.fallback_order
 
-        # Map string names to enum values
-        name_to_transport = {
-            "openrouter": LLMTransportType.OPENROUTER_API,
-            "cerebras": LLMTransportType.CEREBRAS_API,
-            "anthropic": LLMTransportType.ANTHROPIC_API,
-            "codex": LLMTransportType.CODEX_APP_SERVER,
-            "heuristic": LLMTransportType.HEURISTIC,
-        }
-
         # Build ordered list of available transports
         fallback: list[LLMTransportType] = []
         for name in configured_order:
-            transport = name_to_transport.get(name)
+            transport = transport_from_route_name(name)
             if transport and availability.get(transport, False):
                 fallback.append(transport)
 
@@ -260,16 +251,7 @@ class LLMRoutePlanner:
         Returns:
             Route model for the agent, or None if using default.
         """
-        # Map preference name to transport type
-        name_to_transport = {
-            "openrouter": LLMTransportType.OPENROUTER_API,
-            "cerebras": LLMTransportType.CEREBRAS_API,
-            "anthropic": LLMTransportType.ANTHROPIC_API,
-            "codex": LLMTransportType.CODEX_APP_SERVER,
-            "heuristic": LLMTransportType.HEURISTIC,
-        }
-
-        preferred_transport = name_to_transport.get(config_preference)
+        preferred_transport = transport_from_route_name(config_preference)
 
         # Check if preferred transport is available
         if preferred_transport and availability.get(preferred_transport, False):

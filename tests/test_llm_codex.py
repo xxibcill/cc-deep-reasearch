@@ -27,6 +27,7 @@ from cc_deep_research.llm.codex_runtime import (
 )
 from cc_deep_research.llm.registry import LLMRouteRegistry
 from cc_deep_research.llm.router import LLMRouter
+from cc_deep_research.llm.runtime_context import llm_request_scope
 from cc_deep_research.orchestration.llm_route_planner import LLMRoutePlanner
 
 
@@ -104,6 +105,20 @@ async def test_execute_maps_codex_turn_to_normalized_response() -> None:
     assert response.metadata["turn_id"] == "turn-123"
     assert response.metadata["cached_input_tokens"] == 2
     assert response.metadata["unsupported_parameters"] == ["temperature", "max_tokens"]
+
+
+@pytest.mark.asyncio
+async def test_execute_propagates_workflow_scope_to_runtime() -> None:
+    runtime = FakeCodexRuntime()
+    transport = CodexTransport(_codex_route(), runtime=runtime)
+
+    with (
+        llm_request_scope("pipeline-123"),
+        patch("cc_deep_research.llm.codex.append_usage_entry"),
+    ):
+        await transport.execute(LLMRequest(prompt="Scoped request"))
+
+    assert runtime.run_turn.await_args.kwargs["scope_id"] == "pipeline-123"
 
 
 @pytest.mark.parametrize(

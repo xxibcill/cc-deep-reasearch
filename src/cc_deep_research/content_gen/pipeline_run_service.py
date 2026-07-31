@@ -30,10 +30,11 @@ from cc_deep_research.content_gen.models.pipeline import (
 from cc_deep_research.content_gen.models.production import RunConstraints
 from cc_deep_research.content_gen.progress import PipelineRunJob, PipelineRunJobRegistry
 from cc_deep_research.event_router import EventRouter
+from cc_deep_research.llm.runtime_context import llm_request_scope
 
 if TYPE_CHECKING:
     from cc_deep_research.content_gen.pipeline import ContentGenPipeline
-    from cc_deep_research.llm.codex_runtime import CodexRuntime
+    from cc_deep_research.llm.runtime_context import LLMRuntimeContext
 
 
 logger = logging.getLogger(__name__)
@@ -121,20 +122,20 @@ class PipelineRunService:
         event_router: EventRouter,
         pipeline_factory: Callable[[Config], ContentGenPipeline] | None = None,
         *,
-        codex_runtime: CodexRuntime | None = None,
+        llm_runtime: LLMRuntimeContext | None = None,
     ) -> None:
         self._job_registry = job_registry
         self._event_router = event_router
-        self._codex_runtime = codex_runtime
+        self._llm_runtime = llm_runtime
         self._pipeline_factory = pipeline_factory or self._default_pipeline_factory
 
     def _default_pipeline_factory(self, config: Config) -> ContentGenPipeline:
         from cc_deep_research.content_gen.pipeline import ContentGenPipeline
 
-        if self._codex_runtime is not None:
+        if self._llm_runtime is not None:
             return ContentGenPipeline(
                 config,
-                codex_runtime=self._codex_runtime,
+                llm_runtime=self._llm_runtime,
             )
         return ContentGenPipeline(config)
 
@@ -175,6 +176,8 @@ class PipelineRunService:
         if not job.is_active:
             raise PipelineNotActiveError(f"Pipeline is not active: {pipeline_id}")
         self._job_registry.request_cancel(pipeline_id)
+        if self._llm_runtime is not None:
+            self._llm_runtime.request_cancel(pipeline_id)
         return {"pipeline_id": pipeline_id, "status": "cancelling"}
 
     def start_pipeline(
@@ -407,6 +410,14 @@ class PipelineRunService:
                         "timestamp": datetime.now(UTC).isoformat(),
                     },
                 )
+            except asyncio.CancelledError:
+                if not job.stop_requested:
+                    raise
+                self._job_registry.mark_cancelled(job.pipeline_id)
+                await self._event_router.publish(
+                    job.pipeline_id,
+                    {"type": "pipeline_cancelled", "timestamp": datetime.now(UTC).isoformat()},
+                )
             except _PipelineCancelled:
                 self._job_registry.mark_cancelled(job.pipeline_id)
                 await self._event_router.publish(
@@ -425,7 +436,8 @@ class PipelineRunService:
                     },
                 )
 
-        task = asyncio.create_task(_run())
+        with llm_request_scope(job.pipeline_id):
+            task = asyncio.create_task(_run())
         self._job_registry.attach_task(job.pipeline_id, task)
 
     def _start_resume_pipeline_task(
@@ -525,13 +537,18 @@ class PipelineRunService:
                     job.pipeline_id,
                     {"type": "pipeline_completed", "timestamp": datetime.now(UTC).isoformat()},
                 )
+            except asyncio.CancelledError:
+                if not job.stop_requested:
+                    raise
+                self._job_registry.mark_cancelled(job.pipeline_id)
             except _PipelineCancelled:
                 self._job_registry.mark_cancelled(job.pipeline_id)
             except Exception as exc:
                 logger.exception("Pipeline %s resume failed", job.pipeline_id)
                 self._job_registry.mark_failed(job.pipeline_id, error=str(exc))
 
-        task = asyncio.create_task(_run())
+        with llm_request_scope(job.pipeline_id):
+            task = asyncio.create_task(_run())
         self._job_registry.attach_task(job.pipeline_id, task)
 
     def _start_backlog_item_pipeline_task(
@@ -632,6 +649,14 @@ class PipelineRunService:
                         "timestamp": datetime.now(UTC).isoformat(),
                     },
                 )
+            except asyncio.CancelledError:
+                if not job.stop_requested:
+                    raise
+                self._job_registry.mark_cancelled(job.pipeline_id)
+                await self._event_router.publish(
+                    job.pipeline_id,
+                    {"type": "pipeline_cancelled", "timestamp": datetime.now(UTC).isoformat()},
+                )
             except _PipelineCancelled:
                 self._job_registry.mark_cancelled(job.pipeline_id)
                 await self._event_router.publish(
@@ -650,7 +675,8 @@ class PipelineRunService:
                     },
                 )
 
-        task = asyncio.create_task(_run())
+        with llm_request_scope(job.pipeline_id):
+            task = asyncio.create_task(_run())
         self._job_registry.attach_task(job.pipeline_id, task)
 
     def _build_seeded_context_from_backlog_item(

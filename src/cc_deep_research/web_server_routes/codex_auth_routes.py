@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from ipaddress import ip_address
 from typing import cast
 from urllib.parse import urlsplit
@@ -235,6 +235,41 @@ def _error_response(
     return JSONResponse(content=payload.model_dump(mode="json"), status_code=status_code)
 
 
+async def _start_login(
+    login: Callable[[], Awaitable[CodexLoginSnapshot]],
+    *,
+    action: str,
+) -> CodexLoginResponse | JSONResponse:
+    """Start one login flow with the shared public exception mapping."""
+    try:
+        snapshot = await login()
+    except CodexLoginConflictError as error:
+        return _error_response(
+            action=action,
+            error=error,
+            status_code=status.HTTP_409_CONFLICT,
+            code="codex_login_in_progress",
+            message="A Codex login is already in progress.",
+        )
+    except CodexRuntimeUnavailableError as error:
+        return _error_response(
+            action=action,
+            error=error,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="codex_runtime_unavailable",
+            message="Codex runtime is unavailable.",
+        )
+    except CodexRuntimeError as error:
+        return _error_response(
+            action=action,
+            error=error,
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            code="codex_login_failed",
+            message="Codex login could not be started.",
+        )
+    return _login_response(snapshot)
+
+
 def register_codex_auth_routes(
     app: FastAPI,
     *,
@@ -278,33 +313,7 @@ def register_codex_auth_routes(
     )
     async def start_browser_login(request: Request) -> CodexLoginResponse | JSONResponse:
         runtime = _get_codex_runtime(request)
-        try:
-            snapshot = await runtime.login_browser()
-        except CodexLoginConflictError as error:
-            return _error_response(
-                action="browser login",
-                error=error,
-                status_code=status.HTTP_409_CONFLICT,
-                code="codex_login_in_progress",
-                message="A Codex login is already in progress.",
-            )
-        except CodexRuntimeUnavailableError as error:
-            return _error_response(
-                action="browser login",
-                error=error,
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                code="codex_runtime_unavailable",
-                message="Codex runtime is unavailable.",
-            )
-        except CodexRuntimeError as error:
-            return _error_response(
-                action="browser login",
-                error=error,
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                code="codex_login_failed",
-                message="Codex login could not be started.",
-            )
-        return _login_response(snapshot)
+        return await _start_login(runtime.login_browser, action="browser login")
 
     @router.post(
         "/login/device-code",
@@ -313,33 +322,7 @@ def register_codex_auth_routes(
     )
     async def start_device_code_login(request: Request) -> CodexLoginResponse | JSONResponse:
         runtime = _get_codex_runtime(request)
-        try:
-            snapshot = await runtime.login_device_code()
-        except CodexLoginConflictError as error:
-            return _error_response(
-                action="device-code login",
-                error=error,
-                status_code=status.HTTP_409_CONFLICT,
-                code="codex_login_in_progress",
-                message="A Codex login is already in progress.",
-            )
-        except CodexRuntimeUnavailableError as error:
-            return _error_response(
-                action="device-code login",
-                error=error,
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                code="codex_runtime_unavailable",
-                message="Codex runtime is unavailable.",
-            )
-        except CodexRuntimeError as error:
-            return _error_response(
-                action="device-code login",
-                error=error,
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                code="codex_login_failed",
-                message="Codex login could not be started.",
-            )
-        return _login_response(snapshot)
+        return await _start_login(runtime.login_device_code, action="device-code login")
 
     @router.get("/login/active", response_model=CodexLoginResponse | None)
     async def get_active_login_attempt(

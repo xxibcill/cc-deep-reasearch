@@ -12,6 +12,8 @@ import net from 'net';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
+import { createBackendLaunchSpec } from './backend-launcher.mjs';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const rootDir = resolve(__dirname, '..');
@@ -90,27 +92,14 @@ function attachLogs(child, prefixColor, label) {
 function startBackend(port, frontendPort) {
   log(COLORS.cyan, `[backend] Starting FastAPI server on ${BACKEND_HOST}:${port}...`);
 
-  const backend = spawn('uv', [
-    'run',
-    'uvicorn',
-    'cc_deep_research.web_server:create_app',
-    '--factory',
-    '--ws', 'websockets-sansio',
-    '--host', BACKEND_HOST,
-    '--port', String(port),
-    '--reload',
-  ], {
-    cwd: projectRoot,
-    stdio: 'pipe',
-    env: {
-      ...process.env,
-      CORS_ALLOWED_ORIGINS: process.env.CORS_ALLOWED_ORIGINS || [
-        `http://localhost:${frontendPort}`,
-        `http://127.0.0.1:${frontendPort}`,
-        `http://[::1]:${frontendPort}`,
-      ].join(','),
-    },
+  const launch = createBackendLaunchSpec({
+    host: BACKEND_HOST,
+    port,
+    frontendPort,
+    projectRoot,
+    reload: true,
   });
+  const backend = spawn(launch.command, launch.args, launch.options);
 
   attachLogs(backend, COLORS.cyan, 'backend');
 

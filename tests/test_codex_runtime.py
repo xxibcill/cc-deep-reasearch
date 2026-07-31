@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -261,6 +262,7 @@ async def test_run_turn_uses_isolated_tool_disabled_configuration(tmp_path) -> N
     )
     assert start_kwargs["config"] == {
         "allow_login_shell": False,
+        "forced_login_method": "chatgpt",
         "history": {"persistence": "none"},
         "memories": {
             "generate_memories": False,
@@ -358,7 +360,7 @@ async def test_browser_login_is_single_flight_and_redacts_terminal_snapshot(tmp_
     assert client.browser_handle is not None
     client.account_response = _account_response(authenticated=True)
     client.browser_handle.completed.set_result(SimpleNamespace(success=True, error=None))
-    waiter = runtime._logins[pending.login_id].waiter
+    waiter = runtime._login_manager._attempts[pending.login_id].waiter
     assert waiter is not None
     await waiter
 
@@ -443,7 +445,7 @@ async def test_turn_timeout_interrupts_active_codex_turn(tmp_path) -> None:
     )
 
     with pytest.raises(TimeoutError):
-        await runtime.run_turn(prompt="Never finish", timeout_seconds=0)
+        await runtime.run_turn(prompt="Never finish", timeout_seconds=0.01)
 
     assert turn.interrupted is True
     assert client.closed is True
@@ -491,10 +493,125 @@ async def test_turn_timeout_covers_thread_start(tmp_path) -> None:
     )
 
     with pytest.raises(TimeoutError):
-        await runtime.run_turn(prompt="Never start", timeout_seconds=0)
+        await runtime.run_turn(prompt="Never start", timeout_seconds=0.01)
 
     assert client.closed is True
     assert runtime.runtime_status == "stopped"
+    await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_turn_timeout_includes_waiting_for_shared_turn_lock(tmp_path) -> None:
+    first_turn = CoordinatedTurn()
+    client = FakeCodexClient(authenticated=True, turn=first_turn)
+    runtime = CodexRuntime(
+        client_factory=lambda: client,
+        isolated_cwd=tmp_path / "isolated",
+    )
+
+    first_task = asyncio.create_task(runtime.run_turn(prompt="First", timeout_seconds=1))
+    await first_turn.started.wait()
+
+    with pytest.raises(TimeoutError):
+        await runtime.run_turn(prompt="Expires in queue", timeout_seconds=0.01)
+
+    assert len(client.thread_start_calls) == 1
+    first_turn.release.set()
+    await first_task
+    await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_close_cancels_active_turn_and_rejects_queued_turn(tmp_path) -> None:
+    first_turn = CoordinatedTurn()
+    first_client = FakeCodexClient(authenticated=True, turn=first_turn)
+    replacement_client = FakeCodexClient(authenticated=True)
+    clients = iter((first_client, replacement_client))
+    runtime = CodexRuntime(
+        client_factory=lambda: next(clients),
+        isolated_cwd=tmp_path / "isolated",
+    )
+
+    active_task = asyncio.create_task(runtime.run_turn(prompt="Active"))
+    await first_turn.started.wait()
+    queued_task = asyncio.create_task(runtime.run_turn(prompt="Queued"))
+    await asyncio.sleep(0)
+
+    await runtime.close()
+
+    with pytest.raises(asyncio.CancelledError):
+        await active_task
+    with pytest.raises(CodexRuntimeUnavailableError, match="lifecycle changed"):
+        await queued_task
+    assert runtime.runtime_status == "stopped"
+    assert replacement_client.thread_start_calls == []
+
+    result = await runtime.run_turn(prompt="Fresh request")
+    assert result.content == "Codex response"
+    assert len(replacement_client.thread_start_calls) == 1
+    await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_logout_cancels_active_turn_and_rejects_queued_turn(tmp_path) -> None:
+    first_turn = CoordinatedTurn()
+    first_client = FakeCodexClient(authenticated=True, turn=first_turn)
+    logout_client = FakeCodexClient(authenticated=True)
+    clients = iter((first_client, logout_client))
+    runtime = CodexRuntime(
+        client_factory=lambda: next(clients),
+        isolated_cwd=tmp_path / "isolated",
+    )
+
+    active_task = asyncio.create_task(runtime.run_turn(prompt="Active"))
+    await first_turn.started.wait()
+    queued_task = asyncio.create_task(runtime.run_turn(prompt="Queued"))
+    await asyncio.sleep(0)
+
+    snapshot = await runtime.logout()
+
+    with pytest.raises(asyncio.CancelledError):
+        await active_task
+    with pytest.raises(CodexRuntimeUnavailableError, match="lifecycle changed"):
+        await queued_task
+    assert snapshot.authenticated is False
+    assert first_turn.interrupted is True
+    assert logout_client.logged_out is True
+    assert logout_client.thread_start_calls == []
+    await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_cancel_scope_interrupts_active_and_rejects_queued_turns(tmp_path) -> None:
+    first_turn = CoordinatedTurn()
+    first_client = FakeCodexClient(authenticated=True, turn=first_turn)
+    replacement_client = FakeCodexClient(authenticated=True)
+    clients = iter((first_client, replacement_client))
+    runtime = CodexRuntime(
+        client_factory=lambda: next(clients),
+        isolated_cwd=tmp_path / "isolated",
+    )
+
+    active_task = asyncio.create_task(
+        runtime.run_turn(prompt="Active", scope_id="run-1")
+    )
+    await first_turn.started.wait()
+    queued_task = asyncio.create_task(
+        runtime.run_turn(prompt="Queued", scope_id="run-1")
+    )
+    await asyncio.sleep(0)
+
+    runtime.request_cancel_scope("run-1")
+
+    with pytest.raises(asyncio.CancelledError):
+        await active_task
+    with pytest.raises(asyncio.CancelledError):
+        await queued_task
+    assert first_turn.interrupted is True
+
+    result = await runtime.run_turn(prompt="Fresh", scope_id="run-1")
+    assert result.content == "Codex response"
+    assert len(replacement_client.thread_start_calls) == 1
     await runtime.close()
 
 
@@ -514,6 +631,37 @@ async def test_worker_loop_turn_runs_on_runtime_owner_loop(tmp_path) -> None:
 
     assert result.content == "Codex response"
     assert client.thread_start_loop is owner_loop
+    await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_first_use_from_short_lived_loops_completes_both_turns(
+    tmp_path,
+) -> None:
+    clients: list[FakeCodexClient] = []
+
+    def create_client() -> FakeCodexClient:
+        client = FakeCodexClient(authenticated=True)
+        clients.append(client)
+        return client
+
+    runtime = CodexRuntime(
+        client_factory=create_client,
+        isolated_cwd=tmp_path / "isolated",
+    )
+    ready = threading.Barrier(2)
+
+    def run_from_short_lived_loop(prompt: str) -> str:
+        ready.wait(timeout=1)
+        return asyncio.run(runtime.run_turn(prompt=prompt)).content
+
+    first_result, second_result = await asyncio.gather(
+        asyncio.to_thread(run_from_short_lived_loop, "First loop"),
+        asyncio.to_thread(run_from_short_lived_loop, "Second loop"),
+    )
+
+    assert {first_result, second_result} == {"Codex response"}
+    assert sum(len(client.thread_start_calls) for client in clients) == 2
     await runtime.close()
 
 
@@ -543,6 +691,62 @@ async def test_closed_short_lived_owner_loop_restarts_cleanly(tmp_path) -> None:
     assert first_client.closed is True
     assert second_client.thread_start_calls
     assert second_client.closed is True
+
+
+@pytest.mark.asyncio
+async def test_closed_owner_loop_rebind_is_single_flight_for_concurrent_callers(tmp_path) -> None:
+    first_client = FakeCodexClient(authenticated=True)
+    coordinated_turn = CoordinatedTurn()
+    second_client = FakeCodexClient(authenticated=True, turn=coordinated_turn)
+    clients = iter((first_client, second_client))
+    runtime = CodexRuntime(
+        client_factory=lambda: next(clients),
+        isolated_cwd=tmp_path / "isolated",
+    )
+
+    await asyncio.to_thread(lambda: asyncio.run(runtime.run_turn(prompt="Old owner")))
+
+    first_task = asyncio.create_task(runtime.run_turn(prompt="First new owner"))
+    second_task = asyncio.create_task(runtime.run_turn(prompt="Second new owner"))
+    await coordinated_turn.started.wait()
+    await asyncio.sleep(0)
+
+    assert len(second_client.thread_start_calls) == 1
+    coordinated_turn.release.set()
+    first_result, second_result = await asyncio.gather(first_task, second_task)
+
+    assert first_result.content == "Codex response"
+    assert second_result.content == "Codex response"
+    assert len(second_client.thread_start_calls) == 2
+    await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_api_key_account_is_not_accepted_as_chatgpt_authentication(tmp_path) -> None:
+    client = FakeCodexClient(authenticated=False)
+    client.account_response = SimpleNamespace(
+        account=SimpleNamespace(
+            root=SimpleNamespace(
+                type="apiKey",
+                email=None,
+                plan_type=None,
+            )
+        ),
+        requires_openai_auth=True,
+    )
+    runtime = CodexRuntime(
+        client_factory=lambda: client,
+        isolated_cwd=tmp_path / "isolated",
+    )
+
+    await runtime.start()
+
+    assert runtime.account_snapshot.account_type == "apiKey"
+    assert runtime.is_authenticated is False
+    with pytest.raises(CodexNotAuthenticatedError, match="ChatGPT"):
+        await runtime.run_turn(prompt="Must not use metered API auth")
+    assert client.thread_start_calls == []
+    await runtime.close()
 
 
 @pytest.mark.asyncio
@@ -601,7 +805,7 @@ async def test_cancel_failure_keeps_login_pollable(tmp_path) -> None:
     retryable = runtime.get_login(pending.login_id)
     assert retryable.status == "pending"
     assert "secret" not in (retryable.error or "")
-    waiter = runtime._logins[pending.login_id].waiter
+    waiter = runtime._login_manager._attempts[pending.login_id].waiter
     assert waiter is not None
     assert waiter.done() is False
 
@@ -671,7 +875,7 @@ async def test_cancel_returns_login_completion_that_won_the_race(tmp_path) -> No
     await cancel_started.wait()
     client.account_response = _account_response(authenticated=True)
     client.browser_handle.completed.set_result(SimpleNamespace(success=True))
-    waiter = runtime._logins[pending.login_id].waiter
+    waiter = runtime._login_manager._attempts[pending.login_id].waiter
     assert waiter is not None
     await waiter
     release_cancel.set()
@@ -778,7 +982,7 @@ async def test_stale_login_failure_does_not_discard_restarted_client(tmp_path) -
     runtime._account_snapshot = runtime._snapshot_from_account(
         _account_response(authenticated=True)
     )
-    waiter = runtime._logins[pending.login_id].waiter
+    waiter = runtime._login_manager._attempts[pending.login_id].waiter
     assert waiter is not None
     await waiter
 
@@ -891,6 +1095,13 @@ def test_effective_security_config_fails_closed() -> None:
     assert effective_security_config_is_safe(unsafe_view_image) is False
     assert effective_security_config_is_safe(unsafe_tool_web_search) is False
     assert effective_security_config_is_safe(missing_tools) is False
+    assert effective_security_config_is_safe(
+        {**safe_config, "forced_login_method": "api-key"}
+    ) is False
+    missing_login_method = {
+        key: value for key, value in safe_config.items() if key != "forced_login_method"
+    }
+    assert effective_security_config_is_safe(missing_login_method) is False
 
 
 def test_process_overrides_disable_named_mcp_servers(tmp_path, monkeypatch) -> None:
@@ -917,6 +1128,7 @@ url = "https://example.test/mcp"
     assert 'otel.metrics_exporter="none"' in overrides
     assert 'otel.trace_exporter="none"' in overrides
     assert "notify=[]" in overrides
+    assert 'forced_login_method="chatgpt"' in overrides
     assert 'shell_environment_policy.inherit="none"' in overrides
     assert 'mcp_servers.docs={enabled=false,command="codex-provider-disabled"}' in overrides
     assert (

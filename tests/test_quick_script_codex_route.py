@@ -24,6 +24,7 @@ from cc_deep_research.content_gen.models import QCResult, QualityEvaluation, Scr
 from cc_deep_research.content_gen.scripting_api_service import ScriptingApiService
 from cc_deep_research.content_gen.scripting_run_service import ScriptingRunService
 from cc_deep_research.llm.base import LLMTransportType
+from cc_deep_research.llm.runtime_context import LLMRuntimeContext
 from cc_deep_research.web_server import create_app
 
 
@@ -37,10 +38,11 @@ def test_quick_script_request_accepts_codex_route() -> None:
 
 
 def test_quality_evaluator_accepts_codex_route_override() -> None:
+    llm_runtime = LLMRuntimeContext(codex_runtime=MagicMock())
     evaluator = QualityEvaluatorAgent(
         Config(),
         llm_route="codex",
-        codex_runtime=MagicMock(),
+        llm_runtime=llm_runtime,
     )
 
     route = evaluator._router._registry.get_route(EVALUATOR_AGENT_ID)
@@ -51,27 +53,28 @@ def test_quality_evaluator_accepts_codex_route_override() -> None:
 def test_scripting_components_share_injected_codex_runtime() -> None:
     config = Config()
     codex_runtime = MagicMock()
+    llm_runtime = LLMRuntimeContext(codex_runtime=codex_runtime)
 
     agent = ScriptingAgent(
         config,
         llm_route="codex",
-        codex_runtime=codex_runtime,
+        llm_runtime=llm_runtime,
     )
     evaluator = QualityEvaluatorAgent(
         config,
-        codex_runtime=codex_runtime,
+        llm_runtime=llm_runtime,
     )
     api_service = ScriptingApiService(
         config=config,
         scripting_store=MagicMock(),
-        codex_runtime=codex_runtime,
+        llm_runtime=llm_runtime,
     )
     run_service = api_service._default_scripting_run_factory()
 
     assert agent._router._codex_runtime is codex_runtime
     assert agent._router._registry.get_route(AGENT_ID).transport == LLMTransportType.CODEX_APP_SERVER
     assert evaluator._router._codex_runtime is codex_runtime
-    assert run_service._codex_runtime is codex_runtime
+    assert run_service._llm_runtime is llm_runtime
 
 
 @pytest.mark.asyncio
@@ -83,6 +86,7 @@ async def test_iterative_scripting_routes_producer_and_evaluator_through_codex(
         "evaluator": [],
     }
     codex_runtime = MagicMock()
+    llm_runtime = LLMRuntimeContext(codex_runtime=codex_runtime)
 
     class FakeScriptingAgent:
         def __init__(
@@ -90,9 +94,9 @@ async def test_iterative_scripting_routes_producer_and_evaluator_through_codex(
             _config: Config,
             *,
             llm_route: str | None = None,
-            codex_runtime: object | None = None,
+            llm_runtime: object | None = None,
         ) -> None:
-            captured["producer"].append((llm_route, codex_runtime))
+            captured["producer"].append((llm_route, llm_runtime))
 
         async def run_pipeline(
             self,
@@ -110,9 +114,9 @@ async def test_iterative_scripting_routes_producer_and_evaluator_through_codex(
             _config: Config,
             *,
             llm_route: str | None = None,
-            codex_runtime: object | None = None,
+            llm_runtime: object | None = None,
         ) -> None:
-            captured["evaluator"].append((llm_route, codex_runtime))
+            captured["evaluator"].append((llm_route, llm_runtime))
 
         async def evaluate_scripting(self, **_kwargs: object) -> QualityEvaluation:
             return QualityEvaluation(
@@ -128,7 +132,7 @@ async def test_iterative_scripting_routes_producer_and_evaluator_through_codex(
         FakeQualityEvaluatorAgent,
     )
 
-    service = ScriptingRunService(Config(), codex_runtime=codex_runtime)
+    service = ScriptingRunService(Config(), llm_runtime=llm_runtime)
     result, iteration_state = await service.run_scripting_iterative(
         "Explain model routing",
         llm_route="codex",
@@ -137,8 +141,8 @@ async def test_iterative_scripting_routes_producer_and_evaluator_through_codex(
     assert result.raw_idea == "Explain model routing"
     assert iteration_state.is_converged is True
     assert captured == {
-        "producer": [("codex", codex_runtime)],
-        "evaluator": [("codex", codex_runtime)],
+        "producer": [("codex", llm_runtime)],
+        "evaluator": [("codex", llm_runtime)],
     }
 
 
@@ -148,6 +152,7 @@ async def test_scripting_run_service_passes_codex_route_and_runtime(
 ) -> None:
     captured: dict[str, Any] = {}
     codex_runtime = MagicMock()
+    llm_runtime = LLMRuntimeContext(codex_runtime=codex_runtime)
 
     class FakeScriptingAgent:
         def __init__(
@@ -155,10 +160,10 @@ async def test_scripting_run_service_passes_codex_route_and_runtime(
             _config: Config,
             *,
             llm_route: str | None = None,
-            codex_runtime: object | None = None,
+            llm_runtime: object | None = None,
         ) -> None:
             captured["llm_route"] = llm_route
-            captured["codex_runtime"] = codex_runtime
+            captured["llm_runtime"] = llm_runtime
 
         async def run_pipeline(
             self,
@@ -176,7 +181,7 @@ async def test_scripting_run_service_passes_codex_route_and_runtime(
     )
     service = ScriptingRunService(
         Config(),
-        codex_runtime=codex_runtime,
+        llm_runtime=llm_runtime,
     )
 
     result = await service.run_scripting(
@@ -187,7 +192,7 @@ async def test_scripting_run_service_passes_codex_route_and_runtime(
     assert result.raw_idea == "Explain model routing"
     assert captured == {
         "llm_route": "codex",
-        "codex_runtime": codex_runtime,
+        "llm_runtime": llm_runtime,
     }
 
 
@@ -203,12 +208,12 @@ def test_quick_script_uses_codex_config_saved_after_app_start(
             self,
             config: Config,
             *,
-            codex_runtime: object | None = None,
+            llm_runtime: LLMRuntimeContext | None = None,
         ) -> None:
             captured["enabled"] = config.llm.codex.enabled
             captured["model"] = config.llm.codex.model
             captured["reasoning_effort"] = config.llm.codex.reasoning_effort
-            captured["codex_runtime"] = codex_runtime
+            captured["llm_runtime"] = llm_runtime
 
         async def run_scripting(
             self,
@@ -255,7 +260,7 @@ def test_quick_script_uses_codex_config_saved_after_app_start(
     assert captured["model"] == "gpt-5.6-sol"
     assert captured["reasoning_effort"] == "high"
     assert captured["llm_route"] == "codex"
-    assert captured["codex_runtime"] is app.state.dashboard_runtime.codex_runtime
+    assert captured["llm_runtime"].codex_runtime is app.state.dashboard_runtime.codex_runtime
 
 
 def test_quick_script_endpoint_forwards_codex_without_validation_error(

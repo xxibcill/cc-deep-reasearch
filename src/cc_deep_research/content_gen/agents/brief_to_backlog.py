@@ -20,7 +20,7 @@ from cc_deep_research.content_gen.models import BriefRevision
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
-    from cc_deep_research.llm.codex_runtime import CodexRuntime
+    from cc_deep_research.llm.runtime_context import LLMRuntimeContext
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +148,7 @@ async def generate_backlog_from_brief(
     brief_revision: BriefRevision,
     config: Config | None = None,
     *,
-    codex_runtime: CodexRuntime | None = None,
+    llm_runtime: LLMRuntimeContext | None = None,
 ) -> BriefToBacklogResponse:
     """Generate backlog item candidates from a brief revision.
 
@@ -164,7 +164,7 @@ async def generate_backlog_from_brief(
 
         config = load_config()
 
-    router = create_agent_llm_router(config, codex_runtime=codex_runtime)
+    router = create_agent_llm_router(config, llm_runtime=llm_runtime)
 
     user_prompt = _build_user_prompt(brief_revision)
 

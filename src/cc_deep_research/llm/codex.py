@@ -33,6 +33,7 @@ from cc_deep_research.llm.codex_runtime import (
     CodexRuntimeUnavailableError,
     get_shared_codex_runtime,
 )
+from cc_deep_research.llm.runtime_context import get_llm_request_scope
 from cc_deep_research.llm.usage_tracker import TokenUsageEntry, append_usage_entry
 
 _DEFAULT_MODEL_LABELS = {"", "default", "codex-default"}
@@ -85,15 +86,19 @@ class CodexTransport(BaseLLMTransport):
         )
 
         try:
-            result = await self._runtime.run_turn(
-                prompt=request.prompt,
-                model=model,
-                developer_instructions=request.system_prompt,
-                reasoning_effort=str(self._reasoning_effort)
+            turn_kwargs: dict[str, Any] = {
+                "prompt": request.prompt,
+                "model": model,
+                "developer_instructions": request.system_prompt,
+                "reasoning_effort": str(self._reasoning_effort)
                 if self._reasoning_effort
                 else None,
-                timeout_seconds=self._timeout_seconds,
-            )
+                "timeout_seconds": self._timeout_seconds,
+            }
+            scope_id = get_llm_request_scope()
+            if scope_id is not None:
+                turn_kwargs["scope_id"] = scope_id
+            result = await self._runtime.run_turn(**turn_kwargs)
         except asyncio.CancelledError:
             raise
         except TimeoutError as exc:

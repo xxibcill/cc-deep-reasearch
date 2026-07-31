@@ -12,7 +12,7 @@ from cc_deep_research.content_gen.models import IterationState, QualityEvaluatio
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
-    from cc_deep_research.llm.codex_runtime import CodexRuntime
+    from cc_deep_research.llm.runtime_context import LLMRuntimeContext
 
 # Re-export IterationState so callers don't need to import from models
 __all__ = ["ScriptingRunService", "IterationState"]
@@ -29,10 +29,10 @@ class ScriptingRunService:
         self,
         config: Config,
         *,
-        codex_runtime: CodexRuntime | None = None,
+        llm_runtime: LLMRuntimeContext | None = None,
     ) -> None:
         self._config = config
-        self._codex_runtime = codex_runtime
+        self._llm_runtime = llm_runtime
 
     # ------------------------------------------------------------------
     # Single-pass scripting
@@ -51,7 +51,7 @@ class ScriptingRunService:
         agent = ScriptingAgent(
             self._config,
             llm_route=llm_route,
-            codex_runtime=self._codex_runtime,
+            llm_runtime=self._llm_runtime,
         )
         return await agent.run_pipeline(raw_idea, progress_callback=progress_callback)
 
@@ -69,7 +69,7 @@ class ScriptingRunService:
         agent = ScriptingAgent(
             self._config,
             llm_route=llm_route,
-            codex_runtime=self._codex_runtime,
+            llm_runtime=self._llm_runtime,
         )
         return await agent.run_from_step(ctx, step, progress_callback=progress_callback)
 
@@ -102,12 +102,12 @@ class ScriptingRunService:
         agent = ScriptingAgent(
             self._config,
             llm_route=llm_route,
-            codex_runtime=self._codex_runtime,
+            llm_runtime=self._llm_runtime,
         )
         evaluator_agent = QualityEvaluatorAgent(
             self._config,
             llm_route=llm_route,
-            codex_runtime=self._codex_runtime,
+            llm_runtime=self._llm_runtime,
         )
         threshold = self._config.content_gen.quality_threshold
         latest_ctx: ScriptingContext | None = None

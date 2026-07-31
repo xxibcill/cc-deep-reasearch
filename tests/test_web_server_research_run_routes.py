@@ -14,6 +14,7 @@ from cc_deep_research.research_runs import (
 )
 from cc_deep_research.web_server import (
     create_app,
+    get_job_registry,
 )
 
 
@@ -154,3 +155,30 @@ def test_stop_research_run_cancels_active_run_and_interrupts_session(
         assert sessions[0]["session_id"] == session_id
         assert sessions[0]["status"] == "interrupted"
         assert sessions[0]["active"] is False
+
+
+def test_stop_research_run_cancels_matching_llm_scope() -> None:
+    class RecordingCodexRuntime:
+        def __init__(self) -> None:
+            self.cancelled_scopes: list[str] = []
+
+        async def start(self) -> None:
+            pass
+
+        async def close(self) -> None:
+            pass
+
+        def request_cancel_scope(self, scope_id: str) -> None:
+            self.cancelled_scopes.append(scope_id)
+
+    runtime = RecordingCodexRuntime()
+    app = create_app(codex_runtime=runtime)  # type: ignore[arg-type]
+    registry = get_job_registry(app)
+    job = registry.create_job(ResearchRunRequest(query="cancel scope"))
+    registry.mark_running(job.run_id)
+
+    with TestClient(app) as client:
+        response = client.post(f"/api/research-runs/{job.run_id}/stop")
+
+    assert response.status_code == 202
+    assert runtime.cancelled_scopes == [job.run_id]

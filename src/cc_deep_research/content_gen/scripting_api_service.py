@@ -30,7 +30,7 @@ from cc_deep_research.content_gen.storage import ScriptingStore
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from cc_deep_research.llm.codex_runtime import CodexRuntime
+    from cc_deep_research.llm.runtime_context import LLMRuntimeContext
 
 
 class ScriptingApiError(Exception):
@@ -87,19 +87,19 @@ class ScriptingApiService:
         config: Config | None = None,
         scripting_store: ScriptingStore | None = None,
         scripting_run_factory=None,
-        codex_runtime: CodexRuntime | None = None,
+        llm_runtime: LLMRuntimeContext | None = None,
     ) -> None:
         self._config = config or load_config()
         self._store = scripting_store or ScriptingStore()
         self._scripting_run_factory = scripting_run_factory or self._default_scripting_run_factory
-        self._codex_runtime = codex_runtime
+        self._llm_runtime = llm_runtime
 
     def _default_scripting_run_factory(self) -> ScriptingRunService:
-        if self._codex_runtime is None:
+        if self._llm_runtime is None:
             return ScriptingRunService(self._config)
         return ScriptingRunService(
             self._config,
-            codex_runtime=self._codex_runtime,
+            llm_runtime=self._llm_runtime,
         )
 
     # ------------------------------------------------------------------
@@ -287,7 +287,7 @@ class ScriptingApiService:
 
         agent = ScriptingAgent(
             self._config,
-            codex_runtime=self._codex_runtime,
+            llm_runtime=self._llm_runtime,
         )
 
         context = await agent.generate_hooks(context)

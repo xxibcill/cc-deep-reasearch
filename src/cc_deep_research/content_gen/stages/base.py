@@ -8,7 +8,7 @@ from cc_deep_research.config import Config
 
 if TYPE_CHECKING:
     from cc_deep_research.content_gen.models import PipelineCandidate, PipelineContext
-    from cc_deep_research.llm.codex_runtime import CodexRuntime
+    from cc_deep_research.llm.runtime_context import LLMRuntimeContext
 
 
 class BaseStageOrchestrator:
@@ -22,7 +22,7 @@ class BaseStageOrchestrator:
         self,
         config: Config,
         *,
-        codex_runtime: CodexRuntime | None = None,
+        llm_runtime: LLMRuntimeContext | None = None,
     ) -> None:
         """Initialize the stage orchestrator.
 
@@ -30,7 +30,7 @@ class BaseStageOrchestrator:
             config: Application configuration.
         """
         self._config = config
-        self._codex_runtime = codex_runtime
+        self._llm_runtime = llm_runtime
         self._agents: dict[str, object] = {}
 
     def _get_agent(self, name: str) -> object:
@@ -45,7 +45,7 @@ class BaseStageOrchestrator:
 
     def _build_agent(self, agent_type: type[Any]) -> object:
         """Construct an agent with the stage's shared runtime dependency."""
-        return agent_type(self._config, codex_runtime=self._codex_runtime)
+        return agent_type(self._config, llm_runtime=self._llm_runtime)
 
     async def run_with_context(self, ctx: PipelineContext) -> PipelineContext:
         """Run this stage with full pipeline context.

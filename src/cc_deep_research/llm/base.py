@@ -9,7 +9,9 @@ This module defines the core types for agent-level LLM routing:
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from enum import StrEnum
+from types import MappingProxyType
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -23,6 +25,22 @@ class LLMTransportType(StrEnum):
     ANTHROPIC_API = "anthropic_api"
     CODEX_APP_SERVER = "codex_app_server"
     HEURISTIC = "heuristic"
+
+
+LLM_ROUTE_NAME_TO_TRANSPORT: Mapping[str, LLMTransportType] = MappingProxyType(
+    {
+        "openrouter": LLMTransportType.OPENROUTER_API,
+        "cerebras": LLMTransportType.CEREBRAS_API,
+        "anthropic": LLMTransportType.ANTHROPIC_API,
+        "codex": LLMTransportType.CODEX_APP_SERVER,
+        "heuristic": LLMTransportType.HEURISTIC,
+    }
+)
+
+
+def transport_from_route_name(route_name: str) -> LLMTransportType | None:
+    """Resolve one public route name to its transport enum."""
+    return LLM_ROUTE_NAME_TO_TRANSPORT.get(route_name)
 
 
 class LLMProviderType(StrEnum):

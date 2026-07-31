@@ -71,8 +71,8 @@ def test_resume_pipeline_creates_distinct_jobs_per_attempt(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
 
     class FakeOrchestrator:
-        def __init__(self, _config, *, codex_runtime=None) -> None:
-            del codex_runtime
+        def __init__(self, _config, *, llm_runtime=None) -> None:
+            del llm_runtime
 
         def validate_resume_context(self, *, from_stage: int, ctx: PipelineContext) -> str | None:
             del from_stage, ctx
@@ -143,8 +143,8 @@ def test_resume_context_isolation_from_original_failed_job(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
 
     class FakeOrchestrator:
-        def __init__(self, _config, *, codex_runtime=None) -> None:
-            del codex_runtime
+        def __init__(self, _config, *, llm_runtime=None) -> None:
+            del llm_runtime
 
         def validate_resume_context(self, *, from_stage: int, ctx: PipelineContext) -> str | None:
             del from_stage, ctx
@@ -249,8 +249,8 @@ def test_run_scripting_endpoint_can_force_single_pass(
             return ctx.qc.final_script if ctx.qc else ""
 
     class FakeOrchestrator:
-        def __init__(self, _config: Config, *, codex_runtime=None) -> None:
-            del codex_runtime
+        def __init__(self, _config: Config, *, llm_runtime=None) -> None:
+            del llm_runtime
             self.single_pass_calls = 0
 
         async def run_scripting(
@@ -368,8 +368,8 @@ def test_run_scripting_endpoint_accepts_iteration_overrides(
             return ctx.qc.final_script if ctx.qc else ""
 
     class FakeOrchestrator:
-        def __init__(self, _config: Config, *, codex_runtime=None) -> None:
-            del codex_runtime
+        def __init__(self, _config: Config, *, llm_runtime=None) -> None:
+            del llm_runtime
 
         async def run_scripting(self, raw_idea: str, progress_callback=None) -> ScriptingContext:
             del raw_idea, progress_callback
@@ -534,8 +534,8 @@ def test_content_gen_pipeline_websocket_streams_live_stage_events(
     allow_run = threading.Event()
 
     class FakeOrchestrator:
-        def __init__(self, _config: Config, *, codex_runtime=None) -> None:
-            del codex_runtime
+        def __init__(self, _config: Config, *, llm_runtime=None) -> None:
+            del llm_runtime
 
         async def run_full_pipeline(
             self,
@@ -711,8 +711,8 @@ def test_content_gen_pipeline_websocket_streams_failed_stage_events(
     allow_run = threading.Event()
 
     class FakeOrchestrator:
-        def __init__(self, _config: Config, *, codex_runtime=None) -> None:
-            del codex_runtime
+        def __init__(self, _config: Config, *, llm_runtime=None) -> None:
+            del llm_runtime
 
         async def run_full_pipeline(
             self,
@@ -1140,8 +1140,8 @@ def test_start_backlog_item_returns_202_with_pipeline_id(
     from cc_deep_research.content_gen.models import PipelineContext
 
     class FakeOrchestrator:
-        def __init__(self, _config, *, codex_runtime=None) -> None:
-            del codex_runtime
+        def __init__(self, _config, *, llm_runtime=None) -> None:
+            del llm_runtime
 
         async def run_full_pipeline(
             self,
@@ -1212,8 +1212,8 @@ def test_start_backlog_item_returns_409_on_duplicate_active_run(
 
 
     class FakeOrchestrator:
-        def __init__(self, _config, *, codex_runtime=None) -> None:
-            del codex_runtime
+        def __init__(self, _config, *, llm_runtime=None) -> None:
+            del llm_runtime
 
         async def run_full_pipeline(
             self,
@@ -1276,8 +1276,8 @@ def test_start_backlog_item_seeds_context_with_selected_idea_id(
     captured_context: dict | None = None
 
     class FakeOrchestrator:
-        def __init__(self, _config, *, codex_runtime=None) -> None:
-            del codex_runtime
+        def __init__(self, _config, *, llm_runtime=None) -> None:
+            del llm_runtime
 
         async def run_full_pipeline(
             self,
@@ -1347,8 +1347,8 @@ def test_start_backlog_item_respects_from_stage_4(
     captured_from_stage: int | None = None
 
     class FakeOrchestrator:
-        def __init__(self, _config, *, codex_runtime=None) -> None:
-            del codex_runtime
+        def __init__(self, _config, *, llm_runtime=None) -> None:
+            del llm_runtime
 
         async def run_full_pipeline(
             self,

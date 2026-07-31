@@ -37,6 +37,7 @@ from cc_deep_research.content_gen.progress import (
     PipelineRunStatus,
 )
 from cc_deep_research.event_router import EventRouter
+from cc_deep_research.llm.runtime_context import LLMRuntimeContext
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -282,6 +283,26 @@ def test_stop_pipeline_success(
     updated_job = job_registry.get_job(job.pipeline_id)
     assert updated_job is not None
     assert updated_job.stop_requested is True
+
+
+def test_stop_pipeline_cancels_matching_llm_scope(
+    job_registry: PipelineRunJobRegistry,
+    event_router: MagicMock,
+    mock_pipeline_factory: MockPipelineFactory,
+) -> None:
+    runtime = MagicMock()
+    service = PipelineRunService(
+        job_registry=job_registry,
+        event_router=event_router,
+        pipeline_factory=mock_pipeline_factory,
+        llm_runtime=LLMRuntimeContext(codex_runtime=runtime),
+    )
+    job = job_registry.create_job("test theme", from_stage=0, to_stage=5)
+    job.status = PipelineRunStatus.RUNNING
+
+    service.stop_pipeline(job.pipeline_id)
+
+    runtime.request_cancel_scope.assert_called_once_with(job.pipeline_id)
 
 
 # ---------------------------------------------------------------------------

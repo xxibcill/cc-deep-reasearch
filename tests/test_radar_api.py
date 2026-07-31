@@ -371,8 +371,8 @@ class TestRadarWorkflowLaunchAPI:
         )
 
         class FakeOrchestrator:
-            def __init__(self, _config: Config, *, codex_runtime=None) -> None:
-                assert codex_runtime is app.state.dashboard_runtime.codex_runtime
+            def __init__(self, _config: Config, *, llm_runtime=None) -> None:
+                assert llm_runtime.codex_runtime is app.state.dashboard_runtime.codex_runtime
 
             async def run_full_pipeline(
                 self,

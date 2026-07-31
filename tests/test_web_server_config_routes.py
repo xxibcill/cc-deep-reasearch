@@ -110,7 +110,7 @@ def test_patch_config_routes_subsequent_direct_content_agents_through_codex(
     services = app.state.content_gen_services
     agent = BacklogChatAgent(
         services.config,
-        codex_runtime=services.codex_runtime,
+        llm_runtime=services.llm_runtime,
     )
 
     route = agent._router._registry.get_route(BACKLOG_CHAT_AGENT_ID)

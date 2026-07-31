@@ -29,6 +29,7 @@ from cc_deep_research.content_gen.progress import (
 from cc_deep_research.content_gen.router import register_content_gen_routes
 from cc_deep_research.event_router import EventRouter
 from cc_deep_research.llm.codex_runtime import CodexRuntime, get_shared_codex_runtime
+from cc_deep_research.llm.runtime_context import LLMRuntimeContext
 from cc_deep_research.radar.router import register_radar_routes
 from cc_deep_research.reporting import ReportGenerator
 from cc_deep_research.research_runs.jobs import (
@@ -156,7 +157,7 @@ def create_app(
         config=config,
         event_router=runtime.event_router,
         job_registry=runtime.pipeline_jobs,
-        codex_runtime=runtime.codex_runtime,
+        llm_runtime=LLMRuntimeContext(codex_runtime=runtime.codex_runtime),
     )
     app.state.content_gen_services = services
     register_content_gen_routes(app, runtime.event_router, runtime.pipeline_jobs, services)

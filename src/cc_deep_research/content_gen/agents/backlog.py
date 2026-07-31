@@ -23,7 +23,7 @@ from cc_deep_research.content_gen.prompts import backlog as prompts
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
-    from cc_deep_research.llm.codex_runtime import CodexRuntime
+    from cc_deep_research.llm.runtime_context import LLMRuntimeContext
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +37,10 @@ class BacklogAgent:
         self,
         config: Config,
         *,
-        codex_runtime: CodexRuntime | None = None,
+        llm_runtime: LLMRuntimeContext | None = None,
     ) -> None:
         self._config = config
-        self._router = create_agent_llm_router(config, codex_runtime=codex_runtime)
+        self._router = create_agent_llm_router(config, llm_runtime=llm_runtime)
 
     async def _call_llm(
         self,

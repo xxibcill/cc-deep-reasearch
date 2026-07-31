@@ -1083,7 +1083,7 @@ def register_content_gen_routes(
 
         agent = BriefAssistantAgent(
             config=services.config,
-            codex_runtime=services.codex_runtime,
+            llm_runtime=services.llm_runtime,
         )
         messages = [{"role": m.role, "content": m.content} for m in request.messages]
 
@@ -1218,7 +1218,7 @@ def register_content_gen_routes(
 
         result = await generate_backlog_from_brief(
             revision,
-            codex_runtime=services.codex_runtime,
+            llm_runtime=services.llm_runtime,
         )
 
         return JSONResponse(content=model_to_json(result))
@@ -1345,7 +1345,7 @@ def register_content_gen_routes(
 
         agent = BacklogChatAgent(
             services.config,
-            codex_runtime=services.codex_runtime,
+            llm_runtime=services.llm_runtime,
         )
         response = await agent.respond(
             messages=messages,
@@ -1404,7 +1404,7 @@ def register_content_gen_routes(
 
         agent = BatchTriageAgent(
             services.config,
-            codex_runtime=services.codex_runtime,
+            llm_runtime=services.llm_runtime,
         )
         response = await agent.respond(
             backlog_items=backlog_items,
@@ -1459,7 +1459,7 @@ def register_content_gen_routes(
 
         agent = NextActionAgent(
             services.config,
-            codex_runtime=services.codex_runtime,
+            llm_runtime=services.llm_runtime,
         )
         response = await agent.recommend(
             item,
@@ -1489,7 +1489,7 @@ def register_content_gen_routes(
         for item in backlog_items:
             agent = NextActionAgent(
                 services.config,
-                codex_runtime=services.codex_runtime,
+                llm_runtime=services.llm_runtime,
             )
             try:
                 response = await agent.recommend(
@@ -1521,7 +1521,7 @@ def register_content_gen_routes(
 
         agent = ExecutionBriefAgent(
             services.config,
-            codex_runtime=services.codex_runtime,
+            llm_runtime=services.llm_runtime,
         )
         response = await agent.generate_brief(
             item,

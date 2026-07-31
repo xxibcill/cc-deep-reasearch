@@ -76,7 +76,7 @@ def test_create_app_passes_codex_runtime_to_content_services(
     original_builder = web_server.build_content_gen_services
 
     def capture_runtime(**kwargs: object):
-        captured["runtime"] = kwargs.get("codex_runtime")
+        captured["llm_runtime"] = kwargs.get("llm_runtime")
         services = original_builder(**kwargs)  # type: ignore[arg-type]
         captured["services"] = services
         return services
@@ -85,8 +85,9 @@ def test_create_app_passes_codex_runtime_to_content_services(
 
     create_app(codex_runtime=codex_runtime)  # type: ignore[arg-type]
 
-    assert captured["runtime"] is codex_runtime
-    assert captured["services"].scripting_api_service._codex_runtime is codex_runtime  # type: ignore[union-attr]
+    llm_runtime = captured["llm_runtime"]
+    assert llm_runtime.codex_runtime is codex_runtime  # type: ignore[union-attr]
+    assert captured["services"].scripting_api_service._llm_runtime is llm_runtime  # type: ignore[union-attr]
 
 
 def test_lifespan_starts_and_closes_codex_runtime() -> None:
