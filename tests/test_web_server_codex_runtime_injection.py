@@ -96,14 +96,18 @@ async def test_brief_to_backlog_router_uses_injected_runtime(
     runtime = object()
     captured: dict[str, object] = {}
 
-    class CapturingRouter:
-        def __init__(self, _registry: object, *, codex_runtime: object) -> None:
-            captured["runtime"] = codex_runtime
+    def capture_router(
+        _config: Config,
+        *,
+        codex_runtime: object,
+    ) -> object:
+        captured["runtime"] = codex_runtime
+        return object()
 
     async def fake_llm_call(**_kwargs: object) -> str:
         return '{"reply_markdown":"ok","items":[],"warnings":[]}'
 
-    monkeypatch.setattr(brief_to_backlog, "LLMRouter", CapturingRouter)
+    monkeypatch.setattr(brief_to_backlog, "create_agent_llm_router", capture_router)
     monkeypatch.setattr(brief_to_backlog, "call_agent_llm_text", fake_llm_call)
     revision = BriefRevision(
         brief_id="brief-runtime",

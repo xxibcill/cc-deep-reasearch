@@ -1085,16 +1085,14 @@ def register_session_routes(app: FastAPI) -> None:
         elif output_format == ResearchOutputFormat.HTML:
             markdown = store.load_report(session_id, ResearchOutputFormat.MARKDOWN)
             if markdown is None:
-                markdown = await asyncio.to_thread(
-                    reporter.generate_markdown_report,
+                markdown = await reporter.generate_markdown_report_async(
                     session,
                     analysis,
                 )
                 store.save_report(session_id, ResearchOutputFormat.MARKDOWN, markdown)
             content = reporter.render_html_report(markdown)
         else:
-            content = await asyncio.to_thread(
-                reporter.generate_markdown_report,
+            content = await reporter.generate_markdown_report_async(
                 session,
                 analysis,
             )

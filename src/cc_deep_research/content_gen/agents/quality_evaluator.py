@@ -6,7 +6,10 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
-from cc_deep_research.content_gen.agents._llm_utils import call_agent_llm_text
+from cc_deep_research.content_gen.agents._llm_utils import (
+    call_agent_llm_text,
+    create_agent_llm_router,
+)
 from cc_deep_research.content_gen.models import (
     AngleOutput,
     ArgumentMap,
@@ -22,7 +25,6 @@ from cc_deep_research.content_gen.models import (
     VisualPlanOutput,
 )
 from cc_deep_research.content_gen.prompts import quality_evaluator as prompts
-from cc_deep_research.llm import LLMRouter
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
@@ -43,17 +45,13 @@ class QualityEvaluatorAgent:
         llm_route: str | None = None,
         codex_runtime: CodexRuntime | None = None,
     ) -> None:
-        from cc_deep_research.content_gen.agents.scripting import (
-            _transport_from_route_name,
-        )
-        from cc_deep_research.llm.registry import LLMRouteRegistry
-
         self._config = config
-        registry = LLMRouteRegistry(config.llm)
-        if llm_route is not None:
-            transport = _transport_from_route_name(llm_route)
-            registry.set_route(AGENT_ID, registry.get_route_for_transport(transport))
-        self._router = LLMRouter(registry, codex_runtime=codex_runtime)
+        self._router = create_agent_llm_router(
+            config,
+            codex_runtime=codex_runtime,
+            agent_id=AGENT_ID,
+            llm_route=llm_route,
+        )
 
     async def _call_llm(
         self,

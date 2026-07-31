@@ -4,13 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from cc_deep_research.config import Config
-
 from .base import BaseStageOrchestrator
 
 if TYPE_CHECKING:
     from cc_deep_research.content_gen.models import PipelineContext
-    from cc_deep_research.llm.codex_runtime import CodexRuntime
 
 
 class PackagingStageOrchestrator(BaseStageOrchestrator):
@@ -20,25 +17,11 @@ class PackagingStageOrchestrator(BaseStageOrchestrator):
     - Generating platform-specific packaging
     """
 
-    def __init__(
-        self,
-        config: Config,
-        *,
-        codex_runtime: CodexRuntime | None = None,
-    ) -> None:
-        super().__init__(config)
-        self._codex_runtime = codex_runtime
-
     def _create_agent(self, name: str) -> object:
         from cc_deep_research.content_gen.agents.packaging import PackagingAgent
 
         if name == "packaging":
-            if self._codex_runtime is not None:
-                return PackagingAgent(
-                    self._config,
-                    codex_runtime=self._codex_runtime,
-                )
-            return PackagingAgent(self._config)
+            return self._build_agent(PackagingAgent)
         raise ValueError(f"Unknown agent: {name}")
 
     async def run_packaging(

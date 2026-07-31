@@ -122,6 +122,9 @@ def test_get_session_report_offloads_uncached_generation(
                 generated_without_event_loop = True
             return "# Fresh report"
 
+        async def generate_markdown_report_async(self, *args, **kwargs) -> str:
+            return await asyncio.to_thread(self.generate_markdown_report, *args, **kwargs)
+
     monkeypatch.setattr(
         "cc_deep_research.reporting.ReportGenerator",
         ReportGeneratorStub,

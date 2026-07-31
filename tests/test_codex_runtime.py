@@ -16,9 +16,11 @@ from cc_deep_research.llm.codex_runtime import (
     CodexRuntime,
     CodexRuntimeError,
     CodexRuntimeUnavailableError,
-    _effective_security_config_is_safe,
-    _provider_config,
-    _provider_process_overrides,
+)
+from cc_deep_research.llm.codex_security import (
+    effective_security_config_is_safe,
+    provider_config,
+    provider_process_overrides,
 )
 
 
@@ -76,6 +78,18 @@ class FakeTurn:
         self.interrupted = True
 
 
+class CoordinatedTurn(FakeTurn):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def run(self) -> SimpleNamespace:
+        self.started.set()
+        await self.release.wait()
+        return self.result
+
+
 class FakeThread:
     def __init__(self, turn: FakeTurn) -> None:
         self._turn = turn
@@ -90,9 +104,7 @@ class FakeLoginHandle:
     def __init__(self, *, flow: str) -> None:
         self.login_id = f"{flow}-login"
         self.auth_url = "https://example.test/browser" if flow == "browser" else None
-        self.verification_url = (
-            "https://example.test/device" if flow == "device_code" else None
-        )
+        self.verification_url = "https://example.test/device" if flow == "device_code" else None
         self.user_code = "ABCD-1234" if flow == "device_code" else None
         self.completed: asyncio.Future[SimpleNamespace] = asyncio.get_running_loop().create_future()
         self.cancelled = False
@@ -440,6 +452,37 @@ async def test_turn_timeout_interrupts_active_codex_turn(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_canceling_one_turn_does_not_close_a_concurrent_turn_client(tmp_path) -> None:
+    first_turn = CoordinatedTurn()
+    first_client = FakeCodexClient(authenticated=True, turn=first_turn)
+    second_client = FakeCodexClient(authenticated=True)
+    clients = iter((first_client, second_client))
+    runtime = CodexRuntime(
+        client_factory=lambda: next(clients),
+        isolated_cwd=tmp_path / "isolated",
+    )
+
+    first_task = asyncio.create_task(runtime.run_turn(prompt="First"))
+    await first_turn.started.wait()
+    second_task = asyncio.create_task(runtime.run_turn(prompt="Second"))
+    await asyncio.sleep(0)
+
+    assert second_client.thread_start_calls == []
+
+    first_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await first_task
+
+    second_result = await second_task
+
+    assert first_turn.interrupted is True
+    assert first_client.closed is True
+    assert second_result.content == "Codex response"
+    assert len(second_client.thread_start_calls) == 1
+    await runtime.close()
+
+
+@pytest.mark.asyncio
 async def test_turn_timeout_covers_thread_start(tmp_path) -> None:
     client = BlockingThreadStartCodexClient(authenticated=True)
     runtime = CodexRuntime(
@@ -730,9 +773,7 @@ async def test_stale_login_failure_does_not_discard_restarted_client(tmp_path) -
     pending = await runtime.login_browser()
     assert stale_client.browser_handle is not None
 
-    stale_client.browser_handle.completed.set_exception(
-        TransportClosedError("stale client closed")
-    )
+    stale_client.browser_handle.completed.set_exception(TransportClosedError("stale client closed"))
     runtime._client = healthy_client
     runtime._account_snapshot = runtime._snapshot_from_account(
         _account_response(authenticated=True)
@@ -814,7 +855,7 @@ async def test_default_model_discovery_is_bounded(
 
 
 def test_effective_security_config_fails_closed() -> None:
-    safe_config = _provider_config()
+    safe_config = provider_config()
     safe_config["mcp_servers"] = {
         "docs": {
             "enabled": False,
@@ -822,8 +863,8 @@ def test_effective_security_config_fails_closed() -> None:
         }
     }
 
-    assert _effective_security_config_is_safe(safe_config) is True
-    assert _effective_security_config_is_safe({**safe_config, "tools": {}}) is True
+    assert effective_security_config_is_safe(safe_config) is True
+    assert effective_security_config_is_safe({**safe_config, "tools": {}}) is True
 
     unsafe_otel = {**safe_config, "otel": {**safe_config["otel"], "log_user_prompt": True}}
     unsafe_mcp = {
@@ -844,12 +885,12 @@ def test_effective_security_config_fails_closed() -> None:
     }
     missing_tools = {key: value for key, value in safe_config.items() if key != "tools"}
 
-    assert _effective_security_config_is_safe(unsafe_otel) is False
-    assert _effective_security_config_is_safe(unsafe_mcp) is False
-    assert _effective_security_config_is_safe(unsafe_features) is False
-    assert _effective_security_config_is_safe(unsafe_view_image) is False
-    assert _effective_security_config_is_safe(unsafe_tool_web_search) is False
-    assert _effective_security_config_is_safe(missing_tools) is False
+    assert effective_security_config_is_safe(unsafe_otel) is False
+    assert effective_security_config_is_safe(unsafe_mcp) is False
+    assert effective_security_config_is_safe(unsafe_features) is False
+    assert effective_security_config_is_safe(unsafe_view_image) is False
+    assert effective_security_config_is_safe(unsafe_tool_web_search) is False
+    assert effective_security_config_is_safe(missing_tools) is False
 
 
 def test_process_overrides_disable_named_mcp_servers(tmp_path, monkeypatch) -> None:
@@ -866,7 +907,7 @@ url = "https://example.test/mcp"
     )
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
 
-    overrides = _provider_process_overrides()
+    overrides = provider_process_overrides()
 
     assert "features.hooks=false" in overrides
     assert "features.plugins=false" in overrides
@@ -877,12 +918,8 @@ url = "https://example.test/mcp"
     assert 'otel.trace_exporter="none"' in overrides
     assert "notify=[]" in overrides
     assert 'shell_environment_policy.inherit="none"' in overrides
+    assert 'mcp_servers.docs={enabled=false,command="codex-provider-disabled"}' in overrides
     assert (
-        'mcp_servers.docs={enabled=false,command="codex-provider-disabled"}'
-        in overrides
-    )
-    assert (
-        'mcp_servers.server_with_underscores='
-        '{enabled=false,url="http://127.0.0.1:9/codex-provider-disabled"}'
-        in overrides
+        "mcp_servers.server_with_underscores="
+        '{enabled=false,url="http://127.0.0.1:9/codex-provider-disabled"}' in overrides
     )

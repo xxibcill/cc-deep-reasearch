@@ -174,6 +174,18 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+export function isApiErrorCode(error: unknown, code: string): boolean {
+  if (!axios.isAxiosError(error)) {
+    return false;
+  }
+  const payload = error.response?.data;
+  return (
+    !!payload &&
+    typeof payload === 'object' &&
+    (payload as Record<string, unknown>).code === code
+  );
+}
+
 export { getRecentRequestTelemetry, sanitizeForExport } from '@/lib/request-telemetry';
 
 export interface ConfigUpdateErrorDetails {

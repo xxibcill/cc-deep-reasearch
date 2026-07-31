@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -157,6 +158,51 @@ def test_heuristic_reporter_route_preserves_deterministic_report() -> None:
         "model": "heuristic",
         "source": "actual",
     }
+
+
+@pytest.mark.asyncio
+async def test_async_reporter_route_keeps_owner_loop_responsive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _report_config()
+    session = _session()
+    analysis = _analysis()
+    deterministic = ReporterAgent({}).generate_markdown_report(session, analysis)
+    runtime = RecordingCodexRuntime(deterministic)
+    monkeypatch.setattr(
+        "cc_deep_research.llm.codex.append_usage_entry",
+        lambda _entry: None,
+    )
+    generator = ReportGenerator(
+        config,
+        codex_runtime=runtime,  # type: ignore[arg-type]
+    )
+
+    report = await asyncio.wait_for(
+        generator.generate_markdown_report_async(session, analysis),
+        timeout=1,
+    )
+
+    assert report == deterministic
+    assert len(runtime.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_sync_reporter_call_on_active_loop_falls_back_without_deadlock() -> None:
+    config = _report_config()
+    session = _session()
+    analysis = _analysis()
+    deterministic = ReporterAgent({}).generate_markdown_report(session, analysis)
+    runtime = RecordingCodexRuntime(deterministic)
+    generator = ReportGenerator(
+        config,
+        codex_runtime=runtime,  # type: ignore[arg-type]
+    )
+
+    report = generator.generate_markdown_report(session, analysis)
+
+    assert report == deterministic
+    assert runtime.calls == []
 
 
 def test_invalid_codex_report_falls_back_to_deterministic_structure(

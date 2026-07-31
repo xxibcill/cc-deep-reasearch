@@ -25,14 +25,16 @@ import {
   getCodexAccount,
   getCodexLogin,
   getConfigUpdateErrorDetails,
+  isApiErrorCode,
   logoutCodex,
   startCodexBrowserLogin,
   startCodexDeviceCodeLogin,
   updateConfig,
 } from '@/lib/api';
 import {
-  getCodexLoginFailureMessage,
   getCodexLoginOutcome,
+  getCodexLoginTransition,
+  type CodexLoginAction,
 } from '@/lib/codex-login-state';
 import {
   clearCodexLoginRecovery,
@@ -140,7 +142,7 @@ function getRuntimeBadgeVariant(
   if (runtimeStatus === 'ready') {
     return 'success';
   }
-  if (runtimeStatus === 'starting' || runtimeStatus === 'stopping') {
+  if (runtimeStatus === 'starting' || runtimeStatus === 'closing') {
     return 'warning';
   }
   return 'secondary';
@@ -257,6 +259,67 @@ export function CodexProviderPanel({
     [notify]
   );
 
+  const applyLoginResponse = useCallback(
+    async (response: CodexLoginResponse, action: CodexLoginAction) => {
+      const transition = getCodexLoginTransition(response, action);
+      if (transition.keepLogin) {
+        const startedAt =
+          action === 'poll' && loginStartedAtRef.current > 0
+            ? loginStartedAtRef.current
+            : Date.now();
+        loginStartedAtRef.current = startedAt;
+        storeCodexLoginRecovery(window.sessionStorage, {
+          login_id: response.login_id,
+          flow: response.flow,
+          timestamp: startedAt,
+        });
+        setLogin(response);
+        setPolling(true);
+      } else {
+        clearCodexLoginRecovery(window.sessionStorage);
+        setLogin(null);
+        setPolling(false);
+      }
+      if (transition.banner) {
+        setAuthBanner(transition.banner);
+      }
+      if (transition.refreshAccount) {
+        await refreshAccount(false);
+      }
+      if (transition.notification) {
+        notify(transition.notification);
+      }
+      return transition.outcome;
+    },
+    [notify, refreshAccount]
+  );
+
+  const recoverMissingLogin = useCallback(async () => {
+    clearCodexLoginRecovery(window.sessionStorage);
+    setLogin(null);
+    setPolling(false);
+    try {
+      const activeLogin = await getActiveCodexLogin();
+      if (
+        activeLogin &&
+        resumeManagedLogin(
+          activeLogin,
+          'Active Codex sign-in recovered',
+          'The previous request ended, but the managed runtime has another active sign-in.'
+        )
+      ) {
+        return;
+      }
+    } catch {
+      // The account refresh owns runtime availability reporting.
+    }
+    setAuthBanner({
+      variant: 'warning',
+      title: 'Previous Codex sign-in ended',
+      description: 'The saved sign-in is no longer active. Start a new sign-in request.',
+    });
+  }, [resumeManagedLogin]);
+
   useEffect(() => {
     mountedRef.current = true;
     const recovery = loadCodexLoginRecovery(
@@ -324,63 +387,16 @@ export function CodexProviderPanel({
         if (stopped) {
           return;
         }
-        setLogin(response);
-
-        const outcome = getCodexLoginOutcome(response.status);
-        if (outcome === 'succeeded') {
-          clearCodexLoginRecovery(window.sessionStorage);
-          setPolling(false);
-          setLogin(null);
-          setAuthBanner({
-            variant: 'success',
-            title: 'Signed in to Codex',
-            description: 'The managed ChatGPT account is ready for future Codex-routed runs.',
-          });
-          await refreshAccount(false);
-          if (!stopped) {
-            notify({
-              variant: 'success',
-              title: 'Codex sign-in complete',
-              description: 'The Codex provider can now use the managed ChatGPT account.',
-            });
-          }
-          return;
+        const outcome = await applyLoginResponse(response, 'poll');
+        if (outcome === 'active') {
+          timerId = window.setTimeout(poll, LOGIN_POLL_INTERVAL_MS);
         }
-
-        if (outcome === 'failed') {
-          clearCodexLoginRecovery(window.sessionStorage);
-          const message = getCodexLoginFailureMessage(response.status, response.error);
-          setPolling(false);
-          setLogin(null);
-          setAuthBanner({
-            variant: 'destructive',
-            title: 'Codex sign-in failed',
-            description: message,
-          });
-          notify({
-            variant: 'destructive',
-            persistent: true,
-            title: 'Codex sign-in failed',
-            description: message,
-          });
-          return;
-        }
-
-        if (outcome === 'canceled') {
-          clearCodexLoginRecovery(window.sessionStorage);
-          setPolling(false);
-          setLogin(null);
-          setAuthBanner({
-            variant: 'info',
-            title: 'Codex sign-in canceled',
-            description: 'No account changes were made.',
-          });
-          return;
-        }
-
-        timerId = window.setTimeout(poll, LOGIN_POLL_INTERVAL_MS);
       } catch (error) {
         if (stopped) {
+          return;
+        }
+        if (isApiErrorCode(error, 'codex_login_not_found')) {
+          await recoverMissingLogin();
           return;
         }
         stopWithBanner({
@@ -402,7 +418,7 @@ export function CodexProviderPanel({
         window.clearTimeout(timerId);
       }
     };
-  }, [activeLoginId, notify, polling, refreshAccount]);
+  }, [activeLoginId, applyLoginResponse, polling, recoverMissingLogin]);
 
   const handleSettingsSave = async () => {
     const writablePaths = dirtyPaths.filter((path) => !overriddenFields.has(path));
@@ -484,48 +500,7 @@ export function CodexProviderPanel({
         flow === 'browser'
           ? await startCodexBrowserLogin()
           : await startCodexDeviceCodeLogin();
-      const outcome = getCodexLoginOutcome(response.status);
-      if (outcome === 'active') {
-        const startedAt = Date.now();
-        loginStartedAtRef.current = startedAt;
-        storeCodexLoginRecovery(window.sessionStorage, {
-          login_id: response.login_id,
-          flow: response.flow,
-          timestamp: startedAt,
-        });
-        setLogin(response);
-        setPolling(true);
-        setAuthBanner({
-          variant: 'info',
-          title: flow === 'browser' ? 'Browser sign-in started' : 'Device sign-in started',
-          description:
-            'Complete the ChatGPT sign-in outside this dashboard. This page will update automatically.',
-        });
-      } else {
-        clearCodexLoginRecovery(window.sessionStorage);
-        setLogin(null);
-        setPolling(false);
-        if (outcome === 'succeeded') {
-          setAuthBanner({
-            variant: 'success',
-            title: 'Signed in to Codex',
-            description: 'The managed ChatGPT account is ready for future Codex-routed runs.',
-          });
-          await refreshAccount(false);
-        } else if (outcome === 'failed') {
-          setAuthBanner({
-            variant: 'destructive',
-            title: 'Codex sign-in failed',
-            description: getCodexLoginFailureMessage(response.status, response.error),
-          });
-        } else {
-          setAuthBanner({
-            variant: 'info',
-            title: 'Codex sign-in canceled',
-            description: 'No account changes were made.',
-          });
-        }
-      }
+      await applyLoginResponse(response, flow);
     } catch (error) {
       try {
         const activeLogin = await getActiveCodexLogin();
@@ -568,62 +543,12 @@ export function CodexProviderPanel({
     setPolling(false);
     try {
       const response = await cancelCodexLogin(login.login_id);
-      const outcome = getCodexLoginOutcome(response.status);
-      if (outcome === 'active') {
-        const startedAt = Date.now();
-        loginStartedAtRef.current = startedAt;
-        storeCodexLoginRecovery(window.sessionStorage, {
-          login_id: response.login_id,
-          flow: response.flow,
-          timestamp: startedAt,
-        });
-        setLogin(response);
-        setPolling(true);
-        setAuthBanner({
-          variant: 'info',
-          title: 'Canceling Codex sign-in',
-          description: 'Waiting for the managed runtime to finish canceling the request.',
-        });
-      } else if (outcome === 'canceled') {
-        clearCodexLoginRecovery(window.sessionStorage);
-        setLogin(null);
-        setAuthBanner({
-          variant: 'info',
-          title: 'Codex sign-in canceled',
-          description: 'No account changes were made.',
-        });
-      } else if (outcome === 'succeeded') {
-        clearCodexLoginRecovery(window.sessionStorage);
-        setLogin(null);
-        setAuthBanner({
-          variant: 'success',
-          title: 'Codex sign-in completed before cancellation',
-          description:
-            'The managed ChatGPT account finished connecting before the cancel request arrived.',
-        });
-        await refreshAccount(false);
-        notify({
-          variant: 'success',
-          title: 'Codex sign-in complete',
-          description: 'The managed ChatGPT account connected before cancellation.',
-        });
-      } else {
-        clearCodexLoginRecovery(window.sessionStorage);
-        const message = getCodexLoginFailureMessage(response.status, response.error);
-        setLogin(null);
-        setAuthBanner({
-          variant: 'destructive',
-          title: 'Codex sign-in failed',
-          description: message,
-        });
-        notify({
-          variant: 'destructive',
-          persistent: true,
-          title: 'Codex sign-in failed',
-          description: message,
-        });
-      }
+      await applyLoginResponse(response, 'cancel');
     } catch (error) {
+      if (isApiErrorCode(error, 'codex_login_not_found')) {
+        await recoverMissingLogin();
+        return;
+      }
       const message = getApiErrorMessage(error, 'Failed to cancel Codex sign-in.');
       setAuthBanner({
         variant: 'destructive',

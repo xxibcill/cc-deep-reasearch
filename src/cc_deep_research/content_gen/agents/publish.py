@@ -6,13 +6,15 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
-from cc_deep_research.content_gen.agents._llm_utils import call_agent_llm_text
+from cc_deep_research.content_gen.agents._llm_utils import (
+    call_agent_llm_text,
+    create_agent_llm_router,
+)
 from cc_deep_research.content_gen.models import (
     PackagingOutput,
     PublishItem,
 )
 from cc_deep_research.content_gen.prompts import publish as prompts
-from cc_deep_research.llm import LLMRouter
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
@@ -32,11 +34,8 @@ class PublishAgent:
         *,
         codex_runtime: CodexRuntime | None = None,
     ) -> None:
-        from cc_deep_research.llm.registry import LLMRouteRegistry
-
         self._config = config
-        registry = LLMRouteRegistry(config.llm)
-        self._router = LLMRouter(registry, codex_runtime=codex_runtime)
+        self._router = create_agent_llm_router(config, codex_runtime=codex_runtime)
 
     async def _call_llm(
         self,

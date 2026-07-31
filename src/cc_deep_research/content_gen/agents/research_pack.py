@@ -7,7 +7,10 @@ import re
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from cc_deep_research.content_gen.agents._llm_utils import call_agent_llm_text
+from cc_deep_research.content_gen.agents._llm_utils import (
+    call_agent_llm_text,
+    create_agent_llm_router,
+)
 from cc_deep_research.content_gen.models import (
     AngleOption,
     BacklogItem,
@@ -33,7 +36,6 @@ from cc_deep_research.content_gen.models import (
     SourceFreshness,
 )
 from cc_deep_research.content_gen.prompts import research_pack as prompts
-from cc_deep_research.llm import LLMRouter
 from cc_deep_research.models import QueryFamily, QueryProvenance, SearchOptions, SearchResultItem
 
 if TYPE_CHECKING:
@@ -540,11 +542,8 @@ class ResearchPackAgent:
         *,
         codex_runtime: CodexRuntime | None = None,
     ) -> None:
-        from cc_deep_research.llm.registry import LLMRouteRegistry
-
         self._config = config
-        registry = LLMRouteRegistry(config.llm)
-        self._router = LLMRouter(registry, codex_runtime=codex_runtime)
+        self._router = create_agent_llm_router(config, codex_runtime=codex_runtime)
 
     async def _call_llm(
         self,

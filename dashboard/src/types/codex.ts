@@ -1,4 +1,11 @@
 export type CodexLoginFlow = 'browser' | 'device_code';
+export type CodexRuntimeStatus =
+  | 'stopped'
+  | 'starting'
+  | 'ready'
+  | 'closing'
+  | 'unavailable'
+  | 'error';
 
 export type CodexLoginStatus =
   | 'pending'
@@ -9,7 +16,7 @@ export type CodexLoginStatus =
   | 'expired';
 
 export interface CodexAccountResponse {
-  runtime_status: string;
+  runtime_status: CodexRuntimeStatus;
   authenticated: boolean;
   requires_openai_auth: boolean | null;
   account_type: string | null;

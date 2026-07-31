@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from cc_deep_research.config import Config
 from cc_deep_research.content_gen.claim_trace import build_claim_ledger, format_research_context
 from cc_deep_research.content_gen.models import ScriptingContext
 
@@ -12,7 +11,6 @@ from .base import BaseStageOrchestrator
 
 if TYPE_CHECKING:
     from cc_deep_research.content_gen.models import PipelineContext
-    from cc_deep_research.llm.codex_runtime import CodexRuntime
 
 
 class ScriptingStageOrchestrator(BaseStageOrchestrator):
@@ -23,25 +21,11 @@ class ScriptingStageOrchestrator(BaseStageOrchestrator):
     - Iterative refinement of scripts
     """
 
-    def __init__(
-        self,
-        config: Config,
-        *,
-        codex_runtime: CodexRuntime | None = None,
-    ) -> None:
-        super().__init__(config)
-        self._codex_runtime = codex_runtime
-
     def _create_agent(self, name: str) -> object:
         from cc_deep_research.content_gen.agents.scripting import ScriptingAgent
 
         if name == "scripting":
-            if self._codex_runtime is not None:
-                return ScriptingAgent(
-                    self._config,
-                    codex_runtime=self._codex_runtime,
-                )
-            return ScriptingAgent(self._config)
+            return self._build_agent(ScriptingAgent)
         raise ValueError(f"Unknown agent: {name}")
 
     async def run_scripting(

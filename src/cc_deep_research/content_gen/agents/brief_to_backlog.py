@@ -12,9 +12,11 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
-from cc_deep_research.content_gen.agents._llm_utils import call_agent_llm_text
+from cc_deep_research.content_gen.agents._llm_utils import (
+    call_agent_llm_text,
+    create_agent_llm_router,
+)
 from cc_deep_research.content_gen.models import BriefRevision
-from cc_deep_research.llm import LLMRouter
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
@@ -162,10 +164,7 @@ async def generate_backlog_from_brief(
 
         config = load_config()
 
-    from cc_deep_research.llm.registry import LLMRouteRegistry
-
-    registry = LLMRouteRegistry(config.llm)
-    router = LLMRouter(registry, codex_runtime=codex_runtime)
+    router = create_agent_llm_router(config, codex_runtime=codex_runtime)
 
     user_prompt = _build_user_prompt(brief_revision)
 

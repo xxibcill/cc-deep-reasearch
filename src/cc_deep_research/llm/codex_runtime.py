@@ -4,180 +4,47 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import tempfile
 import time
-import tomllib
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from openai_codex import (
-    ApprovalMode,
-    AsyncCodex,
-    CodexConfig,
-    Sandbox,
-    TransportClosedError,
-)
+from openai_codex import AsyncCodex, CodexConfig, TransportClosedError
 from openai_codex.generated.v2_all import (
     ConfigReadResponse,
     ListMcpServerStatusResponse,
 )
-from openai_codex.types import ReasoningEffort
+
+from cc_deep_research.llm.codex_security import (
+    effective_security_config_is_safe as _effective_security_config_is_safe,
+)
+from cc_deep_research.llm.codex_security import (
+    provider_process_overrides as _provider_process_overrides,
+)
+from cc_deep_research.llm.codex_turn import execute_codex_turn
+from cc_deep_research.llm.codex_types import (
+    CodexAccountSnapshot,
+    CodexLoginConflictError,
+    CodexLoginFlow,
+    CodexLoginNotFoundError,
+    CodexLoginSnapshot,
+    CodexLoginStatus,
+    CodexNotAuthenticatedError,
+    CodexRuntimeError,
+    CodexRuntimeStatus,
+    CodexRuntimeUnavailableError,
+    CodexTurnResult,
+)
 
 logger = logging.getLogger(__name__)
 
-_PROVIDER_INSTRUCTIONS = """\
-Operate only as a text-generation provider.
-Do not invoke shell commands, filesystem operations, web search, browser tools,
-apps, MCP tools, image generation, or any other tools. Return only the requested
-final text.
-"""
-_PROVIDER_CONFIG_OVERRIDES = (
-    "allow_login_shell=false",
-    'history.persistence="none"',
-    "memories.generate_memories=false",
-    "memories.use_memories=false",
-    "notify=[]",
-    'otel.exporter="none"',
-    "otel.log_user_prompt=false",
-    'otel.metrics_exporter="none"',
-    'otel.trace_exporter="none"',
-    "shell_environment_policy.experimental_use_profile=false",
-    "shell_environment_policy.ignore_default_excludes=false",
-    'shell_environment_policy.inherit="none"',
-    "tools.view_image=false",
-    "tools.web_search=false",
-    'web_search="disabled"',
-    "features.auth_elicitation=false",
-    "features.apps=false",
-    "features.browser_use=false",
-    "features.browser_use_external=false",
-    "features.browser_use_full_cdp_access=false",
-    "features.code_mode=false",
-    "features.code_mode_host=false",
-    "features.computer_use=false",
-    "features.goals=false",
-    "features.hooks=false",
-    "features.image_generation=false",
-    "features.in_app_browser=false",
-    "features.js_repl=false",
-    "features.memories=false",
-    "features.multi_agent=false",
-    "features.network_proxy=false",
-    "features.plugins=false",
-    "features.remote_plugin=false",
-    "features.remote_control=false",
-    "features.shell_snapshot=false",
-    "features.shell_tool=false",
-    "features.skill_mcp_dependency_install=false",
-    "features.standalone_web_search=false",
-    "features.tool_suggest=false",
-    "features.unified_exec=false",
-    "features.workspace_dependencies=false",
-)
-_REQUIRED_DISABLED_FEATURES = frozenset(
-    {
-        "apps",
-        "auth_elicitation",
-        "browser_use",
-        "browser_use_external",
-        "browser_use_full_cdp_access",
-        "code_mode",
-        "code_mode_host",
-        "computer_use",
-        "goals",
-        "hooks",
-        "image_generation",
-        "in_app_browser",
-        "js_repl",
-        "memories",
-        "multi_agent",
-        "network_proxy",
-        "plugins",
-        "remote_control",
-        "remote_plugin",
-        "shell_snapshot",
-        "shell_tool",
-        "skill_mcp_dependency_install",
-        "standalone_web_search",
-        "tool_suggest",
-        "unified_exec",
-        "workspace_dependencies",
-    }
-)
-_TURN_INTERRUPT_TIMEOUT_SECONDS = 5.0
 _CLIENT_CLOSE_TIMEOUT_SECONDS = 5.0
 _RUNTIME_CONTROL_TIMEOUT_SECONDS = 30.0
 _START_RETRY_DELAY_SECONDS = 5.0
-
-
-class CodexRuntimeError(RuntimeError):
-    """Base error raised by the managed Codex runtime."""
-
-
-class CodexRuntimeUnavailableError(CodexRuntimeError):
-    """Raised when the local Codex app-server cannot be started or reached."""
-
-
-class CodexNotAuthenticatedError(CodexRuntimeError):
-    """Raised when a Codex turn is requested without an authenticated account."""
-
-
-class CodexLoginConflictError(CodexRuntimeError):
-    """Raised when another interactive Codex login is already active."""
-
-
-class CodexLoginNotFoundError(CodexRuntimeError):
-    """Raised when a login identifier is unknown to this runtime."""
-
-
-@dataclass(frozen=True, slots=True)
-class CodexAccountSnapshot:
-    """Safe, immutable account state suitable for API serialization."""
-
-    runtime_status: str
-    authenticated: bool
-    requires_openai_auth: bool | None
-    account_type: str | None
-    email: str | None
-    plan_type: str | None
-    error_code: str | None = None
-    error_message: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class CodexLoginSnapshot:
-    """Safe, immutable state for one managed interactive login."""
-
-    login_id: str
-    flow: str
-    status: str
-    auth_url: str | None
-    verification_url: str | None
-    user_code: str | None
-    error: str | None
-    created_at: str
-    completed_at: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class CodexTurnResult:
-    """Provider-neutral result returned by :class:`CodexRuntime`."""
-
-    content: str
-    model: str
-    turn_id: str
-    duration_ms: int
-    finish_reason: str
-    input_tokens: int = 0
-    output_tokens: int = 0
-    total_tokens: int = 0
-    cached_input_tokens: int = 0
-    reasoning_output_tokens: int = 0
 
 
 @dataclass(slots=True)
@@ -200,180 +67,6 @@ def _enum_value(value: Any) -> str | None:
     return str(raw_value)
 
 
-def _provider_config() -> dict[str, Any]:
-    """Return a fresh, tool-disabled configuration for one provider thread."""
-    return {
-        "allow_login_shell": False,
-        "history": {"persistence": "none"},
-        "memories": {
-            "generate_memories": False,
-            "use_memories": False,
-        },
-        "notify": [],
-        "otel": {
-            "exporter": "none",
-            "log_user_prompt": False,
-            "metrics_exporter": "none",
-            "trace_exporter": "none",
-        },
-        "shell_environment_policy": {
-            "experimental_use_profile": False,
-            "ignore_default_excludes": False,
-            "inherit": "none",
-        },
-        "tools": {
-            "view_image": False,
-            "web_search": False,
-        },
-        "web_search": "disabled",
-        "features": {
-            "apps": False,
-            "auth_elicitation": False,
-            "browser_use": False,
-            "browser_use_external": False,
-            "browser_use_full_cdp_access": False,
-            "code_mode": False,
-            "code_mode_host": False,
-            "computer_use": False,
-            "goals": False,
-            "hooks": False,
-            "image_generation": False,
-            "in_app_browser": False,
-            "js_repl": False,
-            "memories": False,
-            "multi_agent": False,
-            "network_proxy": False,
-            "plugins": False,
-            "remote_plugin": False,
-            "remote_control": False,
-            "shell_snapshot": False,
-            "shell_tool": False,
-            "skill_mcp_dependency_install": False,
-            "standalone_web_search": False,
-            "tool_suggest": False,
-            "unified_exec": False,
-            "workspace_dependencies": False,
-        },
-    }
-
-
-def _provider_process_overrides() -> tuple[str, ...]:
-    """Disable inherited runtime tools, including named user MCP servers."""
-    configured_home = os.environ.get("CODEX_HOME")
-    codex_home = (
-        Path(configured_home).expanduser()
-        if configured_home
-        else Path.home() / ".codex"
-    )
-    config_path = codex_home / "config.toml"
-    if not config_path.exists():
-        return _PROVIDER_CONFIG_OVERRIDES
-
-    try:
-        with config_path.open("rb") as config_file:
-            raw_config = tomllib.load(config_file)
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        raise CodexRuntimeUnavailableError(
-            "Codex configuration could not be inspected safely."
-        ) from exc
-
-    raw_servers = raw_config.get("mcp_servers")
-    if not isinstance(raw_servers, dict):
-        return _PROVIDER_CONFIG_OVERRIDES
-
-    server_names = tuple(str(server_name) for server_name in sorted(raw_servers, key=str))
-    if any(
-        not server_name
-        or not all(character.isalnum() or character in {"-", "_"} for character in server_name)
-        for server_name in server_names
-    ):
-        raise CodexRuntimeUnavailableError(
-            "Codex MCP configuration contains an unsupported server name."
-        )
-
-    disabled_servers: list[str] = []
-    for server_name in server_names:
-        raw_server = raw_servers[server_name]
-        if not isinstance(raw_server, dict):
-            raise CodexRuntimeUnavailableError(
-                "Codex MCP configuration has an unsupported server definition."
-            )
-        has_command = "command" in raw_server
-        has_url = "url" in raw_server
-        if has_command == has_url:
-            raise CodexRuntimeUnavailableError(
-                "Codex MCP configuration has an unsupported transport."
-            )
-        disabled_transport = (
-            'command="codex-provider-disabled"'
-            if has_command
-            else 'url="http://127.0.0.1:9/codex-provider-disabled"'
-        )
-        disabled_servers.append(
-            f"mcp_servers.{server_name}={{enabled=false,{disabled_transport}}}"
-        )
-    return (*_PROVIDER_CONFIG_OVERRIDES, *disabled_servers)
-
-
-def _effective_security_config_is_safe(config: Mapping[str, Any]) -> bool:
-    """Return whether effective app-server config preserves provider isolation."""
-    if config.get("approval_policy") not in (None, "never"):
-        return False
-    if config.get("sandbox_mode") not in (None, "read-only"):
-        return False
-    if config.get("forced_login_method") not in (None, "chatgpt"):
-        return False
-    if config.get("model_provider") not in (None, "openai"):
-        return False
-    if config.get("web_search") != "disabled":
-        return False
-    if config.get("notify") != []:
-        return False
-
-    tools = config.get("tools")
-    if not isinstance(tools, Mapping):
-        return False
-    if tools.get("view_image", False) is not False:
-        return False
-    if tools.get("web_search", False) is not False:
-        return False
-
-    otel = config.get("otel")
-    if not isinstance(otel, Mapping):
-        return False
-    if otel.get("log_user_prompt") is not False:
-        return False
-    if any(
-        otel.get(exporter) != "none"
-        for exporter in ("exporter", "metrics_exporter", "trace_exporter")
-    ):
-        return False
-
-    shell_policy = config.get("shell_environment_policy")
-    if not isinstance(shell_policy, Mapping):
-        return False
-    if shell_policy.get("inherit") != "none":
-        return False
-    if shell_policy.get("experimental_use_profile") is not False:
-        return False
-    if shell_policy.get("ignore_default_excludes") is not False:
-        return False
-
-    features = config.get("features")
-    if not isinstance(features, Mapping):
-        return False
-    if any(features.get(feature) is not False for feature in _REQUIRED_DISABLED_FEATURES):
-        return False
-
-    mcp_servers = config.get("mcp_servers", {})
-    if not isinstance(mcp_servers, Mapping):
-        return False
-    return all(
-        isinstance(server, Mapping) and server.get("enabled") is False
-        for server in mcp_servers.values()
-    )
-
-
 class CodexRuntime:
     """Own one async Codex SDK client, its auth state, and active login handles."""
 
@@ -392,6 +85,7 @@ class CodexRuntime:
         self._account_lock = asyncio.Lock()
         self._auth_operation_lock = asyncio.Lock()
         self._login_lock = asyncio.Lock()
+        self._turn_lock = asyncio.Lock()
         self._logins: dict[str, _LoginAttempt] = {}
         self._active_login_id: str | None = None
         self._default_model: str | None = None
@@ -416,7 +110,7 @@ class CodexRuntime:
         return self._account_snapshot.authenticated
 
     @property
-    def runtime_status(self) -> str:
+    def runtime_status(self) -> CodexRuntimeStatus:
         """Return the current lifecycle status."""
         return self._account_snapshot.runtime_status
 
@@ -452,9 +146,7 @@ class CodexRuntime:
         failure into a typed exception.
         """
         current_loop = asyncio.get_running_loop()
-        if self._owner_loop is None or (
-            self._owner_loop.is_closed() and self._client is None
-        ):
+        if self._owner_loop is None or (self._owner_loop.is_closed() and self._client is None):
             self._owner_loop = current_loop
 
         async with self._lifecycle_lock:
@@ -852,6 +544,7 @@ class CodexRuntime:
         self._account_lock = asyncio.Lock()
         self._auth_operation_lock = asyncio.Lock()
         self._login_lock = asyncio.Lock()
+        self._turn_lock = asyncio.Lock()
         self._logins.clear()
         self._active_login_id = None
         self._default_model = None
@@ -876,6 +569,25 @@ class CodexRuntime:
         timeout_seconds: int,
     ) -> CodexTurnResult:
         """Run one stateless, tool-disabled turn on the owning event loop."""
+        async with self._turn_lock:
+            return await self._run_serialized_turn(
+                prompt=prompt,
+                model=model,
+                developer_instructions=developer_instructions,
+                reasoning_effort=reasoning_effort,
+                timeout_seconds=timeout_seconds,
+            )
+
+    async def _run_serialized_turn(
+        self,
+        *,
+        prompt: str,
+        model: str | None,
+        developer_instructions: str | None,
+        reasoning_effort: str | None,
+        timeout_seconds: int,
+    ) -> CodexTurnResult:
+        """Run one turn while exclusively owning the shared client."""
         client = await self._ensure_started()
         if not self.is_authenticated:
             snapshot = await self.refresh_account()
@@ -888,76 +600,23 @@ class CodexRuntime:
         if cwd is None:
             raise CodexRuntimeUnavailableError("Codex isolated working directory is unavailable")
 
-        effort = ReasoningEffort(reasoning_effort) if reasoning_effort else None
-        combined_instructions = self._compose_developer_instructions(developer_instructions)
-        started_at = time.perf_counter()
-        turn: Any | None = None
-
         try:
-            async with asyncio.timeout(timeout_seconds):
-                thread = await client.thread_start(
-                    approval_mode=ApprovalMode.deny_all,
-                    base_instructions=_PROVIDER_INSTRUCTIONS,
-                    config=_provider_config(),
-                    cwd=str(cwd),
-                    developer_instructions=combined_instructions,
-                    ephemeral=True,
-                    model=model,
-                    sandbox=Sandbox.read_only,
-                )
-                turn = await thread.turn(
-                    prompt,
-                    approval_mode=ApprovalMode.deny_all,
-                    cwd=str(cwd),
-                    effort=effort,
-                    model=model,
-                    sandbox=Sandbox.read_only,
-                )
-                result = await turn.run()
-        except TimeoutError:
-            if turn is not None:
-                await self._interrupt_turn(turn)
-            await self._discard_client(client)
-            raise
-        except asyncio.CancelledError:
-            if turn is not None:
-                await self._interrupt_turn(turn)
+            return await execute_codex_turn(
+                client,
+                cwd=cwd,
+                prompt=prompt,
+                model=model,
+                default_model=self._default_model,
+                developer_instructions=developer_instructions,
+                reasoning_effort=reasoning_effort,
+                timeout_seconds=timeout_seconds,
+            )
+        except (TimeoutError, asyncio.CancelledError):
             await self._discard_client(client)
             raise
         except TransportClosedError as exc:
             await self._discard_client(client)
-            raise CodexRuntimeUnavailableError(
-                "Codex runtime connection closed."
-            ) from exc
-
-        turn_status = _enum_value(result.status)
-        if turn_status != "completed":
-            raise CodexRuntimeError(
-                f"Codex turn did not complete successfully (status={turn_status or 'unknown'})"
-            )
-        if not result.final_response:
-            raise CodexRuntimeError("Codex turn completed without a final response")
-
-        usage = getattr(result, "usage", None)
-        last_usage = getattr(usage, "last", None)
-        duration_ms = result.duration_ms
-        if duration_ms is None:
-            duration_ms = int((time.perf_counter() - started_at) * 1000)
-
-        return CodexTurnResult(
-            content=result.final_response,
-            model=model or self._default_model or "codex-default",
-            turn_id=result.id,
-            duration_ms=duration_ms,
-            finish_reason=turn_status,
-            input_tokens=int(getattr(last_usage, "input_tokens", 0) or 0),
-            output_tokens=int(getattr(last_usage, "output_tokens", 0) or 0),
-            total_tokens=int(getattr(last_usage, "total_tokens", 0) or 0),
-            cached_input_tokens=int(getattr(last_usage, "cached_input_tokens", 0) or 0),
-            reasoning_output_tokens=int(
-                getattr(last_usage, "reasoning_output_tokens", 0) or 0
-            ),
-        )
+            raise CodexRuntimeUnavailableError("Codex runtime connection closed.") from exc
 
     async def _ensure_started(self) -> Any:
         await self.start()
@@ -1050,9 +709,7 @@ class CodexRuntime:
             self._configured_cwd.mkdir(parents=True, exist_ok=True)
             return
         if self._temporary_cwd is None:
-            self._temporary_cwd = tempfile.TemporaryDirectory(
-                prefix="inqulume-codex-provider-"
-            )
+            self._temporary_cwd = tempfile.TemporaryDirectory(prefix="inqulume-codex-provider-")
 
     def _cleanup_temporary_cwd(self) -> None:
         if self._temporary_cwd is None:
@@ -1153,7 +810,7 @@ class CodexRuntime:
                 self._default_model = str(model.model)
                 return
 
-    async def _start_login(self, flow: str) -> CodexLoginSnapshot:
+    async def _start_login(self, flow: CodexLoginFlow) -> CodexLoginSnapshot:
         async with self._auth_operation_lock:
             client = await self._ensure_started()
             async with self._login_lock:
@@ -1168,9 +825,7 @@ class CodexRuntime:
                         )
 
             login_task = asyncio.create_task(
-                client.login_chatgpt()
-                if flow == "browser"
-                else client.login_chatgpt_device_code()
+                client.login_chatgpt() if flow == "browser" else client.login_chatgpt_device_code()
             )
             try:
                 handle = await asyncio.wait_for(
@@ -1188,9 +843,7 @@ class CodexRuntime:
                 ) from exc
             except TransportClosedError as exc:
                 await self._discard_client(client)
-                raise CodexRuntimeUnavailableError(
-                    "Codex runtime connection closed."
-                ) from exc
+                raise CodexRuntimeUnavailableError("Codex runtime connection closed.") from exc
             except Exception as exc:
                 logger.warning(
                     "Codex %s login startup failed (%s)",
@@ -1284,25 +937,6 @@ class CodexRuntime:
                 with suppress(CodexRuntimeError):
                     await self._refresh_account()
 
-    @staticmethod
-    def _compose_developer_instructions(value: str | None) -> str:
-        if not value:
-            return _PROVIDER_INSTRUCTIONS
-        return f"{value.rstrip()}\n\n{_PROVIDER_INSTRUCTIONS}"
-
-    @staticmethod
-    async def _interrupt_turn(turn: Any) -> None:
-        task = asyncio.create_task(turn.interrupt())
-        try:
-            await asyncio.wait_for(
-                asyncio.shield(task),
-                timeout=_TURN_INTERRUPT_TIMEOUT_SECONDS,
-            )
-        except BaseException:
-            task.cancel()
-            with suppress(BaseException):
-                await task
-
 
 _shared_runtime: CodexRuntime | None = None
 
@@ -1318,11 +952,14 @@ def get_shared_codex_runtime() -> CodexRuntime:
 __all__ = [
     "CodexAccountSnapshot",
     "CodexLoginConflictError",
+    "CodexLoginFlow",
     "CodexLoginNotFoundError",
     "CodexLoginSnapshot",
+    "CodexLoginStatus",
     "CodexNotAuthenticatedError",
     "CodexRuntime",
     "CodexRuntimeError",
+    "CodexRuntimeStatus",
     "CodexRuntimeUnavailableError",
     "CodexTurnResult",
     "get_shared_codex_runtime",

@@ -4,13 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from cc_deep_research.config import Config
-
 from .base import BaseStageOrchestrator
 
 if TYPE_CHECKING:
     from cc_deep_research.content_gen.models import PipelineContext
-    from cc_deep_research.llm.codex_runtime import CodexRuntime
 
 
 class OpportunityStageOrchestrator(BaseStageOrchestrator):
@@ -20,31 +17,11 @@ class OpportunityStageOrchestrator(BaseStageOrchestrator):
     - Creating opportunity brief from theme and strategy
     """
 
-    def __init__(
-        self,
-        config: Config,
-        *,
-        codex_runtime: CodexRuntime | None = None,
-    ) -> None:
-        super().__init__(config)
-        self._codex_runtime = codex_runtime
-        self._agents: dict[str, object] = {}
-
-    def _get_agent(self, name: str) -> object:
-        if name not in self._agents:
-            self._agents[name] = self._create_agent(name)
-        return self._agents[name]
-
     def _create_agent(self, name: str) -> object:
         from cc_deep_research.content_gen.agents.opportunity import OpportunityPlanningAgent
 
         if name == "opportunity":
-            if self._codex_runtime is not None:
-                return OpportunityPlanningAgent(
-                    self._config,
-                    codex_runtime=self._codex_runtime,
-                )
-            return OpportunityPlanningAgent(self._config)
+            return self._build_agent(OpportunityPlanningAgent)
         raise ValueError(f"Unknown agent: {name}")
 
     # ------------------------------------------------------------------

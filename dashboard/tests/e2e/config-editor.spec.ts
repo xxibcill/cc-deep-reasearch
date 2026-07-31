@@ -783,6 +783,70 @@ test("settings page resumes an active Codex login after reload", async ({ page }
     .toBeNull();
 });
 
+test("settings page clears stale Codex login recovery after a backend restart", async ({
+  page,
+}) => {
+  await mockSettingsApis(page, makeConfigResponse());
+  await page.addInitScript(() => {
+    window.sessionStorage.setItem(
+      "ccdr.codex-active-login",
+      JSON.stringify({
+        login_id: "login-from-previous-runtime",
+        flow: "browser",
+        timestamp: Date.now(),
+      })
+    );
+  });
+  await page.route("**/api/llm/codex/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    const method = route.request().method();
+
+    if (pathname.endsWith("/llm/codex/account") && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(makeCodexAccount()),
+      });
+      return;
+    }
+    if (pathname.endsWith("/llm/codex/login/active") && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: "null",
+      });
+      return;
+    }
+    if (
+      pathname.endsWith("/llm/codex/login/login-from-previous-runtime") &&
+      method === "GET"
+    ) {
+      await route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        body: JSON.stringify({
+          code: "codex_login_not_found",
+          error: "The Codex login request was not found.",
+        }),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto("/settings");
+
+  await expect(page.getByText("Previous Codex sign-in ended")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign in with browser" })).toBeEnabled();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.sessionStorage.getItem("ccdr.codex-active-login")
+      )
+    )
+    .toBeNull();
+});
+
 test("settings page recovers an active Codex login after browser storage is lost", async ({
   page,
 }) => {

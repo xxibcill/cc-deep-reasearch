@@ -16,10 +16,13 @@ from pydantic import BaseModel, ConfigDict
 from cc_deep_research.llm.codex_runtime import (
     CodexAccountSnapshot,
     CodexLoginConflictError,
+    CodexLoginFlow,
     CodexLoginNotFoundError,
     CodexLoginSnapshot,
+    CodexLoginStatus,
     CodexRuntime,
     CodexRuntimeError,
+    CodexRuntimeStatus,
     CodexRuntimeUnavailableError,
 )
 
@@ -38,7 +41,7 @@ class CodexAccountResponse(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    runtime_status: str
+    runtime_status: CodexRuntimeStatus
     authenticated: bool
     requires_openai_auth: bool | None
     account_type: str | None
@@ -54,8 +57,8 @@ class CodexLoginResponse(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     login_id: str
-    flow: str
-    status: str
+    flow: CodexLoginFlow
+    status: CodexLoginStatus
     auth_url: str | None
     verification_url: str | None
     user_code: str | None
