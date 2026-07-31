@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime, timedelta
 
@@ -92,6 +93,49 @@ def test_get_session_report_serves_cached_report_without_regeneration(
     assert payload["format"] == "markdown"
     assert payload["media_type"] == "text/markdown"
     assert payload["content"] == "# Cached report"
+
+
+def test_get_session_report_offloads_uncached_generation(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Uncached report generation must not block the app's runtime-owner loop."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    session = ResearchSession(
+        session_id="uncached-report-session",
+        query="What changed?",
+        depth=ResearchDepth.STANDARD,
+        metadata={"analysis": {"key_findings": ["new"]}},
+    )
+    SessionStore().save_session(session)
+    generated_without_event_loop = False
+
+    class ReportGeneratorStub:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def generate_markdown_report(self, *_args, **_kwargs) -> str:
+            nonlocal generated_without_event_loop
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                generated_without_event_loop = True
+            return "# Fresh report"
+
+        async def generate_markdown_report_async(self, *args, **kwargs) -> str:
+            return await asyncio.to_thread(self.generate_markdown_report, *args, **kwargs)
+
+    monkeypatch.setattr(
+        "cc_deep_research.reporting.ReportGenerator",
+        ReportGeneratorStub,
+    )
+
+    client = TestClient(create_app())
+    response = client.get(f"/api/sessions/{session.session_id}/report?format=markdown")
+
+    assert response.status_code == 200
+    assert response.json()["content"] == "# Fresh report"
+    assert generated_without_event_loop is True
 
 
 def test_session_detail_summary_preserves_prompt_metadata(

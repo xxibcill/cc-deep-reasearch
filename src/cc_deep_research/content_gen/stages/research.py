@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from cc_deep_research.config import Config
-
 from .base import BaseStageOrchestrator
 
 if TYPE_CHECKING:
@@ -19,14 +17,11 @@ class ResearchStageOrchestrator(BaseStageOrchestrator):
     - Building research packs from angles and evidence
     """
 
-    def __init__(self, config: Config) -> None:
-        super().__init__(config)
-
     def _create_agent(self, name: str) -> object:
         from cc_deep_research.content_gen.agents.research_pack import ResearchPackAgent
 
         if name == "research":
-            return ResearchPackAgent(self._config)
+            return self._build_agent(ResearchPackAgent)
         raise ValueError(f"Unknown agent: {name}")
 
     async def run_research(self, item: Any, angle: Any) -> Any:

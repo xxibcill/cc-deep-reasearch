@@ -51,9 +51,13 @@ class RunScriptingRequest(BaseModel):
     idea: str = Field(min_length=1)
     iterative_mode: bool | None = None
     max_iterations: int | None = Field(default=None, ge=1, le=5)
-    llm_route: Literal["openrouter", "cerebras", "anthropic", "heuristic"] | None = Field(
-        default=None
-    )
+    llm_route: Literal[
+        "openrouter",
+        "cerebras",
+        "anthropic",
+        "codex",
+        "heuristic",
+    ] | None = Field(default=None)
 
 
 class UpdateStrategyRequest(BaseModel):

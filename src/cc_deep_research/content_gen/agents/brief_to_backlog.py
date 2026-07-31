@@ -12,12 +12,15 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
-from cc_deep_research.content_gen.agents._llm_utils import call_agent_llm_text
+from cc_deep_research.content_gen.agents._llm_utils import (
+    call_agent_llm_text,
+    create_agent_llm_router,
+)
 from cc_deep_research.content_gen.models import BriefRevision
-from cc_deep_research.llm import LLMRouter
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
+    from cc_deep_research.llm.runtime_context import LLMRuntimeContext
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +147,8 @@ def _build_user_prompt(brief_revision: BriefRevision) -> str:
 async def generate_backlog_from_brief(
     brief_revision: BriefRevision,
     config: Config | None = None,
+    *,
+    llm_runtime: LLMRuntimeContext | None = None,
 ) -> BriefToBacklogResponse:
     """Generate backlog item candidates from a brief revision.
 
@@ -159,10 +164,7 @@ async def generate_backlog_from_brief(
 
         config = load_config()
 
-    from cc_deep_research.llm.registry import LLMRouteRegistry
-
-    registry = LLMRouteRegistry(config.llm)
-    router = LLMRouter(registry)
+    router = create_agent_llm_router(config, llm_runtime=llm_runtime)
 
     user_prompt = _build_user_prompt(brief_revision)
 

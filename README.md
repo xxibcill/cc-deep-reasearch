@@ -16,6 +16,7 @@ Streamlit telemetry UI have been retired.
 - Node.js 24 recommended (22 minimum)
 - `uv` for Python environments and locking
 - npm for the dashboard lockfile
+- Optional local Codex app-server provider authenticated through ChatGPT
 
 ## Quick Start
 
@@ -70,6 +71,23 @@ including:
 - `OPENROUTER_API_KEY`
 - `CEREBRAS_API_KEY`
 - `CC_DEEP_RESEARCH_CONFIG`
+
+## LLM Routing
+
+Inqulume Studio supports multiple LLM backends:
+
+| Transport | Description |
+|-----------|-------------|
+| `anthropic_api` | Direct Claude API access |
+| `openrouter_api` | Multi-model access via OpenRouter |
+| `cerebras_api` | Fast inference via Cerebras |
+| `codex_app_server` | Codex through the local app-server and ChatGPT sign-in |
+| `heuristic` | Rule-based fallback |
+
+Configure in `~/.config/inqulume-studio/config.yaml` under `llm` section.
+For Codex, start the local dashboard, open `/settings`, enable the provider,
+and complete browser or device-code sign-in. Codex credentials are managed by
+Codex and are never stored in the project configuration.
 
 ## Development
 

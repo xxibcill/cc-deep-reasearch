@@ -783,7 +783,10 @@ def register_content_gen_routes(
         if revision is None or revision.brief_id != brief_id:
             return JSONResponse(status_code=404, content={"error": "Revision not found"})
 
-        agent = BriefAssistantAgent(config=services.config)
+        agent = BriefAssistantAgent(
+            config=services.config,
+            llm_runtime=services.llm_runtime,
+        )
         messages = [{"role": m.role, "content": m.content} for m in request.messages]
 
         response = await agent.respond(
@@ -915,7 +918,10 @@ def register_content_gen_routes(
         if revision is None:
             return JSONResponse(status_code=400, content={"error": "No current revision found"})
 
-        result = await generate_backlog_from_brief(revision)
+        result = await generate_backlog_from_brief(
+            revision,
+            llm_runtime=services.llm_runtime,
+        )
 
         return JSONResponse(content=model_to_json(result))
 
@@ -1039,7 +1045,10 @@ def register_content_gen_routes(
             else services.backlog_service.load().items
         )
 
-        agent = BacklogChatAgent(services.config)
+        agent = BacklogChatAgent(
+            services.config,
+            llm_runtime=services.llm_runtime,
+        )
         response = await agent.respond(
             messages=messages,
             backlog_items=backlog_items,
@@ -1095,7 +1104,10 @@ def register_content_gen_routes(
             else services.backlog_service.load().items
         )
 
-        agent = BatchTriageAgent(services.config)
+        agent = BatchTriageAgent(
+            services.config,
+            llm_runtime=services.llm_runtime,
+        )
         response = await agent.respond(
             backlog_items=backlog_items,
             strategy=request.strategy,
@@ -1147,7 +1159,10 @@ def register_content_gen_routes(
         if item is None:
             return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
 
-        agent = NextActionAgent(services.config)
+        agent = NextActionAgent(
+            services.config,
+            llm_runtime=services.llm_runtime,
+        )
         response = await agent.recommend(
             item,
             strategy_context=request.strategy,
@@ -1174,7 +1189,10 @@ def register_content_gen_routes(
         warnings: list[str] = []
 
         for item in backlog_items:
-            agent = NextActionAgent(services.config)
+            agent = NextActionAgent(
+                services.config,
+                llm_runtime=services.llm_runtime,
+            )
             try:
                 response = await agent.recommend(
                     item,
@@ -1203,7 +1221,10 @@ def register_content_gen_routes(
         if item is None:
             return JSONResponse(status_code=404, content={"error": "Backlog item not found"})
 
-        agent = ExecutionBriefAgent(services.config)
+        agent = ExecutionBriefAgent(
+            services.config,
+            llm_runtime=services.llm_runtime,
+        )
         response = await agent.generate_brief(
             item,
             strategy_context=request.strategy,

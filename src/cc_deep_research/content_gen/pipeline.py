@@ -30,7 +30,7 @@ from cc_deep_research.content_gen.models.pipeline import (
 from cc_deep_research.content_gen.models.production import RunConstraints
 
 if TYPE_CHECKING:
-    pass
+    from cc_deep_research.llm.runtime_context import LLMRuntimeContext
 
 logger = logging.getLogger(__name__)
 
@@ -100,8 +100,14 @@ class ContentGenPipeline:
     Replaces ContentGenOrchestrator._run_stage() for normal pipeline execution.
     """
 
-    def __init__(self, config: Config) -> None:
+    def __init__(
+        self,
+        config: Config,
+        *,
+        llm_runtime: LLMRuntimeContext | None = None,
+    ) -> None:
         self._config = config
+        self._llm_runtime = llm_runtime
         self._stage_orchestrators: dict[str, Any] = {}
         self._prereq_policy = StagePrerequisitePolicy()
         self._gate_policy = StageGatePolicy(config)
@@ -147,6 +153,11 @@ class ContentGenPipeline:
         orchestrator_class = stages.get(name)
         if orchestrator_class is None:
             raise ValueError(f"Unknown stage: {name}")
+        if self._llm_runtime is not None and name not in {"strategy", "performance"}:
+            return orchestrator_class(
+                self._config,
+                llm_runtime=self._llm_runtime,
+            )
         return orchestrator_class(self._config)
 
     async def run_full_pipeline(

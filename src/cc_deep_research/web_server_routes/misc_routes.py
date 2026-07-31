@@ -6,7 +6,7 @@ import json
 import os
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
@@ -35,6 +35,9 @@ from cc_deep_research.telemetry import (
 from cc_deep_research.web_runtime import get_background_job_registry
 from cc_deep_research.web_server_routes._shared import serialize_timestamp
 
+if TYPE_CHECKING:
+    from cc_deep_research.llm.codex_runtime import CodexRuntime
+
 
 def _get_research_theme_list() -> list[dict[str, str]]:
     """Return list of available research themes with metadata."""
@@ -59,6 +62,7 @@ def _run_benchmark_job(
     workflow_mode: str,
     depth: str,
     output_dir: str,
+    codex_runtime: CodexRuntime | None = None,
 ) -> dict[str, Any]:
     """Run the benchmark corpus inside a background worker thread."""
     from cc_deep_research.benchmark import BenchmarkCase
@@ -72,7 +76,7 @@ def _run_benchmark_job(
 
     def run_case(case: BenchmarkCase) -> ResearchSession:
         """Execute one benchmark case as a research run and return the session."""
-        service = ResearchRunService()
+        service = ResearchRunService(codex_runtime=codex_runtime)
         request = ResearchRunRequest(
             query=case.query,
             depth=ResearchDepth(depth),
@@ -582,6 +586,8 @@ def register_misc_routes(app: FastAPI) -> None:
         """Trigger a benchmark corpus run."""
         import asyncio
 
+        from cc_deep_research.web_server import get_backend_runtime
+
         run_output_dir = (
             Path(output_dir)
             if output_dir
@@ -606,6 +612,7 @@ def register_misc_routes(app: FastAPI) -> None:
                     workflow_mode=workflow_mode,
                     depth=depth,
                     output_dir=str(run_output_dir),
+                    codex_runtime=get_backend_runtime(app).codex_runtime,
                 )
                 job_registry.mark_completed(job.job_id, result=result)
             except Exception as exc:

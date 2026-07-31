@@ -91,7 +91,7 @@ async function telemetryWrap<T>(
 }
 
 const SESSION_DETAIL_TIMEOUT_MS = 30000;
-const SESSION_REPORT_TIMEOUT_MS = 120000;
+const SESSION_REPORT_TIMEOUT_MS = 0;
 const SESSION_BUNDLE_TIMEOUT_MS = 120000;
 const BULK_DELETE_TIMEOUT_MS = 120000;
 
@@ -144,6 +144,18 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
     return error.message;
   }
   return fallback;
+}
+
+export function isApiErrorCode(error: unknown, code: string): boolean {
+  if (!axios.isAxiosError(error)) {
+    return false;
+  }
+  const payload = error.response?.data;
+  return (
+    !!payload &&
+    typeof payload === 'object' &&
+    (payload as Record<string, unknown>).code === code
+  );
 }
 
 export { getRecentRequestTelemetry, sanitizeForExport } from '@/lib/request-telemetry';
@@ -753,6 +765,7 @@ export async function getSessionArtifacts(
 
 export * from '@/lib/api/analytics';
 export * from '@/lib/api/benchmark';
+export * from '@/lib/api/codex';
 export * from '@/lib/api/search-cache';
 
 export * from '@/lib/api/radar';

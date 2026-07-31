@@ -27,7 +27,13 @@ interface QuickScriptFormProps {
 }
 
 type RunMode = 'default' | 'single_pass' | 'iterative'
-type QuickScriptRoute = 'default' | 'anthropic' | 'openrouter' | 'cerebras' | 'heuristic'
+type QuickScriptRoute =
+  | 'default'
+  | 'anthropic'
+  | 'openrouter'
+  | 'cerebras'
+  | 'codex'
+  | 'heuristic'
 
 const QUICK_SCRIPT_ROUTE_OPTIONS: Array<{
   value: QuickScriptRoute
@@ -37,6 +43,7 @@ const QUICK_SCRIPT_ROUTE_OPTIONS: Array<{
   { value: 'anthropic', label: 'Anthropic' },
   { value: 'openrouter', label: 'OpenRouter' },
   { value: 'cerebras', label: 'Cerebras' },
+  { value: 'codex', label: 'Codex (ChatGPT)' },
   { value: 'heuristic', label: 'Heuristic' },
 ]
 

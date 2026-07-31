@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from cc_deep_research.config import Config
 from cc_deep_research.content_gen.models import ScriptingContext
 
 from .base import BaseStageOrchestrator
@@ -20,14 +19,11 @@ class VisualStageOrchestrator(BaseStageOrchestrator):
     - Translating scripts into visual plans
     """
 
-    def __init__(self, config: Config) -> None:
-        super().__init__(config)
-
     def _create_agent(self, name: str) -> object:
         from cc_deep_research.content_gen.agents.visual import VisualAgent
 
         if name == "visual":
-            return VisualAgent(self._config)
+            return self._build_agent(VisualAgent)
         raise ValueError(f"Unknown agent: {name}")
 
     async def run_visual(

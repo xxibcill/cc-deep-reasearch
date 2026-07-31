@@ -7,6 +7,7 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
+from cc_deep_research.content_gen.agents._llm_utils import create_agent_llm_router
 from cc_deep_research.content_gen.models import (
     SCRIPTING_STEP_LABELS,
     SCRIPTING_STEPS,
@@ -27,11 +28,11 @@ from cc_deep_research.content_gen.models import (
     VisualNote,
 )
 from cc_deep_research.content_gen.prompts import scripting as prompts
-from cc_deep_research.llm import LLMRouter
-from cc_deep_research.llm.base import LLMResponse, LLMTransportType
+from cc_deep_research.llm.base import LLMResponse
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
+    from cc_deep_research.llm.runtime_context import LLMRuntimeContext
 
 logger = logging.getLogger(__name__)
 
@@ -123,20 +124,6 @@ _RESET_FIELDS_BY_STEP: dict[int, tuple[str, ...]] = {
 }
 
 
-def _transport_from_route_name(route_name: str) -> LLMTransportType:
-    route_map = {
-        "openrouter": LLMTransportType.OPENROUTER_API,
-        "cerebras": LLMTransportType.CEREBRAS_API,
-        "anthropic": LLMTransportType.ANTHROPIC_API,
-        "heuristic": LLMTransportType.HEURISTIC,
-    }
-    transport = route_map.get(route_name)
-    if transport is None:
-        msg = f"Unsupported scripting LLM route: {route_name}"
-        raise ValueError(msg)
-    return transport
-
-
 def _require(value: object, name: str, step: str) -> None:
     """Raise ValueError if *value* is None or empty string."""
     if value is None:
@@ -150,15 +137,20 @@ def _require(value: object, name: str, step: str) -> None:
 class ScriptingAgent:
     """Execute the 10-step scripting pipeline for short-form video scripts."""
 
-    def __init__(self, config: Config, *, llm_route: str | None = None) -> None:
-        from cc_deep_research.llm.registry import LLMRouteRegistry
-
+    def __init__(
+        self,
+        config: Config,
+        *,
+        llm_route: str | None = None,
+        llm_runtime: LLMRuntimeContext | None = None,
+    ) -> None:
         self._config = config
-        registry = LLMRouteRegistry(config.llm)
-        if llm_route is not None:
-            transport = _transport_from_route_name(llm_route)
-            registry.set_route(AGENT_ID, registry.get_route_for_transport(transport))
-        self._router = LLMRouter(registry)
+        self._router = create_agent_llm_router(
+            config,
+            llm_runtime=llm_runtime,
+            agent_id=AGENT_ID,
+            llm_route=llm_route,
+        )
         self._active_iteration = 1
 
     async def _call_llm(
@@ -171,8 +163,8 @@ class ScriptingAgent:
         if not self._router.is_available(AGENT_ID):
             msg = (
                 "No LLM route is available for the scripting workflow. "
-                "Enable Anthropic, OpenRouter, or Cerebras with API keys before running "
-                "'content-gen script'."
+                "Enable Anthropic, OpenRouter, or Cerebras with API keys, or connect "
+                "Codex to ChatGPT, before running 'content-gen script'."
             )
             raise RuntimeError(msg)
         response = await self._router.execute(

@@ -7,16 +7,19 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any
 
-from cc_deep_research.content_gen.agents._llm_utils import call_agent_llm_text
+from cc_deep_research.content_gen.agents._llm_utils import (
+    call_agent_llm_text,
+    create_agent_llm_router,
+)
 from cc_deep_research.content_gen.models import (
     OpportunityBrief,
     StrategyMemory,
 )
 from cc_deep_research.content_gen.prompts import opportunity as prompts
-from cc_deep_research.llm import LLMRouter
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
+    from cc_deep_research.llm.runtime_context import LLMRuntimeContext
 
 logger = logging.getLogger(__name__)
 
@@ -36,12 +39,14 @@ _PARSE_MODE_LEGACY = "legacy"
 class OpportunityPlanningAgent:
     """Turn a raw theme into a structured opportunity brief."""
 
-    def __init__(self, config: Config) -> None:
-        from cc_deep_research.llm.registry import LLMRouteRegistry
-
+    def __init__(
+        self,
+        config: Config,
+        *,
+        llm_runtime: LLMRuntimeContext | None = None,
+    ) -> None:
         self._config = config
-        registry = LLMRouteRegistry(config.llm)
-        self._router = LLMRouter(registry)
+        self._router = create_agent_llm_router(config, llm_runtime=llm_runtime)
 
     async def _call_llm(
         self,

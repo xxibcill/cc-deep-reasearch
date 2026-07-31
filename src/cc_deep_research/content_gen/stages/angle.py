@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from cc_deep_research.config import Config
-
 from .base import BaseStageOrchestrator
 
 if TYPE_CHECKING:
@@ -22,14 +20,11 @@ class AngleStageOrchestrator(BaseStageOrchestrator):
     - Selecting the best angle for production
     """
 
-    def __init__(self, config: Config) -> None:
-        super().__init__(config)
-
     def _create_agent(self, name: str) -> object:
         from cc_deep_research.content_gen.agents.thesis import ThesisAgent
 
         if name in ("angle", "thesis"):
-            return ThesisAgent(self._config)
+            return self._build_agent(ThesisAgent)
         raise ValueError(f"Unknown agent: {name}")
 
     async def run_angle(self, item: Any) -> Any:

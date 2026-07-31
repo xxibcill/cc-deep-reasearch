@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from cc_deep_research.config import Config
-from cc_deep_research.llm.base import LLMRoute, LLMRoutePlan
+from cc_deep_research.llm.base import LLMRoute, LLMRoutePlan, transport_from_route_name
 from cc_deep_research.models.analysis import StrategyResult
 from cc_deep_research.models.llm import (
     LLMPlanModel,
@@ -128,6 +128,9 @@ class LLMRoutePlanner:
         # Check Anthropic availability
         availability[LLMTransportType.ANTHROPIC_API] = self._check_anthropic_available()
 
+        # Codex authentication is verified by the runtime transport.
+        availability[LLMTransportType.CODEX_APP_SERVER] = self._check_codex_available()
+
         # Heuristic is always available as fallback
         availability[LLMTransportType.HEURISTIC] = True
 
@@ -170,6 +173,10 @@ class LLMRoutePlanner:
 
         return bool(self._llm_config.anthropic.get_api_keys())
 
+    def _check_codex_available(self) -> bool:
+        """Return whether Codex is enabled for runtime authentication preflight."""
+        return self._llm_config.codex.enabled
+
     def _build_fallback_order(
         self,
         availability: dict[LLMTransportType, bool],
@@ -185,18 +192,10 @@ class LLMRoutePlanner:
         # Start with configured fallback order
         configured_order = self._llm_config.fallback_order
 
-        # Map string names to enum values
-        name_to_transport = {
-            "openrouter": LLMTransportType.OPENROUTER_API,
-            "cerebras": LLMTransportType.CEREBRAS_API,
-            "anthropic": LLMTransportType.ANTHROPIC_API,
-            "heuristic": LLMTransportType.HEURISTIC,
-        }
-
         # Build ordered list of available transports
         fallback: list[LLMTransportType] = []
         for name in configured_order:
-            transport = name_to_transport.get(name)
+            transport = transport_from_route_name(name)
             if transport and availability.get(transport, False):
                 fallback.append(transport)
 
@@ -252,15 +251,7 @@ class LLMRoutePlanner:
         Returns:
             Route model for the agent, or None if using default.
         """
-        # Map preference name to transport type
-        name_to_transport = {
-            "openrouter": LLMTransportType.OPENROUTER_API,
-            "cerebras": LLMTransportType.CEREBRAS_API,
-            "anthropic": LLMTransportType.ANTHROPIC_API,
-            "heuristic": LLMTransportType.HEURISTIC,
-        }
-
-        preferred_transport = name_to_transport.get(config_preference)
+        preferred_transport = transport_from_route_name(config_preference)
 
         # Check if preferred transport is available
         if preferred_transport and availability.get(preferred_transport, False):
@@ -317,6 +308,14 @@ class LLMRoutePlanner:
                 transport=LLMTransportType.ANTHROPIC_API,
                 provider=LLMProviderType.ANTHROPIC,
                 model=self._llm_config.anthropic.model,
+                enabled=True,
+            )
+
+        if transport == LLMTransportType.CODEX_APP_SERVER:
+            return LLMRouteModel(
+                transport=LLMTransportType.CODEX_APP_SERVER,
+                provider=LLMProviderType.CODEX,
+                model=self._llm_config.codex.model or "codex-default",
                 enabled=True,
             )
 
@@ -401,6 +400,12 @@ class LLMRoutePlanner:
                 "api_keys": api_keys,
                 "base_url": self._llm_config.anthropic.base_url,
                 "max_tokens": str(self._llm_config.anthropic.max_tokens),
+            }
+        elif transport == LLMTransportType.CODEX_APP_SERVER:
+            timeout_seconds = self._llm_config.codex.timeout_seconds
+            extra = {
+                "model": self._llm_config.codex.model,
+                "reasoning_effort": self._llm_config.codex.reasoning_effort,
             }
 
         return LLMRoute(

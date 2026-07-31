@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from fastapi.testclient import TestClient
 
 from cc_deep_research.event_router import EventRouter
 from cc_deep_research.models import ResearchSession
@@ -21,9 +22,27 @@ from cc_deep_research.research_runs.jobs import (
 )
 from cc_deep_research.web_server import (
     create_app,
+    get_backend_runtime,
     get_event_router,
     get_job_registry,
 )
+
+
+class FakeCodexRuntime:
+    """Lifecycle-aware Codex runtime double."""
+
+    def __init__(self, *, fail_start: bool = False) -> None:
+        self.fail_start = fail_start
+        self.start_calls = 0
+        self.close_calls = 0
+
+    async def start(self) -> None:
+        self.start_calls += 1
+        if self.fail_start:
+            raise RuntimeError("Codex startup failed")
+
+    async def close(self) -> None:
+        self.close_calls += 1
 
 
 def test_create_app_uses_supplied_runtime_dependencies() -> None:
@@ -35,6 +54,67 @@ def test_create_app_uses_supplied_runtime_dependencies() -> None:
 
     assert get_event_router(app) is event_router
     assert get_job_registry(app) is registry
+
+
+def test_create_app_uses_supplied_codex_runtime() -> None:
+    """The app should retain one injected Codex runtime for routes and providers."""
+    codex_runtime = FakeCodexRuntime()
+
+    app = create_app(codex_runtime=codex_runtime)  # type: ignore[arg-type]
+
+    assert get_backend_runtime(app).codex_runtime is codex_runtime
+
+
+def test_create_app_passes_codex_runtime_to_content_services(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Content-generation services should share the app-owned Codex runtime."""
+    from cc_deep_research import web_server
+
+    codex_runtime = FakeCodexRuntime()
+    captured: dict[str, object] = {}
+    original_builder = web_server.build_content_gen_services
+
+    def capture_runtime(**kwargs: object):
+        captured["llm_runtime"] = kwargs.get("llm_runtime")
+        services = original_builder(**kwargs)  # type: ignore[arg-type]
+        captured["services"] = services
+        return services
+
+    monkeypatch.setattr(web_server, "build_content_gen_services", capture_runtime)
+
+    create_app(codex_runtime=codex_runtime)  # type: ignore[arg-type]
+
+    llm_runtime = captured["llm_runtime"]
+    assert llm_runtime.codex_runtime is codex_runtime  # type: ignore[union-attr]
+    assert captured["services"].scripting_api_service._llm_runtime is llm_runtime  # type: ignore[union-attr]
+
+
+def test_lifespan_starts_and_closes_codex_runtime() -> None:
+    """FastAPI lifespan should pair startup and shutdown exactly once."""
+    codex_runtime = FakeCodexRuntime()
+    app = create_app(codex_runtime=codex_runtime)  # type: ignore[arg-type]
+
+    with TestClient(app):
+        assert codex_runtime.start_calls == 1
+        assert codex_runtime.close_calls == 0
+
+    assert codex_runtime.close_calls == 1
+
+
+def test_lifespan_closes_partially_started_codex_runtime() -> None:
+    """A startup failure should still close runtime resources through ``finally``."""
+    codex_runtime = FakeCodexRuntime(fail_start=True)
+    app = create_app(codex_runtime=codex_runtime)  # type: ignore[arg-type]
+
+    with (
+        pytest.raises(RuntimeError, match="Codex startup failed"),
+        TestClient(app),
+    ):
+        pass
+
+    assert codex_runtime.start_calls == 1
+    assert codex_runtime.close_calls == 1
 
 
 def test_job_registry_tracks_active_and_completed_runs() -> None:

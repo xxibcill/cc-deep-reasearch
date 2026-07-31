@@ -1058,7 +1058,7 @@ export interface RunScriptingRequest {
   idea: string;
   iterative_mode?: boolean | null;
   max_iterations?: number | null;
-  llm_route?: 'openrouter' | 'cerebras' | 'anthropic' | 'heuristic' | null;
+  llm_route?: 'openrouter' | 'cerebras' | 'anthropic' | 'codex' | 'heuristic' | null;
 }
 
 export interface ScriptingIterationSummary {

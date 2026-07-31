@@ -64,6 +64,19 @@ Use the health endpoint to verify the active environment:
 curl -fsS http://localhost:8000/api/health
 ```
 
+### Connect Codex through ChatGPT
+
+Codex uses the pinned local app-server runtime rather than API-key billing.
+Open **Settings**, enable the Codex provider, choose browser or device-code
+sign-in, and complete the ChatGPT flow. Leave the model empty to use the
+signed-in account's default model, then select `codex` for the desired routing
+roles.
+
+Credentials remain in the local Codex credential store and are never written
+to the Inqulume configuration. Provider turns use isolated, ephemeral threads
+with read-only sandboxing, deny-all approvals, disabled tools, and a fail-closed
+check of the effective Codex and MCP configuration.
+
 ## Research Workflow
 
 1. Open **Research**.

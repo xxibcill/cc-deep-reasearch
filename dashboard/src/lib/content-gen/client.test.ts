@@ -10,8 +10,8 @@ describe('content-gen client', () => {
       expect(CONTENT_GEN_TIMEOUT_MS).toBe(30000);
     });
 
-    it('has extended timeout for scripting operations', () => {
-      expect(SCRIPTING_TIMEOUT_MS).toBe(240000);
+    it('does not preempt long-running provider turns for scripting operations', () => {
+      expect(SCRIPTING_TIMEOUT_MS).toBe(0);
     });
 
     it('client has correct baseURL pattern', () => {

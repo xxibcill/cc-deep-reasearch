@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { startTransition, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 
+import { CodexProviderPanel } from '@/components/codex-provider-panel'
 import { ConfigSecretsPanel } from '@/components/config-secrets-panel'
 import { HelpCallout } from '@/components/ui/help-callout'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -180,7 +181,7 @@ const MODEL_ROUTING_PATHS = [
 ]
 
 const DEFAULT_ROUTE_OPTION = 'anthropic'
-const ROUTE_OPTIONS = ['openrouter', 'cerebras', 'anthropic', 'heuristic'] as const
+const ROUTE_OPTIONS = ['openrouter', 'cerebras', 'anthropic', 'codex', 'heuristic'] as const
 const ROUTE_OPTION_SET = new Set<string>(ROUTE_OPTIONS)
 const DEPTH_OPTIONS = ['quick', 'standard', 'deep']
 const OUTPUT_OPTIONS = ['markdown', 'json', 'html']
@@ -892,6 +893,8 @@ export function ConfigEditor() {
             </div>
           </SettingsSectionCard>
 
+          <CodexProviderPanel config={config} onConfigChange={setConfig} />
+
           <ConfigSecretsPanel config={config} onConfigChange={setConfig} />
 
           <Card className="border-border/80 bg-card/95">
@@ -1186,6 +1189,7 @@ function RouteField({
       overrideSource={overrideSources[field]}
     >
       <NativeSelect
+        aria-label={definition.label}
         className="h-9"
         disabled={disabled || overridden}
         value={value}

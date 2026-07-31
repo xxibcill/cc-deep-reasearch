@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import cast
@@ -18,6 +18,7 @@ from cc_deep_research.config import (
     ConfigPatchErrorResponse,
     ConfigPatchRequest,
     build_config_response,
+    load_config,
     update_config,
 )
 from cc_deep_research.content_gen._services import build_content_gen_services
@@ -27,6 +28,8 @@ from cc_deep_research.content_gen.progress import (
 )
 from cc_deep_research.content_gen.router import register_content_gen_routes
 from cc_deep_research.event_router import EventRouter
+from cc_deep_research.llm.codex_runtime import CodexRuntime, get_shared_codex_runtime
+from cc_deep_research.llm.runtime_context import LLMRuntimeContext
 from cc_deep_research.radar.router import register_radar_routes
 from cc_deep_research.reporting import ReportGenerator
 from cc_deep_research.research_runs.jobs import (
@@ -48,6 +51,10 @@ from cc_deep_research.web_server_routes import (
     register_session_routes,
     register_websocket_routes,
 )
+from cc_deep_research.web_server_routes.codex_auth_routes import (
+    register_codex_auth_routes,
+    resolve_dashboard_cors_origins,
+)
 from cc_deep_research.web_server_routes.operations_routes import register_operations_routes
 
 logger = logging.getLogger(__name__)
@@ -61,11 +68,13 @@ class DashboardBackendRuntime:
     jobs: ResearchRunJobRegistry
     background_jobs: BackgroundJobRegistry
     pipeline_jobs: PipelineRunJobRegistry
+    codex_runtime: CodexRuntime
     maintenance_scheduler: MaintenanceScheduler | None = None
 
     async def start(self) -> None:
         """Start shared realtime infrastructure."""
         await self.event_router.start()
+        await self.codex_runtime.start()
         if self.maintenance_scheduler is not None:
             self.maintenance_scheduler.start()
 
@@ -76,6 +85,7 @@ class DashboardBackendRuntime:
         await self.pipeline_jobs.cancel_all()
         if self.maintenance_scheduler is not None:
             self.maintenance_scheduler.stop()
+        await self.codex_runtime.close()
         await self.event_router.stop()
 
 
@@ -83,20 +93,26 @@ class DashboardBackendRuntime:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Manage application lifecycle."""
     runtime = get_backend_runtime(app)
-    await runtime.start()
-    yield
-    await runtime.stop()
+    try:
+        await runtime.start()
+        yield
+    finally:
+        await runtime.stop()
 
 
 def create_app(
     event_router: EventRouter | None = None,
     job_registry: ResearchRunJobRegistry | None = None,
+    codex_runtime: CodexRuntime | None = None,
+    cors_origins: Sequence[str] | None = None,
 ) -> FastAPI:
     """Create FastAPI application.
 
     Args:
         event_router: Optional EventRouter for WebSocket broadcasting.
         job_registry: Optional in-process run registry for browser-started jobs.
+        codex_runtime: Optional shared Codex runtime for provider and account operations.
+        cors_origins: Exact browser origins allowed to access the dashboard API.
 
     Returns:
         Configured FastAPI application.
@@ -113,12 +129,12 @@ def create_app(
         jobs=job_registry or ResearchRunJobRegistry(),
         background_jobs=BackgroundJobRegistry(),
         pipeline_jobs=PipelineRunJobRegistry(),
+        codex_runtime=codex_runtime or get_shared_codex_runtime(),
     )
 
     # Initialize maintenance scheduler if configured
     maintenance_scheduler: MaintenanceScheduler | None = None
     try:
-        from cc_deep_research.config import load_config
         config = load_config()
         interval_hours = getattr(config.content_gen, "maintenance_interval_hours", 0.0)
         if interval_hours > 0:
@@ -127,17 +143,18 @@ def create_app(
     except Exception:
         logger.exception("Failed to initialize maintenance scheduler")
 
-    # Configure CORS
+    # Configure CORS and use the same explicit list for sensitive auth routes.
+    dashboard_cors_origins = resolve_dashboard_cors_origins(cors_origins)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # In production, restrict to specific origins
+        allow_origins=list(dashboard_cors_origins),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
     # Register route modules
-    register_routes(app)
+    register_routes(app, cors_origins=dashboard_cors_origins)
 
     # Content generation routes
     runtime = get_backend_runtime(app)
@@ -146,7 +163,9 @@ def create_app(
         config=config,
         event_router=runtime.event_router,
         job_registry=runtime.pipeline_jobs,
+        llm_runtime=LLMRuntimeContext(codex_runtime=runtime.codex_runtime),
     )
+    app.state.content_gen_services = services
     register_content_gen_routes(app, runtime.event_router, runtime.pipeline_jobs, services)
 
     # Radar routes
@@ -193,11 +212,16 @@ def _background_job_response(job: BackgroundJob) -> dict[str, object]:
     return response
 
 
-def register_routes(app: FastAPI) -> None:
+def register_routes(
+    app: FastAPI,
+    *,
+    cors_origins: Sequence[str] | None = None,
+) -> None:
     """Register all API routes.
 
     Args:
         app: The FastAPI application instance.
+        cors_origins: Exact browser origins trusted by dashboard-only routes.
     """
 
     @app.get("/")
@@ -260,6 +284,10 @@ def register_routes(app: FastAPI) -> None:
                 status_code=400,
             )
 
+        content_gen_services = getattr(app.state, "content_gen_services", None)
+        if content_gen_services is not None:
+            content_gen_services.refresh_llm_config(load_config())
+
         return JSONResponse(content=response.model_dump(mode="json"))
 
     # Register extracted route modules
@@ -268,6 +296,7 @@ def register_routes(app: FastAPI) -> None:
     register_misc_routes(app)
     register_websocket_routes(app)
     register_operations_routes(app)
+    register_codex_auth_routes(app, allowed_origins=cors_origins)
 
 
 def start_server(

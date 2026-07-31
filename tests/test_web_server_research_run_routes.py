@@ -14,7 +14,48 @@ from cc_deep_research.research_runs import (
 )
 from cc_deep_research.web_server import (
     create_app,
+    get_job_registry,
 )
+
+
+def test_research_route_passes_app_owned_codex_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Browser-started generation should use the same runtime as auth routes."""
+    captured: list[object] = []
+
+    class FakeCodexRuntime:
+        async def start(self) -> None:
+            pass
+
+        async def close(self) -> None:
+            pass
+
+    class CapturingResearchRunService:
+        def __init__(self, *, codex_runtime: object) -> None:
+            captured.append(codex_runtime)
+
+        def run(self, *_args, **_kwargs) -> ResearchRunResult:
+            raise RuntimeError("expected test stop")
+
+    monkeypatch.setattr(
+        "cc_deep_research.web_server.ResearchRunService",
+        CapturingResearchRunService,
+    )
+    codex_runtime = FakeCodexRuntime()
+
+    with TestClient(create_app(codex_runtime=codex_runtime)) as client:  # type: ignore[arg-type]
+        response = client.post(
+            "/api/research-runs",
+            json={"query": "runtime identity", "depth": "quick"},
+        )
+        assert response.status_code == 202
+        for _ in range(50):
+            if captured:
+                break
+            time.sleep(0.01)
+
+    assert captured == [codex_runtime]
 
 
 def test_stop_research_run_cancels_active_run_and_interrupts_session(
@@ -24,6 +65,9 @@ def test_stop_research_run_cancels_active_run_and_interrupts_session(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
 
     class BlockingResearchRunService:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
         def run(
             self,
             request: ResearchRunRequest,
@@ -62,7 +106,7 @@ def test_stop_research_run_cancels_active_run_and_interrupts_session(
                     cancellation_check()
 
     monkeypatch.setattr(
-        "cc_deep_research.web_server_routes.research_run_routes.ResearchRunService",
+        "cc_deep_research.web_server.ResearchRunService",
         BlockingResearchRunService,
     )
 
@@ -111,3 +155,30 @@ def test_stop_research_run_cancels_active_run_and_interrupts_session(
         assert sessions[0]["session_id"] == session_id
         assert sessions[0]["status"] == "interrupted"
         assert sessions[0]["active"] is False
+
+
+def test_stop_research_run_cancels_matching_llm_scope() -> None:
+    class RecordingCodexRuntime:
+        def __init__(self) -> None:
+            self.cancelled_scopes: list[str] = []
+
+        async def start(self) -> None:
+            pass
+
+        async def close(self) -> None:
+            pass
+
+        def request_cancel_scope(self, scope_id: str) -> None:
+            self.cancelled_scopes.append(scope_id)
+
+    runtime = RecordingCodexRuntime()
+    app = create_app(codex_runtime=runtime)  # type: ignore[arg-type]
+    registry = get_job_registry(app)
+    job = registry.create_job(ResearchRunRequest(query="cancel scope"))
+    registry.mark_running(job.run_id)
+
+    with TestClient(app) as client:
+        response = client.post(f"/api/research-runs/{job.run_id}/stop")
+
+    assert response.status_code == 202
+    assert runtime.cancelled_scopes == [job.run_id]

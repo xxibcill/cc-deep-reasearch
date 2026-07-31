@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from cc_deep_research.config import Config
-
 from .base import BaseStageOrchestrator
 
 if TYPE_CHECKING:
@@ -19,14 +17,11 @@ class QCStageOrchestrator(BaseStageOrchestrator):
     - Quality control checks on scripts
     """
 
-    def __init__(self, config: Config) -> None:
-        super().__init__(config)
-
     def _create_agent(self, name: str) -> object:
         from cc_deep_research.content_gen.agents.qc import QCAgent
 
         if name == "qc":
-            return QCAgent(self._config)
+            return self._build_agent(QCAgent)
         raise ValueError(f"Unknown agent: {name}")
 
     async def run_qc(

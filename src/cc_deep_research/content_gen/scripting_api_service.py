@@ -11,7 +11,7 @@ import json
 import logging
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import ValidationError
 
@@ -28,6 +28,9 @@ from cc_deep_research.content_gen.scripting_run_service import ScriptingRunServi
 from cc_deep_research.content_gen.storage import ScriptingStore
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from cc_deep_research.llm.runtime_context import LLMRuntimeContext
 
 
 class ScriptingApiError(Exception):
@@ -84,13 +87,20 @@ class ScriptingApiService:
         config: Config | None = None,
         scripting_store: ScriptingStore | None = None,
         scripting_run_factory=None,
+        llm_runtime: LLMRuntimeContext | None = None,
     ) -> None:
         self._config = config or load_config()
         self._store = scripting_store or ScriptingStore()
         self._scripting_run_factory = scripting_run_factory or self._default_scripting_run_factory
+        self._llm_runtime = llm_runtime
 
     def _default_scripting_run_factory(self) -> ScriptingRunService:
-        return ScriptingRunService(self._config)
+        if self._llm_runtime is None:
+            return ScriptingRunService(self._config)
+        return ScriptingRunService(
+            self._config,
+            llm_runtime=self._llm_runtime,
+        )
 
     # ------------------------------------------------------------------
     # Run scripting
@@ -101,7 +111,14 @@ class ScriptingApiService:
         idea: str,
         iterative_mode: bool | None = None,
         max_iterations: int | None = None,
-        llm_route: Literal["openrouter", "cerebras", "anthropic", "heuristic"] | None = None,
+        llm_route: Literal[
+            "openrouter",
+            "cerebras",
+            "anthropic",
+            "codex",
+            "heuristic",
+        ]
+        | None = None,
     ) -> ScriptingRunResult:
         """Run standalone scripting (single-pass or iterative).
 
@@ -267,10 +284,11 @@ class ScriptingApiService:
 
         # Generate hooks and CTA using ScriptingAgent
         from cc_deep_research.content_gen.agents.scripting import ScriptingAgent
-        from cc_deep_research.llm import LLMRouter
 
-        llm = LLMRouter(self._config.content_gen.llm)
-        agent = ScriptingAgent(llm)
+        agent = ScriptingAgent(
+            self._config,
+            llm_runtime=self._llm_runtime,
+        )
 
         context = await agent.generate_hooks(context)
         context = await agent.generate_cta(context)

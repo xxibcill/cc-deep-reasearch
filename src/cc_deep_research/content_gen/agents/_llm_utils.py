@@ -3,8 +3,38 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from cc_deep_research.llm import LLMRouter
+from cc_deep_research.llm.base import transport_from_route_name
+
+if TYPE_CHECKING:
+    from cc_deep_research.config import Config
+    from cc_deep_research.llm.runtime_context import LLMRuntimeContext
+
+
+def create_agent_llm_router(
+    config: Config,
+    *,
+    llm_runtime: LLMRuntimeContext | None = None,
+    agent_id: str | None = None,
+    llm_route: str | None = None,
+) -> LLMRouter:
+    """Create a content-agent router with optional route and runtime overrides."""
+    from cc_deep_research.llm.registry import LLMRouteRegistry
+
+    registry = LLMRouteRegistry(config.llm)
+    if llm_route is not None:
+        if agent_id is None:
+            raise ValueError("agent_id is required when overriding an LLM route")
+        transport = transport_from_route_name(llm_route)
+        if transport is None:
+            raise ValueError(f"Unsupported content-generation LLM route: {llm_route}")
+        registry.set_route(agent_id, registry.get_route_for_transport(transport))
+    return LLMRouter(
+        registry,
+        codex_runtime=llm_runtime.codex_runtime if llm_runtime is not None else None,
+    )
 
 
 def _missing_route_message(*, workflow_name: str, cli_command: str) -> str:
@@ -30,7 +60,9 @@ async def call_agent_llm_text(
 ) -> str:
     """Execute an agent LLM call with route checks and bounded empty-response retry."""
     if not router.is_available(agent_id):
-        raise RuntimeError(_missing_route_message(workflow_name=workflow_name, cli_command=cli_command))
+        raise RuntimeError(
+            _missing_route_message(workflow_name=workflow_name, cli_command=cli_command)
+        )
 
     for attempt in range(1, max_attempts + 1):
         response = await router.execute(
@@ -59,4 +91,4 @@ async def call_agent_llm_text(
     )
 
 
-__all__ = ["call_agent_llm_text"]
+__all__ = ["call_agent_llm_text", "create_agent_llm_router"]

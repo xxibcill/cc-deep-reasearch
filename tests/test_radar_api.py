@@ -62,6 +62,7 @@ def app(
     """Create a test FastAPI app with Radar routes registered."""
     application = FastAPI()
     application.state.dashboard_runtime = SimpleNamespace(
+        codex_runtime=object(),
         event_router=mock_event_router,
         jobs=ResearchRunJobRegistry(),
         pipeline_jobs=PipelineRunJobRegistry(path=temp_radar_dir / "pipeline-jobs"),
@@ -311,6 +312,9 @@ class TestRadarWorkflowLaunchAPI:
         )
 
         class FakeResearchRunService:
+            def __init__(self, *, codex_runtime=None) -> None:
+                assert codex_runtime is app.state.dashboard_runtime.codex_runtime
+
             def run(self, request, *, on_session_started=None, **_kwargs) -> ResearchRunResult:
                 if on_session_started is not None:
                     on_session_started("session-radar-123")
@@ -367,8 +371,8 @@ class TestRadarWorkflowLaunchAPI:
         )
 
         class FakeOrchestrator:
-            def __init__(self, _config: Config) -> None:
-                pass
+            def __init__(self, _config: Config, *, llm_runtime=None) -> None:
+                assert llm_runtime.codex_runtime is app.state.dashboard_runtime.codex_runtime
 
             async def run_full_pipeline(
                 self,
