@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.agents import (
     AGENT_TYPE_ANALYZER,
@@ -25,6 +25,9 @@ from cc_deep_research.config import Config
 from cc_deep_research.llm import LLMRouter, LLMRouteRegistry
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.prompts import PromptRegistry
+
+if TYPE_CHECKING:
+    from cc_deep_research.llm.codex_runtime import CodexRuntime
 
 
 @dataclass(slots=True)
@@ -50,6 +53,7 @@ class OrchestratorRuntime:
         max_concurrent_sources: int,
         llm_event_callback: Any = None,
         prompt_registry: PromptRegistry | None = None,
+        codex_runtime: CodexRuntime | None = None,
     ) -> None:
         self._config = config
         self._monitor = monitor
@@ -57,6 +61,7 @@ class OrchestratorRuntime:
         self._max_concurrent_sources = max_concurrent_sources
         self._llm_event_callback = llm_event_callback
         self._prompt_registry = prompt_registry or PromptRegistry()
+        self._codex_runtime = codex_runtime
         self._state: OrchestratorRuntimeState | None = None
 
     async def initialize(self) -> OrchestratorRuntimeState:
@@ -69,6 +74,7 @@ class OrchestratorRuntime:
             llm_registry,
             monitor=self._monitor,
             telemetry_callback=self._llm_event_callback,
+            codex_runtime=self._codex_runtime,
         )
         self._state = OrchestratorRuntimeState(
             agents=self._build_agents(llm_router=llm_router),

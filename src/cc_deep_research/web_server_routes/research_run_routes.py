@@ -141,7 +141,11 @@ def register_research_run_routes(app: FastAPI) -> None:
         Returns:
             JSON response with run_id for status polling.
         """
-        from cc_deep_research.web_server import get_event_router, get_job_registry
+        from cc_deep_research.web_server import (
+            get_backend_runtime,
+            get_event_router,
+            get_job_registry,
+        )
 
         job_registry = get_job_registry(app)
         event_router = get_event_router(app)
@@ -154,7 +158,9 @@ def register_research_run_routes(app: FastAPI) -> None:
             """Execute the research run and update job status in a thread."""
             # Import from web_server to support monkeypatching in tests
             from cc_deep_research.web_server import ResearchRunService
-            service = ResearchRunService()
+            service = ResearchRunService(
+                codex_runtime=get_backend_runtime(app).codex_runtime,
+            )
             try:
                 if job.stop_requested:
                     job_registry.mark_cancelled(job.run_id, error=RUN_CANCELLED_MESSAGE)

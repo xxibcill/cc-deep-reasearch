@@ -41,6 +41,17 @@ type SearchCacheStatsResponse = {
   approximate_size_bytes: number;
 };
 
+type CodexAccountResponse = {
+  runtime_status: string;
+  authenticated: boolean;
+  requires_openai_auth: boolean | null;
+  account_type: string | null;
+  email: string | null;
+  plan_type: string | null;
+  error_code: string | null;
+  error_message: string | null;
+};
+
 function makeConfigResponse(overrides: Partial<ConfigResponse> = {}): ConfigResponse {
   return {
     config_path: "/tmp/config.yaml",
@@ -59,6 +70,12 @@ function makeConfigResponse(overrides: Partial<ConfigResponse> = {}): ConfigResp
           default: "anthropic",
         },
         openrouter: { api_key: "********" },
+        codex: {
+          enabled: false,
+          model: null,
+          reasoning_effort: "medium",
+          timeout_seconds: 180,
+        },
       },
       search_cache: { enabled: false, ttl_seconds: 3600, max_entries: 1000 },
     },
@@ -76,6 +93,12 @@ function makeConfigResponse(overrides: Partial<ConfigResponse> = {}): ConfigResp
           default: "anthropic",
         },
         openrouter: { api_key: "********" },
+        codex: {
+          enabled: false,
+          model: null,
+          reasoning_effort: "medium",
+          timeout_seconds: 180,
+        },
       },
       search_cache: { enabled: false, ttl_seconds: 3600, max_entries: 1000 },
     },
@@ -113,6 +136,22 @@ function makeSearchCacheStats(
   };
 }
 
+function makeCodexAccount(
+  overrides: Partial<CodexAccountResponse> = {}
+): CodexAccountResponse {
+  return {
+    runtime_status: "ready",
+    authenticated: false,
+    requires_openai_auth: true,
+    account_type: null,
+    email: null,
+    plan_type: null,
+    error_code: null,
+    error_message: null,
+    ...overrides,
+  };
+}
+
 function makeSearchCacheEntry(overrides: Partial<SearchCacheEntry> = {}): SearchCacheEntry {
   const now = new Date("2026-04-06T10:00:00.000Z");
   const inTwoHours = new Date(now.getTime() + 2 * 60 * 60 * 1000);
@@ -136,6 +175,7 @@ async function mockSettingsApis(
   options: {
     searchCacheStats?: SearchCacheStatsResponse;
     searchCacheEntries?: SearchCacheEntry[];
+    codexAccount?: CodexAccountResponse;
   } = {}
 ) {
   let searchCacheEntries = [...(options.searchCacheEntries ?? [])];
@@ -163,6 +203,32 @@ async function mockSettingsApis(
   };
 
   refreshSearchCacheStats();
+
+  await page.route("**/api/llm/codex/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname.endsWith("/llm/codex/account") && route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(options.codexAccount ?? makeCodexAccount()),
+      });
+      return;
+    }
+
+    if (
+      pathname.endsWith("/llm/codex/login/active") &&
+      route.request().method() === "GET"
+    ) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: "null",
+      });
+      return;
+    }
+
+    await route.fallback();
+  });
 
   await page.route("**/api/search-cache**", async (route) => {
     const requestUrl = new URL(route.request().url());
@@ -481,4 +547,476 @@ test("settings page saves config updates and supports secret replace/clear flows
   expect(patchBodies[2]["llm.openrouter.api_key"]).toEqual({
     action: "clear",
   });
+});
+
+test("settings page configures and authenticates the Codex provider", async ({ page }) => {
+  const configPatchBodies: Array<Record<string, unknown>> = [];
+  let currentResponse = makeConfigResponse();
+  let account = makeCodexAccount();
+
+  await mockSettingsApis(page, currentResponse);
+
+  await page.route("**/api/config", async (route) => {
+    if (route.request().method() !== "PATCH") {
+      await route.fallback();
+      return;
+    }
+
+    const body = route.request().postDataJSON() as {
+      updates: Record<string, unknown>;
+    };
+    configPatchBodies.push(body.updates);
+
+    const codex = {
+      enabled: body.updates["llm.codex.enabled"] ?? false,
+      model: body.updates["llm.codex.model"] ?? null,
+      reasoning_effort: body.updates["llm.codex.reasoning_effort"] ?? "medium",
+      timeout_seconds: body.updates["llm.codex.timeout_seconds"] ?? 180,
+    };
+    const persistedLlm = currentResponse.persisted_config.llm as Record<string, unknown>;
+    const effectiveLlm = currentResponse.effective_config.llm as Record<string, unknown>;
+    currentResponse = {
+      ...currentResponse,
+      persisted_config: {
+        ...currentResponse.persisted_config,
+        llm: { ...persistedLlm, codex },
+      },
+      effective_config: {
+        ...currentResponse.effective_config,
+        llm: { ...effectiveLlm, codex },
+      },
+    };
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(currentResponse),
+    });
+  });
+
+  await page.route("**/api/llm/codex/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    const method = route.request().method();
+
+    if (pathname.endsWith("/llm/codex/account") && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(account),
+      });
+      return;
+    }
+
+    if (pathname.endsWith("/llm/codex/login/device-code") && method === "POST") {
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({
+          login_id: "login-e2e",
+          flow: "device_code",
+          status: "pending",
+          auth_url: null,
+          verification_url: "https://chatgpt.com/activate",
+          user_code: "ABCD-EFGH",
+          error: null,
+          created_at: "2026-07-31T12:00:00+00:00",
+          completed_at: null,
+        }),
+      });
+      return;
+    }
+
+    if (pathname.endsWith("/llm/codex/login/login-e2e") && method === "GET") {
+      account = makeCodexAccount({
+        authenticated: true,
+        account_type: "chatgpt",
+        email: "operator@example.com",
+        plan_type: "plus",
+      });
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          login_id: "login-e2e",
+          flow: "device_code",
+          status: "succeeded",
+          auth_url: null,
+          verification_url: null,
+          user_code: null,
+          error: null,
+          created_at: "2026-07-31T12:00:00+00:00",
+          completed_at: "2026-07-31T12:00:02+00:00",
+        }),
+      });
+      return;
+    }
+
+    await route.fallback();
+  });
+
+  await page.goto("/settings");
+
+  await expect(page.locator('option[value="codex"]')).toHaveCount(5);
+  await page.getByLabel("Enable the Codex provider").click();
+  await page.getByLabel("Codex model").fill("codex-model-test");
+  await page.getByLabel("Codex reasoning effort").selectOption("high");
+  await page.getByLabel("Codex request timeout in seconds").fill("240");
+  await page.getByRole("button", { name: "Save Codex settings" }).click();
+
+  await expect(page.getByText("Saved 4 Codex settings for future runs.")).toBeVisible();
+  expect(configPatchBodies[0]).toEqual({
+    "llm.codex.enabled": true,
+    "llm.codex.model": "codex-model-test",
+    "llm.codex.reasoning_effort": "high",
+    "llm.codex.timeout_seconds": 240,
+  });
+
+  await page.getByRole("button", { name: "Use device code" }).click();
+  await expect(page.getByText("ABCD-EFGH")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open verification page" })).toHaveAttribute(
+    "href",
+    "https://chatgpt.com/activate"
+  );
+  await expect(page.getByText("ChatGPT account connected")).toBeVisible();
+  await expect(page.getByText(/operator@example.com is authenticated/)).toBeVisible();
+});
+
+test("settings page resumes an active Codex login after reload", async ({ page }) => {
+  let account = makeCodexAccount();
+  let allowLoginCompletion = false;
+  let loginStatusReads = 0;
+
+  await mockSettingsApis(page, makeConfigResponse());
+
+  await page.route("**/api/llm/codex/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    const method = route.request().method();
+
+    if (pathname.endsWith("/llm/codex/account") && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(account),
+      });
+      return;
+    }
+
+    if (pathname.endsWith("/llm/codex/login/browser") && method === "POST") {
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({
+          login_id: "login-reload",
+          flow: "browser",
+          status: "pending",
+          auth_url: "https://chatgpt.com/auth/private",
+          verification_url: null,
+          user_code: null,
+          error: null,
+          created_at: "2026-07-31T12:00:00+00:00",
+          completed_at: null,
+        }),
+      });
+      return;
+    }
+
+    if (pathname.endsWith("/llm/codex/login/login-reload") && method === "GET") {
+      loginStatusReads += 1;
+      if (allowLoginCompletion) {
+        account = makeCodexAccount({
+          authenticated: true,
+          account_type: "chatgpt",
+          email: "reloaded@example.com",
+          plan_type: "plus",
+        });
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          login_id: "login-reload",
+          flow: "browser",
+          status: allowLoginCompletion ? "succeeded" : "pending",
+          auth_url: allowLoginCompletion ? null : "https://chatgpt.com/auth/private",
+          verification_url: null,
+          user_code: null,
+          error: null,
+          created_at: "2026-07-31T12:00:00+00:00",
+          completed_at: allowLoginCompletion
+            ? "2026-07-31T12:00:03+00:00"
+            : null,
+        }),
+      });
+      return;
+    }
+
+    await route.fallback();
+  });
+
+  await page.goto("/settings");
+  await page.getByRole("button", { name: "Sign in with browser" }).click();
+
+  const storedRecovery = await page.evaluate(() => {
+    const serialized = window.sessionStorage.getItem("ccdr.codex-active-login");
+    return serialized ? JSON.parse(serialized) : null;
+  });
+  expect(Object.keys(storedRecovery).sort()).toEqual(["flow", "login_id", "timestamp"]);
+  expect(storedRecovery.login_id).toBe("login-reload");
+  expect(storedRecovery.flow).toBe("browser");
+  expect(typeof storedRecovery.timestamp).toBe("number");
+  expect(JSON.stringify(storedRecovery)).not.toContain("auth_url");
+  expect(JSON.stringify(storedRecovery)).not.toContain("chatgpt.com");
+
+  await page.reload();
+  await expect(page.getByText("Resuming Codex sign-in")).toBeVisible();
+  allowLoginCompletion = true;
+
+  await expect(page.getByText("ChatGPT account connected")).toBeVisible();
+  await expect(page.getByText(/reloaded@example.com is authenticated/)).toBeVisible();
+  expect(loginStatusReads).toBeGreaterThan(0);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.sessionStorage.getItem("ccdr.codex-active-login")
+      )
+    )
+    .toBeNull();
+});
+
+test("settings page recovers an active Codex login after browser storage is lost", async ({
+  page,
+}) => {
+  let account = makeCodexAccount();
+  let allowLoginCompletion = false;
+  const activeLogin = {
+    login_id: "login-recovered",
+    flow: "browser",
+    status: "pending",
+    auth_url: "https://chatgpt.com/auth/recovered",
+    verification_url: null,
+    user_code: null,
+    error: null,
+    created_at: "2026-07-31T12:00:00+00:00",
+    completed_at: null,
+  };
+
+  await mockSettingsApis(page, makeConfigResponse());
+  await page.route("**/api/llm/codex/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    const method = route.request().method();
+
+    if (pathname.endsWith("/llm/codex/account") && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(account),
+      });
+      return;
+    }
+
+    if (pathname.endsWith("/llm/codex/login/active") && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(activeLogin),
+      });
+      return;
+    }
+
+    if (pathname.endsWith("/llm/codex/login/login-recovered") && method === "GET") {
+      if (allowLoginCompletion) {
+        account = makeCodexAccount({
+          authenticated: true,
+          account_type: "chatgpt",
+          email: "recovered@example.com",
+          plan_type: "plus",
+        });
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...activeLogin,
+          status: allowLoginCompletion ? "succeeded" : "pending",
+          auth_url: allowLoginCompletion ? null : activeLogin.auth_url,
+          completed_at: allowLoginCompletion
+            ? "2026-07-31T12:00:03+00:00"
+            : null,
+        }),
+      });
+      return;
+    }
+
+    await route.fallback();
+  });
+
+  await page.goto("/settings");
+
+  await expect(page.getByText("Resuming Codex sign-in")).toBeVisible();
+  const recoveredStorage = await page.evaluate(() => {
+    const serialized = window.sessionStorage.getItem("ccdr.codex-active-login");
+    return serialized ? JSON.parse(serialized) : null;
+  });
+  expect(Object.keys(recoveredStorage).sort()).toEqual(["flow", "login_id", "timestamp"]);
+  expect(recoveredStorage.login_id).toBe("login-recovered");
+  expect(JSON.stringify(recoveredStorage)).not.toContain("auth_url");
+
+  allowLoginCompletion = true;
+  await expect(page.getByText("ChatGPT account connected")).toBeVisible();
+  await expect(page.getByText(/recovered@example.com is authenticated/)).toBeVisible();
+});
+
+test("settings page reports a login that wins a cancellation race", async ({ page }) => {
+  let account = makeCodexAccount();
+
+  await mockSettingsApis(page, makeConfigResponse());
+
+  await page.route("**/api/llm/codex/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    const method = route.request().method();
+
+    if (pathname.endsWith("/llm/codex/account") && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(account),
+      });
+      return;
+    }
+
+    if (pathname.endsWith("/llm/codex/login/browser") && method === "POST") {
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({
+          login_id: "login-race",
+          flow: "browser",
+          status: "pending",
+          auth_url: "https://chatgpt.com/auth",
+          verification_url: null,
+          user_code: null,
+          error: null,
+          created_at: "2026-07-31T12:00:00+00:00",
+          completed_at: null,
+        }),
+      });
+      return;
+    }
+
+    if (pathname.endsWith("/llm/codex/login/login-race") && method === "DELETE") {
+      account = makeCodexAccount({
+        authenticated: true,
+        account_type: "chatgpt",
+        email: "race-winner@example.com",
+        plan_type: "pro",
+      });
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          login_id: "login-race",
+          flow: "browser",
+          status: "succeeded",
+          auth_url: null,
+          verification_url: null,
+          user_code: null,
+          error: null,
+          created_at: "2026-07-31T12:00:00+00:00",
+          completed_at: "2026-07-31T12:00:01+00:00",
+        }),
+      });
+      return;
+    }
+
+    await route.fallback();
+  });
+
+  await page.goto("/settings");
+  await page.getByRole("button", { name: "Sign in with browser" }).click();
+  await page.getByRole("button", { name: "Cancel sign-in" }).click();
+
+  await expect(
+    page.getByText("Codex sign-in completed before cancellation")
+  ).toBeVisible();
+  await expect(page.getByText(/race-winner@example.com is authenticated/)).toBeVisible();
+  await expect(page.getByText("Codex sign-in canceled")).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      window.sessionStorage.getItem("ccdr.codex-active-login")
+    )
+  ).toBeNull();
+});
+
+test("settings page preserves dirty Codex fields across parent config refreshes", async ({
+  page,
+}) => {
+  let currentResponse = makeConfigResponse();
+
+  await mockSettingsApis(page, currentResponse);
+
+  await page.route("**/api/config", async (route) => {
+    if (route.request().method() !== "PATCH") {
+      await route.fallback();
+      return;
+    }
+
+    const body = route.request().postDataJSON() as {
+      updates: Record<string, unknown>;
+    };
+    expect(body.updates["llm.openrouter.api_key"]).toEqual({
+      action: "replace",
+      value: "sk-refresh",
+    });
+
+    const persistedLlm = currentResponse.persisted_config.llm as Record<string, unknown>;
+    const effectiveLlm = currentResponse.effective_config.llm as Record<string, unknown>;
+    const codex = {
+      enabled: true,
+      model: "server-model",
+      reasoning_effort: "high",
+      timeout_seconds: 240,
+    };
+    currentResponse = {
+      ...currentResponse,
+      persisted_config: {
+        ...currentResponse.persisted_config,
+        llm: { ...persistedLlm, codex },
+      },
+      effective_config: {
+        ...currentResponse.effective_config,
+        llm: { ...effectiveLlm, codex },
+      },
+      secret_fields: currentResponse.secret_fields.map((field) =>
+        field.field === "llm.openrouter.api_key"
+          ? {
+              ...field,
+              persisted_present: true,
+              effective_present: true,
+              persisted_count: 1,
+              effective_count: 1,
+            }
+          : field
+      ),
+    };
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(currentResponse),
+    });
+  });
+
+  await page.goto("/settings");
+  await page.getByLabel("Codex model").fill("unsaved-draft-model");
+
+  const secretRow = page.locator("div").filter({ hasText: "llm.openrouter.api_key" }).first();
+  await secretRow.getByRole("button", { name: "Replace", exact: true }).click();
+  await page.getByPlaceholder("Enter a replacement value").fill("sk-refresh");
+  await page.getByRole("button", { name: "Save secret" }).click();
+
+  await expect(page.getByLabel("Codex model")).toHaveValue("unsaved-draft-model");
+  await expect(page.getByLabel("Enable the Codex provider")).toBeChecked();
+  await expect(page.getByLabel("Codex reasoning effort")).toHaveValue("high");
+  await expect(page.getByLabel("Codex request timeout in seconds")).toHaveValue("240");
+  await expect(page.getByText("1 unsaved")).toBeVisible();
 });

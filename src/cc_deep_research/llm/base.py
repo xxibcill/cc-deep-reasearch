@@ -21,6 +21,7 @@ class LLMTransportType(StrEnum):
     OPENROUTER_API = "openrouter_api"
     CEREBRAS_API = "cerebras_api"
     ANTHROPIC_API = "anthropic_api"
+    CODEX_APP_SERVER = "codex_app_server"
     HEURISTIC = "heuristic"
 
 
@@ -30,6 +31,7 @@ class LLMProviderType(StrEnum):
     OPENROUTER = "openrouter"
     CEREBRAS = "cerebras"
     ANTHROPIC = "anthropic"
+    CODEX = "codex"
     HEURISTIC = "heuristic"
 
 
@@ -98,6 +100,7 @@ class LLMRoutePlan(BaseModel):
             LLMTransportType.ANTHROPIC_API,
             LLMTransportType.OPENROUTER_API,
             LLMTransportType.CEREBRAS_API,
+            LLMTransportType.CODEX_APP_SERVER,
             LLMTransportType.HEURISTIC,
         ],
         description="Ordered list of fallback transports",

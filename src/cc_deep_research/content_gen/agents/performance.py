@@ -13,6 +13,7 @@ from cc_deep_research.llm import LLMRouter
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
+    from cc_deep_research.llm.codex_runtime import CodexRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -56,12 +57,17 @@ def _maybe_set_degraded(analysis: PerformanceAnalysis, text: str) -> None:
 class PerformanceAgent:
     """Analyze post-publish performance and generate follow-up ideas."""
 
-    def __init__(self, config: Config) -> None:
+    def __init__(
+        self,
+        config: Config,
+        *,
+        codex_runtime: CodexRuntime | None = None,
+    ) -> None:
         from cc_deep_research.llm.registry import LLMRouteRegistry
 
         self._config = config
         registry = LLMRouteRegistry(config.llm)
-        self._router = LLMRouter(registry)
+        self._router = LLMRouter(registry, codex_runtime=codex_runtime)
 
     async def _call_llm(
         self,

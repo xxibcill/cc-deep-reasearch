@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.agents import (
     AnalyzerAgent,
@@ -15,6 +16,7 @@ from cc_deep_research.agents import (
     ValidatorAgent,
 )
 from cc_deep_research.config import Config
+from cc_deep_research.llm import LLMRouter, LLMRouteRegistry
 from cc_deep_research.models import (
     AnalysisResult,
     PlannerResult,
@@ -29,6 +31,9 @@ from cc_deep_research.models import (
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.orchestration.session_builder import SessionBuilder
 from cc_deep_research.orchestration.task_dispatcher import TaskDispatcher
+
+if TYPE_CHECKING:
+    from cc_deep_research.llm.codex_runtime import CodexRuntime
 
 
 class PlannerResearchOrchestrator:
@@ -49,6 +54,7 @@ class PlannerResearchOrchestrator:
         monitor: ResearchMonitor | None = None,
         prompt_registry: Any | None = None,
         workflow_config: Any | None = None,
+        codex_runtime: CodexRuntime | None = None,
     ) -> None:
         """Initialize the planner orchestrator.
 
@@ -57,11 +63,18 @@ class PlannerResearchOrchestrator:
             monitor: Optional research monitor for progress tracking.
             prompt_registry: Optional prompt registry with overrides applied.
             workflow_config: Optional theme workflow configuration.
+            codex_runtime: Optional Codex runtime owned by the calling application.
         """
         self._config = config
         self._monitor = monitor or ResearchMonitor(enabled=False)
         self._prompt_registry = prompt_registry
         self._workflow_config = workflow_config
+        self._llm_registry = LLMRouteRegistry(config.llm)
+        self._llm_router = LLMRouter(
+            self._llm_registry,
+            monitor=self._monitor,
+            codex_runtime=codex_runtime,
+        )
         self._planner = PlannerAgent(config.model_dump())
         self._dispatcher: TaskDispatcher | None = None
         self._agents: dict[str, Any] = {}
@@ -270,6 +283,7 @@ class PlannerResearchOrchestrator:
     async def _initialize_agents(self, depth: ResearchDepth) -> None:
         """Initialize agents for task execution."""
         self._monitor.section("Agent Initialization")
+        research_settings = self._config.research.model_dump(mode="python")
 
         # Create agents with config
         # SourceCollectorAgent handles its own provider initialization
@@ -278,7 +292,12 @@ class PlannerResearchOrchestrator:
                 config=self._config,
                 monitor=self._monitor,
             ),
-            "analyzer": AnalyzerAgent({"config": self._config.model_dump()}),
+            "analyzer": AnalyzerAgent(
+                research_settings,
+                monitor=self._monitor,
+                llm_router=self._llm_router,
+                prompt_registry=self._prompt_registry,
+            ),
             "validator": ValidatorAgent({"config": self._config.model_dump()}),
             "reporter": ReporterAgent({"config": self._config.model_dump()}),
         }
@@ -364,7 +383,8 @@ class PlannerResearchOrchestrator:
                 all_sources.extend(dep_sources)
 
         query = task.inputs.get("query", plan.query)
-        analysis = await analyzer.analyze(
+        analysis = await asyncio.to_thread(
+            analyzer.analyze_sources,
             sources=all_sources,
             query=query,
         )

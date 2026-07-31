@@ -16,6 +16,8 @@ from cc_deep_research.llm.base import (
     LLMTransportType,
 )
 from cc_deep_research.llm.cerebras import CerebrasTransport
+from cc_deep_research.llm.codex import CodexTransport
+from cc_deep_research.llm.codex_runtime import CodexRuntime
 from cc_deep_research.llm.openrouter import OpenRouterTransport
 
 if TYPE_CHECKING:
@@ -36,10 +38,12 @@ class LLMRouter:
         *,
         monitor: ResearchMonitor | None = None,
         telemetry_callback: Callable[[dict[str, Any]], None] | None = None,
+        codex_runtime: CodexRuntime | None = None,
     ) -> None:
         self._registry = registry
         self._monitor = monitor
         self._telemetry_callback = telemetry_callback
+        self._codex_runtime = codex_runtime
         self._transport_cache: dict[tuple[str, str, str], BaseLLMTransport] = {}
 
     @staticmethod
@@ -84,6 +88,12 @@ class LLMRouter:
         if route.transport == LLMTransportType.ANTHROPIC_API:
             return AnthropicAPITransport(
                 route,
+                telemetry_callback=self._telemetry_callback,
+            )
+        if route.transport == LLMTransportType.CODEX_APP_SERVER:
+            return CodexTransport(
+                route,
+                runtime=self._codex_runtime,
                 telemetry_callback=self._telemetry_callback,
             )
         return None
@@ -380,16 +390,25 @@ class LLMRouter:
         )
 
     def is_available(self, agent_id: str) -> bool:
-        try:
-            route = self._registry.get_available_route(agent_id, check_nested_session=True)
-        except TypeError:
-            route = self._registry.get_available_route(agent_id)
-        if route is None:
-            return False
-        if route.transport == LLMTransportType.HEURISTIC:
-            return False
-        transport = self._get_transport_for_route(route)
-        return transport is not None and transport.is_available()
+        planned_route = self._registry.get_route(agent_id)
+        routes = self._build_candidate_routes(
+            agent_id=agent_id,
+            planned_route=planned_route,
+        )
+        attempted: set[LLMTransportType] = set()
+
+        for route in routes:
+            if route is None or route.transport in attempted:
+                continue
+            attempted.add(route.transport)
+            if route.transport == LLMTransportType.HEURISTIC:
+                break
+
+            transport = self._get_transport_for_route(route)
+            if transport is not None and transport.is_available():
+                return True
+
+        return False
 
     def clear_cache(self) -> None:
         self._transport_cache.clear()

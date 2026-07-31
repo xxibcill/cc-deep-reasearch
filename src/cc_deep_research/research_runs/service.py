@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Protocol
+from functools import partial
+from typing import TYPE_CHECKING, Protocol
 
 from cc_deep_research.config import Config, load_config
 from cc_deep_research.event_router import EventRouter
@@ -35,6 +36,9 @@ from cc_deep_research.themes import (
     WorkflowConfig,
     get_workflow_config,
 )
+
+if TYPE_CHECKING:
+    from cc_deep_research.llm.codex_runtime import CodexRuntime
 
 PhaseHook = Callable[[str, str], None]
 CancellationCheck = Callable[[], None]
@@ -96,6 +100,30 @@ class ResearchRunService:
     output_materializer: Callable[..., ResearchRunResult] = materialize_research_run_output
     theme_detector: ThemeDetector = ThemeDetector()
     theme_adapter: ThemeWorkflowAdapter = ThemeWorkflowAdapter()
+    codex_runtime: CodexRuntime | None = None
+
+    def __post_init__(self) -> None:
+        """Bind web-owned Codex state into generation factories when supplied."""
+        if self.codex_runtime is None:
+            return
+
+        runtime = self.codex_runtime
+        self.orchestrator_factory = partial(
+            self.orchestrator_factory,
+            codex_runtime=runtime,
+        )
+        output_materializer = self.output_materializer
+
+        def materialize_with_runtime(**kwargs: object) -> ResearchRunResult:
+            if kwargs.get("reporter") is None:
+                kwargs["reporter"] = ReportGenerator(
+                    kwargs["config"],  # type: ignore[arg-type]
+                    monitor=kwargs.get("monitor"),  # type: ignore[arg-type]
+                    codex_runtime=runtime,
+                )
+            return output_materializer(**kwargs)
+
+        self.output_materializer = materialize_with_runtime
 
     def prepare(
         self,
@@ -198,6 +226,7 @@ class ResearchRunService:
                 monitor=active_monitor,
                 prompt_registry=prepared.prompt_registry,
                 workflow_config=prepared.workflow_config,
+                codex_runtime=self.codex_runtime,
             )
         else:
             orchestrator = self.orchestrator_factory(

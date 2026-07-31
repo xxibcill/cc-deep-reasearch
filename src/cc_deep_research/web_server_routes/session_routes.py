@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import UTC, datetime, timedelta
@@ -1060,6 +1061,7 @@ def register_session_routes(app: FastAPI) -> None:
 
         from cc_deep_research.config import load_config
         from cc_deep_research.reporting import ReportGenerator
+        from cc_deep_research.web_server import get_backend_runtime
 
         analysis = session.metadata.get("analysis", {})
         if not analysis:
@@ -1069,18 +1071,33 @@ def register_session_routes(app: FastAPI) -> None:
             )
 
         config = load_config()
-        reporter = ReportGenerator(config)
+        reporter = ReportGenerator(
+            config,
+            codex_runtime=get_backend_runtime(app).codex_runtime,
+        )
 
         if output_format == ResearchOutputFormat.JSON:
-            content = reporter.generate_json_report(session, analysis)
+            content = await asyncio.to_thread(
+                reporter.generate_json_report,
+                session,
+                analysis,
+            )
         elif output_format == ResearchOutputFormat.HTML:
             markdown = store.load_report(session_id, ResearchOutputFormat.MARKDOWN)
             if markdown is None:
-                markdown = reporter.generate_markdown_report(session, analysis)
+                markdown = await asyncio.to_thread(
+                    reporter.generate_markdown_report,
+                    session,
+                    analysis,
+                )
                 store.save_report(session_id, ResearchOutputFormat.MARKDOWN, markdown)
             content = reporter.render_html_report(markdown)
         else:
-            content = reporter.generate_markdown_report(session, analysis)
+            content = await asyncio.to_thread(
+                reporter.generate_markdown_report,
+                session,
+                analysis,
+            )
         store.save_report(session_id, output_format, content)
 
         return JSONResponse(

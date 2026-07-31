@@ -17,6 +17,7 @@ from cc_deep_research.llm import LLMRouter
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
+    from cc_deep_research.llm.codex_runtime import CodexRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -36,12 +37,17 @@ _PARSE_MODE_LEGACY = "legacy"
 class OpportunityPlanningAgent:
     """Turn a raw theme into a structured opportunity brief."""
 
-    def __init__(self, config: Config) -> None:
+    def __init__(
+        self,
+        config: Config,
+        *,
+        codex_runtime: CodexRuntime | None = None,
+    ) -> None:
         from cc_deep_research.llm.registry import LLMRouteRegistry
 
         self._config = config
         registry = LLMRouteRegistry(config.llm)
-        self._router = LLMRouter(registry)
+        self._router = LLMRouter(registry, codex_runtime=codex_runtime)
 
     async def _call_llm(
         self,

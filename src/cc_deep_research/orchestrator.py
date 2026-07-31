@@ -37,6 +37,7 @@ from cc_deep_research.orchestration.helpers import build_follow_up_queries, norm
 from cc_deep_research.prompts import PromptRegistry
 
 if TYPE_CHECKING:
+    from cc_deep_research.llm.codex_runtime import CodexRuntime
     from cc_deep_research.themes import WorkflowConfig
 
 
@@ -57,6 +58,7 @@ class TeamResearchOrchestrator:
         max_concurrent_sources: int | None = None,
         prompt_registry: PromptRegistry | None = None,
         workflow_config: WorkflowConfig | None = None,
+        codex_runtime: CodexRuntime | None = None,
     ) -> None:
         """Initialize the research orchestrator.
 
@@ -69,6 +71,7 @@ class TeamResearchOrchestrator:
                           If None, uses config.search_team.max_concurrent_sources.
             prompt_registry: Optional prompt registry with overrides applied.
             workflow_config: Optional theme workflow configuration for customizing phases.
+            codex_runtime: Optional Codex runtime owned by the calling application.
         """
         self._config = config
         self._monitor = monitor or ResearchMonitor(enabled=False)
@@ -106,6 +109,7 @@ class TeamResearchOrchestrator:
             max_concurrent_sources=self._max_concurrent_sources,
             llm_event_callback=self._session_state.handle_llm_router_event,
             prompt_registry=self._prompt_registry,
+            codex_runtime=codex_runtime,
         )
         self._execution = ResearchExecutionService(
             config=config,

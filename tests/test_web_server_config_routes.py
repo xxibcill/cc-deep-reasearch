@@ -5,6 +5,11 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from cc_deep_research.content_gen.agents.backlog_chat import (
+    AGENT_ID as BACKLOG_CHAT_AGENT_ID,
+)
+from cc_deep_research.content_gen.agents.backlog_chat import BacklogChatAgent
+from cc_deep_research.llm.base import LLMTransportType
 from cc_deep_research.web_server import (
     create_app,
 )
@@ -55,6 +60,63 @@ def test_patch_config_persists_updates_and_returns_refreshed_payload(
     payload = response.json()
     assert payload["persisted_config"]["output"]["save_dir"] == "./custom-reports"
     assert payload["persisted_config"]["research"]["enable_cross_ref"] is False
+
+
+def test_patch_config_refreshes_live_content_llm_config_in_place(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Subsequent content requests should observe persisted LLM settings."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    app = create_app()
+    services = app.state.content_gen_services
+    startup_config = services.config
+
+    response = TestClient(app).patch(
+        "/api/config",
+        json={
+            "updates": {
+                "llm.codex.enabled": True,
+                "llm.codex.model": "gpt-5.6-sol",
+                "llm.codex.reasoning_effort": "xhigh",
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    assert services.config is startup_config
+    assert services.scripting_api_service._config is startup_config
+    assert services.config.llm.codex.enabled is True
+    assert services.config.llm.codex.model == "gpt-5.6-sol"
+    assert services.config.llm.codex.reasoning_effort == "xhigh"
+
+
+def test_patch_config_routes_subsequent_direct_content_agents_through_codex(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    app = create_app()
+
+    response = TestClient(app).patch(
+        "/api/config",
+        json={
+            "updates": {
+                "llm.codex.enabled": True,
+                "llm.route_defaults.default": "codex",
+            }
+        },
+    )
+    services = app.state.content_gen_services
+    agent = BacklogChatAgent(
+        services.config,
+        codex_runtime=services.codex_runtime,
+    )
+
+    route = agent._router._registry.get_route(BACKLOG_CHAT_AGENT_ID)
+
+    assert response.status_code == 200
+    assert route.transport == LLMTransportType.CODEX_APP_SERVER
 
 
 def test_patch_config_clears_secret_fields(

@@ -18,6 +18,7 @@ from cc_deep_research.llm import LLMRouter
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
+    from cc_deep_research.llm.codex_runtime import CodexRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,12 @@ SUPPORTED_UPDATE_FIELDS = frozenset(
 class BatchTriageAgent:
     """Batch triage agent for superuser backlog cleanup and enrichment."""
 
-    def __init__(self, config: Config | None = None) -> None:
+    def __init__(
+        self,
+        config: Config | None = None,
+        *,
+        codex_runtime: CodexRuntime | None = None,
+    ) -> None:
         from cc_deep_research.llm.registry import LLMRouteRegistry
 
         if config is None:
@@ -77,7 +83,7 @@ class BatchTriageAgent:
 
         self._config = config
         registry = LLMRouteRegistry(config.llm)
-        self._router = LLMRouter(registry)
+        self._router = LLMRouter(registry, codex_runtime=codex_runtime)
 
     async def _call_llm(
         self,
@@ -488,4 +494,3 @@ def _is_well_reframed(item: BacklogItem) -> bool:
     strong_fields = ["idea", "problem", "potential_hook"]
     non_empty = sum(1 for f in strong_fields if getattr(item, f, ""))
     return non_empty >= 2
-

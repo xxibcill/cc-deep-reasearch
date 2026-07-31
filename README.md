@@ -13,6 +13,7 @@ Current codebase version: `0.1.0`
 - Session persistence with full audit trail
 - Real-time WebSocket event streaming
 - Next.js operator console dashboard
+- Optional Codex provider using a locally managed ChatGPT/Codex session
 
 ## Installation
 
@@ -74,9 +75,13 @@ Inqulume Studio supports multiple LLM backends:
 | `anthropic_api` | Direct Claude API access |
 | `openrouter_api` | Multi-model access via OpenRouter |
 | `cerebras_api` | Fast inference via Cerebras |
+| `codex_app_server` | Codex through the local app-server and ChatGPT sign-in |
 | `heuristic` | Rule-based fallback |
 
 Configure in `~/.config/inqulume-studio/config.yaml` under `llm` section.
+For Codex, start the local dashboard, open `/settings`, enable the provider,
+and complete browser or device-code sign-in. Codex credentials are managed by
+Codex and are never stored in the project configuration.
 
 ## Development
 

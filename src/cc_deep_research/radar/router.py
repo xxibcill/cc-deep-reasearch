@@ -370,6 +370,7 @@ def register_radar_routes(
 
         try:
             job_registry = _get_runtime_component(request, "jobs", "Research job registry")
+            codex_runtime = _get_runtime_component(request, "codex_runtime", "Codex runtime")
         except RuntimeError as exc:
             return JSONResponse(status_code=503, content={"error": str(exc)})
 
@@ -391,7 +392,7 @@ def register_radar_routes(
         research_run_id = job.run_id
 
         async def execute_research_run() -> None:
-            run_svc = ResearchRunService()
+            run_svc = ResearchRunService(codex_runtime=codex_runtime)
 
             try:
                 if job.stop_requested:
@@ -647,6 +648,7 @@ def register_radar_routes(
         opp = svc._store.get_opportunity(opportunity_id)
         try:
             job_registry = _get_runtime_component(request, "pipeline_jobs", "Pipeline job registry")
+            codex_runtime = _get_runtime_component(request, "codex_runtime", "Codex runtime")
         except RuntimeError as exc:
             return JSONResponse(status_code=503, content={"error": str(exc)})
 
@@ -668,7 +670,10 @@ def register_radar_routes(
         pipeline_id = job.pipeline_id
 
         async def run_content_pipeline() -> None:
-            orch = ContentGenPipeline(config)
+            orch = ContentGenPipeline(
+                config,
+                codex_runtime=codex_runtime,
+            )
             job_registry.mark_running(job.pipeline_id)
 
             def _progress(stage_idx: int, label: str) -> None:

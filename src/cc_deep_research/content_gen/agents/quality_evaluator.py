@@ -26,6 +26,7 @@ from cc_deep_research.llm import LLMRouter
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
+    from cc_deep_research.llm.codex_runtime import CodexRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +36,24 @@ AGENT_ID = "content_gen_quality_evaluator"
 class QualityEvaluatorAgent:
     """Evaluate content quality after each iteration and decide whether to continue."""
 
-    def __init__(self, config: Config) -> None:
+    def __init__(
+        self,
+        config: Config,
+        *,
+        llm_route: str | None = None,
+        codex_runtime: CodexRuntime | None = None,
+    ) -> None:
+        from cc_deep_research.content_gen.agents.scripting import (
+            _transport_from_route_name,
+        )
         from cc_deep_research.llm.registry import LLMRouteRegistry
 
         self._config = config
         registry = LLMRouteRegistry(config.llm)
-        self._router = LLMRouter(registry)
+        if llm_route is not None:
+            transport = _transport_from_route_name(llm_route)
+            registry.set_route(AGENT_ID, registry.get_route_for_transport(transport))
+        self._router = LLMRouter(registry, codex_runtime=codex_runtime)
 
     async def _call_llm(
         self,

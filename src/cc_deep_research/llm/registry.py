@@ -68,6 +68,7 @@ class LLMRouteRegistry:
             "openrouter": LLMTransportType.OPENROUTER_API,
             "cerebras": LLMTransportType.CEREBRAS_API,
             "anthropic": LLMTransportType.ANTHROPIC_API,
+            "codex": LLMTransportType.CODEX_APP_SERVER,
             "heuristic": LLMTransportType.HEURISTIC,
         }
         order = []
@@ -125,6 +126,18 @@ class LLMRouteRegistry:
                     "max_tokens": self._config.anthropic.max_tokens,
                 },
             )
+        elif transport == LLMTransportType.CODEX_APP_SERVER:
+            return LLMRoute(
+                transport=LLMTransportType.CODEX_APP_SERVER,
+                provider=LLMProviderType.CODEX,
+                model=self._config.codex.model or "codex-default",
+                timeout_seconds=self._config.codex.timeout_seconds,
+                enabled=self._config.codex.enabled,
+                extra={
+                    "model": self._config.codex.model,
+                    "reasoning_effort": self._config.codex.reasoning_effort,
+                },
+            )
         else:
             return LLMRoute(
                 transport=LLMTransportType.HEURISTIC,
@@ -140,6 +153,7 @@ class LLMRouteRegistry:
             "openrouter": LLMTransportType.OPENROUTER_API,
             "cerebras": LLMTransportType.CEREBRAS_API,
             "anthropic": LLMTransportType.ANTHROPIC_API,
+            "codex": LLMTransportType.CODEX_APP_SERVER,
             "heuristic": LLMTransportType.HEURISTIC,
         }
         transport = transport_map.get(transport_name, LLMTransportType.ANTHROPIC_API)
@@ -328,5 +342,6 @@ class LLMRouteRegistry:
                 "openrouter_enabled": self._config.openrouter.enabled,
                 "cerebras_enabled": self._config.cerebras.enabled,
                 "anthropic_enabled": self._config.anthropic.enabled,
+                "codex_enabled": self._config.codex.enabled,
             },
         }

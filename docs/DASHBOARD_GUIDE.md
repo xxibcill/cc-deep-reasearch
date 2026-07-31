@@ -133,8 +133,13 @@ This launcher:
 Backend:
 
 ```bash
-uv run uvicorn cc_deep_research.web_server:create_app --factory --host 0.0.0.0 --port 8000 --reload
+uv run uvicorn cc_deep_research.web_server:create_app --factory --host 127.0.0.1 --port 8000 --reload
 ```
+
+Keep the backend on a loopback address for local use. A non-loopback bind
+requires application authentication in front of every generation endpoint,
+because configured providers—including the signed-in Codex account—are
+available to API callers.
 
 Frontend:
 
@@ -190,6 +195,7 @@ It combines:
 
 - the sectioned settings editor in [`dashboard/src/components/config-editor.tsx`](../dashboard/src/components/config-editor.tsx)
 - masked secret controls in [`dashboard/src/components/config-secrets-panel.tsx`](../dashboard/src/components/config-secrets-panel.tsx)
+- Codex provider configuration and managed ChatGPT sign-in
 - search-cache controls in [`dashboard/src/components/search-cache-panel.tsx`](../dashboard/src/components/search-cache-panel.tsx)
 
 The editor is organized around operator concerns instead of backend structure:
@@ -220,6 +226,16 @@ Secret handling uses the same saved-versus-runtime framing as normal settings:
 - the UI shows saved presence, runtime presence, and override state instead of echoing values
 - operators can explicitly replace or clear persisted secrets
 - clearing a secret requires confirmation
+
+Codex authentication is intentionally separate from persisted secrets. The
+Codex provider panel can enable the route, choose its model and reasoning
+effort, and start browser or device-code ChatGPT sign-in. The backend returns
+only account status and the short-lived login ceremony fields; it never sends
+access tokens to the browser or writes them into application YAML. Login,
+cancellation, status polling, and logout are restricted to local callers.
+The bundled launchers pass their selected frontend port to the backend's exact
+CORS allowlist. Separate deployments can set comma-separated
+`CORS_ALLOWED_ORIGINS`; wildcard origins are rejected.
 
 All settings saves apply to future runs. Active runs keep the config that was resolved when they started.
 

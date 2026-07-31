@@ -12,6 +12,7 @@ from cc_deep_research.content_gen.models import IterationState, QualityEvaluatio
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
+    from cc_deep_research.llm.codex_runtime import CodexRuntime
 
 # Re-export IterationState so callers don't need to import from models
 __all__ = ["ScriptingRunService", "IterationState"]
@@ -24,8 +25,14 @@ class ScriptingRunService:
     flows. Supports single-pass and iterative modes.
     """
 
-    def __init__(self, config: Config) -> None:
+    def __init__(
+        self,
+        config: Config,
+        *,
+        codex_runtime: CodexRuntime | None = None,
+    ) -> None:
         self._config = config
+        self._codex_runtime = codex_runtime
 
     # ------------------------------------------------------------------
     # Single-pass scripting
@@ -41,7 +48,11 @@ class ScriptingRunService:
         """Run the full 10-step scripting pipeline (single-pass)."""
         from cc_deep_research.content_gen.agents.scripting import ScriptingAgent
 
-        agent = ScriptingAgent(self._config, llm_route=llm_route)
+        agent = ScriptingAgent(
+            self._config,
+            llm_route=llm_route,
+            codex_runtime=self._codex_runtime,
+        )
         return await agent.run_pipeline(raw_idea, progress_callback=progress_callback)
 
     async def run_scripting_from_step(
@@ -55,7 +66,11 @@ class ScriptingRunService:
         """Resume the scripting pipeline from a specific step."""
         from cc_deep_research.content_gen.agents.scripting import ScriptingAgent
 
-        agent = ScriptingAgent(self._config, llm_route=llm_route)
+        agent = ScriptingAgent(
+            self._config,
+            llm_route=llm_route,
+            codex_runtime=self._codex_runtime,
+        )
         return await agent.run_from_step(ctx, step, progress_callback=progress_callback)
 
     # ------------------------------------------------------------------
@@ -84,8 +99,16 @@ class ScriptingRunService:
             run_evaluation_loop,
         )
 
-        agent = ScriptingAgent(self._config, llm_route=llm_route)
-        evaluator_agent = QualityEvaluatorAgent(self._config)
+        agent = ScriptingAgent(
+            self._config,
+            llm_route=llm_route,
+            codex_runtime=self._codex_runtime,
+        )
+        evaluator_agent = QualityEvaluatorAgent(
+            self._config,
+            llm_route=llm_route,
+            codex_runtime=self._codex_runtime,
+        )
         threshold = self._config.content_gen.quality_threshold
         latest_ctx: ScriptingContext | None = None
 

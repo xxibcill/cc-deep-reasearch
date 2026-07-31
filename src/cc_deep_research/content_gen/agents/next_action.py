@@ -18,6 +18,7 @@ from cc_deep_research.llm import LLMRouter
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
+    from cc_deep_research.llm.codex_runtime import CodexRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +123,12 @@ def _suggest_field_changes(item: BacklogItem, action: str) -> dict[str, str]:
 class NextActionAgent:
     """Single-item next-action recommendation agent."""
 
-    def __init__(self, config: Config | None = None) -> None:
+    def __init__(
+        self,
+        config: Config | None = None,
+        *,
+        codex_runtime: CodexRuntime | None = None,
+    ) -> None:
         from cc_deep_research.llm.registry import LLMRouteRegistry
 
         if config is None:
@@ -132,7 +138,7 @@ class NextActionAgent:
 
         self._config = config
         registry = LLMRouteRegistry(config.llm)
-        self._router = LLMRouter(registry)
+        self._router = LLMRouter(registry, codex_runtime=codex_runtime)
 
     async def _call_llm(
         self,
@@ -308,4 +314,3 @@ def _build_heuristic_rationale(item: BacklogItem, action: str, blockers: list[st
         parts.append(f"Item is in '{item.status}' status with incomplete editorial fields")
 
     return "; ".join(parts)
-

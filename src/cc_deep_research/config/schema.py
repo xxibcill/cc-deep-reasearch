@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
@@ -313,6 +313,22 @@ class LLMAnthropicConfig(BaseModel):
         """Return the configured Anthropic keys in priority order."""
         return _normalize_api_key_list(self.api_key, self.api_keys)
 
+
+class LLMCodexConfig(BaseModel):
+    """Codex app-server transport configuration.
+
+    Authentication is managed by Codex and is intentionally not represented
+    in the project configuration.
+    """
+
+    enabled: bool = Field(default=False)
+    model: str | None = Field(default=None)
+    timeout_seconds: int = Field(default=180, ge=30, le=900)
+    reasoning_effort: Literal["minimal", "low", "medium", "high", "xhigh"] = Field(
+        default="medium"
+    )
+
+
 class LLMRouteDefaults(BaseModel):
     """Default route assignments for agents."""
 
@@ -329,9 +345,16 @@ class LLMConfig(BaseModel):
     openrouter: LLMOpenRouterConfig = Field(default_factory=LLMOpenRouterConfig)
     cerebras: LLMCerebrasConfig = Field(default_factory=LLMCerebrasConfig)
     anthropic: LLMAnthropicConfig = Field(default_factory=LLMAnthropicConfig)
+    codex: LLMCodexConfig = Field(default_factory=LLMCodexConfig)
     route_defaults: LLMRouteDefaults = Field(default_factory=LLMRouteDefaults)
     fallback_order: list[str] = Field(
-        default_factory=lambda: ["anthropic", "openrouter", "cerebras", "heuristic"]
+        default_factory=lambda: [
+            "anthropic",
+            "openrouter",
+            "cerebras",
+            "codex",
+            "heuristic",
+        ]
     )
 
     def get_enabled_transports(self) -> list[str]:
@@ -348,6 +371,7 @@ class LLMConfig(BaseModel):
                 or (
                     name == "anthropic" and self.anthropic.enabled and self.anthropic.get_api_keys()
                 )
+                or (name == "codex" and self.codex.enabled)
                 or name == "heuristic"
             )
             if is_enabled:
@@ -618,6 +642,7 @@ __all__ = [
     "DisplayConfig",
     "LLMAnthropicConfig",
     "LLMCerebrasConfig",
+    "LLMCodexConfig",
     "LLMConfig",
     "LLMOpenRouterConfig",
     "LLMRouteDefaults",

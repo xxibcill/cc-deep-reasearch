@@ -11,6 +11,7 @@ from .base import BaseStageOrchestrator
 
 if TYPE_CHECKING:
     from cc_deep_research.content_gen.models import PipelineContext
+    from cc_deep_research.llm.codex_runtime import CodexRuntime
 
 
 class VisualStageOrchestrator(BaseStageOrchestrator):
@@ -20,13 +21,24 @@ class VisualStageOrchestrator(BaseStageOrchestrator):
     - Translating scripts into visual plans
     """
 
-    def __init__(self, config: Config) -> None:
+    def __init__(
+        self,
+        config: Config,
+        *,
+        codex_runtime: CodexRuntime | None = None,
+    ) -> None:
         super().__init__(config)
+        self._codex_runtime = codex_runtime
 
     def _create_agent(self, name: str) -> object:
         from cc_deep_research.content_gen.agents.visual import VisualAgent
 
         if name == "visual":
+            if self._codex_runtime is not None:
+                return VisualAgent(
+                    self._config,
+                    codex_runtime=self._codex_runtime,
+                )
             return VisualAgent(self._config)
         raise ValueError(f"Unknown agent: {name}")
 

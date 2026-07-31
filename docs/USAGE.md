@@ -360,10 +360,18 @@ llm:
     api_key: '${CEREBRAS_API_KEY}'
     model: 'llama-3.3-70b'
 
+  codex:
+    enabled: false
+    # Leave null to use the default model available to the signed-in account.
+    model: null
+    reasoning_effort: 'medium'
+    timeout_seconds: 180
+
   fallback_order:
     - 'anthropic'
     - 'openrouter'
     - 'cerebras'
+    - 'codex'
     - 'heuristic'
 
   route_defaults:
@@ -374,7 +382,47 @@ llm:
     default: 'anthropic'
 ```
 
-Planner-selected routes are applied per session. In one run, `analyzer` can use OpenRouter, `deep_analyzer` can use Cerebras, and `report_quality_evaluator` can use Anthropic. If no configured transport is available, the runtime falls back to `heuristic`.
+Planner-selected routes are applied per session. In one run, `analyzer` can use OpenRouter, `deep_analyzer` can use Cerebras, and `report_quality_evaluator` can use Anthropic or Codex. If no configured transport is available, the runtime falls back to `heuristic`.
+
+#### Connect Codex through ChatGPT
+
+Codex uses the official Python SDK and its pinned local app-server runtime. It
+does not use the older `codex` executable that may already be on your `PATH`.
+
+1. Run `uv sync` after installing or updating the project.
+2. Start the dashboard locally and open `http://localhost:3000/settings`.
+3. In the Codex provider panel, enable the provider and choose a reasoning
+   effort. Leave the model empty to use the signed-in account's default model.
+4. Choose browser sign-in or device-code sign-in and finish the ChatGPT flow.
+5. Select `codex` for one or more model-routing roles and save the settings.
+
+The login belongs to the local Codex credential store, not the Inqulume YAML
+file. The dashboard never receives or persists access tokens. Signing out from
+the panel also signs the shared local Codex session out.
+
+Provider calls create isolated, ephemeral threads with read-only sandboxing,
+deny-all approvals, and Codex tool features disabled. Startup also verifies the
+effective layered Codex configuration and active MCP inventory, failing closed
+if managed configuration re-enables tools, notifications, prompt telemetry, or
+MCP capabilities. The adapter returns only the final text and normalized token
+usage. Codex turns do not expose the chat-style `temperature` or hard
+`max_tokens` controls; those request fields are reported as unsupported rather
+than silently treated as equivalent.
+
+For security, the Codex account endpoints accept loopback callers and local
+browser origins only. Do not expose them through a remote proxy without adding
+application authentication and CSRF protection.
+
+The bundled dashboard launchers bind the backend to `127.0.0.1` and
+automatically allowlist the frontend port they select. `BACKEND_HOST` can
+override the bind address, but do not use a non-loopback address until all
+generation endpoints are protected by application authentication. When
+starting the backend and frontend separately on another port, set the exact
+browser origins before launching the backend:
+
+```bash
+export CORS_ALLOWED_ORIGINS='http://localhost:3001,http://127.0.0.1:3001'
+```
 
 ---
 

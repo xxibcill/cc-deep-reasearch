@@ -18,6 +18,7 @@ from cc_deep_research.llm import LLMRouter
 
 if TYPE_CHECKING:
     from cc_deep_research.config import Config
+    from cc_deep_research.llm.codex_runtime import CodexRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +145,8 @@ def _build_user_prompt(brief_revision: BriefRevision) -> str:
 async def generate_backlog_from_brief(
     brief_revision: BriefRevision,
     config: Config | None = None,
+    *,
+    codex_runtime: CodexRuntime | None = None,
 ) -> BriefToBacklogResponse:
     """Generate backlog item candidates from a brief revision.
 
@@ -162,7 +165,7 @@ async def generate_backlog_from_brief(
     from cc_deep_research.llm.registry import LLMRouteRegistry
 
     registry = LLMRouteRegistry(config.llm)
-    router = LLMRouter(registry)
+    router = LLMRouter(registry, codex_runtime=codex_runtime)
 
     user_prompt = _build_user_prompt(brief_revision)
 

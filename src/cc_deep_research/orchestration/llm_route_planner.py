@@ -128,6 +128,9 @@ class LLMRoutePlanner:
         # Check Anthropic availability
         availability[LLMTransportType.ANTHROPIC_API] = self._check_anthropic_available()
 
+        # Codex authentication is verified by the runtime transport.
+        availability[LLMTransportType.CODEX_APP_SERVER] = self._check_codex_available()
+
         # Heuristic is always available as fallback
         availability[LLMTransportType.HEURISTIC] = True
 
@@ -170,6 +173,10 @@ class LLMRoutePlanner:
 
         return bool(self._llm_config.anthropic.get_api_keys())
 
+    def _check_codex_available(self) -> bool:
+        """Return whether Codex is enabled for runtime authentication preflight."""
+        return self._llm_config.codex.enabled
+
     def _build_fallback_order(
         self,
         availability: dict[LLMTransportType, bool],
@@ -190,6 +197,7 @@ class LLMRoutePlanner:
             "openrouter": LLMTransportType.OPENROUTER_API,
             "cerebras": LLMTransportType.CEREBRAS_API,
             "anthropic": LLMTransportType.ANTHROPIC_API,
+            "codex": LLMTransportType.CODEX_APP_SERVER,
             "heuristic": LLMTransportType.HEURISTIC,
         }
 
@@ -257,6 +265,7 @@ class LLMRoutePlanner:
             "openrouter": LLMTransportType.OPENROUTER_API,
             "cerebras": LLMTransportType.CEREBRAS_API,
             "anthropic": LLMTransportType.ANTHROPIC_API,
+            "codex": LLMTransportType.CODEX_APP_SERVER,
             "heuristic": LLMTransportType.HEURISTIC,
         }
 
@@ -317,6 +326,14 @@ class LLMRoutePlanner:
                 transport=LLMTransportType.ANTHROPIC_API,
                 provider=LLMProviderType.ANTHROPIC,
                 model=self._llm_config.anthropic.model,
+                enabled=True,
+            )
+
+        if transport == LLMTransportType.CODEX_APP_SERVER:
+            return LLMRouteModel(
+                transport=LLMTransportType.CODEX_APP_SERVER,
+                provider=LLMProviderType.CODEX,
+                model=self._llm_config.codex.model or "codex-default",
                 enabled=True,
             )
 
@@ -401,6 +418,12 @@ class LLMRoutePlanner:
                 "api_keys": api_keys,
                 "base_url": self._llm_config.anthropic.base_url,
                 "max_tokens": str(self._llm_config.anthropic.max_tokens),
+            }
+        elif transport == LLMTransportType.CODEX_APP_SERVER:
+            timeout_seconds = self._llm_config.codex.timeout_seconds
+            extra = {
+                "model": self._llm_config.codex.model,
+                "reasoning_effort": self._llm_config.codex.reasoning_effort,
             }
 
         return LLMRoute(

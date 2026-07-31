@@ -33,6 +33,7 @@ from cc_deep_research.event_router import EventRouter
 
 if TYPE_CHECKING:
     from cc_deep_research.content_gen.pipeline import ContentGenPipeline
+    from cc_deep_research.llm.codex_runtime import CodexRuntime
 
 
 logger = logging.getLogger(__name__)
@@ -119,14 +120,22 @@ class PipelineRunService:
         job_registry: PipelineRunJobRegistry,
         event_router: EventRouter,
         pipeline_factory: Callable[[Config], ContentGenPipeline] | None = None,
+        *,
+        codex_runtime: CodexRuntime | None = None,
     ) -> None:
         self._job_registry = job_registry
         self._event_router = event_router
+        self._codex_runtime = codex_runtime
         self._pipeline_factory = pipeline_factory or self._default_pipeline_factory
 
     def _default_pipeline_factory(self, config: Config) -> ContentGenPipeline:
         from cc_deep_research.content_gen.pipeline import ContentGenPipeline
 
+        if self._codex_runtime is not None:
+            return ContentGenPipeline(
+                config,
+                codex_runtime=self._codex_runtime,
+            )
         return ContentGenPipeline(config)
 
     # -------------------------------------------------------------------------

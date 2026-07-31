@@ -17,6 +17,7 @@ const __dirname = dirname(__filename);
 const rootDir = resolve(__dirname, '..');
 const projectRoot = resolve(__dirname, '..', '..');
 
+const BACKEND_HOST = process.env.BACKEND_HOST || '127.0.0.1';
 const DEFAULT_BACKEND_PORT = Number.parseInt(process.env.BACKEND_PORT || '8000', 10);
 const DEFAULT_FRONTEND_PORT = Number.parseInt(process.env.FRONTEND_PORT || '3000', 10);
 
@@ -58,7 +59,7 @@ function findAvailablePort(startPort, excludedPorts = new Set()) {
         server.close(() => resolvePort(resolvedPort));
       });
 
-      server.listen(port, '0.0.0.0');
+      server.listen(port, BACKEND_HOST);
     };
 
     tryPort(startPort);
@@ -121,8 +122,8 @@ function runCommand(command, args, { cwd, env, label, color }) {
   });
 }
 
-function startBackend(port) {
-  log(COLORS.cyan, `[backend] Starting FastAPI server on port ${port}...`);
+function startBackend(port, frontendPort) {
+  log(COLORS.cyan, `[backend] Starting FastAPI server on ${BACKEND_HOST}:${port}...`);
 
   const backend = spawn('uv', [
     'run',
@@ -130,11 +131,19 @@ function startBackend(port) {
     'cc_deep_research.web_server:create_app',
     '--factory',
     '--ws', 'websockets-sansio',
-    '--host', '0.0.0.0',
+    '--host', BACKEND_HOST,
     '--port', String(port),
   ], {
     cwd: projectRoot,
     stdio: 'pipe',
+    env: {
+      ...process.env,
+      CORS_ALLOWED_ORIGINS: process.env.CORS_ALLOWED_ORIGINS || [
+        `http://localhost:${frontendPort}`,
+        `http://127.0.0.1:${frontendPort}`,
+        `http://[::1]:${frontendPort}`,
+      ].join(','),
+    },
   });
 
   attachLogs(backend, COLORS.cyan, 'backend');
@@ -245,7 +254,7 @@ async function main() {
   log(COLORS.green, `Frontend: http://localhost:${frontendPort}`);
   console.log('');
 
-  backend = startBackend(backendPort);
+  backend = startBackend(backendPort, frontendPort);
   frontend = startFrontend(frontendPort, backendPort);
   // Attach exit handlers AFTER spawning so they capture process events.
   // Handlers are registered synchronously so no exit event is missed.

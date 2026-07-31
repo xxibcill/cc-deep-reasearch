@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from cc_deep_research.content_gen.models import (
         PipelineContext,
     )
+    from cc_deep_research.llm.codex_runtime import CodexRuntime
 
 
 class AngleStageOrchestrator(BaseStageOrchestrator):
@@ -22,13 +23,24 @@ class AngleStageOrchestrator(BaseStageOrchestrator):
     - Selecting the best angle for production
     """
 
-    def __init__(self, config: Config) -> None:
+    def __init__(
+        self,
+        config: Config,
+        *,
+        codex_runtime: CodexRuntime | None = None,
+    ) -> None:
         super().__init__(config)
+        self._codex_runtime = codex_runtime
 
     def _create_agent(self, name: str) -> object:
         from cc_deep_research.content_gen.agents.thesis import ThesisAgent
 
         if name in ("angle", "thesis"):
+            if self._codex_runtime is not None:
+                return ThesisAgent(
+                    self._config,
+                    codex_runtime=self._codex_runtime,
+                )
             return ThesisAgent(self._config)
         raise ValueError(f"Unknown agent: {name}")
 

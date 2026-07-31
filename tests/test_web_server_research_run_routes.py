@@ -17,6 +17,46 @@ from cc_deep_research.web_server import (
 )
 
 
+def test_research_route_passes_app_owned_codex_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Browser-started generation should use the same runtime as auth routes."""
+    captured: list[object] = []
+
+    class FakeCodexRuntime:
+        async def start(self) -> None:
+            pass
+
+        async def close(self) -> None:
+            pass
+
+    class CapturingResearchRunService:
+        def __init__(self, *, codex_runtime: object) -> None:
+            captured.append(codex_runtime)
+
+        def run(self, *_args, **_kwargs) -> ResearchRunResult:
+            raise RuntimeError("expected test stop")
+
+    monkeypatch.setattr(
+        "cc_deep_research.web_server.ResearchRunService",
+        CapturingResearchRunService,
+    )
+    codex_runtime = FakeCodexRuntime()
+
+    with TestClient(create_app(codex_runtime=codex_runtime)) as client:  # type: ignore[arg-type]
+        response = client.post(
+            "/api/research-runs",
+            json={"query": "runtime identity", "depth": "quick"},
+        )
+        assert response.status_code == 202
+        for _ in range(50):
+            if captured:
+                break
+            time.sleep(0.01)
+
+    assert captured == [codex_runtime]
+
+
 def test_stop_research_run_cancels_active_run_and_interrupts_session(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -24,6 +64,9 @@ def test_stop_research_run_cancels_active_run_and_interrupts_session(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
 
     class BlockingResearchRunService:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
         def run(
             self,
             request: ResearchRunRequest,
