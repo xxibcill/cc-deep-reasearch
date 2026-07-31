@@ -6,35 +6,15 @@ This project now tracks user-visible history with Semantic Versioning and [`CHAN
 
 Before cutting a release, run these checks to ensure the codebase is in a releasable state:
 
-### Python Code Quality
+### Canonical Preflight
 
 ```bash
-# Lint the codebase
-uv run ruff check src/ tests/
-
-# Type check the codebase
-uv run mypy src/
-
-# Run the test suite
-uv run pytest
+./scripts/preflight
 ```
 
-### Dashboard Verification
-
-```bash
-cd dashboard
-
-# Lint the dashboard
-npm run lint
-
-# Run Playwright end-to-end tests
-npm run test:e2e
-
-# Run accessibility tests (optional, more thorough)
-npm run test:e2e -- --grep 'Accessibility'
-```
-
-If the dashboard has dependency issues, you can skip dashboard verification with `SKIP_DASHBOARD=1` before running the release.
+This checks the Python lock, lint, types, and full test suite, then validates the
+dashboard with lint, unit tests, a production build, smoke tests, and the
+accessibility baseline. A release is blocked if either application fails.
 
 ## Release Workflow
 

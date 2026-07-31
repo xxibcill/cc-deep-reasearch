@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from .defaults import get_default_config_path
+from .paths import get_default_config_path
 from .schema import Config, Settings, _normalize_api_key_list
 
 

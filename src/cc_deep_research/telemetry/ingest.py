@@ -18,7 +18,7 @@ from .migrations import (
 if TYPE_CHECKING:
     pass
 
-_DASHBOARD_INSTALL_COMMAND = 'pip install "inqulume-studio[dashboard]"'
+_DASHBOARD_INSTALL_COMMAND = 'pip install "inqulume-studio"'
 _EVENT_INSERT_BATCH_SIZE = 1000
 _EVENT_INSERT_SQL = """
     INSERT INTO telemetry_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

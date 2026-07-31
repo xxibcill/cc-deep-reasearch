@@ -20,12 +20,13 @@ from cc_deep_research.models.session import (
 )
 from cc_deep_research.persistence import atomic_write_json, atomic_write_text
 from cc_deep_research.research_runs.models import ResearchOutputFormat
-from cc_deep_research.telemetry import (
-    get_default_dashboard_db_path,
+from cc_deep_research.session_paths import get_default_session_dir
+from cc_deep_research.telemetry.ingest import get_default_dashboard_db_path
+from cc_deep_research.telemetry.live import (
     get_default_telemetry_dir,
     query_session_checkpoints,
-    query_session_detail,
 )
+from cc_deep_research.telemetry.query import query_session_detail
 
 REPORT_CACHE_DIRNAME = ".reports"
 SESSION_SUMMARY_DIRNAME = ".summaries"
@@ -74,16 +75,6 @@ def log_audit_event(action: str, session_id: str, **details: Any) -> None:
             f.write(json_module.dumps(event) + "\n")
     except Exception:
         pass
-
-
-def get_default_session_dir() -> Path:
-    """Get the default directory for session storage.
-
-    Returns:
-        Path to the session storage directory.
-    """
-    config_dir = get_default_config_path().parent
-    return config_dir / "sessions"
 
 
 @dataclass

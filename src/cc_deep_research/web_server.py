@@ -35,6 +35,12 @@ from cc_deep_research.research_runs.jobs import (
     ResearchRunJobRegistry,
 )
 from cc_deep_research.research_runs.service import ResearchRunService
+from cc_deep_research.web_runtime import (
+    get_background_job_registry,
+    get_event_router,
+    get_job_registry,
+    get_pipeline_job_registry,
+)
 from cc_deep_research.web_server_routes import (
     register_knowledge_routes,
     register_misc_routes,
@@ -167,26 +173,6 @@ def get_app() -> FastAPI:
 def get_backend_runtime(app: FastAPI) -> DashboardBackendRuntime:
     """Return the typed dashboard runtime stored on the app."""
     return cast(DashboardBackendRuntime, app.state.dashboard_runtime)
-
-
-def get_event_router(app: FastAPI) -> EventRouter:
-    """Return the shared event router from app runtime state."""
-    return get_backend_runtime(app).event_router
-
-
-def get_job_registry(app: FastAPI) -> ResearchRunJobRegistry:
-    """Return the shared job registry from app runtime state."""
-    return get_backend_runtime(app).jobs
-
-
-def get_background_job_registry(app: FastAPI) -> BackgroundJobRegistry:
-    """Return the shared generic background job registry from app runtime state."""
-    return get_backend_runtime(app).background_jobs
-
-
-def get_pipeline_job_registry(app: FastAPI) -> PipelineRunJobRegistry:
-    """Return the shared pipeline job registry from app runtime state."""
-    return get_backend_runtime(app).pipeline_jobs
 
 
 def _background_job_response(job: BackgroundJob) -> dict[str, object]:

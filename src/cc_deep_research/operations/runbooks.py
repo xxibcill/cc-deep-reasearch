@@ -52,12 +52,12 @@ _register_runbook(Runbook(
         "Frontend shows a blank page or error boundary",
     ],
     steps=[
-        RunbookStep(1, "Check if backend is running", "inqulume-studio dashboard status", "PID and status returned"),
+        RunbookStep(1, "Check if backend is running", "curl -fsS http://localhost:8000/api/operations/service/status?service_name=dashboard", "Service status returned"),
         RunbookStep(2, "Check backend port availability", "lsof -i :8000", "Process listed on port 8000"),
         RunbookStep(3, "Check frontend port availability", "lsof -i :3000", "Node process on port 3000"),
         RunbookStep(4, "Verify dashboard build exists", "ls dashboard/.next", "Build directory exists"),
-        RunbookStep(5, "Check Node.js version", "node --version", "v18+"),
-        RunbookStep(6, "Restart services", "inqulume-studio dashboard restart", "Services running"),
+        RunbookStep(5, "Check Node.js version", "node --version", "v22+"),
+        RunbookStep(6, "Restart services from the repository root", "./scripts/dashboard-dev", "Backend and frontend URLs printed"),
     ],
     related_checks=["backend_reachable", "port_8000", "port_3000"],
     related_runbooks=["backend_unavailable"],
@@ -77,9 +77,9 @@ _register_runbook(Runbook(
     steps=[
         RunbookStep(1, "Check port availability", "lsof -i :8000", None),
         RunbookStep(2, "Check Python process", "ps aux | grep web_server", None),
-        RunbookStep(3, "Start backend in foreground to see errors", "cd /Users/jjae/Documents/guthib/inqulume-studio && uv run inqulume-studio dashboard", None),
+        RunbookStep(3, "Start backend in foreground to see errors", "uv run uvicorn cc_deep_research.web_server:create_app --factory --ws websockets-sansio --host 127.0.0.1 --port 8000", None),
         RunbookStep(4, "Verify config loads", "uv run python -c 'from cc_deep_research.config import load_config; print(\"OK\")'", "OK printed"),
-        RunbookStep(5, "Check provider credentials", "inqulume-studio health check --section provider", None),
+        RunbookStep(5, "Check provider credentials", "curl -fsS http://localhost:8000/api/health", None),
         RunbookStep(6, "Check log files for errors", "tail -100 ~/.config/inqulume-studio/telemetry/*/events.jsonl 2>/dev/null | tail -50", None),
     ],
     related_checks=["backend_reachable", "provider_credentials"],
@@ -99,10 +99,10 @@ _register_runbook(Runbook(
     ],
     steps=[
         RunbookStep(1, "Verify backend is running", "lsof -i :8000", None),
-        RunbookStep(2, "Test WebSocket endpoint manually", "wscat -c ws://localhost:8000/ws", "Connected"),
+        RunbookStep(2, "Test a session WebSocket endpoint manually", "npx wscat -c ws://localhost:8000/ws/session/<session-id>", "Connected"),
         RunbookStep(3, "Check browser console for CORS errors", None, "No CORS policy errors"),
         RunbookStep(4, "Verify no firewall is blocking WebSocket upgrade", "curl -v -N -H 'Connection: Upgrade' -H 'Upgrade: websocket' http://localhost:8000/ws", "101 Switching Protocols"),
-        RunbookStep(5, "Restart backend to reset WebSocket handler", "inqulume-studio dashboard stop && inqulume-studio dashboard start", None),
+        RunbookStep(5, "Restart the local stack from the repository root", "./scripts/dashboard-dev", None),
     ],
     related_checks=["websocket_route"],
     related_runbooks=["backend_unavailable"],
@@ -124,8 +124,8 @@ _register_runbook(Runbook(
         RunbookStep(2, "Check environment variables", "env | grep API_KEY", "No output if not set"),
         RunbookStep(3, "Add Tavily key", "export TAVILY_API_KEYS='your-key-here'", None),
         RunbookStep(4, "Verify key is detected", "uv run python -c 'from cc_deep_research.config import load_config; print(load_config().tavily.api_keys)'", "Key appears"),
-        RunbookStep(5, "Run health check to confirm", "inqulume-studio health check", "Provider credentials PASS"),
-        RunbookStep(6, "Test a research run", "inqulume-studio research 'test query' --depth quick", None),
+        RunbookStep(5, "Run health check to confirm", "curl -fsS http://localhost:8000/api/health", "Provider credentials PASS"),
+        RunbookStep(6, "Launch a quick research run from the Research dashboard", None, "Session opens in the monitor"),
     ],
     related_checks=["provider_credentials"],
     related_runbooks=["dashboard_unavailable"],
@@ -145,9 +145,9 @@ _register_runbook(Runbook(
     steps=[
         RunbookStep(1, "Check disk space", "df -h ~/.config/inqulume-studio/telemetry", "> 1GB free"),
         RunbookStep(2, "Check DuckDB size", "ls -lh ~/.config/inqulume-studio/telemetry/dashboard.db", "Size within limits"),
-        RunbookStep(3, "Run retention policy", "inqulume-studio telemetry retention --dry-run", None),
-        RunbookStep(4, "Compact old sessions", "inqulume-studio telemetry compact --older-than 30d", None),
-        RunbookStep(5, "Verify analytics query performance", "inqulume-studio analytics --days 7", "Returns in < 5s"),
+        RunbookStep(3, "Preview the retention policy", "curl -fsS -X POST 'http://localhost:8000/api/telemetry/retention/apply?mode=dry_run&max_age_days=30'", None),
+        RunbookStep(4, "Apply retention after reviewing the preview", "curl -fsS -X POST 'http://localhost:8000/api/telemetry/retention/apply?mode=enforce&max_age_days=30'", None),
+        RunbookStep(5, "Verify analytics query performance", "curl -fsS 'http://localhost:8000/api/analytics?days=7'", "Returns in < 5s"),
     ],
     related_checks=["telemetry_access", "duckdb"],
     related_runbooks=["backup_failed"],
@@ -169,8 +169,8 @@ _register_runbook(Runbook(
         RunbookStep(2, "Verify backup permissions", "ls -la ~/.config/inqulume-studio/", "Directories are writable"),
         RunbookStep(3, "Validate manifest manually", "python3 -c 'import json; json.load(open(\"backup.manifest.json\"))'", "No JSON parse error"),
         RunbookStep(4, "Check for conflicting processes", "lsof ~/.config/inqulume-studio/*.json", "No lock on files"),
-        RunbookStep(5, "Retry with dry-run", "inqulume-studio backup plan --dry-run", None),
-        RunbookStep(6, "Run backup with verbose output", "inqulume-studio backup create --verbose", None),
+        RunbookStep(5, "Review the backup plan", "curl -fsS http://localhost:8000/api/operations/backup/plan", None),
+        RunbookStep(6, "Create a backup to an explicit path", "curl -fsS -X POST 'http://localhost:8000/api/operations/backup/create?backup_path=./inqulume-backup.tar.gz'", None),
     ],
     related_checks=["data_paths"],
     related_runbooks=["upgrade_failed"],
@@ -188,11 +188,11 @@ _register_runbook(Runbook(
         "Config fails to load",
     ],
     steps=[
-        RunbookStep(1, "Check upgrade report", "inqulume-studio upgrade report", "Review FAIL items"),
+        RunbookStep(1, "Check upgrade report", "curl -fsS http://localhost:8000/api/operations/upgrade/report", "Review FAIL items"),
         RunbookStep(2, "Check config validity", "uv run python -c 'from cc_deep_research.config import load_config; load_config()'", "No ValidationError"),
-        RunbookStep(3, "Run rollback instructions", "inqulume-studio upgrade rollback --backup <id>", None),
-        RunbookStep(4, "Verify rollback succeeded", "inqulume-studio health check", "All checks PASS"),
-        RunbookStep(5, "Re-run upgrade with dry-run first", "inqulume-studio upgrade validate --dry-run", None),
+        RunbookStep(3, "Fetch rollback instructions", "curl -fsS 'http://localhost:8000/api/operations/upgrade/rollback?backup_id=<id>'", None),
+        RunbookStep(4, "Verify rollback succeeded", "curl -fsS http://localhost:8000/api/health", "All checks PASS"),
+        RunbookStep(5, "Re-run upgrade validation", "curl -fsS http://localhost:8000/api/operations/upgrade/validate", None),
         RunbookStep(6, "Escalate if rollback fails", None, "Contact maintainer with debug export",),
     ],
     related_checks=["config_file", "data_paths", "provider_credentials"],
@@ -211,11 +211,11 @@ _register_runbook(Runbook(
         "Telemetry events missing for session",
     ],
     steps=[
-        RunbookStep(1, "List available sessions", "inqulume-studio session list", "Session ID in list"),
+        RunbookStep(1, "List available sessions", "curl -fsS 'http://localhost:8000/api/sessions?limit=100'", "Session ID in list"),
         RunbookStep(2, "Check session file exists", "ls ~/.config/inqulume-studio/sessions/*.json", "File exists"),
         RunbookStep(3, "Check session store integrity", "uv run python -c 'from cc_deep_research.session_store import SessionStore; print(SessionStore().get_session_count())'", "Count > 0"),
         RunbookStep(4, "Verify telemetry exists", "ls ~/.config/inqulume-studio/telemetry/", "Directory exists"),
-        RunbookStep(5, "Check archived sessions", "inqulume-studio session archive list", "Session may be archived"),
+        RunbookStep(5, "Check archived sessions", "curl -fsS 'http://localhost:8000/api/sessions?archived_only=true&limit=100'", "Session may be archived"),
     ],
 ))
 
@@ -254,9 +254,9 @@ _register_runbook(Runbook(
         RunbookStep(1, "Find process using port", "lsof -i :8000", "PID and process name"),
         RunbookStep(2, "Identify the process", "ps aux | grep <PID>", "Expected or unexpected"),
         RunbookStep(3, "Stop conflicting service", "kill <PID>", None),
-        RunbookStep(4, "Or use a different port", "inqulume-studio dashboard --port 8001", None),
+        RunbookStep(4, "Or prefer different ports", "BACKEND_PORT=8001 FRONTEND_PORT=3001 ./scripts/dashboard-dev", None),
         RunbookStep(5, "Verify port is now available", "lsof -i :8000", "No output"),
-        RunbookStep(6, "Restart dashboard", "inqulume-studio dashboard start", "Started successfully"),
+        RunbookStep(6, "Restart dashboard", "./scripts/dashboard-dev", "Started successfully"),
     ],
 ))
 
@@ -272,11 +272,11 @@ _register_runbook(Runbook(
         "Cache database file is missing",
     ],
     steps=[
-        RunbookStep(1, "Check cache stats", "inqulume-studio cache stats", "Cache state reported"),
-        RunbookStep(2, "Purge expired entries", "inqulume-studio cache purge-expired", None),
+        RunbookStep(1, "Check cache stats", "curl -fsS http://localhost:8000/api/search-cache/stats", "Cache state reported"),
+        RunbookStep(2, "Purge expired entries", "curl -fsS -X POST http://localhost:8000/api/search-cache/purge-expired", None),
         RunbookStep(3, "Verify cache is enabled in config", "uv run python -c 'from cc_deep_research.config import load_config; c=load_config(); print(c.search_cache.enabled)'", "True"),
-        RunbookStep(4, "Clear cache if needed", "inqulume-studio cache clear", None),
-        RunbookStep(5, "Run research with fresh cache", "inqulume-studio research 'fresh query' --depth quick", "New results"),
+        RunbookStep(4, "Clear cache if needed", "curl -fsS -X DELETE http://localhost:8000/api/search-cache", None),
+        RunbookStep(5, "Run research with fresh cache from the Research dashboard", None, "New results"),
     ],
 ))
 
@@ -292,11 +292,11 @@ _register_runbook(Runbook(
         "Orphan claims or duplicates reported",
     ],
     steps=[
-        RunbookStep(1, "Check knowledge health", "inqulume-studio knowledge health", "Health report returned"),
+        RunbookStep(1, "Check knowledge health", "curl -fsS http://localhost:8000/api/knowledge/health", "Health report returned"),
         RunbookStep(2, "Check knowledge directory", "ls ~/.config/inqulume-studio/knowledge/", "Directory exists"),
         RunbookStep(3, "Verify DuckDB knowledge base", "ls ~/.config/inqulume-studio/knowledge/knowledge.db", "File exists"),
         RunbookStep(4, "Check ingestion logs", "tail -50 ~/.config/inqulume-studio/telemetry/*/events.jsonl | grep knowledge", None),
-        RunbookStep(5, "Run knowledge cleanup", "inqulume-studio knowledge cleanup --dry-run", None),
+        RunbookStep(5, "Review the Knowledge dashboard and rebuild only if health checks require it", None, None),
     ],
 ))
 
@@ -334,17 +334,17 @@ def get_support_checklist() -> dict[str, Any]:
         "checklist": [
             {
                 "item": "Debug export",
-                "command": "inqulume-studio debug-export",
-                "description": "Collect system state, config (redacted), and logs",
+                "command": "curl -fsS http://localhost:8000/api/operations/support/checklist",
+                "description": "Collect the current incident-response checklist",
             },
             {
                 "item": "Config summary",
-                "command": "inqulume-studio config show",
-                "description": "Current configuration (secrets redacted)",
+                "command": "curl -fsS http://localhost:8000/api/operations/secrets/inventory",
+                "description": "Credential inventory without secret values",
             },
             {
                 "item": "Health status",
-                "command": "inqulume-studio health check --json",
+                "command": "curl -fsS http://localhost:8000/api/health",
                 "description": "Full health report as JSON",
             },
             {
@@ -359,7 +359,7 @@ def get_support_checklist() -> dict[str, Any]:
             },
             {
                 "item": "Session list",
-                "command": "inqulume-studio session list",
+                "command": "curl -fsS 'http://localhost:8000/api/sessions?limit=100'",
                 "description": "Current sessions and their status",
             },
             {
@@ -374,7 +374,7 @@ def get_support_checklist() -> dict[str, Any]:
             "Provider credentials leaked or compromised",
             "Security incident detected",
         ],
-        "contact": "File an issue at https://github.com/anthropics/inqulume-studio/issues with the debug export attached",
+        "contact": "File an issue at https://github.com/xxibcill/inqulume-studio/issues with the debug export attached",
     }
 
 

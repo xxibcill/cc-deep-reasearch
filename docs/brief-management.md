@@ -1,168 +1,71 @@
-# Brief Management Guide
+# Brief Management
 
-This document describes how to use the persistent brief management system for content generation workflows.
+Opportunity briefs are durable, versioned content-planning resources. Operators
+manage them in the Content workspace or through `/api/content-gen/briefs`.
 
-## Overview
-
-The brief management system provides durable, version-aware persistence for opportunity briefs. Rather than being embedded inline in pipeline contexts, briefs are now stored as independent resources with:
-
-- **Lifecycle states**: DRAFT → APPROVED → ARCHIVED/SUPERSEDED
-- **Immutable revisions**: Each edit creates a new revision snapshot, preserving full history
-- **Lineage tracking**: Branches and clones preserve their ancestry
-- **Approval gates**: Approved briefs can gate downstream pipeline stages
-
-## Lifecycle States
+## Lifecycle
 
 | State | Meaning |
-|-------|---------|
-| `DRAFT` | Brief is being developed; not yet approved |
-| `APPROVED` | Brief has been reviewed and is locked for pipeline use |
-| `SUPERSEDED` | Brief has been replaced by a newer version |
-| `ARCHIVED` | Brief is retired but preserved for historical reference |
+| --- | --- |
+| `DRAFT` | Editable and not yet approved for downstream use |
+| `APPROVED` | Reviewed and eligible to gate downstream work |
+| `SUPERSEDED` | Replaced by a newer brief |
+| `ARCHIVED` | Retired but retained for audit/history |
 
-Only `APPROVED` briefs can be used to gate pipeline execution (when the brief gate is enabled).
+Edits are stored as immutable revisions. Applying a revision changes the
+current head without deleting older snapshots. Branches retain lineage through
+their source brief; clones are independent copies.
 
-## CLI Commands
+## Operator workflow
 
-### List all briefs
+1. Open the brief workspace in the dashboard.
+2. Create a brief directly or let opportunity planning create one.
+3. Edit fields or use the brief assistant to propose a revision.
+4. inspect and apply the new revision.
+5. Approve the brief when it is ready.
+6. Generate backlog candidates from the approved planning record.
+7. Select a backlog item and start its pipeline.
 
-```bash
-inqulume-studio content-gen briefs briefs_list
-```
+Approval, branching, cloning, archive, supersede, and revert operations are
+explicit lifecycle transitions. They should not be implemented as direct
+storage edits.
 
-### View a specific brief
+## API map
 
-```bash
-inqulume-studio content-gen briefs briefs_show --brief-id mbrief_abc123
-```
+| Purpose | Endpoint |
+| --- | --- |
+| List/create briefs | `GET` or `POST /api/content-gen/briefs` |
+| Read/update a brief | `GET` or `PATCH /api/content-gen/briefs/{brief_id}` |
+| Revision history | `GET /api/content-gen/briefs/{brief_id}/revisions` |
+| Save/apply a revision | `POST .../revisions`, `POST .../apply-revision` |
+| Approve/archive/supersede | `POST .../approve`, `.../archive`, `.../supersede` |
+| Revert to draft | `POST .../revert-to-draft` |
+| Clone or branch | `POST .../clone`, `POST .../branch` |
+| Audit history | `GET .../audit` |
+| Assistant proposal/application | `POST .../assistant/respond`, `.../assistant/apply` |
+| Generate/apply backlog | `POST .../generate-backlog`, `.../apply-backlog` |
+| Compare related briefs | `GET .../siblings`, `GET .../compare/{other_brief_id}` |
 
-### Migrate YAML briefs to SQLite
+Use the OpenAPI page at `http://127.0.0.1:8000/docs` for request schemas,
+optimistic-concurrency fields, and response models.
 
-If you have existing briefs in YAML format, migrate them to the SQLite store:
+## Persistence and compatibility
 
-```bash
-inqulume-studio content-gen briefs briefs_migrate
-```
+- New deployments use SQLite-backed brief and revision stores by default.
+- YAML-backed stores remain compatibility inputs where configured.
+- Legacy pipeline contexts containing inline briefs can still be interpreted
+  through the migration/domain layer.
+- Migrations are code-level maintenance operations covered by
+  `tests/test_content_gen_storage_migration.py`; there is no supported
+  operator CLI for running them.
 
-This performs a one-time import from the YAML store to SQLite. Existing SQLite records are preserved; only new briefs are added.
+Before changing a store backend, back up the paths reported by
+`GET /api/operations/data-paths` and validate the migration in a copy.
 
-### Check store health
+## Code map
 
-Verify consistency between YAML and SQLite stores:
-
-```bash
-inqulume-studio content-gen briefs briefs_health
-```
-
-This reports any briefs that exist only in one store or the other.
-
-## Operator Workflows
-
-### Creating a Brief
-
-Briefs are typically created during pipeline stage 1 (plan_opportunity). The pipeline automatically creates a managed brief when you run:
-
-```bash
-inqulume-studio content-gen pipeline --theme "pricing psychology"
-```
-
-This creates a managed brief in `DRAFT` state with the initial opportunity brief content.
-
-### Editing a Brief
-
-1. Open the brief in the dashboard at `/content-gen/briefs/[id]`
-2. Use the AI Brief Assistant to refine content, or edit fields directly
-3. Each save creates a new revision (immutable snapshot)
-4. Use "Apply" to promote a revision to the current head
-
-### Approving a Brief
-
-Once a brief is ready for production use:
-
-1. Navigate to the brief in the dashboard
-2. Review the current revision content
-3. Click **Approve** to transition to `APPROVED` state
-
-Approval is required for the brief to gate pipeline execution.
-
-### Reusing a Brief for a New Run
-
-To start a new pipeline run from an existing brief:
-
-```bash
-inqulume-studio content-gen pipeline --brief-id mbrief_abc123 --from-stage 2
-```
-
-This resumes from stage 2 (ideation) using the approved brief as the planning anchor.
-
-### Branching a Brief
-
-Create a derivative brief for a different theme or channel:
-
-```bash
-# Via dashboard: click "Branch" on any brief
-# Or via API: POST /briefs/{id}/branch
-```
-
-Branches start in `DRAFT` state and track their lineage via `source_brief_id`.
-
-### Cloning a Brief
-
-Create an independent copy for experimentation:
-
-```bash
-# Via dashboard: click "Clone" on any brief
-# Or via API: POST /briefs/{id}/clone
-```
-
-Clones start in `DRAFT` state but do not track lineage.
-
-## Rollout and Backward Compatibility
-
-### Legacy Data
-
-- Old pipeline context files with inline briefs continue to work
-- The system falls back to `inline_fallback` reference type when no managed brief exists
-- Resume validation warns when brief state has changed but allows override with `--allow-stale-brief`
-
-### Storage Transition
-
-- YAML storage remains fully readable
-- SQLite is the default for new brief operations
-- Run `briefs_migrate` to copy YAML data into SQLite
-
-### Feature Flags
-
-| Feature | Default | Description |
-|---------|---------|-------------|
-| `use_sqlite` | `false` | Use SQLite store instead of YAML |
-| Brief gate | enabled | Block pipeline stages without approved brief |
-
-## Invariants (Do Not Break)
-
-These constraints should be preserved by future feature work:
-
-1. **Revisions are immutable**: Once created, a revision's content never changes
-2. **Head pointer**: `current_revision_id` always points to the active revision for pipeline use
-3. **Approval is explicit**: Only operator action transitions to `APPROVED`; the system never auto-approves
-4. ** lineage is traceable**: Cloned and branched briefs preserve `source_brief_id`
-5. **Concurrency safety**: Optimistic locking via `updated_at` prevents silent overwrites
-
-## Data Storage
-
-| Data | Location |
-|------|----------|
-| Briefs (SQLite) | `~/.config/inqulume-studio/content-gen/briefs.db` |
-| Revisions (SQLite) | `~/.config/inqulume-studio/content-gen/briefs_revisions.db` |
-| Briefs (YAML, legacy) | `~/.config/inqulume-studio/content-gen/briefs.yaml` |
-| Audit log | `~/.config/inqulume-studio/content-gen/audit_log.yaml` |
-
-## Key Files
-
-| File | Purpose |
-|------|---------|
-| `src/cc_deep_research/content_gen/brief_service.py` | Brief lifecycle operations |
-| `src/cc_deep_research/content_gen/storage/sqlite_brief_store.py` | SQLite persistence |
-| `src/cc_deep_research/content_gen/storage/revision_store.py` | Revision storage |
-| `src/cc_deep_research/content_gen/brief_migration.py` | Legacy migration utilities |
-| `src/cc_deep_research/content_gen/models/` | `ManagedOpportunityBrief`, `BriefRevision`, `PipelineBriefReference` models |
+- API mapping: [`src/cc_deep_research/content_gen/router.py`](../src/cc_deep_research/content_gen/router.py)
+- domain/API service: [`src/cc_deep_research/content_gen/brief_api_service.py`](../src/cc_deep_research/content_gen/brief_api_service.py)
+- lifecycle service: [`src/cc_deep_research/content_gen/brief_service.py`](../src/cc_deep_research/content_gen/brief_service.py)
+- compatibility migration: [`src/cc_deep_research/content_gen/brief_migration.py`](../src/cc_deep_research/content_gen/brief_migration.py)
+- persistence: [`src/cc_deep_research/content_gen/storage/`](../src/cc_deep_research/content_gen/storage)

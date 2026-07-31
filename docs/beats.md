@@ -746,16 +746,11 @@ The pipeline also records beat counts in metadata so operators can quickly see:
 
 ### Saved scripting runs
 
-Standalone scripting runs are autosaved, including context artifacts that preserve beat state. Relevant commands are documented in [`docs/content-generation.md`](./content-generation.md).
-
-Examples:
-
-```bash
-inqulume-studio content-gen script --idea "..." -o script.txt --save-context
-inqulume-studio content-gen script --from-file script.context.json --from-step 6
-inqulume-studio content-gen scripts list
-inqulume-studio content-gen scripts show --latest
-```
+Standalone scripting runs started from the dashboard or
+`POST /api/content-gen/scripting` are autosaved, including context artifacts
+that preserve beat state. List and inspect them with
+`GET /api/content-gen/scripts` and
+`GET /api/content-gen/scripts/{run_id}`.
 
 Autosaved outputs include:
 

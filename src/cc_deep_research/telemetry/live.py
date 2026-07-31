@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from cc_deep_research.config import get_default_config_path
+from cc_deep_research.session_paths import get_default_session_dir
 
 from .summary_cache import get_or_compute_summary
 from .tree import (
@@ -357,8 +358,6 @@ def _summary_event_count(
 def _saved_session_ids() -> set[str]:
     """Return saved session ids in one directory scan."""
     try:
-        from cc_deep_research.session_store import get_default_session_dir
-
         sessions_dir = get_default_session_dir()
         if not sessions_dir.exists():
             return set()

@@ -66,12 +66,25 @@ test.describe("Operator smoke suite", () => {
     async ({ page }) => {
       await page.goto("/");
 
-      await page.getByLabel("Research Query").fill("What is the current state of fusion energy research?");
+      const researchQuery = page.getByLabel("Research Query");
+      const startButton = page.getByRole("button", {
+        name: /start standard research pass/i,
+      });
+      const queryText = "What is the current state of fusion energy research?";
+      const monitorUrl = /\/session\/.*\/monitor/;
 
-      await page.getByRole("button", { name: /start standard research pass/i }).click();
+      await expect(researchQuery).toBeVisible();
+      await expect(async () => {
+        if (monitorUrl.test(new URL(page.url()).pathname)) {
+          return;
+        }
 
-      // Should navigate to the session monitor page
-      await expect(page).toHaveURL(/\/session\/.*\/monitor/);
+        await researchQuery.fill(queryText);
+        await expect(researchQuery).toHaveValue(queryText);
+        await expect(startButton).toBeEnabled({ timeout: 1_000 });
+        await startButton.click();
+        await expect(page).toHaveURL(monitorUrl, { timeout: 2_000 });
+      }).toPass({ timeout: 15_000 });
     }
   );
 
@@ -128,18 +141,18 @@ test.describe("Operator smoke suite", () => {
       await mockSessionAnnotations(page, sessionId);
       await page.goto(`/session/${sessionId}`);
 
-      // Find the annotation panel
-      const annotationPanel = page.getByText(/annotation|notes?|sticky note/i).first();
-      if (await annotationPanel.isVisible()) {
-        const noteInput = page.getByPlaceholder("Add a note about this session...");
-        if (await noteInput.isVisible()) {
-          await noteInput.fill("Reviewed the analysis. Findings look solid.");
-          const addNoteButton = page.getByRole("button", { name: /^add$/i }).first();
-          await expect(addNoteButton).toBeEnabled();
-          await addNoteButton.click();
-          await expect(page.getByText(/Reviewed the analysis/i)).toBeVisible();
-        }
-      }
+      const noteText = "Reviewed the analysis. Findings look solid.";
+      const noteInput = page.getByPlaceholder("Add a note about this session...");
+      const addNoteButton = page.getByRole("button", { name: /^add$/i }).first();
+
+      await expect(noteInput).toBeVisible();
+      await expect(async () => {
+        await noteInput.fill(noteText);
+        await expect(addNoteButton).toBeEnabled({ timeout: 1_000 });
+      }).toPass({ timeout: 10_000 });
+
+      await addNoteButton.click();
+      await expect(page.getByText(noteText)).toBeVisible();
     }
   );
 

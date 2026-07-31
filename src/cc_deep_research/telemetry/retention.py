@@ -11,7 +11,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from cc_deep_research.telemetry import get_default_telemetry_dir
+from cc_deep_research.telemetry.live import get_default_telemetry_dir
 
 
 class RetentionMode(StrEnum):

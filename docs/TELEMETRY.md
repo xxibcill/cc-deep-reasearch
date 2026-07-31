@@ -1,326 +1,89 @@
-# Telemetry Architecture
+# Telemetry
 
-This project uses a local, file-backed telemetry pipeline. Runtime telemetry is written into per-session JSONL files, optionally ingested into DuckDB for historical analytics, and consumed by two operator UIs:
+Telemetry has two responsibilities:
 
-- the Streamlit telemetry dashboard launched by `inqulume-studio telemetry dashboard`
-- the FastAPI + Next.js real-time operator console launched with `inqulume-studio dashboard` plus the frontend in [`dashboard/`](../dashboard)
+1. persist a durable event trail for every research session;
+2. feed live session events to the dashboard while a run is active.
 
-## Core Boundaries
+The supported UI is the Next.js dashboard. Historical analysis is exposed
+through FastAPI endpoints and DuckDB-backed readers; the old Streamlit
+application and telemetry CLI are retired.
 
-The implementation is split across these modules:
-
-- monitor emission and session finalization: [`src/cc_deep_research/monitoring.py`](../src/cc_deep_research/monitoring.py)
-- telemetry compatibility exports: [`src/cc_deep_research/telemetry/__init__.py`](../src/cc_deep_research/telemetry/__init__.py)
-- live JSONL readers: [`src/cc_deep_research/telemetry/live.py`](../src/cc_deep_research/telemetry/live.py)
-- DuckDB ingestion: [`src/cc_deep_research/telemetry/ingest.py`](../src/cc_deep_research/telemetry/ingest.py)
-- DuckDB analytics queries: [`src/cc_deep_research/telemetry/query.py`](../src/cc_deep_research/telemetry/query.py)
-- telemetry CLI commands: [`src/cc_deep_research/cli/telemetry.py`](../src/cc_deep_research/cli/telemetry.py)
-- real-time dashboard backend: [`src/cc_deep_research/cli/dashboard.py`](../src/cc_deep_research/cli/dashboard.py), [`src/cc_deep_research/web_server.py`](../src/cc_deep_research/web_server.py), and [`src/cc_deep_research/event_router.py`](../src/cc_deep_research/event_router.py)
-- Streamlit dashboard app: [`src/cc_deep_research/dashboard_app.py`](../src/cc_deep_research/dashboard_app.py)
-- Next.js operator console: [`dashboard/src/`](../dashboard/src)
-
-## End-to-End Flow
+## Event flow
 
 ```mermaid
 flowchart LR
-    A["research CLI / orchestrator"] --> B["ResearchMonitor"]
-    B --> C["events.jsonl"]
-    B --> D["summary.json"]
-    C --> E["telemetry.live"]
-    D --> E
-    C --> F["telemetry.ingest"]
-    D --> F
-    F --> G["telemetry.duckdb"]
-    B --> H["EventRouter"]
-    H --> I["FastAPI websocket/api"]
-    E --> J["Streamlit dashboard"]
-    G --> J
-    I --> K["Next.js operator console"]
+    A["Agents and orchestrators"] --> B["ResearchMonitor"]
+    B --> C["Session event files"]
+    B --> D["EventRouter"]
+    D --> E["Session WebSocket"]
+    C --> F["SessionStore"]
+    C --> G["DuckDB analytics"]
+    F --> H["FastAPI session routes"]
+    G --> I["FastAPI analytics routes"]
+    H --> J["Next.js dashboard"]
+    I --> J
+    E --> J
 ```
 
-## Runtime Emission Model
+The disk event stream is authoritative. Live routing is best-effort delivery
+for the active browser view.
 
-`ResearchMonitor` is the telemetry sink. Runtime code should emit through typed helpers such as:
+## Operator endpoints
 
-- `set_session()`
-- `emit_event()`
-- `record_search_query()`
-- `record_tool_call()`
-- `record_reasoning_summary()`
-- `record_source_provenance()`
-- `record_iteration_stop()`
-- `finalize_session()`
+| Purpose | Endpoint |
+| --- | --- |
+| List and filter sessions | `GET /api/sessions` |
+| Session detail | `GET /api/sessions/{session_id}` |
+| Events | `GET /api/sessions/{session_id}/events` |
+| Report | `GET /api/sessions/{session_id}/report` |
+| Artifacts and bundle | `GET /api/sessions/{session_id}/artifacts`, `/bundle` |
+| Checkpoints | `GET /api/sessions/{session_id}/checkpoints` |
+| Archive or restore | `POST /api/sessions/{session_id}/archive`, `/restore` |
+| Add/read annotations | `POST` or `GET /api/sessions/{session_id}/annotations` |
+| Live stream | `WS /ws/session/{session_id}` |
+| Analytics summary | `GET /api/analytics` |
 
-Those helpers keep telemetry writes normalized and let dashboards share one event contract.
+## Retention
 
-### Decision Graph Derived Output
-
-Session detail and trace-bundle exports now include a first-class `decision_graph` derived output alongside:
-
-- `narrative`
-- `critical_path`
-- `state_changes`
-- `decisions`
-- `degradations`
-- `failures`
-
-The graph is built from existing telemetry, not a separate storage path. It currently creates node kinds for:
-
-- explicit `decision.made` records
-- explicit `state.changed` records
-- explicit `degradation.detected` records
-- failure/error events
-- referenced cause events
-- chosen and rejected decision outcomes
-
-The graph currently emits:
-
-- explicit `caused_by`, `produced`, and `rejected` edges directly from telemetry payloads
-- inferred `produced` and `led_to` edges only when a narrow deterministic rule exists
-
-The implementation intentionally favors correctness over graph density.
-
-### Important CLI Behavior
-
-The `research` command constructs the monitor with:
-
-- `ResearchMonitor(enabled=(monitor or show_timeline) and not quiet)`
-
-That means:
-
-- `--monitor` controls terminal output, not persistence
-- `events.jsonl` and `summary.json` are still written for normal CLI runs
-- tests and direct code paths can disable persistence with `ResearchMonitor(..., persist=False)`
-
-## Session Lifecycle
-
-Each research run gets a session directory under the telemetry base dir:
-
-- `~/.config/inqulume-studio/telemetry/<session_id>/events.jsonl`
-- `~/.config/inqulume-studio/telemetry/<session_id>/summary.json`
-
-The default telemetry path is computed by [`get_default_telemetry_dir()`](../src/cc_deep_research/telemetry/live.py) in [`src/cc_deep_research/telemetry/live.py`](../src/cc_deep_research/telemetry/live.py), which places telemetry next to the main config file.
-
-Session setup and finalization happen in the orchestration runtime:
-
-1. `set_session()` initializes the session directory.
-2. The monitor emits `session.started`.
-3. Phase, agent, tool, and subprocess events accumulate in `events.jsonl`.
-4. `finalize_session()` emits `session.finished` and writes `summary.json`.
-
-### Correlation Fields
-
-Every emitted event can carry:
-
-- `event_id`
-- `parent_event_id`
-- `sequence_number`
-- `timestamp`
-
-These fields support ordered tails, event trees, grouped subprocess streams, and parent/child inspection in dashboards.
-
-## Phase Instrumentation
-
-[`src/cc_deep_research/orchestration/phases.py`](../src/cc_deep_research/orchestration/phases.py) emits both lifecycle and timing records:
-
-- `phase.started`
-- `phase.completed`
-- `phase.failed`
-- `operation.started`
-- `operation.finished`
-
-Nested telemetry emitted during an active phase inherits that phase as its default parent.
-
-## Event Families
-
-These are the main event families currently used by the codebase.
-
-| Family | Event types | Purpose |
-| --- | --- | --- |
-| Session | `session.started`, `session.finished` | Run boundaries and final rollups |
-| Phase | `phase.started`, `phase.completed`, `phase.failed` | Workflow lifecycle |
-| Timed operation | `operation.started`, `operation.finished` | Duration metrics |
-| Agent | `agent.spawned`, `agent.started`, `agent.completed`, `agent.failed`, `agent.timeout`, `agent.event` | Parallel researcher and agent activity |
-| Search | `search.query` | Provider search telemetry |
-| Tool lifecycle | `tool.started`, `tool.completed`, `tool.failed` | Detailed tool-like lifecycle |
-| Tool summary | `tool.call` | Stable rollup record for counts and summaries |
-| Reasoning | `reasoning.summary`, `reflection.point` | Human-readable decisions |
-| Planning and retrieval | `query.variations`, `source.provenance` | Query-family generation and source provenance |
-| Iteration | `analysis.mode_selected`, `follow_up.decision`, `iteration.stop` | Follow-up and stop decisions |
-| LLM usage | `llm.usage` | Token and latency summaries where available |
-| Subprocess | `subprocess.*` | Generic external-process visibility and failures |
-| LLM route | `llm.route_selected`, `llm.route_fallback`, `llm.route_request`, `llm.route_completion` | Route-planning and route-usage analytics |
-| Decision graph inputs | `decision.made`, `state.changed`, `degradation.detected`, failure/error events | Explicit operator decisions and causal state transitions |
-| Content-gen run | `contentgen.run_started`, `contentgen.run_completed`, `contentgen.stage_timing`, `contentgen.release_decision` | P7-T1: Content-gen workflow signals linking outcomes to selection and production decisions |
-| Content-gen operating | `contentgen.cycle_time`, `contentgen.kill_decision`, `contentgen.reuse_recorded` | P7-T3: Operating fitness signals for cycle time, kill rate, and reuse metrics |
-
-## Live Query Path
-
-Live views read directly from session files through helpers in [`src/cc_deep_research/telemetry/live.py`](../src/cc_deep_research/telemetry/live.py):
-
-- `query_live_sessions()`
-- `query_live_session_detail()`
-- `query_live_event_tail()`
-- `query_live_agent_timeline()`
-- `query_live_event_tree()`
-- `query_live_subprocess_streams()`
-- `query_live_llm_route_analytics()`
-
-Key behavior:
-
-- active sessions are detected from `events.jsonl` even before `summary.json` exists
-- live reads are cached by file mtime and size
-- older events missing correlation fields are normalized on read
-- active phase is inferred from the last unmatched `phase.started`
-
-This is what makes in-flight sessions appear immediately in both dashboards.
-
-## Historical Analytics Path
-
-Historical analytics are built by ingesting session files into DuckDB with:
-
-- `inqulume-studio telemetry ingest`
-- `inqulume-studio telemetry dashboard`
-
-`ingest_telemetry_to_duckdb()` creates and refreshes:
-
-- `telemetry_events`
-- `telemetry_sessions`
-
-Ingestion is session-replacement based, so repeated ingest runs are safe.
-
-Historical dashboard views use helpers in [`src/cc_deep_research/telemetry/query.py`](../src/cc_deep_research/telemetry/query.py):
-
-- `query_dashboard_data()`
-- `query_session_detail()`
-- `query_events_by_parent()`
-- `query_event_tree()`
-- `query_llm_route_analytics()`
-- `query_llm_route_summary()`
-
-## Dashboard Consumers
-
-### Streamlit telemetry dashboard
-
-The command:
+Inspect retention before mutating data:
 
 ```bash
-inqulume-studio telemetry dashboard
+curl -sS http://127.0.0.1:8000/api/telemetry/retention
 ```
 
-does three things:
-
-1. resolves the telemetry directory and DuckDB path
-2. runs an ingest pass
-3. launches Streamlit against [`src/cc_deep_research/dashboard_app.py`](../src/cc_deep_research/dashboard_app.py)
-
-This dashboard combines:
-
-- live session overview and detail from JSON files
-- KPI and trends from DuckDB
-
-### FastAPI + Next.js operator console
-
-The command:
+Compaction and policy application are explicit operations:
 
 ```bash
-inqulume-studio dashboard --port 8000
+curl -sS -X POST http://127.0.0.1:8000/api/telemetry/retention/compact
+curl -sS -X POST http://127.0.0.1:8000/api/telemetry/retention/apply
 ```
 
-starts the FastAPI backend that serves:
+An archived session can be restored through
+`POST /api/telemetry/retention/restore/{session_id}`. Back up the data paths
+reported by `GET /api/operations/data-paths` before applying a destructive
+retention policy.
 
-- `GET /api/sessions`
-- `GET /api/sessions/{session_id}`
-- `GET /api/sessions/{session_id}/events`
-- `GET /ws/session/{session_id}`
+## Development checks
 
-The Next.js frontend in [`dashboard/`](../dashboard) consumes those endpoints for the browser-based operator console.
-
-The browser detail response and portable trace bundle now also expose `decision_graph`.
-
-## Decision Graph Limits
-
-The decision graph is an observability surface, not authoritative truth beyond the telemetry emitted for a session.
-
-Current limits:
-
-- sparse graphs usually mean telemetry coverage is missing, not necessarily that no important decision happened
-- inferred edges are intentionally conservative and are visually distinct in the dashboard
-- route planning, iteration control, provider-availability changes, runtime fallbacks, and heuristic mitigations are covered explicitly, but not every orchestration branch is modeled yet
-- same-timestamp proximity alone is not used to invent links across unrelated events
-
-## Relationship to Session Persistence
-
-Telemetry is separate from the saved research-session output.
-
-- telemetry stores observability data under the telemetry directory
-- user-facing session results are stored separately by [`src/cc_deep_research/session_store.py`](../src/cc_deep_research/session_store.py)
-
-That separation lets the project answer both:
-
-- "what happened during execution?"
-- "what research result did we produce?"
-
-## Optional Dependencies
-
-Live telemetry files work with the base install.
-
-The Streamlit dashboard requires the `dashboard` extra:
+Run the Python telemetry and monitoring tests:
 
 ```bash
-pip install "inqulume-studio[dashboard]"
+uv run pytest \
+  tests/test_monitoring.py \
+  tests/test_session_store.py \
+  tests/test_telemetry.py \
+  tests/test_telemetry_query.py
 ```
 
-That extra installs:
+Use `./scripts/preflight` before merging. The full suite also exercises
+session APIs, WebSocket behavior, retention, and dashboard integration.
 
-- `duckdb`
-- `pandas`
-- `streamlit`
+## Boundaries and caveats
 
-The browser-based operator console also requires frontend dependencies under [`dashboard/`](../dashboard):
-
-```bash
-cd dashboard
-npm install
-npm run dev
-```
-
-## Content-Gen Telemetry (Phase 07)
-
-Content-generation runs emit specialized telemetry for measuring workflow speed and operating fitness:
-
-- **Run Metrics**: [`ContentGenRunMetrics`](src/cc_deep_research/content_gen/models/) captures idea score, content type, effort tier, stage-level timing, release state, and cost signals for every content-gen run.
-- **Operating Fitness**: [`OperatingFitnessMetrics`](src/cc_deep_research/content_gen/models/) tracks cycle time, kill rate, reuse rate, and cost per published asset.
-- **Rule Versioning**: [`RuleVersionHistory`](src/cc_deep_research/content_gen/models/) records when strategy guidance changed so operators can trace scoring and packaging behavior to observed results.
-
-Content-gen telemetry is stored separately from research telemetry in:
-
-- `~/.config/inqulume-studio/content_gen_telemetry.yaml` (YAML store for run metrics, operating fitness, and rule versions)
-- `~/.config/inqulume-studio/performance_learnings.yaml` (YAML store for performance learnings and strategy guidance)
-
-The [`ContentGenTelemetryStore`](src/cc_deep_research/content_gen/storage/content_gen_telemetry_store.py) provides:
-
-- `add_run_metrics()`: Record a run's performance signals
-- `compute_operating_fitness()`: Derive operating fitness metrics from run history
-- `record_rule_change()`: Version rule changes when learnings are applied
-- `get_fast_cycles()`, `get_top_performers()`: Query runs by performance
-
-See [`docs/phases/phase-07-performance-and-rule-updates.md`](phases/phase-07-performance-and-rule-updates.md) for the full Phase 07 specification.
-
-## Adding New Telemetry
-
-When adding telemetry:
-
-1. Emit through `ResearchMonitor`, not by writing files directly.
-2. Prefer stable `event_type` values and keep variable data inside `metadata`.
-3. Reuse existing categories such as `phase`, `agent`, `tool`, `search`, `llm`, or `reasoning`.
-4. Preserve parent/child correlation by emitting inside the active phase or by passing `parent_event_id`.
-5. If the event should appear in dashboards or analytics, update the relevant helper in [`src/cc_deep_research/telemetry/live.py`](../src/cc_deep_research/telemetry/live.py), [`src/cc_deep_research/telemetry/query.py`](../src/cc_deep_research/telemetry/query.py), or the compatibility exports in [`src/cc_deep_research/telemetry/__init__.py`](../src/cc_deep_research/telemetry/__init__.py).
-6. Add tests in [`tests/test_monitoring.py`](../tests/test_monitoring.py) or [`tests/test_telemetry.py`](../tests/test_telemetry.py).
-
-## Known Limitations
-
-- There is no top-level config flag to disable telemetry persistence for normal CLI runs.
-- Historical analytics only cover sessions that have a `summary.json`.
-- `summary.json.created_at` reflects finalization time, not true session start time.
-- Some routed fallback paths may still report zero tokens when precise token accounting is unavailable.
+- Event payloads are application records and may contain research text. Treat
+  telemetry directories as sensitive data.
+- The live router is not a durable queue and should not become one.
+- DuckDB is an analysis layer over persisted events, not the write path.
+- New event types must remain backward-compatible with saved sessions, or ship
+  with an explicit migration and regression fixtures.
