@@ -1,813 +1,91 @@
-# Research Workflow Design
+# Research Workflow
 
-This document explains how the research workflow in `inqulume-studio` is designed, how the runtime moves through each phase, and which modules own each responsibility.
+The research workflow is a backend service boundary shared by the dashboard,
+API routes, tests, and future automation. The removed Click CLI is no longer an
+execution owner.
 
-## Purpose
-
-The system is designed to turn a single user query into a persisted research session with:
-
-- query planning
-- multi-query source collection
-- optional concurrent source collection
-- source deduplication and content enrichment
-- AI-assisted synthesis
-- quality validation
-- iterative follow-up search
-- final report generation
-- telemetry and session persistence
-
-At a high level, the workflow is a staged local pipeline managed by the orchestrator.
-
-## Primary Runtime Path
-
-The main runtime path for a CLI research run is:
-
-1. CLI parses flags and loads configuration.
-2. CLI builds a `TeamResearchOrchestrator`.
-3. Orchestrator initializes local workflow components and optional concurrent source collection.
-4. Lead agent derives a strategy from the query and depth.
-5. Query expander produces search variations when depth requires it.
-6. Source collector or concurrent local collection tasks gather results from providers.
-7. Results are deduplicated and top-ranked sources are enriched with fetched page content.
-8. Analyzer produces findings, themes, cross-reference output, and gaps.
-9. Deep mode adds a second analysis layer with multi-pass synthesis.
-10. Validator scores quality and generates follow-up queries when the run is weak.
-11. Orchestrator optionally performs iterative follow-up collection and reruns analysis.
-12. Orchestrator returns a `ResearchSession`.
-13. CLI persists the session and renders Markdown or JSON output.
-
-## Execution Diagram
+## Request path
 
 ```mermaid
 flowchart TD
-    A["CLI research command"] --> B["load_config()"]
-    B --> C["TeamResearchOrchestrator.execute_research()"]
-    C --> D["Initialize local workflow components and optional concurrent source collection"]
-    D --> E["ResearchLeadAgent.analyze_query()"]
-    E --> F["QueryExpanderAgent.expand_query()"]
-    F --> G{"Concurrent source collection?"}
-    G -- "No" --> H["SourceCollectorAgent.collect_*()"]
-    G -- "Yes" --> I["ResearcherAgent.execute_multiple_tasks()"]
-    H --> J["Aggregate + deduplicate results"]
-    I --> J
-    J --> K["Fetch full content for top sources"]
-    K --> L["AnalyzerAgent.analyze_sources()"]
-    L --> M{"Deep mode?"}
-    M -- "Yes" --> N["DeepAnalyzerAgent.deep_analyze()"]
-    M -- "No" --> O["ValidatorAgent.validate_research()"]
-    N --> O
-    O --> P{"Needs follow-up?"}
-    P -- "Yes" --> Q["Follow-up source collection"]
-    Q --> K
-    P -- "No" --> R["Build ResearchSession"]
-    R --> S["SessionStore.save_session()"]
-    R --> T["ReportGenerator / ReporterAgent"]
+    A["Dashboard"] -->|POST /api/research-runs| B["research_run_routes"]
+    B --> C["In-process job registry"]
+    C --> D["ResearchRunService"]
+    D --> E["Resolve config, theme, prompts"]
+    E --> F{"workflow"}
+    F -->|team| G["TeamResearchOrchestrator"]
+    F -->|planner| H["PlannerResearchOrchestrator"]
+    G --> I["ResearchSession"]
+    H --> I
+    I --> J["Report and artifacts"]
+    I --> K["Persisted telemetry"]
 ```
 
-## Workflow Owner
-
-The stable public workflow entry point is [`src/cc_deep_research/orchestrator.py`](../src/cc_deep_research/orchestrator.py), but most phase execution internals now live under [`src/cc_deep_research/orchestration/`](../src/cc_deep_research/orchestration).
-
-`TeamResearchOrchestrator.execute_research()` remains the public facade for the pipeline. It delegates to orchestration services that handle:
-
-- phase ordering
-- monitor events
-- runtime initialization for local workflow components
-- sequential versus concurrent source collection
-- iterative follow-up passes
-- session assembly
-- cleanup
-
-## Entry Point and User Controls
-
-The CLI bootstrap entry point is [`src/cc_deep_research/cli/main.py`](../src/cc_deep_research/cli/main.py).
-
-Command handlers are split by concern under [`src/cc_deep_research/cli/`](../src/cc_deep_research/cli):
-
-- research execution: [`src/cc_deep_research/cli/research.py`](../src/cc_deep_research/cli/research.py)
-- config commands: [`src/cc_deep_research/cli/config.py`](../src/cc_deep_research/cli/config.py)
-- telemetry commands: [`src/cc_deep_research/cli/telemetry.py`](../src/cc_deep_research/cli/telemetry.py)
-- real-time dashboard backend command: [`src/cc_deep_research/cli/dashboard.py`](../src/cc_deep_research/cli/dashboard.py)
-- saved-session commands: [`src/cc_deep_research/cli/session.py`](../src/cc_deep_research/cli/session.py)
-
-The `research` command controls the workflow through flags such as:
-
-- `--depth`
-- `--sources`
-- `--no-cross-ref`
-- `--tavily-only`
-- `--claude-only`
-- `--no-team`
-- `--concurrent-source-collection`
-- `--max-concurrent-sources`
-- `--monitor`
-- `--show-timeline`
-- `--pdf`
-
-Important implementation detail:
-
-- `--no-team` forces sequential source collection. It does not switch to a separate non-agent pipeline or disable the local specialist components.
-- Parallel behavior is driven by `concurrent_source_collection` and `config.search_team.concurrent_source_collection`.
-
-## Configuration That Shapes the Workflow
-
-The workflow is parameterized by the config package rooted at [`src/cc_deep_research/config/`](../src/cc_deep_research/config).
-
-Post-refactor responsibilities are split as:
-
-- schema models and settings: [`src/cc_deep_research/config/schema.py`](../src/cc_deep_research/config/schema.py)
-- file loading and persistence: [`src/cc_deep_research/config/io.py`](../src/cc_deep_research/config/io.py)
-- defaults and path helpers: [`src/cc_deep_research/config/defaults.py`](../src/cc_deep_research/config/defaults.py)
-
-The most relevant settings are:
-
-- `search.providers`: search backends to use
-- `research.default_depth`: default depth mode
-- `research.min_sources`: target source count by depth
-- `research.enable_iterative_search`: whether follow-up loops run
-- `research.max_iterations`: cap on iterative passes
-- `research.deep_analysis_passes`: deep analysis intensity
-- `research.top_sources_for_content`: how many sources get full-page enrichment
-- `research.ai_integration_method`: `heuristic`, `api`, or `hybrid`
-- routed LLM analysis is configured through `llm.route_defaults` and provider-specific `llm.*` settings
-- `search_team.concurrent_source_collection`: default concurrent collection mode
-- `search_team.max_concurrent_sources`: maximum concurrent source collection tasks
-- `search_team.researcher_timeout`: timeout per parallel local collection task
-
-## Data Model
-
-The core runtime models live in the package rooted at [`src/cc_deep_research/models/`](../src/cc_deep_research/models).
-
-The main objects are:
-
-- `ResearchDepth`: `quick`, `standard`, `deep`
-- `SearchOptions`: provider request controls
-- `SearchResultItem`: normalized source object
-- `SearchResult`: one provider response for one query
-- `ResearchSession`: final session artifact returned by the orchestrator
-
-`ResearchSession` is the durable product of a run. It carries:
-
-- source list
-- timing
-- original query
-- depth
-- metadata such as strategy, analysis, validation, iteration history, and provider list
-
-## Supporting Boundaries
-
-Telemetry and dashboard code now have explicit module boundaries:
-
-- live JSONL session readers: [`src/cc_deep_research/telemetry/live.py`](../src/cc_deep_research/telemetry/live.py)
-- DuckDB ingestion: [`src/cc_deep_research/telemetry/ingest.py`](../src/cc_deep_research/telemetry/ingest.py)
-- DuckDB analytics queries: [`src/cc_deep_research/telemetry/query.py`](../src/cc_deep_research/telemetry/query.py)
-- telemetry compatibility exports: [`src/cc_deep_research/telemetry/__init__.py`](../src/cc_deep_research/telemetry/__init__.py)
-- real-time monitoring backend: [`src/cc_deep_research/web_server.py`](../src/cc_deep_research/web_server.py) and [`src/cc_deep_research/event_router.py`](../src/cc_deep_research/event_router.py)
-- dashboard runtime config and network clients: [`dashboard/src/lib/runtime-config.ts`](../dashboard/src/lib/runtime-config.ts), [`dashboard/src/lib/api.ts`](../dashboard/src/lib/api.ts), and [`dashboard/src/lib/websocket.ts`](../dashboard/src/lib/websocket.ts)
-
-## Phase-by-Phase Design
-
-### 1. Team and Agent Initialization
-
-Initialization happens in `TeamResearchOrchestrator._initialize_team()`.
-
-This phase creates:
-
-- a local registry of specialized agents
-- optional concurrent source collection settings
-
-The actual agent instances used by the workflow are local Python objects:
-
-- `ResearchLeadAgent`
-- `SourceCollectorAgent`
-- `QueryExpanderAgent`
-- `AnalyzerAgent`
-- `DeepAnalyzerAgent`
-- `ReporterAgent`
-- `ValidatorAgent`
-
-Design intent:
-
-- keep the orchestration surface stable
-- allow future replacement of local agent calls with real external agent runtimes
-- isolate each workflow concern into a narrow component
-
-Current reality:
-
-- the local Python agent objects perform the real work
-- concurrent source collection uses asyncio task fan-out inside one process
-
-### 2. Strategy Analysis
-
-Strategy analysis is handled by [`src/cc_deep_research/agents/research_lead.py`](../src/cc_deep_research/agents/research_lead.py).
-
-The lead agent:
-
-- estimates query complexity
-- builds a lightweight query profile
-- detects intent such as comparison or explanatory framing
-- detects time sensitivity
-- derives a strategy from the requested depth
-
-The strategy includes:
-
-- number of query variations
-- source expectations
-- whether quality scoring is enabled
-- task list
-- follow-up bias
-- key terms
-
-Design tradeoff:
-
-- planning is intentionally heuristic and cheap
-- the system prefers deterministic setup over spending an LLM call before search begins
-
-### 3. Query Expansion
-
-Query expansion is handled by [`src/cc_deep_research/agents/query_expander.py`](../src/cc_deep_research/agents/query_expander.py).
-
-Expansion is depth-sensitive:
-
-- `quick`: typically keep only the original query
-- `standard`: generate a few variants
-- `deep`: generate broader coverage variants
-
-The expander currently uses heuristics rather than semantic generation. It:
-
-- creates simple rephrasings
-- adds context-oriented variants
-- adds time-sensitive variants when needed
-- validates relevance by keyword overlap
-
-Design intent:
-
-- widen coverage without losing query intent
-- provide the collection layer with multiple retrieval angles
-
-Current limitation:
-
-- the expansion logic is simple and can produce repetitive or low-value variants for some topics
-
-### 4. Source Collection
-
-Source collection is handled by [`src/cc_deep_research/agents/source_collector.py`](../src/cc_deep_research/agents/source_collector.py).
-
-The collector:
-
-- resolves configured providers
-- initializes provider clients
-- issues searches for one or many queries
-- aggregates provider results
-- tolerates partial provider failure
-
-Provider behavior today:
-
-- Tavily is implemented
-- Claude is declared in config and CLI flags but is not implemented as a real provider
-
-The Tavily provider lives in [`src/cc_deep_research/providers/tavily.py`](../src/cc_deep_research/providers/tavily.py) and returns normalized `SearchResultItem` objects with:
-
-- URL
-- title
-- snippet
-- raw content when provided by Tavily
-- score
-- source metadata such as published date
-
-### 5. Aggregation and Deduplication
-
-Aggregation is handled by [`src/cc_deep_research/aggregation.py`](../src/cc_deep_research/aggregation.py).
-
-The aggregator:
-
-- merges results from multiple queries or providers
-- normalizes URLs
-- removes duplicates
-- keeps the highest-scoring duplicate
-- sorts by score descending
-
-This stage is critical because the workflow often fans out query variants and then collapses them back into one ranked source set before analysis.
-
-### 6. Content Enrichment
-
-After collection, the orchestrator fetches full page content for top-ranked sources in `_fetch_content_for_top_sources()`.
-
-This stage exists because provider snippets and raw content are often incomplete. The enrichment step:
-
-- selects the highest-scoring sources
-- skips sources that already have substantial content
-- fetches page content through the `web_reader` MCP integration
-- caches content by URL for reuse across iterations
-
-Design intent:
-
-- improve downstream AI analysis quality
-- spend enrichment effort only on likely high-value sources
-
-Operational note:
-
-- if `web_reader` is unavailable, the run continues with provider content only
-
-### 7. Analysis
-
-Primary analysis is handled by [`src/cc_deep_research/agents/analyzer.py`](../src/cc_deep_research/agents/analyzer.py) with support from [`src/cc_deep_research/agents/ai_analysis_service.py`](../src/cc_deep_research/agents/ai_analysis_service.py).
-
-The analyzer:
-
-- cleans noisy webpage content
-- chooses AI-powered analysis when enough content is available
-- falls back to basic analysis when content is shallow
-- extracts themes
-- performs cross-reference analysis
-- identifies gaps
-- synthesizes key findings
-
-The AI analysis service is designed with multiple modes:
-
-- `api`: require a configured routed LLM
-- `heuristic`: use rule-based or lightweight logic only
-- `hybrid`: prefer a routed LLM, fall back to heuristics
-
-This split is a design decision to keep the workflow usable when:
-
-- no routed LLM is available
-- cost needs to be controlled
-- content is too sparse for a strong semantic pass
-
-### 8. Deep Analysis
-
-Deep mode adds `DeepAnalyzerAgent`, implemented in [`src/cc_deep_research/agents/deep_analyzer.py`](../src/cc_deep_research/agents/deep_analyzer.py).
-
-This pass is designed as a second analysis layer, not just "more sources".
-
-It performs three conceptual passes:
-
-1. theme and pattern extraction
-2. cross-reference and disagreement analysis
-3. synthesis of implications and broader meaning
-
-Design intent:
-
-- separate first-pass extraction from deeper synthesis
-- make deep mode qualitatively different from standard mode
-
-Current implementation:
-
-- still relies on the same AI analysis service underneath
-- adds broader thematic coverage and more explicit implication synthesis
-
-### 9. Validation
-
-Validation is handled by [`src/cc_deep_research/agents/validator.py`](../src/cc_deep_research/agents/validator.py).
-
-The validator scores whether the run is usable by checking:
-
-- minimum source count
-- domain diversity
-- content depth
-- analysis gaps
-- citation completeness
-
-It returns:
-
-- `is_valid`
-- `issues`
-- `warnings`
-- `recommendations`
-- `quality_score`
-- `follow_up_queries`
-- `needs_follow_up`
-
-This is the key bridge between analysis and iteration. The validator does not just score the run; it proposes the next retrieval actions.
-
-### 10. Iterative Follow-Up Search
-
-The orchestrator’s `_run_analysis_workflow()` turns the pipeline into a loop instead of a single pass.
-
-Loop behavior:
-
-1. run analysis
-2. run validation
-3. collect follow-up queries from validation or gap output
-4. execute another retrieval pass
-5. merge new and old sources
-6. repeat until no new value is found or iteration limit is reached
-
-This is one of the most important design choices in the project. The system is built to improve a weak first pass instead of assuming the initial retrieval set is sufficient.
-
-Stop conditions include:
-
-- iterative search disabled
-- max iterations reached
-- validator does not request follow-up
-- no follow-up queries remain after deduplication
-- follow-up collection adds no new unique sources
-
-Iteration history is stored in `session.metadata["iteration_history"]`.
-
-### 11. Parallel Research Mode
-
-Concurrent collection is implemented inside the orchestrator and [`src/cc_deep_research/agents/researcher.py`](../src/cc_deep_research/agents/researcher.py).
-
-In concurrent source collection mode:
-
-- the orchestrator decomposes query variations into task dictionaries
-- a `ResearcherAgent` executes those tasks concurrently with `asyncio.gather`
-- results are aggregated and deduplicated afterward
-
-Design intent:
-
-- reduce wall-clock time for multi-query retrieval
-- make deep runs more practical
-- preserve a future path to actual multi-agent execution
-
-Current implementation detail:
-
-- this is concurrent task execution inside one process, not true distributed or spawned external agents
-
-That distinction matters when changing the architecture. The runtime is specialized local components with optional concurrent retrieval.
-
-### 12. Report Generation
-
-Reporting is handled by [`src/cc_deep_research/reporting.py`](../src/cc_deep_research/reporting.py) and [`src/cc_deep_research/agents/reporter.py`](../src/cc_deep_research/agents/reporter.py).
-
-The reporter generates:
-
-- Markdown reports for humans
-- JSON reports for downstream tooling
-
-Report sections are designed to include:
-
-- executive summary
-- methodology
-- key findings
-- detailed analysis
-- evidence quality analysis
-- cross-reference analysis
-- safety and contraindications
-- research gaps and limitations
-- sources
-- research metadata
-
-The reporting layer depends on `session.metadata["analysis"]` being the canonical analysis artifact from the orchestrator.
-
-`ResearchSession.metadata` is a stable workflow contract, not an ad hoc bag of fields. Every saved session includes the same top-level keys:
-
-- `strategy`: orchestration strategy output
-- `analysis`: canonical analysis payload for reporting and UI
-- `validation`: validator output, or `{}` when no validation payload exists
-- `iteration_history`: iterative follow-up search history
-- `providers`: configured providers, available providers, warnings, and an explicit provider `status`
-- `execution`: parallel-mode intent, whether parallel collection actually ran, and any degraded-run reasons
-- `deep_analysis`: whether deep analysis was requested, whether it completed, and explicit degraded/not-requested state
-
-## Session Metadata Contract
-
-This section documents the exact shape of `ResearchSession.metadata` produced by the research pipeline. This contract is stable and applies to all depth modes (quick, standard, deep).
-
-### Top-Level Structure
-
-```python
-SessionMetadataContract = {
-    "strategy": dict,           # Required: StrategyResult output
-    "analysis": dict,           # Required: AnalysisResult output
-    "validation": dict,         # Optional: ValidationResult output ({} if not available)
-    "iteration_history": list,  # Required: List of iteration records (can be empty)
-    "providers": {...},         # Required: Provider resolution metadata
-    "execution": {...},         # Required: Execution mode and degradation info
-    "deep_analysis": {...},      # Required: Deep analysis status
-    "llm_routes": {...},         # Required: LLM routing and usage summary
-    "prompts": {...},            # Required: Prompt configuration metadata
-}
+The route returns `202 Accepted` immediately. Execution runs in a worker
+thread, and status is available from `GET /api/research-runs/{run_id}`.
+
+## Service ownership
+
+| Area | Owner |
+| --- | --- |
+| HTTP request/status/cancellation | `web_server_routes/research_run_routes.py` |
+| Reusable execution contract | `research_runs/service.py` |
+| Request models and lifecycle states | `research_runs/models.py` |
+| Request-specific config overrides | `research_runs/options.py` |
+| Report and artifact materialization | `research_runs/output.py` |
+| Team workflow | `orchestrator.py` and `orchestration/` |
+| Planner workflow | `orchestration/planner_orchestrator.py` |
+| Events and lifecycle telemetry | `monitoring.py` |
+| Session persistence | `session_store.py` |
+
+Keep transport behavior in the routes and research behavior in
+`ResearchRunService`. A new caller should construct a `ResearchRunRequest` and
+call the service rather than duplicating orchestration setup.
+
+## Execution phases
+
+The exact agent plan varies by workflow and detected theme, but the service
+contract is stable:
+
+1. load and copy configuration;
+2. detect or apply the research theme;
+3. apply request and theme overrides;
+4. construct the prompt registry;
+5. choose the team or planner orchestrator;
+6. start real-time routing when requested;
+7. execute research with cancellation and phase hooks;
+8. finalize monitor state;
+9. materialize the report and artifacts;
+10. persist session output for later retrieval.
+
+## Supported invocation
+
+Use the dashboard, or call the API:
+
+```bash
+curl -sS http://127.0.0.1:8000/api/research-runs \
+  -H 'content-type: application/json' \
+  -d '{
+    "query": "What evidence supports local-first AI tooling?",
+    "depth": "quick",
+    "workflow": "team",
+    "realtime_enabled": true
+  }'
 ```
 
-### Field Descriptions
-
-#### `strategy` (Required)
-Type: `dict` - Output from `ResearchLeadAgent.analyze_query()`
-
-Contains the research strategy derived from the query and depth:
-- `query_profile`: Estimated query complexity and characteristics
-- `intent`: Detected intent (comparison, explanatory, etc.)
-- `estimated_sources`: Target source count
-- `task_list`: Planned task breakdown
-- `follow_up_bias`: Bias toward or against iterative search
-
-#### `analysis` (Required)
-Type: `dict` - Output from `AnalyzerAgent` (and optionally `DeepAnalyzerAgent`)
-
-Contains findings from source analysis:
-- `findings`: Key findings extracted from sources
-- `themes`: Major themes identified
-- `gaps`: Research gaps identified
-- `cross_references`: Cross-reference analysis output
-- `source_provenance`: Summary of which queries returned which sources
-- `analysis_method`: Method used ("ai", "heuristic", "hybrid", etc.)
-- `deep_analysis_complete`: Boolean indicating if deep analysis succeeded
-
-#### `validation` (Optional)
-Type: `dict` - Output from `ValidatorAgent.validate_research()`
-
-May be empty `{}` if validation was not run or failed. When present:
-- `is_valid`: Boolean quality gate result
-- `quality_score`: Numeric quality score
-- `issues`: List of identified issues
-- `warnings`: List of warnings
-- `recommendations`: Recommendations for improvement
-- `follow_up_queries`: Suggested follow-up queries
-- `needs_follow_up`: Boolean indicating if iteration is needed
-
-#### `iteration_history` (Required)
-Type: `list[dict]` - Records from iterative follow-up search
-
-Each record represents one iteration cycle:
-```python
-{
-    "iteration": int,           # Iteration number (1-indexed)
-    "query": str,                # Original query
-    "sources_before": int,       # Source count before iteration
-    "sources_after": int,        # Source count after iteration
-    "new_sources": int,          # New unique sources added
-    "follow_up_queries": list,    # Queries used for follow-up
-    "validation": dict,           # Validation result at this iteration
-    "timestamp": str,            # ISO timestamp
-}
-```
-
-#### `providers` (Required)
-Type: `SessionProvidersMetadata`
-
-```python
-{
-    "configured": list[str],     # Required: Providers configured in settings
-    "available": list[str],      # Required: Providers that resolved successfully
-    "warnings": list[str],        # Required: Warnings from provider resolution
-    "status": ProviderStatus,    # Required: "ready" | "degraded" | "unavailable"
-}
-```
-
-#### `execution` (Required)
-Type: `SessionExecutionMetadata`
-
-```python
-{
-    "parallel_requested": bool,      # Required: Whether concurrent source collection mode was requested
-    "parallel_used": bool,            # Required: Whether parallel collection ran
-    "degraded": bool,                 # Required: Whether any degradation occurred
-    "degraded_reasons": list[str],    # Required: List of degradation reasons
-}
-```
-
-#### `deep_analysis` (Required)
-Type: `SessionDeepAnalysisMetadata`
-
-```python
-{
-    "requested": bool,               # Required: Whether deep mode was requested
-    "completed": bool,               # Required: Whether deep analysis completed
-    "status": DeepAnalysisStatus,    # Required: "not_requested" | "completed" | "degraded"
-    "reason": str | None,            # Optional: Reason if degraded or not requested
-}
-```
-
-#### `llm_routes` (Required)
-Type: `dict` - Summary of LLM routing decisions
-
-```python
-{
-    "planned_routes": {               # Maps agent_id -> route config
-        "<agent_id>": {
-            "transport": str,        # e.g., "anthropic_api", "openrouter_api"
-            "provider": str,         # e.g., "claude", "openrouter"
-            "model": str,            # Model identifier
-            "source": str,           # "config" | "planner"
-        }
-    },
-    "actual_routes": {...},          # Similar structure, reflects actual usage
-    "usage_stats": {                 # Usage per agent:transport key
-        "<agent_id>:<transport>": {
-            "request_count": int,
-            "total_tokens": int,
-            "prompt_tokens": int,
-            "completion_tokens": int,
-            "error_count": int,
-            "avg_latency_ms": int,
-        }
-    },
-    "fallback_events": [...],        # List of fallback events
-    "fallback_count": int,           # Total fallback events
-}
-```
-
-#### `prompts` (Required)
-Type: `SessionPromptMetadata`
-
-```python
-{
-    "overrides_applied": bool,                    # Whether any prompt overrides were used
-    "effective_overrides": {                      # Maps agent_id -> override config
-        "<agent_id>": {
-            "system_prompt": str | None,
-            "prompt_prefix": str | None,
-        }
-    },
-    "default_prompts_used": list[str],            # List of agents using default prompts
-}
-```
-
-### Required vs Optional Fields
-
-| Field | Required | Default if Missing |
-|-------|----------|-------------------|
-| `strategy` | Yes | `{}` (should not be empty for valid session) |
-| `analysis` | Yes | `{}` (should not be empty for valid session) |
-| `validation` | No | `{}` |
-| `iteration_history` | Yes | `[]` |
-| `providers` | Yes | All fields default to empty/UNAVAILABLE |
-| `execution` | Yes | All fields default to `False`/`[]` |
-| `deep_analysis` | Yes | All fields default to not_requested |
-| `llm_routes` | Yes | All nested dicts default to `{}` |
-| `prompts` | Yes | All fields default to `False`/empty |
-
-### Source Provenance Sub-Structure
-
-The `analysis.source_provenance` field (added during metadata build) provides a compact summary:
-
-```python
-{
-    "sources_with_provenance": int,   # Count of sources with query tracking
-    "multi_query_sources": int,       # Sources returned by multiple queries
-    "queries": list[str],             # Unique queries used
-    "families": list[str],            # Unique query families used
-    "family_counts": {                # Count per family
-        "<family_name>": int,
-    }
-}
-```
-
-### Degraded States
-
-Degraded states are explicit, not inferred:
-
-1. **Provider degradation**: `providers.status != "ready"` indicates reduced functionality
-2. **Execution degradation**: `execution.degraded == True` when `execution.degraded_reasons` is non-empty
-3. **Deep analysis degradation**: `deep_analysis.status == "degraded"` when deep mode was requested but did not complete fully
-
-This contract applies to quick, standard, and deep runs. The normalization logic in `models/session.py` ensures backward compatibility with legacy session formats.
-
-### 13. Persistence and Telemetry
-
-Persistence is handled by [`src/cc_deep_research/session_store.py`](../src/cc_deep_research/session_store.py).
-
-Each run is saved as a JSON session file containing:
-
-- query
-- depth
-- timestamps
-- searches
-- sources
-- metadata
-
-Telemetry and monitor output are handled through `ResearchMonitor`, which the orchestrator calls at each phase boundary and during provider execution.
-
-Design intent:
-
-- make runs inspectable after completion
-- support dashboards and performance analysis
-- preserve reasoning summaries for debugging
-
-## Designed Roles vs Current Responsibilities
-
-The project uses agent-oriented naming, but the current architecture is mixed. The table below is the important mental model for contributors.
-
-| Layer | Designed role | Current implementation status |
-| --- | --- | --- |
-| `TeamResearchOrchestrator` | End-to-end workflow owner | Real and authoritative |
-| `ResearchLeadAgent` | Strategy and planning | Real, heuristic |
-| `QueryExpanderAgent` | Query diversification | Real, heuristic |
-| `SourceCollectorAgent` | Provider orchestration | Real |
-| `AnalyzerAgent` | Main synthesis | Real |
-| `DeepAnalyzerAgent` | Multi-pass deep synthesis | Real |
-| `ValidatorAgent` | Quality gate and loop trigger | Real |
-| `ReporterAgent` | Final report assembly | Real |
-
-## Design Principles Visible in the Code
-
-Several design principles recur across the workflow:
-
-### Stage Separation
-
-Each major concern has its own component. Planning, collection, synthesis, validation, and reporting are not collapsed into one large class.
-
-### Graceful Degradation
-
-The system prefers partial success over hard failure:
-
-- missing providers surface warnings
-- failed provider calls do not necessarily fail the run
-- missing `web_reader` disables enrichment, not the session
-- AI analysis can fall back to heuristic logic
-
-### Quality-Driven Iteration
-
-Validation is not terminal bookkeeping. It actively steers more retrieval when the run lacks source count, diversity, depth, or citation coverage.
-
-### Retrieval Before Heavy Synthesis
-
-The workflow spends effort building a stronger source set before report generation. This is the right shape for a research tool because weak retrieval quality cannot be repaired by better formatting.
-
-### Observability
-
-Telemetry hooks are embedded in provider calls, phase transitions, and researcher events so that a run can be debugged after the fact.
-
-## Known Architectural Gaps
-
-Contributors should understand these current gaps before extending the workflow:
-
-### Team abstractions are ahead of execution reality
-
-The repository includes team and coordination primitives, but the orchestrator still directly invokes local Python objects. Do not assume a true message-driven multi-agent runtime exists yet.
-
-### Provider support is incomplete
-
-`claude` can be selected in configuration, but no real Claude search provider is implemented. Source collection is effectively Tavily-centric today.
-
-### Concurrent source collection mode is narrower than it sounds
-
-Concurrent source collection mode currently means concurrent execution of retrieval tasks in one runtime. It is not external worker orchestration.
-
-### Report generation is downstream-only
-
-The reporter does not decide what to research next. All loop control belongs in the orchestrator and validator.
-
-### Strategy and expansion are heuristic
-
-The up-front planning path is intentionally lightweight. If richer planning is added, it should preserve determinism, cost controls, and testability.
-
-## Extension Points
-
-The safest places to extend the workflow are:
-
-### Add a provider
-
-- implement `SearchProvider`
-- register it in collector initialization
-- ensure results normalize to `SearchResultItem`
-- keep aggregation and validation unchanged
-
-### Improve planning
-
-- enhance `ResearchLeadAgent.analyze_query()`
-- preserve the strategy contract expected by the orchestrator
-
-### Improve query expansion
-
-- replace heuristics in `QueryExpanderAgent`
-- keep relevance filtering and deterministic limits
-
-### Improve analysis quality
-
-- extend `AIAnalysisService`
-- avoid changing report contracts unless necessary
-
-### Improve validation
-
-- add stronger quality metrics
-- keep `follow_up_queries` and `needs_follow_up` semantics stable
-
-### Keep orchestration explicit
-
-- keep the orchestrator as the coordination boundary
-- migrate one phase at a time rather than replacing the whole pipeline at once
-
-## Contributor Guidance
-
-When changing the workflow:
-
-1. Start with [`src/cc_deep_research/orchestrator.py`](../src/cc_deep_research/orchestrator.py) and the relevant module in [`src/cc_deep_research/orchestration/`](../src/cc_deep_research/orchestration) because phase order now spans the public facade and split orchestration services.
-2. Treat `ResearchSession.metadata` as part of the workflow API.
-3. Preserve graceful fallback behavior.
-4. Keep iterative search semantics intact unless intentionally redesigning them.
-5. Be explicit about whether a change affects sequential mode, concurrent source collection, or both.
-6. Update tests around follow-up query generation, iteration stopping conditions, and output metadata when behavior changes.
-
-## Relevant Files
-
-- [`src/cc_deep_research/cli/main.py`](../src/cc_deep_research/cli/main.py)
-- [`src/cc_deep_research/orchestrator.py`](../src/cc_deep_research/orchestrator.py)
-- [`src/cc_deep_research/orchestration/`](../src/cc_deep_research/orchestration)
-- [`src/cc_deep_research/config/`](../src/cc_deep_research/config)
-- [`src/cc_deep_research/models/`](../src/cc_deep_research/models)
-- [`src/cc_deep_research/aggregation.py`](../src/cc_deep_research/aggregation.py)
-- [`src/cc_deep_research/agents/research_lead.py`](../src/cc_deep_research/agents/research_lead.py)
-- [`src/cc_deep_research/agents/query_expander.py`](../src/cc_deep_research/agents/query_expander.py)
-- [`src/cc_deep_research/agents/source_collector.py`](../src/cc_deep_research/agents/source_collector.py)
-- [`src/cc_deep_research/agents/researcher.py`](../src/cc_deep_research/agents/researcher.py)
-- [`src/cc_deep_research/agents/analyzer.py`](../src/cc_deep_research/agents/analyzer.py)
-- [`src/cc_deep_research/agents/deep_analyzer.py`](../src/cc_deep_research/agents/deep_analyzer.py)
-- [`src/cc_deep_research/agents/validator.py`](../src/cc_deep_research/agents/validator.py)
-- [`src/cc_deep_research/agents/reporter.py`](../src/cc_deep_research/agents/reporter.py)
-- [`src/cc_deep_research/coordination/agent_pool.py`](../src/cc_deep_research/coordination/agent_pool.py)
-- [`src/cc_deep_research/coordination/message_bus.py`](../src/cc_deep_research/coordination/message_bus.py)
-- [`src/cc_deep_research/session_store.py`](../src/cc_deep_research/session_store.py)
+Use the returned `run_id` to poll status or request cancellation. Once
+`session_id` is present, read events, reports, and artifacts through
+`/api/sessions/{session_id}/...`.
+
+## Extension rules
+
+- Add new request options to the typed models and central override layer.
+- Keep provider calls and research policy out of FastAPI route functions.
+- Emit lifecycle events through `ResearchMonitor`; do not write ad hoc
+  dashboard-only state.
+- Preserve cooperative cancellation checks around expensive phases.
+- Test the reusable service separately from the HTTP adapter.
+- Treat saved sessions as a compatibility boundary.
+
+For the event-level interaction trace, see
+[`RESEARCH_WORKFLOW_AGENT_INTERACTIONS.md`](RESEARCH_WORKFLOW_AGENT_INTERACTIONS.md).

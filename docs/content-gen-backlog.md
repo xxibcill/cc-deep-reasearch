@@ -189,11 +189,11 @@ Relevant code:
 - stage implementation: [`src/cc_deep_research/content_gen/stages/backlog.py`](../src/cc_deep_research/content_gen/stages/backlog.py)
 - service logic: [`src/cc_deep_research/content_gen/backlog_service.py`](../src/cc_deep_research/content_gen/backlog_service.py)
 
-### 2. CLI backlog build
+### 2. API or dashboard pipeline start
 
-`inqulume-studio content-gen backlog build --theme "..."`
-
-This command now generates ideas and persists them into the managed backlog store. If `-o/--output` is provided, it also writes a JSON export of the stage result.
+Starting a content pipeline from the dashboard or
+`POST /api/content-gen/pipelines` runs backlog generation as stage 2. Generated
+items are merged into the managed backlog store by the stage service.
 
 ### 3. Manual creation
 
@@ -242,26 +242,7 @@ That queue exists so the system can remember the current winner and one plausibl
 
 ## How Users Manage The Backlog
 
-There are three operator surfaces: CLI, dashboard/API, and chat-assisted editing.
-
-### CLI
-
-The CLI is generation- and scoring-oriented:
-
-```bash
-inqulume-studio content-gen backlog build --theme "pricing psychology" --count 20
-inqulume-studio content-gen backlog score --from-file backlog.json --select-top 5
-```
-
-Important CLI behavior:
-
-- `backlog build` persists generated items into the managed backlog file
-- `backlog score` does not read the persistent backlog automatically
-- `backlog score` expects explicit items, typically from `--from-file`
-- before scoring, the CLI upserts those items into the backlog store
-- after scoring, the CLI applies score metadata back onto the persistent backlog
-
-So the CLI is good for structured generation and ranking, but not for general CRUD management.
+There are two operator surfaces: dashboard/API and chat-assisted editing.
 
 ### Dashboard and API
 

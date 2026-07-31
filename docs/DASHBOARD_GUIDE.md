@@ -17,7 +17,8 @@ Its job is to let you:
 - inspect workflow phases, agent activity, tool calls, and LLM routing
 - view the final rendered report for completed runs
 
-It is separate from the older Streamlit telemetry dashboard in [`src/cc_deep_research/dashboard_app.py`](../src/cc_deep_research/dashboard_app.py). The browser dashboard is the interactive operational UI. The Streamlit dashboard is the historical analytics UI.
+It is the supported interactive and historical operator UI. Session analytics
+are served by the same FastAPI backend.
 
 ## Who This Guide Is For
 
@@ -107,11 +108,8 @@ The launcher is a thin shell wrapper around [`dashboard/scripts/dev.mjs`](../das
 - prefixes logs by process
 - shuts both down together on `Ctrl+C`
 
-Current caveat:
-
-- the launcher can move the backend off `8000`, but the frontend runtime config only reads `NEXT_PUBLIC_CC_*` variables from [`dashboard/src/lib/runtime-config.ts`](../dashboard/src/lib/runtime-config.ts)
-- the launcher currently exports `NEXT_PUBLIC_API_BASE_URL`, which the runtime config does not read
-- if the backend falls back to a non-`8000` port, set `NEXT_PUBLIC_CC_BACKEND_ORIGIN` manually before starting the frontend or use fixed ports
+The launcher passes the resolved backend origin, API URL, and WebSocket URL to
+the frontend, including when the preferred ports are busy.
 
 ### Production-Style Startup
 
@@ -145,19 +143,18 @@ Frontend:
 
 ```bash
 cd dashboard
-npm install
+npm ci
 npm run dev:frontend
 ```
 
-### Backend-Only CLI Startup
+### Backend-Only Startup
 
 If you want only the API/WebSocket server:
 
 ```bash
-uv run inqulume-studio dashboard --host localhost --port 8000
+uv run uvicorn cc_deep_research.web_server:create_app \
+  --factory --host 127.0.0.1 --port 8000
 ```
-
-That command is registered in [`src/cc_deep_research/cli/dashboard.py`](../src/cc_deep_research/cli/dashboard.py).
 
 ### Frontend Runtime Configuration
 
@@ -956,7 +953,7 @@ If a feature or bug is unclear, identify which layer owns it first. That usually
 - overview of current docs: [`docs/README.md`](README.md)
 - browser-first monitoring summary: [`docs/REALTIME_MONITORING.md`](REALTIME_MONITORING.md)
 - telemetry storage and analytics: [`docs/TELEMETRY.md`](TELEMETRY.md)
-- CLI usage and workflows: [`docs/USAGE.md`](USAGE.md)
+- installation and operator workflows: [`docs/USAGE.md`](USAGE.md)
 
 ## Test Scenario Library
 

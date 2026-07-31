@@ -18,6 +18,7 @@ from cc_deep_research.knowledge.vault import (
     wiki_index_path,
 )
 from cc_deep_research.session_store import SessionStore, get_default_session_dir
+from cc_deep_research.web_runtime import get_background_job_registry
 
 
 def _run_knowledge_backfill(session_ids: list[str]) -> dict[str, object]:
@@ -537,8 +538,6 @@ def register_knowledge_routes(app: FastAPI) -> None:
         """Ingest all saved sessions into the knowledge vault."""
         import asyncio
 
-        from cc_deep_research.web_server import get_background_job_registry
-
         sessions_dir = get_default_session_dir()
 
         if not sessions_dir.exists():
@@ -599,8 +598,6 @@ def register_knowledge_routes(app: FastAPI) -> None:
     ) -> JSONResponse:
         """Clear and rebuild the SQLite graph index."""
         import asyncio
-
-        from cc_deep_research.web_server import get_background_job_registry
 
         vault = vault_root(config_path)
 

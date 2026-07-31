@@ -118,7 +118,7 @@ def migrate_duckdb_schema(db_path: Path) -> dict[str, Any]:
     except ImportError as exc:
         raise RuntimeError(
             "DuckDB is required for schema migration. "
-            'Install with `pip install "inqulume-studio[dashboard]"`.'
+            'Install with `pip install "inqulume-studio"`.'
         ) from exc
 
     if not db_path.exists():

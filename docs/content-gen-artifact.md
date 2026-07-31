@@ -21,7 +21,10 @@ The system does not actually film, record, or render the final video. It generat
 
 ## Core Pipeline Container
 
-The canonical full-run artifact is [`PipelineContext`](src/cc_deep_research/content_gen/models/), defined in [`src/cc_deep_research/content_gen/models/`](src/cc_deep_research/content_gen/models/). It is the accumulated state for the full content pipeline and is the main object that gets saved for resumable pipeline runs.
+The canonical full-run artifact is `PipelineContext`, defined in
+[`src/cc_deep_research/content_gen/models/`](../src/cc_deep_research/content_gen/models/).
+It is the accumulated state for the full content pipeline and is the main
+object saved for resumable pipeline runs.
 
 `PipelineContext` currently contains these major fields:
 
@@ -56,7 +59,7 @@ The canonical full-run artifact is [`PipelineContext`](src/cc_deep_research/cont
 
 Relevant source:
 
-- [`src/cc_deep_research/content_gen/models/`](src/cc_deep_research/content_gen/models/)
+- [`src/cc_deep_research/content_gen/models/`](../src/cc_deep_research/content_gen/models/)
 - [`docs/content-generation.md`](docs/content-generation.md)
 
 ## Pipeline Artifact Inventory
@@ -86,7 +89,7 @@ The current full content-generation flow is:
 | --- | --- | --- | --- |
 | Strategy load | `StrategyMemory` | Niche, pillars, platforms, tone rules, proof standards, winners/losers, performance guidance | Persisted to YAML via `StrategyStore` |
 | Opportunity planning | `OpportunityBrief` | Goal, audience segments, problem statements, proof requirements, hypotheses, success criteria | Held in `PipelineContext`; saved when pipeline context is persisted |
-| Backlog build | `BacklogOutput` | Candidate ideas, rejection counts, rejection reasons, degradation metadata | Incomplete by default for CLI-generated backlog unless explicitly saved; can be persisted via backlog service/store |
+| Backlog build | `BacklogOutput` | Candidate ideas, rejection counts, rejection reasons, degradation metadata | Pipeline stage persists generated items through the backlog service/store |
 | Idea scoring | `ScoringOutput` | Per-idea scores, shortlist, selected idea, runner-ups, recommendations | Held in `PipelineContext`; scoring metadata can be applied to persisted backlog |
 | Angle generation | `AngleOutput` | Multiple editorial framings for one idea plus selected angle | Held in `PipelineContext`; operator-managed if saved as standalone JSON |
 | Research pack | `ResearchPack` | Audience insights, competitor observations, facts, proof points, examples, gaps, claims requiring verification, source-backed research summary | Held in `PipelineContext`; operator-managed if saved as standalone JSON |
@@ -95,7 +98,7 @@ The current full content-generation flow is:
 | Visual translation | `VisualPlanOutput` | Beat-by-beat visual treatment and refresh check | Held in `PipelineContext`; can also be saved as standalone JSON |
 | Production brief | `ProductionBrief` | Location, setup, wardrobe, props, prep assets, audio/battery/storage checks, pickup lines, backup plan | Held in `PipelineContext`; can also be saved as standalone JSON |
 | Packaging | `PackagingOutput` | Per-platform hooks, captions, keywords, hashtags, pinned comments, CTAs, notes | Held in `PipelineContext`; can also be saved as standalone JSON |
-| Human QC | `HumanQCGate` | Hook strength, issue lists, fact-check flags, must-fix items, human approval flag | Held in `PipelineContext`; approval can be mutated from dashboard or CLI |
+| Human QC | `HumanQCGate` | Hook strength, issue lists, fact-check flags, must-fix items, human approval flag | Held in `PipelineContext`; approval is an explicit dashboard/API action |
 | Publish queue | `PublishItem` list | Suggested publish datetimes and first-30-minute engagement plans | Persisted in YAML via `PublishQueueStore`; also retained in `PipelineContext.publish_items` |
 | Performance analysis | `PerformanceAnalysis` | What worked, what failed, audience signals, drop-off hypotheses, hook diagnosis, lessons, next tests, follow-up ideas | Not auto-run by the all-in-one pipeline; usually operator-managed from real post-publish metrics |
 
@@ -139,7 +142,7 @@ The important caveat is that downstream automation still executes only the prima
 In this repo, "persistence" means that generated state is written to local storage so it can survive:
 
 - app restarts
-- CLI exits
+- backend restarts
 - browser refreshes
 - failed or interrupted jobs
 - later operator review or resume
@@ -156,20 +159,21 @@ Persistence is not one thing. There are several layers:
 
 ### Strategy memory
 
-- Store class: [`StrategyStore`](src/cc_deep_research/content_gen/storage/strategy_store.py)
+- Store class: [`StrategyStore`](../src/cc_deep_research/content_gen/storage/strategy_store.py)
 - Format: YAML
 - Default path: `~/.config/inqulume-studio/strategy.yaml`
 
 ### Backlog
 
-- Store class: [`BacklogStore`](src/cc_deep_research/content_gen/storage/backlog_store.py)
+- Store class: [`BacklogStore`](../src/cc_deep_research/content_gen/storage/backlog_store.py)
 - Format: YAML
 - Default path resolution comes from content-gen path helpers and config
-- Important caveat: backlog storage exists, but not every CLI backlog command auto-persists generated outputs to it
+- Pipeline backlog generation persists through the backlog service; direct API
+  creation and updates also write to the managed store
 
 ### Standalone scripts
 
-- Store class: [`ScriptingStore`](src/cc_deep_research/content_gen/storage/scripting_store.py)
+- Store class: [`ScriptingStore`](../src/cc_deep_research/content_gen/storage/scripting_store.py)
 - Format: text plus JSON
 - Default directory: `~/.config/inqulume-studio/scripts/`
 
@@ -190,7 +194,7 @@ Each per-run directory stores:
 
 ### Publish queue
 
-- Store class: [`PublishQueueStore`](src/cc_deep_research/content_gen/storage/publish_queue_store.py)
+- Store class: [`PublishQueueStore`](../src/cc_deep_research/content_gen/storage/publish_queue_store.py)
 - Format: YAML
 - Default path: `~/.config/inqulume-studio/publish_queue.yaml`
 
@@ -227,8 +231,8 @@ These are wired into the current system behavior:
 | Publish queue | Yes | Saved via `PublishQueueStore` |
 | Browser-started pipeline jobs | Yes | Saved as durable job records with serialized `PipelineContext` |
 | Dashboard pipeline context snapshots | Yes | Updated after stage completion and on final completion |
-| CLI pipeline context | Yes, when configured | Checkpoint-style context saves happen if output/save-context is configured |
-| Partial CLI pipeline context on failure | Best effort | The latest resumable context can be written even when later stages fail |
+| API-started pipeline context | Yes | Checkpoint-style snapshots are saved after stage completion |
+| Partial pipeline context on failure | Best effort | The latest resumable context remains attached to the durable job record |
 
 ### Not fully automatic yet
 
@@ -236,8 +240,8 @@ These are not uniformly persisted as first-class managed resources:
 
 | Resource | Current state |
 | --- | --- |
-| Backlog build output from CLI | Often file-based unless operator saves explicitly |
-| Scoring output from CLI | Often file-based unless operator saves explicitly |
+| Standalone backlog exports | Operator-managed |
+| Standalone scoring exports | Operator-managed |
 | Angles JSON | Operator-managed |
 | Research pack JSON | Operator-managed |
 | Visual plan JSON | Operator-managed |
@@ -263,12 +267,8 @@ This matters because persistence here is not just for historical storage. It is 
 
 ## Dashboard-Manageable Surfaces
 
-There are two dashboard stories in this repo:
-
-1. the browser-first operational dashboard built from FastAPI plus Next.js
-2. the older Streamlit telemetry dashboard used for historical analytics
-
-When discussing "manage via dashboard" for content generation, the browser dashboard is the relevant one.
+The browser-first FastAPI plus Next.js dashboard is the supported management
+surface for content generation.
 
 ## Content Studio Surfaces
 
@@ -281,7 +281,7 @@ The Content Studio shell currently exposes these major tabs:
 - `Backlog`
 - `Assistant`
 
-These are defined in [`dashboard/src/components/content-gen/content-gen-shell.tsx`](dashboard/src/components/content-gen/content-gen-shell.tsx).
+These are defined in [`dashboard/src/components/content-gen/content-gen-shell.tsx`](../dashboard/src/components/content-gen/content-gen-shell.tsx).
 
 ### Overview
 
@@ -318,7 +318,7 @@ The strategy editor is the operator surface for strategy memory. It currently su
 - copying strategy JSON
 - importing strategy JSON into the UI
 
-The frontend component is [`dashboard/src/components/content-gen/strategy-editor.tsx`](dashboard/src/components/content-gen/strategy-editor.tsx), and the backend writes through `/api/content-gen/strategy`.
+The frontend component is [`dashboard/src/components/content-gen/strategy-editor.tsx`](../dashboard/src/components/content-gen/strategy-editor.tsx), and the backend writes through `/api/content-gen/strategy`.
 
 ### Queue
 
@@ -421,7 +421,7 @@ Important behavioral rule:
 
 ## Dashboard API Capabilities
 
-The backend routes in [`src/cc_deep_research/content_gen/router.py`](src/cc_deep_research/content_gen/router.py) show the practical management surface exposed to the dashboard.
+The backend routes in [`src/cc_deep_research/content_gen/router.py`](../src/cc_deep_research/content_gen/router.py) show the practical management surface exposed to the dashboard.
 
 ### Pipeline control endpoints
 
@@ -563,7 +563,7 @@ I also did not find dependencies or code paths for common video stacks such as:
 - `remotion`
 - `shotstack`
 
-The Python dependencies in [`pyproject.toml`](pyproject.toml) and the frontend dependencies in [`dashboard/package.json`](dashboard/package.json) do not define a video rendering pipeline.
+The Python dependencies in [`pyproject.toml`](../pyproject.toml) and the frontend dependencies in [`dashboard/package.json`](../dashboard/package.json) do not define a video rendering pipeline.
 
 ## Practical Interpretation
 
@@ -629,19 +629,19 @@ Main implementation and documentation references used for this note:
 
 - [`docs/content-generation.md`](docs/content-generation.md)
 - [`docs/DASHBOARD_GUIDE.md`](docs/DASHBOARD_GUIDE.md)
-- [`src/cc_deep_research/content_gen/models/`](src/cc_deep_research/content_gen/models/)
-- [`src/cc_deep_research/content_gen/progress.py`](src/cc_deep_research/content_gen/progress.py)
-- [`src/cc_deep_research/content_gen/router.py`](src/cc_deep_research/content_gen/router.py)
-- [`src/cc_deep_research/content_gen/storage/strategy_store.py`](src/cc_deep_research/content_gen/storage/strategy_store.py)
-- [`src/cc_deep_research/content_gen/storage/backlog_store.py`](src/cc_deep_research/content_gen/storage/backlog_store.py)
-- [`src/cc_deep_research/content_gen/storage/scripting_store.py`](src/cc_deep_research/content_gen/storage/scripting_store.py)
-- [`src/cc_deep_research/content_gen/storage/publish_queue_store.py`](src/cc_deep_research/content_gen/storage/publish_queue_store.py)
-- [`src/cc_deep_research/content_gen/prompts/production.py`](src/cc_deep_research/content_gen/prompts/production.py)
-- [`dashboard/src/components/content-gen/content-gen-shell.tsx`](dashboard/src/components/content-gen/content-gen-shell.tsx)
-- [`dashboard/src/components/content-gen/strategy-editor.tsx`](dashboard/src/components/content-gen/strategy-editor.tsx)
-- [`dashboard/src/components/content-gen/scripts-panel.tsx`](dashboard/src/components/content-gen/scripts-panel.tsx)
-- [`dashboard/src/components/content-gen/backlog-panel.tsx`](dashboard/src/components/content-gen/backlog-panel.tsx)
-- [`dashboard/src/components/content-gen/publish-queue-panel.tsx`](dashboard/src/components/content-gen/publish-queue-panel.tsx)
-- [`dashboard/src/components/content-gen/qc-gate-panel.tsx`](dashboard/src/components/content-gen/qc-gate-panel.tsx)
+- [`src/cc_deep_research/content_gen/models/`](../src/cc_deep_research/content_gen/models/)
+- [`src/cc_deep_research/content_gen/progress.py`](../src/cc_deep_research/content_gen/progress.py)
+- [`src/cc_deep_research/content_gen/router.py`](../src/cc_deep_research/content_gen/router.py)
+- [`src/cc_deep_research/content_gen/storage/strategy_store.py`](../src/cc_deep_research/content_gen/storage/strategy_store.py)
+- [`src/cc_deep_research/content_gen/storage/backlog_store.py`](../src/cc_deep_research/content_gen/storage/backlog_store.py)
+- [`src/cc_deep_research/content_gen/storage/scripting_store.py`](../src/cc_deep_research/content_gen/storage/scripting_store.py)
+- [`src/cc_deep_research/content_gen/storage/publish_queue_store.py`](../src/cc_deep_research/content_gen/storage/publish_queue_store.py)
+- [`src/cc_deep_research/content_gen/prompts/production.py`](../src/cc_deep_research/content_gen/prompts/production.py)
+- [`dashboard/src/components/content-gen/content-gen-shell.tsx`](../dashboard/src/components/content-gen/content-gen-shell.tsx)
+- [`dashboard/src/components/content-gen/strategy-editor.tsx`](../dashboard/src/components/content-gen/strategy-editor.tsx)
+- [`dashboard/src/components/content-gen/scripts-panel.tsx`](../dashboard/src/components/content-gen/scripts-panel.tsx)
+- [`dashboard/src/components/content-gen/backlog-panel.tsx`](../dashboard/src/components/content-gen/backlog-panel.tsx)
+- [`dashboard/src/components/content-gen/publish-queue-panel.tsx`](../dashboard/src/components/content-gen/publish-queue-panel.tsx)
+- [`dashboard/src/components/content-gen/qc-gate-panel.tsx`](../dashboard/src/components/content-gen/qc-gate-panel.tsx)
 - [`pyproject.toml`](pyproject.toml)
-- [`dashboard/package.json`](dashboard/package.json)
+- [`dashboard/package.json`](../dashboard/package.json)

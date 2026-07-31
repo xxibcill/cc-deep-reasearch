@@ -1,5 +1,7 @@
 """Tests for source credibility scoring."""
 
+from datetime import UTC, datetime, timedelta
+
 from cc_deep_research.credibility import (
     CREDIBILITY_DOMAINS,
     DEFAULT_TLD_SCORES,
@@ -112,12 +114,13 @@ class TestSourceCredibilityScorer:
     def test_calculate_freshness_score_recent(self) -> None:
         """Test freshness score for recent content."""
         scorer = SourceCredibilityScorer()
+        recent_publication_date = (datetime.now(UTC) - timedelta(days=14)).date().isoformat()
 
         item = SearchResultItem(
             url="https://example.com",
             title="Test",
             snippet="Test",
-            source_metadata={"published_date": "2026-04-15"},
+            source_metadata={"published_date": recent_publication_date},
         )
 
         score = scorer._calculate_freshness_score(item)

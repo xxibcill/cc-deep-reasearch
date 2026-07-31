@@ -1,162 +1,98 @@
-# Inqulume Studio Monitoring Dashboard
+# Inqulume Studio Dashboard
 
-Real-time interactive monitoring dashboard for Inqulume Studio with workflow visualization, agent tracking, and detailed event inspection.
+The dashboard is the supported interface for research, telemetry, analytics,
+benchmarks, opportunity radar, knowledge, settings, and content generation.
+It is a Next.js 16 application backed by the project FastAPI server.
 
-## Features
+## Start the Full Stack
 
-- **Real-time Event Streaming**: WebSocket-based live updates without manual refresh
-- **Multiple View Modes**: Switch between a D3 workflow graph, an agent swimlane timeline, and a virtualized event table
-- **Session Management**: View and manage all research sessions
-- **Event Filtering**: Filter by phase, agent, tool, provider, status, and event type
-- **Detailed Inspection**: Dedicated tool execution and LLM reasoning panels plus raw event inspection
-- **Live Status Indicators**: See connection status and event counts in real-time
-- **Live Performance Guardrails**: WebSocket batching, virtualized event rendering, and lazy-loaded heavy panels
+From the repository root:
 
-## Installation
+```bash
+./scripts/dashboard-dev
+```
 
-\`\`\`bash
-npm install
-\`\`\`
+Or from this directory:
 
-## Development
-
-### Quick Start (Recommended)
-
-Start both the backend API and frontend dashboard together:
-
-\`\`\`bash
-../scripts/dashboard-dev
-\`\`\`
-
-This starts:
-- **Backend API**: http://localhost:8000
-- **Frontend Dashboard**: http://localhost:3000
-
-The combined launcher handles graceful shutdown with Ctrl+C and labels logs clearly.
-
-If you prefer running from inside the dashboard directory, use:
-
-\`\`\`bash
+```bash
 npm run dev
-\`\`\`
+```
 
-### Production-Style Startup
+Both commands start the backend and frontend together. The launchers discover
+available ports beginning at 8000 and 3000 and print the selected URLs.
 
-Build the frontend and run the backend plus `next start` together:
+## Production-Style Startup
 
-\`\`\`bash
-../scripts/dashboard-start
-\`\`\`
+From the repository root:
 
-From inside `dashboard/`, the equivalent command is:
+```bash
+./scripts/dashboard-start
+```
 
-\`\`\`bash
+From this directory:
+
+```bash
 npm run start:stack
-\`\`\`
+```
 
-### Frontend-Only Development
+This builds the frontend before starting FastAPI and `next start`.
 
-For frontend-only debugging without the backend:
+## Frontend Only
 
-\`\`\`bash
+```bash
 npm run dev:frontend
-\`\`\`
+```
 
-To point the dashboard at a different backend without code edits, create `.env.local` or export runtime variables before starting Next.js:
+Override backend locations with `.env.local` or environment variables:
 
-\`\`\`bash
+```bash
 NEXT_PUBLIC_CC_BACKEND_ORIGIN=http://localhost:8000
-# optional explicit overrides
 NEXT_PUBLIC_CC_API_BASE_URL=http://localhost:8000/api
 NEXT_PUBLIC_CC_WS_BASE_URL=ws://localhost:8000/ws
-\`\`\`
+```
 
-## Build
+## Backend Only
 
-\`\`\`bash
+Run from the repository root:
+
+```bash
+uv run uvicorn cc_deep_research.web_server:create_app \
+  --factory \
+  --ws websockets-sansio \
+  --host 127.0.0.1 \
+  --port 8000
+```
+
+## Validation
+
+```bash
+npm run audit
+npm run lint
+npm test
 npm run build
-\`\`\`
-
-## Testing
-
-Run the mocked dashboard smoke checks:
-
-\`\`\`bash
 npm run test:e2e:smoke
-\`\`\`
-
-Run the accessibility regression baseline used by CI and local preflight:
-
-\`\`\`bash
 npm run test:a11y
-\`\`\`
+```
 
-The accessibility baseline runs mocked Playwright coverage in Chromium against the primary operator surfaces: Research, Monitor, Compare, and Analytics.
+Install the browser used by local Playwright checks once:
 
-## Technology Stack
+```bash
+npx playwright install chromium
+```
 
-- **Next.js 14**: React framework with App Router
-- **TypeScript**: Type-safe development
-- **Tailwind CSS**: Utility-first styling
-- **shadcn/ui conventions**: shared UI primitives in `src/components/ui/` backed by `components.json`
-- **Zustand**: Lightweight state management
-- **D3.js**: Workflow graph visualization
-- **WebSocket**: Real-time event streaming
-- **Lucide React**: Icon library
+The repository-level `./scripts/preflight` command runs all of these checks
+plus the complete Python suite.
 
-## Project Structure
+## Structure
 
-\`\`\`
-src/
-├── app/               # Next.js App Router pages
-├── components/        # Reusable page sections, visualizations, and ui primitives
-├── hooks/             # Shared dashboard state
-├── lib/               # Runtime config, API, websocket, transformers
-└── types/             # Frontend and API payload types
-\`\`\`
+```text
+src/app/         App Router pages
+src/components/  Operator workflows and shared UI
+src/hooks/       Shared dashboard state
+src/lib/         API, WebSocket, runtime config, and transformers
+src/types/       Frontend contracts for backend payloads
+tests/e2e/       Mocked smoke and accessibility journeys
+```
 
-## API Integration
-
-The dashboard connects to the Inqulume Studio backend:
-
-- **WebSocket**: \`${NEXT_PUBLIC_CC_WS_BASE_URL}/session/{sessionId}\` with \`ws://localhost:8000/ws\` as the local default
-- **REST API**: \`${NEXT_PUBLIC_CC_API_BASE_URL}/sessions\` with \`http://localhost:8000/api\` as the local default
-
-## Backend Setup
-
-`npm run dev` already starts both the backend API and the frontend dashboard. If you want to run the backend separately, use the real CLI command and current flags:
-
-1. Start the backend server:
-   \`\`\`bash
-   inqulume-studio dashboard --host localhost --port 8000
-   \`\`\`
-
-2. Run a research query with real-time enabled:
-   \`\`\`bash
-   inqulume-studio research "your query" --enable-realtime
-   \`\`\`
-
-3. Open the dashboard in a browser and select the session to monitor
-
-## Component Foundation
-
-The dashboard now uses shared `shadcn/ui`-style primitives from [`src/components/ui/`](src/components/ui) with class merging from [`src/lib/utils.ts`](src/lib/utils.ts). The local setup is declared in [`components.json`](components.json) so dashboard surfaces can reuse the same vocabulary for:
-
-- dialogs and confirmation flows
-- buttons, badges, tabs, and cards
-- text inputs, textareas, labels, native selects, and field messaging
-- alerts, tables, separators, and collapsible content panels
-
-Intentionally custom surfaces still keep bespoke rendering logic and only reuse the shared shell around them:
-
-- workflow graphs
-- decision graphs
-- agent timelines
-- pipeline progress visualization
-- rich script and report viewers
-
-## Performance Notes
-
-- WebSocket updates are buffered briefly before they hit React state.
-- The event table renders a moving window instead of the full list.
-- Graph, timeline, tool, and LLM detail panels are lazy-loaded on the session page.
+The project uses React 19, TypeScript, Tailwind CSS, Radix primitives, Zustand,
+D3, Vitest, and Playwright.

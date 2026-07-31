@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from .phase_policy import OperatingPhasePolicy
 from .shared import (
     BriefExecutionPolicyMode,
     BriefLifecycleState,
     BriefProvenance,
 )
-
-if TYPE_CHECKING:
-    from .pipeline import OperatingPhasePolicy
 
 
 class BriefRevision(BaseModel):
@@ -160,8 +158,8 @@ class BriefExecutionGate(BaseModel):
         self.error_message = (
             f"Execution blocked: brief is in '{brief_state.value}' state. "
             f"Stage '{stage_name}' requires an approved brief. "
-            f"Please approve the brief before proceeding, or use --brief-policy allow_draft "
-            f"to run with draft briefs (not recommended for production)."
+            "Please approve the brief in the dashboard before proceeding; "
+            "draft briefs are not eligible for this production stage."
         )
         return False, self.error_message
 
