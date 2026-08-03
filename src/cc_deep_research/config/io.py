@@ -19,7 +19,9 @@ def resolve_config_path(config_path: Path | None = None) -> Path:
     return config_path or settings.config_path or get_default_config_path()
 
 
-def load_persisted_config_data(config_path: Path | None = None) -> tuple[Path, dict[str, Any], bool]:
+def load_persisted_config_data(
+    config_path: Path | None = None,
+) -> tuple[Path, dict[str, Any], bool]:
     """Load raw persisted YAML config data without applying env overrides."""
     resolved_path = resolve_config_path(config_path)
     if not resolved_path.exists():
@@ -76,6 +78,14 @@ def load_config(config_path: Path | None = None) -> Config:
     if cerebras_api_keys:
         config.llm.cerebras.api_keys = cerebras_api_keys
         config.llm.cerebras.api_key = cerebras_api_keys[0]
+
+    kimi_api_keys = _normalize_api_key_list(
+        _parse_provider_api_keys_from_env("MOONSHOT_API_KEYS", "MOONSHOT_API_KEY"),
+        _parse_provider_api_keys_from_env("KIMI_API_KEYS", "KIMI_API_KEY"),
+    )
+    if kimi_api_keys:
+        config.llm.kimi.api_keys = kimi_api_keys
+        config.llm.kimi.api_key = kimi_api_keys[0]
 
     anthropic_api_keys = _parse_provider_api_keys_from_env(
         "ANTHROPIC_API_KEYS",

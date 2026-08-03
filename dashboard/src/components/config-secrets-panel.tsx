@@ -33,6 +33,8 @@ const SECRET_FIELD_LABELS: Record<string, string> = {
   'llm.cerebras.api_keys': 'Cerebras API keys',
   'llm.anthropic.api_key': 'Anthropic API key',
   'llm.anthropic.api_keys': 'Anthropic API keys',
+  'llm.kimi.api_key': 'Kimi API key',
+  'llm.kimi.api_keys': 'Kimi API keys',
 };
 
 function isMultiValueSecret(field: string): boolean {

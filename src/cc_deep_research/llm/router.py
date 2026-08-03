@@ -18,6 +18,7 @@ from cc_deep_research.llm.base import (
 from cc_deep_research.llm.cerebras import CerebrasTransport
 from cc_deep_research.llm.codex import CodexTransport
 from cc_deep_research.llm.codex_runtime import CodexRuntime
+from cc_deep_research.llm.kimi import KimiTransport
 from cc_deep_research.llm.openrouter import OpenRouterTransport
 
 if TYPE_CHECKING:
@@ -90,6 +91,8 @@ class LLMRouter:
                 route,
                 telemetry_callback=self._telemetry_callback,
             )
+        if route.transport == LLMTransportType.KIMI_API:
+            return KimiTransport(route, telemetry_callback=self._telemetry_callback)
         if route.transport == LLMTransportType.CODEX_APP_SERVER:
             return CodexTransport(
                 route,

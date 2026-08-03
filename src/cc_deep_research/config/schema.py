@@ -292,6 +292,29 @@ class LLMCerebrasConfig(BaseModel):
         """Return the configured Cerebras keys in priority order."""
         return _normalize_api_key_list(self.api_key, self.api_keys)
 
+
+class LLMKimiConfig(BaseModel):
+    """Direct Kimi API transport configuration."""
+
+    enabled: bool = Field(default=False)
+    api_key: str | None = Field(default=None)
+    api_keys: list[str] = Field(default_factory=list)
+    base_url: str = Field(default="https://api.moonshot.ai/v1")
+    timeout_seconds: int = Field(default=300, ge=30, le=900)
+    model: str = Field(default="kimi-k3")
+    reasoning_effort: Literal["low", "high", "max"] = Field(default="max")
+
+    @field_validator("api_keys")
+    @classmethod
+    def normalize_api_keys(cls, values: list[str]) -> list[str]:
+        """Normalize configured Kimi API keys."""
+        return _normalize_api_key_list(values)
+
+    def get_api_keys(self) -> list[str]:
+        """Return configured Kimi keys in priority order."""
+        return _normalize_api_key_list(self.api_key, self.api_keys)
+
+
 class LLMAnthropicConfig(BaseModel):
     """Anthropic API transport configuration."""
 
@@ -324,9 +347,7 @@ class LLMCodexConfig(BaseModel):
     enabled: bool = Field(default=False)
     model: str | None = Field(default=None)
     timeout_seconds: int = Field(default=180, ge=30, le=900)
-    reasoning_effort: Literal["minimal", "low", "medium", "high", "xhigh"] = Field(
-        default="medium"
-    )
+    reasoning_effort: Literal["minimal", "low", "medium", "high", "xhigh"] = Field(default="medium")
 
 
 class LLMRouteDefaults(BaseModel):
@@ -345,11 +366,13 @@ class LLMConfig(BaseModel):
     openrouter: LLMOpenRouterConfig = Field(default_factory=LLMOpenRouterConfig)
     cerebras: LLMCerebrasConfig = Field(default_factory=LLMCerebrasConfig)
     anthropic: LLMAnthropicConfig = Field(default_factory=LLMAnthropicConfig)
+    kimi: LLMKimiConfig = Field(default_factory=LLMKimiConfig)
     codex: LLMCodexConfig = Field(default_factory=LLMCodexConfig)
     route_defaults: LLMRouteDefaults = Field(default_factory=LLMRouteDefaults)
     fallback_order: list[str] = Field(
         default_factory=lambda: [
             "anthropic",
+            "kimi",
             "openrouter",
             "cerebras",
             "codex",
@@ -371,6 +394,7 @@ class LLMConfig(BaseModel):
                 or (
                     name == "anthropic" and self.anthropic.enabled and self.anthropic.get_api_keys()
                 )
+                or (name == "kimi" and self.kimi.enabled and self.kimi.get_api_keys())
                 or (name == "codex" and self.codex.enabled)
                 or name == "heuristic"
             )
@@ -575,6 +599,14 @@ def load_config(config_path: Path | None = None) -> Config:
         config.llm.cerebras.api_keys = cerebras_api_keys
         config.llm.cerebras.api_key = cerebras_api_keys[0]
 
+    kimi_api_keys = _normalize_api_key_list(
+        _parse_provider_api_keys_from_env("MOONSHOT_API_KEYS", "MOONSHOT_API_KEY"),
+        _parse_provider_api_keys_from_env("KIMI_API_KEYS", "KIMI_API_KEY"),
+    )
+    if kimi_api_keys:
+        config.llm.kimi.api_keys = kimi_api_keys
+        config.llm.kimi.api_key = kimi_api_keys[0]
+
     if settings.depth:
         config.search.depth = settings.depth
         config.research.default_depth = settings.depth
@@ -633,6 +665,8 @@ def create_default_config_file(config_path: Path | None = None) -> Path:
     save_config(config, config_path)
 
     return config_path
+
+
 __all__ = [
     "AgentConfig",
     "AgentTeamConfig",
@@ -644,6 +678,7 @@ __all__ = [
     "LLMCerebrasConfig",
     "LLMCodexConfig",
     "LLMConfig",
+    "LLMKimiConfig",
     "LLMOpenRouterConfig",
     "LLMRouteDefaults",
     "MinSourcesConfig",

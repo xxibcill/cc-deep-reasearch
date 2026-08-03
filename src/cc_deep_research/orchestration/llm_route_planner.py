@@ -128,6 +128,9 @@ class LLMRoutePlanner:
         # Check Anthropic availability
         availability[LLMTransportType.ANTHROPIC_API] = self._check_anthropic_available()
 
+        # Check direct Kimi availability
+        availability[LLMTransportType.KIMI_API] = self._check_kimi_available()
+
         # Codex authentication is verified by the runtime transport.
         availability[LLMTransportType.CODEX_APP_SERVER] = self._check_codex_available()
 
@@ -172,6 +175,12 @@ class LLMRoutePlanner:
             return False
 
         return bool(self._llm_config.anthropic.get_api_keys())
+
+    def _check_kimi_available(self) -> bool:
+        """Check whether the direct Kimi transport is enabled and credentialed."""
+        if not self._llm_config.kimi.enabled:
+            return False
+        return bool(self._llm_config.kimi.get_api_keys())
 
     def _check_codex_available(self) -> bool:
         """Return whether Codex is enabled for runtime authentication preflight."""
@@ -263,6 +272,7 @@ class LLMRoutePlanner:
             for transport in [
                 LLMTransportType.CEREBRAS_API,
                 LLMTransportType.OPENROUTER_API,
+                LLMTransportType.KIMI_API,
                 LLMTransportType.ANTHROPIC_API,
             ]:
                 if availability.get(transport, False):
@@ -308,6 +318,14 @@ class LLMRoutePlanner:
                 transport=LLMTransportType.ANTHROPIC_API,
                 provider=LLMProviderType.ANTHROPIC,
                 model=self._llm_config.anthropic.model,
+                enabled=True,
+            )
+
+        if transport == LLMTransportType.KIMI_API:
+            return LLMRouteModel(
+                transport=LLMTransportType.KIMI_API,
+                provider=LLMProviderType.KIMI,
+                model=self._llm_config.kimi.model,
                 enabled=True,
             )
 
@@ -400,6 +418,15 @@ class LLMRoutePlanner:
                 "api_keys": api_keys,
                 "base_url": self._llm_config.anthropic.base_url,
                 "max_tokens": str(self._llm_config.anthropic.max_tokens),
+            }
+        elif transport == LLMTransportType.KIMI_API:
+            api_keys = self._llm_config.kimi.get_api_keys()
+            timeout_seconds = self._llm_config.kimi.timeout_seconds
+            extra = {
+                "api_key": api_keys[0] if api_keys else None,
+                "api_keys": api_keys,
+                "base_url": self._llm_config.kimi.base_url,
+                "reasoning_effort": self._llm_config.kimi.reasoning_effort,
             }
         elif transport == LLMTransportType.CODEX_APP_SERVER:
             timeout_seconds = self._llm_config.codex.timeout_seconds

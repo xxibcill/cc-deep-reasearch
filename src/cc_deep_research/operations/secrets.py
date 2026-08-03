@@ -78,22 +78,42 @@ SECRET_FIELD_MAP: dict[str, dict[str, str]] = {
         "provider": "Anthropic",
         "rotation": "Generate new key at https://console.anthropic.com/settings/keys, then update config or set ANTHROPIC_API_KEYS env var",
     },
+    "llm.kimi.api_key": {
+        "provider": "Kimi",
+        "rotation": "Generate a key at https://platform.kimi.ai, then update config or set MOONSHOT_API_KEY",
+    },
+    "llm.kimi.api_keys": {
+        "provider": "Kimi",
+        "rotation": "Generate keys at https://platform.kimi.ai, then update config or set MOONSHOT_API_KEYS",
+    },
+}
+
+CREDENTIAL_ENV_VARS: dict[str, tuple[str, ...]] = {
+    "tavily.api_keys": ("TAVILY_API_KEYS",),
+    "llm.openrouter.api_key": ("OPENROUTER_API_KEY", "OPENROUTER_API_KEYS"),
+    "llm.openrouter.api_keys": ("OPENROUTER_API_KEY", "OPENROUTER_API_KEYS"),
+    "llm.cerebras.api_key": ("CEREBRAS_API_KEY", "CEREBRAS_API_KEYS"),
+    "llm.cerebras.api_keys": ("CEREBRAS_API_KEY", "CEREBRAS_API_KEYS"),
+    "llm.anthropic.api_key": ("ANTHROPIC_API_KEY", "ANTHROPIC_API_KEYS"),
+    "llm.anthropic.api_keys": ("ANTHROPIC_API_KEY", "ANTHROPIC_API_KEYS"),
+    "llm.kimi.api_key": (
+        "MOONSHOT_API_KEY",
+        "MOONSHOT_API_KEYS",
+        "KIMI_API_KEY",
+        "KIMI_API_KEYS",
+    ),
+    "llm.kimi.api_keys": (
+        "MOONSHOT_API_KEY",
+        "MOONSHOT_API_KEYS",
+        "KIMI_API_KEY",
+        "KIMI_API_KEYS",
+    ),
 }
 
 
 def _get_secret_source(field: str) -> str | None:
     """Determine if a secret is set via env var or config file."""
-    env_map = {
-        "tavily.api_keys": "TAVILY_API_KEYS",
-        "llm.openrouter.api_key": "OPENROUTER_API_KEY",
-        "llm.openrouter.api_keys": "OPENROUTER_API_KEYS",
-        "llm.cerebras.api_key": "CEREBRAS_API_KEY",
-        "llm.cerebras.api_keys": "CEREBRAS_API_KEYS",
-        "llm.anthropic.api_key": "ANTHROPIC_API_KEY",
-        "llm.anthropic.api_keys": "ANTHROPIC_API_KEYS",
-    }
-    env_var = env_map.get(field)
-    if env_var and os.environ.get(env_var):
+    if any(os.environ.get(env_var) for env_var in CREDENTIAL_ENV_VARS.get(field, ())):
         return "env"
     return "file"
 
@@ -125,15 +145,7 @@ def _check_credential_health(field: str, info: dict[str, Any]) -> CredentialInfo
         warnings.append(f"Multiple credentials ({count}) configured for {provider}")
 
     # Check for conflict (both env and file)
-    env_has = os.environ.get(
-        field.split(".")[-1].upper()
-        if field.startswith("tavily")
-        else {
-            "openrouter": "OPENROUTER_API_KEY",
-            "cerebras": "CEREBRAS_API_KEY",
-            "anthropic": "ANTHROPIC_API_KEY",
-        }.get(field.split(".")[1], "")
-    )
+    env_has = any(os.environ.get(env_var) for env_var in CREDENTIAL_ENV_VARS.get(field, ()))
     file_has = bool(info)
     if env_has and file_has:
         status = CredentialStatus.CONFLICTING
@@ -169,6 +181,8 @@ def get_secrets_inventory() -> SecretsInventory:
         "llm.cerebras.api_keys": config.llm.cerebras.api_keys,
         "llm.anthropic.api_key": config.llm.anthropic.api_key,
         "llm.anthropic.api_keys": config.llm.anthropic.api_keys,
+        "llm.kimi.api_key": config.llm.kimi.api_key,
+        "llm.kimi.api_keys": config.llm.kimi.api_keys,
     }
 
     for field_name, info in secret_values.items():
@@ -177,8 +191,14 @@ def get_secrets_inventory() -> SecretsInventory:
 
     # Count by status
     healthy = sum(1 for c in credentials if c.status == CredentialStatus.CONFIGURED)
-    warnings = sum(1 for c in credentials if c.status in (CredentialStatus.DUPLICATE, CredentialStatus.CONFLICTING))
-    critical = sum(1 for c in credentials if c.status in (CredentialStatus.MISSING, CredentialStatus.STALE))
+    warnings = sum(
+        1
+        for c in credentials
+        if c.status in (CredentialStatus.DUPLICATE, CredentialStatus.CONFLICTING)
+    )
+    critical = sum(
+        1 for c in credentials if c.status in (CredentialStatus.MISSING, CredentialStatus.STALE)
+    )
 
     return SecretsInventory(
         timestamp=datetime.now(UTC).isoformat(),
@@ -201,15 +221,17 @@ def get_rotation_guidance() -> list[dict[str, Any]]:
 
     for cred in inventory.credentials:
         if cred.rotation_guidance:
-            guidance.append({
-                "provider": cred.provider,
-                "field": cred.field,
-                "status": cred.status.value,
-                "guidance": cred.rotation_guidance,
-                "count": cred.count,
-                "source": cred.source,
-                "warnings": cred.warnings,
-            })
+            guidance.append(
+                {
+                    "provider": cred.provider,
+                    "field": cred.field,
+                    "status": cred.status.value,
+                    "guidance": cred.rotation_guidance,
+                    "count": cred.count,
+                    "source": cred.source,
+                    "warnings": cred.warnings,
+                }
+            )
 
     return guidance
 

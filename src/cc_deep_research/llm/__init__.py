@@ -1,7 +1,7 @@
 """LLM routing layer for Inqulume Studio.
 
 This package provides a unified interface for LLM operations across multiple
-transport providers (OpenRouter, Cerebras, Anthropic) with session-scoped
+transport providers (OpenRouter, Cerebras, Anthropic, Kimi) with session-scoped
 route management and telemetry.
 """
 
@@ -37,6 +37,7 @@ from cc_deep_research.llm.codex_runtime import (
     CodexTurnResult,
     get_shared_codex_runtime,
 )
+from cc_deep_research.llm.kimi import KimiTransport
 from cc_deep_research.llm.openrouter import OpenRouterTransport
 from cc_deep_research.llm.registry import LLMRouteRegistry
 from cc_deep_research.llm.router import LLMRouter
@@ -59,6 +60,7 @@ __all__ = [
     "OpenRouterTransport",
     "CerebrasTransport",
     "AnthropicAPITransport",
+    "KimiTransport",
     "CodexTransport",
     "CodexRuntime",
     "CodexRuntimeError",

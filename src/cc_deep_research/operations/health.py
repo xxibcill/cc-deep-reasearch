@@ -154,6 +154,26 @@ def _check_provider_credentials() -> HealthCheckResult:
     if config.llm.anthropic.enabled and (anthropic_keys or anthropic_from_env):
         has_any_provider = True
 
+    # Check direct Kimi API
+    kimi_keys = config.llm.kimi.get_api_keys()
+    kimi_from_env = any(
+        os.environ.get(name)
+        for name in (
+            "MOONSHOT_API_KEY",
+            "MOONSHOT_API_KEYS",
+            "KIMI_API_KEY",
+            "KIMI_API_KEYS",
+        )
+    )
+    providers_status["kimi"] = {
+        "enabled": config.llm.kimi.enabled,
+        "configured": len(kimi_keys) > 0,
+        "from_env": kimi_from_env,
+        "count": len(kimi_keys),
+    }
+    if config.llm.kimi.enabled and (kimi_keys or kimi_from_env):
+        has_any_provider = True
+
     if not has_any_provider:
         return HealthCheckResult(
             check_id="provider_credentials",
@@ -354,18 +374,22 @@ def _check_data_paths() -> HealthCheckResult:
     path_summary = []
     for name, info in validation["paths"].items():
         if info["status"] in (PathStatus.FAIL, PathStatus.WARNING):
-            path_summary.append({
-                "name": name,
-                "status": info["status"],
-                "remediation": info["remediation"],
-            })
+            path_summary.append(
+                {
+                    "name": name,
+                    "status": info["status"],
+                    "remediation": info["remediation"],
+                }
+            )
 
     return HealthCheckResult(
         check_id="data_paths",
         label="Data paths",
         status=status,
         reason=f"{summary['pass']} paths OK, {summary['warning']} warnings, {summary['fail']} failures",
-        remediation="Review path permissions in the settings panel" if summary["fail"] > 0 or summary["warning"] > 0 else None,
+        remediation="Review path permissions in the settings panel"
+        if summary["fail"] > 0 or summary["warning"] > 0
+        else None,
         details={"paths": validation["paths"], "summary": summary},
     )
 

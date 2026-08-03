@@ -81,8 +81,7 @@ class LLMRouteRegistry:
                 provider=LLMProviderType.OPENROUTER,
                 model=self._config.openrouter.model,
                 timeout_seconds=self._config.openrouter.timeout_seconds,
-                enabled=self._config.openrouter.enabled
-                and bool(api_keys),
+                enabled=self._config.openrouter.enabled and bool(api_keys),
                 extra={
                     "api_key": api_keys[0] if api_keys else None,
                     "api_keys": api_keys,
@@ -97,8 +96,7 @@ class LLMRouteRegistry:
                 provider=LLMProviderType.CEREBRAS,
                 model=self._config.cerebras.model,
                 timeout_seconds=self._config.cerebras.timeout_seconds,
-                enabled=self._config.cerebras.enabled
-                and bool(api_keys),
+                enabled=self._config.cerebras.enabled and bool(api_keys),
                 extra={
                     "api_key": api_keys[0] if api_keys else None,
                     "api_keys": api_keys,
@@ -112,13 +110,27 @@ class LLMRouteRegistry:
                 provider=LLMProviderType.ANTHROPIC,
                 model=self._config.anthropic.model,
                 timeout_seconds=self._config.anthropic.timeout_seconds,
-                enabled=self._config.anthropic.enabled
-                and bool(api_keys),
+                enabled=self._config.anthropic.enabled and bool(api_keys),
                 extra={
                     "api_key": api_keys[0] if api_keys else None,
                     "api_keys": api_keys,
                     "base_url": self._config.anthropic.base_url,
                     "max_tokens": self._config.anthropic.max_tokens,
+                },
+            )
+        elif transport == LLMTransportType.KIMI_API:
+            api_keys = self._config.kimi.get_api_keys()
+            return LLMRoute(
+                transport=LLMTransportType.KIMI_API,
+                provider=LLMProviderType.KIMI,
+                model=self._config.kimi.model,
+                timeout_seconds=self._config.kimi.timeout_seconds,
+                enabled=self._config.kimi.enabled and bool(api_keys),
+                extra={
+                    "api_key": api_keys[0] if api_keys else None,
+                    "api_keys": api_keys,
+                    "base_url": self._config.kimi.base_url,
+                    "reasoning_effort": self._config.kimi.reasoning_effort,
                 },
             )
         elif transport == LLMTransportType.CODEX_APP_SERVER:
@@ -245,9 +257,7 @@ class LLMRouteRegistry:
         """Build a route for a specific transport using current config."""
         return self._build_route_from_transport(transport)
 
-    def get_available_route(
-        self, agent_id: str, *, check_nested_session: bool = False
-    ) -> LLMRoute:
+    def get_available_route(self, agent_id: str, *, check_nested_session: bool = False) -> LLMRoute:
         """Return the first available route for an agent."""
         primary_route = self.get_route(agent_id)
 
@@ -330,6 +340,7 @@ class LLMRouteRegistry:
                 "openrouter_enabled": self._config.openrouter.enabled,
                 "cerebras_enabled": self._config.cerebras.enabled,
                 "anthropic_enabled": self._config.anthropic.enabled,
+                "kimi_enabled": self._config.kimi.enabled,
                 "codex_enabled": self._config.codex.enabled,
             },
         }

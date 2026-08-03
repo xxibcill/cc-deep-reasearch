@@ -30,6 +30,8 @@ SECRET_FIELD_PATHS = {
     "llm.cerebras.api_keys",
     "llm.anthropic.api_key",
     "llm.anthropic.api_keys",
+    "llm.kimi.api_key",
+    "llm.kimi.api_keys",
 }
 
 OVERRIDE_SOURCES = {
@@ -44,6 +46,18 @@ OVERRIDE_SOURCES = {
     "llm.cerebras.api_keys": ["CEREBRAS_API_KEY", "CEREBRAS_API_KEYS"],
     "llm.anthropic.api_key": ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEYS"],
     "llm.anthropic.api_keys": ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEYS"],
+    "llm.kimi.api_key": [
+        "MOONSHOT_API_KEY",
+        "MOONSHOT_API_KEYS",
+        "KIMI_API_KEY",
+        "KIMI_API_KEYS",
+    ],
+    "llm.kimi.api_keys": [
+        "MOONSHOT_API_KEY",
+        "MOONSHOT_API_KEYS",
+        "KIMI_API_KEY",
+        "KIMI_API_KEYS",
+    ],
 }
 
 
