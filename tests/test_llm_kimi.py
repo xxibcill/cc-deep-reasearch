@@ -251,3 +251,33 @@ class TestKimiTransport:
 
         with pytest.raises(LLMAuthenticationError):
             await transport.execute(LLMRequest(prompt="Research this"))
+
+
+def test_disabled_kimi_transport_is_unavailable_with_configured_key() -> None:
+    route = LLMRoute(
+        transport=LLMTransportType.KIMI_API,
+        provider=LLMProviderType.KIMI,
+        model="kimi-k3",
+        enabled=False,
+        extra={"api_key": "configured-but-disabled"},
+    )
+
+    assert KimiTransport(route).is_available() is False
+
+
+@pytest.mark.asyncio
+async def test_kimi_permission_error_is_not_reported_as_invalid_authentication() -> None:
+    transport = KimiTransport(create_kimi_route())
+    response = create_mock_response(
+        403,
+        json_data={"error": {"message": "K3 is not available to this account"}},
+    )
+
+    with (
+        patch.object(httpx, "AsyncClient", return_value=MockAsyncClient(response)),
+        pytest.raises(LLMProviderError) as exc_info,
+    ):
+        await transport.execute(LLMRequest(prompt="Research this"))
+
+    assert exc_info.value.status_code == 403
+    assert "not available" in str(exc_info.value)

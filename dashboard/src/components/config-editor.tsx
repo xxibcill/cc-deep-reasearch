@@ -57,6 +57,29 @@ type BannerState = {
   description: string
 } | null
 
+const KIMI_FIELD_DEFINITIONS = {
+  enabled: {
+    path: 'llm.kimi.enabled',
+    label: 'Enable Kimi',
+    description: 'Allow direct Kimi API routes when a Moonshot API key is configured.',
+  },
+  model: {
+    path: 'llm.kimi.model',
+    label: 'Kimi model',
+    description: 'Model ID sent to the direct Kimi API.',
+  },
+  reasoningEffort: {
+    path: 'llm.kimi.reasoning_effort',
+    label: 'Kimi reasoning effort',
+    description: 'Reasoning budget for Kimi K3 requests.',
+  },
+  timeoutSeconds: {
+    path: 'llm.kimi.timeout_seconds',
+    label: 'Kimi timeout (seconds)',
+    description: 'Maximum time to wait for one direct Kimi response.',
+  },
+} satisfies Record<string, FieldDefinition>
+
 const FIELD_DEFINITIONS: FieldDefinition[] = [
   {
     path: 'search.providers',
@@ -133,26 +156,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
     label: 'Max cache entries',
     description: 'Upper limit for cached search results kept on disk.',
   },
-  {
-    path: 'llm.kimi.enabled',
-    label: 'Enable Kimi',
-    description: 'Allow direct Kimi API routes when a Moonshot API key is configured.',
-  },
-  {
-    path: 'llm.kimi.model',
-    label: 'Kimi model',
-    description: 'Model ID sent to the direct Kimi API.',
-  },
-  {
-    path: 'llm.kimi.reasoning_effort',
-    label: 'Kimi reasoning effort',
-    description: 'Reasoning budget for Kimi K3 requests.',
-  },
-  {
-    path: 'llm.kimi.timeout_seconds',
-    label: 'Kimi timeout (seconds)',
-    description: 'Maximum time to wait for one direct Kimi response.',
-  },
+  ...Object.values(KIMI_FIELD_DEFINITIONS),
 ]
 
 const FRIENDLY_FIELD_LABELS: Record<string, string> = {
@@ -945,8 +949,8 @@ export function ConfigEditor() {
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <SettingFieldShell
-                  label={FIELD_DEFINITIONS[15].label}
-                  description={FIELD_DEFINITIONS[15].description}
+                  label={KIMI_FIELD_DEFINITIONS.enabled.label}
+                  description={KIMI_FIELD_DEFINITIONS.enabled.description}
                   error={fieldErrors['llm.kimi.enabled']}
                   overridden={false}
                   dirty={dirtyFieldPaths.includes('llm.kimi.enabled')}
@@ -963,8 +967,8 @@ export function ConfigEditor() {
                   />
                 </SettingFieldShell>
                 <SettingFieldShell
-                  label={FIELD_DEFINITIONS[16].label}
-                  description={FIELD_DEFINITIONS[16].description}
+                  label={KIMI_FIELD_DEFINITIONS.model.label}
+                  description={KIMI_FIELD_DEFINITIONS.model.description}
                   error={fieldErrors['llm.kimi.model']}
                   overridden={false}
                   dirty={dirtyFieldPaths.includes('llm.kimi.model')}
@@ -979,8 +983,8 @@ export function ConfigEditor() {
                   />
                 </SettingFieldShell>
                 <SettingFieldShell
-                  label={FIELD_DEFINITIONS[17].label}
-                  description={FIELD_DEFINITIONS[17].description}
+                  label={KIMI_FIELD_DEFINITIONS.reasoningEffort.label}
+                  description={KIMI_FIELD_DEFINITIONS.reasoningEffort.description}
                   error={fieldErrors['llm.kimi.reasoning_effort']}
                   overridden={false}
                   dirty={dirtyFieldPaths.includes('llm.kimi.reasoning_effort')}
@@ -1009,8 +1013,8 @@ export function ConfigEditor() {
                   </NativeSelect>
                 </SettingFieldShell>
                 <SettingFieldShell
-                  label={FIELD_DEFINITIONS[18].label}
-                  description={FIELD_DEFINITIONS[18].description}
+                  label={KIMI_FIELD_DEFINITIONS.timeoutSeconds.label}
+                  description={KIMI_FIELD_DEFINITIONS.timeoutSeconds.description}
                   error={fieldErrors['llm.kimi.timeout_seconds']}
                   overridden={false}
                   dirty={dirtyFieldPaths.includes('llm.kimi.timeout_seconds')}

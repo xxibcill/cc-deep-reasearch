@@ -17,6 +17,7 @@ from .api_models import (
     SecretFieldMetadata,
     SecretFieldPatch,
 )
+from .credentials import CREDENTIAL_ENV_VARS_BY_FIELD
 from .io import load_config, load_persisted_config_data, save_config
 from .schema import Config
 
@@ -40,24 +41,7 @@ OVERRIDE_SOURCES = {
     "output.format": ["CC_DEEP_RESEARCH_FORMAT"],
     "display.color": ["NO_COLOR"],
     "tavily.api_keys": ["TAVILY_API_KEYS"],
-    "llm.openrouter.api_key": ["OPENROUTER_API_KEY", "OPENROUTER_API_KEYS"],
-    "llm.openrouter.api_keys": ["OPENROUTER_API_KEY", "OPENROUTER_API_KEYS"],
-    "llm.cerebras.api_key": ["CEREBRAS_API_KEY", "CEREBRAS_API_KEYS"],
-    "llm.cerebras.api_keys": ["CEREBRAS_API_KEY", "CEREBRAS_API_KEYS"],
-    "llm.anthropic.api_key": ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEYS"],
-    "llm.anthropic.api_keys": ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEYS"],
-    "llm.kimi.api_key": [
-        "MOONSHOT_API_KEY",
-        "MOONSHOT_API_KEYS",
-        "KIMI_API_KEY",
-        "KIMI_API_KEYS",
-    ],
-    "llm.kimi.api_keys": [
-        "MOONSHOT_API_KEY",
-        "MOONSHOT_API_KEYS",
-        "KIMI_API_KEY",
-        "KIMI_API_KEYS",
-    ],
+    **{field: list(env_vars) for field, env_vars in CREDENTIAL_ENV_VARS_BY_FIELD.items()},
 }
 
 

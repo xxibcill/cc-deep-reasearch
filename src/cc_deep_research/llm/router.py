@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from cc_deep_research.llm.anthropic import AnthropicAPITransport
@@ -28,6 +29,15 @@ if TYPE_CHECKING:
 # Reason codes and severity levels (use string literals to avoid circular import)
 REASON_FALLBACK = "fallback"
 SEVERITY_WARNING = "warning"
+
+API_TRANSPORT_FACTORIES: Mapping[LLMTransportType, type[BaseLLMTransport]] = MappingProxyType(
+    {
+        LLMTransportType.OPENROUTER_API: OpenRouterTransport,
+        LLMTransportType.CEREBRAS_API: CerebrasTransport,
+        LLMTransportType.ANTHROPIC_API: AnthropicAPITransport,
+        LLMTransportType.KIMI_API: KimiTransport,
+    }
+)
 
 
 class LLMRouter:
@@ -82,17 +92,9 @@ class LLMRouter:
         return transport
 
     def _create_transport(self, route: LLMRoute) -> BaseLLMTransport | None:
-        if route.transport == LLMTransportType.OPENROUTER_API:
-            return OpenRouterTransport(route, telemetry_callback=self._telemetry_callback)
-        if route.transport == LLMTransportType.CEREBRAS_API:
-            return CerebrasTransport(route, telemetry_callback=self._telemetry_callback)
-        if route.transport == LLMTransportType.ANTHROPIC_API:
-            return AnthropicAPITransport(
-                route,
-                telemetry_callback=self._telemetry_callback,
-            )
-        if route.transport == LLMTransportType.KIMI_API:
-            return KimiTransport(route, telemetry_callback=self._telemetry_callback)
+        factory = API_TRANSPORT_FACTORIES.get(route.transport)
+        if factory is not None:
+            return factory(route, telemetry_callback=self._telemetry_callback)
         if route.transport == LLMTransportType.CODEX_APP_SERVER:
             return CodexTransport(
                 route,

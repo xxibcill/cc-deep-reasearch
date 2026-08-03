@@ -583,29 +583,9 @@ def load_config(config_path: Path | None = None) -> Config:
     if api_keys:
         config.tavily.api_keys = api_keys
 
-    openrouter_api_keys = _parse_provider_api_keys_from_env(
-        "OPENROUTER_API_KEYS",
-        "OPENROUTER_API_KEY",
-    )
-    if openrouter_api_keys:
-        config.llm.openrouter.api_keys = openrouter_api_keys
-        config.llm.openrouter.api_key = openrouter_api_keys[0]
+    from .env_overrides import apply_provider_api_key_overrides
 
-    cerebras_api_keys = _parse_provider_api_keys_from_env(
-        "CEREBRAS_API_KEYS",
-        "CEREBRAS_API_KEY",
-    )
-    if cerebras_api_keys:
-        config.llm.cerebras.api_keys = cerebras_api_keys
-        config.llm.cerebras.api_key = cerebras_api_keys[0]
-
-    kimi_api_keys = _normalize_api_key_list(
-        _parse_provider_api_keys_from_env("MOONSHOT_API_KEYS", "MOONSHOT_API_KEY"),
-        _parse_provider_api_keys_from_env("KIMI_API_KEYS", "KIMI_API_KEY"),
-    )
-    if kimi_api_keys:
-        config.llm.kimi.api_keys = kimi_api_keys
-        config.llm.kimi.api_key = kimi_api_keys[0]
+    apply_provider_api_key_overrides(config)
 
     if settings.depth:
         config.search.depth = settings.depth

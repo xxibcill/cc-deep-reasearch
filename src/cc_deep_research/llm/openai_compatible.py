@@ -74,6 +74,8 @@ class OpenAICompatibleTransport(BaseLLMTransport):
 
     def is_available(self) -> bool:
         """Return whether at least one API key is currently usable."""
+        if not self.route.enabled:
+            return False
         if self._key_manager is not None:
             return self._key_manager.available_count > 0
         return bool(self._api_keys)
@@ -165,7 +167,7 @@ class OpenAICompatibleTransport(BaseLLMTransport):
             )
             latency_ms = self._latency_ms(started_at)
 
-            if response.status_code in {401, 403}:
+            if response.status_code == 401:
                 self._emit_failure(request, latency_ms, "authentication", response.status_code)
                 raise self._authentication_error("authentication failed: invalid API key")
 
