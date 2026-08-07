@@ -65,6 +65,10 @@ class ResearchRunJobRegistry:
         self._jobs: dict[str, ResearchRunJob] = {}
         self._lock = threading.Lock()
 
+    def _job_changed(self, job: ResearchRunJob) -> None:
+        """Handle a durable job-state mutation."""
+        return None
+
     def create_job(
         self,
         request: ResearchRunRequest,
@@ -78,6 +82,7 @@ class ResearchRunJobRegistry:
         )
         with self._lock:
             self._jobs[job.run_id] = job
+        self._job_changed(job)
         return job
 
     def create_resume_job(
@@ -117,7 +122,8 @@ class ResearchRunJobRegistry:
                 idempotency_key=idempotency_key,
             )
             self._jobs[job.run_id] = job
-            return job
+        self._job_changed(job)
+        return job
 
     def find_by_session_id(self, session_id: str) -> ResearchRunJob | None:
         """Return the most recently created job attached to a session."""
@@ -162,7 +168,8 @@ class ResearchRunJobRegistry:
                 idempotency_key=idempotency_key,
             )
             self._jobs[job.run_id] = job
-            return job
+        self._job_changed(job)
+        return job
 
     def find_active_resume(
         self,
@@ -220,6 +227,7 @@ class ResearchRunJobRegistry:
         job = self._require_job(run_id)
         with self._lock:
             job.session_id = session_id
+        self._job_changed(job)
         return job
 
     def mark_running(
@@ -237,6 +245,7 @@ class ResearchRunJobRegistry:
             job.started_at = datetime.now(UTC)
             if session_id is not None:
                 job.session_id = session_id
+        self._job_changed(job)
         return job
 
     def mark_completed(
@@ -268,6 +277,7 @@ class ResearchRunJobRegistry:
             job.session_id = result.session_id
             job.error = None
             job.completed_at = datetime.now(UTC)
+        self._job_changed(job)
         return job
 
     def mark_failed(
@@ -285,12 +295,14 @@ class ResearchRunJobRegistry:
             job.result = None
             job.error = error
             job.completed_at = datetime.now(UTC)
+        self._job_changed(job)
         return job
 
     def request_cancel(self, run_id: str) -> ResearchRunJob:
         """Record an operator stop request for a run."""
         job = self._require_job(run_id)
         job.cancel_requested.set()
+        self._job_changed(job)
         return job
 
     def mark_cancelled(
@@ -307,6 +319,7 @@ class ResearchRunJobRegistry:
             job.result = None
             job.error = error
             job.completed_at = datetime.now(UTC)
+        self._job_changed(job)
         return job
 
     async def cancel_all(self) -> None:
@@ -445,91 +458,8 @@ class PersistentResearchRunJobRegistry(ResearchRunJobRegistry):
         self._store = store or ResearchRunJobStore()
         self._restore_jobs()
 
-    def create_job(
-        self,
-        request: ResearchRunRequest,
-        *,
-        run_id: str | None = None,
-    ) -> ResearchRunJob:
-        job = super().create_job(request, run_id=run_id)
-        self._persist_job(job)
-        return job
-
-    def create_resume_job(
-        self,
-        original: ResearchRunJob,
-        *,
-        checkpoint_id: str,
-        idempotency_key: str | None = None,
-    ) -> ResearchRunJob:
-        job = super().create_resume_job(
-            original,
-            checkpoint_id=checkpoint_id,
-            idempotency_key=idempotency_key,
-        )
-        self._persist_job(job)
-        return job
-
-    def create_resume_job_for_session(
-        self,
-        request: ResearchRunRequest,
-        *,
-        original_session_id: str,
-        checkpoint_id: str,
-        original_run_id: str | None = None,
-        idempotency_key: str | None = None,
-    ) -> ResearchRunJob:
-        job = super().create_resume_job_for_session(
-            request,
-            original_session_id=original_session_id,
-            checkpoint_id=checkpoint_id,
-            original_run_id=original_run_id,
-            idempotency_key=idempotency_key,
-        )
-        self._persist_job(job)
-        return job
-
-    def set_session_id(self, run_id: str, *, session_id: str) -> ResearchRunJob:
-        job = super().set_session_id(run_id, session_id=session_id)
-        self._persist_job(job)
-        return job
-
-    def mark_running(
-        self,
-        run_id: str,
-        *,
-        session_id: str | None = None,
-    ) -> ResearchRunJob:
-        job = super().mark_running(run_id, session_id=session_id)
-        self._persist_job(job)
-        return job
-
-    def mark_completed(self, run_id: str, *, result: ResearchRunResult) -> ResearchRunJob:
-        job = super().mark_completed(run_id, result=result)
-        self._persist_job(job)
-        return job
-
-    def mark_failed(self, run_id: str, *, error: str) -> ResearchRunJob:
-        job = super().mark_failed(run_id, error=error)
-        self._persist_job(job)
-        return job
-
-    def request_cancel(self, run_id: str) -> ResearchRunJob:
-        job = super().request_cancel(run_id)
-        self._persist_job(job)
-        return job
-
-    def mark_cancelled(
-        self,
-        run_id: str,
-        *,
-        error: str = "Research run was cancelled by the operator.",
-    ) -> ResearchRunJob:
-        job = super().mark_cancelled(run_id, error=error)
-        self._persist_job(job)
-        return job
-
-    def _persist_job(self, job: ResearchRunJob) -> None:
+    def _job_changed(self, job: ResearchRunJob) -> None:
+        """Persist every durable mutation through the base registry hook."""
         self._store.save(job)
 
     def _restore_jobs(self) -> None:
@@ -540,7 +470,7 @@ class PersistentResearchRunJobRegistry(ResearchRunJobRegistry):
                 job.error = self._RECOVERY_ERROR
                 job.completed_at = datetime.now(UTC)
             self._jobs[job.run_id] = job
-            self._persist_job(job)
+            self._job_changed(job)
 
 
 ResearchRunJobStatus = ResearchRunStatus

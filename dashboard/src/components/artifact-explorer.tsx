@@ -28,6 +28,7 @@ import {
   resumeResearchSession,
   type SessionArtifactsResponse,
 } from '@/lib/api';
+import { isResumableStatus } from '@/lib/session-route';
 import { useNotifications } from '@/components/ui/notification-center';
 import type {
   ResearchRunStatus,
@@ -383,7 +384,7 @@ export function ArtifactExplorer({
             </div>
           )}
 
-          {isTerminal && resumeAvailable && (
+          {isResumableStatus(runStatus) && resumeAvailable && (
             <div className="mb-4 flex flex-col gap-3 rounded-lg border border-primary/25 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-sm font-medium text-foreground">Continue saved research</p>

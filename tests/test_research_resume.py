@@ -28,7 +28,11 @@ from cc_deep_research.orchestration.execution import (
 from cc_deep_research.orchestration.phases import PhaseRunner
 from cc_deep_research.orchestration.session_builder import SessionBuilder
 from cc_deep_research.orchestration.task_dispatcher import TaskDispatcher
-from cc_deep_research.research_runs.models import ResearchRunRequest, ResearchWorkflow
+from cc_deep_research.research_runs.models import (
+    ResearchRunCancelled,
+    ResearchRunRequest,
+    ResearchWorkflow,
+)
 from cc_deep_research.research_runs.resume import (
     ResearchResumePhase,
     ResearchResumeSnapshotError,
@@ -311,3 +315,38 @@ async def test_planner_dispatch_resume_skips_successful_tasks() -> None:
     assert calls == {"search": 0, "analyze": 1}
     assert set(results) == {"search", "analyze"}
     assert snapshots[-1]["search"].findings == ["saved search"]
+
+
+@pytest.mark.asyncio
+async def test_planner_dispatch_propagates_cancellation_before_persisting_group() -> None:
+    monitor = ResearchMonitor(enabled=False)
+    dispatcher = TaskDispatcher(monitor=monitor)
+    cancellation_requested = False
+
+    async def cancelled_handler(**_kwargs):
+        nonlocal cancellation_requested
+        cancellation_requested = True
+        raise RuntimeError("provider request cancelled")
+
+    def cancellation_check() -> None:
+        if cancellation_requested:
+            raise ResearchRunCancelled("cancelled")
+
+    dispatcher.register_handler("search", cancelled_handler)
+    plan = ResearchPlan(
+        plan_id="plan-cancelled",
+        query="What changed?",
+        summary="Do not advance cancelled task groups",
+        subtasks=[
+            ResearchSubtask(
+                id="search",
+                title="Search",
+                description="Collect sources",
+                task_type="search",
+            )
+        ],
+        execution_order=[["search"]],
+    )
+
+    with pytest.raises(ResearchRunCancelled, match="cancelled"):
+        await dispatcher.dispatch_plan(plan, cancellation_check=cancellation_check)

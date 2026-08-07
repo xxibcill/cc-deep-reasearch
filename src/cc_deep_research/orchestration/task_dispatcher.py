@@ -14,6 +14,7 @@ from cc_deep_research.models import (
     TaskExecutionResult,
 )
 from cc_deep_research.monitoring import ResearchMonitor
+from cc_deep_research.research_runs.models import ResearchRunCancelled
 
 from .resilience import decide_subtask_retry
 
@@ -114,6 +115,14 @@ class TaskDispatcher:
                 for task_id in pending_task_ids
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
+            self._check_cancellation(cancellation_check)
+
+            cancellation = next(
+                (result for result in results if isinstance(result, ResearchRunCancelled)),
+                None,
+            )
+            if cancellation is not None:
+                raise cancellation
 
             # Process results
             for task_id, result in zip(pending_task_ids, results, strict=True):
@@ -204,6 +213,8 @@ class TaskDispatcher:
                     findings=result.get("findings", []) if isinstance(result, dict) else [],
                     execution_time_seconds=execution_time,
                 )
+            except ResearchRunCancelled:
+                raise
             except Exception as e:
                 retry_decision = decide_subtask_retry(
                     task=task,

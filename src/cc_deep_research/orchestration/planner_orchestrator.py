@@ -260,6 +260,8 @@ class PlannerResearchOrchestrator:
                     initial_results=task_results,
                     group_completed_callback=persist_group,
                 )
+                if cancellation_check:
+                    cancellation_check()
                 self._persist_planner_state(
                     session_id=session_id,
                     query=query,

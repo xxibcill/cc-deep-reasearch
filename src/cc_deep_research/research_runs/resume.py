@@ -81,8 +81,6 @@ class ResearchResumeState(BaseModel):
     analysis: AnalysisResult | None = None
     validation: ValidationResult | None = None
     iteration_history: list[IterationHistoryRecord] = Field(default_factory=list)
-    iteration: int = Field(default=1, ge=1)
-    follow_up_queries: list[str] = Field(default_factory=list)
     planner_result: PlannerResult | None = None
     planner_task_results: dict[str, TaskExecutionResult] = Field(default_factory=dict)
     planner_synthesis: PlanSynthesis | None = None

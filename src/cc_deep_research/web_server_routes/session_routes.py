@@ -17,6 +17,7 @@ from cc_deep_research.models.session import (
 from cc_deep_research.research_runs.models import (
     BulkSessionDeleteRequest,
     ResearchOutputFormat,
+    ResearchRunStatus,
     SessionDeleteRequest,
 )
 from cc_deep_research.research_runs.resume import (
@@ -24,6 +25,7 @@ from cc_deep_research.research_runs.resume import (
     ResearchResumeState,
     ResearchResumeStore,
 )
+from cc_deep_research.research_runs.service import ResearchRunService
 from cc_deep_research.research_runs.session_purge import SessionPurgeService
 from cc_deep_research.session_store import SessionStore
 from cc_deep_research.telemetry import (
@@ -51,10 +53,24 @@ from cc_deep_research.web_server_routes.session_views import (
 logger = logging.getLogger(__name__)
 
 
+class ResearchResumeConfigurationError(RuntimeError):
+    """Raised when a snapshot no longer matches the active configuration."""
+
+
+def _resume_state_matches_current_configuration(state: ResearchResumeState) -> bool:
+    try:
+        current_fingerprint = ResearchRunService().prepare(state.request).config_fingerprint
+    except Exception:
+        logger.exception("Could not resolve current configuration for resume validation")
+        return False
+    return current_fingerprint == state.config_fingerprint
+
+
 def _load_executable_resume_checkpoint(
     session_id: str,
     *,
     checkpoint_id: str | None = None,
+    reject_incompatible_config: bool = False,
 ) -> tuple[dict[str, Any], ResearchResumeState] | None:
     """Return a checksum-verified execution snapshot, excluding legacy checkpoints."""
     telemetry_dir = get_default_telemetry_dir()
@@ -67,6 +83,7 @@ def _load_executable_resume_checkpoint(
         candidates = list(reversed(manifest.get("checkpoints", [])))
 
     store = ResearchResumeStore(telemetry_dir)
+    incompatible_config_found = False
     for candidate in candidates:
         if not isinstance(candidate, dict):
             continue
@@ -87,9 +104,21 @@ def _load_executable_resume_checkpoint(
                 candidate.get("checkpoint_id"),
             )
             continue
+        if not _resume_state_matches_current_configuration(state):
+            incompatible_config_found = True
+            logger.warning(
+                "Ignoring configuration-incompatible resume snapshot for session %s checkpoint %s",
+                session_id,
+                candidate.get("checkpoint_id"),
+            )
+            continue
         state.origin_session_id = state.origin_session_id or session_id
         state.origin_checkpoint_id = str(candidate["checkpoint_id"])
         return candidate, state
+    if incompatible_config_found and reject_incompatible_config:
+        raise ResearchResumeConfigurationError(
+            "Research configuration changed since the checkpoint was created"
+        )
     return None
 
 def register_session_routes(app: FastAPI) -> None:
@@ -1121,10 +1150,32 @@ def register_session_routes(app: FastAPI) -> None:
                 status_code=404,
             )
 
-        executable = _load_executable_resume_checkpoint(
-            session_id,
-            checkpoint_id=checkpoint_id,
+        registry = get_job_registry(app)
+        original_job = registry.find_by_session_id(session_id)
+        if original_job is not None and original_job.is_active:
+            return JSONResponse(
+                content={"error": "The original research run is still active"},
+                status_code=409,
+            )
+        completed_session = (
+            original_job.status == ResearchRunStatus.COMPLETED
+            if original_job is not None
+            else SessionStore().load_session(session_id) is not None
         )
+        if completed_session:
+            return JSONResponse(
+                content={"error": "Completed research sessions cannot be resumed"},
+                status_code=409,
+            )
+
+        try:
+            executable = _load_executable_resume_checkpoint(
+                session_id,
+                checkpoint_id=checkpoint_id,
+                reject_incompatible_config=True,
+            )
+        except ResearchResumeConfigurationError as exc:
+            return JSONResponse(content={"error": str(exc)}, status_code=409)
         if executable is None:
             return JSONResponse(
                 content={
@@ -1139,13 +1190,6 @@ def register_session_routes(app: FastAPI) -> None:
 
         checkpoint, state = executable
         selected_checkpoint_id = str(checkpoint["checkpoint_id"])
-        registry = get_job_registry(app)
-        original_job = registry.find_by_session_id(session_id)
-        if original_job is not None and original_job.is_active:
-            return JSONResponse(
-                content={"error": "The original research run is still active"},
-                status_code=409,
-            )
 
         if idempotency_key:
             duplicate = next(

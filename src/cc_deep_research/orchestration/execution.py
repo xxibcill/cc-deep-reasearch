@@ -723,7 +723,6 @@ class ResearchExecutionService:
         analysis: AnalysisResult | None = None,
         validation: ValidationResult | None = None,
         iteration_history: list[IterationHistoryRecord] | None = None,
-        iteration: int = 1,
         resume_state: ResearchResumeState | None = None,
     ) -> str | None:
         """Commit executable state and link it from a telemetry checkpoint."""
@@ -744,7 +743,6 @@ class ResearchExecutionService:
             analysis=analysis,
             validation=validation,
             iteration_history=iteration_history or [],
-            iteration=iteration,
             origin_session_id=(resume_state.origin_session_id if resume_state else session_id),
             origin_checkpoint_id=(resume_state.origin_checkpoint_id if resume_state else None),
         )
@@ -755,7 +753,6 @@ class ResearchExecutionService:
             output_ref={
                 "next_phase": next_phase.value,
                 "source_count": len(state.sources),
-                "iteration": state.iteration,
             },
             state_ref=snapshot.path,
             artifact_refs=[
