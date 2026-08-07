@@ -8,7 +8,16 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from cc_deep_research.config import get_default_config_path, load_config
+from cc_deep_research.config import (
+    Config,
+    get_default_config_path,
+    load_config,
+    load_persisted_config_data,
+)
+from cc_deep_research.config.credentials import (
+    PROVIDER_CREDENTIAL_SPECS,
+    ProviderCredentialSpec,
+)
 from cc_deep_research.operations import (
     PathStatus,
     validate_all_data_paths,
@@ -97,6 +106,8 @@ def _check_config_file() -> HealthCheckResult:
 def _check_provider_credentials() -> HealthCheckResult:
     """Check that at least one provider has valid credentials configured."""
     config = load_config()
+    _, persisted_data, _ = load_persisted_config_data()
+    persisted_config = Config(**persisted_data)
 
     providers_status: dict[str, Any] = {}
     has_any_provider = False
@@ -107,52 +118,17 @@ def _check_provider_credentials() -> HealthCheckResult:
     providers_status["tavily"] = {
         "configured": len(tavily_keys) > 0,
         "from_env": tavily_from_env,
+        "persisted": bool(persisted_config.tavily.api_keys),
         "count": len(tavily_keys),
     }
     if tavily_keys or tavily_from_env:
         has_any_provider = True
 
-    # Check OpenRouter
-    openrouter_keys = config.llm.openrouter.get_api_keys()
-    openrouter_from_env = bool(
-        os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENROUTER_API_KEYS")
-    )
-    providers_status["openrouter"] = {
-        "enabled": config.llm.openrouter.enabled,
-        "configured": len(openrouter_keys) > 0,
-        "from_env": openrouter_from_env,
-        "count": len(openrouter_keys),
-    }
-    if config.llm.openrouter.enabled and (openrouter_keys or openrouter_from_env):
-        has_any_provider = True
-
-    # Check Cerebras
-    cerebras_keys = config.llm.cerebras.get_api_keys()
-    cerebras_from_env = bool(
-        os.environ.get("CEREBRAS_API_KEY") or os.environ.get("CEREBRAS_API_KEYS")
-    )
-    providers_status["cerebras"] = {
-        "enabled": config.llm.cerebras.enabled,
-        "configured": len(cerebras_keys) > 0,
-        "from_env": cerebras_from_env,
-        "count": len(cerebras_keys),
-    }
-    if config.llm.cerebras.enabled and (cerebras_keys or cerebras_from_env):
-        has_any_provider = True
-
-    # Check Anthropic
-    anthropic_keys = config.llm.anthropic.get_api_keys()
-    anthropic_from_env = bool(
-        os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEYS")
-    )
-    providers_status["anthropic"] = {
-        "enabled": config.llm.anthropic.enabled,
-        "configured": len(anthropic_keys) > 0,
-        "from_env": anthropic_from_env,
-        "count": len(anthropic_keys),
-    }
-    if config.llm.anthropic.enabled and (anthropic_keys or anthropic_from_env):
-        has_any_provider = True
+    for spec in PROVIDER_CREDENTIAL_SPECS:
+        status = _build_llm_provider_status(config, persisted_config, spec)
+        providers_status[spec.config_attribute] = status
+        if status["enabled"] and status["configured"]:
+            has_any_provider = True
 
     if not has_any_provider:
         return HealthCheckResult(
@@ -167,7 +143,7 @@ def _check_provider_credentials() -> HealthCheckResult:
     # Check for duplicate credentials (config file + env vars)
     conflicts: list[str] = []
     for name, info in providers_status.items():
-        if info.get("from_env") and info.get("configured"):
+        if info.get("from_env") and info.get("persisted"):
             conflicts.append(name)
 
     if conflicts:
@@ -187,6 +163,25 @@ def _check_provider_credentials() -> HealthCheckResult:
         reason="At least one provider has credentials configured",
         details={"providers": providers_status},
     )
+
+
+def _build_llm_provider_status(
+    config: Config,
+    persisted_config: Config,
+    spec: ProviderCredentialSpec,
+) -> dict[str, bool | int]:
+    """Build non-secret health metadata for one configured LLM provider."""
+    provider_config = getattr(config.llm, spec.config_attribute)
+    persisted_provider = getattr(persisted_config.llm, spec.config_attribute)
+    api_keys = provider_config.get_api_keys()
+    persisted_api_keys = persisted_provider.get_api_keys()
+    return {
+        "enabled": provider_config.enabled,
+        "configured": bool(api_keys),
+        "from_env": any(os.environ.get(name) for name in spec.env_vars),
+        "persisted": bool(persisted_api_keys),
+        "count": len(api_keys),
+    }
 
 
 def _check_duckdb_access() -> HealthCheckResult:
@@ -354,18 +349,22 @@ def _check_data_paths() -> HealthCheckResult:
     path_summary = []
     for name, info in validation["paths"].items():
         if info["status"] in (PathStatus.FAIL, PathStatus.WARNING):
-            path_summary.append({
-                "name": name,
-                "status": info["status"],
-                "remediation": info["remediation"],
-            })
+            path_summary.append(
+                {
+                    "name": name,
+                    "status": info["status"],
+                    "remediation": info["remediation"],
+                }
+            )
 
     return HealthCheckResult(
         check_id="data_paths",
         label="Data paths",
         status=status,
         reason=f"{summary['pass']} paths OK, {summary['warning']} warnings, {summary['fail']} failures",
-        remediation="Review path permissions in the settings panel" if summary["fail"] > 0 or summary["warning"] > 0 else None,
+        remediation="Review path permissions in the settings panel"
+        if summary["fail"] > 0 or summary["warning"] > 0
+        else None,
         details={"paths": validation["paths"], "summary": summary},
     )
 

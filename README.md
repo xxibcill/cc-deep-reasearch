@@ -70,6 +70,7 @@ including:
 - `ANTHROPIC_API_KEY`
 - `OPENROUTER_API_KEY`
 - `CEREBRAS_API_KEY`
+- `MOONSHOT_API_KEY` (direct Kimi API; `KIMI_API_KEY` is also accepted)
 - `CC_DEEP_RESEARCH_CONFIG`
 
 ## LLM Routing
@@ -81,10 +82,17 @@ Inqulume Studio supports multiple LLM backends:
 | `anthropic_api` | Direct Claude API access |
 | `openrouter_api` | Multi-model access via OpenRouter |
 | `cerebras_api` | Fast inference via Cerebras |
+| `kimi_api` | Direct Kimi API access through Moonshot AI |
 | `codex_app_server` | Codex through the local app-server and ChatGPT sign-in |
 | `heuristic` | Rule-based fallback |
 
 Configure in `~/.config/inqulume-studio/config.yaml` under `llm` section.
+For direct Kimi access, create a key in the
+[Kimi API Platform](https://platform.kimi.ai), add it under **Settings →
+Secrets**, enable the direct Kimi provider, and select `kimi` for the desired
+agent routes. The default endpoint is `https://api.moonshot.ai/v1` and the
+default model is `kimi-k3`.
+
 For Codex, start the local dashboard, open `/settings`, enable the provider,
 and complete browser or device-code sign-in. Codex credentials are managed by
 Codex and are never stored in the project configuration.

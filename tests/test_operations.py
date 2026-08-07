@@ -8,6 +8,7 @@ from signal import SIGTERM
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from cc_deep_research.config import Config
 from cc_deep_research.operations import (
     PathStatus,
     get_recommended_directory_layout,
@@ -28,6 +29,7 @@ from cc_deep_research.operations.hardening import (
 )
 from cc_deep_research.operations.health import (
     HealthCheckStatus,
+    _check_provider_credentials,
     run_health_checks,
 )
 from cc_deep_research.operations.runbooks import (
@@ -37,6 +39,7 @@ from cc_deep_research.operations.runbooks import (
 )
 from cc_deep_research.operations.secrets import (
     CredentialStatus,
+    _check_credential_health,
     get_rotation_guidance,
     get_secrets_inventory,
 )
@@ -307,6 +310,35 @@ class TestSecretsRotation:
             assert "provider" in item
             assert "guidance" in item  # rotation guidance text
             assert item["guidance"] is not None
+
+
+def test_env_only_kimi_key_is_not_reported_as_duplicate(
+    monkeypatch,
+) -> None:
+    config = Config()
+    config.llm.kimi.enabled = True
+    config.llm.kimi.api_key = "moonshot-env-key"
+    config.llm.kimi.api_keys = ["moonshot-env-key"]
+    monkeypatch.setenv("MOONSHOT_API_KEY", "moonshot-env-key")
+    monkeypatch.setattr(
+        "cc_deep_research.operations.health.load_config",
+        lambda: config,
+    )
+    monkeypatch.setattr(
+        "cc_deep_research.operations.health.load_persisted_config_data",
+        lambda: (Path("config.yaml"), {}, False),
+    )
+
+    result = _check_provider_credentials()
+
+    assert "kimi" not in (result.details.get("conflicts", []) if result.details else [])
+    assert result.details["providers"]["kimi"]["persisted"] is False
+
+
+def test_single_saved_kimi_key_is_configured() -> None:
+    credential = _check_credential_health("llm.kimi.api_key", "saved-key")
+
+    assert credential.status == CredentialStatus.CONFIGURED
 
 
 class TestSetupWizard:

@@ -56,6 +56,7 @@ export TAVILY_API_KEYS="..."
 export ANTHROPIC_API_KEY="..."
 export OPENROUTER_API_KEY="..."
 export CEREBRAS_API_KEY="..."
+export MOONSHOT_API_KEY="..."  # Direct Kimi API
 ```
 
 Use the health endpoint to verify the active environment:
@@ -63,6 +64,17 @@ Use the health endpoint to verify the active environment:
 ```bash
 curl -fsS http://localhost:8000/api/health
 ```
+
+### Connect Kimi directly
+
+Create a key in the [Kimi API Platform](https://platform.kimi.ai), then either
+save it in **Settings → Secrets** or set `MOONSHOT_API_KEY`. The aliases
+`KIMI_API_KEY`, `MOONSHOT_API_KEYS`, and `KIMI_API_KEYS` are also supported.
+
+In **Settings → Model routing**, enable the direct Kimi provider, keep
+`kimi-k3` or choose another model available to your account, then select
+`kimi` for the desired agent routes. The built-in endpoint is
+`https://api.moonshot.ai/v1`; no OpenRouter credential is required.
 
 ### Connect Codex through ChatGPT
 

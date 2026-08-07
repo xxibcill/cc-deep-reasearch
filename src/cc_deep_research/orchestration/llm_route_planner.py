@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from cc_deep_research.config import Config
 from cc_deep_research.llm.base import LLMRoute, LLMRoutePlan, transport_from_route_name
+from cc_deep_research.llm.provider_catalog import build_route_for_transport
 from cc_deep_research.models.analysis import StrategyResult
 from cc_deep_research.models.llm import (
     LLMPlanModel,
@@ -128,6 +129,9 @@ class LLMRoutePlanner:
         # Check Anthropic availability
         availability[LLMTransportType.ANTHROPIC_API] = self._check_anthropic_available()
 
+        # Check direct Kimi availability
+        availability[LLMTransportType.KIMI_API] = self._check_kimi_available()
+
         # Codex authentication is verified by the runtime transport.
         availability[LLMTransportType.CODEX_APP_SERVER] = self._check_codex_available()
 
@@ -172,6 +176,12 @@ class LLMRoutePlanner:
             return False
 
         return bool(self._llm_config.anthropic.get_api_keys())
+
+    def _check_kimi_available(self) -> bool:
+        """Check whether the direct Kimi transport is enabled and credentialed."""
+        if not self._llm_config.kimi.enabled:
+            return False
+        return bool(self._llm_config.kimi.get_api_keys())
 
     def _check_codex_available(self) -> bool:
         """Return whether Codex is enabled for runtime authentication preflight."""
@@ -263,6 +273,7 @@ class LLMRoutePlanner:
             for transport in [
                 LLMTransportType.CEREBRAS_API,
                 LLMTransportType.OPENROUTER_API,
+                LLMTransportType.KIMI_API,
                 LLMTransportType.ANTHROPIC_API,
             ]:
                 if availability.get(transport, False):
@@ -287,45 +298,8 @@ class LLMRoutePlanner:
         Returns:
             Route model with appropriate configuration.
         """
-        if transport == LLMTransportType.OPENROUTER_API:
-            return LLMRouteModel(
-                transport=LLMTransportType.OPENROUTER_API,
-                provider=LLMProviderType.OPENROUTER,
-                model=self._llm_config.openrouter.model,
-                enabled=True,
-            )
-
-        if transport == LLMTransportType.CEREBRAS_API:
-            return LLMRouteModel(
-                transport=LLMTransportType.CEREBRAS_API,
-                provider=LLMProviderType.CEREBRAS,
-                model=self._llm_config.cerebras.model,
-                enabled=True,
-            )
-
-        if transport == LLMTransportType.ANTHROPIC_API:
-            return LLMRouteModel(
-                transport=LLMTransportType.ANTHROPIC_API,
-                provider=LLMProviderType.ANTHROPIC,
-                model=self._llm_config.anthropic.model,
-                enabled=True,
-            )
-
-        if transport == LLMTransportType.CODEX_APP_SERVER:
-            return LLMRouteModel(
-                transport=LLMTransportType.CODEX_APP_SERVER,
-                provider=LLMProviderType.CODEX,
-                model=self._llm_config.codex.model or "codex-default",
-                enabled=True,
-            )
-
-        # Heuristic fallback
-        return LLMRouteModel(
-            transport=LLMTransportType.HEURISTIC,
-            provider=LLMProviderType.HEURISTIC,
-            model="heuristic",
-            enabled=True,
-        )
+        route = build_route_for_transport(self._llm_config, transport)
+        return route.model_copy(update={"enabled": True})
 
     def update_registry_from_plan(
         self,
@@ -372,49 +346,13 @@ class LLMRoutePlanner:
         enabled: bool,
     ) -> LLMRoute:
         """Build a runtime route with transport-specific configuration."""
-        extra: dict[str, str | list[str] | dict[str, str] | None] = {}
-        timeout_seconds = 180
-
-        if transport == LLMTransportType.OPENROUTER_API:
-            api_keys = self._llm_config.openrouter.get_api_keys()
-            timeout_seconds = self._llm_config.openrouter.timeout_seconds
-            extra = {
-                "api_key": api_keys[0] if api_keys else None,
-                "api_keys": api_keys,
-                "base_url": self._llm_config.openrouter.base_url,
-                "extra_headers": self._llm_config.openrouter.extra_headers,
+        route = build_route_for_transport(self._llm_config, transport)
+        return route.model_copy(
+            update={
+                "provider": provider,
+                "model": model,
+                "enabled": enabled,
             }
-        elif transport == LLMTransportType.CEREBRAS_API:
-            api_keys = self._llm_config.cerebras.get_api_keys()
-            timeout_seconds = self._llm_config.cerebras.timeout_seconds
-            extra = {
-                "api_key": api_keys[0] if api_keys else None,
-                "api_keys": api_keys,
-                "base_url": self._llm_config.cerebras.base_url,
-            }
-        elif transport == LLMTransportType.ANTHROPIC_API:
-            api_keys = self._llm_config.anthropic.get_api_keys()
-            timeout_seconds = self._llm_config.anthropic.timeout_seconds
-            extra = {
-                "api_key": api_keys[0] if api_keys else None,
-                "api_keys": api_keys,
-                "base_url": self._llm_config.anthropic.base_url,
-                "max_tokens": str(self._llm_config.anthropic.max_tokens),
-            }
-        elif transport == LLMTransportType.CODEX_APP_SERVER:
-            timeout_seconds = self._llm_config.codex.timeout_seconds
-            extra = {
-                "model": self._llm_config.codex.model,
-                "reasoning_effort": self._llm_config.codex.reasoning_effort,
-            }
-
-        return LLMRoute(
-            transport=transport,
-            provider=provider,
-            model=model,
-            enabled=enabled,
-            timeout_seconds=timeout_seconds,
-            extra=extra,
         )
 
 

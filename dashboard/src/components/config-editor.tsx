@@ -31,6 +31,10 @@ type FormState = {
   routeReportQualityEvaluator: string
   routeReporter: string
   routeDefault: string
+  kimiEnabled: boolean
+  kimiModel: string
+  kimiReasoningEffort: string
+  kimiTimeoutSeconds: string
   cacheEnabled: boolean
   cacheTtlSeconds: string
   cacheMaxEntries: string
@@ -52,6 +56,29 @@ type BannerState = {
   title: string
   description: string
 } | null
+
+const KIMI_FIELD_DEFINITIONS = {
+  enabled: {
+    path: 'llm.kimi.enabled',
+    label: 'Enable Kimi',
+    description: 'Allow direct Kimi API routes when a Moonshot API key is configured.',
+  },
+  model: {
+    path: 'llm.kimi.model',
+    label: 'Kimi model',
+    description: 'Model ID sent to the direct Kimi API.',
+  },
+  reasoningEffort: {
+    path: 'llm.kimi.reasoning_effort',
+    label: 'Kimi reasoning effort',
+    description: 'Reasoning budget for Kimi K3 requests.',
+  },
+  timeoutSeconds: {
+    path: 'llm.kimi.timeout_seconds',
+    label: 'Kimi timeout (seconds)',
+    description: 'Maximum time to wait for one direct Kimi response.',
+  },
+} satisfies Record<string, FieldDefinition>
 
 const FIELD_DEFINITIONS: FieldDefinition[] = [
   {
@@ -129,6 +156,7 @@ const FIELD_DEFINITIONS: FieldDefinition[] = [
     label: 'Max cache entries',
     description: 'Upper limit for cached search results kept on disk.',
   },
+  ...Object.values(KIMI_FIELD_DEFINITIONS),
 ]
 
 const FRIENDLY_FIELD_LABELS: Record<string, string> = {
@@ -140,6 +168,8 @@ const FRIENDLY_FIELD_LABELS: Record<string, string> = {
   'llm.cerebras.api_keys': 'Cerebras API keys',
   'llm.anthropic.api_key': 'Anthropic API key',
   'llm.anthropic.api_keys': 'Anthropic API keys',
+  'llm.kimi.api_key': 'Kimi API key',
+  'llm.kimi.api_keys': 'Kimi API keys',
 }
 
 const FORM_BINDINGS: FormBinding[] = [
@@ -155,6 +185,10 @@ const FORM_BINDINGS: FormBinding[] = [
   { path: 'llm.route_defaults.report_quality_evaluator', key: 'routeReportQualityEvaluator' },
   { path: 'llm.route_defaults.reporter', key: 'routeReporter' },
   { path: 'llm.route_defaults.default', key: 'routeDefault' },
+  { path: 'llm.kimi.enabled', key: 'kimiEnabled' },
+  { path: 'llm.kimi.model', key: 'kimiModel' },
+  { path: 'llm.kimi.reasoning_effort', key: 'kimiReasoningEffort' },
+  { path: 'llm.kimi.timeout_seconds', key: 'kimiTimeoutSeconds' },
   { path: 'search_cache.enabled', key: 'cacheEnabled' },
   { path: 'search_cache.ttl_seconds', key: 'cacheTtlSeconds' },
   { path: 'search_cache.max_entries', key: 'cacheMaxEntries' },
@@ -178,11 +212,16 @@ const MODEL_ROUTING_PATHS = [
   'llm.route_defaults.report_quality_evaluator',
   'llm.route_defaults.reporter',
   'llm.route_defaults.default',
+  'llm.kimi.enabled',
+  'llm.kimi.model',
+  'llm.kimi.reasoning_effort',
+  'llm.kimi.timeout_seconds',
 ]
 
 const DEFAULT_ROUTE_OPTION = 'anthropic'
-const ROUTE_OPTIONS = ['openrouter', 'cerebras', 'anthropic', 'codex', 'heuristic'] as const
+const ROUTE_OPTIONS = ['openrouter', 'cerebras', 'anthropic', 'kimi', 'codex', 'heuristic'] as const
 const ROUTE_OPTION_SET = new Set<string>(ROUTE_OPTIONS)
+const KIMI_REASONING_EFFORT_OPTIONS = ['low', 'high', 'max'] as const
 const DEPTH_OPTIONS = ['quick', 'standard', 'deep']
 const OUTPUT_OPTIONS = ['markdown', 'json', 'html']
 
@@ -234,6 +273,10 @@ function normalizeFormState(config: ConfigResponse): FormState {
     ),
     routeReporter: normalizeRouteOption(readPath(source, 'llm.route_defaults.reporter')),
     routeDefault: normalizeRouteOption(readPath(source, 'llm.route_defaults.default')),
+    kimiEnabled: readPath(source, 'llm.kimi.enabled') === true,
+    kimiModel: String(readPath(source, 'llm.kimi.model') ?? 'kimi-k3'),
+    kimiReasoningEffort: String(readPath(source, 'llm.kimi.reasoning_effort') ?? 'max'),
+    kimiTimeoutSeconds: String(readPath(source, 'llm.kimi.timeout_seconds') ?? 300),
     cacheEnabled: Boolean(readPath(source, 'search_cache.enabled')),
     cacheTtlSeconds: String(readPath(source, 'search_cache.ttl_seconds') ?? 3600),
     cacheMaxEntries: String(readPath(source, 'search_cache.max_entries') ?? 1000),
@@ -398,6 +441,10 @@ export function ConfigEditor() {
           'llm.route_defaults.report_quality_evaluator': form.routeReportQualityEvaluator,
           'llm.route_defaults.reporter': form.routeReporter,
           'llm.route_defaults.default': form.routeDefault,
+          'llm.kimi.enabled': form.kimiEnabled,
+          'llm.kimi.model': form.kimiModel,
+          'llm.kimi.reasoning_effort': form.kimiReasoningEffort,
+          'llm.kimi.timeout_seconds': Number(form.kimiTimeoutSeconds),
           'search_cache.enabled': form.cacheEnabled,
           'search_cache.ttl_seconds': Number(form.cacheTtlSeconds),
           'search_cache.max_entries': Number(form.cacheMaxEntries),
@@ -890,6 +937,109 @@ export function ConfigEditor() {
                 config={config}
                 overrideSources={overrideSources}
               />
+            </div>
+
+            <div className="space-y-3 rounded-2xl border border-border/80 bg-background/50 p-4">
+              <div className="space-y-1">
+                <div className="text-sm font-medium">Direct Kimi provider</div>
+                <div className="text-sm text-muted-foreground">
+                  Add a Moonshot API key in Secrets, enable this provider, then choose Kimi for any
+                  agent route above.
+                </div>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <SettingFieldShell
+                  label={KIMI_FIELD_DEFINITIONS.enabled.label}
+                  description={KIMI_FIELD_DEFINITIONS.enabled.description}
+                  error={fieldErrors['llm.kimi.enabled']}
+                  overridden={false}
+                  dirty={dirtyFieldPaths.includes('llm.kimi.enabled')}
+                  draftValue={formatConfigValue(form.kimiEnabled)}
+                  effectiveValue={formatFieldValue(config, 'effective_config', 'llm.kimi.enabled')}
+                  persistedValue={formatFieldValue(config, 'persisted_config', 'llm.kimi.enabled')}
+                >
+                  <CheckboxRow
+                    checked={form.kimiEnabled}
+                    disabled={saving}
+                    id="config-kimi-enabled"
+                    label="Enable direct Kimi API routing"
+                    onCheckedChange={(checked) => updateField('kimiEnabled', checked)}
+                  />
+                </SettingFieldShell>
+                <SettingFieldShell
+                  label={KIMI_FIELD_DEFINITIONS.model.label}
+                  description={KIMI_FIELD_DEFINITIONS.model.description}
+                  error={fieldErrors['llm.kimi.model']}
+                  overridden={false}
+                  dirty={dirtyFieldPaths.includes('llm.kimi.model')}
+                  draftValue={formatConfigValue(form.kimiModel)}
+                  effectiveValue={formatFieldValue(config, 'effective_config', 'llm.kimi.model')}
+                  persistedValue={formatFieldValue(config, 'persisted_config', 'llm.kimi.model')}
+                >
+                  <Input
+                    disabled={saving}
+                    value={form.kimiModel}
+                    onChange={(event) => updateField('kimiModel', event.target.value)}
+                  />
+                </SettingFieldShell>
+                <SettingFieldShell
+                  label={KIMI_FIELD_DEFINITIONS.reasoningEffort.label}
+                  description={KIMI_FIELD_DEFINITIONS.reasoningEffort.description}
+                  error={fieldErrors['llm.kimi.reasoning_effort']}
+                  overridden={false}
+                  dirty={dirtyFieldPaths.includes('llm.kimi.reasoning_effort')}
+                  draftValue={formatConfigValue(form.kimiReasoningEffort)}
+                  effectiveValue={formatFieldValue(
+                    config,
+                    'effective_config',
+                    'llm.kimi.reasoning_effort',
+                  )}
+                  persistedValue={formatFieldValue(
+                    config,
+                    'persisted_config',
+                    'llm.kimi.reasoning_effort',
+                  )}
+                >
+                  <NativeSelect
+                    disabled={saving}
+                    value={form.kimiReasoningEffort}
+                    onChange={(event) => updateField('kimiReasoningEffort', event.target.value)}
+                  >
+                    {KIMI_REASONING_EFFORT_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </SettingFieldShell>
+                <SettingFieldShell
+                  label={KIMI_FIELD_DEFINITIONS.timeoutSeconds.label}
+                  description={KIMI_FIELD_DEFINITIONS.timeoutSeconds.description}
+                  error={fieldErrors['llm.kimi.timeout_seconds']}
+                  overridden={false}
+                  dirty={dirtyFieldPaths.includes('llm.kimi.timeout_seconds')}
+                  draftValue={formatConfigValue(form.kimiTimeoutSeconds)}
+                  effectiveValue={formatFieldValue(
+                    config,
+                    'effective_config',
+                    'llm.kimi.timeout_seconds',
+                  )}
+                  persistedValue={formatFieldValue(
+                    config,
+                    'persisted_config',
+                    'llm.kimi.timeout_seconds',
+                  )}
+                >
+                  <Input
+                    disabled={saving}
+                    min={30}
+                    max={900}
+                    type="number"
+                    value={form.kimiTimeoutSeconds}
+                    onChange={(event) => updateField('kimiTimeoutSeconds', event.target.value)}
+                  />
+                </SettingFieldShell>
+              </div>
             </div>
           </SettingsSectionCard>
 

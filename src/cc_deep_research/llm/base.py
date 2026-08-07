@@ -23,6 +23,7 @@ class LLMTransportType(StrEnum):
     OPENROUTER_API = "openrouter_api"
     CEREBRAS_API = "cerebras_api"
     ANTHROPIC_API = "anthropic_api"
+    KIMI_API = "kimi_api"
     CODEX_APP_SERVER = "codex_app_server"
     HEURISTIC = "heuristic"
 
@@ -32,6 +33,7 @@ LLM_ROUTE_NAME_TO_TRANSPORT: Mapping[str, LLMTransportType] = MappingProxyType(
         "openrouter": LLMTransportType.OPENROUTER_API,
         "cerebras": LLMTransportType.CEREBRAS_API,
         "anthropic": LLMTransportType.ANTHROPIC_API,
+        "kimi": LLMTransportType.KIMI_API,
         "codex": LLMTransportType.CODEX_APP_SERVER,
         "heuristic": LLMTransportType.HEURISTIC,
     }
@@ -49,6 +51,7 @@ class LLMProviderType(StrEnum):
     OPENROUTER = "openrouter"
     CEREBRAS = "cerebras"
     ANTHROPIC = "anthropic"
+    KIMI = "kimi"
     CODEX = "codex"
     HEURISTIC = "heuristic"
 
@@ -116,6 +119,7 @@ class LLMRoutePlan(BaseModel):
     fallback_order: list[LLMTransportType] = Field(
         default_factory=lambda: [
             LLMTransportType.ANTHROPIC_API,
+            LLMTransportType.KIMI_API,
             LLMTransportType.OPENROUTER_API,
             LLMTransportType.CEREBRAS_API,
             LLMTransportType.CODEX_APP_SERVER,

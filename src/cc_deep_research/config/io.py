@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml
 
+from .env_overrides import apply_provider_api_key_overrides
 from .paths import get_default_config_path
 from .schema import Config, Settings, _normalize_api_key_list
 
@@ -19,7 +20,9 @@ def resolve_config_path(config_path: Path | None = None) -> Path:
     return config_path or settings.config_path or get_default_config_path()
 
 
-def load_persisted_config_data(config_path: Path | None = None) -> tuple[Path, dict[str, Any], bool]:
+def load_persisted_config_data(
+    config_path: Path | None = None,
+) -> tuple[Path, dict[str, Any], bool]:
     """Load raw persisted YAML config data without applying env overrides."""
     resolved_path = resolve_config_path(config_path)
     if not resolved_path.exists():
@@ -61,29 +64,7 @@ def load_config(config_path: Path | None = None) -> Config:
     if api_keys:
         config.tavily.api_keys = api_keys
 
-    openrouter_api_keys = _parse_provider_api_keys_from_env(
-        "OPENROUTER_API_KEYS",
-        "OPENROUTER_API_KEY",
-    )
-    if openrouter_api_keys:
-        config.llm.openrouter.api_keys = openrouter_api_keys
-        config.llm.openrouter.api_key = openrouter_api_keys[0]
-
-    cerebras_api_keys = _parse_provider_api_keys_from_env(
-        "CEREBRAS_API_KEYS",
-        "CEREBRAS_API_KEY",
-    )
-    if cerebras_api_keys:
-        config.llm.cerebras.api_keys = cerebras_api_keys
-        config.llm.cerebras.api_key = cerebras_api_keys[0]
-
-    anthropic_api_keys = _parse_provider_api_keys_from_env(
-        "ANTHROPIC_API_KEYS",
-        "ANTHROPIC_API_KEY",
-    )
-    if anthropic_api_keys:
-        config.llm.anthropic.api_keys = anthropic_api_keys
-        config.llm.anthropic.api_key = anthropic_api_keys[0]
+    apply_provider_api_key_overrides(config)
 
     if settings.depth:
         config.search.depth = settings.depth

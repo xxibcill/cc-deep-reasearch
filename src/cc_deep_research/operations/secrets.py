@@ -8,7 +8,8 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from cc_deep_research.config import load_config
+from cc_deep_research.config import Config, load_config, load_persisted_config_data
+from cc_deep_research.config.credentials import CREDENTIAL_ENV_VARS_BY_FIELD
 
 
 class CredentialStatus(StrEnum):
@@ -78,27 +79,35 @@ SECRET_FIELD_MAP: dict[str, dict[str, str]] = {
         "provider": "Anthropic",
         "rotation": "Generate new key at https://console.anthropic.com/settings/keys, then update config or set ANTHROPIC_API_KEYS env var",
     },
+    "llm.kimi.api_key": {
+        "provider": "Kimi",
+        "rotation": "Generate a key at https://platform.kimi.ai, then update config or set MOONSHOT_API_KEY",
+    },
+    "llm.kimi.api_keys": {
+        "provider": "Kimi",
+        "rotation": "Generate keys at https://platform.kimi.ai, then update config or set MOONSHOT_API_KEYS",
+    },
+}
+
+CREDENTIAL_ENV_VARS = {
+    "tavily.api_keys": ("TAVILY_API_KEYS",),
+    **CREDENTIAL_ENV_VARS_BY_FIELD,
 }
 
 
 def _get_secret_source(field: str) -> str | None:
     """Determine if a secret is set via env var or config file."""
-    env_map = {
-        "tavily.api_keys": "TAVILY_API_KEYS",
-        "llm.openrouter.api_key": "OPENROUTER_API_KEY",
-        "llm.openrouter.api_keys": "OPENROUTER_API_KEYS",
-        "llm.cerebras.api_key": "CEREBRAS_API_KEY",
-        "llm.cerebras.api_keys": "CEREBRAS_API_KEYS",
-        "llm.anthropic.api_key": "ANTHROPIC_API_KEY",
-        "llm.anthropic.api_keys": "ANTHROPIC_API_KEYS",
-    }
-    env_var = env_map.get(field)
-    if env_var and os.environ.get(env_var):
+    if any(os.environ.get(env_var) for env_var in CREDENTIAL_ENV_VARS.get(field, ())):
         return "env"
     return "file"
 
 
-def _check_credential_health(field: str, info: dict[str, Any]) -> CredentialInfo:
+def _check_credential_health(
+    field: str,
+    info: Any,
+    *,
+    persisted_info: Any = None,
+) -> CredentialInfo:
     """Check the health of a single credential."""
     meta = SECRET_FIELD_MAP.get(field, {"provider": field, "rotation": None})
     provider = meta["provider"]
@@ -114,7 +123,7 @@ def _check_credential_health(field: str, info: dict[str, Any]) -> CredentialInfo
     source = _get_secret_source(field)
 
     # Status
-    status = CredentialStatus.UNKNOWN
+    status = CredentialStatus.CONFIGURED if count == 1 else CredentialStatus.UNKNOWN
     warnings: list[str] = []
 
     if count == 0:
@@ -125,16 +134,8 @@ def _check_credential_health(field: str, info: dict[str, Any]) -> CredentialInfo
         warnings.append(f"Multiple credentials ({count}) configured for {provider}")
 
     # Check for conflict (both env and file)
-    env_has = os.environ.get(
-        field.split(".")[-1].upper()
-        if field.startswith("tavily")
-        else {
-            "openrouter": "OPENROUTER_API_KEY",
-            "cerebras": "CEREBRAS_API_KEY",
-            "anthropic": "ANTHROPIC_API_KEY",
-        }.get(field.split(".")[1], "")
-    )
-    file_has = bool(info)
+    env_has = any(os.environ.get(env_var) for env_var in CREDENTIAL_ENV_VARS.get(field, ()))
+    file_has = bool(persisted_info)
     if env_has and file_has:
         status = CredentialStatus.CONFLICTING
         warnings.append("Credentials set in both config file and environment variables")
@@ -158,27 +159,31 @@ def get_secrets_inventory() -> SecretsInventory:
         SecretsInventory with credential health info.
     """
     config = load_config()
+    _, persisted_data, _ = load_persisted_config_data()
+    persisted_config = Config(**persisted_data)
     credentials: list[CredentialInfo] = []
 
-    # Collect secret values for health check
-    secret_values: dict[str, Any] = {
-        "tavily.api_keys": config.tavily.api_keys,
-        "llm.openrouter.api_key": config.llm.openrouter.api_key,
-        "llm.openrouter.api_keys": config.llm.openrouter.api_keys,
-        "llm.cerebras.api_key": config.llm.cerebras.api_key,
-        "llm.cerebras.api_keys": config.llm.cerebras.api_keys,
-        "llm.anthropic.api_key": config.llm.anthropic.api_key,
-        "llm.anthropic.api_keys": config.llm.anthropic.api_keys,
-    }
+    secret_values = _collect_secret_values(config)
+    persisted_secret_values = _collect_secret_values(persisted_config)
 
     for field_name, info in secret_values.items():
-        cred_info = _check_credential_health(field_name, info)
+        cred_info = _check_credential_health(
+            field_name,
+            info,
+            persisted_info=persisted_secret_values[field_name],
+        )
         credentials.append(cred_info)
 
     # Count by status
     healthy = sum(1 for c in credentials if c.status == CredentialStatus.CONFIGURED)
-    warnings = sum(1 for c in credentials if c.status in (CredentialStatus.DUPLICATE, CredentialStatus.CONFLICTING))
-    critical = sum(1 for c in credentials if c.status in (CredentialStatus.MISSING, CredentialStatus.STALE))
+    warnings = sum(
+        1
+        for c in credentials
+        if c.status in (CredentialStatus.DUPLICATE, CredentialStatus.CONFLICTING)
+    )
+    critical = sum(
+        1 for c in credentials if c.status in (CredentialStatus.MISSING, CredentialStatus.STALE)
+    )
 
     return SecretsInventory(
         timestamp=datetime.now(UTC).isoformat(),
@@ -188,6 +193,21 @@ def get_secrets_inventory() -> SecretsInventory:
         warning_count=warnings,
         critical_count=critical,
     )
+
+
+def _collect_secret_values(config: Config) -> dict[str, Any]:
+    """Collect configured secret fields without serializing their values."""
+    return {
+        "tavily.api_keys": config.tavily.api_keys,
+        "llm.openrouter.api_key": config.llm.openrouter.api_key,
+        "llm.openrouter.api_keys": config.llm.openrouter.api_keys,
+        "llm.cerebras.api_key": config.llm.cerebras.api_key,
+        "llm.cerebras.api_keys": config.llm.cerebras.api_keys,
+        "llm.anthropic.api_key": config.llm.anthropic.api_key,
+        "llm.anthropic.api_keys": config.llm.anthropic.api_keys,
+        "llm.kimi.api_key": config.llm.kimi.api_key,
+        "llm.kimi.api_keys": config.llm.kimi.api_keys,
+    }
 
 
 def get_rotation_guidance() -> list[dict[str, Any]]:
@@ -201,15 +221,17 @@ def get_rotation_guidance() -> list[dict[str, Any]]:
 
     for cred in inventory.credentials:
         if cred.rotation_guidance:
-            guidance.append({
-                "provider": cred.provider,
-                "field": cred.field,
-                "status": cred.status.value,
-                "guidance": cred.rotation_guidance,
-                "count": cred.count,
-                "source": cred.source,
-                "warnings": cred.warnings,
-            })
+            guidance.append(
+                {
+                    "provider": cred.provider,
+                    "field": cred.field,
+                    "status": cred.status.value,
+                    "guidance": cred.rotation_guidance,
+                    "count": cred.count,
+                    "source": cred.source,
+                    "warnings": cred.warnings,
+                }
+            )
 
     return guidance
 

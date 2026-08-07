@@ -14,6 +14,7 @@ from cc_deep_research.llm.base import (
     LLMTransportType,
     transport_from_route_name,
 )
+from cc_deep_research.llm.provider_catalog import build_route_for_transport
 
 
 class LLMRouteRegistry:
@@ -74,72 +75,7 @@ class LLMRouteRegistry:
 
     def _build_route_from_transport(self, transport: LLMTransportType) -> LLMRoute:
         """Build a route configuration for a transport type."""
-        if transport == LLMTransportType.OPENROUTER_API:
-            api_keys = self._config.openrouter.get_api_keys()
-            return LLMRoute(
-                transport=LLMTransportType.OPENROUTER_API,
-                provider=LLMProviderType.OPENROUTER,
-                model=self._config.openrouter.model,
-                timeout_seconds=self._config.openrouter.timeout_seconds,
-                enabled=self._config.openrouter.enabled
-                and bool(api_keys),
-                extra={
-                    "api_key": api_keys[0] if api_keys else None,
-                    "api_keys": api_keys,
-                    "base_url": self._config.openrouter.base_url,
-                    "extra_headers": self._config.openrouter.extra_headers,
-                },
-            )
-        elif transport == LLMTransportType.CEREBRAS_API:
-            api_keys = self._config.cerebras.get_api_keys()
-            return LLMRoute(
-                transport=LLMTransportType.CEREBRAS_API,
-                provider=LLMProviderType.CEREBRAS,
-                model=self._config.cerebras.model,
-                timeout_seconds=self._config.cerebras.timeout_seconds,
-                enabled=self._config.cerebras.enabled
-                and bool(api_keys),
-                extra={
-                    "api_key": api_keys[0] if api_keys else None,
-                    "api_keys": api_keys,
-                    "base_url": self._config.cerebras.base_url,
-                },
-            )
-        elif transport == LLMTransportType.ANTHROPIC_API:
-            api_keys = self._config.anthropic.get_api_keys()
-            return LLMRoute(
-                transport=LLMTransportType.ANTHROPIC_API,
-                provider=LLMProviderType.ANTHROPIC,
-                model=self._config.anthropic.model,
-                timeout_seconds=self._config.anthropic.timeout_seconds,
-                enabled=self._config.anthropic.enabled
-                and bool(api_keys),
-                extra={
-                    "api_key": api_keys[0] if api_keys else None,
-                    "api_keys": api_keys,
-                    "base_url": self._config.anthropic.base_url,
-                    "max_tokens": self._config.anthropic.max_tokens,
-                },
-            )
-        elif transport == LLMTransportType.CODEX_APP_SERVER:
-            return LLMRoute(
-                transport=LLMTransportType.CODEX_APP_SERVER,
-                provider=LLMProviderType.CODEX,
-                model=self._config.codex.model or "codex-default",
-                timeout_seconds=self._config.codex.timeout_seconds,
-                enabled=self._config.codex.enabled,
-                extra={
-                    "model": self._config.codex.model,
-                    "reasoning_effort": self._config.codex.reasoning_effort,
-                },
-            )
-        else:
-            return LLMRoute(
-                transport=LLMTransportType.HEURISTIC,
-                provider=LLMProviderType.HEURISTIC,
-                model="heuristic",
-                enabled=True,
-            )
+        return build_route_for_transport(self._config, transport)
 
     def _get_default_route_for_agent(self, agent_id: str) -> LLMRoute:
         """Get the default route for an agent from config."""
@@ -245,9 +181,7 @@ class LLMRouteRegistry:
         """Build a route for a specific transport using current config."""
         return self._build_route_from_transport(transport)
 
-    def get_available_route(
-        self, agent_id: str, *, check_nested_session: bool = False
-    ) -> LLMRoute:
+    def get_available_route(self, agent_id: str, *, check_nested_session: bool = False) -> LLMRoute:
         """Return the first available route for an agent."""
         primary_route = self.get_route(agent_id)
 
@@ -330,6 +264,7 @@ class LLMRouteRegistry:
                 "openrouter_enabled": self._config.openrouter.enabled,
                 "cerebras_enabled": self._config.cerebras.enabled,
                 "anthropic_enabled": self._config.anthropic.enabled,
+                "kimi_enabled": self._config.kimi.enabled,
                 "codex_enabled": self._config.codex.enabled,
             },
         }
