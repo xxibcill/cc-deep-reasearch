@@ -77,6 +77,13 @@ Use the returned `run_id` to poll status or request cancellation. Once
 `session_id` is present, read events, reports, and artifacts through
 `/api/sessions/{session_id}/...`.
 
+Interrupted runs persist checksum-protected state at completed workflow
+boundaries. `POST /api/sessions/{session_id}/resume` queues a distinct child
+run from the latest executable checkpoint (or a selected `checkpoint_id`).
+The response includes the original run/session, checkpoint, and resume-attempt
+lineage. Legacy summary-only checkpoints remain inspectable but are not
+advertised as executable resume points.
+
 ## Extension rules
 
 - Add new request options to the typed models and central override layer.

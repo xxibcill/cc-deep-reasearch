@@ -7,7 +7,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Header, Query
 from fastapi.responses import JSONResponse
 
 from cc_deep_research.models.session import (
@@ -19,6 +19,11 @@ from cc_deep_research.research_runs.models import (
     ResearchOutputFormat,
     SessionDeleteRequest,
 )
+from cc_deep_research.research_runs.resume import (
+    ResearchResumeSnapshotError,
+    ResearchResumeState,
+    ResearchResumeStore,
+)
 from cc_deep_research.research_runs.session_purge import SessionPurgeService
 from cc_deep_research.session_store import SessionStore
 from cc_deep_research.telemetry import (
@@ -26,7 +31,6 @@ from cc_deep_research.telemetry import (
     get_default_telemetry_dir,
     query_checkpoint_detail,
     query_checkpoint_lineage,
-    query_latest_resumable_checkpoint,
     query_live_events_page,
     query_live_session_summaries,
     query_live_sessions,
@@ -34,6 +38,8 @@ from cc_deep_research.telemetry import (
     query_session_summaries,
 )
 from cc_deep_research.telemetry.tree import empty_decision_graph
+from cc_deep_research.web_runtime import get_job_registry
+from cc_deep_research.web_server_routes.research_run_routes import queue_research_run
 from cc_deep_research.web_server_routes.session_views import (
     SessionSortBy,
     SortOrder,
@@ -43,6 +49,48 @@ from cc_deep_research.web_server_routes.session_views import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _load_executable_resume_checkpoint(
+    session_id: str,
+    *,
+    checkpoint_id: str | None = None,
+) -> tuple[dict[str, Any], ResearchResumeState] | None:
+    """Return a checksum-verified execution snapshot, excluding legacy checkpoints."""
+    telemetry_dir = get_default_telemetry_dir()
+    if checkpoint_id is not None:
+        candidates = [
+            query_checkpoint_detail(session_id, checkpoint_id, base_dir=telemetry_dir)
+        ]
+    else:
+        manifest = query_session_checkpoints(session_id, base_dir=telemetry_dir)
+        candidates = list(reversed(manifest.get("checkpoints", [])))
+
+    store = ResearchResumeStore(telemetry_dir)
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        metadata = candidate.get("metadata")
+        if (
+            not candidate.get("resume_safe")
+            or not candidate.get("state_ref")
+            or not isinstance(metadata, dict)
+            or metadata.get("execution_resume") is not True
+        ):
+            continue
+        try:
+            state = store.load(session_id, str(candidate["state_ref"]))
+        except ResearchResumeSnapshotError:
+            logger.warning(
+                "Ignoring invalid resume snapshot for session %s checkpoint %s",
+                session_id,
+                candidate.get("checkpoint_id"),
+            )
+            continue
+        state.origin_session_id = state.origin_session_id or session_id
+        state.origin_checkpoint_id = str(candidate["checkpoint_id"])
+        return candidate, state
+    return None
 
 def register_session_routes(app: FastAPI) -> None:
     """Register session HTTP API routes.
@@ -343,14 +391,19 @@ def register_session_routes(app: FastAPI) -> None:
         if include_checkpoints:
             telemetry_dir = get_default_telemetry_dir()
             checkpoint_manifest = query_session_checkpoints(session_id, base_dir=telemetry_dir)
+            executable_checkpoint = _load_executable_resume_checkpoint(session_id)
             response_content["checkpoints"] = {
                 "total": len(checkpoint_manifest.get("checkpoints", [])),
                 "latest_checkpoint_id": checkpoint_manifest.get("latest_checkpoint_id"),
                 "latest_resume_safe_checkpoint_id": checkpoint_manifest.get(
                     "latest_resume_safe_checkpoint_id"
                 ),
-                "resume_available": checkpoint_manifest.get("latest_resume_safe_checkpoint_id")
-                is not None,
+                "resume_available": executable_checkpoint is not None,
+                "latest_executable_checkpoint_id": (
+                    executable_checkpoint[0].get("checkpoint_id")
+                    if executable_checkpoint is not None
+                    else None
+                ),
             }
 
         return JSONResponse(content=response_content)
@@ -912,8 +965,9 @@ def register_session_routes(app: FastAPI) -> None:
         """Get artifact inventory with provenance metadata for a session."""
         store = SessionStore()
         session = store.load_session(session_id)
+        telemetry_dir = get_default_telemetry_dir()
 
-        if session is None:
+        if session is None and not (telemetry_dir / session_id).exists():
             return JSONResponse(
                 content={"error": f"Session not found: {session_id}"},
                 status_code=404,
@@ -926,13 +980,19 @@ def register_session_routes(app: FastAPI) -> None:
             "missing": {},
         }
 
-        has_report = bool(session.metadata.get("analysis"))
-        has_payload = True
+        has_report = bool(session and session.metadata.get("analysis"))
+        has_payload = session is not None
 
-        artifacts["available"]["session_payload"] = {
+        payload_inventory = artifacts["available"] if has_payload else artifacts["missing"]
+        payload_inventory["session_payload"] = {
             "present": has_payload,
             "provenance": "direct",
             "description": "Full research session data including sources and collected content",
+            **(
+                {}
+                if has_payload
+                else {"reason": "Run ended before a complete session payload was produced"}
+            ),
         }
 
         if has_report:
@@ -955,7 +1015,6 @@ def register_session_routes(app: FastAPI) -> None:
                 "formats": report_formats,
                 "description": "Generated research report in various formats",
             }
-            del artifacts["missing"]
         else:
             artifacts["missing"]["reports"] = {
                 "present": False,
@@ -970,9 +1029,9 @@ def register_session_routes(app: FastAPI) -> None:
             "description": "Portable trace bundle with telemetry events and derived outputs",
         }
 
-        telemetry_dir = get_default_telemetry_dir()
         checkpoint_manifest = query_session_checkpoints(session_id, base_dir=telemetry_dir)
         has_checkpoints = len(checkpoint_manifest.get("checkpoints", [])) > 0
+        executable_checkpoint = _load_executable_resume_checkpoint(session_id)
 
         if has_checkpoints:
             artifacts["available"]["checkpoints"] = {
@@ -980,8 +1039,12 @@ def register_session_routes(app: FastAPI) -> None:
                 "provenance": "derived",
                 "count": len(checkpoint_manifest.get("checkpoints", [])),
                 "latest_checkpoint_id": checkpoint_manifest.get("latest_checkpoint_id"),
-                "resume_available": checkpoint_manifest.get("latest_resume_safe_checkpoint_id")
-                is not None,
+                "resume_available": executable_checkpoint is not None,
+                "latest_executable_checkpoint_id": (
+                    executable_checkpoint[0].get("checkpoint_id")
+                    if executable_checkpoint is not None
+                    else None
+                ),
                 "description": "Session checkpoints for potential resume",
             }
         else:
@@ -1046,10 +1109,9 @@ def register_session_routes(app: FastAPI) -> None:
         session_id: str,
         checkpoint_id: str | None = Query(default=None, description="Checkpoint to resume from"),
         mode: str = Query(default="resume_latest", description="Resume mode"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> JSONResponse:
-        """Resume a session from a checkpoint."""
-        from cc_deep_research.models.checkpoint import ResumeResult
-
+        """Queue a new run from a checksum-verified execution checkpoint."""
         telemetry_dir = get_default_telemetry_dir()
         session_dir = telemetry_dir / session_id
 
@@ -1059,41 +1121,99 @@ def register_session_routes(app: FastAPI) -> None:
                 status_code=404,
             )
 
-        if checkpoint_id is None:
-            checkpoint = query_latest_resumable_checkpoint(session_id, base_dir=telemetry_dir)
-            if checkpoint is None:
-                return JSONResponse(
-                    content={"error": "No resumable checkpoint available"},
-                    status_code=404,
-                )
-            checkpoint_id = checkpoint["checkpoint_id"]
-        else:
-            checkpoint = query_checkpoint_detail(session_id, checkpoint_id, base_dir=telemetry_dir)
-            if checkpoint is None:
-                return JSONResponse(
-                    content={"error": f"Checkpoint not found: {checkpoint_id}"},
-                    status_code=404,
-                )
-            if not checkpoint.get("resume_safe"):
-                return JSONResponse(
-                    content={"error": f"Checkpoint {checkpoint_id} is not safe to resume from"},
-                    status_code=409,
-                )
-
-        lineage = query_checkpoint_lineage(session_id, checkpoint_id, base_dir=telemetry_dir)
-        lineage_ids = [cp.get("checkpoint_id") for cp in lineage]
-
-        result = ResumeResult(
-            success=True,
-            session_id=f"{session_id}-resumed",
-            original_session_id=session_id,
-            resumed_from_checkpoint_id=checkpoint_id,
-            resume_mode=mode,
-            checkpoint_lineage=lineage_ids,
-            message=f"Ready to resume from checkpoint {checkpoint_id}. Use the checkpoint info to start a new run.",
+        executable = _load_executable_resume_checkpoint(
+            session_id,
+            checkpoint_id=checkpoint_id,
         )
+        if executable is None:
+            return JSONResponse(
+                content={
+                    "error": (
+                        f"Checkpoint {checkpoint_id} has no valid executable resume state"
+                        if checkpoint_id is not None
+                        else "No executable resume checkpoint available"
+                    )
+                },
+                status_code=409,
+            )
 
-        return JSONResponse(content=result.model_dump(mode="json"))
+        checkpoint, state = executable
+        selected_checkpoint_id = str(checkpoint["checkpoint_id"])
+        registry = get_job_registry(app)
+        original_job = registry.find_by_session_id(session_id)
+        if original_job is not None and original_job.is_active:
+            return JSONResponse(
+                content={"error": "The original research run is still active"},
+                status_code=409,
+            )
+
+        if idempotency_key:
+            duplicate = next(
+                (
+                    job
+                    for job in registry.list_jobs()
+                    if job.idempotency_key == idempotency_key
+                    and job.original_session_id == session_id
+                ),
+                None,
+            )
+            if duplicate is not None:
+                return JSONResponse(
+                    content={
+                        "run_id": duplicate.run_id,
+                        "status": duplicate.status.value,
+                        "original_run_id": duplicate.original_run_id,
+                        "original_session_id": duplicate.original_session_id,
+                        "resumed_from_checkpoint_id": duplicate.resumed_from_checkpoint_id,
+                        "resume_attempt": duplicate.resume_attempt,
+                        "resume_mode": mode,
+                        "idempotent_replay": True,
+                    },
+                    status_code=202,
+                )
+
+        active_resume = registry.find_active_resume(
+            original_session_id=session_id,
+            checkpoint_id=selected_checkpoint_id,
+        )
+        if active_resume is not None:
+            return JSONResponse(
+                content={
+                    "error": "A resume attempt from this checkpoint is already active",
+                    "run_id": active_resume.run_id,
+                },
+                status_code=409,
+            )
+
+        state.origin_session_id = state.origin_session_id or session_id
+        state.origin_checkpoint_id = selected_checkpoint_id
+        if original_job is not None:
+            job = registry.create_resume_job(
+                original_job,
+                checkpoint_id=selected_checkpoint_id,
+                idempotency_key=idempotency_key,
+            )
+        else:
+            job = registry.create_resume_job_for_session(
+                state.request,
+                original_session_id=session_id,
+                checkpoint_id=selected_checkpoint_id,
+                idempotency_key=idempotency_key,
+            )
+        queue_research_run(app, job, resume_state=state)
+
+        return JSONResponse(
+            content={
+                "run_id": job.run_id,
+                "status": job.status.value,
+                "original_run_id": job.original_run_id,
+                "original_session_id": job.original_session_id,
+                "resumed_from_checkpoint_id": job.resumed_from_checkpoint_id,
+                "resume_attempt": job.resume_attempt,
+                "resume_mode": mode,
+            },
+            status_code=202,
+        )
 
     @app.post("/api/sessions/{session_id}/rerun-step")
     async def rerun_step(request: dict) -> JSONResponse:

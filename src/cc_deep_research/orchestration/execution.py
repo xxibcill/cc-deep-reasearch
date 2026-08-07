@@ -35,6 +35,13 @@ from cc_deep_research.orchestration.runtime import OrchestratorRuntime
 from cc_deep_research.orchestration.session_builder import SessionBuilder
 from cc_deep_research.orchestration.session_state import OrchestratorSessionState
 from cc_deep_research.orchestration.source_collection import SourceCollectionService
+from cc_deep_research.research_runs.models import ResearchRunRequest, ResearchWorkflow
+from cc_deep_research.research_runs.resume import (
+    ResearchResumePhase,
+    ResearchResumeState,
+    ResearchResumeStore,
+    build_config_fingerprint,
+)
 
 
 def _strategy_checkpoint_output(result: StrategyResult) -> dict[str, Any]:
@@ -65,6 +72,9 @@ class ResearchExecutionService:
         planning: ResearchPlanningService | None = None,
         source_collection: SourceCollectionService | None = None,
         analysis_workflow: AnalysisWorkflow | None = None,
+        run_request: ResearchRunRequest | None = None,
+        resume_store: ResearchResumeStore | None = None,
+        config_fingerprint: str | None = None,
     ) -> None:
         self._config = config
         self._monitor = monitor
@@ -78,6 +88,9 @@ class ResearchExecutionService:
         self._planning = planning
         self._source_collection = source_collection
         self._analysis_workflow = analysis_workflow
+        self._run_request = run_request
+        self._resume_store = resume_store or ResearchResumeStore()
+        self._config_fingerprint = config_fingerprint or build_config_fingerprint(config)
 
     def _build_hooks(
         self,
@@ -394,6 +407,66 @@ class ResearchExecutionService:
         When hooks is None, builds them from owned collaborators (deepened boundary).
         When hooks is provided, uses them directly (backward-compatible facade).
         """
+        if self._run_request is None:
+            self._run_request = ResearchRunRequest(
+                query=query,
+                depth=depth,
+                min_sources=min_sources,
+                concurrent_source_collection=self._concurrent_source_collection,
+                max_concurrent_sources=self._max_concurrent_sources,
+                workflow=ResearchWorkflow.STAGED,
+            )
+        return await self._execute_staged(
+            query=query,
+            depth=depth,
+            min_sources=min_sources,
+            phase_hook=phase_hook,
+            cancellation_check=cancellation_check,
+            on_session_started=on_session_started,
+            hooks=hooks,
+            resume_state=None,
+        )
+
+    async def resume(
+        self,
+        state: ResearchResumeState,
+        *,
+        phase_hook: Callable[[str, str], None] | None,
+        cancellation_check: Callable[[], None] | None = None,
+        on_session_started: Callable[[str], None] | None = None,
+        hooks: ResearchExecutionHooks | None = None,
+    ) -> ResearchSession:
+        """Resume a staged run from a validated durable boundary."""
+        if state.workflow != ResearchWorkflow.STAGED:
+            raise ValueError("Staged execution cannot resume a planner snapshot")
+        if state.config_fingerprint != self._config_fingerprint:
+            raise ValueError("Research configuration changed since the checkpoint was created")
+        if self._run_request is None:
+            self._run_request = state.request.model_copy(deep=True)
+        return await self._execute_staged(
+            query=state.query,
+            depth=state.depth,
+            min_sources=state.min_sources,
+            phase_hook=phase_hook,
+            cancellation_check=cancellation_check,
+            on_session_started=on_session_started,
+            hooks=hooks,
+            resume_state=state,
+        )
+
+    async def _execute_staged(
+        self,
+        *,
+        query: str,
+        depth: ResearchDepth,
+        min_sources: int | None,
+        phase_hook: Callable[[str, str], None] | None,
+        cancellation_check: Callable[[], None] | None,
+        on_session_started: Callable[[str], None] | None,
+        hooks: ResearchExecutionHooks | None,
+        resume_state: ResearchResumeState | None,
+    ) -> ResearchSession:
+        """Execute staged research from the beginning or a restored boundary."""
         hooks_built_here = hooks is None
         hooks = hooks if hooks is not None else self._build_hooks()
 
@@ -405,6 +478,18 @@ class ResearchExecutionService:
             depth=depth,
             on_session_started=on_session_started,
         )
+        if resume_state is not None:
+            self._monitor.emit_event(
+                event_type="session.resumed",
+                category="session",
+                name="research-session",
+                status="started",
+                metadata={
+                    "original_session_id": resume_state.origin_session_id,
+                    "resumed_from_checkpoint_id": resume_state.origin_checkpoint_id,
+                    "next_phase": resume_state.next_phase.value,
+                },
+            )
 
         try:
             await self._phase_runner.run_phase(
@@ -421,59 +506,133 @@ class ResearchExecutionService:
             if hooks_built_here:
                 hooks = self._build_hooks()
 
-            strategy = await self._phase_runner.run_phase(
-                phase_hook=phase_hook,
-                phase_key="strategy",
-                description="Analyzing research strategy",
-                operation=lambda: hooks.analyze_strategy(query, depth),
-                cancellation_check=cancellation_check,
-                input_ref={"query": query, "depth": depth.value},
-                output_transformer=_strategy_checkpoint_output,
+            next_phase = (
+                resume_state.next_phase if resume_state is not None else ResearchResumePhase.STRATEGY
             )
-            raw_query_families = await self._phase_runner.run_phase(
-                phase_hook=phase_hook,
-                phase_key="query_expansion",
-                description="Expanding search queries",
-                operation=lambda: hooks.expand_queries(query, strategy, depth),
-                cancellation_check=cancellation_check,
-                input_ref={"query": query, "depth": depth.value},
-                output_transformer=lambda result: {
-                    "family_count": len(result),
-                },
+            strategy = resume_state.strategy if resume_state is not None else None
+            sources = list(resume_state.sources) if resume_state is not None else []
+            analysis = resume_state.analysis if resume_state is not None else None
+            validation = resume_state.validation if resume_state is not None else None
+            iteration_history = (
+                list(resume_state.iteration_history) if resume_state is not None else []
             )
-            strategy.strategy.query_families = hooks.normalize_query_families(
-                original_query=query,
-                strategy=strategy,
-                raw_families=raw_query_families,
-            )
-            sources = await self._phase_runner.run_phase(
-                phase_hook=phase_hook,
-                phase_key="source_collection",
-                description="Collecting sources from providers",
-                operation=lambda: hooks.collect_sources(
-                    query_families=strategy.strategy.query_families,
+
+            if next_phase == ResearchResumePhase.STRATEGY:
+                strategy = await self._phase_runner.run_phase(
+                    phase_hook=phase_hook,
+                    phase_key="strategy",
+                    description="Analyzing research strategy",
+                    operation=lambda: hooks.analyze_strategy(query, depth),
+                    cancellation_check=cancellation_check,
+                    input_ref={"query": query, "depth": depth.value},
+                    output_transformer=_strategy_checkpoint_output,
+                )
+                self._persist_resume_state(
+                    checkpoint_phase=CheckpointPhase.STRATEGY,
+                    next_phase=ResearchResumePhase.QUERY_EXPANSION,
+                    query=query,
                     depth=depth,
                     min_sources=min_sources,
-                ),
-                cancellation_check=cancellation_check,
-                input_ref={
-                    "query_family_count": len(strategy.strategy.query_families),
-                    "depth": depth.value,
-                    "min_sources": min_sources,
-                },
-                output_transformer=lambda result: {
-                    "source_count": len(result),
-                },
-            )
-            analysis, validation, sources, iteration_history = await hooks.run_analysis_workflow(
-                query=query,
-                depth=depth,
-                strategy=strategy,
-                sources=sources,
-                min_sources=min_sources,
-                phase_hook=phase_hook,
-                cancellation_check=cancellation_check,
-            )
+                    strategy=strategy,
+                    resume_state=resume_state,
+                )
+
+            if strategy is None:
+                raise ValueError("Resume state is missing the research strategy")
+
+            if next_phase in {
+                ResearchResumePhase.STRATEGY,
+                ResearchResumePhase.QUERY_EXPANSION,
+            }:
+                raw_query_families = await self._phase_runner.run_phase(
+                    phase_hook=phase_hook,
+                    phase_key="query_expansion",
+                    description="Expanding search queries",
+                    operation=lambda: hooks.expand_queries(query, strategy, depth),
+                    cancellation_check=cancellation_check,
+                    input_ref={"query": query, "depth": depth.value},
+                    output_transformer=lambda result: {
+                        "family_count": len(result),
+                    },
+                )
+                strategy.strategy.query_families = hooks.normalize_query_families(
+                    original_query=query,
+                    strategy=strategy,
+                    raw_families=raw_query_families,
+                )
+                self._persist_resume_state(
+                    checkpoint_phase=CheckpointPhase.QUERY_EXPANSION,
+                    next_phase=ResearchResumePhase.SOURCE_COLLECTION,
+                    query=query,
+                    depth=depth,
+                    min_sources=min_sources,
+                    strategy=strategy,
+                    resume_state=resume_state,
+                )
+
+            if next_phase in {
+                ResearchResumePhase.STRATEGY,
+                ResearchResumePhase.QUERY_EXPANSION,
+                ResearchResumePhase.SOURCE_COLLECTION,
+            }:
+                sources = await self._phase_runner.run_phase(
+                    phase_hook=phase_hook,
+                    phase_key="source_collection",
+                    description="Collecting sources from providers",
+                    operation=lambda: hooks.collect_sources(
+                        query_families=strategy.strategy.query_families,
+                        depth=depth,
+                        min_sources=min_sources,
+                    ),
+                    cancellation_check=cancellation_check,
+                    input_ref={
+                        "query_family_count": len(strategy.strategy.query_families),
+                        "depth": depth.value,
+                        "min_sources": min_sources,
+                    },
+                    output_transformer=lambda result: {
+                        "source_count": len(result),
+                    },
+                )
+                self._persist_resume_state(
+                    checkpoint_phase=CheckpointPhase.SOURCE_COLLECTION,
+                    next_phase=ResearchResumePhase.ANALYSIS,
+                    query=query,
+                    depth=depth,
+                    min_sources=min_sources,
+                    strategy=strategy,
+                    sources=sources,
+                    resume_state=resume_state,
+                )
+
+            if next_phase != ResearchResumePhase.COMPLETE:
+                analysis, validation, sources, iteration_history = (
+                    await hooks.run_analysis_workflow(
+                        query=query,
+                        depth=depth,
+                        strategy=strategy,
+                        sources=sources,
+                        min_sources=min_sources,
+                        phase_hook=phase_hook,
+                        cancellation_check=cancellation_check,
+                    )
+                )
+                self._persist_resume_state(
+                    checkpoint_phase=CheckpointPhase.VALIDATION,
+                    next_phase=ResearchResumePhase.COMPLETE,
+                    query=query,
+                    depth=depth,
+                    min_sources=min_sources,
+                    strategy=strategy,
+                    sources=sources,
+                    analysis=analysis,
+                    validation=validation,
+                    iteration_history=iteration_history,
+                    resume_state=resume_state,
+                )
+
+            if analysis is None:
+                raise ValueError("Resume state is missing completed analysis")
             self._check_cancelled(cancellation_check)
             session = self._session_builder.build(
                 session_id=session_id,
@@ -487,6 +646,12 @@ class ResearchExecutionService:
                 iteration_history=iteration_history,
                 build_metadata=hooks.build_metadata,
             )
+            if resume_state is not None:
+                session.metadata["resume"] = {
+                    "original_session_id": resume_state.origin_session_id,
+                    "resumed_from_checkpoint_id": resume_state.origin_checkpoint_id,
+                    "resumed_phase": resume_state.next_phase.value,
+                }
             hooks.log_session_summary(
                 source_count=len(sources),
                 finding_count=len(analysis.key_findings),
@@ -544,6 +709,66 @@ class ResearchExecutionService:
                 description="Cleaning up team resources",
             )
             await hooks.shutdown_team()
+
+    def _persist_resume_state(
+        self,
+        *,
+        checkpoint_phase: CheckpointPhase,
+        next_phase: ResearchResumePhase,
+        query: str,
+        depth: ResearchDepth,
+        min_sources: int | None,
+        strategy: StrategyResult | None = None,
+        sources: list[SearchResultItem] | None = None,
+        analysis: AnalysisResult | None = None,
+        validation: ValidationResult | None = None,
+        iteration_history: list[IterationHistoryRecord] | None = None,
+        iteration: int = 1,
+        resume_state: ResearchResumeState | None = None,
+    ) -> str | None:
+        """Commit executable state and link it from a telemetry checkpoint."""
+        session_id = self._monitor.session_id
+        request = self._run_request
+        if session_id is None or request is None:
+            return None
+        state = ResearchResumeState(
+            workflow=ResearchWorkflow.STAGED,
+            query=query,
+            depth=depth,
+            min_sources=min_sources,
+            next_phase=next_phase,
+            request=request,
+            config_fingerprint=self._config_fingerprint,
+            strategy=strategy,
+            sources=sources or [],
+            analysis=analysis,
+            validation=validation,
+            iteration_history=iteration_history or [],
+            iteration=iteration,
+            origin_session_id=(resume_state.origin_session_id if resume_state else session_id),
+            origin_checkpoint_id=(resume_state.origin_checkpoint_id if resume_state else None),
+        )
+        snapshot = self._resume_store.save(session_id, state)
+        return self._monitor.emit_checkpoint(
+            phase=checkpoint_phase.value,
+            operation=CheckpointOperation.FINALIZE.value,
+            output_ref={
+                "next_phase": next_phase.value,
+                "source_count": len(state.sources),
+                "iteration": state.iteration,
+            },
+            state_ref=snapshot.path,
+            artifact_refs=[
+                {
+                    "kind": "resume_state",
+                    "path": snapshot.path,
+                    "content_hash": snapshot.content_hash,
+                    "size_bytes": snapshot.size_bytes,
+                }
+            ],
+            replayable=True,
+            metadata={"execution_resume": True},
+        )
 
     def _initialize_session(
         self,

@@ -70,6 +70,10 @@ class TaskDispatcher:
         self,
         plan: ResearchPlan,
         cancellation_check: Callable[[], None] | None = None,
+        initial_results: dict[str, TaskExecutionResult] | None = None,
+        group_completed_callback: (
+            Callable[[dict[str, TaskExecutionResult]], Awaitable[None] | None] | None
+        ) = None,
     ) -> dict[str, TaskExecutionResult]:
         """Execute a research plan by dispatching subtasks.
 
@@ -85,22 +89,34 @@ class TaskDispatcher:
         self._monitor.log(f"Total subtasks: {len(plan.subtasks)}")
         self._monitor.log(f"Execution groups: {len(plan.execution_order)}")
 
-        self._task_results = {}
+        self._task_results = {
+            task_id: result
+            for task_id, result in (initial_results or {}).items()
+            if result.success
+        }
+        for task in plan.subtasks:
+            task.status = "completed" if task.id in self._task_results else "pending"
 
         for group_index, task_group in enumerate(plan.execution_order):
             self._check_cancellation(cancellation_check)
 
             self._monitor.log(f"\nExecuting group {group_index + 1}/{len(plan.execution_order)}: {task_group}")
 
-            # Execute tasks in this group in parallel
+            pending_task_ids = [
+                task_id for task_id in task_group if task_id not in self._task_results
+            ]
+            if not pending_task_ids:
+                continue
+
+            # Execute unfinished tasks in this group in parallel.
             tasks = [
                 self._execute_subtask(plan, task_id, cancellation_check)
-                for task_id in task_group
+                for task_id in pending_task_ids
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             # Process results
-            for task_id, result in zip(task_group, results, strict=True):
+            for task_id, result in zip(pending_task_ids, results, strict=True):
                 if isinstance(result, Exception):
                     self._monitor.log(f"  Task {task_id} failed: {result}")
                     self._task_results[task_id] = TaskExecutionResult(
@@ -118,6 +134,11 @@ class TaskDispatcher:
                     else:
                         plan.update_subtask_status(task_id, "failed")
                         self._monitor.log(f"  Task {task_id} failed: {result.error_message}")
+
+            if group_completed_callback is not None:
+                callback_result = group_completed_callback(dict(self._task_results))
+                if callback_result is not None:
+                    await callback_result
 
             # Check if any critical failures should stop execution
             if self._should_abort(plan, task_group):

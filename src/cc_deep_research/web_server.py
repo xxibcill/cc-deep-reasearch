@@ -35,6 +35,7 @@ from cc_deep_research.reporting import ReportGenerator
 from cc_deep_research.research_runs.jobs import (
     BackgroundJob,
     BackgroundJobRegistry,
+    PersistentResearchRunJobRegistry,
     ResearchRunJobRegistry,
 )
 from cc_deep_research.research_runs.service import ResearchRunService
@@ -126,7 +127,7 @@ def create_app(
 
     app.state.dashboard_runtime = DashboardBackendRuntime(
         event_router=event_router or EventRouter(),
-        jobs=job_registry or ResearchRunJobRegistry(),
+        jobs=job_registry or PersistentResearchRunJobRegistry(),
         background_jobs=BackgroundJobRegistry(),
         pipeline_jobs=PipelineRunJobRegistry(),
         codex_runtime=codex_runtime or get_shared_codex_runtime(),

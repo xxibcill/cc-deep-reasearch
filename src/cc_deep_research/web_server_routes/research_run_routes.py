@@ -21,6 +21,7 @@ from cc_deep_research.research_runs.models import (
     ResearchRunRequest,
     ResearchRunStatus,
 )
+from cc_deep_research.research_runs.resume import ResearchResumeState
 from cc_deep_research.telemetry import (
     get_default_telemetry_dir,
     query_live_session_detail,
@@ -125,6 +126,80 @@ def _media_type_for_report(output_format: ResearchOutputFormat) -> str:
     return "text/markdown"
 
 
+async def _execute_research_run(
+    app: FastAPI,
+    job: ResearchRunJob,
+    *,
+    resume_state: ResearchResumeState | None = None,
+) -> None:
+    """Execute a new or resumed run and persist its lifecycle transitions."""
+    from cc_deep_research.web_server import ResearchRunService, get_backend_runtime
+
+    job_registry = get_job_registry(app)
+    event_router = get_event_router(app)
+    service = ResearchRunService(
+        codex_runtime=get_backend_runtime(app).codex_runtime,
+    )
+    try:
+        if job.stop_requested:
+            job_registry.mark_cancelled(job.run_id, error=RUN_CANCELLED_MESSAGE)
+            return
+        job_registry.mark_running(job.run_id)
+
+        def cancellation_check() -> None:
+            _raise_if_run_cancelled(job)
+
+        on_session_started = cast(
+            "Callable[[str], None]",
+            lambda session_id: job_registry.set_session_id(
+                job.run_id, session_id=session_id
+            ),
+        )
+        if resume_state is not None:
+            result = await asyncio.to_thread(
+                service.resume,
+                resume_state,
+                event_router=event_router,
+                cancellation_check=cancellation_check,
+                on_session_started=on_session_started,
+            )
+        else:
+            result = await asyncio.to_thread(
+                service.run,
+                job.request,
+                event_router=event_router,
+                cancellation_check=cancellation_check,
+                on_session_started=on_session_started,
+            )
+        job_registry.mark_completed(job.run_id, result=result)
+    except ResearchRunCancelled:
+        if job.session_id:
+            _interrupt_live_session(job.session_id)
+        job_registry.mark_cancelled(job.run_id, error=RUN_CANCELLED_MESSAGE)
+    except asyncio.CancelledError:
+        if job.session_id:
+            _interrupt_live_session(job.session_id)
+        job_registry.mark_cancelled(job.run_id, error=RUN_CANCELLED_MESSAGE)
+    except Exception as exc:
+        logger.exception("Research run %s failed", job.run_id)
+        job_registry.mark_failed(job.run_id, error=str(exc))
+
+
+def queue_research_run(
+    app: FastAPI,
+    job: ResearchRunJob,
+    *,
+    resume_state: ResearchResumeState | None = None,
+) -> None:
+    """Schedule one research job on the active application event loop."""
+    job_registry = get_job_registry(app)
+    with llm_request_scope(job.run_id):
+        task = asyncio.create_task(
+            _execute_research_run(app, job, resume_state=resume_state)
+        )
+    job_registry.attach_task(job.run_id, task)
+
+
 def register_research_run_routes(app: FastAPI) -> None:
     """Register research run HTTP API routes.
 
@@ -142,56 +217,12 @@ def register_research_run_routes(app: FastAPI) -> None:
         Returns:
             JSON response with run_id for status polling.
         """
-        from cc_deep_research.web_server import get_backend_runtime
-
         job_registry = get_job_registry(app)
-        event_router = get_event_router(app)
 
         # Create job entry in registry
         job = job_registry.create_job(request)
 
-        # Define background execution coroutine
-        async def execute_research_run(job: ResearchRunJob) -> None:
-            """Execute the research run and update job status in a thread."""
-            # Import from web_server to support monkeypatching in tests
-            from cc_deep_research.web_server import ResearchRunService
-            service = ResearchRunService(
-                codex_runtime=get_backend_runtime(app).codex_runtime,
-            )
-            try:
-                if job.stop_requested:
-                    job_registry.mark_cancelled(job.run_id, error=RUN_CANCELLED_MESSAGE)
-                    return
-                job_registry.mark_running(job.run_id)
-                # Run the synchronous service in a thread to avoid blocking
-                result = await asyncio.to_thread(
-                    service.run,
-                    job.request,
-                    event_router=event_router,
-                    cancellation_check=lambda: _raise_if_run_cancelled(job),
-                    on_session_started=cast(
-                        "Callable[[str], None]",
-                        lambda session_id: job_registry.set_session_id(
-                            job.run_id, session_id=session_id
-                        ),
-                    ),
-                )
-                job_registry.mark_completed(job.run_id, result=result)
-            except ResearchRunCancelled:
-                if job.session_id:
-                    _interrupt_live_session(job.session_id)
-                job_registry.mark_cancelled(job.run_id, error=RUN_CANCELLED_MESSAGE)
-            except asyncio.CancelledError:
-                if job.session_id:
-                    _interrupt_live_session(job.session_id)
-                job_registry.mark_cancelled(job.run_id, error=RUN_CANCELLED_MESSAGE)
-            except Exception as e:
-                job_registry.mark_failed(job.run_id, error=str(e))
-
-        # Spawn background task
-        with llm_request_scope(job.run_id):
-            task = asyncio.create_task(execute_research_run(job))
-        job_registry.attach_task(job.run_id, task)
+        queue_research_run(app, job)
 
         # Return immediately with run identifier
         return JSONResponse(
@@ -226,6 +257,10 @@ def register_research_run_routes(app: FastAPI) -> None:
             "status": job.status.value,
             "created_at": job.created_at.isoformat(),
             "stop_requested": job.stop_requested,
+            "original_run_id": job.original_run_id,
+            "original_session_id": job.original_session_id,
+            "resumed_from_checkpoint_id": job.resumed_from_checkpoint_id,
+            "resume_attempt": job.resume_attempt,
         }
 
         if job.session_id:
@@ -254,6 +289,8 @@ def register_research_run_routes(app: FastAPI) -> None:
                     for artifact in job.result.artifacts
                 ],
             }
+        elif job.result_metadata is not None:
+            response["result"] = job.result_metadata
 
         return JSONResponse(content=response)
 

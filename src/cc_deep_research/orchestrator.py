@@ -35,6 +35,8 @@ from cc_deep_research.orchestration import (
 )
 from cc_deep_research.orchestration.helpers import build_follow_up_queries, normalize_query_families
 from cc_deep_research.prompts import PromptRegistry
+from cc_deep_research.research_runs.models import ResearchRunRequest
+from cc_deep_research.research_runs.resume import ResearchResumeState, ResearchResumeStore
 
 if TYPE_CHECKING:
     from cc_deep_research.llm.codex_runtime import CodexRuntime
@@ -59,6 +61,9 @@ class TeamResearchOrchestrator:
         prompt_registry: PromptRegistry | None = None,
         workflow_config: WorkflowConfig | None = None,
         codex_runtime: CodexRuntime | None = None,
+        run_request: ResearchRunRequest | None = None,
+        resume_store: ResearchResumeStore | None = None,
+        config_fingerprint: str | None = None,
     ) -> None:
         """Initialize the research orchestrator.
 
@@ -124,7 +129,11 @@ class TeamResearchOrchestrator:
             planning=self._planning,
             source_collection=self._source_collection,
             analysis_workflow=self._analysis_workflow,
+            run_request=run_request,
+            resume_store=resume_store,
+            config_fingerprint=config_fingerprint,
         )
+
     async def execute_research(
         self,
         query: str,
@@ -152,6 +161,23 @@ class TeamResearchOrchestrator:
             query=query,
             depth=depth,
             min_sources=min_sources,
+            phase_hook=phase_hook,
+            cancellation_check=cancellation_check,
+            on_session_started=on_session_started,
+            hooks=self._build_execution_hooks(),
+        )
+
+    async def resume_research(
+        self,
+        state: ResearchResumeState,
+        *,
+        phase_hook: Callable[[str, str], None] | None = None,
+        cancellation_check: Callable[[], None] | None = None,
+        on_session_started: Callable[[str], None] | None = None,
+    ) -> ResearchSession:
+        """Continue a prior staged session from its last durable boundary."""
+        return await self._execution.resume(
+            state,
             phase_hook=phase_hook,
             cancellation_check=cancellation_check,
             on_session_started=on_session_started,
