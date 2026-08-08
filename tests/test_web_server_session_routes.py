@@ -269,6 +269,53 @@ def test_session_detail_summary_preserves_prompt_metadata(
     }
 
 
+def test_live_session_detail_merges_saved_identity_and_prompt_metadata(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Live telemetry detail should retain canonical saved-session metadata."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    telemetry_dir = tmp_path / "xdg" / "inqulume-studio" / "telemetry"
+    monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=telemetry_dir)
+    monitor.set_session("live-prompt-session", query="Telemetry query", depth="quick")
+    monitor.finalize_session(total_sources=3, providers=["tavily"], total_time_ms=120)
+
+    session = ResearchSession(
+        session_id="live-prompt-session",
+        query="Which demand signals changed?",
+        depth=ResearchDepth.STANDARD,
+        metadata={
+            "analysis": {"key_findings": ["Demand increased"]},
+            "prompts": {
+                "overrides_applied": True,
+                "effective_overrides": {
+                    "analyzer": {
+                        "prompt_prefix": "Prioritize verified demand signals.",
+                        "system_prompt": None,
+                    }
+                },
+                "default_prompts_used": ["deep_analyzer"],
+            },
+        },
+    )
+    SessionStore().save_session(session)
+
+    response = TestClient(create_app()).get(f"/api/sessions/{session.session_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["session"]["query"] == "Which demand signals changed?"
+    assert payload["session"]["label"] == "Which demand signals changed?"
+    assert payload["session"]["depth"] == "standard"
+    assert payload["session"]["has_session_payload"] is True
+    assert payload["session"]["has_report"] is True
+    assert payload["summary"]["query"] == "Which demand signals changed?"
+    assert payload["summary"]["metadata"]["prompts"]["overrides_applied"] is True
+    assert payload["summary"]["metadata"]["prompts"]["effective_overrides"]["analyzer"] == {
+        "prompt_prefix": "Prioritize verified demand signals.",
+        "system_prompt": None,
+    }
+
+
 def test_bulk_delete_route_returns_per_session_outcomes(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
