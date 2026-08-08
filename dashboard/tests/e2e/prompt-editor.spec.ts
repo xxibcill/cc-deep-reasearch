@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { setupDashboardWithActiveRun } from "./test-fixtures";
 
 async function mockSessionsList(page: Page) {
   await page.route("**/api/sessions*", async (route) => {
@@ -353,143 +354,12 @@ test("run status raises a completion notification with follow-up actions", async
 test("active run monitor keeps controls and session context through the run handoff", async ({
   page,
 }) => {
-  let stopRequested = false;
+  const { session } = await setupDashboardWithActiveRun(page);
 
-  await page.route("**/api/research-runs/by-session/active-session", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        run_id: "run-active",
-        status: stopRequested ? "cancelled" : "running",
-        session_id: "active-session",
-        stop_requested: stopRequested,
-      }),
-    });
-  });
+  await page.goto(`/session/${session.session_id}/monitor`);
 
-  await page.route("**/api/research-runs/run-active/stop", async (route) => {
-    stopRequested = true;
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        run_id: "run-active",
-        status: "running",
-        session_id: "active-session",
-        stop_requested: true,
-      }),
-    });
-  });
-
-  await page.route("**/api/research-runs/run-active", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        run_id: "run-active",
-        status: stopRequested ? "cancelled" : "running",
-        created_at: "2026-03-25T00:00:00Z",
-        started_at: "2026-03-25T00:00:02Z",
-        completed_at: stopRequested ? "2026-03-25T00:00:10Z" : undefined,
-        session_id: "active-session",
-        stop_requested: stopRequested,
-      }),
-    });
-  });
-
-  await page.route("**/api/sessions/active-session*", async (route) => {
-    const url = new URL(route.request().url());
-
-    if (url.pathname.endsWith("/events")) {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          events: [],
-          count: 0,
-          total: 0,
-          has_more: false,
-          next_cursor: null,
-          prev_cursor: null,
-        }),
-      });
-      return;
-    }
-
-    const session = {
-      session_id: "active-session",
-      label: "Market signal watch",
-      created_at: "2026-03-25T00:00:00Z",
-      total_time_ms: 8000,
-      total_sources: 6,
-      status: "running",
-      active: true,
-      event_count: 0,
-      last_event_at: "2026-03-25T00:00:08Z",
-      query: "Track quarterly demand signals across priority markets.",
-      depth: "standard",
-      completed_at: null,
-      has_session_payload: true,
-      has_report: false,
-    };
-
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(
-        url.searchParams.get("include_derived") === "true"
-          ? {
-              session,
-              summary: null,
-              events_page: {
-                events: [],
-                total: 0,
-                has_more: false,
-                next_cursor: null,
-                prev_cursor: null,
-              },
-              event_tail: [],
-              agent_timeline: [],
-              active_phase: null,
-              narrative: [],
-              critical_path: {
-                path: [],
-                total_duration_ms: 0,
-                bottleneck_event: null,
-                phase_durations: [],
-              },
-              state_changes: [],
-              decisions: [],
-              degradations: [],
-              failures: [],
-              decision_graph: {
-                nodes: [],
-                edges: [],
-                summary: {
-                  node_count: 0,
-                  edge_count: 0,
-                  explicit_edge_count: 0,
-                  inferred_edge_count: 0,
-                },
-              },
-              prompt_metadata: {
-                overrides_applied: false,
-                effective_overrides: {},
-                default_prompts_used: [],
-              },
-            }
-          : { session, summary: null }
-      ),
-    });
-  });
-
-  await page.goto("/session/active-session/monitor");
-
-  await expect(page.getByText("Market signal watch", { exact: true })).toBeVisible();
-  await expect(
-    page.getByText("Track quarterly demand signals across priority markets.", { exact: true })
-  ).toBeVisible();
+  await expect(page.getByText(session.label, { exact: true })).toBeVisible();
+  await expect(page.getByText(session.query, { exact: true })).toBeVisible();
 
   await page.setViewportSize({ width: 320, height: 800 });
   await expect
@@ -505,10 +375,10 @@ test("active run monitor keeps controls and session context through the run hand
   await expect(stopButton).toBeVisible();
 
   await page.getByRole("link", { name: "Overview" }).click();
-  await expect(page).toHaveURL(/\/session\/active-session$/);
+  await expect(page).toHaveURL(new RegExp(`/session/${session.session_id}$`));
   await expect(page.getByRole("button", { name: "Stop run" })).toHaveCount(0);
   await page.getByRole("link", { name: "Monitor" }).click();
-  await expect(page).toHaveURL(/\/session\/active-session\/monitor$/);
+  await expect(page).toHaveURL(new RegExp(`/session/${session.session_id}/monitor$`));
   await expect(page.getByRole("button", { name: "Stop run" })).toBeVisible();
 
   await stopButton.click();
