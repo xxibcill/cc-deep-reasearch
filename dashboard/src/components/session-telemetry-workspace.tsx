@@ -94,6 +94,7 @@ export function SessionTelemetryWorkspace({
   const { exportDebugBundle, isExporting: isExportingDebug } = useDebugExport(sessionId);
   const [derivedOutputs, setDerivedOutputs] = useState<DerivedOutputs | null>(null);
   const [promptMetadata, setPromptMetadata] = useState<SessionPromptMetadata | null>(null);
+  const [derivedSessionId, setDerivedSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [derivedLoading, setDerivedLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -102,6 +103,9 @@ export function SessionTelemetryWorkspace({
   const [nowMs, setNowMs] = useState(() => Date.now());
   const previousPhaseRef = useRef(liveStreamStatus.phase);
   const derivedFetchedRef = useRef(false);
+  const derivedRequestVersionRef = useRef(0);
+  const visibleDerivedOutputs = derivedSessionId === sessionId ? derivedOutputs : null;
+  const visiblePromptMetadata = derivedSessionId === sessionId ? promptMetadata : null;
 
   useEffect(() => {
     if (liveStreamStatus.phase !== 'reconnecting' || !liveStreamStatus.nextRetryAt) {
@@ -121,6 +125,7 @@ export function SessionTelemetryWorkspace({
   const loadDerivedOutputs = useCallback(() => {
     if (derivedFetchedRef.current) return;
     derivedFetchedRef.current = true;
+    const requestVersion = ++derivedRequestVersionRef.current;
     setDerivedLoading(true);
     setDerivedError(null);
     Promise.all([
@@ -128,13 +133,17 @@ export function SessionTelemetryWorkspace({
       getSessionPromptMetadata(sessionId),
     ])
       .then(([derived, prompts]) => {
+        if (requestVersion !== derivedRequestVersionRef.current) return;
         setDerivedOutputs(derived);
         setPromptMetadata(prompts ?? null);
+        setDerivedSessionId(sessionId);
       })
       .catch((err) => {
+        if (requestVersion !== derivedRequestVersionRef.current) return;
         setDerivedError(getApiErrorMessage(err, 'Failed to load derived outputs.'));
       })
       .finally(() => {
+        if (requestVersion !== derivedRequestVersionRef.current) return;
         setDerivedLoading(false);
       });
   }, [sessionId]);
@@ -142,10 +151,16 @@ export function SessionTelemetryWorkspace({
   // Load events eagerly (doesn't wait for derived outputs)
   useEffect(() => {
     let mounted = true;
+    derivedRequestVersionRef.current += 1;
     derivedFetchedRef.current = false;
 
     setLoading(true);
     setError(null);
+    setDerivedOutputs(null);
+    setPromptMetadata(null);
+    setDerivedSessionId(null);
+    setDerivedLoading(false);
+    setDerivedError(null);
 
     Promise.all([
       getSessionSummary(sessionId),
@@ -166,6 +181,7 @@ export function SessionTelemetryWorkspace({
 
     return () => {
       mounted = false;
+      derivedRequestVersionRef.current += 1;
     };
   }, [appendEvents, loadDerivedOutputs, reloadNonce, sessionId]);
 
@@ -314,7 +330,7 @@ export function SessionTelemetryWorkspace({
           </CardContent>
         </Card>
 
-        {(derivedOutputs || promptMetadata) ? (
+        {visibleDerivedOutputs || visiblePromptMetadata ? (
           <SessionDetails
             sessionId={sessionId}
             liveStreamStatus={liveStreamStatus}
@@ -323,8 +339,8 @@ export function SessionTelemetryWorkspace({
             viewMode={viewMode}
             onSelectEvent={setSelectedEvent}
             onViewModeChange={setViewMode}
-            derivedOutputs={derivedOutputs ?? undefined}
-            promptMetadata={promptMetadata ?? undefined}
+            derivedOutputs={visibleDerivedOutputs ?? undefined}
+            promptMetadata={visiblePromptMetadata ?? undefined}
           />
         ) : null}
       </div>
@@ -497,8 +513,8 @@ export function SessionTelemetryWorkspace({
         viewMode={viewMode}
         onSelectEvent={setSelectedEvent}
         onViewModeChange={setViewMode}
-        derivedOutputs={derivedOutputs ?? undefined}
-        promptMetadata={promptMetadata ?? undefined}
+        derivedOutputs={visibleDerivedOutputs ?? undefined}
+        promptMetadata={visiblePromptMetadata ?? undefined}
       />
     </div>
   );
