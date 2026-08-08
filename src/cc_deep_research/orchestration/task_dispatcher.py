@@ -115,7 +115,6 @@ class TaskDispatcher:
                 for task_id in pending_task_ids
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            self._check_cancellation(cancellation_check)
 
             cancellation = next(
                 (result for result in results if isinstance(result, ResearchRunCancelled)),
@@ -148,6 +147,8 @@ class TaskDispatcher:
                 callback_result = group_completed_callback(dict(self._task_results))
                 if callback_result is not None:
                     await callback_result
+
+            self._check_cancellation(cancellation_check)
 
             # Check if any critical failures should stop execution
             if self._should_abort(plan, task_group):

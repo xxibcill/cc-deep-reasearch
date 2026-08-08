@@ -321,16 +321,13 @@ async def test_planner_dispatch_resume_skips_successful_tasks() -> None:
 async def test_planner_dispatch_propagates_cancellation_before_persisting_group() -> None:
     monitor = ResearchMonitor(enabled=False)
     dispatcher = TaskDispatcher(monitor=monitor)
-    cancellation_requested = False
+    snapshots: list[dict[str, TaskExecutionResult]] = []
 
     async def cancelled_handler(**_kwargs):
-        nonlocal cancellation_requested
-        cancellation_requested = True
-        raise RuntimeError("provider request cancelled")
+        raise ResearchRunCancelled("cancelled")
 
-    def cancellation_check() -> None:
-        if cancellation_requested:
-            raise ResearchRunCancelled("cancelled")
+    async def capture_group(results: dict[str, TaskExecutionResult]) -> None:
+        snapshots.append(results)
 
     dispatcher.register_handler("search", cancelled_handler)
     plan = ResearchPlan(
@@ -349,4 +346,56 @@ async def test_planner_dispatch_propagates_cancellation_before_persisting_group(
     )
 
     with pytest.raises(ResearchRunCancelled, match="cancelled"):
-        await dispatcher.dispatch_plan(plan, cancellation_check=cancellation_check)
+        await dispatcher.dispatch_plan(
+            plan,
+            group_completed_callback=capture_group,
+        )
+
+    assert snapshots == []
+
+
+@pytest.mark.asyncio
+async def test_planner_dispatch_persists_completed_group_before_operator_pause() -> None:
+    monitor = ResearchMonitor(enabled=False)
+    dispatcher = TaskDispatcher(monitor=monitor)
+    cancellation_requested = False
+    snapshots: list[dict[str, TaskExecutionResult]] = []
+
+    async def completed_handler(**_kwargs):
+        nonlocal cancellation_requested
+        cancellation_requested = True
+        return {"findings": ["completed before pause"]}
+
+    def cancellation_check() -> None:
+        if cancellation_requested:
+            raise ResearchRunCancelled("paused")
+
+    async def capture_group(results: dict[str, TaskExecutionResult]) -> None:
+        snapshots.append(results)
+
+    dispatcher.register_handler("search", completed_handler)
+    plan = ResearchPlan(
+        plan_id="plan-paused",
+        query="What changed?",
+        summary="Persist completed task groups before pausing",
+        subtasks=[
+            ResearchSubtask(
+                id="search",
+                title="Search",
+                description="Collect sources",
+                task_type="search",
+            )
+        ],
+        execution_order=[["search"]],
+    )
+
+    with pytest.raises(ResearchRunCancelled, match="paused"):
+        await dispatcher.dispatch_plan(
+            plan,
+            cancellation_check=cancellation_check,
+            group_completed_callback=capture_group,
+        )
+
+    assert len(snapshots) == 1
+    assert snapshots[0]["search"].success is True
+    assert plan.get_subtask("search").status == "completed"
