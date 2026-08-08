@@ -114,9 +114,8 @@ export function CommandPalette() {
       icon: Search,
       shortcut: '/',
       action: () => {
-        setOpen(false);
+        closePalette();
         focusSessionSearch();
-        clearSequence();
       },
     },
     ...(activeSessionId
@@ -129,8 +128,7 @@ export function CommandPalette() {
             shortcut: 'G O',
             action: () => {
               router.push(`/session/${activeSessionId}`);
-              setOpen(false);
-              clearSequence();
+              closePalette();
             },
           },
           {
@@ -141,8 +139,7 @@ export function CommandPalette() {
             shortcut: 'G M',
             action: () => {
               router.push(`/session/${activeSessionId}/monitor`);
-              setOpen(false);
-              clearSequence();
+              closePalette();
             },
           },
           {
@@ -153,8 +150,7 @@ export function CommandPalette() {
             shortcut: 'G R',
             action: () => {
               router.push(`/session/${activeSessionId}/report`);
-              setOpen(false);
-              clearSequence();
+              closePalette();
             },
           },
         ]
@@ -166,8 +162,7 @@ export function CommandPalette() {
       icon: Terminal,
       action: () => {
         router.push(`/session/${session.sessionId}`);
-        setOpen(false);
-        clearSequence();
+        closePalette();
       },
     })),
   ];
