@@ -663,6 +663,7 @@ class ResearchExecutionService:
                 description="Research complete",
             )
             terminal_status = self._resolve_terminal_status(session)
+            session.metadata["execution"]["terminal_status"] = terminal_status
             self._monitor.finalize_session(
                 total_sources=len(sources),
                 providers=self._configured_providers(),

@@ -168,6 +168,18 @@ class TestSessionStore:
             "resumed_phase": "analysis",
         }
 
+    def test_terminal_status_survives_save_and_load(
+        self, session_store: SessionStore, sample_session: ResearchSession
+    ) -> None:
+        """Provider failure status added after execution should remain durable."""
+        sample_session.metadata["execution"]["terminal_status"] = "failed"
+
+        session_store.save_session(sample_session)
+        loaded = session_store.load_session(sample_session.session_id)
+
+        assert loaded is not None
+        assert loaded.metadata["execution"]["terminal_status"] == "failed"
+
     def test_load_session_not_found(self, session_store: SessionStore) -> None:
         """Test loading a non-existent session."""
         result = session_store.load_session("nonexistent")

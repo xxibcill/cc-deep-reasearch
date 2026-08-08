@@ -31,6 +31,9 @@ from cc_deep_research.web_server_routes._shared import parse_timestamp
 
 STALE_LIVE_SESSION_AFTER = timedelta(minutes=15)
 RUN_CANCELLED_MESSAGE = "Research run was cancelled by the operator."
+PROVIDER_FAILURE_MESSAGE = (
+    "Research run failed because configured providers returned no usable sources."
+)
 logger = logging.getLogger(__name__)
 
 
@@ -171,7 +174,13 @@ async def _execute_research_run(
                 cancellation_check=cancellation_check,
                 on_session_started=on_session_started,
             )
-        job_registry.mark_completed(job.run_id, result=result)
+        terminal_status = result.session.metadata.get("execution", {}).get(
+            "terminal_status"
+        )
+        if terminal_status == ResearchRunStatus.FAILED.value:
+            job_registry.mark_failed(job.run_id, error=PROVIDER_FAILURE_MESSAGE)
+        else:
+            job_registry.mark_completed(job.run_id, result=result)
     except ResearchRunCancelled:
         if job.session_id:
             _interrupt_live_session(job.session_id)
