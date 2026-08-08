@@ -4,19 +4,14 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  BarChart3,
-  FileVideo,
   FlaskConical,
   Menu,
-  Network,
-  Radar,
   Search,
-  Settings,
-  Trophy,
   X,
   type LucideIcon,
 } from 'lucide-react'
 
+import { PRIMARY_NAVIGATION_DESTINATIONS } from '@/lib/navigation'
 import { cn } from '@/lib/utils'
 
 const COMMAND_PALETTE_OPEN_EVENT = 'ccdr.command-palette.open'
@@ -28,15 +23,9 @@ export interface NavBarItem {
   match?: (pathname: string) => boolean
 }
 
-const defaultNavItems: NavBarItem[] = [
-  { href: '/', label: 'Research', icon: FlaskConical },
-  { href: '/analytics', label: 'Analytics', icon: BarChart3 },
-  { href: '/benchmark', label: 'Benchmark', icon: Trophy },
-  { href: '/radar', label: 'Radar', icon: Radar },
-  { href: '/knowledge', label: 'Knowledge', icon: Network },
-  { href: '/content-gen', label: 'Content', icon: FileVideo },
-  { href: '/settings', label: 'Settings', icon: Settings },
-]
+const defaultNavItems: NavBarItem[] = PRIMARY_NAVIGATION_DESTINATIONS.map(
+  ({ href, label, icon }) => ({ href, label, icon }),
+)
 
 function isActive(pathname: string, href: string): boolean {
   if (href === '/') {

@@ -2,23 +2,14 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { 
-  Search, 
-  Home, 
-  Settings, 
-  Film, 
-  GitCompare, 
-  Terminal,
-  X,
-  BarChart3,
-  Trophy,
-  ScrollText,
-  Radar,
-  FileText,
-  Network
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { FileText, Radar, ScrollText, Search, Terminal, X } from 'lucide-react';
+
 import useDashboardStore from '@/hooks/useDashboard';
+import {
+  NAVIGATION_DESTINATIONS,
+  navigationShortcutLegend,
+} from '@/lib/navigation';
+import { cn } from '@/lib/utils';
 
 const PALETTE_OPEN_EVENT = 'ccdr.command-palette.open';
 const SEQUENCE_TIMEOUT_MS = 900;
@@ -105,100 +96,17 @@ export function CommandPalette() {
   }, [clearSequence]);
 
   const commands: CommandItem[] = [
-    {
-      id: 'research',
-      label: 'Go to Research',
-      description: 'View sessions and start new research',
-      icon: Home,
-      shortcut: 'G H',
+    ...NAVIGATION_DESTINATIONS.map((destination) => ({
+      id: destination.id,
+      label: destination.commandLabel,
+      description: destination.description,
+      icon: destination.icon,
+      shortcut: `G ${destination.shortcutKey.toUpperCase()}`,
       action: () => {
-        router.push('/');
-        setOpen(false);
-        clearSequence();
-      },
-    },
-    {
-      id: 'radar',
-      label: 'Go to Radar',
-      description: 'Review monitored opportunities and sources',
-      icon: Radar,
-      shortcut: 'G D',
-      action: () => {
-        router.push('/radar');
+        router.push(destination.href);
         closePalette();
       },
-    },
-    {
-      id: 'knowledge',
-      label: 'Go to Knowledge',
-      description: 'Explore evidence and research relationships',
-      icon: Network,
-      shortcut: 'G K',
-      action: () => {
-        router.push('/knowledge');
-        closePalette();
-      },
-    },
-    {
-      id: 'analytics',
-      label: 'Go to Analytics',
-      description: 'Review aggregate operational trends',
-      icon: BarChart3,
-      shortcut: 'G A',
-      action: () => {
-        router.push('/analytics');
-        setOpen(false);
-        clearSequence();
-      },
-    },
-    {
-      id: 'benchmark',
-      label: 'Go to Benchmark',
-      description: 'View evaluation results',
-      icon: Trophy,
-      shortcut: 'G B',
-      action: () => {
-        router.push('/benchmark');
-        setOpen(false);
-        clearSequence();
-      },
-    },
-    {
-      id: 'content-studio',
-      label: 'Go to Content Studio',
-      description: 'Manage production workflows',
-      icon: Film,
-      shortcut: 'G C',
-      action: () => {
-        router.push('/content-gen');
-        setOpen(false);
-        clearSequence();
-      },
-    },
-    {
-      id: 'settings',
-      label: 'Go to Settings',
-      description: 'Configure runtime controls',
-      icon: Settings,
-      shortcut: 'G S',
-      action: () => {
-        router.push('/settings');
-        setOpen(false);
-        clearSequence();
-      },
-    },
-    {
-      id: 'compare',
-      label: 'Jump to Compare',
-      description: 'Compare two sessions side by side',
-      icon: GitCompare,
-      shortcut: 'G V',
-      action: () => {
-        router.push('/compare');
-        setOpen(false);
-        clearSequence();
-      },
-    },
+    })),
     {
       id: 'search-sessions',
       label: 'Search Sessions',
@@ -307,16 +215,12 @@ export function CommandPalette() {
           }
 
           if (currentSequence === 'g') {
-            const commandByShortcutKey: Record<string, () => void> = {
-              h: () => router.push('/'),
-              a: () => router.push('/analytics'),
-              b: () => router.push('/benchmark'),
-              c: () => router.push('/content-gen'),
-              d: () => router.push('/radar'),
-              k: () => router.push('/knowledge'),
-              s: () => router.push('/settings'),
-              v: () => router.push('/compare'),
-            };
+            const commandByShortcutKey = Object.fromEntries(
+              NAVIGATION_DESTINATIONS.map((destination) => [
+                destination.shortcutKey,
+                () => router.push(destination.href),
+              ])
+            ) as Record<string, () => void>;
 
             if (activeSessionId) {
               commandByShortcutKey.o = () => router.push(`/session/${activeSessionId}`);
@@ -565,7 +469,7 @@ export function CommandPalette() {
           </div>
           <div className="flex flex-wrap items-center gap-3 opacity-80">
             <span>Cmd/Ctrl+K open</span>
-            <span>G then H/A/B/C/D/K/S/V navigate</span>
+            <span>G then {navigationShortcutLegend} navigate</span>
             {activeSessionId ? <span>G then O/M/R switch tabs</span> : null}
             <span>/ focus session search</span>
           </div>
