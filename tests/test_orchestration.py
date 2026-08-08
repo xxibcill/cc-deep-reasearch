@@ -702,6 +702,7 @@ class TestSessionBuilder:
             "deep_analysis",
             "llm_routes",
             "prompts",
+            "resume",
             "annotations",
             "triage_status",
             "triage_owner",
@@ -886,7 +887,7 @@ class TestResearchExecutionService:
             shutdown_team=AsyncMock(),
         )
 
-        await service.execute(
+        session = await service.execute(
             query="market structure",
             depth=ResearchDepth.STANDARD,
             min_sources=2,
@@ -898,6 +899,7 @@ class TestResearchExecutionService:
             event for event in monitor._telemetry_events if event["event_type"] == "session.finished"
         ]
         assert session_finished[-1]["status"] == "failed"
+        assert session.metadata["execution"]["terminal_status"] == "failed"
         session_complete = monitor.get_checkpoints_by_phase("session_complete")[0]
         assert session_complete["output_ref"]["status"] == "failed"
 
@@ -953,7 +955,7 @@ class TestResearchExecutionService:
             shutdown_team=AsyncMock(),
         )
 
-        await service.execute(
+        session = await service.execute(
             query="market structure",
             depth=ResearchDepth.STANDARD,
             min_sources=2,
@@ -965,6 +967,7 @@ class TestResearchExecutionService:
             event for event in monitor._telemetry_events if event["event_type"] == "session.finished"
         ]
         assert session_finished[-1]["status"] == "failed"
+        assert session.metadata["execution"]["terminal_status"] == "failed"
 
     @pytest.mark.asyncio
     async def test_execute_marks_completed_for_empty_but_valid_provider_results(self, tmp_path) -> None:

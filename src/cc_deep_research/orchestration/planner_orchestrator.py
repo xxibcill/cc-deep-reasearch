@@ -26,11 +26,24 @@ from cc_deep_research.models import (
     ResearchSession,
     SearchResultItem,
     StrategyResult,
+    TaskExecutionResult,
     ValidationResult,
 )
+from cc_deep_research.models.checkpoint import CheckpointOperation
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.orchestration.session_builder import SessionBuilder
 from cc_deep_research.orchestration.task_dispatcher import TaskDispatcher
+from cc_deep_research.research_runs.models import (
+    ResearchRunCancelled,
+    ResearchRunRequest,
+    ResearchWorkflow,
+)
+from cc_deep_research.research_runs.resume import (
+    ResearchResumePhase,
+    ResearchResumeState,
+    ResearchResumeStore,
+    build_config_fingerprint,
+)
 
 if TYPE_CHECKING:
     from cc_deep_research.llm.codex_runtime import CodexRuntime
@@ -55,6 +68,9 @@ class PlannerResearchOrchestrator:
         prompt_registry: Any | None = None,
         workflow_config: Any | None = None,
         codex_runtime: CodexRuntime | None = None,
+        run_request: ResearchRunRequest | None = None,
+        resume_store: ResearchResumeStore | None = None,
+        config_fingerprint: str | None = None,
     ) -> None:
         """Initialize the planner orchestrator.
 
@@ -83,6 +99,9 @@ class PlannerResearchOrchestrator:
         self._execution_degradations: list[str] = []
         self._llm_routes: dict[str, Any] = {"planned_routes": {}, "actual_routes": {}, "usage_stats": {}, "fallback_events": []}
         self._iteration_history: list[dict[str, Any]] = []
+        self._run_request = run_request
+        self._resume_store = resume_store or ResearchResumeStore()
+        self._config_fingerprint = config_fingerprint or build_config_fingerprint(config)
 
     async def execute_research(
         self,
@@ -93,22 +112,61 @@ class PlannerResearchOrchestrator:
         cancellation_check: Callable[[], None] | None = None,
         on_session_started: Callable[[str], None] | None = None,
     ) -> ResearchSession:
-        """Execute research using the planner workflow.
+        """Execute research using the planner workflow."""
+        if self._run_request is None:
+            self._run_request = ResearchRunRequest(
+                query=query,
+                depth=depth,
+                min_sources=min_sources,
+                workflow=ResearchWorkflow.PLANNER,
+            )
+        return await self._execute_research(
+            query=query,
+            depth=depth,
+            min_sources=min_sources,
+            phase_hook=phase_hook,
+            cancellation_check=cancellation_check,
+            on_session_started=on_session_started,
+            resume_state=None,
+        )
 
-        Args:
-            query: Research query string.
-            depth: Research depth mode (quick/standard/deep).
-            min_sources: Minimum number of sources (optional).
-            phase_hook: Optional callback for phase progress updates.
-            cancellation_check: Optional callback to check for cancellation.
-            on_session_started: Optional callback when session starts.
+    async def resume_research(
+        self,
+        state: ResearchResumeState,
+        *,
+        phase_hook: Callable[[str, str], None] | None = None,
+        cancellation_check: Callable[[], None] | None = None,
+        on_session_started: Callable[[str], None] | None = None,
+    ) -> ResearchSession:
+        """Continue a planner run without repeating completed task groups."""
+        if state.workflow != ResearchWorkflow.PLANNER:
+            raise ValueError("Planner execution cannot resume a staged snapshot")
+        if state.config_fingerprint != self._config_fingerprint:
+            raise ValueError("Research configuration changed since the checkpoint was created")
+        if self._run_request is None:
+            self._run_request = state.request.model_copy(deep=True)
+        return await self._execute_research(
+            query=state.query,
+            depth=state.depth,
+            min_sources=state.min_sources,
+            phase_hook=phase_hook,
+            cancellation_check=cancellation_check,
+            on_session_started=on_session_started,
+            resume_state=state,
+        )
 
-        Returns:
-            ResearchSession with complete research results.
-
-        Raises:
-            PlannerOrchestratorError: If research execution fails.
-        """
+    async def _execute_research(
+        self,
+        *,
+        query: str,
+        depth: ResearchDepth,
+        min_sources: int | None,
+        phase_hook: Callable[[str, str], None] | None,
+        cancellation_check: Callable[[], None] | None,
+        on_session_started: Callable[[str], None] | None,
+        resume_state: ResearchResumeState | None,
+    ) -> ResearchSession:
+        """Run a new or restored planner workflow from a durable boundary."""
         start_time = datetime.utcnow()
         session_id = self._initialize_session(
             query=query,
@@ -126,6 +184,9 @@ class PlannerResearchOrchestrator:
                 "workflow": "planner",
                 "query": query,
                 "depth": depth.value if hasattr(depth, 'value') else str(depth),
+                "original_session_id": (
+                    resume_state.origin_session_id if resume_state is not None else None
+                ),
             },
         )
 
@@ -134,60 +195,103 @@ class PlannerResearchOrchestrator:
             cancellation_check()
 
         try:
-            # Phase 1: Planning
-            self._notify_phase(phase_hook, "planning", "Creating research plan")
-            if cancellation_check:
-                cancellation_check()
-            planner_result = await self._create_plan(query, depth)
+            next_phase = (
+                resume_state.next_phase
+                if resume_state is not None
+                else ResearchResumePhase.PLANNER_PLAN
+            )
+            planner_result = resume_state.planner_result if resume_state is not None else None
+            task_results = (
+                dict(resume_state.planner_task_results) if resume_state is not None else {}
+            )
+            synthesis = resume_state.planner_synthesis if resume_state is not None else None
+
+            if next_phase == ResearchResumePhase.PLANNER_PLAN:
+                self._notify_phase(phase_hook, "planning", "Creating research plan")
+                if cancellation_check:
+                    cancellation_check()
+                planner_result = await self._create_plan(query, depth)
+                self._persist_planner_state(
+                    session_id=session_id,
+                    query=query,
+                    depth=depth,
+                    min_sources=min_sources,
+                    next_phase=ResearchResumePhase.PLANNER_EXECUTION,
+                    planner_result=planner_result,
+                    task_results={},
+                    resume_state=resume_state,
+                )
+
+            if planner_result is None:
+                raise ValueError("Resume state is missing the research plan")
             plan = planner_result.plan
 
-            self._monitor.log(f"Plan created with {len(plan.subtasks)} subtasks")
-            self._monitor.log(f"Complexity: {planner_result.complexity_assessment}")
-            self._monitor.log(f"Estimated time: {planner_result.estimated_time_minutes} minutes")
+            if next_phase != ResearchResumePhase.COMPLETE:
+                self._notify_phase(phase_hook, "init", "Initializing agents")
+                if cancellation_check:
+                    cancellation_check()
+                await self._initialize_agents(depth)
 
-            # Emit planning completion event
-            self._monitor.emit_event(
-                event_type="phase.completed",
-                category="planner",
-                name="planning",
-                status="completed",
-                metadata={
-                    "plan_id": plan.plan_id,
-                    "subtask_count": len(plan.subtasks),
-                    "complexity": planner_result.complexity_assessment,
-                    "confidence": planner_result.confidence,
-                },
-            )
+            if next_phase in {
+                ResearchResumePhase.PLANNER_PLAN,
+                ResearchResumePhase.PLANNER_EXECUTION,
+            }:
+                self._notify_phase(phase_hook, "execution", "Executing research plan")
+                if cancellation_check:
+                    cancellation_check()
 
-            # Phase 2: Initialize agents and dispatcher
-            self._notify_phase(phase_hook, "init", "Initializing agents")
-            if cancellation_check:
-                cancellation_check()
-            await self._initialize_agents(depth)
+                async def persist_group(
+                    current_results: dict[str, TaskExecutionResult],
+                ) -> None:
+                    self._persist_planner_state(
+                        session_id=session_id,
+                        query=query,
+                        depth=depth,
+                        min_sources=min_sources,
+                        next_phase=ResearchResumePhase.PLANNER_EXECUTION,
+                        planner_result=planner_result,
+                        task_results=current_results,
+                        resume_state=resume_state,
+                    )
 
-            # Emit agent initialization completion event
-            self._monitor.emit_event(
-                event_type="phase.completed",
-                category="planner",
-                name="agent_initialization",
-                status="completed",
-                metadata={"agent_count": len(self._agents)},
-            )
+                task_results = await self._execute_plan(
+                    plan,
+                    cancellation_check=cancellation_check,
+                    initial_results=task_results,
+                    group_completed_callback=persist_group,
+                )
+                if cancellation_check:
+                    cancellation_check()
+                self._persist_planner_state(
+                    session_id=session_id,
+                    query=query,
+                    depth=depth,
+                    min_sources=min_sources,
+                    next_phase=ResearchResumePhase.PLANNER_SYNTHESIS,
+                    planner_result=planner_result,
+                    task_results=task_results,
+                    resume_state=resume_state,
+                )
 
-            # Phase 3: Execute plan
-            self._notify_phase(phase_hook, "execution", "Executing research plan")
-            if cancellation_check:
-                cancellation_check()
-            task_results = await self._execute_plan(
-                plan,
-                cancellation_check=cancellation_check,
-            )
+            if next_phase != ResearchResumePhase.COMPLETE:
+                self._notify_phase(phase_hook, "synthesis", "Synthesizing results")
+                if cancellation_check:
+                    cancellation_check()
+                synthesis = self._synthesize_results(plan, task_results)
+                self._persist_planner_state(
+                    session_id=session_id,
+                    query=query,
+                    depth=depth,
+                    min_sources=min_sources,
+                    next_phase=ResearchResumePhase.COMPLETE,
+                    planner_result=planner_result,
+                    task_results=task_results,
+                    synthesis=synthesis,
+                    resume_state=resume_state,
+                )
 
-            # Phase 4: Synthesize results
-            self._notify_phase(phase_hook, "synthesis", "Synthesizing results")
-            if cancellation_check:
-                cancellation_check()
-            synthesis = self._synthesize_results(plan, task_results)
+            if synthesis is None:
+                raise ValueError("Resume state is missing the planner synthesis")
 
             # Phase 5: Build session
             self._notify_phase(phase_hook, "complete", "Research complete")
@@ -201,6 +305,12 @@ class PlannerResearchOrchestrator:
                 started_at=start_time,
                 min_sources=min_sources,
             )
+            if resume_state is not None:
+                session.metadata["resume"] = {
+                    "original_session_id": resume_state.origin_session_id,
+                    "resumed_from_checkpoint_id": resume_state.origin_checkpoint_id,
+                    "resumed_phase": resume_state.next_phase.value,
+                }
 
             self._monitor.log(f"Research complete: {len(synthesis.all_sources)} sources, {len(synthesis.key_findings)} findings")
 
@@ -215,6 +325,8 @@ class PlannerResearchOrchestrator:
 
             return session
 
+        except ResearchRunCancelled:
+            raise
         except Exception as exc:
             self._monitor.log(f"Research failed: {exc}")
             # Emit failed session event
@@ -235,6 +347,62 @@ class PlannerResearchOrchestrator:
         finally:
             await self._cleanup()
 
+    def _persist_planner_state(
+        self,
+        *,
+        session_id: str,
+        query: str,
+        depth: ResearchDepth,
+        min_sources: int | None,
+        next_phase: ResearchResumePhase,
+        planner_result: PlannerResult,
+        task_results: dict[str, TaskExecutionResult],
+        synthesis: PlanSynthesis | None = None,
+        resume_state: ResearchResumeState | None,
+    ) -> str | None:
+        """Persist the planner graph and completed task outputs atomically."""
+        if self._run_request is None:
+            return None
+        state = ResearchResumeState(
+            workflow=ResearchWorkflow.PLANNER,
+            query=query,
+            depth=depth,
+            min_sources=min_sources,
+            next_phase=next_phase,
+            request=self._run_request,
+            config_fingerprint=self._config_fingerprint,
+            planner_result=planner_result,
+            planner_task_results=task_results,
+            planner_synthesis=synthesis,
+            origin_session_id=(
+                resume_state.origin_session_id if resume_state is not None else session_id
+            ),
+            origin_checkpoint_id=(
+                resume_state.origin_checkpoint_id if resume_state is not None else None
+            ),
+        )
+        snapshot = self._resume_store.save(session_id, state)
+        return self._monitor.emit_checkpoint(
+            phase=next_phase.value,
+            operation=CheckpointOperation.FINALIZE.value,
+            output_ref={
+                "next_phase": next_phase.value,
+                "completed_tasks": sum(result.success for result in task_results.values()),
+                "task_count": len(planner_result.plan.subtasks),
+            },
+            state_ref=snapshot.path,
+            artifact_refs=[
+                {
+                    "kind": "resume_state",
+                    "path": snapshot.path,
+                    "content_hash": snapshot.content_hash,
+                    "size_bytes": snapshot.size_bytes,
+                }
+            ],
+            replayable=True,
+            metadata={"execution_resume": True, "workflow": ResearchWorkflow.PLANNER.value},
+        )
+
     def _initialize_session(
         self,
         *,
@@ -249,6 +417,13 @@ class PlannerResearchOrchestrator:
 
         session_id = f"planner-{uuid.uuid4().hex[:12]}"
         self._monitor.log(f"Session ID: {session_id}")
+        self._monitor.set_session(
+            session_id=session_id,
+            query=query,
+            depth=depth.value,
+            concurrent_source_collection=False,
+            configured_researchers=1,
+        )
 
         if on_session_started:
             on_session_started(session_id)
@@ -320,7 +495,11 @@ class PlannerResearchOrchestrator:
         self,
         plan: ResearchPlan,
         cancellation_check: Callable[[], None] | None = None,
-    ) -> dict[str, Any]:
+        initial_results: dict[str, TaskExecutionResult] | None = None,
+        group_completed_callback: (
+            Callable[[dict[str, TaskExecutionResult]], Any] | None
+        ) = None,
+    ) -> dict[str, TaskExecutionResult]:
         """Execute the research plan."""
         if not self._dispatcher:
             raise PlannerOrchestratorError("Dispatcher not initialized")
@@ -328,6 +507,8 @@ class PlannerResearchOrchestrator:
         return await self._dispatcher.dispatch_plan(
             plan=plan,
             cancellation_check=cancellation_check,
+            initial_results=initial_results,
+            group_completed_callback=group_completed_callback,
         )
 
     async def _handle_search_task(

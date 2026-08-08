@@ -28,6 +28,10 @@ export function isTerminalStatus(status: ResearchRunStatus | null): boolean {
   return status === 'completed' || status === 'failed' || status === 'cancelled';
 }
 
+export function isResumableStatus(status: ResearchRunStatus | null): boolean {
+  return status === 'failed' || status === 'cancelled';
+}
+
 export function mergeRunStatus(
   current: ResearchRunStatus | null,
   next: ResearchRunStatus | null

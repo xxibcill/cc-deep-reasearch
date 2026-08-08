@@ -148,6 +148,38 @@ class TestSessionStore:
         assert loaded.depth == sample_session.depth
         assert len(loaded.sources) == len(sample_session.sources)
 
+    def test_resume_lineage_survives_save_and_load(
+        self, session_store: SessionStore, sample_session: ResearchSession
+    ) -> None:
+        """Resume lineage added after construction should remain durable."""
+        sample_session.metadata["resume"] = {
+            "original_session_id": "original-session",
+            "resumed_from_checkpoint_id": "cp-source-collection",
+            "resumed_phase": "analysis",
+        }
+
+        session_store.save_session(sample_session)
+        loaded = session_store.load_session(sample_session.session_id)
+
+        assert loaded is not None
+        assert loaded.metadata["resume"] == {
+            "original_session_id": "original-session",
+            "resumed_from_checkpoint_id": "cp-source-collection",
+            "resumed_phase": "analysis",
+        }
+
+    def test_terminal_status_survives_save_and_load(
+        self, session_store: SessionStore, sample_session: ResearchSession
+    ) -> None:
+        """Provider failure status added after execution should remain durable."""
+        sample_session.metadata["execution"]["terminal_status"] = "failed"
+
+        session_store.save_session(sample_session)
+        loaded = session_store.load_session(sample_session.session_id)
+
+        assert loaded is not None
+        assert loaded.metadata["execution"]["terminal_status"] == "failed"
+
     def test_load_session_not_found(self, session_store: SessionStore) -> None:
         """Test loading a non-existent session."""
         result = session_store.load_session("nonexistent")

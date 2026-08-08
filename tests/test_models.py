@@ -367,6 +367,7 @@ class TestResearchRunResult:
             "deep_analysis",
             "llm_routes",
             "prompts",
+            "resume",
             "annotations",
             "triage_status",
             "triage_owner",
@@ -376,6 +377,7 @@ class TestResearchRunResult:
         assert session.metadata["providers"]["status"] == "unavailable"
         assert session.metadata["deep_analysis"]["status"] == "not_requested"
         assert session.metadata["llm_routes"] == {}
+        assert session.metadata["resume"] is None
 
     def test_research_session_preserves_legacy_metadata_and_normalizes_deep_state(self) -> None:
         """Test normalization of legacy metadata formats."""
@@ -454,6 +456,7 @@ class TestResearchRunResult:
             "deep_analysis",
             "llm_routes",
             "prompts",
+            "resume",
             "annotations",
             "triage_status",
             "triage_owner",

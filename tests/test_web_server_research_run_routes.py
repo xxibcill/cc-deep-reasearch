@@ -8,7 +8,10 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
+from cc_deep_research.models import ResearchSession
 from cc_deep_research.research_runs import (
+    ResearchOutputFormat,
+    ResearchRunReport,
     ResearchRunRequest,
     ResearchRunResult,
 )
@@ -56,6 +59,70 @@ def test_research_route_passes_app_owned_codex_runtime(
             time.sleep(0.01)
 
     assert captured == [codex_runtime]
+
+
+def test_provider_degraded_result_keeps_run_failed_and_resumable(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A materialized provider failure must not become a completed job."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    class ProviderFailedResearchRunService:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def run(
+            self,
+            request: ResearchRunRequest,
+            *,
+            on_session_started=None,
+            **_kwargs,
+        ) -> ResearchRunResult:
+            session = ResearchSession(
+                session_id="provider-failed-session",
+                query=request.query,
+                depth=request.depth,
+                metadata={
+                    "execution": {
+                        "degraded": True,
+                        "terminal_status": "failed",
+                    }
+                },
+            )
+            if on_session_started is not None:
+                on_session_started(session.session_id)
+            return ResearchRunResult(
+                session=session,
+                report=ResearchRunReport(
+                    format=ResearchOutputFormat.MARKDOWN,
+                    content="No sources were available.",
+                    media_type="text/markdown",
+                ),
+            )
+
+    monkeypatch.setattr(
+        "cc_deep_research.web_server.ResearchRunService",
+        ProviderFailedResearchRunService,
+    )
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/api/research-runs",
+            json={"query": "provider outage", "depth": "quick"},
+        )
+        assert response.status_code == 202
+        run_id = response.json()["run_id"]
+
+        payload = None
+        for _ in range(100):
+            payload = client.get(f"/api/research-runs/{run_id}").json()
+            if payload["status"] == "failed":
+                break
+            time.sleep(0.01)
+
+    assert payload is not None
+    assert payload["status"] == "failed"
+    assert payload["session_id"] == "provider-failed-session"
 
 
 def test_stop_research_run_cancels_active_run_and_interrupts_session(

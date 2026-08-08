@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
   ArrowRight,
@@ -12,6 +13,7 @@ import {
   GitBranch,
   Info,
   Package,
+  RotateCcw,
   XCircle,
 } from 'lucide-react';
 
@@ -20,7 +22,13 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { HelpCallout } from '@/components/ui/help-callout';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { getSessionArtifacts, getApiErrorMessage, type SessionArtifactsResponse } from '@/lib/api';
+import {
+  getSessionArtifacts,
+  getApiErrorMessage,
+  resumeResearchSession,
+  type SessionArtifactsResponse,
+} from '@/lib/api';
+import { isResumableStatus } from '@/lib/session-route';
 import { useNotifications } from '@/components/ui/notification-center';
 import type {
   ResearchRunStatus,
@@ -192,10 +200,12 @@ export function ArtifactExplorer({
   sessionSummary,
   onOpenBundleExport,
 }: ArtifactExplorerProps) {
+  const router = useRouter();
   const { notify } = useNotifications();
   const [artifacts, setArtifacts] = useState<SessionArtifactsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isResuming, setIsResuming] = useState(false);
 
   const isTerminal =
     runStatus === 'completed' || runStatus === 'failed' || runStatus === 'cancelled';
@@ -302,6 +312,35 @@ export function ArtifactExplorer({
     }
   };
 
+  const resumeAvailable = artifacts.available.checkpoints?.resume_available === true;
+
+  const handleResume = async () => {
+    setIsResuming(true);
+    try {
+      const idempotencyKey = globalThis.crypto?.randomUUID?.() ??
+        `resume-${sessionId}-${Date.now()}`;
+      const response = await resumeResearchSession(sessionId, { idempotencyKey });
+      notify({
+        variant: 'success',
+        title: 'Research resume queued',
+        description: `Attempt ${response.resume_attempt} will continue from checkpoint ${response.resumed_from_checkpoint_id}.`,
+      });
+      router.push(`/session/${response.run_id}/monitor`);
+    } catch (resumeError) {
+      notify({
+        variant: 'destructive',
+        persistent: true,
+        title: 'Could not resume research',
+        description: getApiErrorMessage(
+          resumeError,
+          'The latest checkpoint could not be resumed.'
+        ),
+      });
+    } finally {
+      setIsResuming(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <HelpCallout
@@ -342,6 +381,26 @@ export function ArtifactExplorer({
                   Run {runStatus}. No artifacts available for inspection.
                 </span>
               </div>
+            </div>
+          )}
+
+          {isResumableStatus(runStatus) && resumeAvailable && (
+            <div className="mb-4 flex flex-col gap-3 rounded-lg border border-primary/25 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-medium text-foreground">Continue saved research</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Start a new run from the latest verified checkpoint. The original session stays unchanged.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                onClick={handleResume}
+                disabled={isResuming}
+                className="shrink-0"
+              >
+                <RotateCcw className={`mr-2 h-3.5 w-3.5 ${isResuming ? 'animate-spin' : ''}`} />
+                {isResuming ? 'Queuing resume…' : 'Resume research'}
+              </Button>
             </div>
           )}
 

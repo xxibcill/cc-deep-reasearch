@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -65,6 +65,7 @@ class SessionExecutionMetadata(BaseModel):
     parallel_used: bool = Field(default=False)
     degraded: bool = Field(default=False)
     degraded_reasons: list[str] = Field(default_factory=list)
+    terminal_status: Literal["completed", "failed"] | None = Field(default=None)
 
     model_config = {"extra": "allow"}
 
@@ -96,6 +97,14 @@ class SessionPromptMetadata(BaseModel):
     model_config = {"extra": "allow"}
 
 
+class SessionResumeMetadata(BaseModel):
+    """Durable lineage for a research session created from a resume snapshot."""
+
+    original_session_id: str | None = Field(default=None)
+    resumed_from_checkpoint_id: str | None = Field(default=None)
+    resumed_phase: str
+
+
 class SessionMetadataContract(BaseModel):
     """Stable top-level shape for ``ResearchSession.metadata``."""
 
@@ -110,6 +119,7 @@ class SessionMetadataContract(BaseModel):
     )
     llm_routes: dict[str, Any] = Field(default_factory=dict)
     prompts: SessionPromptMetadata = Field(default_factory=SessionPromptMetadata)
+    resume: SessionResumeMetadata | None = Field(default=None)
     annotations: list[SessionAnnotation] = Field(default_factory=list)
     triage_status: SessionTriageStatus | None = Field(default=None)
     triage_owner: str | None = Field(default=None)
@@ -277,10 +287,16 @@ def normalize_session_metadata(
             parallel_used=bool(raw_execution.get("parallel_used", False)),
             degraded=bool(raw_execution.get("degraded", bool(degraded_reasons))),
             degraded_reasons=degraded_reasons,
+            terminal_status=raw_execution.get("terminal_status"),
         ),
         deep_analysis=deep_analysis,
         llm_routes=_mapping_dict(raw_metadata.get("llm_routes", {})),
         prompts=prompt_metadata,
+        resume=(
+            SessionResumeMetadata.model_validate(raw_metadata["resume"])
+            if isinstance(raw_metadata.get("resume"), Mapping)
+            else None
+        ),
         annotations=raw_metadata.get("annotations", []),
         triage_status=SessionTriageStatus(raw_metadata["triage_status"])
         if isinstance(raw_metadata.get("triage_status"), str)
@@ -338,6 +354,7 @@ __all__ = [
     "SessionMetadataContract",
     "SessionPromptMetadata",
     "SessionProvidersMetadata",
+    "SessionResumeMetadata",
     "SessionTriageStatus",
     "normalize_session_metadata",
 ]

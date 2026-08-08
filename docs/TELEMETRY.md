@@ -39,6 +39,7 @@ for the active browser view.
 | Report | `GET /api/sessions/{session_id}/report` |
 | Artifacts and bundle | `GET /api/sessions/{session_id}/artifacts`, `/bundle` |
 | Checkpoints | `GET /api/sessions/{session_id}/checkpoints` |
+| Resume from executable checkpoint | `POST /api/sessions/{session_id}/resume` |
 | Archive or restore | `POST /api/sessions/{session_id}/archive`, `/restore` |
 | Add/read annotations | `POST` or `GET /api/sessions/{session_id}/annotations` |
 | Live stream | `WS /ws/session/{session_id}` |

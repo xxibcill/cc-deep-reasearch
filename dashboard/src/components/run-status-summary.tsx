@@ -251,7 +251,10 @@ export function RunStatusSummary({
               </CardTitle>
               <Badge variant={runStatusBadgeVariant(status.status)}>{status.status}</Badge>
               {stopRequested && isActiveStatus(status.status) ? (
-                <Badge variant="warning">Stop Requested</Badge>
+                <Badge variant="warning">Pause Requested</Badge>
+              ) : null}
+              {status.resume_attempt ? (
+                <Badge variant="secondary">Resume attempt {status.resume_attempt}</Badge>
               ) : null}
             </div>
             <p className="text-sm text-muted-foreground">
@@ -266,6 +269,17 @@ export function RunStatusSummary({
                 '. Waiting for session allocation.'
               )}
             </p>
+            {status.original_session_id && status.resumed_from_checkpoint_id ? (
+              <p className="text-xs text-muted-foreground">
+                Continuing session{' '}
+                <span className="font-mono text-foreground">{status.original_session_id}</span>{' '}
+                from checkpoint{' '}
+                <span className="font-mono text-foreground">
+                  {status.resumed_from_checkpoint_id}
+                </span>
+                .
+              </p>
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-3 lg:items-end">
@@ -279,12 +293,12 @@ export function RunStatusSummary({
                 {stopping || stopRequested ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Stopping...
+                    Pausing...
                   </>
                 ) : (
                   <>
                     <Square className="mr-2 h-4 w-4" />
-                    Stop Run
+                    Pause &amp; Save
                   </>
                 )}
               </Button>

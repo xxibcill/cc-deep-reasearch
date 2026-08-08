@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 from typing import TYPE_CHECKING, Protocol
 
@@ -28,6 +28,11 @@ from cc_deep_research.research_runs.options import (
     create_prompt_registry_with_overrides,
 )
 from cc_deep_research.research_runs.output import materialize_research_run_output
+from cc_deep_research.research_runs.resume import (
+    ResearchResumeState,
+    ResearchResumeStore,
+    build_config_fingerprint,
+)
 from cc_deep_research.session_store import SessionStore
 from cc_deep_research.themes import (
     ResearchTheme,
@@ -54,6 +59,7 @@ class PreparedResearchRun:
     prompt_registry: PromptRegistry
     workflow_config: WorkflowConfig | None = None
     detected_theme: ResearchTheme | None = None
+    config_fingerprint: str | None = None
 
 
 class ResearchRunExecutionAdapter(Protocol):
@@ -101,6 +107,7 @@ class ResearchRunService:
     theme_detector: ThemeDetector = ThemeDetector()
     theme_adapter: ThemeWorkflowAdapter = ThemeWorkflowAdapter()
     codex_runtime: CodexRuntime | None = None
+    resume_store: ResearchResumeStore = field(default_factory=ResearchResumeStore)
 
     def __post_init__(self) -> None:
         """Bind web-owned Codex state into generation factories when supplied."""
@@ -170,6 +177,7 @@ class ResearchRunService:
             prompt_registry=prompt_registry,
             workflow_config=workflow_config,
             detected_theme=detected_theme,
+            config_fingerprint=build_config_fingerprint(resolved_config),
         )
 
     def run(
@@ -212,6 +220,7 @@ class ResearchRunService:
         pdf_generator: PDFGenerator | None = None,
         cancellation_check: CancellationCheck | None = None,
         on_session_started: SessionStartedCallback | None = None,
+        resume_state: ResearchResumeState | None = None,
     ) -> ResearchRunResult:
         """Execute a pre-resolved research run."""
         active_monitor = monitor or ResearchMonitor(enabled=False)
@@ -227,6 +236,9 @@ class ResearchRunService:
                 prompt_registry=prepared.prompt_registry,
                 workflow_config=prepared.workflow_config,
                 codex_runtime=self.codex_runtime,
+                run_request=prepared.request,
+                resume_store=self.resume_store,
+                config_fingerprint=prepared.config_fingerprint,
             )
         else:
             orchestrator = self.orchestrator_factory(
@@ -236,6 +248,9 @@ class ResearchRunService:
                 max_concurrent_sources=prepared.request.max_concurrent_sources,
                 prompt_registry=prepared.prompt_registry,
                 workflow_config=prepared.workflow_config,
+                run_request=prepared.request,
+                resume_store=self.resume_store,
+                config_fingerprint=prepared.config_fingerprint,
             )
         adapter = execution_adapter or AsyncioResearchRunExecutionAdapter()
 
@@ -248,6 +263,7 @@ class ResearchRunService:
                     phase_hook=phase_hook,
                     cancellation_check=cancellation_check,
                     on_session_started=on_session_started,
+                    resume_state=resume_state,
                 )
             )
         except ResearchRunCancelled:
@@ -267,6 +283,36 @@ class ResearchRunService:
             pdf_generator=pdf_generator,
         )
 
+    def resume(
+        self,
+        state: ResearchResumeState,
+        *,
+        monitor: ResearchMonitor | None = None,
+        execution_adapter: ResearchRunExecutionAdapter | None = None,
+        event_router: EventRouter | None = None,
+        session_store: SessionStore | None = None,
+        reporter: ReportGenerator | None = None,
+        pdf_generator: PDFGenerator | None = None,
+        cancellation_check: CancellationCheck | None = None,
+        on_session_started: SessionStartedCallback | None = None,
+    ) -> ResearchRunResult:
+        """Resume a run from a validated persisted workflow snapshot."""
+        prepared = self.prepare(state.request)
+        if prepared.config_fingerprint != state.config_fingerprint:
+            raise ValueError("Research configuration changed since the checkpoint was created")
+        return self.run_prepared(
+            prepared,
+            monitor=monitor,
+            execution_adapter=execution_adapter,
+            event_router=event_router,
+            session_store=session_store,
+            reporter=reporter,
+            pdf_generator=pdf_generator,
+            cancellation_check=cancellation_check,
+            on_session_started=on_session_started,
+            resume_state=state,
+        )
+
     async def _execute_session(
         self,
         *,
@@ -276,6 +322,7 @@ class ResearchRunService:
         phase_hook: PhaseHook | None,
         cancellation_check: CancellationCheck | None,
         on_session_started: SessionStartedCallback | None,
+        resume_state: ResearchResumeState | None,
     ) -> ResearchSession:
         """Run the orchestrator and manage optional realtime startup."""
         router_started = False
@@ -286,6 +333,13 @@ class ResearchRunService:
 
         try:
             self._check_cancelled(cancellation_check)
+            if resume_state is not None:
+                return await orchestrator.resume_research(
+                    resume_state,
+                    phase_hook=phase_hook,
+                    cancellation_check=cancellation_check,
+                    on_session_started=on_session_started,
+                )
             return await orchestrator.execute_research(
                 query=request.query,
                 depth=request.depth,

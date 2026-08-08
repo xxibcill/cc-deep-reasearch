@@ -11,6 +11,7 @@ import {
   ResearchRunRequest,
   StartResearchRunResponse,
   ResearchRunStatusResponse,
+  ResumeResearchSessionResponse,
   StopResearchRunResponse,
   SessionReportResponse,
   SessionDeleteResponse,
@@ -456,6 +457,23 @@ export async function stopResearchRun(runId: string): Promise<StopResearchRunRes
   return response.data;
 }
 
+export async function resumeResearchSession(
+  sessionId: string,
+  options: { checkpointId?: string; idempotencyKey?: string } = {}
+): Promise<ResumeResearchSessionResponse> {
+  const response = await apiClient.post<ResumeResearchSessionResponse>(
+    `/sessions/${sessionId}/resume`,
+    undefined,
+    {
+      params: options.checkpointId ? { checkpoint_id: options.checkpointId } : undefined,
+      headers: options.idempotencyKey
+        ? { 'Idempotency-Key': options.idempotencyKey }
+        : undefined,
+    }
+  );
+  return response.data;
+}
+
 export async function getSessionReport(
   sessionId: string,
   format: 'markdown' | 'json' | 'html' = 'markdown'
@@ -743,6 +761,7 @@ export interface SessionArtifactInfo {
   formats?: string[];
   count?: number;
   latest_checkpoint_id?: string | null;
+  latest_executable_checkpoint_id?: string | null;
   resume_available?: boolean;
   reason?: string;
 }

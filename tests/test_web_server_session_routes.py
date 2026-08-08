@@ -5,19 +5,31 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
+from cc_deep_research.config import Config
 from cc_deep_research.models import ResearchDepth, ResearchSession
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.research_runs import (
     ResearchOutputFormat,
 )
+from cc_deep_research.research_runs.jobs import ResearchRunJobRegistry
 from cc_deep_research.research_runs.models import (
     MAX_BULK_DELETE_SESSION_IDS,
     BulkSessionDeleteRequest,
+    ResearchRunRequest,
+    ResearchWorkflow,
 )
+from cc_deep_research.research_runs.resume import (
+    ResearchResumePhase,
+    ResearchResumeState,
+    ResearchResumeStore,
+    build_config_fingerprint,
+)
+from cc_deep_research.research_runs.service import ResearchRunService
 from cc_deep_research.session_store import SessionStore
 from cc_deep_research.telemetry import ingest_telemetry_to_duckdb
 from cc_deep_research.web_server import (
@@ -1231,7 +1243,7 @@ def test_session_includes_checkpoint_inventory(tmp_path, monkeypatch: pytest.Mon
     assert "checkpoints" in data
     assert data["checkpoints"]["total"] == 1
     assert data["checkpoints"]["latest_checkpoint_id"] == "cp-abc123"
-    assert data["checkpoints"]["resume_available"] is True
+    assert data["checkpoints"]["resume_available"] is False
 
 
 def test_checkpoint_list_endpoint(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1441,8 +1453,168 @@ def test_checkpoint_lineage_endpoint(tmp_path, monkeypatch: pytest.MonkeyPatch) 
     assert data["lineage"][2]["checkpoint_id"] == "cp-3"
 
 
+def _write_resume_checkpoint(
+    telemetry_dir: Path,
+    *,
+    session_id: str,
+    config_fingerprint: str,
+) -> None:
+    session_dir = telemetry_dir / session_id
+    session_dir.mkdir(parents=True)
+    (session_dir / "events.jsonl").write_text(
+        json.dumps(
+            {
+                "event_id": "event-1",
+                "sequence_number": 1,
+                "timestamp": "2026-03-18T10:00:00Z",
+                "session_id": session_id,
+                "event_type": "session.started",
+                "category": "session",
+                "name": "session",
+                "status": "started",
+                "metadata": {},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    request = ResearchRunRequest(query="test query", workflow=ResearchWorkflow.STAGED)
+    snapshot = ResearchResumeStore(telemetry_dir).save(
+        session_id,
+        ResearchResumeState(
+            workflow=ResearchWorkflow.STAGED,
+            query=request.query,
+            depth=request.depth,
+            min_sources=request.min_sources,
+            next_phase=ResearchResumePhase.STRATEGY,
+            request=request,
+            config_fingerprint=config_fingerprint,
+            origin_session_id=session_id,
+        ),
+    )
+    checkpoints_dir = session_dir / "checkpoints"
+    checkpoints_dir.mkdir()
+    (checkpoints_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "checkpoints": [
+                    {
+                        "checkpoint_id": "cp-resumable",
+                        "phase": "strategy",
+                        "operation": "finalize",
+                        "resume_safe": True,
+                        "replayable": True,
+                        "state_ref": snapshot.path,
+                        "metadata": {"execution_resume": True},
+                    }
+                ],
+                "latest_resume_safe_checkpoint_id": "cp-resumable",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_resume_endpoint_rejects_configuration_incompatible_checkpoint(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setattr(
+        "cc_deep_research.web_server_routes.session_routes.queue_research_run",
+        lambda *_args, **_kwargs: None,
+    )
+    telemetry_dir = tmp_path / "xdg" / "inqulume-studio" / "telemetry"
+    incompatible_config = Config()
+    incompatible_config.research.max_iterations += 1
+    incompatible_prepared = ResearchRunService().prepare(
+        ResearchRunRequest(query="test query", workflow=ResearchWorkflow.STAGED),
+        config=incompatible_config,
+    )
+    assert incompatible_prepared.config_fingerprint is not None
+    _write_resume_checkpoint(
+        telemetry_dir,
+        session_id="incompatible-resume-session",
+        config_fingerprint=incompatible_prepared.config_fingerprint,
+    )
+
+    client = TestClient(create_app(job_registry=ResearchRunJobRegistry()))
+    artifacts = client.get("/api/sessions/incompatible-resume-session/artifacts")
+    response = client.post("/api/sessions/incompatible-resume-session/resume")
+
+    assert artifacts.status_code == 200
+    assert artifacts.json()["available"]["checkpoints"]["resume_available"] is False
+    assert response.status_code == 409
+    assert "configuration" in response.json()["error"].lower()
+
+
+def test_resume_endpoint_rejects_completed_session(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setattr(
+        "cc_deep_research.web_server_routes.session_routes.queue_research_run",
+        lambda *_args, **_kwargs: None,
+    )
+    telemetry_dir = tmp_path / "xdg" / "inqulume-studio" / "telemetry"
+    session_id = "completed-resume-session"
+    _write_resume_checkpoint(
+        telemetry_dir,
+        session_id=session_id,
+        config_fingerprint=build_config_fingerprint(Config()),
+    )
+    SessionStore().save_session(
+        ResearchSession(
+            session_id=session_id,
+            query="test query",
+            depth=ResearchDepth.DEEP,
+        )
+    )
+
+    client = TestClient(create_app(job_registry=ResearchRunJobRegistry()))
+    response = client.post(f"/api/sessions/{session_id}/resume")
+
+    assert response.status_code == 409
+    assert "completed" in response.json()["error"].lower()
+
+
+def test_resume_endpoint_allows_failed_job_with_saved_session(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setattr(
+        "cc_deep_research.web_server_routes.session_routes.queue_research_run",
+        lambda *_args, **_kwargs: None,
+    )
+    telemetry_dir = tmp_path / "xdg" / "inqulume-studio" / "telemetry"
+    session_id = "failed-saved-session"
+    request = ResearchRunRequest(query="test query", workflow=ResearchWorkflow.STAGED)
+    prepared = ResearchRunService().prepare(request)
+    assert prepared.config_fingerprint is not None
+    _write_resume_checkpoint(
+        telemetry_dir,
+        session_id=session_id,
+        config_fingerprint=prepared.config_fingerprint,
+    )
+    SessionStore().save_session(
+        ResearchSession(
+            session_id=session_id,
+            query=request.query,
+            depth=request.depth,
+        )
+    )
+    registry = ResearchRunJobRegistry()
+    original = registry.create_job(request)
+    registry.set_session_id(original.run_id, session_id=session_id)
+    registry.mark_failed(original.run_id, error="report materialization failed")
+
+    client = TestClient(create_app(job_registry=registry))
+    response = client.post(f"/api/sessions/{session_id}/resume")
+
+    assert response.status_code == 202
+
+
 def test_resume_endpoint_returns_resume_info(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The resume endpoint should return resume information for valid checkpoint."""
+    """The resume endpoint should queue a child run from executable state."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     config_dir = tmp_path / "xdg" / "inqulume-studio"
     telemetry_dir = config_dir / "telemetry"
@@ -1468,7 +1640,25 @@ def test_resume_endpoint_returns_resume_info(tmp_path, monkeypatch: pytest.Monke
         encoding="utf-8",
     )
 
-    # Create checkpoint manifest with resume-safe checkpoint
+    request = ResearchRunRequest(query="test query", workflow=ResearchWorkflow.STAGED)
+    prepared = ResearchRunService().prepare(request)
+    assert prepared.config_fingerprint is not None
+    resume_store = ResearchResumeStore(telemetry_dir)
+    snapshot = resume_store.save(
+        "resume-session",
+        ResearchResumeState(
+            workflow=ResearchWorkflow.STAGED,
+            query=request.query,
+            depth=request.depth,
+            min_sources=request.min_sources,
+            next_phase=ResearchResumePhase.STRATEGY,
+            request=request,
+            config_fingerprint=prepared.config_fingerprint,
+            origin_session_id="resume-session",
+        ),
+    )
+
+    # Create checkpoint manifest with executable resume state.
     checkpoints_dir = session_dir / "checkpoints"
     checkpoints_dir.mkdir()
     (checkpoints_dir / "manifest.json").write_text(
@@ -1482,6 +1672,9 @@ def test_resume_endpoint_returns_resume_info(tmp_path, monkeypatch: pytest.Monke
                         "resume_safe": True,
                         "replayable": True,
                         "input_ref": {"query": "test query"},
+                        "output_ref": {"next_phase": "strategy"},
+                        "state_ref": snapshot.path,
+                        "metadata": {"execution_resume": True},
                     },
                 ],
                 "latest_resume_safe_checkpoint_id": "cp-resumable",
@@ -1490,15 +1683,88 @@ def test_resume_endpoint_returns_resume_info(tmp_path, monkeypatch: pytest.Monke
         encoding="utf-8",
     )
 
-    client = TestClient(create_app())
-    response = client.post("/api/sessions/resume-session/resume")
+    queued: dict[str, object] = {}
 
-    assert response.status_code == 200
+    def capture_queue(_app, job, *, resume_state=None) -> None:
+        queued["job"] = job
+        queued["state"] = resume_state
+
+    monkeypatch.setattr(
+        "cc_deep_research.web_server_routes.session_routes.queue_research_run",
+        capture_queue,
+    )
+    registry = ResearchRunJobRegistry()
+    client = TestClient(create_app(job_registry=registry))
+    response = client.post(
+        "/api/sessions/resume-session/resume",
+        headers={"Idempotency-Key": "resume-once"},
+    )
+
+    assert response.status_code == 202
     data = response.json()
-    assert data["success"] is True
     assert data["resumed_from_checkpoint_id"] == "cp-resumable"
     assert data["original_session_id"] == "resume-session"
-    assert "checkpoint_lineage" in data
+    assert data["resume_attempt"] == 1
+    assert data["resume_mode"] == "resume_latest"
+    assert data["status"] == "queued"
+    assert queued["state"].origin_checkpoint_id == "cp-resumable"
+    assert registry.get_job(data["run_id"]) is queued["job"]
+
+
+def test_resume_endpoint_does_not_queue_atomic_idempotent_replay(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A retry that loses the reservation race must reuse without requeueing."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    telemetry_dir = tmp_path / "xdg" / "inqulume-studio" / "telemetry"
+    session_id = "concurrent-resume-session"
+    request = ResearchRunRequest(query="test query", workflow=ResearchWorkflow.STAGED)
+    prepared = ResearchRunService().prepare(request)
+    assert prepared.config_fingerprint is not None
+    _write_resume_checkpoint(
+        telemetry_dir,
+        session_id=session_id,
+        config_fingerprint=prepared.config_fingerprint,
+    )
+
+    class PrecheckBlindRegistry(ResearchRunJobRegistry):
+        def find_by_session_id(self, _session_id: str):
+            return None
+
+        def list_jobs(self):
+            return []
+
+    registry = PrecheckBlindRegistry()
+    existing = registry.create_resume_job_for_session(
+        request,
+        original_session_id=session_id,
+        checkpoint_id="cp-resumable",
+        idempotency_key="same-retry",
+    )
+    queued: list[str] = []
+    monkeypatch.setattr(
+        "cc_deep_research.web_server_routes.session_routes.queue_research_run",
+        lambda _app, job, **_kwargs: queued.append(job.run_id),
+    )
+
+    client = TestClient(create_app(job_registry=registry))
+    response = client.post(
+        f"/api/sessions/{session_id}/resume",
+        headers={"Idempotency-Key": "same-retry"},
+    )
+
+    assert response.status_code == 202
+    assert response.json()["run_id"] == existing.run_id
+    assert response.json()["idempotent_replay"] is True
+    assert queued == []
+
+
+def test_resume_endpoint_rejects_unsupported_mode() -> None:
+    client = TestClient(create_app(job_registry=ResearchRunJobRegistry()))
+
+    response = client.post("/api/sessions/missing/resume?mode=debug_replay")
+
+    assert response.status_code == 422
 
 
 def test_resume_endpoint_rejects_non_resumable_checkpoint(
@@ -1556,7 +1822,7 @@ def test_resume_endpoint_rejects_non_resumable_checkpoint(
     response = client.post("/api/sessions/non-resumable-session/resume?checkpoint_id=cp-failed")
 
     assert response.status_code == 409  # Conflict
-    assert "not safe to resume" in response.json()["error"]
+    assert "no valid executable resume state" in response.json()["error"]
 
 
 def test_rerun_step_endpoint_reports_not_implemented_for_replayable_checkpoint(

@@ -111,6 +111,21 @@ GET  /api/research-runs/{run_id}
 POST /api/research-runs/{run_id}/stop
 ```
 
+Stopping a run is the pause operation: the service keeps the latest verified
+workflow snapshot. For a failed, cancelled, or otherwise interrupted session,
+open **Artifacts** and choose **Resume research**, or call:
+
+```text
+POST /api/sessions/{session_id}/resume
+Idempotency-Key: <unique-client-key>
+```
+
+Resume creates a new run and session; it never rewrites the original. Staged
+runs reuse completed strategy, query-expansion, and source-collection work.
+Planner runs reuse completed task groups. A checkpoint is offered for resume
+only when its version, checksum, configuration fingerprint, and phase
+prerequisites validate successfully.
+
 ## Session Operations
 
 The dashboard supports listing, searching, sorting, archiving, restoring,
