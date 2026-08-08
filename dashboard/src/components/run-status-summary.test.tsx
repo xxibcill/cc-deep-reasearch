@@ -71,4 +71,26 @@ describe('RunStatusSummary polling', () => {
     expect(screen.getAllByText('Completed').length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: 'Stop run' })).toBeNull();
   });
+
+  it('clears active controls while a new run status is loading', async () => {
+    const currentResponse = deferred<ResearchRunStatusResponse>();
+    getResearchRunStatusMock.mockImplementation((runId) =>
+      runId === 'run-old'
+        ? Promise.resolve(runStatus('run-old', 'running'))
+        : currentResponse.promise
+    );
+
+    const { rerender } = render(<RunStatusSummary runId="run-old" />);
+
+    await screen.findByRole('button', { name: 'Stop run' });
+    rerender(<RunStatusSummary runId="run-current" />);
+
+    expect(screen.queryByRole('button', { name: 'Stop run' })).toBeNull();
+    expect(screen.getByText('Loading run status...')).toBeTruthy();
+
+    await act(async () => {
+      currentResponse.resolve(runStatus('run-current', 'completed'));
+      await currentResponse.promise;
+    });
+  });
 });

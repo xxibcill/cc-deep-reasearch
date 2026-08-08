@@ -101,6 +101,13 @@ export function RunStatusSummary({
   const [stopping, setStopping] = useState(false);
   const statusRequestVersionRef = useRef(0);
 
+  useEffect(() => {
+    setStatus(null);
+    setError(null);
+    setStopError(null);
+    setStopping(false);
+  }, [runId]);
+
   const fetchStatus = useCallback(async () => {
     const requestVersion = ++statusRequestVersionRef.current;
 
@@ -247,7 +254,7 @@ export function RunStatusSummary({
     );
   }
 
-  if (!status) {
+  if (!status || status.run_id !== runId) {
     return (
       <Card>
         <CardContent className="p-4">
