@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 from cc_deep_research.research_runs.jobs import (
     PersistentResearchRunJobRegistry,
     ResearchRunJobStore,
@@ -100,3 +102,25 @@ def test_resume_job_for_historical_session_is_idempotent(tmp_path) -> None:
     assert resumed.original_run_id is None
     assert resumed.original_session_id == "historical-session"
     assert resumed.resume_attempt == 1
+
+
+def test_concurrent_resume_reservations_create_one_job(tmp_path) -> None:
+    registry = PersistentResearchRunJobRegistry(
+        store=ResearchRunJobStore(tmp_path / "runs")
+    )
+    original = registry.create_job(ResearchRunRequest(query="resume concurrently"))
+    registry.mark_running(original.run_id, session_id="concurrent-session")
+    registry.mark_failed(original.run_id, error="provider failed")
+
+    def reserve_job():
+        return registry.reserve_resume_job(
+            original,
+            checkpoint_id="cp-concurrent",
+            idempotency_key="same-retry",
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        reservations = list(executor.map(lambda _: reserve_job(), range(2)))
+
+    assert sum(reservation.created for reservation in reservations) == 1
+    assert reservations[0].job is reservations[1].job

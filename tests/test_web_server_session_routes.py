@@ -1711,6 +1711,54 @@ def test_resume_endpoint_returns_resume_info(tmp_path, monkeypatch: pytest.Monke
     assert registry.get_job(data["run_id"]) is queued["job"]
 
 
+def test_resume_endpoint_does_not_queue_atomic_idempotent_replay(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A retry that loses the reservation race must reuse without requeueing."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    telemetry_dir = tmp_path / "xdg" / "inqulume-studio" / "telemetry"
+    session_id = "concurrent-resume-session"
+    request = ResearchRunRequest(query="test query", workflow=ResearchWorkflow.STAGED)
+    prepared = ResearchRunService().prepare(request)
+    assert prepared.config_fingerprint is not None
+    _write_resume_checkpoint(
+        telemetry_dir,
+        session_id=session_id,
+        config_fingerprint=prepared.config_fingerprint,
+    )
+
+    class PrecheckBlindRegistry(ResearchRunJobRegistry):
+        def find_by_session_id(self, _session_id: str):
+            return None
+
+        def list_jobs(self):
+            return []
+
+    registry = PrecheckBlindRegistry()
+    existing = registry.create_resume_job_for_session(
+        request,
+        original_session_id=session_id,
+        checkpoint_id="cp-resumable",
+        idempotency_key="same-retry",
+    )
+    queued: list[str] = []
+    monkeypatch.setattr(
+        "cc_deep_research.web_server_routes.session_routes.queue_research_run",
+        lambda _app, job, **_kwargs: queued.append(job.run_id),
+    )
+
+    client = TestClient(create_app(job_registry=registry))
+    response = client.post(
+        f"/api/sessions/{session_id}/resume",
+        headers={"Idempotency-Key": "same-retry"},
+    )
+
+    assert response.status_code == 202
+    assert response.json()["run_id"] == existing.run_id
+    assert response.json()["idempotent_replay"] is True
+    assert queued == []
+
+
 def test_resume_endpoint_rejects_unsupported_mode() -> None:
     client = TestClient(create_app(job_registry=ResearchRunJobRegistry()))
 

@@ -58,6 +58,14 @@ class ResearchRunJob:
         return self.cancel_requested.is_set()
 
 
+@dataclass(frozen=True, slots=True)
+class ResearchRunJobReservation:
+    """Result of atomically reserving an idempotent resume job."""
+
+    job: ResearchRunJob
+    created: bool
+
+
 class ResearchRunJobRegistry:
     """Process-local registry for browser-started research jobs."""
 
@@ -93,6 +101,20 @@ class ResearchRunJobRegistry:
         idempotency_key: str | None = None,
     ) -> ResearchRunJob:
         """Create one child job without mutating the original failed run."""
+        return self.reserve_resume_job(
+            original,
+            checkpoint_id=checkpoint_id,
+            idempotency_key=idempotency_key,
+        ).job
+
+    def reserve_resume_job(
+        self,
+        original: ResearchRunJob,
+        *,
+        checkpoint_id: str,
+        idempotency_key: str | None = None,
+    ) -> ResearchRunJobReservation:
+        """Atomically return a new or matching idempotent child job."""
         return self._create_resume_job(
             original.request,
             original_run_id=original.run_id,
@@ -111,7 +133,7 @@ class ResearchRunJobRegistry:
         checkpoint_id: str,
         idempotency_key: str | None,
         lineage_scope: Literal["run", "session"],
-    ) -> ResearchRunJob:
+    ) -> ResearchRunJobReservation:
         """Create one idempotent resume job within a lineage scope."""
         def belongs_to_lineage(job: ResearchRunJob) -> bool:
             if lineage_scope == "run":
@@ -129,7 +151,7 @@ class ResearchRunJobRegistry:
                     None,
                 )
                 if duplicate is not None:
-                    return duplicate
+                    return ResearchRunJobReservation(job=duplicate, created=False)
 
             previous_attempts = [
                 job.resume_attempt for job in self._jobs.values() if belongs_to_lineage(job)
@@ -145,7 +167,7 @@ class ResearchRunJobRegistry:
             )
             self._jobs[job.run_id] = job
         self._job_changed(job)
-        return job
+        return ResearchRunJobReservation(job=job, created=True)
 
     def find_by_session_id(self, session_id: str) -> ResearchRunJob | None:
         """Return the most recently created job attached to a session."""
@@ -162,6 +184,24 @@ class ResearchRunJobRegistry:
         idempotency_key: str | None = None,
     ) -> ResearchRunJob:
         """Create a child job for a durable session without a registry parent."""
+        return self.reserve_resume_job_for_session(
+            request,
+            original_session_id=original_session_id,
+            checkpoint_id=checkpoint_id,
+            original_run_id=original_run_id,
+            idempotency_key=idempotency_key,
+        ).job
+
+    def reserve_resume_job_for_session(
+        self,
+        request: ResearchRunRequest,
+        *,
+        original_session_id: str,
+        checkpoint_id: str,
+        original_run_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> ResearchRunJobReservation:
+        """Atomically return a new or matching child for a durable session."""
         return self._create_resume_job(
             request,
             original_run_id=original_run_id,

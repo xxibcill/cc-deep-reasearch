@@ -1236,32 +1236,34 @@ def register_session_routes(app: FastAPI) -> None:
         state.origin_session_id = state.origin_session_id or session_id
         state.origin_checkpoint_id = selected_checkpoint_id
         if original_job is not None:
-            job = registry.create_resume_job(
+            reservation = registry.reserve_resume_job(
                 original_job,
                 checkpoint_id=selected_checkpoint_id,
                 idempotency_key=idempotency_key,
             )
         else:
-            job = registry.create_resume_job_for_session(
+            reservation = registry.reserve_resume_job_for_session(
                 state.request,
                 original_session_id=session_id,
                 checkpoint_id=selected_checkpoint_id,
                 idempotency_key=idempotency_key,
             )
-        queue_research_run(app, job, resume_state=state)
+        job = reservation.job
+        if reservation.created:
+            queue_research_run(app, job, resume_state=state)
 
-        return JSONResponse(
-            content={
-                "run_id": job.run_id,
-                "status": job.status.value,
-                "original_run_id": job.original_run_id,
-                "original_session_id": job.original_session_id,
-                "resumed_from_checkpoint_id": job.resumed_from_checkpoint_id,
-                "resume_attempt": job.resume_attempt,
-                "resume_mode": mode.value,
-            },
-            status_code=202,
-        )
+        response = {
+            "run_id": job.run_id,
+            "status": job.status.value,
+            "original_run_id": job.original_run_id,
+            "original_session_id": job.original_session_id,
+            "resumed_from_checkpoint_id": job.resumed_from_checkpoint_id,
+            "resume_attempt": job.resume_attempt,
+            "resume_mode": mode.value,
+        }
+        if not reservation.created:
+            response["idempotent_replay"] = True
+        return JSONResponse(content=response, status_code=202)
 
     @app.post("/api/sessions/{session_id}/rerun-step")
     async def rerun_step(request: dict) -> JSONResponse:
