@@ -381,6 +381,13 @@ export interface ResearchRunStatusResponse {
   resume_attempt?: number;
 }
 
+export interface ResearchRunSessionLookupResponse {
+  run_id: string;
+  status: ResearchRunStatus;
+  stop_requested: boolean;
+  session_id: string;
+}
+
 export interface ResumeResearchSessionResponse {
   run_id: string;
   status: ResearchRunStatus;

@@ -294,6 +294,31 @@ def register_research_run_routes(app: FastAPI) -> None:
 
         return JSONResponse(content=response)
 
+    @app.get("/api/research-runs/by-session/{session_id}")
+    async def get_research_run_by_session(session_id: str) -> JSONResponse:
+        """Return the most recent dashboard run attached to one session.
+
+        Session workspaces use this read-only lookup to recover operator controls
+        after a reload or when opened from the session archive.
+        """
+        job_registry = get_job_registry(app)
+        job = job_registry.find_by_session_id(session_id)
+
+        if job is None:
+            return JSONResponse(
+                content={"error": f"Research run not found for session: {session_id}"},
+                status_code=404,
+            )
+
+        return JSONResponse(
+            content={
+                "run_id": job.run_id,
+                "status": job.status.value,
+                "stop_requested": job.stop_requested,
+                "session_id": job.session_id,
+            }
+        )
+
     @app.post("/api/research-runs/{run_id}/stop")
     async def stop_research_run(run_id: str) -> JSONResponse:
         """Request cancellation of an in-process browser-started run."""

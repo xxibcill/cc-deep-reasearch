@@ -30,7 +30,7 @@ function formatKind(kind: string): string {
 export function NodeInspector({ node, neighbors = [], edges = [], onClose }: NodeInspectorProps) {
   if (!node) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+      <div className="flex min-h-48 h-full items-center justify-center p-4 text-center text-sm text-muted-foreground lg:min-h-0">
         Select a node to inspect
       </div>
     );
@@ -46,17 +46,18 @@ export function NodeInspector({ node, neighbors = [], edges = [], onClose }: Nod
           <span className="text-xs text-muted-foreground">Node Inspector</span>
         </div>
         <button
+          type="button"
           onClick={onClose}
-          className="text-xs text-muted-foreground hover:text-foreground"
+          className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md text-sm text-muted-foreground hover:bg-surface-raised hover:text-foreground lg:min-h-8 lg:min-w-8"
           aria-label="Close inspector"
         >
-          ✕
+          <span aria-hidden="true">✕</span>
         </button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
         <h3 className="break-words text-sm font-semibold">{node.label}</h3>
-        <p className="mt-1 text-xs text-muted-foreground">{node.id}</p>
+        <p className="mt-1 break-all text-xs text-muted-foreground">{node.id}</p>
 
         {node.properties && Object.keys(node.properties).length > 0 && (
           <div className="mt-4">
@@ -87,6 +88,7 @@ export function NodeInspector({ node, neighbors = [], edges = [], onClose }: Nod
               {neighbors.slice(0, 10).map((n) => (
                 <li key={n.id} className="flex items-center gap-2 text-xs">
                   <span
+                    aria-hidden="true"
                     className="h-2 w-2 rounded-full"
                     style={{ backgroundColor: '#94a3b8' }}
                   />

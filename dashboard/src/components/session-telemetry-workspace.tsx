@@ -102,8 +102,6 @@ export function SessionTelemetryWorkspace({
   const [nowMs, setNowMs] = useState(() => Date.now());
   const previousPhaseRef = useRef(liveStreamStatus.phase);
   const derivedFetchedRef = useRef(false);
-  const promptFetchedRef = useRef(false);
-  const summaryLoadedRef = useRef(false);
 
   useEffect(() => {
     if (liveStreamStatus.phase !== 'reconnecting' || !liveStreamStatus.nextRetryAt) {
@@ -119,40 +117,7 @@ export function SessionTelemetryWorkspace({
     };
   }, [liveStreamStatus.nextRetryAt, liveStreamStatus.phase]);
 
-  // Load events eagerly (doesn't wait for derived outputs)
-  useEffect(() => {
-    let mounted = true;
-    summaryLoadedRef.current = false;
-    derivedFetchedRef.current = false;
-    promptFetchedRef.current = false;
-
-    setLoading(true);
-    setError(null);
-
-    Promise.all([
-      getSessionSummary(sessionId),
-      getSessionEventsPage(sessionId, 500),
-    ])
-      .then(([summaryResult, eventsPageResult]) => {
-        if (!mounted) return;
-        // Events from the events page
-        appendEvents(eventsPageResult.events);
-        // Signal that summary loaded so derived outputs can load regardless of event count
-        summaryLoadedRef.current = true;
-        setLoading(false);
-      })
-      .catch((requestError) => {
-        if (!mounted) return;
-        setError(getApiErrorMessage(requestError, 'Failed to load telemetry workspace.'));
-        setLoading(false);
-      });
-
-    return () => {
-      mounted = false;
-    };
-  }, [appendEvents, reloadNonce, sessionId]);
-
-  // Lazily load derived outputs and prompt metadata after session summary loads
+  // Load derived outputs only after the lightweight session history succeeds.
   const loadDerivedOutputs = useCallback(() => {
     if (derivedFetchedRef.current) return;
     derivedFetchedRef.current = true;
@@ -174,12 +139,35 @@ export function SessionTelemetryWorkspace({
       });
   }, [sessionId]);
 
-  // Load derived outputs when summary loads (handles 0-event edge case)
+  // Load events eagerly (doesn't wait for derived outputs)
   useEffect(() => {
-    if (summaryLoadedRef.current && !derivedFetchedRef.current) {
-      loadDerivedOutputs();
-    }
-  }, [loadDerivedOutputs]);
+    let mounted = true;
+    derivedFetchedRef.current = false;
+
+    setLoading(true);
+    setError(null);
+
+    Promise.all([
+      getSessionSummary(sessionId),
+      getSessionEventsPage(sessionId, 500),
+    ])
+      .then(([, eventsPageResult]) => {
+        if (!mounted) return;
+        // Events from the events page
+        appendEvents(eventsPageResult.events);
+        setLoading(false);
+        loadDerivedOutputs();
+      })
+      .catch((requestError) => {
+        if (!mounted) return;
+        setError(getApiErrorMessage(requestError, 'Failed to load telemetry workspace.'));
+        setLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [appendEvents, loadDerivedOutputs, reloadNonce, sessionId]);
 
   useEffect(() => {
     const previousPhase = previousPhaseRef.current;
@@ -451,52 +439,54 @@ export function SessionTelemetryWorkspace({
       (liveStreamStatus.phase === 'reconnecting' ||
         liveStreamStatus.phase === 'failed' ||
         liveStreamStatus.phase === 'historical') ? (
-        <CollapsiblePanel
-          summary={
-            <div className="text-sm font-medium text-foreground">
-              Stream diagnostics — {liveStreamStatus.reconnectHistory.length} reconnect{' '}
-              {liveStreamStatus.reconnectHistory.length === 1 ? 'attempt' : 'attempts'}
+        <div className="space-y-2">
+          <CollapsiblePanel
+            summary={
+              <div className="text-sm font-medium text-foreground">
+                Stream diagnostics — {liveStreamStatus.reconnectHistory.length} reconnect{' '}
+                {liveStreamStatus.reconnectHistory.length === 1 ? 'attempt' : 'attempts'}
+              </div>
+            }
+            meta={
+              liveStreamStatus.phase === 'failed' ? (
+                <Badge variant="destructive">{liveStreamStatus.reconnectAttempt} failed</Badge>
+              ) : liveStreamStatus.phase === 'reconnecting' ? (
+                <Badge variant="warning">Reconnecting</Badge>
+              ) : null
+            }
+            defaultOpen={liveStreamStatus.phase === 'failed'}
+          >
+            <div className="space-y-2">
+              <div className="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground lg:grid-cols-2 xl:grid-cols-3">
+                <div className="contents">
+                  <span className="font-medium text-foreground">Attempt</span>
+                  <span className="font-medium text-foreground">Time</span>
+                  <span className="font-medium text-foreground">Duration</span>
+                  <span className="font-medium text-foreground">Close code</span>
+                  <span className="font-medium text-foreground">Close reason</span>
+                  <span className="font-medium text-foreground">Clean</span>
+                </div>
+                {liveStreamStatus.reconnectHistory.map((entry) => (
+                  <div key={entry.attempt} className="contents">
+                    <span className="font-mono">{entry.attempt}</span>
+                    <span>{new Date(entry.timestamp).toLocaleTimeString()}</span>
+                    <span>{entry.tookMs}ms</span>
+                    <span className="font-mono">{entry.closeCode ?? '—'}</span>
+                    <span className="truncate">{entry.closeReason ?? '—'}</span>
+                    <span>{entry.wasClean == null ? '?' : entry.wasClean ? 'yes' : 'no'}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-          }
-          meta={
-            liveStreamStatus.phase === 'failed' ? (
-              <Badge variant="destructive">{liveStreamStatus.reconnectAttempt} failed</Badge>
-            ) : liveStreamStatus.phase === 'reconnecting' ? (
-              <Badge variant="warning">Reconnecting</Badge>
-            ) : null
-          }
-          actions={
-            canRetryLiveStream ? (
+          </CollapsiblePanel>
+          {canRetryLiveStream ? (
+            <div className="flex justify-end">
               <Button onClick={reconnect} type="button" size="sm" variant="outline">
                 Retry stream
               </Button>
-            ) : null
-          }
-          defaultOpen={liveStreamStatus.phase === 'failed'}
-        >
-          <div className="space-y-2">
-            <div className="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground lg:grid-cols-2 xl:grid-cols-3">
-              <div className="contents">
-                <span className="font-medium text-foreground">Attempt</span>
-                <span className="font-medium text-foreground">Time</span>
-                <span className="font-medium text-foreground">Duration</span>
-                <span className="font-medium text-foreground">Close code</span>
-                <span className="font-medium text-foreground">Close reason</span>
-                <span className="font-medium text-foreground">Clean</span>
-              </div>
-              {liveStreamStatus.reconnectHistory.map((entry) => (
-                <div key={entry.attempt} className="contents">
-                  <span className="font-mono">{entry.attempt}</span>
-                  <span>{new Date(entry.timestamp).toLocaleTimeString()}</span>
-                  <span>{entry.tookMs}ms</span>
-                  <span className="font-mono">{entry.closeCode ?? '—'}</span>
-                  <span className="truncate">{entry.closeReason ?? '—'}</span>
-                  <span>{entry.wasClean == null ? '?' : entry.wasClean ? 'yes' : 'no'}</span>
-                </div>
-              ))}
             </div>
-          </div>
-        </CollapsiblePanel>
+          ) : null}
+        </div>
       ) : null}
 
       <SessionDetails

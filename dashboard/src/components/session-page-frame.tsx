@@ -13,7 +13,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardTitle } from '@/components/ui/card';
 import { useNotifications } from '@/components/ui/notification-center';
 import { useSessionRoute } from '@/hooks/useSessionRoute';
-import { runStatusBadgeVariant } from '@/lib/session-route';
+import { runStatusBadgeVariant, runStatusLabel } from '@/lib/session-route';
 import { cn } from '@/lib/utils';
 import type { ResearchRunStatus, Session } from '@/types/telemetry';
 import { TraceBundleExportDialog } from '@/components/trace-bundle-export-dialog';
@@ -54,42 +54,40 @@ const viewMeta: Record<
 };
 
 function WorkspaceNav({
-  sessionId,
-  currentView,
+  workspaceId,
 }: {
-  sessionId: string;
-  currentView: SessionView;
+  workspaceId: string;
 }) {
   const pathname = usePathname();
 
   return (
     <nav
       aria-label="Session workspace views"
-      className="flex items-center gap-1 rounded-[0.85rem] border border-border/60 bg-muted/40 p-1"
+      className="grid w-full grid-cols-3 items-center gap-1 rounded-[0.85rem] border border-border/60 bg-muted/40 p-1 md:flex md:w-auto"
     >
       {(Object.entries(viewMeta) as Array<[SessionView, (typeof viewMeta)[SessionView]]>).map(
         ([key, item]) => {
           const Icon = item.icon;
-          const isActive = pathname === item.href(sessionId);
+          const isActive = pathname === item.href(workspaceId);
 
           return (
             <Link
               key={key}
-              href={item.href(sessionId)}
+              href={item.href(workspaceId)}
               className={cn(
                 buttonVariants({
                   variant: 'ghost',
                   size: 'sm',
                 }),
-                'gap-2 px-3 py-1.5 text-sm font-medium transition-all',
+                'min-h-11 min-w-0 gap-1 px-2 py-1.5 text-sm font-medium transition-all md:gap-2 md:px-3',
                 isActive
                   ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
               )}
               aria-current={isActive ? 'page' : undefined}
             >
-              <Icon className="h-4 w-4" />
-              {item.label}
+              <Icon className="h-4 w-4 shrink-0" />
+              <span className="truncate">{item.label}</span>
             </Link>
           );
         }
@@ -109,6 +107,7 @@ export function SessionPageFrame({
   const {
     isRunRoute,
     resolvedSessionId,
+    controlRunId,
     runStatus,
     sessionSummary,
     sessionError,
@@ -119,7 +118,13 @@ export function SessionPageFrame({
   const previousRunStatusRef = useRef<ResearchRunStatus | null>(null);
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
 
-  const showRunStatus = isRunRoute && !resolvedSessionId;
+  const isActiveRun = runStatus === 'queued' || runStatus === 'running';
+  const runIdForControls = isRunRoute ? routeId : controlRunId;
+  const showRunStatus =
+    Boolean(runIdForControls) &&
+    ((isRunRoute && !resolvedSessionId) || (view === 'monitor' && isActiveRun));
+  const lifecycleStatusLabel = runStatusLabel(runStatus);
+  const workspaceRouteId = isRunRoute ? routeId : resolvedSessionId;
 
   useEffect(() => {
     const previousStatus = previousRunStatusRef.current;
@@ -165,7 +170,7 @@ export function SessionPageFrame({
       notify({
         variant: 'warning',
         persistent: true,
-        title: 'Run cancelled',
+        title: 'Run stopped',
         description: 'The run stopped before completion. Historical telemetry remains available for review.',
         actions: [{ label: 'Open monitor', href: `/session/${resolvedSessionId}/monitor` }],
       });
@@ -174,9 +179,9 @@ export function SessionPageFrame({
 
   return (
     <div className="mx-auto max-w-content space-y-5 px-page-x py-page-y">
-      {showRunStatus ? (
+      {showRunStatus && runIdForControls ? (
         <RunStatusSummary
-          runId={routeId}
+          runId={runIdForControls}
           onSessionIdResolved={setResolvedSessionId}
           onStatusChange={setRunStatus}
           onStatusLoaded={handleRunStatusLoaded}
@@ -201,7 +206,7 @@ export function SessionPageFrame({
                 label: resolvedSessionId
                   ? `Session ${resolvedSessionId.slice(0, 8)}`
                   : 'Session',
-                href: resolvedSessionId ? `/session/${resolvedSessionId}` : undefined,
+                href: workspaceRouteId ? `/session/${workspaceRouteId}` : undefined,
               },
               { label: viewMeta[view].label },
             ]}
@@ -225,7 +230,7 @@ export function SessionPageFrame({
                       );
                     })()}
                     <Badge variant={runStatusBadgeVariant(runStatus)} className="px-2.5 py-0.5">
-                      {runStatus ?? 'loading'}
+                      {lifecycleStatusLabel}
                     </Badge>
                     {sessionSummary?.hasReport ? (
                       <Badge variant="success" className="px-2.5 py-0.5">
@@ -236,11 +241,35 @@ export function SessionPageFrame({
                   <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
                     {description}
                   </p>
+                  {view === 'monitor' && sessionSummary ? (
+                    <dl className="grid max-w-3xl gap-3 rounded-xl border border-border/60 bg-background/70 p-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+                      <div className="min-w-0">
+                        <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                          Session
+                        </dt>
+                        <dd className="mt-1 truncate text-sm font-medium text-foreground">
+                          {sessionSummary.label}
+                        </dd>
+                      </div>
+                      {sessionSummary.query ? (
+                        <div className="min-w-0">
+                          <dt className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                            Research query
+                          </dt>
+                          <dd className="mt-1 line-clamp-2 text-sm leading-5 text-foreground">
+                            {sessionSummary.query}
+                          </dd>
+                        </div>
+                      ) : null}
+                    </dl>
+                  ) : null}
                 </div>
 
                 <div className="flex flex-col items-start gap-3 xl:items-end">
-                  {resolvedSessionId && (
-                    <WorkspaceNav sessionId={resolvedSessionId} currentView={view} />
+                  {workspaceRouteId && (
+                    <div className="w-full xl:w-auto">
+                      <WorkspaceNav workspaceId={workspaceRouteId} />
+                    </div>
                   )}
                   {resolvedSessionId && (
                     <button

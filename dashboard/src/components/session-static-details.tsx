@@ -38,6 +38,7 @@ import { Input } from '@/components/ui/input';
 import { MetricCard } from '@/components/ui/metric-card';
 import { Textarea } from '@/components/ui/textarea';
 import { buildResearchContentBridgePayloadFromSession } from '@/lib/research-content-bridge';
+import { runStatusLabel } from '@/lib/session-route';
 import { useNotifications } from '@/components/ui/notification-center';
 import type { ResearchRunStatus, Session, TriageStatus } from '@/types/telemetry';
 
@@ -99,7 +100,7 @@ function StatusIndicator({ status }: { status: ResearchRunStatus | null }) {
     },
     cancelled: {
       icon: XCircle,
-      label: 'Cancelled',
+      label: runStatusLabel('cancelled'),
       description: 'Research was stopped before completion.',
     },
     queued: {

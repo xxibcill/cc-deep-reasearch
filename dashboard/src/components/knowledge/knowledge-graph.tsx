@@ -52,11 +52,40 @@ export function KnowledgeGraph({
   width = 800,
   height = 500,
 }: KnowledgeGraphProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const [dimensions, setDimensions] = useState({ width, height });
   const [positions, setPositions] = useState<Map<string, { x: number; y: number }>>(
     () => new Map(),
   );
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+
+    const updateDimensions = () => {
+      const rect = element.getBoundingClientRect();
+      const nextWidth = Math.max(1, Math.round(rect.width));
+      const nextHeight = Math.max(1, Math.round(rect.height));
+      setDimensions((current) =>
+        current.width === nextWidth && current.height === nextHeight
+          ? current
+          : { width: nextWidth, height: nextHeight },
+      );
+    };
+
+    updateDimensions();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateDimensions);
+      return () => window.removeEventListener('resize', updateDimensions);
+    }
+
+    const observer = new ResizeObserver(updateDimensions);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [data.nodes.length, height, width]);
 
   const simulation = useMemo(() => {
     if (data.nodes.length === 0) return null;
@@ -77,9 +106,9 @@ export function KnowledgeGraph({
           .distance(80),
       )
       .force('charge', d3.forceManyBody().strength(-200))
-      .force('center', d3.forceCenter(width / 2, height / 2))
+      .force('center', d3.forceCenter(dimensions.width / 2, dimensions.height / 2))
       .force('collision', d3.forceCollide().radius(24));
-  }, [data, width, height]);
+  }, [data, dimensions.height, dimensions.width]);
 
   useEffect(() => {
     const element = svgRef.current;
@@ -125,12 +154,21 @@ export function KnowledgeGraph({
   }
 
   return (
-    <div className="relative overflow-hidden rounded-xl border bg-background">
+    <div
+      ref={containerRef}
+      className="relative h-full min-h-0 w-full overflow-hidden rounded-xl bg-background"
+    >
+      <p id="knowledge-graph-instructions" className="sr-only">
+        Use Tab to move between graph nodes. Press Enter or Space to inspect a node.
+      </p>
       <svg
         ref={svgRef}
         className="h-full w-full"
-        viewBox={`0 0 ${width} ${height}`}
+        viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}
+        preserveAspectRatio="xMidYMid meet"
+        role="group"
         aria-label="Knowledge graph"
+        aria-describedby="knowledge-graph-instructions"
       >
         <defs>
           <marker
@@ -176,12 +214,30 @@ export function KnowledgeGraph({
             return (
               <g
                 key={node.id}
+                className="group outline-none"
                 transform={`translate(${pos.x},${pos.y})`}
+                role="button"
+                tabIndex={0}
+                aria-label={`${node.kind.replace(/_/g, ' ')}: ${node.label}`}
+                aria-pressed={isSelected}
                 onClick={() => onSelectNode(isSelected ? null : node)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onSelectNode(isSelected ? null : node);
+                  }
+                }}
                 onMouseEnter={() => setHoveredNode(node.id)}
                 onMouseLeave={() => setHoveredNode(null)}
                 style={{ cursor: 'pointer' }}
               >
+                <circle
+                  r={22}
+                  fill="transparent"
+                  stroke="hsl(var(--ring))"
+                  strokeWidth={2}
+                  className="opacity-0 transition-opacity group-focus-visible:opacity-100"
+                />
                 <circle
                   r={isSelected || isHovered ? 14 : 10}
                   fill={color}

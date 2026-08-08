@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { 
   Search, 
@@ -14,7 +14,8 @@ import {
   Trophy,
   ScrollText,
   Radar,
-  FileText
+  FileText,
+  Network
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import useDashboardStore from '@/hooks/useDashboard';
@@ -52,8 +53,13 @@ export function CommandPalette() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   const sequenceRef = useRef('');
   const sequenceTimerRef = useRef<number | null>(null);
+  const titleId = useId();
+  const descriptionId = useId();
+  const listId = useId();
 
   const sessions = useDashboardStore((state) => state.sessions);
   const activeSessionMatch = pathname.match(/^\/session\/([^/]+)(?:\/(monitor|report))?$/);
@@ -93,10 +99,15 @@ export function CommandPalette() {
     }, 100);
   }, [router]);
 
+  const closePalette = useCallback(() => {
+    setOpen(false);
+    clearSequence();
+  }, [clearSequence]);
+
   const commands: CommandItem[] = [
     {
-      id: 'home',
-      label: 'Go to Home',
+      id: 'research',
+      label: 'Go to Research',
       description: 'View sessions and start new research',
       icon: Home,
       shortcut: 'G H',
@@ -104,6 +115,28 @@ export function CommandPalette() {
         router.push('/');
         setOpen(false);
         clearSequence();
+      },
+    },
+    {
+      id: 'radar',
+      label: 'Go to Radar',
+      description: 'Review monitored opportunities and sources',
+      icon: Radar,
+      shortcut: 'G D',
+      action: () => {
+        router.push('/radar');
+        closePalette();
+      },
+    },
+    {
+      id: 'knowledge',
+      label: 'Go to Knowledge',
+      description: 'Explore evidence and research relationships',
+      icon: Network,
+      shortcut: 'G K',
+      action: () => {
+        router.push('/knowledge');
+        closePalette();
       },
     },
     {
@@ -279,6 +312,8 @@ export function CommandPalette() {
               a: () => router.push('/analytics'),
               b: () => router.push('/benchmark'),
               c: () => router.push('/content-gen'),
+              d: () => router.push('/radar'),
+              k: () => router.push('/knowledge'),
               s: () => router.push('/settings'),
               v: () => router.push('/compare'),
             };
@@ -306,8 +341,7 @@ export function CommandPalette() {
 
       if (e.key === 'Escape') {
         e.preventDefault();
-        setOpen(false);
-        clearSequence();
+        closePalette();
         return;
       }
 
@@ -315,11 +349,17 @@ export function CommandPalette() {
 
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setSelectedIndex((prev) => Math.min(prev + 1, filteredCommands.length - 1));
+        if (filteredCommands.length > 0) {
+          setSelectedIndex((prev) => Math.min(prev + 1, filteredCommands.length - 1));
+        }
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         setSelectedIndex((prev) => Math.max(prev - 1, 0));
-      } else if (e.key === 'Enter' && filteredCommands[selectedIndex]) {
+      } else if (
+        e.key === 'Enter' &&
+        document.activeElement === inputRef.current &&
+        filteredCommands[selectedIndex]
+      ) {
         e.preventDefault();
         filteredCommands[selectedIndex].action();
       }
@@ -330,6 +370,7 @@ export function CommandPalette() {
   }, [
     activeSessionId,
     clearSequence,
+    closePalette,
     filteredCommands,
     focusSessionSearch,
     open,
@@ -339,9 +380,51 @@ export function CommandPalette() {
   ]);
 
   useEffect(() => {
-    if (open && inputRef.current) {
-      inputRef.current.focus();
+    if (!open) {
+      return;
     }
+
+    previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const focusFrame = window.requestAnimationFrame(() => inputRef.current?.focus());
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') {
+        return;
+      }
+
+      const focusable = Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+        ) ?? []
+      ).filter((element) => !element.hasAttribute('hidden'));
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!first || !last) {
+        event.preventDefault();
+        dialogRef.current?.focus();
+        return;
+      }
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', trapFocus);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener('keydown', trapFocus);
+      document.body.style.overflow = previousOverflow;
+      const previousFocus = previouslyFocusedRef.current;
+      window.requestAnimationFrame(() => previousFocus?.focus());
+    };
   }, [open]);
 
   useEffect(() => {
@@ -374,28 +457,49 @@ export function CommandPalette() {
     <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh]">
       <div 
         className="fixed inset-0 bg-background/80 backdrop-blur-sm"
-        onClick={() => setOpen(false)}
+        onClick={closePalette}
+        aria-hidden="true"
       />
-      <div className="relative w-full max-w-lg overflow-hidden rounded-[1.2rem] border border-border/70 bg-popover shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+        tabIndex={-1}
+        className="relative mx-3 w-full max-w-lg overflow-hidden rounded-[1.2rem] border border-border/70 bg-popover shadow-2xl animate-in fade-in zoom-in-95 duration-150 motion-reduce:animate-none"
+      >
+        <h2 id={titleId} className="sr-only">Command palette</h2>
+        <p id={descriptionId} className="sr-only">
+          Search available workspaces, sessions, and actions. Use the arrow keys to move and Enter to select.
+        </p>
         <div className="flex items-center border-b border-border/70 px-4">
           <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
           <input
             ref={inputRef}
             type="text"
+            role="combobox"
+            aria-label="Search commands"
+            aria-expanded="true"
+            aria-controls={listId}
+            aria-activedescendant={filteredCommands[selectedIndex] ? `${listId}-${filteredCommands[selectedIndex].id}` : undefined}
+            aria-autocomplete="list"
             placeholder="Search commands..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="flex-1 bg-transparent px-3 py-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
           />
           <button
-            onClick={() => setOpen(false)}
-            className="flex h-6 w-6 items-center justify-center rounded border border-border/50 text-muted-foreground hover:bg-surface-raised/75"
+            type="button"
+            aria-label="Close command palette"
+            onClick={closePalette}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-transparent text-muted-foreground hover:border-border/50 hover:bg-surface-raised/75 hover:text-foreground"
           >
-            <X className="h-3 w-3" />
+            <X className="h-4 w-4" />
           </button>
         </div>
         
-        <div ref={listRef} className="max-h-[60vh] overflow-y-auto p-2">
+        <div ref={listRef} id={listId} role="listbox" aria-label="Available commands" className="max-h-[60vh] overflow-y-auto p-2">
           {filteredCommands.length === 0 ? (
             <div className="py-8 text-center text-sm text-muted-foreground">
               No commands found
@@ -405,8 +509,12 @@ export function CommandPalette() {
               {filteredCommands.map((command, index) => (
                 <button
                   key={command.id}
+                  id={`${listId}-${command.id}`}
+                  role="option"
+                  aria-selected={index === selectedIndex}
                   data-selected={index === selectedIndex}
                   onClick={() => handleSelect(command)}
+                  onFocus={() => setSelectedIndex(index)}
                   onMouseEnter={() => setSelectedIndex(index)}
                   className={cn(
                     'flex w-full items-center gap-3 rounded-[0.8rem] px-3 py-2.5 text-left transition-colors',
@@ -457,41 +565,12 @@ export function CommandPalette() {
           </div>
           <div className="flex flex-wrap items-center gap-3 opacity-80">
             <span>Cmd/Ctrl+K open</span>
-            <span>G then H/A/B/C/S/V navigate</span>
+            <span>G then H/A/B/C/D/K/S/V navigate</span>
             {activeSessionId ? <span>G then O/M/R switch tabs</span> : null}
             <span>/ focus session search</span>
           </div>
         </div>
       </div>
     </div>
-  );
-}
-
-export function KeyboardHint() {
-  const [showHint, setShowHint] = useState(true);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        setShowHint(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  if (!showHint) return null;
-
-  return (
-    <button
-      onClick={() => window.dispatchEvent(new Event(PALETTE_OPEN_EVENT))}
-      className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full border border-border/70 bg-popover/95 px-3 py-2 text-xs text-muted-foreground shadow-lg backdrop-blur-sm transition-opacity hover:bg-surface-raised/75 hover:text-foreground"
-    >
-      <span className="flex items-center gap-1">
-        <kbd className="rounded border border-border/50 bg-background px-1.5 py-0.5 font-medium">⌘</kbd>
-        <kbd className="rounded border border-border/50 bg-background px-1.5 py-0.5 font-medium">K</kbd>
-      </span>
-      <span className="text-[0.7rem]">Palette · GH home · / search</span>
-    </button>
   );
 }

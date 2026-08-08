@@ -10,6 +10,9 @@ test.describe("Dashboard accessibility baseline @a11y", () => {
 
       await expect(page.locator("header")).toBeVisible();
       await expect(page.locator("main")).toBeVisible();
+      const menuButton = page.getByRole("button", { name: "Open main navigation" });
+      await menuButton.focus();
+      await menuButton.press("Enter");
       await expect(page.locator('nav[aria-label="Primary navigation"]')).toBeVisible();
       await expect(page.locator("main h1")).toHaveCount(1);
     });

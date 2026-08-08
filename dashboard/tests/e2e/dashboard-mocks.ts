@@ -568,6 +568,25 @@ export async function mockDashboardApis(page: Page, options: MockOptions = {}) {
       return;
     }
 
+    const eventsMatch = pathName.match(/\/api\/sessions\/([^/]+)\/events$/);
+    if (eventsMatch && eventsMatch[1]) {
+      const session = getSession(eventsMatch[1], sessions);
+      const detail = buildSessionDetail(session);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          events: detail.events_page.events,
+          count: detail.events_page.events.length,
+          total: detail.events_page.total,
+          has_more: detail.events_page.has_more,
+          next_cursor: detail.events_page.next_cursor,
+          prev_cursor: detail.events_page.prev_cursor,
+        }),
+      });
+      return;
+    }
+
     const sessionMatch = pathName.match(/\/api\/sessions\/([^/]+)$/);
     if (sessionMatch && sessionMatch[1]) {
       const session = getSession(sessionMatch[1], sessions);

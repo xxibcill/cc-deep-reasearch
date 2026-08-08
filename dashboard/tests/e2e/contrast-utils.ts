@@ -91,9 +91,27 @@ export async function checkContrast(
         current = current.parentElement;
       }
 
+      const htmlBackground = parseColor(
+        window.getComputedStyle(document.documentElement).backgroundColor
+      );
+      const bodyBackground = parseColor(window.getComputedStyle(document.body).backgroundColor);
+
+      // The dashboard paints its base with CSS gradients, so html/body can report a
+      // transparent background color even though the page is visibly dark. Resolve
+      // the semantic background token through the browser instead of treating that
+      // transparent value as an opaque RGB layer.
+      const tokenProbe = document.createElement("span");
+      tokenProbe.style.position = "fixed";
+      tokenProbe.style.pointerEvents = "none";
+      tokenProbe.style.backgroundColor = "hsl(var(--background))";
+      document.body.appendChild(tokenProbe);
+      const tokenBackground = parseColor(window.getComputedStyle(tokenProbe).backgroundColor);
+      tokenProbe.remove();
+
       const pageBackground =
-        parseColor(window.getComputedStyle(document.documentElement).backgroundColor)
-        ?? parseColor(window.getComputedStyle(document.body).backgroundColor)
+        (htmlBackground && htmlBackground.alpha > 0 ? htmlBackground : null)
+        ?? (bodyBackground && bodyBackground.alpha > 0 ? bodyBackground : null)
+        ?? (tokenBackground && tokenBackground.alpha > 0 ? tokenBackground : null)
         ?? { rgb: [255, 255, 255], alpha: 1 };
 
       return layers.reduceRight(

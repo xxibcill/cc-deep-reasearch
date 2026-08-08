@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import useDashboardStore from '@/hooks/useDashboard';
-import { getApiErrorMessage, getSession } from '@/lib/api';
+import { getApiErrorMessage, getResearchRunBySession, getSession } from '@/lib/api';
 import {
   isRunRouteId,
   isTerminalStatus,
@@ -15,6 +15,7 @@ import type { ResearchRunStatus, ResearchRunStatusResponse, Session } from '@/ty
 interface SessionRouteState {
   isRunRoute: boolean;
   resolvedSessionId: string | null;
+  controlRunId: string | null;
   runStatus: ResearchRunStatus | null;
   sessionSummary: Session | null;
   sessionError: string | null;
@@ -31,8 +32,12 @@ export function useSessionRoute(routeId: string): SessionRouteState {
   const [runStatus, setRunStatus] = useState<ResearchRunStatus | null>(
     isRunRoute ? 'queued' : null
   );
+  const [controlRunId, setControlRunId] = useState<string | null>(
+    isRunRoute ? routeId : null
+  );
   const [sessionSummary, setSessionSummary] = useState<Session | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const runLookupAttemptedRef = useRef<string | null>(null);
   const reconcileSession = useDashboardStore((state) => state.reconcileSession);
 
   const sessionId = isRunRoute ? resolvedSessionId : routeId;
@@ -40,8 +45,10 @@ export function useSessionRoute(routeId: string): SessionRouteState {
   useEffect(() => {
     setResolvedSessionId(isRunRoute ? null : routeId);
     setRunStatus(isRunRoute ? 'queued' : null);
+    setControlRunId(isRunRoute ? routeId : null);
     setSessionSummary(null);
     setSessionError(null);
+    runLookupAttemptedRef.current = null;
   }, [isRunRoute, routeId]);
 
   useEffect(() => {
@@ -59,11 +66,40 @@ export function useSessionRoute(routeId: string): SessionRouteState {
           return;
         }
 
+        const sessionStatus = toRunStatus(response.session);
+
         setSessionSummary(response.session);
         setSessionError(null);
-        setRunStatus((current) => mergeRunStatus(current, toRunStatus(response.session)));
+        setRunStatus((current) => mergeRunStatus(current, sessionStatus));
 
-        if (isTerminalStatus(toRunStatus(response.session)) && intervalId) {
+        if (!isRunRoute && sessionStatus && !isTerminalStatus(sessionStatus)) {
+          if (runLookupAttemptedRef.current !== sessionId) {
+            runLookupAttemptedRef.current = sessionId;
+            try {
+              const lookup = await getResearchRunBySession(sessionId);
+              if (!mounted) {
+                return;
+              }
+
+              if (lookup) {
+                setRunStatus((current) => mergeRunStatus(current, lookup.status));
+                setControlRunId(
+                  lookup.status === 'queued' || lookup.status === 'running'
+                    ? lookup.run_id
+                    : null
+                );
+              } else {
+                setControlRunId(null);
+              }
+            } catch {
+              runLookupAttemptedRef.current = null;
+            }
+          }
+        } else if (!isRunRoute) {
+          setControlRunId(null);
+        }
+
+        if (isTerminalStatus(sessionStatus) && intervalId) {
           clearInterval(intervalId);
           intervalId = null;
         }
@@ -85,7 +121,7 @@ export function useSessionRoute(routeId: string): SessionRouteState {
         clearInterval(intervalId);
       }
     };
-  }, [sessionId]);
+  }, [isRunRoute, sessionId]);
 
   const handleRunStatusLoaded = useCallback(
     (status: ResearchRunStatusResponse) => {
@@ -118,6 +154,7 @@ export function useSessionRoute(routeId: string): SessionRouteState {
   return {
     isRunRoute,
     resolvedSessionId,
+    controlRunId,
     runStatus,
     sessionSummary,
     sessionError,

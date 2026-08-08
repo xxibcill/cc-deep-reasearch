@@ -903,6 +903,48 @@ export function normalizeSession(session: ApiSession): Session {
   };
 }
 
+export function normalizeSessionDetail(
+  session: ApiSession,
+  summary: Record<string, unknown> | null | undefined,
+): Session {
+  const summaryRecord = isRecord(summary) ? summary : null;
+  const metadata = summaryRecord && isRecord(summaryRecord.metadata)
+    ? summaryRecord.metadata
+    : null;
+  const analysis = metadata?.analysis;
+  const hasSummaryAnalysis = isRecord(analysis)
+    ? Object.keys(analysis).length > 0
+    : Array.isArray(analysis)
+      ? analysis.length > 0
+      : Boolean(analysis);
+  const summarySources = summaryRecord && Array.isArray(summaryRecord.sources)
+    ? summaryRecord.sources.length
+    : null;
+  const query = asNullableString(session.query)
+    ?? asNullableString(summaryRecord?.query);
+
+  return normalizeSession({
+    ...session,
+    label:
+      asNullableString(session.label)
+      ?? asNullableString(summaryRecord?.label)
+      ?? query,
+    created_at:
+      asNullableString(session.created_at)
+      ?? asNullableString(summaryRecord?.started_at),
+    total_sources: asNumberOrNull(session.total_sources) ?? summarySources,
+    query,
+    depth:
+      asNullableString(session.depth)
+      ?? asNullableString(summaryRecord?.depth),
+    completed_at:
+      asNullableString(session.completed_at)
+      ?? asNullableString(summaryRecord?.completed_at),
+    has_session_payload: session.has_session_payload === true || summaryRecord !== null,
+    has_report: session.has_report === true || hasSummaryAnalysis,
+  });
+}
+
 export function normalizeEvent(event: ApiTelemetryEvent): TelemetryEvent {
   return {
     eventId: asString(event.event_id),

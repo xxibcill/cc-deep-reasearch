@@ -21,6 +21,10 @@ test.describe("Dashboard contrast baseline @a11y", () => {
   test("primary navigation remains readable", async ({ page }) => {
     await openOperatorSurface(page, operatorSurfaces[0]);
 
+    const menuButton = page.getByRole("button", { name: "Open main navigation" });
+    await menuButton.focus();
+    await menuButton.press("Enter");
+
     const results = await checkContrast(page, 'nav[aria-label="Primary navigation"] a');
 
     expect(results.length).toBeGreaterThan(0);

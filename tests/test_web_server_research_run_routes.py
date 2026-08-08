@@ -182,3 +182,27 @@ def test_stop_research_run_cancels_matching_llm_scope() -> None:
 
     assert response.status_code == 202
     assert runtime.cancelled_scopes == [job.run_id]
+
+
+def test_get_research_run_by_session_returns_latest_attached_job() -> None:
+    app = create_app()
+    registry = get_job_registry(app)
+    older_job = registry.create_job(ResearchRunRequest(query="older run"))
+    registry.mark_running(older_job.run_id)
+    registry.set_session_id(older_job.run_id, session_id="shared-session")
+    latest_job = registry.create_job(ResearchRunRequest(query="latest run"))
+    registry.mark_running(latest_job.run_id)
+    registry.set_session_id(latest_job.run_id, session_id="shared-session")
+
+    with TestClient(app) as client:
+        response = client.get("/api/research-runs/by-session/shared-session")
+        missing_response = client.get("/api/research-runs/by-session/missing-session")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "run_id": latest_job.run_id,
+        "status": "running",
+        "stop_requested": False,
+        "session_id": "shared-session",
+    }
+    assert missing_response.status_code == 404

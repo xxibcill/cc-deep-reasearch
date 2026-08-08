@@ -16,6 +16,7 @@ import {
   buildResearchContentBridgePayloadFromSession,
   withResearchReportContent,
 } from '@/lib/research-content-bridge';
+import { runStatusLabel } from '@/lib/session-route';
 import type {
   ResearchOutputFormat,
   ResearchRunStatus,
@@ -239,7 +240,7 @@ export function SessionReport({
       <ReportStateAlert
         body="The session stopped before a final report artifact was produced."
         icon={AlertCircle}
-        title="Run was cancelled"
+        title={`Run was ${runStatusLabel('cancelled').toLowerCase()}`}
         variant="warning"
       />
     );
