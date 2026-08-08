@@ -141,9 +141,62 @@ class ResearchResumeState(BaseModel):
         }
         if self.next_phase in planner_phases_requiring_plan and self.planner_result is None:
             raise ValueError(f"planner_result is required before {self.next_phase.value}")
+        if self.planner_result is not None:
+            self._validate_planner_task_results(
+                require_terminal=self.next_phase
+                in {
+                    ResearchResumePhase.PLANNER_SYNTHESIS,
+                    ResearchResumePhase.COMPLETE,
+                }
+            )
         if self.next_phase == ResearchResumePhase.COMPLETE and self.planner_synthesis is None:
             raise ValueError("planner_synthesis is required before completion")
         return self
+
+    def _validate_planner_task_results(self, *, require_terminal: bool) -> None:
+        """Validate persisted task results against the snapshotted plan."""
+        assert self.planner_result is not None
+        plan = self.planner_result.plan
+        task_by_id = {task.id: task for task in plan.subtasks}
+        if len(task_by_id) != len(plan.subtasks):
+            raise ValueError("planner task IDs must be unique")
+
+        for result_key, result in self.planner_task_results.items():
+            if result_key != result.task_id:
+                raise ValueError(
+                    f"planner task result key {result_key!r} does not match "
+                    f"task_id {result.task_id!r}"
+                )
+            task = task_by_id.get(result_key)
+            if task is None:
+                raise ValueError(f"planner task result {result_key!r} is not in the plan")
+            expected_status = "completed" if result.success else "failed"
+            if task.status != expected_status:
+                raise ValueError(
+                    f"planner task {result_key!r} has status {task.status!r}; "
+                    f"expected {expected_status!r} for its persisted result"
+                )
+
+        required_result_ids = {
+            task.id for task in plan.subtasks if task.status in {"completed", "failed"}
+        }
+        missing_result_ids = required_result_ids - self.planner_task_results.keys()
+        if missing_result_ids:
+            missing = ", ".join(sorted(missing_result_ids))
+            raise ValueError(f"planner task results are missing for: {missing}")
+
+        if require_terminal:
+            unfinished_ids = {
+                task.id
+                for task in plan.subtasks
+                if task.status in {"pending", "in_progress"}
+            }
+            if unfinished_ids:
+                unfinished = ", ".join(sorted(unfinished_ids))
+                raise ValueError(
+                    f"planner tasks must be terminal before {self.next_phase.value}: "
+                    f"{unfinished}"
+                )
 
 
 class ResearchResumeSnapshotRef(BaseModel):

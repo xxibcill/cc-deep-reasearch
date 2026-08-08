@@ -10,6 +10,7 @@ import pytest
 from cc_deep_research.config import Config
 from cc_deep_research.models import (
     AnalysisResult,
+    PlannerResult,
     QueryFamily,
     ResearchDepth,
     ResearchPlan,
@@ -111,6 +112,75 @@ def test_resume_state_rejects_phase_from_other_workflow() -> None:
             request=ResearchRunRequest(query="What changed?"),
             config_fingerprint=build_config_fingerprint(Config()),
         )
+
+
+def _planner_result(*, task_status: str = "pending") -> PlannerResult:
+    return PlannerResult(
+        plan=ResearchPlan(
+            plan_id="plan-snapshot",
+            query="What changed?",
+            summary="Validate resume prerequisites",
+            subtasks=[
+                ResearchSubtask(
+                    id="search",
+                    title="Search",
+                    description="Collect sources",
+                    task_type="search",
+                    status=task_status,
+                )
+            ],
+            execution_order=[["search"]],
+        ),
+        reasoning="One search task is sufficient.",
+    )
+
+
+def _planner_resume_state(**overrides) -> ResearchResumeState:
+    values = {
+        "workflow": ResearchWorkflow.PLANNER,
+        "query": "What changed?",
+        "depth": ResearchDepth.STANDARD,
+        "next_phase": ResearchResumePhase.PLANNER_SYNTHESIS,
+        "request": ResearchRunRequest(
+            query="What changed?",
+            workflow=ResearchWorkflow.PLANNER,
+        ),
+        "config_fingerprint": build_config_fingerprint(Config()),
+        "planner_result": _planner_result(),
+    }
+    values.update(overrides)
+    return ResearchResumeState(**values)
+
+
+def test_planner_synthesis_snapshot_rejects_unfinished_tasks() -> None:
+    with pytest.raises(ValueError, match="must be terminal"):
+        _planner_resume_state()
+
+
+def test_planner_synthesis_snapshot_rejects_missing_task_results() -> None:
+    with pytest.raises(ValueError, match="results are missing for: search"):
+        _planner_resume_state(planner_result=_planner_result(task_status="completed"))
+
+
+def test_planner_snapshot_rejects_mismatched_task_result_key() -> None:
+    with pytest.raises(ValueError, match="does not match task_id"):
+        _planner_resume_state(
+            planner_result=_planner_result(task_status="completed"),
+            planner_task_results={
+                "search": TaskExecutionResult(task_id="other", success=True)
+            },
+        )
+
+
+def test_planner_synthesis_snapshot_accepts_matching_terminal_results() -> None:
+    state = _planner_resume_state(
+        planner_result=_planner_result(task_status="completed"),
+        planner_task_results={
+            "search": TaskExecutionResult(task_id="search", success=True)
+        },
+    )
+
+    assert state.planner_task_results["search"].success is True
 
 
 def test_config_fingerprint_does_not_change_for_secret_values() -> None:
