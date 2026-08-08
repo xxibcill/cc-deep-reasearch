@@ -1705,9 +1705,18 @@ def test_resume_endpoint_returns_resume_info(tmp_path, monkeypatch: pytest.Monke
     assert data["resumed_from_checkpoint_id"] == "cp-resumable"
     assert data["original_session_id"] == "resume-session"
     assert data["resume_attempt"] == 1
+    assert data["resume_mode"] == "resume_latest"
     assert data["status"] == "queued"
     assert queued["state"].origin_checkpoint_id == "cp-resumable"
     assert registry.get_job(data["run_id"]) is queued["job"]
+
+
+def test_resume_endpoint_rejects_unsupported_mode() -> None:
+    client = TestClient(create_app(job_registry=ResearchRunJobRegistry()))
+
+    response = client.post("/api/sessions/missing/resume?mode=debug_replay")
+
+    assert response.status_code == 422
 
 
 def test_resume_endpoint_rejects_non_resumable_checkpoint(

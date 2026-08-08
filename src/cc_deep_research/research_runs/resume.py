@@ -65,6 +65,12 @@ class ResearchResumePhase(StrEnum):
     PLANNER_SYNTHESIS = "planner_synthesis"
 
 
+class ResearchResumeMode(StrEnum):
+    """Supported execution semantics for the session resume endpoint."""
+
+    LATEST = "resume_latest"
+
+
 class ResearchResumeState(BaseModel):
     """Complete serializable workflow state at one safe resume boundary."""
 
@@ -256,6 +262,7 @@ class ResearchResumeStore:
 
 __all__ = [
     "RESUME_SNAPSHOT_SCHEMA_VERSION",
+    "ResearchResumeMode",
     "ResearchResumePhase",
     "ResearchResumeSnapshotError",
     "ResearchResumeSnapshotRef",

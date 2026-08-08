@@ -21,6 +21,7 @@ from cc_deep_research.research_runs.models import (
     SessionDeleteRequest,
 )
 from cc_deep_research.research_runs.resume import (
+    ResearchResumeMode,
     ResearchResumeSnapshotError,
     ResearchResumeState,
     ResearchResumeStore,
@@ -1137,7 +1138,10 @@ def register_session_routes(app: FastAPI) -> None:
     async def resume_session(
         session_id: str,
         checkpoint_id: str | None = Query(default=None, description="Checkpoint to resume from"),
-        mode: str = Query(default="resume_latest", description="Resume mode"),
+        mode: ResearchResumeMode = Query(
+            default=ResearchResumeMode.LATEST,
+            description="Resume mode",
+        ),
         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> JSONResponse:
         """Queue a new run from a checksum-verified execution checkpoint."""
@@ -1210,7 +1214,7 @@ def register_session_routes(app: FastAPI) -> None:
                         "original_session_id": duplicate.original_session_id,
                         "resumed_from_checkpoint_id": duplicate.resumed_from_checkpoint_id,
                         "resume_attempt": duplicate.resume_attempt,
-                        "resume_mode": mode,
+                        "resume_mode": mode.value,
                         "idempotent_replay": True,
                     },
                     status_code=202,
@@ -1254,7 +1258,7 @@ def register_session_routes(app: FastAPI) -> None:
                 "original_session_id": job.original_session_id,
                 "resumed_from_checkpoint_id": job.resumed_from_checkpoint_id,
                 "resume_attempt": job.resume_attempt,
-                "resume_mode": mode,
+                "resume_mode": mode.value,
             },
             status_code=202,
         )
