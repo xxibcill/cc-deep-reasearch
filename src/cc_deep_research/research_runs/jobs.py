@@ -9,7 +9,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from cc_deep_research.config import get_default_config_path
 from cc_deep_research.persistence import atomic_write_json
@@ -93,14 +93,38 @@ class ResearchRunJobRegistry:
         idempotency_key: str | None = None,
     ) -> ResearchRunJob:
         """Create one child job without mutating the original failed run."""
+        return self._create_resume_job(
+            original.request,
+            original_run_id=original.run_id,
+            original_session_id=original.session_id,
+            checkpoint_id=checkpoint_id,
+            idempotency_key=idempotency_key,
+            lineage_scope="run",
+        )
+
+    def _create_resume_job(
+        self,
+        request: ResearchRunRequest,
+        *,
+        original_run_id: str | None,
+        original_session_id: str | None,
+        checkpoint_id: str,
+        idempotency_key: str | None,
+        lineage_scope: Literal["run", "session"],
+    ) -> ResearchRunJob:
+        """Create one idempotent resume job within a lineage scope."""
+        def belongs_to_lineage(job: ResearchRunJob) -> bool:
+            if lineage_scope == "run":
+                return job.original_run_id == original_run_id
+            return job.original_session_id == original_session_id
+
         with self._lock:
             if idempotency_key:
                 duplicate = next(
                     (
                         job
                         for job in self._jobs.values()
-                        if job.idempotency_key == idempotency_key
-                        and job.original_run_id == original.run_id
+                        if job.idempotency_key == idempotency_key and belongs_to_lineage(job)
                     ),
                     None,
                 )
@@ -108,15 +132,13 @@ class ResearchRunJobRegistry:
                     return duplicate
 
             previous_attempts = [
-                job.resume_attempt
-                for job in self._jobs.values()
-                if job.original_run_id == original.run_id
+                job.resume_attempt for job in self._jobs.values() if belongs_to_lineage(job)
             ]
             job = ResearchRunJob(
                 run_id=self._generate_run_id(),
-                request=original.request.model_copy(deep=True),
-                original_run_id=original.run_id,
-                original_session_id=original.session_id,
+                request=request.model_copy(deep=True),
+                original_run_id=original_run_id,
+                original_session_id=original_session_id,
                 resumed_from_checkpoint_id=checkpoint_id,
                 resume_attempt=max(previous_attempts, default=0) + 1,
                 idempotency_key=idempotency_key,
@@ -140,36 +162,14 @@ class ResearchRunJobRegistry:
         idempotency_key: str | None = None,
     ) -> ResearchRunJob:
         """Create a child job for a durable session without a registry parent."""
-        with self._lock:
-            if idempotency_key:
-                duplicate = next(
-                    (
-                        job
-                        for job in self._jobs.values()
-                        if job.idempotency_key == idempotency_key
-                        and job.original_session_id == original_session_id
-                    ),
-                    None,
-                )
-                if duplicate is not None:
-                    return duplicate
-            previous_attempts = [
-                job.resume_attempt
-                for job in self._jobs.values()
-                if job.original_session_id == original_session_id
-            ]
-            job = ResearchRunJob(
-                run_id=self._generate_run_id(),
-                request=request.model_copy(deep=True),
-                original_run_id=original_run_id,
-                original_session_id=original_session_id,
-                resumed_from_checkpoint_id=checkpoint_id,
-                resume_attempt=max(previous_attempts, default=0) + 1,
-                idempotency_key=idempotency_key,
-            )
-            self._jobs[job.run_id] = job
-        self._job_changed(job)
-        return job
+        return self._create_resume_job(
+            request,
+            original_run_id=original_run_id,
+            original_session_id=original_session_id,
+            checkpoint_id=checkpoint_id,
+            idempotency_key=idempotency_key,
+            lineage_scope="session",
+        )
 
     def find_active_resume(
         self,
