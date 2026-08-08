@@ -702,6 +702,7 @@ class TestSessionBuilder:
             "deep_analysis",
             "llm_routes",
             "prompts",
+            "resume",
             "annotations",
             "triage_status",
             "triage_owner",

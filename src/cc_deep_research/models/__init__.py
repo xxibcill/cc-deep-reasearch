@@ -72,6 +72,7 @@ from .session import (
     SessionExecutionMetadata,
     SessionMetadataContract,
     SessionProvidersMetadata,
+    SessionResumeMetadata,
     normalize_session_metadata,
 )
 from .support import APIKey, SearchMode
@@ -127,6 +128,7 @@ __all__ = [
     "SessionExecutionMetadata",
     "SessionMetadataContract",
     "SessionProvidersMetadata",
+    "SessionResumeMetadata",
     "SourceType",
     "StepInputRef",
     "StepOutputRef",
