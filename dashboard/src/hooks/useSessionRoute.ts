@@ -38,6 +38,7 @@ export function useSessionRoute(routeId: string): SessionRouteState {
   const [sessionSummary, setSessionSummary] = useState<Session | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const runLookupAttemptedRef = useRef<string | null>(null);
+  const activeControlRunIdRef = useRef<string | null>(isRunRoute ? routeId : null);
   const reconcileSession = useDashboardStore((state) => state.reconcileSession);
 
   const sessionId = isRunRoute ? resolvedSessionId : routeId;
@@ -49,6 +50,7 @@ export function useSessionRoute(routeId: string): SessionRouteState {
     setSessionSummary(null);
     setSessionError(null);
     runLookupAttemptedRef.current = null;
+    activeControlRunIdRef.current = isRunRoute ? routeId : null;
   }, [isRunRoute, routeId]);
 
   useEffect(() => {
@@ -70,9 +72,8 @@ export function useSessionRoute(routeId: string): SessionRouteState {
 
         setSessionSummary(response.session);
         setSessionError(null);
-        setRunStatus((current) => mergeRunStatus(current, sessionStatus));
 
-        if (!isRunRoute && sessionStatus && !isTerminalStatus(sessionStatus)) {
+        if (!isRunRoute) {
           if (runLookupAttemptedRef.current !== sessionId) {
             runLookupAttemptedRef.current = sessionId;
             try {
@@ -81,25 +82,35 @@ export function useSessionRoute(routeId: string): SessionRouteState {
                 return;
               }
 
-              if (lookup) {
-                setRunStatus((current) => mergeRunStatus(current, lookup.status));
-                setControlRunId(
-                  lookup.status === 'queued' || lookup.status === 'running'
-                    ? lookup.run_id
-                    : null
-                );
+              if (lookup && (lookup.status === 'queued' || lookup.status === 'running')) {
+                activeControlRunIdRef.current = lookup.run_id;
+                setControlRunId(lookup.run_id);
+                setRunStatus(lookup.status);
               } else {
+                activeControlRunIdRef.current = null;
                 setControlRunId(null);
+                setRunStatus((current) =>
+                  mergeRunStatus(current, lookup?.status ?? sessionStatus)
+                );
               }
             } catch {
               runLookupAttemptedRef.current = null;
+              if (!activeControlRunIdRef.current) {
+                setRunStatus((current) => mergeRunStatus(current, sessionStatus));
+              }
             }
+          } else if (!activeControlRunIdRef.current) {
+            setRunStatus((current) => mergeRunStatus(current, sessionStatus));
           }
-        } else if (!isRunRoute) {
-          setControlRunId(null);
+        } else {
+          setRunStatus((current) => mergeRunStatus(current, sessionStatus));
         }
 
-        if (isTerminalStatus(sessionStatus) && intervalId) {
+        if (
+          isTerminalStatus(sessionStatus) &&
+          (!isRunRoute ? !activeControlRunIdRef.current : true) &&
+          intervalId
+        ) {
           clearInterval(intervalId);
           intervalId = null;
         }
@@ -125,6 +136,11 @@ export function useSessionRoute(routeId: string): SessionRouteState {
 
   const handleRunStatusLoaded = useCallback(
     (status: ResearchRunStatusResponse) => {
+      if (isTerminalStatus(status.status)) {
+        activeControlRunIdRef.current = null;
+        setControlRunId(null);
+      }
+
       if (!status.session_id) {
         return;
       }
