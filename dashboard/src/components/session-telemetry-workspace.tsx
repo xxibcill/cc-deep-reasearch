@@ -95,17 +95,19 @@ export function SessionTelemetryWorkspace({
   const [derivedOutputs, setDerivedOutputs] = useState<DerivedOutputs | null>(null);
   const [promptMetadata, setPromptMetadata] = useState<SessionPromptMetadata | null>(null);
   const [derivedSessionId, setDerivedSessionId] = useState<string | null>(null);
+  const [promptSessionId, setPromptSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [derivedLoading, setDerivedLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [derivedError, setDerivedError] = useState<string | null>(null);
+  const [promptError, setPromptError] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const previousPhaseRef = useRef(liveStreamStatus.phase);
   const derivedFetchedRef = useRef(false);
   const derivedRequestVersionRef = useRef(0);
   const visibleDerivedOutputs = derivedSessionId === sessionId ? derivedOutputs : null;
-  const visiblePromptMetadata = derivedSessionId === sessionId ? promptMetadata : null;
+  const visiblePromptMetadata = promptSessionId === sessionId ? promptMetadata : null;
 
   useEffect(() => {
     if (liveStreamStatus.phase !== 'reconnecting' || !liveStreamStatus.nextRetryAt) {
@@ -128,24 +130,34 @@ export function SessionTelemetryWorkspace({
     const requestVersion = ++derivedRequestVersionRef.current;
     setDerivedLoading(true);
     setDerivedError(null);
-    Promise.all([
-      getSessionDerivedOutputs(sessionId),
-      getSessionPromptMetadata(sessionId),
-    ])
-      .then(([derived, prompts]) => {
+    setPromptError(null);
+
+    const derivedRequest = getSessionDerivedOutputs(sessionId)
+      .then((derived) => {
         if (requestVersion !== derivedRequestVersionRef.current) return;
         setDerivedOutputs(derived);
-        setPromptMetadata(prompts ?? null);
         setDerivedSessionId(sessionId);
       })
       .catch((err) => {
         if (requestVersion !== derivedRequestVersionRef.current) return;
         setDerivedError(getApiErrorMessage(err, 'Failed to load derived outputs.'));
-      })
-      .finally(() => {
-        if (requestVersion !== derivedRequestVersionRef.current) return;
-        setDerivedLoading(false);
       });
+
+    const promptRequest = getSessionPromptMetadata(sessionId)
+      .then((prompts) => {
+        if (requestVersion !== derivedRequestVersionRef.current) return;
+        setPromptMetadata(prompts ?? null);
+        setPromptSessionId(sessionId);
+      })
+      .catch((err) => {
+        if (requestVersion !== derivedRequestVersionRef.current) return;
+        setPromptError(getApiErrorMessage(err, 'Failed to load prompt metadata.'));
+      });
+
+    void Promise.allSettled([derivedRequest, promptRequest]).then(() => {
+      if (requestVersion !== derivedRequestVersionRef.current) return;
+      setDerivedLoading(false);
+    });
   }, [sessionId]);
 
   // Load events eagerly (doesn't wait for derived outputs)
@@ -159,8 +171,10 @@ export function SessionTelemetryWorkspace({
     setDerivedOutputs(null);
     setPromptMetadata(null);
     setDerivedSessionId(null);
+    setPromptSessionId(null);
     setDerivedLoading(false);
     setDerivedError(null);
+    setPromptError(null);
 
     Promise.all([
       getSessionSummary(sessionId),
@@ -445,6 +459,21 @@ export function SessionTelemetryWorkspace({
               <p className="text-sm font-medium text-foreground">Derived outputs unavailable</p>
               <p className="text-sm text-muted-foreground">
                 Event data is loading, but derived outputs (graph, timeline, counts) could not be computed. {derivedError}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {promptError && !error ? (
+        <Card className="border-warning/25 bg-warning-muted/22">
+          <CardContent className="flex items-start gap-3 p-4">
+            <AlertCircle className="mt-0.5 h-5 w-5 text-warning" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-foreground">Prompt metadata unavailable</p>
+              <p className="text-sm text-muted-foreground">
+                Telemetry remains available, but the prompt audit metadata could not be loaded.{' '}
+                {promptError}
               </p>
             </div>
           </CardContent>

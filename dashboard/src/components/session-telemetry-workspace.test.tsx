@@ -64,10 +64,12 @@ const getSessionSummaryMock = vi.mocked(getSessionSummary);
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((promiseResolve) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
     resolve = promiseResolve;
+    reject = promiseReject;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 function derivedOutputs(): SessionDetailResult['derivedOutputs'] {
@@ -172,5 +174,28 @@ describe('SessionTelemetryWorkspace derived output loading', () => {
     });
 
     expect(screen.getByTestId('prompt-metadata').textContent).toBe('session-current');
+  });
+
+  it('shows prompt metadata even when derived outputs fail', async () => {
+    const delayedDerived = deferred<SessionDetailResult['derivedOutputs']>();
+    getSessionDerivedOutputsMock.mockReturnValue(delayedDerived.promise);
+    getSessionPromptMetadataMock.mockResolvedValue(promptMetadata('prompt-audit'));
+
+    render(
+      <SessionTelemetryWorkspace
+        sessionId="prompt-audit"
+        runStatus="completed"
+        sessionSummary={null}
+      />
+    );
+
+    expect((await screen.findByTestId('prompt-metadata')).textContent).toBe('prompt-audit');
+
+    await act(async () => {
+      delayedDerived.reject(new Error('derived output failure'));
+      await delayedDerived.promise.catch(() => undefined);
+    });
+
+    expect(screen.getByTestId('prompt-metadata').textContent).toBe('prompt-audit');
   });
 });
