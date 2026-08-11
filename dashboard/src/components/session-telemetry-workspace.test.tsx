@@ -109,7 +109,7 @@ function promptMetadata(label: string): SessionPromptMetadata {
 describe('SessionTelemetryWorkspace derived output loading', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getSessionSummaryMock.mockResolvedValue({} as Session);
+    getSessionSummaryMock.mockResolvedValue({ session: {} as Session });
     getSessionEventsPageMock.mockResolvedValue({
       events: [],
       count: 0,
