@@ -114,6 +114,7 @@ test.describe("Operator smoke suite", () => {
       await page.goto(`/session/${liveScenario.sessions[0].session_id}/monitor`);
 
       await expect(page.getByText(/Live telemetry/i)).toBeVisible();
+      await page.getByRole("button", { name: "Open main navigation" }).click();
       await expect(page.getByText(/Radar/i)).toBeVisible();
     }
   );
