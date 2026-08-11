@@ -12,6 +12,20 @@ export interface ActiveRunFixture {
   session: MockSession;
 }
 
+function buildResearchRunControlResponse(
+  runId: string,
+  sessionId: string,
+  status: "running" | "cancelled",
+  stopRequested: boolean
+) {
+  return {
+    run_id: runId,
+    status,
+    session_id: sessionId,
+    stop_requested: stopRequested,
+  };
+}
+
 export async function setupTestPage(
   page: Page,
   options: TestFixtureOptions = {}
@@ -39,12 +53,14 @@ export async function setupDashboardWithActiveRun(page: Page): Promise<ActiveRun
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({
-        run_id: runId,
-        status: stopRequested ? "cancelled" : "running",
-        session_id: session.session_id,
-        stop_requested: stopRequested,
-      }),
+      body: JSON.stringify(
+        buildResearchRunControlResponse(
+          runId,
+          session.session_id,
+          stopRequested ? "cancelled" : "running",
+          stopRequested
+        )
+      ),
     });
   });
 
@@ -53,12 +69,9 @@ export async function setupDashboardWithActiveRun(page: Page): Promise<ActiveRun
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({
-        run_id: runId,
-        status: "running",
-        session_id: session.session_id,
-        stop_requested: true,
-      }),
+      body: JSON.stringify(
+        buildResearchRunControlResponse(runId, session.session_id, "running", true)
+      ),
     });
   });
 

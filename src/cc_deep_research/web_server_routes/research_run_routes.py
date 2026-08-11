@@ -40,6 +40,18 @@ def _raise_if_run_cancelled(job: ResearchRunJob) -> None:
         raise ResearchRunCancelled(RUN_CANCELLED_MESSAGE)
 
 
+def _build_research_run_control_payload(
+    job: ResearchRunJob,
+) -> dict[str, str | bool | None]:
+    """Build the shared operator-control state returned by run endpoints."""
+    return {
+        "run_id": job.run_id,
+        "status": job.status.value,
+        "stop_requested": job.stop_requested,
+        "session_id": job.session_id,
+    }
+
+
 def _build_interrupted_session_summary(
     *,
     session_id: str,
@@ -310,14 +322,7 @@ def register_research_run_routes(app: FastAPI) -> None:
                 status_code=404,
             )
 
-        return JSONResponse(
-            content={
-                "run_id": job.run_id,
-                "status": job.status.value,
-                "stop_requested": job.stop_requested,
-                "session_id": job.session_id,
-            }
-        )
+        return JSONResponse(content=_build_research_run_control_payload(job))
 
     @app.post("/api/research-runs/{run_id}/stop")
     async def stop_research_run(run_id: str) -> JSONResponse:
@@ -348,11 +353,6 @@ def register_research_run_routes(app: FastAPI) -> None:
             job = job_registry.mark_cancelled(run_id, error=RUN_CANCELLED_MESSAGE)
 
         return JSONResponse(
-            content={
-                "run_id": job.run_id,
-                "status": job.status.value,
-                "stop_requested": job.stop_requested,
-                "session_id": job.session_id,
-            },
+            content=_build_research_run_control_payload(job),
             status_code=202,
         )
