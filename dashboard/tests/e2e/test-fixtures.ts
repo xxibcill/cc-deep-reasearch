@@ -23,6 +23,12 @@ export async function setupTestPage(
   await mockDashboardApis(page, { sessions });
 }
 
+export async function openPrimaryNavigation(page: Page): Promise<void> {
+  const menuButton = page.getByRole("button", { name: "Open main navigation" });
+  await menuButton.focus();
+  await menuButton.press("Enter");
+}
+
 export async function setupDashboardWithActiveRun(page: Page): Promise<ActiveRunFixture> {
   await setupTestPage(page, { scenario: "liveActiveRun" });
   const session = SCENARIOS.liveActiveRun.sessions[0];

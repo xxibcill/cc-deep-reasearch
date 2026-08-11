@@ -2,6 +2,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 
 import { mockDashboardApis } from './dashboard-mocks';
+import { openPrimaryNavigation } from './test-fixtures';
 
 test.describe('Global navigation accessibility @a11y', () => {
   test.beforeEach(async ({ page }) => {
@@ -17,8 +18,7 @@ test.describe('Global navigation accessibility @a11y', () => {
     const menuButton = page.getByRole('button', { name: 'Open main navigation' });
     await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toHaveCount(0);
 
-    await menuButton.focus();
-    await menuButton.press('Enter');
+    await openPrimaryNavigation(page);
     const navigation = page.getByRole('navigation', { name: 'Primary navigation' });
     await expect(navigation).toBeVisible();
     await expect(navigation.getByRole('link', { name: 'Knowledge' })).toBeVisible();

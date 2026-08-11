@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 
 import { openOperatorSurface, operatorSurfaces } from "./a11y-surfaces";
 import { checkContrast, expectContrastToPass } from "./contrast-utils";
+import { openPrimaryNavigation } from "./test-fixtures";
 
 const CONTENT_SELECTOR =
   "main h1, main h2, main h3, main p, main li, main a, main button, main label, main input, main textarea, main select, main [role='button']";
@@ -21,9 +22,7 @@ test.describe("Dashboard contrast baseline @a11y", () => {
   test("primary navigation remains readable", async ({ page }) => {
     await openOperatorSurface(page, operatorSurfaces[0]);
 
-    const menuButton = page.getByRole("button", { name: "Open main navigation" });
-    await menuButton.focus();
-    await menuButton.press("Enter");
+    await openPrimaryNavigation(page);
 
     const results = await checkContrast(page, 'nav[aria-label="Primary navigation"] a');
 
