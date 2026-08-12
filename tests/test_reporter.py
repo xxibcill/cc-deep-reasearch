@@ -1116,6 +1116,163 @@ class TestReportRefinementPipeline:
             assert report is not None
             assert len(report) > 0
 
+    def test_quality_evaluator_failure_keeps_deterministic_report(self) -> None:
+        """An optional quality-evaluator outage must not abort report delivery."""
+        from unittest.mock import patch
+
+        from cc_deep_research.config import Config
+        from cc_deep_research.reporting import ReportGenerator
+
+        config = Config()
+        config.research.quality.enable_report_quality_evaluation = True
+        config.research.quality.enable_report_refinement = False
+        generator = ReportGenerator(config)
+        session = ResearchSession(
+            session_id="quality-fallback",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+        analysis = {
+            "key_findings": [],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        with (
+            patch.object(
+                generator,
+                "_generate_routed_markdown_report",
+                side_effect=lambda _session, markdown: markdown,
+            ),
+            patch.object(
+                generator._report_quality_evaluator,
+                "evaluate_report_quality_sync",
+                side_effect=RuntimeError("quality route unavailable"),
+            ),
+        ):
+            report = generator.generate_markdown_report(session, analysis)
+
+        assert "# Research Report:" in report
+        assert session.metadata["execution"]["degraded"] is True
+        assert (
+            "Report quality evaluation failed; deterministic report retained (RuntimeError)."
+            in session.metadata["execution"]["degraded_reasons"]
+        )
+
+    def test_post_validation_failure_keeps_generated_report(self) -> None:
+        """A post-validator failure should preserve the already generated report."""
+        from unittest.mock import patch
+
+        from cc_deep_research.config import Config
+        from cc_deep_research.reporting import ReportGenerator
+
+        config = Config()
+        config.research.quality.enable_report_quality_evaluation = False
+        config.research.quality.enable_report_refinement = False
+        generator = ReportGenerator(config)
+        session = ResearchSession(
+            session_id="validation-fallback",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+        analysis = {
+            "key_findings": [],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        with (
+            patch.object(
+                generator,
+                "_generate_routed_markdown_report",
+                side_effect=lambda _session, markdown: markdown,
+            ),
+            patch.object(
+                generator._post_validator,
+                "validate_report",
+                side_effect=RuntimeError("validator unavailable"),
+            ),
+        ):
+            report = generator.generate_markdown_report(session, analysis)
+
+        assert "# Research Report:" in report
+        assert (
+            "Report post-validation failed; generated report retained (RuntimeError)."
+            in session.metadata["execution"]["degraded_reasons"]
+        )
+
+    def test_refiner_failure_keeps_pre_refinement_report(self) -> None:
+        """A refiner failure should retain the validated pre-refinement report."""
+        from unittest.mock import patch
+
+        from cc_deep_research.config import Config
+        from cc_deep_research.models import ReportEvaluationResult
+        from cc_deep_research.reporting import ReportGenerator
+
+        config = Config()
+        config.research.quality.enable_report_quality_evaluation = True
+        config.research.quality.enable_report_refinement = True
+        generator = ReportGenerator(config)
+        session = ResearchSession(
+            session_id="refiner-fallback",
+            query="test query",
+            depth=ResearchDepth.STANDARD,
+            sources=[],
+        )
+        analysis = {
+            "key_findings": [],
+            "themes": [],
+            "themes_detailed": [],
+            "consensus_points": [],
+            "contention_points": [],
+            "gaps": [],
+            "analysis_method": "basic_keyword",
+        }
+
+        with (
+            patch.object(
+                generator,
+                "_generate_routed_markdown_report",
+                side_effect=lambda _session, markdown: markdown,
+            ),
+            patch.object(
+                generator._report_quality_evaluator,
+                "evaluate_report_quality_sync",
+                return_value=ReportEvaluationResult(
+                    overall_quality_score=0.5,
+                    is_acceptable=False,
+                    warnings=["Needs editing"],
+                ),
+            ),
+            patch.object(
+                generator._post_validator,
+                "validate_report",
+                return_value={"issues": [], "warnings": [], "recommendations": []},
+            ),
+            patch.object(
+                generator._report_refiner,
+                "refine_report",
+                side_effect=RuntimeError("refiner unavailable"),
+            ),
+        ):
+            report = generator.generate_markdown_report(session, analysis)
+
+        assert "# Research Report:" in report
+        assert (
+            "Report refinement failed; pre-refinement report retained (RuntimeError)."
+            in session.metadata["execution"]["degraded_reasons"]
+        )
+
     def test_report_refinement_preserves_sections(self) -> None:
         """Refinement should preserve required report sections and citations."""
         from cc_deep_research.agents.report_refiner import ReportRefinerAgent

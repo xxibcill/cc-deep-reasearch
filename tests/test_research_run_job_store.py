@@ -4,11 +4,18 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 
+from cc_deep_research.models import ResearchSession
 from cc_deep_research.research_runs.jobs import (
     PersistentResearchRunJobRegistry,
     ResearchRunJobStore,
 )
-from cc_deep_research.research_runs.models import ResearchRunRequest, ResearchRunStatus
+from cc_deep_research.research_runs.models import (
+    ResearchOutputFormat,
+    ResearchRunReport,
+    ResearchRunRequest,
+    ResearchRunResult,
+    ResearchRunStatus,
+)
 
 
 def test_persistent_registry_restores_failed_job_and_request(tmp_path) -> None:
@@ -26,6 +33,40 @@ def test_persistent_registry_restores_failed_job_and_request(tmp_path) -> None:
     assert restored_job.session_id == "research-session"
     assert restored_job.status == ResearchRunStatus.FAILED
     assert restored_job.error == "provider failed"
+
+
+def test_persistent_registry_retains_failed_report_metadata(tmp_path) -> None:
+    path = tmp_path / "runs"
+    registry = PersistentResearchRunJobRegistry(store=ResearchRunJobStore(path))
+    request = ResearchRunRequest(query="recoverable report")
+    job = registry.create_job(request)
+    result = ResearchRunResult(
+        session=ResearchSession(
+            session_id="failed-with-report",
+            query=request.query,
+            depth=request.depth,
+            metadata={"execution": {"terminal_status": "failed"}},
+        ),
+        report=ResearchRunReport(
+            format=ResearchOutputFormat.MARKDOWN,
+            content="# Terminal recovery report",
+            media_type="text/markdown",
+        ),
+    )
+
+    registry.mark_failed(job.run_id, error="recovery exhausted", result=result)
+
+    restored = PersistentResearchRunJobRegistry(store=ResearchRunJobStore(path))
+    restored_job = restored.get_job(job.run_id)
+    assert restored_job is not None
+    assert restored_job.status == ResearchRunStatus.FAILED
+    assert restored_job.session_id == "failed-with-report"
+    assert restored_job.result_metadata == {
+        "session_id": "failed-with-report",
+        "report_format": "markdown",
+        "report_path": None,
+        "artifacts": [],
+    }
 
 
 def test_registry_recovers_process_interrupted_job_as_failed(tmp_path) -> None:

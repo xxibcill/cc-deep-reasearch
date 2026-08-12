@@ -7,6 +7,7 @@ research sessions on disk.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,6 +28,8 @@ from cc_deep_research.telemetry.live import (
     query_session_checkpoints,
 )
 from cc_deep_research.telemetry.query import query_session_detail
+
+logger = logging.getLogger(__name__)
 
 REPORT_CACHE_DIRNAME = ".reports"
 SESSION_SUMMARY_DIRNAME = ".summaries"
@@ -179,7 +182,34 @@ class SessionStore:
         """Persist one rendered report variant for a session."""
         path = self._report_path(session_id, output_format)
         atomic_write_text(path, content)
+        self._mark_report_available(session_id)
         return path
+
+    def report_exists(self, session_id: str) -> bool:
+        """Return whether any cached report variant exists for a session."""
+        return any(
+            self._report_path(session_id, output_format).is_file()
+            for output_format in REPORT_FILE_EXTENSIONS
+        )
+
+    def _mark_report_available(self, session_id: str) -> None:
+        """Best-effort update of the lightweight session summary sidecar."""
+        summary_path = self._session_summary_path(session_id)
+        if not summary_path.exists():
+            return
+
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            if not isinstance(summary, dict):
+                return
+            summary["has_report"] = True
+            atomic_write_json(summary_path, summary)
+        except (json.JSONDecodeError, OSError) as error:
+            logger.warning(
+                "Unable to update report availability for session %s: %s",
+                session_id,
+                type(error).__name__,
+            )
 
     def load_report(
         self,
@@ -208,6 +238,8 @@ class SessionStore:
         data = _serialize_session(session)
         summary_path = self._session_summary_path(session.session_id)
         summary = _build_saved_session_summary(data, session_path=path)
+        if self.report_exists(session.session_id):
+            summary["has_report"] = True
 
         # Publish the full payload first. Session listing can regenerate a
         # missing summary after an interrupted process, but not vice versa.

@@ -325,14 +325,34 @@ class ResearchRunJobRegistry:
         run_id: str,
         *,
         error: str,
+        result: ResearchRunResult | None = None,
     ) -> ResearchRunJob:
-        """Record a failed run with a safe error message."""
+        """Record a failed run and retain any terminal recovery report."""
         job = self._require_job(run_id)
         with self._lock:
             if job.status == ResearchRunStatus.CANCELLED:
                 return job
             job.status = ResearchRunStatus.FAILED
-            job.result = None
+            job.result = result
+            job.result_metadata = (
+                {
+                    "session_id": result.session_id,
+                    "report_format": result.report.format.value,
+                    "report_path": str(result.report.path) if result.report.path else None,
+                    "artifacts": [
+                        {
+                            "kind": artifact.kind.value,
+                            "path": str(artifact.path),
+                            "media_type": artifact.media_type,
+                        }
+                        for artifact in result.artifacts
+                    ],
+                }
+                if result is not None
+                else None
+            )
+            if result is not None:
+                job.session_id = result.session_id
             job.error = error
             job.completed_at = datetime.now(UTC)
         self._job_changed(job)

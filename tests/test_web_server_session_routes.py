@@ -745,6 +745,58 @@ def test_live_session_detail_returns_decision_graph(
     assert payload["decision_graph"]["summary"]["explicit_edge_count"] >= 1
 
 
+def test_live_session_detail_merges_saved_report_artifact_flags(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Live telemetry should not hide a report already saved for the session."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    telemetry_dir = tmp_path / "xdg" / "inqulume-studio" / "telemetry"
+    monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=telemetry_dir)
+    monitor.set_session("live-saved-report", query="Telemetry query", depth="quick")
+    monitor.finalize_session(total_sources=0, providers=[], total_time_ms=120)
+
+    session = ResearchSession(
+        session_id="live-saved-report",
+        query="Saved research query",
+        depth=ResearchDepth.STANDARD,
+        metadata={"analysis": {}},
+    )
+    store = SessionStore()
+    store.save_session(session)
+    store.save_report(
+        session.session_id,
+        ResearchOutputFormat.MARKDOWN,
+        "# Recovery report",
+    )
+
+    response = TestClient(create_app()).get(f"/api/sessions/{session.session_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["session"]["query"] == "Saved research query"
+    assert payload["session"]["depth"] == "standard"
+    assert payload["session"]["has_session_payload"] is True
+    assert payload["session"]["has_report"] is True
+    assert payload["summary"]["query"] == "Saved research query"
+
+
+def test_live_session_detail_exposes_false_artifact_flags_without_saved_payload(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Telemetry-only detail should expose explicit false artifact flags."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    telemetry_dir = tmp_path / "xdg" / "inqulume-studio" / "telemetry"
+    monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=telemetry_dir)
+    monitor.set_session("telemetry-only-detail", query="Telemetry query", depth="quick")
+
+    response = TestClient(create_app()).get("/api/sessions/telemetry-only-detail")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["session"]["has_session_payload"] is False
+    assert payload["session"]["has_report"] is False
+
+
 def test_session_detail_include_derived_false_returns_empty_decision_graph(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
