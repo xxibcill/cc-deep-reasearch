@@ -163,6 +163,12 @@ def _query_session_api_detail(
     )
     if live_detail["session"]:
         live_session = _normalize_live_session_state(live_detail["session"])
+        live_session.update(
+            {
+                "has_session_payload": saved_payload is not None,
+                "has_report": False,
+            }
+        )
         if saved_payload is not None:
             saved_metadata = saved_payload.get("metadata", {})
             query = _normalize_optional_string(saved_payload.get("query"))
@@ -213,6 +219,12 @@ def _query_session_api_detail(
         "active": False,
         "event_count": len(events),
         "last_event_at": events[-1].get("timestamp") if events else None,
+        "has_session_payload": saved_payload is not None,
+        "has_report": bool(
+            saved_payload is not None
+            and isinstance(saved_payload.get("metadata"), dict)
+            and saved_payload["metadata"].get("analysis")
+        ),
     }
     return {
         "session": session,

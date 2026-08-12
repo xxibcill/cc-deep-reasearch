@@ -316,6 +316,25 @@ def test_live_session_detail_merges_saved_identity_and_prompt_metadata(
     }
 
 
+def test_telemetry_summary_does_not_claim_saved_session_payload(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Telemetry completion data must not masquerade as a SessionStore artifact."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    telemetry_dir = tmp_path / "xdg" / "inqulume-studio" / "telemetry"
+    monitor = ResearchMonitor(enabled=False, persist=True, telemetry_dir=telemetry_dir)
+    monitor.set_session("telemetry-summary-only", query="Telemetry query", depth="quick")
+    monitor.finalize_session(total_sources=2, providers=["tavily"], total_time_ms=120)
+
+    response = TestClient(create_app()).get("/api/sessions/telemetry-summary-only")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"] is not None
+    assert payload["session"]["has_session_payload"] is False
+    assert payload["session"]["has_report"] is False
+
+
 def test_bulk_delete_route_returns_per_session_outcomes(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

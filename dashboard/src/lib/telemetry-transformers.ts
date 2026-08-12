@@ -908,15 +908,6 @@ export function normalizeSessionDetail(
   summary: Record<string, unknown> | null | undefined,
 ): Session {
   const summaryRecord = isRecord(summary) ? summary : null;
-  const metadata = summaryRecord && isRecord(summaryRecord.metadata)
-    ? summaryRecord.metadata
-    : null;
-  const analysis = metadata?.analysis;
-  const hasSummaryAnalysis = isRecord(analysis)
-    ? Object.keys(analysis).length > 0
-    : Array.isArray(analysis)
-      ? analysis.length > 0
-      : Boolean(analysis);
   const summarySources = summaryRecord && Array.isArray(summaryRecord.sources)
     ? summaryRecord.sources.length
     : null;
@@ -940,8 +931,8 @@ export function normalizeSessionDetail(
     completed_at:
       asNullableString(session.completed_at)
       ?? asNullableString(summaryRecord?.completed_at),
-    has_session_payload: session.has_session_payload === true || summaryRecord !== null,
-    has_report: session.has_report === true || hasSummaryAnalysis,
+    has_session_payload: session.has_session_payload === true,
+    has_report: session.has_report === true,
   });
 }
 

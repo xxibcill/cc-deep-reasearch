@@ -56,6 +56,8 @@ describe('normalizeSessionDetail', () => {
       active: false,
       event_count: 24,
       last_event_at: '2026-04-05T15:10:48Z',
+      has_session_payload: true,
+      has_report: true,
     } as ApiSession;
 
     const normalized = normalizeSessionDetail(session, {
@@ -75,5 +77,29 @@ describe('normalizeSessionDetail', () => {
       hasSessionPayload: true,
       hasReport: true,
     });
+  });
+
+  it('does not treat a telemetry summary as a saved research payload', () => {
+    const session = {
+      session_id: 'telemetry-only-session',
+      created_at: '2026-04-05T15:00:00Z',
+      total_time_ms: 9000,
+      total_sources: 2,
+      status: 'completed',
+      active: false,
+      event_count: 8,
+      last_event_at: '2026-04-05T15:00:09Z',
+      has_session_payload: false,
+      has_report: false,
+    } as ApiSession;
+
+    const normalized = normalizeSessionDetail(session, {
+      status: 'completed',
+      total_sources: 2,
+      metadata: { analysis: { findings: ['Telemetry finding'] } },
+    });
+
+    expect(normalized.hasSessionPayload).toBe(false);
+    expect(normalized.hasReport).toBe(false);
   });
 });
