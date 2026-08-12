@@ -17,7 +17,7 @@ import {
 } from '@/lib/knowledge-client';
 import { KnowledgeGraph } from './knowledge-graph';
 import { NodeInspector } from './node-inspector';
-import { KnowledgeFilters } from './knowledge-filters';
+import { KnowledgeFilters, type KnowledgeNodeKind } from './knowledge-filters';
 import { LintQueue } from './lint-queue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,7 +34,7 @@ export function KnowledgeShell({ initialGraph, initialFindings }: KnowledgeShell
   const [selectedNode, setSelectedNode] = useState<KnowledgeNode | null>(null);
   const [neighbors, setNeighbors] = useState<KnowledgeNode[]>([]);
   const [neighborEdges, setNeighborEdges] = useState<KnowledgeEdge[]>([]);
-  const [selectedKinds, setSelectedKinds] = useState<string[]>([]);
+  const [selectedKinds, setSelectedKinds] = useState<KnowledgeNodeKind[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [showLint, setShowLint] = useState(false);
@@ -82,18 +82,18 @@ export function KnowledgeShell({ initialGraph, initialFindings }: KnowledgeShell
     }
   }
 
-  function handleToggleKind(kind: string) {
-    if (!kind) {
-      setSelectedKinds([]);
-      return;
-    }
+  function handleToggleKind(kind: KnowledgeNodeKind) {
     setSelectedKinds((prev) =>
       prev.includes(kind) ? prev.filter((k) => k !== kind) : [...prev, kind],
     );
   }
 
+  function handleClearKinds() {
+    setSelectedKinds([]);
+  }
+
   const filteredNodes = (graph?.nodes ?? []).filter((n) => {
-    if (selectedKinds.length > 0 && !selectedKinds.includes(n.kind)) return false;
+    if (selectedKinds.length > 0 && !selectedKinds.some((kind) => kind === n.kind)) return false;
     if (searchQuery && !n.label.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;
   });
@@ -112,6 +112,7 @@ export function KnowledgeShell({ initialGraph, initialFindings }: KnowledgeShell
         <KnowledgeFilters
           selectedKinds={selectedKinds}
           onToggleKind={handleToggleKind}
+          onClearKinds={handleClearKinds}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
         />

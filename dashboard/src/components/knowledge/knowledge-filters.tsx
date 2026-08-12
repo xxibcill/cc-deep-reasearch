@@ -13,9 +13,12 @@ const ALL_KINDS = [
   'wiki_page',
 ] as const;
 
+export type KnowledgeNodeKind = (typeof ALL_KINDS)[number];
+
 interface KnowledgeFiltersProps {
-  selectedKinds: string[];
-  onToggleKind: (kind: string) => void;
+  selectedKinds: KnowledgeNodeKind[];
+  onToggleKind: (kind: KnowledgeNodeKind) => void;
+  onClearKinds: () => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
 }
@@ -23,6 +26,7 @@ interface KnowledgeFiltersProps {
 export function KnowledgeFilters({
   selectedKinds,
   onToggleKind,
+  onClearKinds,
   searchQuery,
   onSearchChange,
 }: KnowledgeFiltersProps) {
@@ -55,7 +59,7 @@ export function KnowledgeFilters({
       {selectedKinds.length > 0 && (
         <button
           type="button"
-          onClick={() => onToggleKind('')}
+          onClick={onClearKinds}
           className="min-h-11 rounded-md px-2 text-xs font-medium text-foreground/70 hover:text-foreground lg:min-h-7"
         >
           Clear filters
