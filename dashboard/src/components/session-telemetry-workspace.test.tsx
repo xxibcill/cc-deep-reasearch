@@ -9,6 +9,7 @@ import {
   getSessionSummary,
 } from '@/lib/api';
 import type { SessionDetailResult } from '@/lib/api';
+import { deferred } from '@/test-utils/deferred';
 import type { Session, SessionPromptMetadata } from '@/types/telemetry';
 
 vi.mock('@/components/session-details', () => ({
@@ -61,16 +62,6 @@ const getSessionDerivedOutputsMock = vi.mocked(getSessionDerivedOutputs);
 const getSessionEventsPageMock = vi.mocked(getSessionEventsPage);
 const getSessionPromptMetadataMock = vi.mocked(getSessionPromptMetadata);
 const getSessionSummaryMock = vi.mocked(getSessionSummary);
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((promiseResolve, promiseReject) => {
-    resolve = promiseResolve;
-    reject = promiseReject;
-  });
-  return { promise, resolve, reject };
-}
 
 function derivedOutputs(): SessionDetailResult['derivedOutputs'] {
   return {

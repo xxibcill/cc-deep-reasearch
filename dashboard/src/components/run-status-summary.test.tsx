@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { RunStatusSummary } from '@/components/run-status-summary';
 import { getResearchRunStatus } from '@/lib/api';
+import { deferred } from '@/test-utils/deferred';
 import type { ResearchRunStatusResponse } from '@/types/telemetry';
 
 vi.mock('@/components/ui/notification-center', () => ({
@@ -16,14 +17,6 @@ vi.mock('@/lib/api', () => ({
 }));
 
 const getResearchRunStatusMock = vi.mocked(getResearchRunStatus);
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((promiseResolve) => {
-    resolve = promiseResolve;
-  });
-  return { promise, resolve };
-}
 
 function runStatus(
   runId: string,
