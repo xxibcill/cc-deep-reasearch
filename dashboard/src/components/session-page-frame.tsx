@@ -122,7 +122,7 @@ export function SessionPageFrame({
   const runIdForControls = isRunRoute ? routeId : controlRunId;
   const showRunStatus =
     Boolean(runIdForControls) &&
-    ((isRunRoute && !resolvedSessionId) || (view === 'monitor' && isActiveRun));
+    ((isRunRoute && !resolvedSessionId) || isActiveRun);
   const lifecycleStatusLabel = runStatusLabel(runStatus);
   const workspaceRouteId = isRunRoute ? routeId : resolvedSessionId;
 

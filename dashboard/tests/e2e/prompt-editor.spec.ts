@@ -351,12 +351,12 @@ test("run status raises a completion notification with follow-up actions", async
   await expect(page.getByRole("button", { name: "Open report" })).toBeVisible();
 });
 
-test("active run monitor keeps controls and session context through the run handoff", async ({
+test("active run keeps controls across run handoff and direct session views", async ({
   page,
 }) => {
-  const { session } = await setupDashboardWithActiveRun(page);
+  const { runId, session } = await setupDashboardWithActiveRun(page);
 
-  await page.goto(`/session/${session.session_id}/monitor`);
+  await page.goto(`/session/${runId}/monitor`);
 
   await expect(page.getByText(session.label, { exact: true })).toBeVisible();
   await expect(page.getByText(session.query, { exact: true })).toBeVisible();
@@ -375,8 +375,16 @@ test("active run monitor keeps controls and session context through the run hand
   await expect(stopButton).toBeVisible();
 
   await page.getByRole("link", { name: "Overview" }).click();
-  await expect(page).toHaveURL(new RegExp(`/session/${session.session_id}$`));
-  await expect(page.getByRole("button", { name: "Stop run" })).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`/session/${runId}$`));
+  await expect(page.getByRole("button", { name: "Stop run" })).toBeVisible();
+  await page.getByRole("link", { name: "Report" }).click();
+  await expect(page).toHaveURL(new RegExp(`/session/${runId}/report$`));
+  await expect(page.getByRole("button", { name: "Stop run" })).toBeVisible();
+
+  await page.goto(`/session/${session.session_id}`);
+  await expect(page.getByRole("button", { name: "Stop run" })).toBeVisible();
+  await page.goto(`/session/${session.session_id}/report`);
+  await expect(page.getByRole("button", { name: "Stop run" })).toBeVisible();
   await page.getByRole("link", { name: "Monitor" }).click();
   await expect(page).toHaveURL(new RegExp(`/session/${session.session_id}/monitor$`));
   await expect(page.getByRole("button", { name: "Stop run" })).toBeVisible();
