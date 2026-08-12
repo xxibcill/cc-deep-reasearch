@@ -7,6 +7,25 @@ export interface TestFixtureOptions {
   customSessions?: MockSession[];
 }
 
+export interface ActiveRunFixture {
+  runId: string;
+  session: MockSession;
+}
+
+function buildResearchRunControlResponse(
+  runId: string,
+  sessionId: string,
+  status: "running" | "cancelled",
+  stopRequested: boolean
+) {
+  return {
+    run_id: runId,
+    status,
+    session_id: sessionId,
+    stop_requested: stopRequested,
+  };
+}
+
 export async function setupTestPage(
   page: Page,
   options: TestFixtureOptions = {}
@@ -18,8 +37,61 @@ export async function setupTestPage(
   await mockDashboardApis(page, { sessions });
 }
 
-export async function setupDashboardWithActiveRun(page: Page): Promise<void> {
+export async function openPrimaryNavigation(page: Page): Promise<void> {
+  const menuButton = page.getByRole("button", { name: "Open main navigation" });
+  await menuButton.focus();
+  await menuButton.press("Enter");
+}
+
+export async function setupDashboardWithActiveRun(page: Page): Promise<ActiveRunFixture> {
   await setupTestPage(page, { scenario: "liveActiveRun" });
+  const session = SCENARIOS.liveActiveRun.sessions[0];
+  const runId = `run-${session.session_id}`;
+  let stopRequested = false;
+
+  await page.route(`**/api/research-runs/by-session/${session.session_id}`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(
+        buildResearchRunControlResponse(
+          runId,
+          session.session_id,
+          stopRequested ? "cancelled" : "running",
+          stopRequested
+        )
+      ),
+    });
+  });
+
+  await page.route(`**/api/research-runs/${runId}/stop`, async (route) => {
+    stopRequested = true;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(
+        buildResearchRunControlResponse(runId, session.session_id, "running", true)
+      ),
+    });
+  });
+
+  await page.route(`**/api/research-runs/${runId}`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        run_id: runId,
+        status: stopRequested ? "cancelled" : "running",
+        created_at: session.created_at,
+        started_at: session.created_at,
+        completed_at: stopRequested ? session.last_event_at : undefined,
+        session_id: session.session_id,
+        stop_requested: stopRequested,
+      }),
+    });
+  });
+
+  return { runId, session };
 }
 
 export async function setupDashboardWithFailedRun(page: Page): Promise<void> {

@@ -4,18 +4,14 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  BarChart3,
-  FileVideo,
   FlaskConical,
   Menu,
-  Radar,
   Search,
-  Settings,
-  Trophy,
   X,
   type LucideIcon,
 } from 'lucide-react'
 
+import { PRIMARY_NAVIGATION_DESTINATIONS } from '@/lib/navigation'
 import { cn } from '@/lib/utils'
 
 const COMMAND_PALETTE_OPEN_EVENT = 'ccdr.command-palette.open'
@@ -27,14 +23,9 @@ export interface NavBarItem {
   match?: (pathname: string) => boolean
 }
 
-const defaultNavItems: NavBarItem[] = [
-  { href: '/', label: 'Research', icon: FlaskConical },
-  { href: '/analytics', label: 'Analytics', icon: BarChart3 },
-  { href: '/benchmark', label: 'Benchmark', icon: Trophy },
-  { href: '/radar', label: 'Radar', icon: Radar },
-  { href: '/content-gen', label: 'Content', icon: FileVideo },
-  { href: '/settings', label: 'Settings', icon: Settings },
-]
+const defaultNavItems: NavBarItem[] = PRIMARY_NAVIGATION_DESTINATIONS.map(
+  ({ href, label, icon }) => ({ href, label, icon }),
+)
 
 function isActive(pathname: string, href: string): boolean {
   if (href === '/') {
@@ -192,6 +183,7 @@ export function NavBar({
   const pathname = pathnameProp ?? currentPathname
   const menuId = useId()
   const containerRef = useRef<HTMLDivElement>(null)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const activeItem = getActiveItem(pathname, items)
   const hasItems = items.length > 0 && activeItem !== null
@@ -215,6 +207,7 @@ export function NavBar({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setMenuOpen(false)
+        menuButtonRef.current?.focus()
       }
     }
 
@@ -235,9 +228,10 @@ export function NavBar({
           {hasItems && activeItem ? (
             <div ref={containerRef} className="relative">
               <button
+                ref={menuButtonRef}
                 type="button"
                 aria-expanded={menuOpen}
-                aria-controls={menuId}
+                aria-controls={menuOpen ? menuId : undefined}
                 aria-label={menuOpen ? 'Close main navigation' : 'Open main navigation'}
                 onClick={() => setMenuOpen((open) => !open)}
                 className={cn(
@@ -254,29 +248,26 @@ export function NavBar({
                 </span>
               </button>
 
-              <div
-                id={menuId}
-                className={cn(
-                  'fixed left-4 top-14 z-[100] mt-2 w-[min(18rem,calc(100vw-2rem))] origin-top-left transition-transform duration-150 motion-reduce:transition-none sm:absolute sm:left-0 sm:top-full sm:z-[90]',
-                  menuOpen
-                    ? 'translate-y-0 opacity-100'
-                    : 'pointer-events-none translate-y-1 opacity-0',
-                )}
-              >
-                <nav
-                  aria-label={navLabel}
-                  className="relative z-[100] rounded-lg border border-border bg-background p-1.5 shadow-2xl sm:z-[90]"
+              {menuOpen ? (
+                <div
+                  id={menuId}
+                  className="fixed left-4 top-14 z-[100] mt-2 w-[min(18rem,calc(100vw-2rem))] origin-top-left animate-in fade-in slide-in-from-top-1 duration-150 motion-reduce:animate-none sm:absolute sm:left-0 sm:top-full sm:z-[90]"
                 >
-                  {items.map((item) => (
-                    <NavMenuLink
-                      key={item.href}
-                      item={item}
-                      pathname={pathname}
-                      onNavigate={() => setMenuOpen(false)}
-                    />
-                  ))}
-                </nav>
-              </div>
+                  <nav
+                    aria-label={navLabel}
+                    className="relative z-[100] rounded-lg border border-border bg-background p-1.5 shadow-2xl sm:z-[90]"
+                  >
+                    {items.map((item) => (
+                      <NavMenuLink
+                        key={item.href}
+                        item={item}
+                        pathname={pathname}
+                        onNavigate={() => setMenuOpen(false)}
+                      />
+                    ))}
+                  </nav>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>

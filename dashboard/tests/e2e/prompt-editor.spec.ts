@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { setupDashboardWithActiveRun } from "./test-fixtures";
 
 async function mockSessionsList(page: Page) {
   await page.route("**/api/sessions*", async (route) => {
@@ -118,6 +119,36 @@ test("start form serializes supported prompt overrides into the research request
 });
 
 test("session monitor shows configured prompt metadata from session detail", async ({ page }) => {
+  await page.route("**/api/sessions/prompt-session/events*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        events: [
+          {
+            event_id: "prompt-session-1",
+            parent_event_id: null,
+            sequence_number: 1,
+            timestamp: "2026-03-25T00:01:00Z",
+            session_id: "prompt-session",
+            event_type: "research.started",
+            category: "agent",
+            name: "research-started",
+            status: "started",
+            duration_ms: null,
+            agent_id: "analyzer",
+            metadata: { phase: "intake" },
+          },
+        ],
+        count: 1,
+        total: 1,
+        has_more: false,
+        next_cursor: null,
+        prev_cursor: null,
+      }),
+    });
+  });
+
   await page.route("**/api/sessions/prompt-session*", async (route) => {
     const url = new URL(route.request().url());
     if (url.searchParams.has("include_derived")) {
@@ -222,8 +253,8 @@ test("session monitor shows configured prompt metadata from session detail", asy
   await page.goto("/session/prompt-session/monitor");
   await page.getByRole("button", { name: "Prompts" }).click();
 
-  await expect(page.getByText("Prompt Configuration")).toBeVisible();
-  await expect(page.getByText("Custom Prompts Applied")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Prompt Audit" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Overridden Agents" })).toBeVisible();
   await expect(page.getByText("Focus on management guidance.")).toBeVisible();
   await expect(page.getByText("Deep Analyzer")).toBeVisible();
   await expect(page.getByText("Report Quality Evaluator")).toBeVisible();
@@ -318,4 +349,55 @@ test("run status raises a completion notification with follow-up actions", async
 
   await expect(page.getByText("Run completed")).toBeVisible();
   await expect(page.getByRole("button", { name: "Open report" })).toBeVisible();
+});
+
+test("active run keeps controls across run handoff and direct session views", async ({
+  page,
+}) => {
+  const { runId, session } = await setupDashboardWithActiveRun(page);
+
+  await page.goto(`/session/${runId}/monitor`);
+
+  await expect(page.getByText(session.label, { exact: true })).toBeVisible();
+  await expect(page.getByText(session.query, { exact: true })).toBeVisible();
+
+  await page.setViewportSize({ width: 320, height: 800 });
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
+    .toBeLessThanOrEqual(320);
+  for (const label of ["Overview", "Monitor", "Report"]) {
+    const tab = page.getByRole("link", { name: label });
+    const box = await tab.boundingBox();
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+  }
+
+  const stopButton = page.getByRole("button", { name: "Stop run" });
+  await expect(stopButton).toBeVisible();
+
+  await page.getByRole("link", { name: "Overview" }).click();
+  await expect(page).toHaveURL(new RegExp(`/session/${runId}$`));
+  await expect(page.getByRole("button", { name: "Stop run" })).toBeVisible();
+  await page.getByRole("link", { name: "Report" }).click();
+  await expect(page).toHaveURL(new RegExp(`/session/${runId}/report$`));
+  await expect(page.getByRole("button", { name: "Stop run" })).toBeVisible();
+
+  await page.goto(`/session/${session.session_id}`);
+  await expect(page.getByRole("button", { name: "Stop run" })).toBeVisible();
+  await page.goto(`/session/${session.session_id}/report`);
+  await expect(page.getByRole("button", { name: "Stop run" })).toBeVisible();
+  await page.getByRole("link", { name: "Monitor" }).click();
+  await expect(page).toHaveURL(new RegExp(`/session/${session.session_id}/monitor$`));
+  await expect(page.getByRole("button", { name: "Stop run" })).toBeVisible();
+
+  await stopButton.click();
+
+  await expect(page.getByText("Stop requested", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stopping run" })).toBeDisabled();
+
+  await expect(page.getByRole("button", { name: "Stop run" })).toHaveCount(0, {
+    timeout: 5000,
+  });
+  await expect(page.getByText("Run Status", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Stopped", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Telemetry Monitor" })).toBeVisible();
 });

@@ -43,6 +43,18 @@ def _raise_if_run_cancelled(job: ResearchRunJob) -> None:
         raise ResearchRunCancelled(RUN_CANCELLED_MESSAGE)
 
 
+def _build_research_run_control_payload(
+    job: ResearchRunJob,
+) -> dict[str, str | bool | None]:
+    """Build the shared operator-control state returned by run endpoints."""
+    return {
+        "run_id": job.run_id,
+        "status": job.status.value,
+        "stop_requested": job.stop_requested,
+        "session_id": job.session_id,
+    }
+
+
 def _build_interrupted_session_summary(
     *,
     session_id: str,
@@ -303,6 +315,24 @@ def register_research_run_routes(app: FastAPI) -> None:
 
         return JSONResponse(content=response)
 
+    @app.get("/api/research-runs/by-session/{session_id}")
+    async def get_research_run_by_session(session_id: str) -> JSONResponse:
+        """Return the most recent dashboard run attached to one session.
+
+        Session workspaces use this read-only lookup to recover operator controls
+        after a reload or when opened from the session archive.
+        """
+        job_registry = get_job_registry(app)
+        job = job_registry.find_by_session_id(session_id)
+
+        if job is None:
+            return JSONResponse(
+                content={"error": f"Research run not found for session: {session_id}"},
+                status_code=404,
+            )
+
+        return JSONResponse(content=_build_research_run_control_payload(job))
+
     @app.post("/api/research-runs/{run_id}/stop")
     async def stop_research_run(run_id: str) -> JSONResponse:
         """Request cancellation of an in-process browser-started run."""
@@ -332,11 +362,6 @@ def register_research_run_routes(app: FastAPI) -> None:
             job = job_registry.mark_cancelled(run_id, error=RUN_CANCELLED_MESSAGE)
 
         return JSONResponse(
-            content={
-                "run_id": job.run_id,
-                "status": job.status.value,
-                "stop_requested": job.stop_requested,
-                "session_id": job.session_id,
-            },
+            content=_build_research_run_control_payload(job),
             status_code=202,
         )

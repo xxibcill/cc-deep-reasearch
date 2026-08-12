@@ -32,6 +32,21 @@ export function isResumableStatus(status: ResearchRunStatus | null): boolean {
   return status === 'failed' || status === 'cancelled';
 }
 
+export function runStatusLabel(
+  status: ResearchRunStatus | null,
+  fallback = 'Loading'
+): string {
+  if (!status) {
+    return fallback;
+  }
+
+  if (status === 'cancelled') {
+    return 'Stopped';
+  }
+
+  return `${status.charAt(0).toUpperCase()}${status.slice(1)}`;
+}
+
 export function mergeRunStatus(
   current: ResearchRunStatus | null,
   next: ResearchRunStatus | null

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   Ban,
@@ -21,7 +21,7 @@ import {
   getResearchRunStatus,
   stopResearchRun,
 } from '@/lib/api';
-import { runStatusBadgeVariant } from '@/lib/session-route';
+import { runStatusBadgeVariant, runStatusLabel } from '@/lib/session-route';
 import type { ResearchRunStatus, ResearchRunStatusResponse } from '@/types/telemetry';
 
 interface RunStatusSummaryProps {
@@ -99,57 +99,85 @@ export function RunStatusSummary({
   const [error, setError] = useState<string | null>(null);
   const [stopError, setStopError] = useState<string | null>(null);
   const [stopping, setStopping] = useState(false);
+  const statusRequestVersionRef = useRef(0);
+
+  useEffect(() => {
+    setStatus(null);
+    setError(null);
+    setStopError(null);
+    setStopping(false);
+  }, [runId]);
 
   const fetchStatus = useCallback(async () => {
-    const response = await getResearchRunStatus(runId);
+    const requestVersion = ++statusRequestVersionRef.current;
 
-    setStatus(response);
-    setError(null);
+    try {
+      const response = await getResearchRunStatus(runId);
+      if (requestVersion !== statusRequestVersionRef.current) {
+        return null;
+      }
 
-    if (onStatusChange) {
-      onStatusChange(response.status);
-    }
-    if (response.session_id && onSessionIdResolved) {
-      onSessionIdResolved(response.session_id);
-    }
-    if (onStatusLoaded) {
-      onStatusLoaded(response);
-    }
-    if (!isActiveStatus(response.status)) {
-      setStopping(false);
-    }
+      setStatus(response);
+      setError(null);
 
-    return response;
+      if (onStatusChange) {
+        onStatusChange(response.status);
+      }
+      if (response.session_id && onSessionIdResolved) {
+        onSessionIdResolved(response.session_id);
+      }
+      if (onStatusLoaded) {
+        onStatusLoaded(response);
+      }
+      if (!isActiveStatus(response.status)) {
+        setStopping(false);
+      }
+
+      return response;
+    } catch (requestError) {
+      if (requestVersion !== statusRequestVersionRef.current) {
+        return null;
+      }
+      throw requestError;
+    }
   }, [onSessionIdResolved, onStatusChange, onStatusLoaded, runId]);
 
   useEffect(() => {
     let mounted = true;
-    let intervalId: NodeJS.Timeout | null = null;
+    let timeoutId: NodeJS.Timeout | null = null;
 
     const pollStatus = async () => {
+      let shouldContinue = true;
+
       try {
         const response = await fetchStatus();
         if (!mounted) {
           return;
         }
-        if (!isActiveStatus(response.status) && intervalId) {
-          clearInterval(intervalId);
+        if (response && !isActiveStatus(response.status)) {
+          shouldContinue = false;
         }
       } catch (requestError) {
         if (!mounted) {
           return;
         }
         setError(getApiErrorMessage(requestError, 'Failed to fetch status'));
+      } finally {
+        if (mounted && shouldContinue) {
+          timeoutId = setTimeout(() => {
+            void pollStatus();
+          }, 2000);
+        }
       }
     };
 
     void pollStatus();
-    intervalId = setInterval(pollStatus, 2000);
 
     return () => {
       mounted = false;
-      if (intervalId) {
-        clearInterval(intervalId);
+      statusRequestVersionRef.current += 1;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
       }
     };
   }, [fetchStatus]);
@@ -157,9 +185,11 @@ export function RunStatusSummary({
   const handleStop = async () => {
     setStopError(null);
     setStopping(true);
+    statusRequestVersionRef.current += 1;
 
     try {
       const response = await stopResearchRun(runId);
+      statusRequestVersionRef.current += 1;
       setStatus((current) =>
         current
           ? {
@@ -170,16 +200,22 @@ export function RunStatusSummary({
             }
           : null
       );
+      if (onStatusChange) {
+        onStatusChange(response.status);
+      }
+      if (response.session_id && onSessionIdResolved) {
+        onSessionIdResolved(response.session_id);
+      }
       if (response.status === 'cancelled') {
         setStopping(false);
       }
       notify({
         variant: 'warning',
-        title: response.status === 'cancelled' ? 'Run cancelled' : 'Stop requested',
+        title: response.status === 'cancelled' ? 'Run stopped' : 'Stop requested',
         description:
           response.status === 'cancelled'
-            ? 'The backend confirmed cancellation for this run.'
-            : 'The backend is stopping the run and will update the status when cleanup finishes.',
+            ? 'The run has stopped. Historical telemetry remains available in the session.'
+            : 'The stop request was accepted. Status will update when the run ends.',
       });
     } catch (requestError) {
       const message = getApiErrorMessage(requestError, 'Failed to stop run');
@@ -218,7 +254,7 @@ export function RunStatusSummary({
     );
   }
 
-  if (!status) {
+  if (!status || status.run_id !== runId) {
     return (
       <Card>
         <CardContent className="p-4">
@@ -233,10 +269,11 @@ export function RunStatusSummary({
 
   const stopRequested = status.stop_requested === true;
   const showStopAction = isActiveStatus(status.status);
+  const lifecycleStatusLabel = runStatusLabel(status.status);
   const liveMonitorMessage = status.session_id
     ? isActiveStatus(status.status)
       ? 'The monitor will keep buffered telemetry visible if the live stream drops and will retry automatically while the run is still active.'
-      : 'This run is no longer active. Monitor pages will load historical telemetry only, without expecting a live stream.'
+      : 'This run has ended. Monitor pages will load historical telemetry without expecting a live stream.'
     : 'A monitor session will become available after the backend allocates a session ID.';
 
   return (
@@ -249,9 +286,11 @@ export function RunStatusSummary({
                 {statusIcon(status.status)}
                 Run Status
               </CardTitle>
-              <Badge variant={runStatusBadgeVariant(status.status)}>{status.status}</Badge>
+              <Badge variant={runStatusBadgeVariant(status.status)}>
+                {lifecycleStatusLabel}
+              </Badge>
               {stopRequested && isActiveStatus(status.status) ? (
-                <Badge variant="warning">Pause Requested</Badge>
+                <Badge variant="warning">Stop requested</Badge>
               ) : null}
               {status.resume_attempt ? (
                 <Badge variant="secondary">Resume attempt {status.resume_attempt}</Badge>
@@ -293,12 +332,12 @@ export function RunStatusSummary({
                 {stopping || stopRequested ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Pausing...
+                    Stopping run…
                   </>
                 ) : (
                   <>
                     <Square className="mr-2 h-4 w-4" />
-                    Pause &amp; Save
+                    Stop run
                   </>
                 )}
               </Button>
@@ -332,7 +371,7 @@ export function RunStatusSummary({
           />
           <div className="space-y-1">
             <AlertTitle>
-              {isActiveStatus(status.status) ? 'Live monitor expectation' : 'Historical monitor mode'}
+              {isActiveStatus(status.status) ? 'Live monitoring' : 'Historical telemetry'}
             </AlertTitle>
             <AlertDescription>{liveMonitorMessage}</AlertDescription>
           </div>
@@ -344,7 +383,7 @@ export function RunStatusSummary({
             <div className="space-y-1">
               <AlertTitle>Stop requested</AlertTitle>
               <AlertDescription>
-                Waiting for the backend to confirm cancellation and close the session cleanly.
+                The request was accepted. Controls will clear when the run reaches a final status.
               </AlertDescription>
             </div>
           </Alert>
@@ -374,7 +413,7 @@ export function RunStatusSummary({
           <Alert className="flex items-start gap-3" variant="warning">
             <Ban className="mt-0.5 h-5 w-5 shrink-0" />
             <div className="space-y-1">
-              <AlertTitle>Run cancelled</AlertTitle>
+              <AlertTitle>Run stopped</AlertTitle>
               <AlertDescription>
                 {status.error ||
                   'The in-progress run was stopped. Historical session artifacts remain available for follow-on actions.'}

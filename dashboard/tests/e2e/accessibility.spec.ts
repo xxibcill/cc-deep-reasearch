@@ -2,6 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { test, expect } from "@playwright/test";
 
 import { openOperatorSurface, operatorSurfaces } from "./a11y-surfaces";
+import { openPrimaryNavigation } from "./test-fixtures";
 
 test.describe("Dashboard accessibility baseline @a11y", () => {
   for (const surface of operatorSurfaces) {
@@ -10,6 +11,7 @@ test.describe("Dashboard accessibility baseline @a11y", () => {
 
       await expect(page.locator("header")).toBeVisible();
       await expect(page.locator("main")).toBeVisible();
+      await openPrimaryNavigation(page);
       await expect(page.locator('nav[aria-label="Primary navigation"]')).toBeVisible();
       await expect(page.locator("main h1")).toHaveCount(1);
     });

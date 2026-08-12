@@ -149,6 +149,8 @@ def _query_session_api_detail(
 ) -> dict[str, Any]:
     """Return session detail from live telemetry, or DuckDB when only historical data exists."""
     telemetry_dir = get_default_telemetry_dir()
+    saved_session = SessionStore().load_session(session_id)
+    saved_payload = saved_session.model_dump(mode="json") if saved_session is not None else None
     live_detail = query_live_session_detail(
         session_id,
         base_dir=telemetry_dir,
@@ -160,7 +162,38 @@ def _query_session_api_detail(
         include_derived=include_derived,
     )
     if live_detail["session"]:
-        live_detail["session"] = _normalize_live_session_state(live_detail["session"])
+        live_session = _normalize_live_session_state(live_detail["session"])
+        live_session.update(
+            {
+                "has_session_payload": saved_payload is not None,
+                "has_report": False,
+            }
+        )
+        if saved_payload is not None:
+            saved_metadata = saved_payload.get("metadata", {})
+            query = _normalize_optional_string(saved_payload.get("query"))
+            live_session.update(
+                {
+                    "label": _build_session_list_label(
+                        session_id=session_id,
+                        query=query,
+                        active=bool(live_session.get("active")),
+                    ),
+                    "query": query,
+                    "depth": _normalize_optional_string(saved_payload.get("depth")),
+                    "completed_at": serialize_timestamp(saved_payload.get("completed_at")),
+                    "has_session_payload": True,
+                    "has_report": bool(
+                        isinstance(saved_metadata, dict) and saved_metadata.get("analysis")
+                    ),
+                }
+            )
+            telemetry_summary = live_detail.get("summary")
+            live_detail["summary"] = {
+                **(telemetry_summary if isinstance(telemetry_summary, dict) else {}),
+                **saved_payload,
+            }
+        live_detail["session"] = live_session
         return live_detail
 
     historical = query_session_detail(
@@ -176,8 +209,7 @@ def _query_session_api_detail(
         return live_detail
 
     events = historical.get("events", [])
-    saved_session = SessionStore().load_session(session_id)
-    summary = saved_session.model_dump(mode="json") if saved_session is not None else None
+    summary = saved_payload
     session = {
         "session_id": session_data.get("session_id"),
         "created_at": session_data.get("created_at"),
@@ -187,6 +219,12 @@ def _query_session_api_detail(
         "active": False,
         "event_count": len(events),
         "last_event_at": events[-1].get("timestamp") if events else None,
+        "has_session_payload": saved_payload is not None,
+        "has_report": bool(
+            saved_payload is not None
+            and isinstance(saved_payload.get("metadata"), dict)
+            and saved_payload["metadata"].get("analysis")
+        ),
     }
     return {
         "session": session,

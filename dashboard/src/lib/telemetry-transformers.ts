@@ -903,6 +903,39 @@ export function normalizeSession(session: ApiSession): Session {
   };
 }
 
+export function normalizeSessionDetail(
+  session: ApiSession,
+  summary: Record<string, unknown> | null | undefined,
+): Session {
+  const summaryRecord = isRecord(summary) ? summary : null;
+  const summarySources = summaryRecord && Array.isArray(summaryRecord.sources)
+    ? summaryRecord.sources.length
+    : null;
+  const query = asNullableString(session.query)
+    ?? asNullableString(summaryRecord?.query);
+
+  return normalizeSession({
+    ...session,
+    label:
+      asNullableString(session.label)
+      ?? asNullableString(summaryRecord?.label)
+      ?? query,
+    created_at:
+      asNullableString(session.created_at)
+      ?? asNullableString(summaryRecord?.started_at),
+    total_sources: asNumberOrNull(session.total_sources) ?? summarySources,
+    query,
+    depth:
+      asNullableString(session.depth)
+      ?? asNullableString(summaryRecord?.depth),
+    completed_at:
+      asNullableString(session.completed_at)
+      ?? asNullableString(summaryRecord?.completed_at),
+    has_session_payload: session.has_session_payload === true,
+    has_report: session.has_report === true,
+  });
+}
+
 export function normalizeEvent(event: ApiTelemetryEvent): TelemetryEvent {
   return {
     eventId: asString(event.event_id),

@@ -738,6 +738,23 @@ Returns:
 - `error` for failed jobs
 - `result` for completed jobs
 
+### `GET /api/research-runs/by-session/{session_id}`
+
+Returns the most recent browser-owned research run associated with the session. Session
+workspaces use this lookup after the run-to-session handoff and on direct session URLs so
+operator controls can recover their run identity.
+
+A successful response contains:
+
+- `run_id`
+- `status`
+- `stop_requested`
+- `session_id`
+
+If the in-process run registry has no matching run, the endpoint returns `404` with an
+`error` message. Persisted sessions created outside the browser run registry therefore do
+not necessarily have a matching run-control record.
+
 ### `GET /api/sessions`
 
 Returns merged live and historical sessions. Live sessions come from telemetry reads; historical sessions come from dashboard analytics data.
@@ -749,7 +766,13 @@ Query params:
 
 ### `GET /api/sessions/{session_id}`
 
-Returns live detail for one session, using telemetry file reads.
+Returns detail for one session from live telemetry when available, otherwise from the
+historical analytics store. If a canonical `SessionStore` payload exists, its persisted
+research identity and metadata take precedence over telemetry summary fields: `query`,
+`depth`, `completed_at`, saved analysis/report availability, and the full saved summary
+come from the stored payload. Telemetry remains authoritative for live execution state,
+event counts, timestamps, and event-derived views. A session without a saved payload keeps
+its telemetry or historical identity and reports no saved research payload.
 
 ### `GET /api/sessions/{session_id}/events`
 

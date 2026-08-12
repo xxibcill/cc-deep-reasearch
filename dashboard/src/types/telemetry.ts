@@ -381,6 +381,15 @@ export interface ResearchRunStatusResponse {
   resume_attempt?: number;
 }
 
+export interface ResearchRunControlResponse {
+  run_id: string;
+  status: ResearchRunStatus;
+  stop_requested: boolean;
+  session_id: string | null;
+}
+
+export type ResearchRunSessionLookupResponse = ResearchRunControlResponse;
+
 export interface ResumeResearchSessionResponse {
   run_id: string;
   status: ResearchRunStatus;
@@ -392,12 +401,7 @@ export interface ResumeResearchSessionResponse {
   idempotent_replay?: boolean;
 }
 
-export interface StopResearchRunResponse {
-  run_id: string;
-  status: ResearchRunStatus;
-  stop_requested: boolean;
-  session_id?: string;
-}
+export type StopResearchRunResponse = ResearchRunControlResponse;
 
 export interface SessionReportResponse {
   session_id: string;

@@ -94,16 +94,20 @@ export function SessionTelemetryWorkspace({
   const { exportDebugBundle, isExporting: isExportingDebug } = useDebugExport(sessionId);
   const [derivedOutputs, setDerivedOutputs] = useState<DerivedOutputs | null>(null);
   const [promptMetadata, setPromptMetadata] = useState<SessionPromptMetadata | null>(null);
+  const [derivedSessionId, setDerivedSessionId] = useState<string | null>(null);
+  const [promptSessionId, setPromptSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [derivedLoading, setDerivedLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [derivedError, setDerivedError] = useState<string | null>(null);
+  const [promptError, setPromptError] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const previousPhaseRef = useRef(liveStreamStatus.phase);
   const derivedFetchedRef = useRef(false);
-  const promptFetchedRef = useRef(false);
-  const summaryLoadedRef = useRef(false);
+  const derivedRequestVersionRef = useRef(0);
+  const visibleDerivedOutputs = derivedSessionId === sessionId ? derivedOutputs : null;
+  const visiblePromptMetadata = promptSessionId === sessionId ? promptMetadata : null;
 
   useEffect(() => {
     if (liveStreamStatus.phase !== 'reconnecting' || !liveStreamStatus.nextRetryAt) {
@@ -119,27 +123,69 @@ export function SessionTelemetryWorkspace({
     };
   }, [liveStreamStatus.nextRetryAt, liveStreamStatus.phase]);
 
+  // Load derived outputs only after the lightweight session history succeeds.
+  const loadDerivedOutputs = useCallback(() => {
+    if (derivedFetchedRef.current) return;
+    derivedFetchedRef.current = true;
+    const requestVersion = ++derivedRequestVersionRef.current;
+    setDerivedLoading(true);
+    setDerivedError(null);
+    setPromptError(null);
+
+    const derivedRequest = getSessionDerivedOutputs(sessionId)
+      .then((derived) => {
+        if (requestVersion !== derivedRequestVersionRef.current) return;
+        setDerivedOutputs(derived);
+        setDerivedSessionId(sessionId);
+      })
+      .catch((err) => {
+        if (requestVersion !== derivedRequestVersionRef.current) return;
+        setDerivedError(getApiErrorMessage(err, 'Failed to load derived outputs.'));
+      });
+
+    const promptRequest = getSessionPromptMetadata(sessionId)
+      .then((prompts) => {
+        if (requestVersion !== derivedRequestVersionRef.current) return;
+        setPromptMetadata(prompts ?? null);
+        setPromptSessionId(sessionId);
+      })
+      .catch((err) => {
+        if (requestVersion !== derivedRequestVersionRef.current) return;
+        setPromptError(getApiErrorMessage(err, 'Failed to load prompt metadata.'));
+      });
+
+    void Promise.allSettled([derivedRequest, promptRequest]).then(() => {
+      if (requestVersion !== derivedRequestVersionRef.current) return;
+      setDerivedLoading(false);
+    });
+  }, [sessionId]);
+
   // Load events eagerly (doesn't wait for derived outputs)
   useEffect(() => {
     let mounted = true;
-    summaryLoadedRef.current = false;
+    derivedRequestVersionRef.current += 1;
     derivedFetchedRef.current = false;
-    promptFetchedRef.current = false;
 
     setLoading(true);
     setError(null);
+    setDerivedOutputs(null);
+    setPromptMetadata(null);
+    setDerivedSessionId(null);
+    setPromptSessionId(null);
+    setDerivedLoading(false);
+    setDerivedError(null);
+    setPromptError(null);
 
     Promise.all([
       getSessionSummary(sessionId),
       getSessionEventsPage(sessionId, 500),
     ])
-      .then(([summaryResult, eventsPageResult]) => {
+      .then(([, eventsPageResult]) => {
         if (!mounted) return;
         // Events from the events page
         appendEvents(eventsPageResult.events);
-        // Signal that summary loaded so derived outputs can load regardless of event count
-        summaryLoadedRef.current = true;
         setLoading(false);
+        loadDerivedOutputs();
       })
       .catch((requestError) => {
         if (!mounted) return;
@@ -149,37 +195,9 @@ export function SessionTelemetryWorkspace({
 
     return () => {
       mounted = false;
+      derivedRequestVersionRef.current += 1;
     };
-  }, [appendEvents, reloadNonce, sessionId]);
-
-  // Lazily load derived outputs and prompt metadata after session summary loads
-  const loadDerivedOutputs = useCallback(() => {
-    if (derivedFetchedRef.current) return;
-    derivedFetchedRef.current = true;
-    setDerivedLoading(true);
-    setDerivedError(null);
-    Promise.all([
-      getSessionDerivedOutputs(sessionId),
-      getSessionPromptMetadata(sessionId),
-    ])
-      .then(([derived, prompts]) => {
-        setDerivedOutputs(derived);
-        setPromptMetadata(prompts ?? null);
-      })
-      .catch((err) => {
-        setDerivedError(getApiErrorMessage(err, 'Failed to load derived outputs.'));
-      })
-      .finally(() => {
-        setDerivedLoading(false);
-      });
-  }, [sessionId]);
-
-  // Load derived outputs when summary loads (handles 0-event edge case)
-  useEffect(() => {
-    if (summaryLoadedRef.current && !derivedFetchedRef.current) {
-      loadDerivedOutputs();
-    }
-  }, [loadDerivedOutputs]);
+  }, [appendEvents, loadDerivedOutputs, reloadNonce, sessionId]);
 
   useEffect(() => {
     const previousPhase = previousPhaseRef.current;
@@ -326,7 +344,7 @@ export function SessionTelemetryWorkspace({
           </CardContent>
         </Card>
 
-        {(derivedOutputs || promptMetadata) ? (
+        {visibleDerivedOutputs || visiblePromptMetadata ? (
           <SessionDetails
             sessionId={sessionId}
             liveStreamStatus={liveStreamStatus}
@@ -335,8 +353,8 @@ export function SessionTelemetryWorkspace({
             viewMode={viewMode}
             onSelectEvent={setSelectedEvent}
             onViewModeChange={setViewMode}
-            derivedOutputs={derivedOutputs ?? undefined}
-            promptMetadata={promptMetadata ?? undefined}
+            derivedOutputs={visibleDerivedOutputs ?? undefined}
+            promptMetadata={visiblePromptMetadata ?? undefined}
           />
         ) : null}
       </div>
@@ -447,56 +465,73 @@ export function SessionTelemetryWorkspace({
         </Card>
       ) : null}
 
+      {promptError && !error ? (
+        <Card className="border-warning/25 bg-warning-muted/22">
+          <CardContent className="flex items-start gap-3 p-4">
+            <AlertCircle className="mt-0.5 h-5 w-5 text-warning" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-foreground">Prompt metadata unavailable</p>
+              <p className="text-sm text-muted-foreground">
+                Telemetry remains available, but the prompt audit metadata could not be loaded.{' '}
+                {promptError}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {liveStreamStatus.reconnectHistory.length > 0 &&
       (liveStreamStatus.phase === 'reconnecting' ||
         liveStreamStatus.phase === 'failed' ||
         liveStreamStatus.phase === 'historical') ? (
-        <CollapsiblePanel
-          summary={
-            <div className="text-sm font-medium text-foreground">
-              Stream diagnostics — {liveStreamStatus.reconnectHistory.length} reconnect{' '}
-              {liveStreamStatus.reconnectHistory.length === 1 ? 'attempt' : 'attempts'}
+        <div className="space-y-2">
+          <CollapsiblePanel
+            summary={
+              <div className="text-sm font-medium text-foreground">
+                Stream diagnostics — {liveStreamStatus.reconnectHistory.length} reconnect{' '}
+                {liveStreamStatus.reconnectHistory.length === 1 ? 'attempt' : 'attempts'}
+              </div>
+            }
+            meta={
+              liveStreamStatus.phase === 'failed' ? (
+                <Badge variant="destructive">{liveStreamStatus.reconnectAttempt} failed</Badge>
+              ) : liveStreamStatus.phase === 'reconnecting' ? (
+                <Badge variant="warning">Reconnecting</Badge>
+              ) : null
+            }
+            defaultOpen={liveStreamStatus.phase === 'failed'}
+          >
+            <div className="space-y-2">
+              <div className="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground lg:grid-cols-2 xl:grid-cols-3">
+                <div className="contents">
+                  <span className="font-medium text-foreground">Attempt</span>
+                  <span className="font-medium text-foreground">Time</span>
+                  <span className="font-medium text-foreground">Duration</span>
+                  <span className="font-medium text-foreground">Close code</span>
+                  <span className="font-medium text-foreground">Close reason</span>
+                  <span className="font-medium text-foreground">Clean</span>
+                </div>
+                {liveStreamStatus.reconnectHistory.map((entry) => (
+                  <div key={entry.attempt} className="contents">
+                    <span className="font-mono">{entry.attempt}</span>
+                    <span>{new Date(entry.timestamp).toLocaleTimeString()}</span>
+                    <span>{entry.tookMs}ms</span>
+                    <span className="font-mono">{entry.closeCode ?? '—'}</span>
+                    <span className="truncate">{entry.closeReason ?? '—'}</span>
+                    <span>{entry.wasClean == null ? '?' : entry.wasClean ? 'yes' : 'no'}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-          }
-          meta={
-            liveStreamStatus.phase === 'failed' ? (
-              <Badge variant="destructive">{liveStreamStatus.reconnectAttempt} failed</Badge>
-            ) : liveStreamStatus.phase === 'reconnecting' ? (
-              <Badge variant="warning">Reconnecting</Badge>
-            ) : null
-          }
-          actions={
-            canRetryLiveStream ? (
+          </CollapsiblePanel>
+          {canRetryLiveStream ? (
+            <div className="flex justify-end">
               <Button onClick={reconnect} type="button" size="sm" variant="outline">
                 Retry stream
               </Button>
-            ) : null
-          }
-          defaultOpen={liveStreamStatus.phase === 'failed'}
-        >
-          <div className="space-y-2">
-            <div className="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground lg:grid-cols-2 xl:grid-cols-3">
-              <div className="contents">
-                <span className="font-medium text-foreground">Attempt</span>
-                <span className="font-medium text-foreground">Time</span>
-                <span className="font-medium text-foreground">Duration</span>
-                <span className="font-medium text-foreground">Close code</span>
-                <span className="font-medium text-foreground">Close reason</span>
-                <span className="font-medium text-foreground">Clean</span>
-              </div>
-              {liveStreamStatus.reconnectHistory.map((entry) => (
-                <div key={entry.attempt} className="contents">
-                  <span className="font-mono">{entry.attempt}</span>
-                  <span>{new Date(entry.timestamp).toLocaleTimeString()}</span>
-                  <span>{entry.tookMs}ms</span>
-                  <span className="font-mono">{entry.closeCode ?? '—'}</span>
-                  <span className="truncate">{entry.closeReason ?? '—'}</span>
-                  <span>{entry.wasClean == null ? '?' : entry.wasClean ? 'yes' : 'no'}</span>
-                </div>
-              ))}
             </div>
-          </div>
-        </CollapsiblePanel>
+          ) : null}
+        </div>
       ) : null}
 
       <SessionDetails
@@ -507,8 +542,8 @@ export function SessionTelemetryWorkspace({
         viewMode={viewMode}
         onSelectEvent={setSelectedEvent}
         onViewModeChange={setViewMode}
-        derivedOutputs={derivedOutputs ?? undefined}
-        promptMetadata={promptMetadata ?? undefined}
+        derivedOutputs={visibleDerivedOutputs ?? undefined}
+        promptMetadata={visiblePromptMetadata ?? undefined}
       />
     </div>
   );

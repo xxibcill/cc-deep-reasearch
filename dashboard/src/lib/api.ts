@@ -1,7 +1,11 @@
 import axios, { type AxiosError } from 'axios';
 import { apiClient } from '@/lib/api/client';
 import { dashboardRuntimeConfig } from '@/lib/runtime-config';
-import { normalizeEvent, normalizeSession } from '@/lib/telemetry-transformers';
+import {
+  normalizeEvent,
+  normalizeSession,
+  normalizeSessionDetail,
+} from '@/lib/telemetry-transformers';
 import {
   ApiSession,
   ApiTelemetryEvent,
@@ -11,6 +15,7 @@ import {
   ResearchRunRequest,
   StartResearchRunResponse,
   ResearchRunStatusResponse,
+  ResearchRunSessionLookupResponse,
   ResumeResearchSessionResponse,
   StopResearchRunResponse,
   SessionReportResponse,
@@ -175,6 +180,7 @@ interface SessionsResponse {
 
 interface SessionResponse {
   session: ApiSession;
+  summary?: Record<string, unknown> | null;
 }
 
 interface SessionEventsResponse {
@@ -241,7 +247,9 @@ export function getConfigUpdateErrorDetails(error: unknown): ConfigUpdateErrorDe
 
 export async function getSession(sessionId: string): Promise<{ session: Session }> {
   const response = await apiClient.get<SessionResponse>(`/sessions/${sessionId}`);
-  return { session: normalizeSession(response.data.session) };
+  return {
+    session: normalizeSessionDetail(response.data.session, response.data.summary),
+  };
 }
 
 export async function getSessionSummary(
@@ -251,7 +259,9 @@ export async function getSessionSummary(
     params: { include_derived: false, include_checkpoints: false },
     timeout: SESSION_DETAIL_TIMEOUT_MS,
   });
-  return { session: normalizeSession(response.data.session) };
+  return {
+    session: normalizeSessionDetail(response.data.session, response.data.summary),
+  };
 }
 
 export async function getSessionEventsPage(
@@ -380,7 +390,7 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
     timeout: SESSION_DETAIL_TIMEOUT_MS,
   });
   return {
-    session: normalizeSession(response.data.session),
+    session: normalizeSessionDetail(response.data.session, response.data.summary),
     events: response.data.events_page.events.map(normalizeEvent),
     derivedOutputs: {
       narrative: response.data.narrative,
@@ -450,6 +460,22 @@ export async function startResearchRun(
 export async function getResearchRunStatus(runId: string): Promise<ResearchRunStatusResponse> {
   const response = await apiClient.get<ResearchRunStatusResponse>(`/research-runs/${runId}`);
   return response.data;
+}
+
+export async function getResearchRunBySession(
+  sessionId: string
+): Promise<ResearchRunSessionLookupResponse | null> {
+  try {
+    const response = await apiClient.get<ResearchRunSessionLookupResponse>(
+      `/research-runs/by-session/${sessionId}`
+    );
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function stopResearchRun(runId: string): Promise<StopResearchRunResponse> {

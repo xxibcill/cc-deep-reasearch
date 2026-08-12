@@ -16,7 +16,7 @@ import {
   mockSessions,
 } from "./dashboard-mocks";
 import { SCENARIOS } from "./scenarios";
-import { setupTestPage } from "./test-fixtures";
+import { openPrimaryNavigation, setupTestPage } from "./test-fixtures";
 
 async function mockSessionAnnotations(page: Page, sessionId: string) {
   await page.route(`**/api/sessions/${sessionId}/annotations`, async (route) => {
@@ -114,6 +114,7 @@ test.describe("Operator smoke suite", () => {
       await page.goto(`/session/${liveScenario.sessions[0].session_id}/monitor`);
 
       await expect(page.getByText(/Live telemetry/i)).toBeVisible();
+      await openPrimaryNavigation(page);
       await expect(page.getByText(/Radar/i)).toBeVisible();
     }
   );
