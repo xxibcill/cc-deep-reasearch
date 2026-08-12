@@ -1,12 +1,11 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 
-import { mockDashboardApis } from './dashboard-mocks';
-import { openPrimaryNavigation } from './test-fixtures';
+import { openPrimaryNavigation, setupTestPage } from './test-fixtures';
 
 test.describe('Global navigation accessibility @a11y', () => {
   test.beforeEach(async ({ page }) => {
-    await mockDashboardApis(page);
+    await setupTestPage(page);
     await page.goto('/');
     await page.waitForLoadState('networkidle');
   });
