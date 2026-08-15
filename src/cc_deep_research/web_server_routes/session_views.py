@@ -210,7 +210,42 @@ def _query_session_api_detail(
     )
     session_data = historical.get("session")
     if session_data is None:
-        return live_detail
+        if saved_payload is None:
+            return live_detail
+        execution = saved_metadata.get("execution", {})
+        terminal_status = (
+            execution.get("terminal_status") if isinstance(execution, dict) else None
+        )
+        saved_view = {
+            **saved_payload,
+            "total_sources": len(saved_payload.get("sources", [])),
+            "has_session_payload": True,
+            "has_report": saved_has_report,
+        }
+        session = _build_session_list_row(
+            session_id=session_id,
+            status=terminal_status,
+            active=False,
+            event_count=0,
+            saved=saved_view,
+        )
+        empty_page = {
+            "events": [],
+            "total": 0,
+            "has_more": False,
+            "next_cursor": None,
+            "prev_cursor": None,
+        }
+        return {
+            **live_detail,
+            "session": session,
+            "summary": saved_payload,
+            "events": [],
+            "event_tail": [],
+            "events_page": empty_page,
+            "agent_timeline": [],
+            "decision_graph": empty_decision_graph(),
+        }
 
     events = historical.get("events", [])
     summary = saved_payload

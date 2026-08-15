@@ -780,6 +780,46 @@ def test_live_session_detail_merges_saved_report_artifact_flags(
     assert payload["summary"]["query"] == "Saved research query"
 
 
+def test_saved_only_session_detail_returns_payload_and_report_flags(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Saved recovery artifacts should remain inspectable without telemetry."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    session = ResearchSession(
+        session_id="saved-only-recovery",
+        query="Saved-only recovery query",
+        depth=ResearchDepth.STANDARD,
+        metadata={
+            "analysis": {"key_findings": ["Evidence survived recovery."]},
+            "execution": {"terminal_status": "failed"},
+        },
+    )
+    store = SessionStore()
+    store.save_session(session)
+    store.save_report(
+        session.session_id,
+        ResearchOutputFormat.MARKDOWN,
+        "# Saved recovery report",
+    )
+
+    response = TestClient(create_app()).get(f"/api/sessions/{session.session_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["session"]["query"] == "Saved-only recovery query"
+    assert payload["session"]["status"] == "failed"
+    assert payload["session"]["has_session_payload"] is True
+    assert payload["session"]["has_report"] is True
+    assert payload["summary"]["query"] == "Saved-only recovery query"
+    assert payload["events_page"] == {
+        "events": [],
+        "total": 0,
+        "has_more": False,
+        "next_cursor": None,
+        "prev_cursor": None,
+    }
+
+
 def test_live_session_detail_exposes_false_artifact_flags_without_saved_payload(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
