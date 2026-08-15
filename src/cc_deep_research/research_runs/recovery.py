@@ -167,8 +167,22 @@ class FailureReportGenerator:
 
 def is_terminal_failure(result: ResearchRunResult) -> bool:
     """Return whether a materialized result still represents a failed run."""
-    terminal_status = result.session.metadata.get("execution", {}).get("terminal_status")
-    return isinstance(terminal_status, str) and terminal_status == "failed"
+    metadata = result.session.metadata
+    execution = metadata.get("execution", {})
+    terminal_status = execution.get("terminal_status")
+    if isinstance(terminal_status, str):
+        return terminal_status == "failed"
+    if result.session.total_sources > 0:
+        return False
+
+    providers = metadata.get("providers", {})
+    if providers.get("status") == "unavailable":
+        return True
+    degraded_reasons = execution.get("degraded_reasons", [])
+    return any(
+        isinstance(reason, str) and reason.startswith("All initialized providers failed")
+        for reason in degraded_reasons
+    )
 
 
 def is_retriable_failure(error: Exception) -> bool:

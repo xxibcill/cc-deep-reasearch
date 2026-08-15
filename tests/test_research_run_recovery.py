@@ -14,6 +14,7 @@ from cc_deep_research.research_runs.models import (
 )
 from cc_deep_research.research_runs.recovery import (
     build_alternate_recovery_request,
+    is_terminal_failure,
     load_latest_recovery_checkpoint,
     materialize_failure_result,
     safe_failure_reason,
@@ -119,6 +120,21 @@ def test_safe_failure_reason_does_not_expose_provider_error_details() -> None:
 
     assert reason == "Initial execution failed (RuntimeError)."
     assert "secret-value" not in reason
+
+
+def test_zero_source_unavailable_provider_result_is_terminal_failure() -> None:
+    result = SimpleNamespace(
+        session=ResearchSession(
+            session_id="planner-provider-failure",
+            query="planner fallback",
+            metadata={
+                "providers": {"status": "unavailable"},
+                "execution": {},
+            },
+        )
+    )
+
+    assert is_terminal_failure(result)  # type: ignore[arg-type]
 
 
 def test_checkpoint_loader_skips_invalid_and_non_executable_snapshots(
