@@ -57,6 +57,9 @@ from cc_deep_research.web_server_routes.codex_auth_routes import (
     resolve_dashboard_cors_origins,
 )
 from cc_deep_research.web_server_routes.operations_routes import register_operations_routes
+from cc_deep_research.web_server_routes.research_run_routes import (
+    queue_interrupted_research_run_recoveries,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +99,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     runtime = get_backend_runtime(app)
     try:
         await runtime.start()
+        await queue_interrupted_research_run_recoveries(app)
         yield
     finally:
         await runtime.stop()

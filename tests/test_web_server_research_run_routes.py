@@ -17,6 +17,10 @@ from cc_deep_research.research_runs import (
     ResearchRunResult,
     ResearchWorkflow,
 )
+from cc_deep_research.research_runs.jobs import (
+    PersistentResearchRunJobRegistry,
+    ResearchRunJobStore,
+)
 from cc_deep_research.web_server import (
     create_app,
     get_job_registry,
@@ -63,9 +67,11 @@ def _wait_for_run_status(
 
 
 def test_research_route_passes_app_owned_codex_runtime(
+    tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Browser-started generation should use the same runtime as auth routes."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     captured: list[object] = []
 
     class FakeCodexRuntime:
@@ -424,6 +430,74 @@ def test_transient_exception_automatically_resumes_latest_checkpoint(
     assert payload["status"] == "completed"
     assert payload["session_id"] == "checkpoint-success"
     assert calls == {"run": 1, "resume": 1}
+
+
+def test_backend_restart_automatically_queues_latest_checkpoint(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A persisted in-flight job should resume automatically when the app restarts."""
+    store = ResearchRunJobStore(tmp_path / "runs")
+    original_registry = PersistentResearchRunJobRegistry(store=store)
+    original = original_registry.create_job(ResearchRunRequest(query="restart recovery"))
+    original_registry.mark_running(original.run_id, session_id="restart-origin")
+    restored_registry = PersistentResearchRunJobRegistry(store=store)
+    resume_state = object()
+
+    class RestartRecoveryService:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def resume(
+            self,
+            state: object,
+            *,
+            on_session_started=None,
+            **_kwargs,
+        ) -> ResearchRunResult:
+            assert state is resume_state
+            if on_session_started is not None:
+                on_session_started("restart-success")
+            return _result_for_status(
+                request=original.request,
+                session_id="restart-success",
+                terminal_status="completed",
+            )
+
+        def run(self, *_args, **_kwargs) -> ResearchRunResult:
+            raise AssertionError("Restart recovery must resume the checkpoint")
+
+    monkeypatch.setattr(
+        "cc_deep_research.web_server.ResearchRunService",
+        RestartRecoveryService,
+    )
+    monkeypatch.setattr(
+        "cc_deep_research.web_server_routes.research_run_routes.load_latest_recovery_checkpoint",
+        lambda session_id: SimpleNamespace(
+            checkpoint_id="cp-restart",
+            state=resume_state,
+            session_id=session_id,
+        ),
+    )
+
+    with TestClient(create_app(job_registry=restored_registry)):
+        recovered = None
+        for _ in range(100):
+            recovered = next(
+                (
+                    job
+                    for job in restored_registry.list_jobs()
+                    if job.original_run_id == original.run_id
+                ),
+                None,
+            )
+            if recovered is not None and recovered.status.value == "completed":
+                break
+            time.sleep(0.01)
+
+    assert recovered is not None
+    assert recovered.status.value == "completed"
+    assert recovered.session_id == "restart-success"
+    assert recovered.resumed_from_checkpoint_id == "cp-restart"
 
 
 def test_non_retriable_failure_still_materializes_final_report(

@@ -501,6 +501,44 @@ def queue_research_run(
     job_registry.attach_task(job.run_id, task)
 
 
+async def queue_interrupted_research_run_recoveries(app: FastAPI) -> None:
+    """Queue one idempotent checkpoint resume for each restart-interrupted job."""
+    job_registry = get_job_registry(app)
+    for interrupted_job in job_registry.interrupted_restart_jobs():
+        session_id = interrupted_job.session_id or interrupted_job.original_session_id
+        if session_id is None:
+            continue
+
+        try:
+            checkpoint = await asyncio.to_thread(
+                load_latest_recovery_checkpoint,
+                session_id,
+            )
+        except Exception:
+            logger.exception(
+                "Unable to inspect restart recovery checkpoints for run %s",
+                interrupted_job.run_id,
+            )
+            continue
+        if checkpoint is None:
+            continue
+
+        reservation = job_registry.reserve_resume_job(
+            interrupted_job,
+            checkpoint_id=checkpoint.checkpoint_id,
+            idempotency_key=(
+                f"automatic-restart:{interrupted_job.run_id}:{checkpoint.checkpoint_id}"
+            ),
+        )
+        if not reservation.created:
+            continue
+        queue_research_run(
+            app,
+            reservation.job,
+            resume_state=checkpoint.state,
+        )
+
+
 def register_research_run_routes(app: FastAPI) -> None:
     """Register research run HTTP API routes.
 

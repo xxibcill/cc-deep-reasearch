@@ -246,6 +246,10 @@ class ResearchRunJobRegistry:
         """Return completed and failed jobs."""
         return [job for job in self.list_jobs() if not job.is_active]
 
+    def interrupted_restart_jobs(self) -> list[ResearchRunJob]:
+        """Return jobs that need automatic recovery after a process restart."""
+        return []
+
     def attach_task(
         self,
         run_id: str,
@@ -521,6 +525,14 @@ class PersistentResearchRunJobRegistry(ResearchRunJobRegistry):
     def _job_changed(self, job: ResearchRunJob) -> None:
         """Persist every durable mutation through the base registry hook."""
         self._store.save(job)
+
+    def interrupted_restart_jobs(self) -> list[ResearchRunJob]:
+        """Return persisted jobs that were interrupted by a backend restart."""
+        return [
+            job
+            for job in self.completed_jobs()
+            if job.status == ResearchRunStatus.FAILED and job.error == self._RECOVERY_ERROR
+        ]
 
     def _restore_jobs(self) -> None:
         for job in self._store.load_all():
