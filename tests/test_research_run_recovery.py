@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from cc_deep_research.models import ResearchSession, SearchResultItem
 from cc_deep_research.research_runs.models import (
     ResearchOutputFormat,
     ResearchRunRequest,
@@ -65,6 +66,49 @@ def test_terminal_failure_materializes_and_caches_dependency_free_report(
         result.report.content
     )
     assert store.load_session(result.session_id) is not None
+
+
+def test_terminal_failure_preserves_saved_session_evidence(tmp_path) -> None:
+    store = SessionStore(tmp_path / "sessions")
+    request = ResearchRunRequest(query="research with partial evidence")
+    partial_session = ResearchSession(
+        session_id="partial-recovery-session",
+        query=request.query,
+        sources=[
+            SearchResultItem(
+                url="https://example.com/evidence",
+                title="Recovered source",
+                snippet="Evidence collected before the provider failed.",
+            )
+        ],
+        metadata={
+            "analysis": {
+                "key_findings": ["A partial finding survived the interrupted run."],
+                "themes": ["recovery"],
+                "gaps": ["The synthesis was incomplete."],
+            }
+        },
+    )
+    store.save_session(partial_session)
+
+    result = materialize_failure_result(
+        request,
+        session_id=partial_session.session_id,
+        failure_reasons=["Alternate execution failed (RuntimeError)."],
+        session_store=store,
+    )
+
+    reloaded = store.load_session(partial_session.session_id)
+    assert reloaded is not None
+    assert [source.url for source in result.session.sources] == [
+        "https://example.com/evidence"
+    ]
+    assert [source.url for source in reloaded.sources] == ["https://example.com/evidence"]
+    assert result.session.metadata["analysis"]["key_findings"] == [
+        "A partial finding survived the interrupted run."
+    ]
+    assert "A partial finding survived the interrupted run." in result.report.content
+    assert "https://example.com/evidence" in result.report.content
 
 
 def test_safe_failure_reason_does_not_expose_provider_error_details() -> None:

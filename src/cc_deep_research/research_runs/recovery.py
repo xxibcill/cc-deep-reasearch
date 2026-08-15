@@ -92,11 +92,20 @@ class FailureReportGenerator:
         analysis: dict[str, Any],
     ) -> str:
         """Build a transparent final report from the failed session payload."""
-        del analysis
         reasons = _execution_failure_reasons(session)
         reason_lines = [f"- {reason}" for reason in reasons] or [
             "- Research execution stopped before a validated result was available."
         ]
+        finding_lines = [
+            f"- {_finding_text(finding)}"
+            for finding in analysis.get("key_findings", [])
+            if _finding_text(finding)
+        ] or ["- No findings were validated before execution stopped."]
+        source_lines = [
+            f"- [{source.title or source.url}]({source.url})"
+            + (f" — {source.snippet}" if source.snippet else "")
+            for source in session.sources
+        ] or ["- No usable source set was available for a final synthesis."]
         return "\n".join(
             [
                 f"# Recovery report: {session.query}",
@@ -110,11 +119,11 @@ class FailureReportGenerator:
                 "",
                 "## Key Findings",
                 "",
-                "- No findings were validated before execution stopped.",
+                *finding_lines,
                 "",
                 "## Sources",
                 "",
-                "- No usable source set was available for a final synthesis.",
+                *source_lines,
                 "",
                 "## Limitations",
                 "",
@@ -140,7 +149,7 @@ class FailureReportGenerator:
                 "terminal_status": "failed",
                 "failure_reasons": _execution_failure_reasons(session),
                 "analysis": analysis,
-                "sources": [],
+                "sources": [source.model_dump(mode="json") for source in session.sources],
             },
             ensure_ascii=False,
             indent=2,
@@ -228,38 +237,89 @@ def load_latest_recovery_checkpoint(
     return None
 
 
+def _finding_text(finding: Any) -> str:
+    """Return a compact display value for typed or serialized findings."""
+    if isinstance(finding, str):
+        return finding
+    if isinstance(finding, dict):
+        for key in ("finding", "claim", "summary", "text"):
+            value = finding.get(key)
+            if isinstance(value, str) and value:
+                return value
+    return str(finding) if finding is not None else ""
+
+
+def _append_unique(existing: Any, additions: list[str]) -> list[Any]:
+    """Append strings to a possibly typed list without discarding prior entries."""
+    values = list(existing) if isinstance(existing, list) else []
+    for addition in additions:
+        if addition not in values:
+            values.append(addition)
+    return values
+
+
+def _resume_evidence(
+    recovery_state: ResearchResumeState | None,
+) -> tuple[list[Any], dict[str, Any]]:
+    """Extract sources and analysis already persisted in a resumable checkpoint."""
+    if recovery_state is None:
+        return [], {}
+    if recovery_state.analysis is not None:
+        return list(recovery_state.sources), recovery_state.analysis.model_dump(mode="json")
+    if recovery_state.planner_synthesis is not None:
+        synthesis = recovery_state.planner_synthesis
+        return list(synthesis.all_sources), {
+            "key_findings": list(synthesis.key_findings),
+            "themes": list(synthesis.themes),
+            "gaps": list(synthesis.gaps),
+            "analysis_method": "planner_synthesis",
+        }
+    return list(recovery_state.sources), {}
+
+
 def build_failed_research_session(
     request: ResearchRunRequest,
     *,
     session_id: str | None,
     failure_reasons: list[str],
+    preserved_session: ResearchSession | None = None,
+    recovery_state: ResearchResumeState | None = None,
 ) -> ResearchSession:
-    """Create a terminal session payload that can always produce a final report."""
+    """Create a terminal session while retaining every available piece of evidence."""
     normalized_reasons = list(dict.fromkeys(failure_reasons)) or [
         "Research execution failed before a detailed reason was available."
     ]
-    return ResearchSession(
-        session_id=session_id or f"research-failed-{uuid.uuid4().hex[:12]}",
-        query=request.query,
-        depth=request.depth,
-        completed_at=datetime.now(UTC),
-        metadata={
-            "analysis": {
-                "key_findings": [],
-                "themes": [],
-                "themes_detailed": [],
-                "consensus_points": [],
-                "contention_points": [],
-                "gaps": normalized_reasons,
-                "analysis_method": "automatic_recovery_failure",
-            },
-            "execution": {
-                "degraded": True,
-                "degraded_reasons": normalized_reasons,
-                "terminal_status": "failed",
-            },
-        },
+    resume_sources, resume_analysis = _resume_evidence(recovery_state)
+    if preserved_session is not None:
+        session = preserved_session.model_copy(deep=True)
+    else:
+        session = ResearchSession(
+            session_id=session_id or f"research-failed-{uuid.uuid4().hex[:12]}",
+            query=request.query,
+            depth=request.depth,
+            sources=resume_sources,
+        )
+
+    analysis = dict(resume_analysis)
+    analysis.update(session.metadata.get("analysis", {}))
+    analysis.setdefault("key_findings", [])
+    analysis.setdefault("themes", [])
+    analysis.setdefault("themes_detailed", [])
+    analysis.setdefault("consensus_points", [])
+    analysis.setdefault("contention_points", [])
+    analysis["gaps"] = _append_unique(analysis.get("gaps", []), normalized_reasons)
+    analysis.setdefault("analysis_method", "automatic_recovery_failure")
+
+    execution = dict(session.metadata.get("execution", {}))
+    execution["degraded"] = True
+    execution["degraded_reasons"] = _append_unique(
+        execution.get("degraded_reasons", []), normalized_reasons
     )
+    execution["terminal_status"] = "failed"
+    session.metadata["analysis"] = analysis
+    session.metadata["execution"] = execution
+    session.completed_at = datetime.now(UTC)
+    return session
 
 
 def materialize_failure_result(
@@ -268,12 +328,22 @@ def materialize_failure_result(
     session_id: str | None,
     failure_reasons: list[str],
     session_store: SessionStore | None = None,
+    preserved_session: ResearchSession | None = None,
+    recovery_state: ResearchResumeState | None = None,
 ) -> ResearchRunResult:
     """Always return an in-memory report and persist it on a best-effort basis."""
+    store = session_store or SessionStore()
+    if preserved_session is None and session_id is not None:
+        try:
+            preserved_session = store.load_session(session_id)
+        except Exception:  # pragma: no cover - corrupt persistence boundary
+            logger.exception("Unable to load partial session %s", session_id)
     session = build_failed_research_session(
         request,
         session_id=session_id,
         failure_reasons=failure_reasons,
+        preserved_session=preserved_session,
+        recovery_state=recovery_state,
     )
     reporter = FailureReportGenerator()
     analysis = session.metadata["analysis"]
@@ -287,7 +357,6 @@ def materialize_failure_result(
 
     warnings: list[str] = []
     artifacts: list[ResearchRunArtifact] = []
-    store = session_store or SessionStore()
     try:
         session_path = store.save_session(session)
         artifacts.append(

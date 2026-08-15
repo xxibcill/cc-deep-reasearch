@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from cc_deep_research.llm.runtime_context import llm_request_scope
+from cc_deep_research.models import ResearchSession
 from cc_deep_research.research_runs.jobs import ResearchRunJob
 from cc_deep_research.research_runs.models import (
     ResearchOutputFormat,
@@ -179,6 +180,9 @@ def _materialize_terminal_failure(
     service: Any,
     job: ResearchRunJob,
     failure_reasons: list[str],
+    *,
+    preserved_session: ResearchSession | None = None,
+    recovery_state: ResearchResumeState | None = None,
 ) -> ResearchRunResult:
     """Create a dependency-free final report after execution recovery is exhausted."""
     custom_materializer = getattr(service, "materialize_failure_result", None)
@@ -200,6 +204,8 @@ def _materialize_terminal_failure(
         job.request,
         session_id=job.session_id,
         failure_reasons=failure_reasons,
+        preserved_session=preserved_session,
+        recovery_state=recovery_state,
     )
 
 
@@ -231,6 +237,8 @@ async def _execute_with_automatic_recovery(
     attempts: list[RecoveryAttempt] = []
     failure_reasons: list[str] = []
     initial_exception: Exception | None = None
+    partial_session: ResearchSession | None = None
+    recovery_evidence = resume_state
 
     try:
         initial_result = await _execute_service_attempt(
@@ -252,6 +260,7 @@ async def _execute_with_automatic_recovery(
                 service,
                 job,
                 failure_reasons,
+                recovery_state=recovery_evidence,
             )
             return await _finalize_recovery(
                 failed_result,
@@ -261,6 +270,7 @@ async def _execute_with_automatic_recovery(
     else:
         if not is_terminal_failure(initial_result):
             return initial_result
+        partial_session = initial_result.session
         failure_reasons.append("Initial execution returned terminal status 'failed'.")
 
     if initial_exception is not None:
@@ -282,6 +292,7 @@ async def _execute_with_automatic_recovery(
                 )
 
         if checkpoint is not None:
+            recovery_evidence = checkpoint.state
             _raise_if_run_cancelled(job)
             logger.info(
                 "Automatically resuming research run %s from checkpoint %s",
@@ -313,6 +324,7 @@ async def _execute_with_automatic_recovery(
                 )
             else:
                 if is_terminal_failure(checkpoint_result):
+                    partial_session = checkpoint_result.session
                     reason = "Checkpoint resume returned terminal status 'failed'."
                     failure_reasons.append(reason)
                     attempts.append(
@@ -374,6 +386,8 @@ async def _execute_with_automatic_recovery(
             service,
             job,
             failure_reasons,
+            preserved_session=partial_session,
+            recovery_state=recovery_evidence,
         )
         return await _finalize_recovery(
             failed_result,
