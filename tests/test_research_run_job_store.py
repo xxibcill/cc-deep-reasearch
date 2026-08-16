@@ -72,6 +72,34 @@ def test_persistent_registry_retains_failed_report_metadata(tmp_path) -> None:
     }
 
 
+def test_completed_and_failed_jobs_serialize_results_consistently(tmp_path) -> None:
+    """A terminal result should have one durable metadata shape in every state."""
+    registry = PersistentResearchRunJobRegistry(
+        store=ResearchRunJobStore(tmp_path / "runs")
+    )
+    request = ResearchRunRequest(query="consistent result metadata")
+    completed = registry.create_job(request)
+    failed = registry.create_job(request)
+    result = ResearchRunResult(
+        session=ResearchSession(session_id="shared-result", query=request.query),
+        report=ResearchRunReport(
+            format=ResearchOutputFormat.MARKDOWN,
+            content="# Shared result",
+            media_type="text/markdown",
+        ),
+    )
+
+    registry.mark_completed(completed.run_id, result=result)
+    registry.mark_failed(failed.run_id, error="terminal failure", result=result)
+
+    assert completed.result_metadata == failed.result_metadata == {
+        "session_id": "shared-result",
+        "report_format": "markdown",
+        "report_path": None,
+        "artifacts": [],
+    }
+
+
 def test_registry_recovers_process_interrupted_job_as_failed(tmp_path) -> None:
     path = tmp_path / "runs"
     registry = PersistentResearchRunJobRegistry(store=ResearchRunJobStore(path))

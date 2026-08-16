@@ -26,6 +26,23 @@ RESTART_INTERRUPTED_ERROR = (
 OPERATOR_CANCELLED_ERROR = "Research run was cancelled by the operator."
 
 
+def _serialize_result_metadata(result: ResearchRunResult) -> dict[str, Any]:
+    """Return the durable subset of a terminal research result."""
+    return {
+        "session_id": result.session_id,
+        "report_format": result.report.format.value,
+        "report_path": str(result.report.path) if result.report.path else None,
+        "artifacts": [
+            {
+                "kind": artifact.kind.value,
+                "path": str(artifact.path),
+                "media_type": artifact.media_type,
+            }
+            for artifact in result.artifacts
+        ],
+    }
+
+
 def _default_research_runs_dir() -> Path:
     """Return the durable store for browser-started research jobs."""
     return get_default_config_path().parent / "research-runs"
@@ -330,19 +347,7 @@ class ResearchRunJobRegistry:
             job.status = ResearchRunStatus.COMPLETED
             job.shutdown_requested = False
             job.result = result
-            job.result_metadata = {
-                "session_id": result.session_id,
-                "report_format": result.report.format.value,
-                "report_path": str(result.report.path) if result.report.path else None,
-                "artifacts": [
-                    {
-                        "kind": artifact.kind.value,
-                        "path": str(artifact.path),
-                        "media_type": artifact.media_type,
-                    }
-                    for artifact in result.artifacts
-                ],
-            }
+            job.result_metadata = _serialize_result_metadata(result)
             job.session_id = result.session_id
             job.error = None
             job.completed_at = datetime.now(UTC)
@@ -365,19 +370,7 @@ class ResearchRunJobRegistry:
             job.shutdown_requested = False
             job.result = result
             job.result_metadata = (
-                {
-                    "session_id": result.session_id,
-                    "report_format": result.report.format.value,
-                    "report_path": str(result.report.path) if result.report.path else None,
-                    "artifacts": [
-                        {
-                            "kind": artifact.kind.value,
-                            "path": str(artifact.path),
-                            "media_type": artifact.media_type,
-                        }
-                        for artifact in result.artifacts
-                    ],
-                }
+                _serialize_result_metadata(result)
                 if result is not None
                 else None
             )
