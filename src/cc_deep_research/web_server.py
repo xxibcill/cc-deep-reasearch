@@ -38,6 +38,9 @@ from cc_deep_research.research_runs.jobs import (
     PersistentResearchRunJobRegistry,
     ResearchRunJobRegistry,
 )
+from cc_deep_research.research_runs.recovery_scheduler import (
+    queue_interrupted_research_run_recoveries,
+)
 from cc_deep_research.research_runs.service import ResearchRunService
 from cc_deep_research.web_runtime import (
     get_background_job_registry,
@@ -57,9 +60,6 @@ from cc_deep_research.web_server_routes.codex_auth_routes import (
     resolve_dashboard_cors_origins,
 )
 from cc_deep_research.web_server_routes.operations_routes import register_operations_routes
-from cc_deep_research.web_server_routes.research_run_routes import (
-    queue_interrupted_research_run_recoveries,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +143,9 @@ def create_app(
         config = load_config()
         interval_hours = getattr(config.content_gen, "maintenance_interval_hours", 0.0)
         if interval_hours > 0:
-            maintenance_scheduler = MaintenanceScheduler(config=config, interval_hours=interval_hours)
+            maintenance_scheduler = MaintenanceScheduler(
+                config=config, interval_hours=interval_hours
+            )
             app.state.dashboard_runtime.maintenance_scheduler = maintenance_scheduler
     except Exception:
         logger.exception("Failed to initialize maintenance scheduler")

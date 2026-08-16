@@ -361,9 +361,7 @@ def test_terminal_provider_failure_retries_with_alternate_execution(
     assert job is not None and job.result is not None
     recovery = job.result.session.metadata["execution"]["automatic_recovery"]
     assert recovery["succeeded"] is True
-    assert [attempt["strategy"] for attempt in recovery["attempts"]] == [
-        "alternate_execution"
-    ]
+    assert [attempt["strategy"] for attempt in recovery["attempts"]] == ["alternate_execution"]
 
 
 def test_terminal_alternate_failure_preserves_earlier_evidence(
@@ -475,7 +473,7 @@ def test_transient_exception_automatically_resumes_latest_checkpoint(
         CheckpointRecoveryService,
     )
     monkeypatch.setattr(
-        "cc_deep_research.web_server_routes.research_run_routes.load_latest_recovery_checkpoint",
+        "cc_deep_research.research_runs.recovery_controller.load_latest_recovery_checkpoint",
         lambda session_id: SimpleNamespace(
             checkpoint_id="cp-safe",
             state=resume_state,
@@ -534,7 +532,7 @@ def test_backend_restart_automatically_queues_latest_checkpoint(
         RestartRecoveryService,
     )
     monkeypatch.setattr(
-        "cc_deep_research.web_server_routes.research_run_routes.load_latest_recovery_checkpoint",
+        "cc_deep_research.research_runs.recovery_scheduler.load_latest_recovery_checkpoint",
         lambda session_id: SimpleNamespace(
             checkpoint_id="cp-restart",
             state=resume_state,
@@ -575,7 +573,7 @@ def test_backend_restart_without_checkpoint_materializes_failure_report(
     restored_registry = PersistentResearchRunJobRegistry(store=store)
 
     monkeypatch.setattr(
-        "cc_deep_research.web_server_routes.research_run_routes.load_latest_recovery_checkpoint",
+        "cc_deep_research.research_runs.recovery_scheduler.load_latest_recovery_checkpoint",
         lambda _session_id: None,
     )
 
@@ -726,7 +724,7 @@ def test_automatic_recovery_is_bounded_before_failure_report(
         ExhaustedRecoveryService,
     )
     monkeypatch.setattr(
-        "cc_deep_research.web_server_routes.research_run_routes.load_latest_recovery_checkpoint",
+        "cc_deep_research.research_runs.recovery_controller.load_latest_recovery_checkpoint",
         lambda session_id: SimpleNamespace(
             checkpoint_id="cp-safe",
             state=resume_state,
