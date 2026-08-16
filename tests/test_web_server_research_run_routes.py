@@ -500,6 +500,31 @@ def test_backend_restart_automatically_queues_latest_checkpoint(
     assert recovered.resumed_from_checkpoint_id == "cp-restart"
 
 
+def test_backend_restart_without_checkpoint_materializes_failure_report(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An interrupted job without a checkpoint should still expose a final report."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    store = ResearchRunJobStore(tmp_path / "runs")
+    original_registry = PersistentResearchRunJobRegistry(store=store)
+    original = original_registry.create_job(ResearchRunRequest(query="restart without checkpoint"))
+    original_registry.mark_running(original.run_id, session_id="restart-no-checkpoint")
+    restored_registry = PersistentResearchRunJobRegistry(store=store)
+
+    monkeypatch.setattr(
+        "cc_deep_research.web_server_routes.research_run_routes.load_latest_recovery_checkpoint",
+        lambda _session_id: None,
+    )
+
+    with TestClient(create_app(job_registry=restored_registry)) as client:
+        payload = client.get(f"/api/research-runs/{original.run_id}").json()
+
+    assert payload["status"] == "failed"
+    assert payload["session_id"] == "restart-no-checkpoint"
+    assert payload["result"]["session_id"] == "restart-no-checkpoint"
+    assert payload["result"]["artifacts"]
+
+
 def test_non_retriable_failure_still_materializes_final_report(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
