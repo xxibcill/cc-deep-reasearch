@@ -657,16 +657,23 @@ def register_research_run_routes(app: FastAPI) -> None:
                 status_code=404,
             )
 
+        requested_job = job
+        recovery_job = job_registry.latest_recovery_descendant(run_id)
+        if recovery_job is not None:
+            job = recovery_job
+
         response: dict = {
-            "run_id": job.run_id,
+            "run_id": requested_job.run_id,
             "status": job.status.value,
-            "created_at": job.created_at.isoformat(),
+            "created_at": requested_job.created_at.isoformat(),
             "stop_requested": job.stop_requested,
             "original_run_id": job.original_run_id,
             "original_session_id": job.original_session_id,
             "resumed_from_checkpoint_id": job.resumed_from_checkpoint_id,
             "resume_attempt": job.resume_attempt,
         }
+        if recovery_job is not None:
+            response["recovery_run_id"] = recovery_job.run_id
 
         if job.session_id:
             response["session_id"] = job.session_id

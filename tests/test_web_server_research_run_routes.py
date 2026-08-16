@@ -19,6 +19,7 @@ from cc_deep_research.research_runs import (
 )
 from cc_deep_research.research_runs.jobs import (
     PersistentResearchRunJobRegistry,
+    ResearchRunJobRegistry,
     ResearchRunJobStore,
 )
 from cc_deep_research.web_server import (
@@ -523,6 +524,37 @@ def test_backend_restart_without_checkpoint_materializes_failure_report(
     assert payload["session_id"] == "restart-no-checkpoint"
     assert payload["result"]["session_id"] == "restart-no-checkpoint"
     assert payload["result"]["artifacts"]
+
+
+def test_original_run_status_follows_latest_recovery_child(tmp_path) -> None:
+    """Polling the interrupted parent should expose its latest recovery result."""
+    registry = ResearchRunJobRegistry()
+    original = registry.create_job(ResearchRunRequest(query="follow automatic recovery"))
+    registry.mark_running(original.run_id, session_id="recovery-origin")
+    registry.mark_failed(original.run_id, error="backend restarted")
+    recovery = registry.create_resume_job(
+        original,
+        checkpoint_id="cp-recovery",
+        idempotency_key="automatic-recovery",
+    )
+    registry.mark_running(recovery.run_id)
+    registry.mark_completed(
+        recovery.run_id,
+        result=_result_for_status(
+            request=recovery.request,
+            session_id="recovery-complete",
+            terminal_status="completed",
+        ),
+    )
+
+    with TestClient(create_app(job_registry=registry)) as client:
+        payload = client.get(f"/api/research-runs/{original.run_id}").json()
+
+    assert payload["run_id"] == original.run_id
+    assert payload["recovery_run_id"] == recovery.run_id
+    assert payload["status"] == "completed"
+    assert payload["session_id"] == "recovery-complete"
+    assert payload["result"]["session_id"] == "recovery-complete"
 
 
 def test_non_retriable_failure_still_materializes_final_report(

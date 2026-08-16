@@ -174,6 +174,23 @@ class ResearchRunJobRegistry:
         matches = [job for job in self.list_jobs() if job.session_id == session_id]
         return matches[-1] if matches else None
 
+    def latest_recovery_descendant(self, run_id: str) -> ResearchRunJob | None:
+        """Return the newest child at the end of a run's recovery lineage."""
+        jobs = self.list_jobs()
+        current_run_id = run_id
+        latest: ResearchRunJob | None = None
+        visited = {run_id}
+
+        while True:
+            children = [job for job in jobs if job.original_run_id == current_run_id]
+            if not children:
+                return latest
+            latest = max(children, key=lambda job: (job.created_at, job.run_id))
+            if latest.run_id in visited:
+                return latest
+            visited.add(latest.run_id)
+            current_run_id = latest.run_id
+
     def create_resume_job_for_session(
         self,
         request: ResearchRunRequest,

@@ -377,6 +377,7 @@ export interface ResearchRunStatusResponse {
   stop_requested?: boolean;
   original_run_id?: string | null;
   original_session_id?: string | null;
+  recovery_run_id?: string | null;
   resumed_from_checkpoint_id?: string | null;
   resume_attempt?: number;
 }
