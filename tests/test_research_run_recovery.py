@@ -19,6 +19,7 @@ from cc_deep_research.research_runs.recovery import (
     materialize_failure_result,
     safe_failure_reason,
 )
+from cc_deep_research.research_runs.recovery_reports import RecoveryReportRenderer
 from cc_deep_research.research_runs.resume import ResearchResumeSnapshotError
 from cc_deep_research.session_store import SessionStore
 
@@ -69,6 +70,30 @@ def test_terminal_failure_materializes_and_caches_dependency_free_report(
     assert store.load_session(result.session_id) is not None
 
 
+def test_shared_recovery_renderer_supports_pipeline_and_terminal_failures() -> None:
+    """One dependency-free renderer should cover both recovery report paths."""
+    session = ResearchSession(session_id="shared-renderer", query="shared rendering")
+    renderer = RecoveryReportRenderer()
+
+    pipeline_markdown, pipeline_json = renderer.render(
+        ResearchOutputFormat.JSON,
+        session=session,
+        analysis={},
+        warning="Primary reporter failed.",
+    )
+    terminal_markdown, terminal_json = renderer.render(
+        ResearchOutputFormat.JSON,
+        session=session,
+        analysis={},
+        terminal_status="failed",
+    )
+
+    assert pipeline_markdown.startswith("# Recovery report: shared rendering")
+    assert '"warning": "Primary reporter failed."' in pipeline_json
+    assert terminal_markdown.startswith("# Recovery report: shared rendering")
+    assert '"terminal_status": "failed"' in terminal_json
+
+
 def test_terminal_failure_preserves_saved_session_evidence(tmp_path) -> None:
     store = SessionStore(tmp_path / "sessions")
     request = ResearchRunRequest(query="research with partial evidence")
@@ -101,9 +126,7 @@ def test_terminal_failure_preserves_saved_session_evidence(tmp_path) -> None:
 
     reloaded = store.load_session(partial_session.session_id)
     assert reloaded is not None
-    assert [source.url for source in result.session.sources] == [
-        "https://example.com/evidence"
-    ]
+    assert [source.url for source in result.session.sources] == ["https://example.com/evidence"]
     assert [source.url for source in reloaded.sources] == ["https://example.com/evidence"]
     assert result.session.metadata["analysis"]["key_findings"] == [
         "A partial finding survived the interrupted run."

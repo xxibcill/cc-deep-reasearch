@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +22,7 @@ from cc_deep_research.research_runs.models import (
     ResearchRunResult,
     ResearchWorkflow,
 )
+from cc_deep_research.research_runs.recovery_reports import RecoveryReportRenderer
 from cc_deep_research.research_runs.resume import (
     ResearchResumeSnapshotError,
     ResearchResumeState,
@@ -83,86 +82,7 @@ class RecoveryAttempt:
         return {key: value for key, value in asdict(self).items() if value is not None}
 
 
-class FailureReportGenerator:
-    """Dependency-free reporter used after every execution path has failed."""
-
-    def generate_markdown_report(
-        self,
-        session: ResearchSession,
-        analysis: dict[str, Any],
-    ) -> str:
-        """Build a transparent final report from the failed session payload."""
-        reasons = _execution_failure_reasons(session)
-        reason_lines = [f"- {reason}" for reason in reasons] or [
-            "- Research execution stopped before a validated result was available."
-        ]
-        finding_lines = [
-            f"- {_finding_text(finding)}"
-            for finding in analysis.get("key_findings", [])
-            if _finding_text(finding)
-        ] or ["- No findings were validated before execution stopped."]
-        source_lines = [
-            f"- [{source.title or source.url}]({source.url})"
-            + (f" — {source.snippet}" if source.snippet else "")
-            for source in session.sources
-        ] or ["- No usable source set was available for a final synthesis."]
-        return "\n".join(
-            [
-                f"# Recovery report: {session.query}",
-                "",
-                "> The research workflow did not complete successfully after bounded automatic "
-                "recovery. This report preserves the terminal state and limitations.",
-                "",
-                "## Execution Summary",
-                "",
-                *reason_lines,
-                "",
-                "## Key Findings",
-                "",
-                *finding_lines,
-                "",
-                "## Sources",
-                "",
-                *source_lines,
-                "",
-                "## Limitations",
-                "",
-                "- Do not treat this recovery report as a completed evidence review.",
-                "- Review the session telemetry and retry after correcting unavailable services "
-                "or invalid configuration.",
-                "",
-            ]
-        )
-
-    def generate_json_report(
-        self,
-        session: ResearchSession,
-        analysis: dict[str, Any],
-    ) -> str:
-        """Build the JSON representation of the terminal recovery state."""
-        return json.dumps(
-            {
-                "session_id": session.session_id,
-                "query": session.query,
-                "depth": session.depth.value,
-                "recovery_mode": True,
-                "terminal_status": "failed",
-                "failure_reasons": _execution_failure_reasons(session),
-                "analysis": analysis,
-                "sources": [source.model_dump(mode="json") for source in session.sources],
-            },
-            ensure_ascii=False,
-            indent=2,
-            default=str,
-        )
-
-    def render_html_report(self, markdown_report: str) -> str:
-        """Render recovery Markdown without optional report dependencies."""
-        return (
-            '<!doctype html><html><head><meta charset="utf-8">'
-            "<title>Research recovery report</title></head><body>"
-            f"<pre>{escape(markdown_report)}</pre></body></html>"
-        )
+FailureReportGenerator = RecoveryReportRenderer
 
 
 def is_terminal_failure(result: ResearchRunResult) -> bool:
@@ -298,18 +218,6 @@ def load_latest_recovery_checkpoint(
     return None
 
 
-def _finding_text(finding: Any) -> str:
-    """Return a compact display value for typed or serialized findings."""
-    if isinstance(finding, str):
-        return finding
-    if isinstance(finding, dict):
-        for key in ("finding", "claim", "summary", "text"):
-            value = finding.get(key)
-            if isinstance(value, str) and value:
-                return value
-    return str(finding) if finding is not None else ""
-
-
 def _append_unique(existing: Any, additions: list[str]) -> list[Any]:
     """Append strings to a possibly typed list without discarding prior entries."""
     values = list(existing) if isinstance(existing, list) else []
@@ -406,15 +314,14 @@ def materialize_failure_result(
         preserved_session=preserved_session,
         recovery_state=recovery_state,
     )
-    reporter = FailureReportGenerator()
+    reporter = RecoveryReportRenderer()
     analysis = session.metadata["analysis"]
-    markdown_report = reporter.generate_markdown_report(session, analysis)
-    if request.output_format == ResearchOutputFormat.JSON:
-        report_content = reporter.generate_json_report(session, analysis)
-    elif request.output_format == ResearchOutputFormat.HTML:
-        report_content = reporter.render_html_report(markdown_report)
-    else:
-        report_content = markdown_report
+    markdown_report, report_content = reporter.render(
+        request.output_format,
+        session=session,
+        analysis=analysis,
+        terminal_status="failed",
+    )
 
     warnings: list[str] = []
     artifacts: list[ResearchRunArtifact] = []
@@ -540,14 +447,6 @@ def _is_executable_checkpoint(candidate: Any) -> bool:
         and isinstance(metadata, dict)
         and metadata.get("execution_resume") is True
     )
-
-
-def _execution_failure_reasons(session: ResearchSession) -> list[str]:
-    """Read normalized failure reasons from session execution metadata."""
-    reasons = session.metadata.get("execution", {}).get("degraded_reasons", [])
-    if not isinstance(reasons, list):
-        return []
-    return [reason for reason in reasons if isinstance(reason, str)]
 
 
 def _media_type_for_format(output_format: ResearchOutputFormat) -> str:
