@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
+
+import pytest
 
 from cc_deep_research.models import ResearchSession
 from cc_deep_research.research_runs.jobs import (
@@ -81,6 +84,39 @@ def test_registry_recovers_process_interrupted_job_as_failed(tmp_path) -> None:
     assert restored_job is not None
     assert restored_job.status == ResearchRunStatus.FAILED
     assert "interrupted" in (restored_job.error or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_graceful_shutdown_interruption_remains_recoverable(tmp_path) -> None:
+    path = tmp_path / "runs"
+    registry = PersistentResearchRunJobRegistry(store=ResearchRunJobStore(path))
+    job = registry.create_job(ResearchRunRequest(query="resume after deploy"))
+    registry.mark_running(job.run_id, session_id="deploy-session")
+    task = asyncio.create_task(asyncio.sleep(60))
+    registry.attach_task(job.run_id, task)
+
+    await registry.interrupt_all_for_shutdown()
+
+    assert task.cancelled() is True
+    assert job.status == ResearchRunStatus.FAILED
+    restored = PersistentResearchRunJobRegistry(store=ResearchRunJobStore(path))
+    assert [candidate.run_id for candidate in restored.interrupted_restart_jobs()] == [job.run_id]
+
+
+def test_operator_stop_pending_during_crash_remains_cancelled(tmp_path) -> None:
+    path = tmp_path / "runs"
+    registry = PersistentResearchRunJobRegistry(store=ResearchRunJobStore(path))
+    job = registry.create_job(ResearchRunRequest(query="do not resume me"))
+    registry.mark_running(job.run_id, session_id="operator-stopped-session")
+    registry.request_cancel(job.run_id)
+
+    restored = PersistentResearchRunJobRegistry(store=ResearchRunJobStore(path))
+    restored_job = restored.get_job(job.run_id)
+
+    assert restored_job is not None
+    assert restored_job.status == ResearchRunStatus.CANCELLED
+    assert restored_job.stop_requested is True
+    assert restored.interrupted_restart_jobs() == []
 
 
 def test_resume_job_has_distinct_identity_and_lineage(tmp_path) -> None:

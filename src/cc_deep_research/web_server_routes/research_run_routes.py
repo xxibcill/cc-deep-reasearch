@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 def _raise_if_run_cancelled(job: ResearchRunJob) -> None:
     """Raise the shared cancellation error when a run stop has been requested."""
-    if job.stop_requested:
+    if job.stop_requested or job.shutdown_requested:
         raise ResearchRunCancelled(RUN_CANCELLED_MESSAGE)
 
 
@@ -469,11 +469,17 @@ async def _execute_research_run(
     except ResearchRunCancelled:
         if job.session_id:
             _interrupt_live_session(job.session_id)
-        job_registry.mark_cancelled(job.run_id, error=RUN_CANCELLED_MESSAGE)
+        if job.shutdown_requested:
+            job_registry.mark_restart_interrupted(job.run_id)
+        else:
+            job_registry.mark_cancelled(job.run_id, error=RUN_CANCELLED_MESSAGE)
     except asyncio.CancelledError:
         if job.session_id:
             _interrupt_live_session(job.session_id)
-        job_registry.mark_cancelled(job.run_id, error=RUN_CANCELLED_MESSAGE)
+        if job.shutdown_requested:
+            job_registry.mark_restart_interrupted(job.run_id)
+        else:
+            job_registry.mark_cancelled(job.run_id, error=RUN_CANCELLED_MESSAGE)
     except Exception as exc:
         logger.exception("Research run %s failed", job.run_id)
         failure_reasons = [safe_failure_reason("Recovery controller", exc)]

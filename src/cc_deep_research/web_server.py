@@ -84,7 +84,7 @@ class DashboardBackendRuntime:
 
     async def stop(self) -> None:
         """Stop shared infrastructure and cancel in-flight jobs."""
-        await self.jobs.cancel_all()
+        await self.jobs.interrupt_all_for_shutdown()
         await self.background_jobs.cancel_all()
         await self.pipeline_jobs.cancel_all()
         if self.maintenance_scheduler is not None:
