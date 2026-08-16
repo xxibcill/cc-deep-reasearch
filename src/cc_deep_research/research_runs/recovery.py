@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -71,15 +71,32 @@ class RecoveryCheckpoint:
 class RecoveryAttempt:
     """Durable summary of one bounded automatic recovery attempt."""
 
-    strategy: str
-    outcome: str
+    strategy: RecoveryStrategy
+    outcome: RecoveryOutcome
     session_id: str | None = None
     checkpoint_id: str | None = None
     reason: str | None = None
 
+    def __post_init__(self) -> None:
+        """Reject invalid states before they reach durable metadata."""
+        if not isinstance(self.strategy, RecoveryStrategy):
+            raise TypeError("strategy must be a RecoveryStrategy")
+        if not isinstance(self.outcome, RecoveryOutcome):
+            raise TypeError("outcome must be a RecoveryOutcome")
+
     def to_metadata(self) -> dict[str, Any]:
         """Return JSON-compatible session metadata."""
-        return {key: value for key, value in asdict(self).items() if value is not None}
+        metadata: dict[str, Any] = {
+            "strategy": self.strategy.value,
+            "outcome": self.outcome.value,
+        }
+        if self.session_id is not None:
+            metadata["session_id"] = self.session_id
+        if self.checkpoint_id is not None:
+            metadata["checkpoint_id"] = self.checkpoint_id
+        if self.reason is not None:
+            metadata["reason"] = self.reason
+        return metadata
 
 
 FailureReportGenerator = RecoveryReportRenderer

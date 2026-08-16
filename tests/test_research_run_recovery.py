@@ -13,6 +13,9 @@ from cc_deep_research.research_runs.models import (
     ResearchWorkflow,
 )
 from cc_deep_research.research_runs.recovery import (
+    RecoveryAttempt,
+    RecoveryOutcome,
+    RecoveryStrategy,
     build_alternate_recovery_request,
     is_terminal_failure,
     load_latest_recovery_checkpoint,
@@ -42,6 +45,29 @@ def test_alternate_request_switches_execution_path_without_mutating_original() -
     assert request.workflow == ResearchWorkflow.STAGED
     assert request.search_providers == ["tavily_basic"]
     assert request.concurrent_source_collection is True
+
+
+def test_recovery_attempt_requires_declared_strategy_and_outcome() -> None:
+    """Recovery provenance should reject misspelled states before persistence."""
+    attempt = RecoveryAttempt(
+        strategy=RecoveryStrategy.CHECKPOINT_RESUME,
+        outcome=RecoveryOutcome.COMPLETED,
+    )
+
+    assert attempt.to_metadata() == {
+        "strategy": "checkpoint_resume",
+        "outcome": "completed",
+    }
+    with pytest.raises(TypeError, match="RecoveryStrategy"):
+        RecoveryAttempt(
+            strategy="checkpoint-resume",  # type: ignore[arg-type]
+            outcome=RecoveryOutcome.COMPLETED,
+        )
+    with pytest.raises(TypeError, match="RecoveryOutcome"):
+        RecoveryAttempt(
+            strategy=RecoveryStrategy.CHECKPOINT_RESUME,
+            outcome="complete",  # type: ignore[arg-type]
+        )
 
 
 def test_terminal_failure_materializes_and_caches_dependency_free_report(
