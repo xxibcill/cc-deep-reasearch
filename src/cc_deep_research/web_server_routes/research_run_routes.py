@@ -33,6 +33,7 @@ from cc_deep_research.research_runs.recovery import (
     is_terminal_failure,
     load_latest_recovery_checkpoint,
     materialize_failure_result,
+    merge_research_session_evidence,
     safe_failure_reason,
 )
 from cc_deep_research.research_runs.resume import ResearchResumeState
@@ -324,7 +325,10 @@ async def _execute_with_automatic_recovery(
                 )
             else:
                 if is_terminal_failure(checkpoint_result):
-                    partial_session = checkpoint_result.session
+                    partial_session = merge_research_session_evidence(
+                        partial_session,
+                        checkpoint_result.session,
+                    )
                     reason = "Checkpoint resume returned terminal status 'failed'."
                     failure_reasons.append(reason)
                     attempts.append(
@@ -405,6 +409,22 @@ async def _execute_with_automatic_recovery(
                 session_id=alternate_result.session_id,
                 reason=reason,
             )
+        )
+        failed_result = await asyncio.to_thread(
+            _materialize_terminal_failure,
+            service,
+            job,
+            failure_reasons,
+            preserved_session=merge_research_session_evidence(
+                partial_session,
+                alternate_result.session,
+            ),
+            recovery_state=recovery_evidence,
+        )
+        return await _finalize_recovery(
+            failed_result,
+            attempts=attempts,
+            failure_reasons=failure_reasons,
         )
     else:
         attempts.append(

@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from cc_deep_research.models import ResearchSession
+from cc_deep_research.models import ResearchSession, SearchResultItem
 from cc_deep_research.research_runs import (
     ResearchOutputFormat,
     ResearchRunReport,
@@ -364,6 +364,68 @@ def test_terminal_provider_failure_retries_with_alternate_execution(
     assert [attempt["strategy"] for attempt in recovery["attempts"]] == [
         "alternate_execution"
     ]
+
+
+def test_terminal_alternate_failure_preserves_earlier_evidence(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A later empty failure must not discard sources from an earlier attempt."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    calls = 0
+
+    class TerminalAttemptsService:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def run(
+            self,
+            request: ResearchRunRequest,
+            *,
+            on_session_started=None,
+            **_kwargs,
+        ) -> ResearchRunResult:
+            nonlocal calls
+            calls += 1
+            session_id = f"terminal-attempt-{calls}"
+            if on_session_started is not None:
+                on_session_started(session_id)
+            result = _result_for_status(
+                request=request,
+                session_id=session_id,
+                terminal_status="failed",
+            )
+            if calls == 1:
+                result.session.sources = [
+                    SearchResultItem(
+                        title="Preserved evidence",
+                        url="https://evidence.example/source",
+                        snippet="Useful evidence collected before recovery.",
+                    )
+                ]
+            return result
+
+        def resume(self, *_args, **_kwargs) -> ResearchRunResult:
+            raise AssertionError("Terminal results should use alternate fresh execution")
+
+    monkeypatch.setattr(
+        "cc_deep_research.web_server.ResearchRunService",
+        TerminalAttemptsService,
+    )
+
+    app = create_app()
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/research-runs",
+            json={"query": "preserve evidence", "depth": "quick"},
+        )
+        payload = _wait_for_run_status(client, response.json()["run_id"], "failed")
+
+    job = get_job_registry(app).get_job(payload["run_id"])
+    assert job is not None and job.result is not None
+    assert [source.url for source in job.result.session.sources] == [
+        "https://evidence.example/source"
+    ]
+    assert "Preserved evidence" in job.result.report.content
 
 
 def test_transient_exception_automatically_resumes_latest_checkpoint(

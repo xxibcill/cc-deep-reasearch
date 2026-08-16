@@ -195,6 +195,53 @@ def safe_failure_reason(stage: str, error: Exception) -> str:
     return f"{stage} failed ({type(error).__name__})."
 
 
+def merge_research_session_evidence(
+    *sessions: ResearchSession | None,
+) -> ResearchSession | None:
+    """Merge evidence from bounded attempts while retaining the latest session identity."""
+    available = [session for session in sessions if session is not None]
+    if not available:
+        return None
+
+    merged = available[-1].model_copy(deep=True)
+    merged.sources = []
+    seen_urls: set[str] = set()
+    for session in available:
+        for source in session.sources:
+            if source.url in seen_urls:
+                continue
+            seen_urls.add(source.url)
+            merged.sources.append(source.model_copy(deep=True))
+
+    merged.searches = []
+    seen_searches: set[tuple[str, str, datetime]] = set()
+    for session in available:
+        for search in session.searches:
+            key = (search.query, search.provider, search.timestamp)
+            if key in seen_searches:
+                continue
+            seen_searches.add(key)
+            merged.searches.append(search.model_copy(deep=True))
+
+    analysis: dict[str, Any] = {}
+    for session in available:
+        for key, value in session.metadata.get("analysis", {}).items():
+            if isinstance(value, list):
+                current = analysis.get(key)
+                combined = list(current) if isinstance(current, list) else []
+                for item in value:
+                    if item not in combined:
+                        combined.append(item)
+                analysis[key] = combined
+            elif isinstance(value, dict) and isinstance(analysis.get(key), dict):
+                analysis[key] = {**analysis[key], **value}
+            else:
+                analysis[key] = value
+    if analysis:
+        merged.metadata["analysis"] = analysis
+    return merged
+
+
 def build_alternate_recovery_request(request: ResearchRunRequest) -> ResearchRunRequest:
     """Build a fresh request that exercises a distinct, lower-concurrency path."""
     configured_providers = set(request.search_providers or [])
