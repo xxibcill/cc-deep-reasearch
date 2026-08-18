@@ -61,11 +61,14 @@ export function useSessionRoute(routeId: string): SessionRouteState {
 
         setSessionSummary(response.session);
         setSessionError(null);
-        setRunStatus((current) => mergeRunStatus(current, toRunStatus(response.session)));
+        if (!isRunRoute) {
+          const sessionStatus = toRunStatus(response.session);
+          setRunStatus((current) => mergeRunStatus(current, sessionStatus));
 
-        if (isTerminalStatus(toRunStatus(response.session)) && intervalId) {
-          clearInterval(intervalId);
-          intervalId = null;
+          if (isTerminalStatus(sessionStatus) && intervalId) {
+            clearInterval(intervalId);
+            intervalId = null;
+          }
         }
       } catch (requestError) {
         if (!mounted) {
@@ -85,7 +88,7 @@ export function useSessionRoute(routeId: string): SessionRouteState {
         clearInterval(intervalId);
       }
     };
-  }, [sessionId]);
+  }, [isRunRoute, sessionId]);
 
   const handleRunStatusLoaded = useCallback(
     (status: ResearchRunStatusResponse) => {

@@ -409,6 +409,19 @@ class StubReportGenerator:
         return f"<html>{markdown_report}</html>"
 
 
+class FailingReportGenerator:
+    """Test double that simulates a complete report-pipeline outage."""
+
+    def generate_markdown_report(self, _session: ResearchSession, _analysis: dict) -> str:
+        raise RuntimeError("report pipeline unavailable")
+
+    def generate_json_report(self, _session: ResearchSession, _analysis: dict) -> str:
+        raise RuntimeError("report pipeline unavailable")
+
+    def render_html_report(self, _markdown_report: str) -> str:
+        raise RuntimeError("report pipeline unavailable")
+
+
 class StubPDFGenerator:
     """Test double for PDF output generation."""
 
@@ -495,7 +508,103 @@ class TestResearchRunOutputMaterialization:
             )
             == '{"report":"json"}'
         )
-        assert [artifact.kind for artifact in result.artifacts] == [ResearchArtifactKind.SESSION]
+        assert [artifact.kind for artifact in result.artifacts] == [
+            ResearchArtifactKind.SESSION,
+            ResearchArtifactKind.REPORT,
+        ]
+        assert result.artifacts[1].path.suffix == ".json"
+
+    def test_materialize_output_recovers_when_report_pipeline_fails(
+        self,
+        temp_session_dir: Path,
+        sample_session: ResearchSession,
+    ) -> None:
+        """A report-pipeline exception should still leave a cached final report."""
+        session_store = SessionStore(session_dir=temp_session_dir)
+
+        result = materialize_research_run_output(
+            session=sample_session,
+            config=Config(),
+            request=ResearchRunRequest(
+                query=sample_session.query,
+                output_format=ResearchOutputFormat.HTML,
+            ),
+            session_store=session_store,
+            reporter=FailingReportGenerator(),
+        )
+
+        assert result.report.path is None
+        assert "Recovery report" in result.report.content
+        assert result.warnings == [
+            "Report generation failed (RuntimeError); generated a recovery report from partial session data."
+        ]
+        assert session_store.load_report(
+            sample_session.session_id,
+            ResearchOutputFormat.HTML,
+        ) == result.report.content
+        assert "Recovery report" in (
+            session_store.load_report(
+                sample_session.session_id,
+                ResearchOutputFormat.MARKDOWN,
+            )
+            or ""
+        )
+        assert [artifact.kind for artifact in result.artifacts] == [
+            ResearchArtifactKind.SESSION,
+            ResearchArtifactKind.REPORT,
+        ]
+        assert result.artifacts[1].path.suffix == ".html"
+
+        loaded = session_store.load_session(sample_session.session_id)
+        assert loaded is not None
+        assert loaded.metadata["execution"]["degraded"] is True
+        assert result.warnings[0] in loaded.metadata["execution"]["degraded_reasons"]
+
+    def test_save_report_marks_cached_artifact_available(
+        self,
+        temp_session_dir: Path,
+    ) -> None:
+        """A cached report should be discoverable even when analysis is empty."""
+        session_store = SessionStore(session_dir=temp_session_dir)
+        session = ResearchSession(
+            session_id="cached-empty-analysis",
+            query="What could be recovered?",
+            depth=ResearchDepth.QUICK,
+            metadata={"analysis": {}},
+        )
+        session_store.save_session(session)
+
+        session_store.save_report(
+            session.session_id,
+            ResearchOutputFormat.MARKDOWN,
+            "# Recovery report",
+        )
+
+        assert session_store.report_exists(session.session_id) is True
+        assert session_store.list_sessions()[0]["has_report"] is True
+
+    def test_resaving_session_preserves_cached_report_availability(
+        self,
+        temp_session_dir: Path,
+    ) -> None:
+        """Final metadata persistence must not hide an already cached report."""
+        session_store = SessionStore(session_dir=temp_session_dir)
+        session = ResearchSession(
+            session_id="report-before-final-save",
+            query="Can the report marker survive?",
+            depth=ResearchDepth.QUICK,
+            metadata={"analysis": {}},
+        )
+        session_store.save_session(session)
+        session_store.save_report(
+            session.session_id,
+            ResearchOutputFormat.MARKDOWN,
+            "# Recovery report",
+        )
+
+        session_store.save_session(session)
+
+        assert session_store.list_sessions()[0]["has_report"] is True
 
     def test_deserialize_legacy_metadata_normalizes_contract(self) -> None:
         """Test that legacy session metadata is normalized when loaded."""

@@ -149,6 +149,17 @@ def _query_session_api_detail(
 ) -> dict[str, Any]:
     """Return session detail from live telemetry, or DuckDB when only historical data exists."""
     telemetry_dir = get_default_telemetry_dir()
+    store = SessionStore()
+    saved_session = store.load_session(session_id)
+    saved_payload = saved_session.model_dump(mode="json") if saved_session is not None else None
+    saved_metadata = saved_payload.get("metadata", {}) if saved_payload is not None else {}
+    saved_has_report = bool(
+        saved_payload is not None
+        and (
+            store.report_exists(session_id)
+            or (isinstance(saved_metadata, dict) and saved_metadata.get("analysis"))
+        )
+    )
     live_detail = query_live_session_detail(
         session_id,
         base_dir=telemetry_dir,
@@ -160,7 +171,33 @@ def _query_session_api_detail(
         include_derived=include_derived,
     )
     if live_detail["session"]:
-        live_detail["session"] = _normalize_live_session_state(live_detail["session"])
+        live_session = _normalize_live_session_state(live_detail["session"])
+        live_session.update(
+            {
+                "has_session_payload": saved_payload is not None,
+                "has_report": saved_has_report,
+            }
+        )
+        if saved_payload is not None:
+            query = _normalize_optional_string(saved_payload.get("query"))
+            live_session.update(
+                {
+                    "label": _build_session_list_label(
+                        session_id=session_id,
+                        query=query,
+                        active=bool(live_session.get("active")),
+                    ),
+                    "query": query,
+                    "depth": _normalize_optional_string(saved_payload.get("depth")),
+                    "completed_at": serialize_timestamp(saved_payload.get("completed_at")),
+                }
+            )
+            telemetry_summary = live_detail.get("summary")
+            live_detail["summary"] = {
+                **(telemetry_summary if isinstance(telemetry_summary, dict) else {}),
+                **saved_payload,
+            }
+        live_detail["session"] = live_session
         return live_detail
 
     historical = query_session_detail(
@@ -173,13 +210,53 @@ def _query_session_api_detail(
     )
     session_data = historical.get("session")
     if session_data is None:
-        return live_detail
+        if saved_payload is None:
+            return live_detail
+        execution = saved_metadata.get("execution", {})
+        terminal_status = (
+            execution.get("terminal_status") if isinstance(execution, dict) else None
+        )
+        saved_view = {
+            **saved_payload,
+            "total_sources": len(saved_payload.get("sources", [])),
+            "has_session_payload": True,
+            "has_report": saved_has_report,
+        }
+        session = _build_session_list_row(
+            session_id=session_id,
+            status=terminal_status,
+            active=False,
+            event_count=0,
+            saved=saved_view,
+        )
+        empty_page = {
+            "events": [],
+            "total": 0,
+            "has_more": False,
+            "next_cursor": None,
+            "prev_cursor": None,
+        }
+        return {
+            **live_detail,
+            "session": session,
+            "summary": saved_payload,
+            "events": [],
+            "event_tail": [],
+            "events_page": empty_page,
+            "agent_timeline": [],
+            "decision_graph": empty_decision_graph(),
+        }
 
     events = historical.get("events", [])
-    saved_session = SessionStore().load_session(session_id)
-    summary = saved_session.model_dump(mode="json") if saved_session is not None else None
+    summary = saved_payload
+    query = _normalize_optional_string(saved_payload.get("query")) if saved_payload else None
     session = {
         "session_id": session_data.get("session_id"),
+        "label": _build_session_list_label(
+            session_id=session_id,
+            query=query,
+            active=False,
+        ),
         "created_at": session_data.get("created_at"),
         "status": session_data.get("status"),
         "total_time_ms": session_data.get("total_time_ms"),
@@ -187,6 +264,13 @@ def _query_session_api_detail(
         "active": False,
         "event_count": len(events),
         "last_event_at": events[-1].get("timestamp") if events else None,
+        "query": query,
+        "depth": _normalize_optional_string(saved_payload.get("depth")) if saved_payload else None,
+        "completed_at": (
+            serialize_timestamp(saved_payload.get("completed_at")) if saved_payload else None
+        ),
+        "has_session_payload": saved_payload is not None,
+        "has_report": saved_has_report,
     }
     return {
         "session": session,

@@ -33,6 +33,18 @@ _REPORTER_AGENT_ID = "reporter"
 _REPORT_QUALITY_EVALUATOR_AGENT_ID = "report_quality_evaluator"
 
 
+def record_report_degradation(session: ResearchSession, message: str) -> None:
+    """Record a recoverable report-stage failure on the durable session."""
+    execution = session.metadata.setdefault("execution", {})
+    execution["degraded"] = True
+    reasons = execution.setdefault("degraded_reasons", [])
+    if not isinstance(reasons, list):
+        reasons = []
+        execution["degraded_reasons"] = reasons
+    if message not in reasons:
+        reasons.append(message)
+
+
 class ReportGenerator:
     """Generates research reports in various formats.
 
@@ -107,33 +119,56 @@ class ReportGenerator:
         # Evaluate report quality (before post-validation)
         quality_result = ReportEvaluationResult(overall_quality_score=0.0, is_acceptable=True)
         if self._config.research.quality.enable_report_quality_evaluation:
-            quality_result = self._report_quality_evaluator.evaluate_report_quality_sync(
+            try:
+                quality_result = self._report_quality_evaluator.evaluate_report_quality_sync(
+                    markdown,
+                    session,
+                    analysis_result,
+                )
+            except Exception as error:
+                message = (
+                    "Report quality evaluation failed; deterministic report retained "
+                    f"({type(error).__name__})."
+                )
+                record_report_degradation(session, message)
+                logger.exception(message)
+            else:
+                logger.info(
+                    f"Report quality score: {quality_result.overall_quality_score:.2f} "
+                    f"(threshold: {self._config.research.quality.min_report_quality_score})"
+                )
+
+                if quality_result.critical_issues:
+                    logger.warning(
+                        "Report quality evaluation found %s critical issues",
+                        len(quality_result.critical_issues),
+                    )
+                    for issue in quality_result.critical_issues:
+                        logger.warning("  - %s", issue)
+
+                if quality_result.warnings:
+                    logger.info(
+                        "Report quality evaluation found %s warnings",
+                        len(quality_result.warnings),
+                    )
+                    for warning in quality_result.warnings[:3]:
+                        logger.info("  - %s", warning)
+
+        # Run post-validation (regex-based checks)
+        try:
+            validation_result = self._post_validator.validate_report(
                 markdown,
                 session,
                 analysis_result,
             )
-
-            logger.info(
-                f"Report quality score: {quality_result.overall_quality_score:.2f} "
-                f"(threshold: {self._config.research.quality.min_report_quality_score})"
+        except Exception as error:
+            message = (
+                "Report post-validation failed; generated report retained "
+                f"({type(error).__name__})."
             )
-
-            if quality_result.critical_issues:
-                logger.warning(
-                    f"Report quality evaluation found {len(quality_result.critical_issues)} critical issues"
-                )
-                for issue in quality_result.critical_issues:
-                    logger.warning(f"  - {issue}")
-
-            if quality_result.warnings:
-                logger.info(
-                    f"Report quality evaluation found {len(quality_result.warnings)} warnings"
-                )
-                for warning in quality_result.warnings[:3]:  # Log first 3 warnings
-                    logger.info(f"  - {warning}")
-
-        # Run post-validation (regex-based checks)
-        validation_result = self._post_validator.validate_report(markdown, session, analysis_result)
+            record_report_degradation(session, message)
+            logger.exception(message)
+            validation_result = {}
 
         if validation_result.get("issues"):
             logger.warning(
@@ -158,14 +193,32 @@ class ReportGenerator:
                     recommendations=validation_result.get("recommendations", []),
                 )
 
-                markdown = self._report_refiner.refine_report(
-                    original_markdown=markdown,
-                    validation_result=validation_result_typed,
-                    evaluation_result=quality_result,
-                    session=session,
-                    analysis=analysis_result,
-                )
-                logger.info("Report refinement pass completed")
+                try:
+                    refined_markdown = self._report_refiner.refine_report(
+                        original_markdown=markdown,
+                        validation_result=validation_result_typed,
+                        evaluation_result=quality_result,
+                        session=session,
+                        analysis=analysis_result,
+                    )
+                except Exception as error:
+                    message = (
+                        "Report refinement failed; pre-refinement report retained "
+                        f"({type(error).__name__})."
+                    )
+                    record_report_degradation(session, message)
+                    logger.exception(message)
+                else:
+                    if self._preserves_report_structure(refined_markdown, markdown):
+                        markdown = refined_markdown
+                        logger.info("Report refinement pass completed")
+                    else:
+                        message = (
+                            "Report refinement returned an invalid structure; "
+                            "pre-refinement report retained."
+                        )
+                        record_report_degradation(session, message)
+                        logger.warning(message)
 
         self._update_session_route_metadata(session)
         return markdown
@@ -178,8 +231,13 @@ class ReportGenerator:
         """Rewrite the canonical report through its route, with a safe fallback."""
         try:
             response = self._execute_reporter_route(session, deterministic_markdown)
-        except Exception:
+        except Exception as error:
             logger.exception("Routed report generation failed; using deterministic report")
+            record_report_degradation(
+                session,
+                "Routed report generation failed; deterministic report retained "
+                f"({type(error).__name__}).",
+            )
             self._update_reporter_route_metadata(session, None)
             return deterministic_markdown
 
@@ -190,6 +248,10 @@ class ReportGenerator:
         if not self._preserves_report_structure(candidate, deterministic_markdown):
             logger.warning(
                 "Routed reporter returned an invalid report structure; using deterministic report"
+            )
+            record_report_degradation(
+                session,
+                "Routed reporter returned an invalid structure; deterministic report retained.",
             )
             self._update_reporter_route_metadata(session, None)
             return deterministic_markdown
@@ -501,6 +563,7 @@ def format_sources_list(sources: list[Any]) -> str:
 
 __all__ = [
     "ReportGenerator",
+    "record_report_degradation",
     "format_citation",
     "generate_executive_summary",
     "format_sources_list",

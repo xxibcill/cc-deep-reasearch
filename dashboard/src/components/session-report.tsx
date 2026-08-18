@@ -23,6 +23,8 @@ import type {
   SessionReportResponse,
 } from '@/types/telemetry';
 
+import styles from './session-report.module.css';
+
 interface SessionReportProps {
   sessionId: string;
   runStatus: ResearchRunStatus | null;
@@ -69,20 +71,41 @@ function renderReportContent(
 
   if (selectedFormat === 'html') {
     return (
-      <div
-        className="prose prose-invert max-w-none prose-headings:text-foreground prose-a:text-primary prose-strong:text-foreground"
-        dangerouslySetInnerHTML={{ __html: report.content }}
+      <iframe
+        className={styles.htmlFrame}
+        referrerPolicy="no-referrer"
+        sandbox=""
+        srcDoc={report.content}
+        title="Standalone HTML report preview"
       />
     );
   }
 
   return (
-    <ReactMarkdown
-      className="prose prose-invert max-w-none prose-headings:text-foreground prose-a:text-primary prose-strong:text-foreground prose-pre:rounded-2xl"
-      remarkPlugins={[remarkGfm]}
-    >
-      {report.content}
-    </ReactMarkdown>
+    <article className={styles.document} data-testid="research-markdown-document">
+      <ReactMarkdown
+        components={{
+          a: ({ children, href, title }) => (
+            <a href={href} rel="noopener noreferrer" target="_blank" title={title}>
+              {children}
+            </a>
+          ),
+          table: ({ children }) => (
+            <div
+              aria-label="Scrollable report table"
+              className={styles.tableScroller}
+              role="region"
+              tabIndex={0}
+            >
+              <table>{children}</table>
+            </div>
+          ),
+        }}
+        remarkPlugins={[remarkGfm]}
+      >
+        {report.content}
+      </ReactMarkdown>
+    </article>
   );
 }
 
@@ -174,8 +197,6 @@ export function SessionReport({
     if (
       runStatus === 'queued' ||
       runStatus === 'running' ||
-      runStatus === 'failed' ||
-      runStatus === 'cancelled' ||
       hasReport === false ||
       selectedReport
     ) {
@@ -223,7 +244,7 @@ export function SessionReport({
     );
   }
 
-  if (runStatus === 'failed') {
+  if (runStatus === 'failed' && hasReport === false) {
     return (
       <ReportStateAlert
         body="No report is available because the run did not complete successfully."
@@ -234,7 +255,7 @@ export function SessionReport({
     );
   }
 
-  if (runStatus === 'cancelled') {
+  if (runStatus === 'cancelled' && hasReport === false) {
     return (
       <ReportStateAlert
         body="The session stopped before a final report artifact was produced."
@@ -268,6 +289,18 @@ export function SessionReport({
   return (
     <Card className="overflow-hidden border-border/70">
       <CardHeader className="gap-5 border-b border-border/60 bg-surface-raised/45">
+        {runStatus === 'failed' || runStatus === 'cancelled' ? (
+          <Alert className="flex items-start gap-3" variant="warning">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div className="space-y-1">
+              <AlertTitle>Partial report available</AlertTitle>
+              <AlertDescription>
+                The run ended with errors, but the evidence collected before the failure was
+                preserved in this report. Review its limitations before relying on the findings.
+              </AlertDescription>
+            </div>
+          </Alert>
+        ) : null}
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-sm text-primary">
@@ -329,7 +362,7 @@ export function SessionReport({
         </div>
       </CardHeader>
 
-      <CardContent className="min-h-[360px] p-6">
+      <CardContent className="min-h-[360px] p-4 sm:p-6 lg:p-10">
         {loadingFormat === selectedFormat && !selectedReport ? (
           <Alert className="flex min-h-[300px] items-center justify-center border-dashed" variant="default">
             <div className="flex flex-col items-center gap-4 text-center">

@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import logging
 
 from cc_deep_research.config import Config
 from cc_deep_research.models import ResearchSession
 from cc_deep_research.monitoring import ResearchMonitor
 from cc_deep_research.pdf_generator import PDFGenerationError, PDFGenerator
 from cc_deep_research.persistence import atomic_write_text
-from cc_deep_research.reporting import ReportGenerator
+from cc_deep_research.reporting import ReportGenerator, record_report_degradation
 from cc_deep_research.research_runs.models import (
     ResearchArtifactKind,
     ResearchOutputFormat,
@@ -18,14 +18,18 @@ from cc_deep_research.research_runs.models import (
     ResearchRunRequest,
     ResearchRunResult,
 )
+from cc_deep_research.research_runs.recovery_reports import RecoveryReportRenderer
 from cc_deep_research.session_store import SessionStore
 
 # Optional: knowledge vault ingest (non-fatal)
 try:
     from cc_deep_research.knowledge.ingest import ingest_session
+
     _KNOWLEDGE_AVAILABLE = True
 except Exception:
     _KNOWLEDGE_AVAILABLE = False
+
+logger = logging.getLogger(__name__)
 
 
 def materialize_research_run_output(
@@ -43,6 +47,7 @@ def materialize_research_run_output(
     report_generator = reporter or ReportGenerator(config, monitor=monitor)
     artifacts: list[ResearchRunArtifact] = []
     warnings: list[str] = []
+    initial_degradation_reasons = set(_degradation_reasons(session))
 
     session_path = store.save_session(session)
     artifacts.append(
@@ -56,30 +61,74 @@ def materialize_research_run_output(
 
     analysis = session.metadata.get("analysis", {})
     markdown_report: str | None = None
-    if request.output_format == ResearchOutputFormat.JSON:
-        report_content = report_generator.generate_json_report(session, analysis)
-    else:
-        markdown_report = report_generator.generate_markdown_report(session, analysis)
-        if request.output_format == ResearchOutputFormat.HTML:
-            report_content = report_generator.render_html_report(markdown_report)
+    try:
+        if request.output_format == ResearchOutputFormat.JSON:
+            report_content = report_generator.generate_json_report(session, analysis)
         else:
-            report_content = markdown_report
+            markdown_report = report_generator.generate_markdown_report(session, analysis)
+            if request.output_format == ResearchOutputFormat.HTML:
+                report_content = report_generator.render_html_report(markdown_report)
+            else:
+                report_content = markdown_report
+    except Exception as error:
+        logger.exception(
+            "Primary report generation failed for session %s; building recovery report",
+            session.session_id,
+        )
+        warning = (
+            f"Report generation failed ({type(error).__name__}); "
+            "generated a recovery report from partial session data."
+        )
+        record_report_degradation(session, warning)
+        markdown_report, report_content = RecoveryReportRenderer().render(
+            request.output_format,
+            session=session,
+            analysis=analysis,
+            warning=warning,
+        )
 
-    store.save_report(session.session_id, request.output_format, report_content)
+    current_degradation_reasons = _degradation_reasons(session)
+    warnings.extend(
+        reason
+        for reason in current_degradation_reasons
+        if isinstance(reason, str) and reason not in initial_degradation_reasons
+    )
+
+    cached_report_path = store.save_report(
+        session.session_id,
+        request.output_format,
+        report_content,
+    )
     if markdown_report is not None and request.output_format != ResearchOutputFormat.MARKDOWN:
         store.save_report(session.session_id, ResearchOutputFormat.MARKDOWN, markdown_report)
 
     report_path = request.output_path
+    artifact_path = cached_report_path
     if report_path is not None:
-        atomic_write_text(report_path, report_content)
-        artifacts.append(
-            ResearchRunArtifact(
-                kind=ResearchArtifactKind.REPORT,
-                path=report_path,
-                format=request.output_format.value,
-                media_type=_media_type_for_format(request.output_format),
+        try:
+            atomic_write_text(report_path, report_content)
+        except OSError as error:
+            logger.warning(
+                "Unable to write requested report path for session %s: %s",
+                session.session_id,
+                type(error).__name__,
             )
+            warnings.append(
+                "Failed to write the requested report path; cached report retained "
+                f"({type(error).__name__})."
+            )
+            report_path = None
+        else:
+            artifact_path = report_path
+
+    artifacts.append(
+        ResearchRunArtifact(
+            kind=ResearchArtifactKind.REPORT,
+            path=artifact_path,
+            format=request.output_format.value,
+            media_type=_media_type_for_format(request.output_format),
         )
+    )
 
     if request.pdf_enabled:
         try:
@@ -87,7 +136,7 @@ def materialize_research_run_output(
             if markdown_report is None:
                 markdown_report = report_generator.generate_markdown_report(session, analysis)
             html_report = report_generator.render_html_report(markdown_report)
-            pdf_path = report_path.with_suffix(".pdf") if report_path else Path("research_report.pdf")
+            pdf_path = (report_path or cached_report_path).with_suffix(".pdf")
             generator.generate_pdf_from_html(html_report, pdf_path)
             artifacts.append(
                 ResearchRunArtifact(
@@ -111,6 +160,15 @@ def materialize_research_run_output(
         except Exception as exc:
             warnings.append(f"[knowledge] ingest failed: {exc}")
 
+    try:
+        store.save_session(session)
+    except Exception as error:  # pragma: no cover - persistence boundary
+        logger.exception("Unable to persist final metadata for session %s", session.session_id)
+        warnings.append(
+            "Failed to persist final report metadata; report cache remains available "
+            f"({type(error).__name__})."
+        )
+
     return ResearchRunResult(
         session=session,
         report=ResearchRunReport(
@@ -122,6 +180,14 @@ def materialize_research_run_output(
         artifacts=artifacts,
         warnings=warnings,
     )
+
+
+def _degradation_reasons(session: ResearchSession) -> list[str]:
+    """Return normalized durable degradation reasons for one session."""
+    reasons = session.metadata.get("execution", {}).get("degraded_reasons", [])
+    if not isinstance(reasons, list):
+        return []
+    return [reason for reason in reasons if isinstance(reason, str)]
 
 
 def _media_type_for_format(output_format: ResearchOutputFormat) -> str:

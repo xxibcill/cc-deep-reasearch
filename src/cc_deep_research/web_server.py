@@ -38,6 +38,9 @@ from cc_deep_research.research_runs.jobs import (
     PersistentResearchRunJobRegistry,
     ResearchRunJobRegistry,
 )
+from cc_deep_research.research_runs.recovery_scheduler import (
+    queue_interrupted_research_run_recoveries,
+)
 from cc_deep_research.research_runs.service import ResearchRunService
 from cc_deep_research.web_runtime import (
     get_background_job_registry,
@@ -81,7 +84,7 @@ class DashboardBackendRuntime:
 
     async def stop(self) -> None:
         """Stop shared infrastructure and cancel in-flight jobs."""
-        await self.jobs.cancel_all()
+        await self.jobs.interrupt_all_for_shutdown()
         await self.background_jobs.cancel_all()
         await self.pipeline_jobs.cancel_all()
         if self.maintenance_scheduler is not None:
@@ -96,6 +99,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     runtime = get_backend_runtime(app)
     try:
         await runtime.start()
+        await queue_interrupted_research_run_recoveries(app)
         yield
     finally:
         await runtime.stop()
@@ -139,7 +143,9 @@ def create_app(
         config = load_config()
         interval_hours = getattr(config.content_gen, "maintenance_interval_hours", 0.0)
         if interval_hours > 0:
-            maintenance_scheduler = MaintenanceScheduler(config=config, interval_hours=interval_hours)
+            maintenance_scheduler = MaintenanceScheduler(
+                config=config, interval_hours=interval_hours
+            )
             app.state.dashboard_runtime.maintenance_scheduler = maintenance_scheduler
     except Exception:
         logger.exception("Failed to initialize maintenance scheduler")

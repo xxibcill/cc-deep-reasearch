@@ -19,6 +19,29 @@ from cc_deep_research.research_runs.models import (
     ResearchRunStatus,
 )
 
+RESTART_INTERRUPTED_ERROR = (
+    "Research run was interrupted by a backend restart. "
+    "Resume from the latest valid checkpoint."
+)
+OPERATOR_CANCELLED_ERROR = "Research run was cancelled by the operator."
+
+
+def _serialize_result_metadata(result: ResearchRunResult) -> dict[str, Any]:
+    """Return the durable subset of a terminal research result."""
+    return {
+        "session_id": result.session_id,
+        "report_format": result.report.format.value,
+        "report_path": str(result.report.path) if result.report.path else None,
+        "artifacts": [
+            {
+                "kind": artifact.kind.value,
+                "path": str(artifact.path),
+                "media_type": artifact.media_type,
+            }
+            for artifact in result.artifacts
+        ],
+    }
+
 
 def _default_research_runs_dir() -> Path:
     """Return the durable store for browser-started research jobs."""
@@ -46,6 +69,7 @@ class ResearchRunJob:
     started_at: datetime | None = None
     completed_at: datetime | None = None
     cancel_requested: threading.Event = field(default_factory=threading.Event, repr=False)
+    shutdown_requested: bool = False
 
     @property
     def is_active(self) -> bool:
@@ -174,6 +198,23 @@ class ResearchRunJobRegistry:
         matches = [job for job in self.list_jobs() if job.session_id == session_id]
         return matches[-1] if matches else None
 
+    def latest_recovery_descendant(self, run_id: str) -> ResearchRunJob | None:
+        """Return the newest child at the end of a run's recovery lineage."""
+        jobs = self.list_jobs()
+        current_run_id = run_id
+        latest: ResearchRunJob | None = None
+        visited = {run_id}
+
+        while True:
+            children = [job for job in jobs if job.original_run_id == current_run_id]
+            if not children:
+                return latest
+            latest = max(children, key=lambda job: (job.created_at, job.run_id))
+            if latest.run_id in visited:
+                return latest
+            visited.add(latest.run_id)
+            current_run_id = latest.run_id
+
     def create_resume_job_for_session(
         self,
         request: ResearchRunRequest,
@@ -246,6 +287,10 @@ class ResearchRunJobRegistry:
         """Return completed and failed jobs."""
         return [job for job in self.list_jobs() if not job.is_active]
 
+    def interrupted_restart_jobs(self) -> list[ResearchRunJob]:
+        """Return jobs that need automatic recovery after a process restart."""
+        return []
+
     def attach_task(
         self,
         run_id: str,
@@ -300,20 +345,9 @@ class ResearchRunJobRegistry:
             if job.status == ResearchRunStatus.CANCELLED:
                 return job
             job.status = ResearchRunStatus.COMPLETED
+            job.shutdown_requested = False
             job.result = result
-            job.result_metadata = {
-                "session_id": result.session_id,
-                "report_format": result.report.format.value,
-                "report_path": str(result.report.path) if result.report.path else None,
-                "artifacts": [
-                    {
-                        "kind": artifact.kind.value,
-                        "path": str(artifact.path),
-                        "media_type": artifact.media_type,
-                    }
-                    for artifact in result.artifacts
-                ],
-            }
+            job.result_metadata = _serialize_result_metadata(result)
             job.session_id = result.session_id
             job.error = None
             job.completed_at = datetime.now(UTC)
@@ -325,14 +359,23 @@ class ResearchRunJobRegistry:
         run_id: str,
         *,
         error: str,
+        result: ResearchRunResult | None = None,
     ) -> ResearchRunJob:
-        """Record a failed run with a safe error message."""
+        """Record a failed run and retain any terminal recovery report."""
         job = self._require_job(run_id)
         with self._lock:
             if job.status == ResearchRunStatus.CANCELLED:
                 return job
             job.status = ResearchRunStatus.FAILED
-            job.result = None
+            job.shutdown_requested = False
+            job.result = result
+            job.result_metadata = (
+                _serialize_result_metadata(result)
+                if result is not None
+                else None
+            )
+            if result is not None:
+                job.session_id = result.session_id
             job.error = error
             job.completed_at = datetime.now(UTC)
         self._job_changed(job)
@@ -341,7 +384,9 @@ class ResearchRunJobRegistry:
     def request_cancel(self, run_id: str) -> ResearchRunJob:
         """Record an operator stop request for a run."""
         job = self._require_job(run_id)
-        job.cancel_requested.set()
+        with self._lock:
+            job.shutdown_requested = False
+            job.cancel_requested.set()
         self._job_changed(job)
         return job
 
@@ -349,12 +394,13 @@ class ResearchRunJobRegistry:
         self,
         run_id: str,
         *,
-        error: str = "Research run was cancelled by the operator.",
+        error: str = OPERATOR_CANCELLED_ERROR,
     ) -> ResearchRunJob:
         """Store a terminal cancelled state for a run."""
         job = self._require_job(run_id)
         with self._lock:
             job.cancel_requested.set()
+            job.shutdown_requested = False
             job.status = ResearchRunStatus.CANCELLED
             job.result = None
             job.error = error
@@ -375,6 +421,38 @@ class ResearchRunJobRegistry:
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+
+    def mark_restart_interrupted(self, run_id: str) -> ResearchRunJob:
+        """Persist a recoverable interruption caused by backend shutdown."""
+        job = self._require_job(run_id)
+        with self._lock:
+            job.cancel_requested.clear()
+            job.shutdown_requested = False
+            job.status = ResearchRunStatus.FAILED
+            job.error = RESTART_INTERRUPTED_ERROR
+            job.completed_at = datetime.now(UTC)
+        self._job_changed(job)
+        return job
+
+    async def interrupt_all_for_shutdown(self) -> None:
+        """Stop active tasks while preserving them for restart recovery."""
+        active_jobs = self.active_jobs()
+        tasks = [
+            job.task
+            for job in active_jobs
+            if job.task is not None and not job.task.done()
+        ]
+        for job in active_jobs:
+            with self._lock:
+                job.shutdown_requested = True
+            self._job_changed(job)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        for job in active_jobs:
+            if job.is_active:
+                self.mark_restart_interrupted(job.run_id)
 
     def _require_job(self, run_id: str) -> ResearchRunJob:
         """Load a known job or raise a keyed error."""
@@ -436,6 +514,7 @@ class ResearchRunJobStore:
             "started_at": job.started_at.isoformat() if job.started_at else None,
             "completed_at": job.completed_at.isoformat() if job.completed_at else None,
             "stop_requested": job.stop_requested,
+            "shutdown_requested": job.shutdown_requested,
         }
 
     @staticmethod
@@ -479,6 +558,7 @@ class ResearchRunJobStore:
                 if payload.get("completed_at")
                 else None
             ),
+            shutdown_requested=bool(payload.get("shutdown_requested")),
         )
         if payload.get("stop_requested"):
             job.cancel_requested.set()
@@ -488,10 +568,7 @@ class ResearchRunJobStore:
 class PersistentResearchRunJobRegistry(ResearchRunJobRegistry):
     """Research job registry that survives dashboard process restarts."""
 
-    _RECOVERY_ERROR = (
-        "Research run was interrupted by a backend restart. "
-        "Resume from the latest valid checkpoint."
-    )
+    _RECOVERY_ERROR = RESTART_INTERRUPTED_ERROR
 
     def __init__(self, *, store: ResearchRunJobStore | None = None) -> None:
         super().__init__()
@@ -502,12 +579,25 @@ class PersistentResearchRunJobRegistry(ResearchRunJobRegistry):
         """Persist every durable mutation through the base registry hook."""
         self._store.save(job)
 
+    def interrupted_restart_jobs(self) -> list[ResearchRunJob]:
+        """Return persisted jobs that were interrupted by a backend restart."""
+        return [
+            job
+            for job in self.completed_jobs()
+            if job.status == ResearchRunStatus.FAILED and job.error == self._RECOVERY_ERROR
+        ]
+
     def _restore_jobs(self) -> None:
         for job in self._store.load_all():
             if job.status in {ResearchRunStatus.QUEUED, ResearchRunStatus.RUNNING}:
-                job.cancel_requested.clear()
-                job.status = ResearchRunStatus.FAILED
-                job.error = self._RECOVERY_ERROR
+                if job.stop_requested and not job.shutdown_requested:
+                    job.status = ResearchRunStatus.CANCELLED
+                    job.error = OPERATOR_CANCELLED_ERROR
+                else:
+                    job.cancel_requested.clear()
+                    job.status = ResearchRunStatus.FAILED
+                    job.error = self._RECOVERY_ERROR
+                job.shutdown_requested = False
                 job.completed_at = datetime.now(UTC)
             self._jobs[job.run_id] = job
             self._job_changed(job)

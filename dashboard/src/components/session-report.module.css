@@ -1,0 +1,253 @@
+.document {
+  width: min(100%, 76ch);
+  margin-inline: auto;
+  color: hsl(var(--foreground) / 0.9);
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  font-size: 1rem;
+  font-kerning: normal;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+.document h1,
+.document h2,
+.document h3,
+.document h4,
+.document h5,
+.document h6 {
+  color: hsl(var(--foreground));
+  font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+.document h1 {
+  margin: 0 0 2.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid hsl(var(--primary) / 0.45);
+  font-size: clamp(2.35rem, 5vw, 3.5rem);
+  letter-spacing: -0.015em;
+  line-height: 1.02;
+}
+
+.document h2 {
+  margin: 3.75rem 0 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid hsl(var(--border) / 0.75);
+  font-size: clamp(1.85rem, 3.5vw, 2.4rem);
+  letter-spacing: -0.005em;
+  line-height: 1.08;
+}
+
+.document h3 {
+  margin: 2.75rem 0 1rem;
+  font-size: clamp(1.45rem, 2.6vw, 1.8rem);
+  line-height: 1.18;
+}
+
+.document h4 {
+  margin: 2.25rem 0 0.875rem;
+  font-size: 1.25rem;
+  line-height: 1.25;
+}
+
+.document h5,
+.document h6 {
+  margin: 2rem 0 0.75rem;
+  font-size: 1.05rem;
+  line-height: 1.35;
+}
+
+.document p {
+  margin: 0 0 1.35rem;
+}
+
+.document ul,
+.document ol {
+  margin: 0 0 1.5rem;
+  padding-left: 1.6rem;
+}
+
+.document ul {
+  list-style: disc;
+}
+
+.document ol {
+  list-style: decimal;
+}
+
+.document li {
+  margin-block: 0.45rem;
+  padding-left: 0.2rem;
+}
+
+.document li::marker {
+  color: hsl(var(--primary));
+  font-weight: 600;
+}
+
+.document li > ul,
+.document li > ol {
+  margin-block: 0.45rem 0;
+}
+
+.document a {
+  color: hsl(var(--primary));
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: hsl(var(--primary) / 0.55);
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.2em;
+}
+
+.document a:hover {
+  color: hsl(var(--foreground));
+  text-decoration-color: hsl(var(--primary));
+}
+
+.document strong {
+  color: hsl(var(--foreground));
+  font-weight: 600;
+}
+
+.document blockquote {
+  margin: 2rem 0;
+  padding: 1rem 1.25rem;
+  border-left: 0.22rem solid hsl(var(--primary));
+  border-radius: 0 0.75rem 0.75rem 0;
+  background: hsl(var(--surface-raised) / 0.55);
+  color: hsl(var(--foreground) / 0.78);
+}
+
+.document blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.document code {
+  border: 1px solid hsl(var(--border) / 0.7);
+  border-radius: 0.35rem;
+  background: hsl(var(--surface-raised) / 0.72);
+  color: hsl(var(--foreground));
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 0.875em;
+  padding: 0.12em 0.35em;
+}
+
+.document pre {
+  max-width: 100%;
+  margin: 1.75rem 0;
+  overflow: auto;
+  border: 1px solid hsl(var(--border) / 0.75);
+  border-radius: 0.9rem;
+  background: hsl(var(--background) / 0.92);
+  padding: 1.1rem 1.2rem;
+  font-size: 0.875rem;
+  line-height: 1.65;
+}
+
+.document pre code {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
+
+.document hr {
+  margin: 3.25rem 0;
+  border: 0;
+  border-top: 1px solid hsl(var(--border) / 0.8);
+}
+
+.document img {
+  max-width: 100%;
+  height: auto;
+  margin: 2rem auto;
+  border: 1px solid hsl(var(--border) / 0.7);
+  border-radius: 0.9rem;
+}
+
+.tableScroller {
+  width: 100%;
+  margin: 2rem 0;
+  overflow-x: auto;
+  border: 1px solid hsl(var(--border) / 0.8);
+  border-radius: 0.9rem;
+  background: hsl(var(--background) / 0.48);
+}
+
+.tableScroller:focus-visible {
+  outline: 2px solid hsl(var(--ring) / 0.75);
+  outline-offset: 0.2rem;
+}
+
+.tableScroller table {
+  width: 100%;
+  min-width: 38rem;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.55;
+}
+
+.tableScroller th,
+.tableScroller td {
+  padding: 0.8rem 1rem;
+  border-right: 1px solid hsl(var(--border) / 0.6);
+  border-bottom: 1px solid hsl(var(--border) / 0.6);
+  text-align: left;
+  vertical-align: top;
+}
+
+.tableScroller th:last-child,
+.tableScroller td:last-child {
+  border-right: 0;
+}
+
+.tableScroller tr:last-child td {
+  border-bottom: 0;
+}
+
+.tableScroller th {
+  background: hsl(var(--surface-raised) / 0.72);
+  color: hsl(var(--foreground));
+  font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.tableScroller tbody tr:nth-child(even) {
+  background: hsl(var(--surface) / 0.45);
+}
+
+.htmlFrame {
+  display: block;
+  width: 100%;
+  min-height: min(76vh, 60rem);
+  border: 1px solid hsl(var(--border) / 0.85);
+  border-radius: 0.9rem;
+  background: hsl(36 20% 96%);
+  color-scheme: light;
+}
+
+@media (max-width: 40rem) {
+  .document {
+    font-size: 0.975rem;
+    line-height: 1.7;
+  }
+
+  .document h1 {
+    margin-bottom: 1.75rem;
+  }
+
+  .document h2 {
+    margin-top: 3rem;
+  }
+
+  .tableScroller table {
+    min-width: 34rem;
+  }
+
+  .htmlFrame {
+    min-height: 70vh;
+  }
+}

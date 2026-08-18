@@ -186,6 +186,7 @@ class ResearchRunStatusResponse(BaseModel):
     stop_requested: bool = False
     original_run_id: str | None = None
     original_session_id: str | None = None
+    recovery_run_id: str | None = None
     resumed_from_checkpoint_id: str | None = None
     resume_attempt: int = Field(default=0, ge=0)
 

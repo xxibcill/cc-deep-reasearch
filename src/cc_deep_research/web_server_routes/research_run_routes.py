@@ -21,6 +21,16 @@ from cc_deep_research.research_runs.models import (
     ResearchRunRequest,
     ResearchRunStatus,
 )
+from cc_deep_research.research_runs.recovery import (
+    is_terminal_failure,
+    materialize_failure_result,
+    safe_failure_reason,
+)
+from cc_deep_research.research_runs.recovery_controller import (
+    RECOVERY_FAILURE_MESSAGE,
+    execute_with_automatic_recovery,
+    finalize_recovery_result_async,
+)
 from cc_deep_research.research_runs.resume import ResearchResumeState
 from cc_deep_research.telemetry import (
     get_default_telemetry_dir,
@@ -31,15 +41,12 @@ from cc_deep_research.web_server_routes._shared import parse_timestamp
 
 STALE_LIVE_SESSION_AFTER = timedelta(minutes=15)
 RUN_CANCELLED_MESSAGE = "Research run was cancelled by the operator."
-PROVIDER_FAILURE_MESSAGE = (
-    "Research run failed because configured providers returned no usable sources."
-)
 logger = logging.getLogger(__name__)
 
 
 def _raise_if_run_cancelled(job: ResearchRunJob) -> None:
     """Raise the shared cancellation error when a run stop has been requested."""
-    if job.stop_requested:
+    if job.stop_requested or job.shutdown_requested:
         raise ResearchRunCancelled(RUN_CANCELLED_MESSAGE)
 
 
@@ -154,44 +161,62 @@ async def _execute_research_run(
 
         on_session_started = cast(
             "Callable[[str], None]",
-            lambda session_id: job_registry.set_session_id(
-                job.run_id, session_id=session_id
-            ),
+            lambda session_id: job_registry.set_session_id(job.run_id, session_id=session_id),
         )
-        if resume_state is not None:
-            result = await asyncio.to_thread(
-                service.resume,
-                resume_state,
-                event_router=event_router,
-                cancellation_check=cancellation_check,
-                on_session_started=on_session_started,
-            )
-        else:
-            result = await asyncio.to_thread(
-                service.run,
-                job.request,
-                event_router=event_router,
-                cancellation_check=cancellation_check,
-                on_session_started=on_session_started,
-            )
-        terminal_status = result.session.metadata.get("execution", {}).get(
-            "terminal_status"
+        result = await execute_with_automatic_recovery(
+            service,
+            job,
+            resume_state=resume_state,
+            event_router=event_router,
+            cancellation_check=cancellation_check,
+            on_session_started=on_session_started,
         )
-        if terminal_status == ResearchRunStatus.FAILED.value:
-            job_registry.mark_failed(job.run_id, error=PROVIDER_FAILURE_MESSAGE)
+        if is_terminal_failure(result):
+            job_registry.mark_failed(
+                job.run_id,
+                error=RECOVERY_FAILURE_MESSAGE,
+                result=result,
+            )
         else:
             job_registry.mark_completed(job.run_id, result=result)
     except ResearchRunCancelled:
         if job.session_id:
             _interrupt_live_session(job.session_id)
-        job_registry.mark_cancelled(job.run_id, error=RUN_CANCELLED_MESSAGE)
+        if job.shutdown_requested:
+            job_registry.mark_restart_interrupted(job.run_id)
+        else:
+            job_registry.mark_cancelled(job.run_id, error=RUN_CANCELLED_MESSAGE)
     except asyncio.CancelledError:
         if job.session_id:
             _interrupt_live_session(job.session_id)
-        job_registry.mark_cancelled(job.run_id, error=RUN_CANCELLED_MESSAGE)
+        if job.shutdown_requested:
+            job_registry.mark_restart_interrupted(job.run_id)
+        else:
+            job_registry.mark_cancelled(job.run_id, error=RUN_CANCELLED_MESSAGE)
     except Exception as exc:
         logger.exception("Research run %s failed", job.run_id)
-        job_registry.mark_failed(job.run_id, error=str(exc))
+        failure_reasons = [safe_failure_reason("Recovery controller", exc)]
+        try:
+            result = await asyncio.to_thread(
+                materialize_failure_result,
+                job.request,
+                session_id=job.session_id,
+                failure_reasons=failure_reasons,
+            )
+            result = await finalize_recovery_result_async(
+                result,
+                attempts=[],
+                failure_reasons=failure_reasons,
+            )
+        except Exception:
+            logger.exception("Unable to create a terminal report for run %s", job.run_id)
+            job_registry.mark_failed(job.run_id, error=RECOVERY_FAILURE_MESSAGE)
+        else:
+            job_registry.mark_failed(
+                job.run_id,
+                error=RECOVERY_FAILURE_MESSAGE,
+                result=result,
+            )
 
 
 def queue_research_run(
@@ -203,9 +228,7 @@ def queue_research_run(
     """Schedule one research job on the active application event loop."""
     job_registry = get_job_registry(app)
     with llm_request_scope(job.run_id):
-        task = asyncio.create_task(
-            _execute_research_run(app, job, resume_state=resume_state)
-        )
+        task = asyncio.create_task(_execute_research_run(app, job, resume_state=resume_state))
     job_registry.attach_task(job.run_id, task)
 
 
@@ -261,16 +284,23 @@ def register_research_run_routes(app: FastAPI) -> None:
                 status_code=404,
             )
 
+        requested_job = job
+        recovery_job = job_registry.latest_recovery_descendant(run_id)
+        if recovery_job is not None:
+            job = recovery_job
+
         response: dict = {
-            "run_id": job.run_id,
+            "run_id": requested_job.run_id,
             "status": job.status.value,
-            "created_at": job.created_at.isoformat(),
+            "created_at": requested_job.created_at.isoformat(),
             "stop_requested": job.stop_requested,
             "original_run_id": job.original_run_id,
             "original_session_id": job.original_session_id,
             "resumed_from_checkpoint_id": job.resumed_from_checkpoint_id,
             "resume_attempt": job.resume_attempt,
         }
+        if recovery_job is not None:
+            response["recovery_run_id"] = recovery_job.run_id
 
         if job.session_id:
             response["session_id"] = job.session_id

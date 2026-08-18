@@ -4,16 +4,23 @@ from __future__ import annotations
 
 import json
 import time
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
-from cc_deep_research.models import ResearchSession
+from cc_deep_research.models import ResearchSession, SearchResultItem
 from cc_deep_research.research_runs import (
     ResearchOutputFormat,
     ResearchRunReport,
     ResearchRunRequest,
     ResearchRunResult,
+    ResearchWorkflow,
+)
+from cc_deep_research.research_runs.jobs import (
+    PersistentResearchRunJobRegistry,
+    ResearchRunJobRegistry,
+    ResearchRunJobStore,
 )
 from cc_deep_research.web_server import (
     create_app,
@@ -21,10 +28,51 @@ from cc_deep_research.web_server import (
 )
 
 
+def _result_for_status(
+    *,
+    request: ResearchRunRequest,
+    session_id: str,
+    terminal_status: str,
+) -> ResearchRunResult:
+    """Build a compact research result for lifecycle tests."""
+    return ResearchRunResult(
+        session=ResearchSession(
+            session_id=session_id,
+            query=request.query,
+            depth=request.depth,
+            metadata={"execution": {"terminal_status": terminal_status}},
+        ),
+        report=ResearchRunReport(
+            format=ResearchOutputFormat.MARKDOWN,
+            content=f"# Report for {session_id}",
+            media_type="text/markdown",
+        ),
+    )
+
+
+def _wait_for_run_status(
+    client: TestClient,
+    run_id: str,
+    *terminal_statuses: str,
+) -> dict:
+    """Poll one browser run until it reaches an expected terminal status."""
+    payload: dict = {}
+    for _ in range(150):
+        response = client.get(f"/api/research-runs/{run_id}")
+        assert response.status_code == 200
+        payload = response.json()
+        if payload.get("status") in terminal_statuses:
+            return payload
+        time.sleep(0.01)
+    return payload
+
+
 def test_research_route_passes_app_owned_codex_runtime(
+    tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Browser-started generation should use the same runtime as auth routes."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     captured: list[object] = []
 
     class FakeCodexRuntime:
@@ -249,3 +297,448 @@ def test_stop_research_run_cancels_matching_llm_scope() -> None:
 
     assert response.status_code == 202
     assert runtime.cancelled_scopes == [job.run_id]
+
+
+def test_terminal_provider_failure_retries_with_alternate_execution(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A no-source terminal result should retry once through a distinct execution path."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    requests: list[ResearchRunRequest] = []
+
+    class AlternateExecutionService:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def run(
+            self,
+            request: ResearchRunRequest,
+            *,
+            on_session_started=None,
+            **_kwargs,
+        ) -> ResearchRunResult:
+            requests.append(request)
+            recovered = len(requests) == 2
+            session_id = "alternate-success" if recovered else "provider-failed"
+            if on_session_started is not None:
+                on_session_started(session_id)
+            return _result_for_status(
+                request=request,
+                session_id=session_id,
+                terminal_status="completed" if recovered else "failed",
+            )
+
+        def resume(self, *_args, **_kwargs) -> ResearchRunResult:
+            raise AssertionError("Terminal provider failures should use alternate fresh execution")
+
+    monkeypatch.setattr(
+        "cc_deep_research.web_server.ResearchRunService",
+        AlternateExecutionService,
+    )
+
+    app = create_app()
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/research-runs",
+            json={
+                "query": "provider recovery",
+                "depth": "quick",
+                "workflow": "staged",
+                "search_providers": ["tavily"],
+                "concurrent_source_collection": True,
+            },
+        )
+        payload = _wait_for_run_status(client, response.json()["run_id"], "completed")
+
+    assert payload["status"] == "completed"
+    assert payload["session_id"] == "alternate-success"
+    assert len(requests) == 2
+    assert requests[1].workflow == ResearchWorkflow.PLANNER
+    assert requests[1].search_providers == ["tavily_basic"]
+    assert requests[1].concurrent_source_collection is False
+
+    job = get_job_registry(app).get_job(payload["run_id"])
+    assert job is not None and job.result is not None
+    recovery = job.result.session.metadata["execution"]["automatic_recovery"]
+    assert recovery["succeeded"] is True
+    assert [attempt["strategy"] for attempt in recovery["attempts"]] == ["alternate_execution"]
+
+
+def test_terminal_alternate_failure_preserves_earlier_evidence(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A later empty failure must not discard sources from an earlier attempt."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    calls = 0
+
+    class TerminalAttemptsService:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def run(
+            self,
+            request: ResearchRunRequest,
+            *,
+            on_session_started=None,
+            **_kwargs,
+        ) -> ResearchRunResult:
+            nonlocal calls
+            calls += 1
+            session_id = f"terminal-attempt-{calls}"
+            if on_session_started is not None:
+                on_session_started(session_id)
+            result = _result_for_status(
+                request=request,
+                session_id=session_id,
+                terminal_status="failed",
+            )
+            if calls == 1:
+                result.session.sources = [
+                    SearchResultItem(
+                        title="Preserved evidence",
+                        url="https://evidence.example/source",
+                        snippet="Useful evidence collected before recovery.",
+                    )
+                ]
+            return result
+
+        def resume(self, *_args, **_kwargs) -> ResearchRunResult:
+            raise AssertionError("Terminal results should use alternate fresh execution")
+
+    monkeypatch.setattr(
+        "cc_deep_research.web_server.ResearchRunService",
+        TerminalAttemptsService,
+    )
+
+    app = create_app()
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/research-runs",
+            json={"query": "preserve evidence", "depth": "quick"},
+        )
+        payload = _wait_for_run_status(client, response.json()["run_id"], "failed")
+
+    job = get_job_registry(app).get_job(payload["run_id"])
+    assert job is not None and job.result is not None
+    assert [source.url for source in job.result.session.sources] == [
+        "https://evidence.example/source"
+    ]
+    assert "Preserved evidence" in job.result.report.content
+
+
+def test_transient_exception_automatically_resumes_latest_checkpoint(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A transient crash should resume from the latest executable checkpoint first."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    resume_state = object()
+    calls = {"run": 0, "resume": 0}
+
+    class CheckpointRecoveryService:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def run(
+            self,
+            request: ResearchRunRequest,
+            *,
+            on_session_started=None,
+            **_kwargs,
+        ) -> ResearchRunResult:
+            calls["run"] += 1
+            if on_session_started is not None:
+                on_session_started("checkpoint-origin")
+            raise RuntimeError("temporary transport failure")
+
+        def resume(
+            self,
+            state: object,
+            *,
+            on_session_started=None,
+            **_kwargs,
+        ) -> ResearchRunResult:
+            calls["resume"] += 1
+            assert state is resume_state
+            request = ResearchRunRequest(query="checkpoint recovery", depth="quick")
+            if on_session_started is not None:
+                on_session_started("checkpoint-success")
+            return _result_for_status(
+                request=request,
+                session_id="checkpoint-success",
+                terminal_status="completed",
+            )
+
+    monkeypatch.setattr(
+        "cc_deep_research.web_server.ResearchRunService",
+        CheckpointRecoveryService,
+    )
+    monkeypatch.setattr(
+        "cc_deep_research.research_runs.recovery_controller.load_latest_recovery_checkpoint",
+        lambda session_id: SimpleNamespace(
+            checkpoint_id="cp-safe",
+            state=resume_state,
+            session_id=session_id,
+        ),
+    )
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/api/research-runs",
+            json={"query": "checkpoint recovery", "depth": "quick"},
+        )
+        payload = _wait_for_run_status(client, response.json()["run_id"], "completed")
+
+    assert payload["status"] == "completed"
+    assert payload["session_id"] == "checkpoint-success"
+    assert calls == {"run": 1, "resume": 1}
+
+
+def test_backend_restart_automatically_queues_latest_checkpoint(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A persisted in-flight job should resume automatically when the app restarts."""
+    store = ResearchRunJobStore(tmp_path / "runs")
+    original_registry = PersistentResearchRunJobRegistry(store=store)
+    original = original_registry.create_job(ResearchRunRequest(query="restart recovery"))
+    original_registry.mark_running(original.run_id, session_id="restart-origin")
+    restored_registry = PersistentResearchRunJobRegistry(store=store)
+    resume_state = object()
+
+    class RestartRecoveryService:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def resume(
+            self,
+            state: object,
+            *,
+            on_session_started=None,
+            **_kwargs,
+        ) -> ResearchRunResult:
+            assert state is resume_state
+            if on_session_started is not None:
+                on_session_started("restart-success")
+            return _result_for_status(
+                request=original.request,
+                session_id="restart-success",
+                terminal_status="completed",
+            )
+
+        def run(self, *_args, **_kwargs) -> ResearchRunResult:
+            raise AssertionError("Restart recovery must resume the checkpoint")
+
+    monkeypatch.setattr(
+        "cc_deep_research.web_server.ResearchRunService",
+        RestartRecoveryService,
+    )
+    monkeypatch.setattr(
+        "cc_deep_research.research_runs.recovery_scheduler.load_latest_recovery_checkpoint",
+        lambda session_id: SimpleNamespace(
+            checkpoint_id="cp-restart",
+            state=resume_state,
+            session_id=session_id,
+        ),
+    )
+
+    with TestClient(create_app(job_registry=restored_registry)):
+        recovered = None
+        for _ in range(100):
+            recovered = next(
+                (
+                    job
+                    for job in restored_registry.list_jobs()
+                    if job.original_run_id == original.run_id
+                ),
+                None,
+            )
+            if recovered is not None and recovered.status.value == "completed":
+                break
+            time.sleep(0.01)
+
+    assert recovered is not None
+    assert recovered.status.value == "completed"
+    assert recovered.session_id == "restart-success"
+    assert recovered.resumed_from_checkpoint_id == "cp-restart"
+
+
+def test_backend_restart_without_checkpoint_materializes_failure_report(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An interrupted job without a checkpoint should still expose a final report."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    store = ResearchRunJobStore(tmp_path / "runs")
+    original_registry = PersistentResearchRunJobRegistry(store=store)
+    original = original_registry.create_job(ResearchRunRequest(query="restart without checkpoint"))
+    original_registry.mark_running(original.run_id, session_id="restart-no-checkpoint")
+    restored_registry = PersistentResearchRunJobRegistry(store=store)
+
+    monkeypatch.setattr(
+        "cc_deep_research.research_runs.recovery_scheduler.load_latest_recovery_checkpoint",
+        lambda _session_id: None,
+    )
+
+    with TestClient(create_app(job_registry=restored_registry)) as client:
+        payload = client.get(f"/api/research-runs/{original.run_id}").json()
+
+    assert payload["status"] == "failed"
+    assert payload["session_id"] == "restart-no-checkpoint"
+    assert payload["result"]["session_id"] == "restart-no-checkpoint"
+    assert payload["result"]["artifacts"]
+
+
+def test_original_run_status_follows_latest_recovery_child(tmp_path) -> None:
+    """Polling the interrupted parent should expose its latest recovery result."""
+    registry = ResearchRunJobRegistry()
+    original = registry.create_job(ResearchRunRequest(query="follow automatic recovery"))
+    registry.mark_running(original.run_id, session_id="recovery-origin")
+    registry.mark_failed(original.run_id, error="backend restarted")
+    recovery = registry.create_resume_job(
+        original,
+        checkpoint_id="cp-recovery",
+        idempotency_key="automatic-recovery",
+    )
+    registry.mark_running(recovery.run_id)
+    registry.mark_completed(
+        recovery.run_id,
+        result=_result_for_status(
+            request=recovery.request,
+            session_id="recovery-complete",
+            terminal_status="completed",
+        ),
+    )
+
+    with TestClient(create_app(job_registry=registry)) as client:
+        payload = client.get(f"/api/research-runs/{original.run_id}").json()
+
+    assert payload["run_id"] == original.run_id
+    assert payload["recovery_run_id"] == recovery.run_id
+    assert payload["status"] == "completed"
+    assert payload["session_id"] == "recovery-complete"
+    assert payload["result"]["session_id"] == "recovery-complete"
+
+
+def test_non_retriable_failure_still_materializes_final_report(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invalid execution state should not retry, but should still return a failure report."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    calls = {"run": 0, "resume": 0, "failure_report": 0}
+
+    class NonRetriableFailureService:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def run(
+            self,
+            request: ResearchRunRequest,
+            *,
+            on_session_started=None,
+            **_kwargs,
+        ) -> ResearchRunResult:
+            calls["run"] += 1
+            if on_session_started is not None:
+                on_session_started("invalid-session")
+            raise ValueError("invalid workflow state")
+
+        def resume(self, *_args, **_kwargs) -> ResearchRunResult:
+            calls["resume"] += 1
+            raise AssertionError("Non-retriable errors must not resume")
+
+        def materialize_failure_result(
+            self,
+            request: ResearchRunRequest,
+            *,
+            session_id: str | None,
+            failure_reasons: list[str],
+        ) -> ResearchRunResult:
+            calls["failure_report"] += 1
+            assert failure_reasons == ["Initial execution failed (ValueError)."]
+            return _result_for_status(
+                request=request,
+                session_id=session_id or "failure-report",
+                terminal_status="failed",
+            )
+
+    monkeypatch.setattr(
+        "cc_deep_research.web_server.ResearchRunService",
+        NonRetriableFailureService,
+    )
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/api/research-runs",
+            json={"query": "invalid state", "depth": "quick"},
+        )
+        payload = _wait_for_run_status(client, response.json()["run_id"], "failed")
+
+    assert payload["status"] == "failed"
+    assert payload["result"]["session_id"] == "invalid-session"
+    assert calls == {"run": 1, "resume": 0, "failure_report": 1}
+
+
+def test_automatic_recovery_is_bounded_before_failure_report(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Checkpoint and alternate retries should each run at most once."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    resume_state = object()
+    calls = {"run": 0, "resume": 0, "failure_report": 0}
+
+    class ExhaustedRecoveryService:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def run(
+            self,
+            request: ResearchRunRequest,
+            *,
+            on_session_started=None,
+            **_kwargs,
+        ) -> ResearchRunResult:
+            calls["run"] += 1
+            if on_session_started is not None:
+                on_session_started(f"failed-attempt-{calls['run']}")
+            raise RuntimeError("temporary failure")
+
+        def resume(self, *_args, **_kwargs) -> ResearchRunResult:
+            calls["resume"] += 1
+            raise RuntimeError("resume failed")
+
+        def materialize_failure_result(
+            self,
+            request: ResearchRunRequest,
+            *,
+            session_id: str | None,
+            failure_reasons: list[str],
+        ) -> ResearchRunResult:
+            calls["failure_report"] += 1
+            assert len(failure_reasons) == 3
+            return _result_for_status(
+                request=request,
+                session_id=session_id or "exhausted-recovery",
+                terminal_status="failed",
+            )
+
+    monkeypatch.setattr(
+        "cc_deep_research.web_server.ResearchRunService",
+        ExhaustedRecoveryService,
+    )
+    monkeypatch.setattr(
+        "cc_deep_research.research_runs.recovery_controller.load_latest_recovery_checkpoint",
+        lambda session_id: SimpleNamespace(
+            checkpoint_id="cp-safe",
+            state=resume_state,
+            session_id=session_id,
+        ),
+    )
+
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/api/research-runs",
+            json={"query": "bounded recovery", "depth": "quick"},
+        )
+        payload = _wait_for_run_status(client, response.json()["run_id"], "failed")
+
+    assert payload["status"] == "failed"
+    assert payload["result"]["session_id"] == "failed-attempt-2"
+    assert calls == {"run": 2, "resume": 1, "failure_report": 1}

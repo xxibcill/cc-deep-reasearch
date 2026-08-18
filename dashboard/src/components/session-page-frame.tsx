@@ -119,7 +119,9 @@ export function SessionPageFrame({
   const previousRunStatusRef = useRef<ResearchRunStatus | null>(null);
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
 
-  const showRunStatus = isRunRoute && !resolvedSessionId;
+  const showRunStatus =
+    isRunRoute &&
+    (!resolvedSessionId || runStatus === 'queued' || runStatus === 'running');
 
   useEffect(() => {
     const previousStatus = previousRunStatusRef.current;
